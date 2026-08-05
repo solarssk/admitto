@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Bounce IMAP MIME extraction uses libmime / libqp / iconv-lite** for quoted-printable, base64, and charset decoding (including ISO-8859-1 and windows-1252 NDR parts), instead of a UTF-8-only hand-rolled decoder. RFC 2047 encoded-words in part headers are decoded before walking the MIME tree. JS string sources are encoded as UTF-8 octets before the binary walk so unescaped non-ASCII in 8bit bodies (e.g. `boîte`) is preserved.
 - **Bounce ingest looks up matching deliveries in one query per folder poll**, instead of one database round-trip per parsed NDR recipient line.
+- **Bounce free-text NDR dialects are a matcher table** in `parseBounceLine` (Postfix / mailhop / Synology / orphan `failed:`), so new MTA formats can be added without growing one inline function. Bounce probe reuses the same IMAP open helper as ingest.
 
 ### Fixed
 - **OIDC group sync retries Serializable conflicts more patiently** when two instance superadmins lose the mapped group at the same time (jittered backoff, up to 8 attempts), so concurrent logins no longer fail with a transaction write conflict after three immediate retries.

@@ -199,6 +199,77 @@ function inferRecipientEmail(
   return null;
 }
 
+type FreeTextMatchFields = {
+  email?: string;
+  code?: string;
+  enhanced?: string;
+  reason?: string;
+};
+
+/**
+ * Vendor / dialect free-text matchers (Postfix, mailhop, Synology, angle-bracket).
+ * Add new MTA dialects here instead of growing parsePostfixFallback inline.
+ */
+const FREE_TEXT_MATCHERS: ReadonlyArray<{
+  id: string;
+  pattern: RegExp;
+  extract: (match: RegExpMatchArray, inferredEmail: string | null) => FreeTextMatchFields;
+}> = [
+  {
+    id: "postfix-enhanced",
+    pattern: new RegExp(
+      String.raw`${EMAIL_RE}\s+failed:\s+${HOST_SAID}(\d{3})\s+(\d\.\d\.\d)\s+\S+:\s+(.+?)${REPLY_TAIL}`,
+      "gim",
+    ),
+    extract: (match) => ({
+      email: match[1],
+      code: match[2],
+      enhanced: match[3],
+      reason: match[4],
+    }),
+  },
+  {
+    // mailhop/Synology-style "<address>failed: host …" with optional brackets / enhanced code.
+    id: "failed-host-said",
+    pattern: new RegExp(
+      String.raw`<?${EMAIL_RE}>?\s*failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:\S+:\s+)?(.+?)${REPLY_TAIL}`,
+      "gim",
+    ),
+    extract: (match) => ({
+      email: match[1],
+      code: match[2],
+      enhanced: match[3],
+      reason: match[4],
+    }),
+  },
+  {
+    id: "postfix-angle-bracket",
+    pattern: new RegExp(
+      String.raw`<${EMAIL_RE}>:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:<[^>]+>:\s+)?(.+?)${REPLY_TAIL}`,
+      "gim",
+    ),
+    extract: (match) => ({
+      email: match[1],
+      code: match[2],
+      enhanced: match[3],
+      reason: match[4],
+    }),
+  },
+  {
+    id: "orphan-failed",
+    pattern: new RegExp(
+      String.raw`(?:^|\n)failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?:?\s*(.+?)${REPLY_TAIL}`,
+      "gim",
+    ),
+    extract: (match, inferredEmail) => ({
+      email: inferredEmail ?? undefined,
+      code: match[1],
+      enhanced: match[2],
+      reason: match[3],
+    }),
+  },
+];
+
 function parsePostfixFallback(
   normalized: string,
   out: ParsedBounceLine[],
@@ -207,38 +278,11 @@ function parsePostfixFallback(
 ): void {
   const inferredEmail = inferRecipientEmail(normalized, dsnLines);
 
-  const withEnhanced = new RegExp(
-    String.raw`${EMAIL_RE}\s+failed:\s+${HOST_SAID}(\d{3})\s+(\d\.\d\.\d)\s+\S+:\s+(.+?)${REPLY_TAIL}`,
-    "gim",
-  );
-  for (const match of normalized.matchAll(withEnhanced)) {
-    pushLine(out, seen, match[1], match[2], match[3], match[4]);
-  }
-
-  // Also matches mailhop/Synology-style "<address>failed: host …" with no
-  // colon and no space between the bracketed address and "failed:".
-  const withoutStrictEnhanced = new RegExp(
-    String.raw`<?${EMAIL_RE}>?\s*failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:\S+:\s+)?(.+?)${REPLY_TAIL}`,
-    "gim",
-  );
-  for (const match of normalized.matchAll(withoutStrictEnhanced)) {
-    pushLine(out, seen, match[1], match[2], match[3], match[4]);
-  }
-
-  const angleBracket = new RegExp(
-    String.raw`<${EMAIL_RE}>:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:<[^>]+>:\s+)?(.+?)${REPLY_TAIL}`,
-    "gim",
-  );
-  for (const match of normalized.matchAll(angleBracket)) {
-    pushLine(out, seen, match[1], match[2], match[3], match[4]);
-  }
-
-  const orphanFailed = new RegExp(
-    String.raw`(?:^|\n)failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?:?\s*(.+?)${REPLY_TAIL}`,
-    "gim",
-  );
-  for (const match of normalized.matchAll(orphanFailed)) {
-    pushLine(out, seen, inferredEmail ?? undefined, match[1], match[2], match[3]);
+  for (const matcher of FREE_TEXT_MATCHERS) {
+    for (const match of normalized.matchAll(matcher.pattern)) {
+      const fields = matcher.extract(match, inferredEmail);
+      pushLine(out, seen, fields.email, fields.code, fields.enhanced, fields.reason);
+    }
   }
 }
 

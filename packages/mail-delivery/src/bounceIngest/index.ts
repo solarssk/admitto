@@ -8,6 +8,7 @@ import {
 import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
 import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
+import { openBounceImapProvider } from "./openProvider.js";
 import { lookbackSince, parseFolders, resolveImapConnectConfig } from "./resolveAuth.js";
 import type { InboundMailProvider, InboundMessage, IngestSummary, ParsedBounceLine } from "./types.js";
 
@@ -53,11 +54,7 @@ async function openProvider(
   settings: BounceIngestSettings,
   options: IngestBouncesOptions,
 ): Promise<InboundMailProvider> {
-  if (options.createProvider) {
-    return options.createProvider(settings);
-  }
-  const connectCfg = await resolveImapConnectConfig(db, settings, options.env ?? process.env);
-  return new ImapInboundProvider(connectCfg);
+  return openBounceImapProvider(db, settings, options);
 }
 
 async function maybeMarkSeen(
@@ -375,6 +372,7 @@ export {
   NON_TERMINAL,
 } from "./correlate.js";
 export { applyBounceResult, buildErrorCode } from "./applyBounceResult.js";
+export { openBounceImapProvider } from "./openProvider.js";
 export type { ApplyBounceOutcome } from "./applyBounceResult.js";
 export { ImapInboundProvider, extractPlainTextFromSource, MAX_BODY_BYTES } from "./imapProvider.js";
 export {
