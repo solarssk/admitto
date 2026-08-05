@@ -199,6 +199,55 @@ async function softCloseProvider(provider: InboundMailProvider): Promise<void> {
 
 type PollHit = { smtpCode: string; reason: string };
 
+type PollSessionState = {
+  everConnected: boolean;
+  reconnectUsed: boolean;
+  lastImapError?: string;
+};
+
+async function executePollPass(
+  provider: InboundMailProvider,
+  state: PollSessionState,
+  scanArgs: {
+    db: PrismaClient;
+    eventId: string;
+    folders: string[];
+    since: Date;
+    notBefore: Date;
+    want: string;
+    examinedUids: Set<string>;
+  },
+): Promise<PollHit | null> {
+  try {
+    if (!state.everConnected) {
+      await provider.connect();
+      state.everConnected = true;
+    }
+
+    const hit = await scanFoldersForHardBounce(scanArgs.db, {
+      eventId: scanArgs.eventId,
+      folders: scanArgs.folders,
+      since: scanArgs.since,
+      notBefore: scanArgs.notBefore,
+      want: scanArgs.want,
+      provider,
+      examinedUids: scanArgs.examinedUids,
+    });
+    if (hit) return hit;
+    return null;
+  } catch (err) {
+    state.lastImapError = err instanceof Error ? err.message : String(err);
+    console.error(`[bounce-probe] IMAP poll failed: ${state.lastImapError}`);
+
+    if (state.everConnected && !state.reconnectUsed) {
+      state.reconnectUsed = true;
+      state.everConnected = false;
+      await softCloseProvider(provider);
+    }
+    return null;
+  }
+}
+
 async function pollForHardBounce(args: {
   db: PrismaClient;
   eventId: string;
@@ -213,39 +262,21 @@ async function pollForHardBounce(args: {
   now: () => number;
 }): Promise<{ hit: PollHit | null; everConnected: boolean; lastImapError?: string }> {
   const examinedUids = new Set<string>();
-  let everConnected = false;
-  let reconnectUsed = false;
-  let lastImapError: string | undefined;
+  const state: PollSessionState = { everConnected: false, reconnectUsed: false };
   const deadline = args.now() + args.timeoutMs;
 
   try {
     while (args.now() < deadline) {
-      try {
-        if (!everConnected) {
-          await args.provider.connect();
-          everConnected = true;
-        }
-
-        const hit = await scanFoldersForHardBounce(args.db, {
-          eventId: args.eventId,
-          folders: args.folders,
-          since: args.since,
-          notBefore: args.notBefore,
-          want: args.want,
-          provider: args.provider,
-          examinedUids,
-        });
-        if (hit) return { hit, everConnected, lastImapError };
-      } catch (err) {
-        lastImapError = err instanceof Error ? err.message : String(err);
-        console.error(`[bounce-probe] IMAP poll failed: ${lastImapError}`);
-
-        if (everConnected && !reconnectUsed) {
-          reconnectUsed = true;
-          everConnected = false;
-          await softCloseProvider(args.provider);
-        }
-      }
+      const hit = await executePollPass(args.provider, state, {
+        db: args.db,
+        eventId: args.eventId,
+        folders: args.folders,
+        since: args.since,
+        notBefore: args.notBefore,
+        want: args.want,
+        examinedUids,
+      });
+      if (hit) return { hit, everConnected: state.everConnected, lastImapError: state.lastImapError };
 
       const remaining = deadline - args.now();
       if (remaining <= 0) break;
@@ -255,7 +286,7 @@ async function pollForHardBounce(args: {
     await softCloseProvider(args.provider);
   }
 
-  return { hit: null, everConnected, lastImapError };
+  return { hit: null, everConnected: state.everConnected, lastImapError: state.lastImapError };
 }
 
 /**
