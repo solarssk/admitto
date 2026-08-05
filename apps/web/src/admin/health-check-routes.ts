@@ -29,6 +29,7 @@ import { resolveProductVersion } from "../ops/product-version.js";
 import { readAdminBuildMeta } from "./admin-build-meta.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../maps/config.js";
+import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
 import { isGeocodingContactConfigured } from "../maps/user-agent.js";
 import {
   createWeatherServiceFromDb,
@@ -1258,6 +1259,8 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   const live = Boolean(deps.live);
   const probeMail = deps.probeMail ?? probeMailTransport;
   const resolveOrgMailConfig = deps.resolveOrgMailConfig ?? resolveMailConfigForOrg;
+
+  await refreshMapsConfigCacheIfStale(deps.db, env).catch(() => undefined);
 
   const setupFallback: Awaited<ReturnType<typeof collectSetupChecks>> = {
     database: { ok: false, reason: "unreachable", detail: "Database check unavailable" },

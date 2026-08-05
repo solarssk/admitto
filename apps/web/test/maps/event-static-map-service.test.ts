@@ -55,6 +55,9 @@ function fakeDb(location: {
         };
       }),
     },
+    systemSettings: {
+      findUnique: vi.fn(async () => null),
+    },
   } as unknown as PrismaClient;
 }
 

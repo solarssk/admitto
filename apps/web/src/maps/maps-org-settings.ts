@@ -3,15 +3,19 @@
  * Organisation Settings → External services is the operator source of truth.
  */
 
-import type { PrismaClient } from "@admitto/db";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import {
   defaultGeocodingConfig,
   defaultMapTileConfig,
   getMapsConfigCache,
+  isMapsConfigCacheStale,
   isStaffSpaCompatibleTileUrl,
   setMapsConfigCache,
   type MapsRuntimeConfig,
 } from "./config.js";
+import { publishMapsConfigInvalidation } from "./maps-config-invalidate.js";
+
+type MapsDb = PrismaClient | Prisma.TransactionClient;
 
 export type { GeocodingConfig, MapTileConfig } from "./config.js";
 
@@ -65,7 +69,7 @@ function parseStored(raw: unknown): MapsSettingsStored | null {
 }
 
 /** Throws when the query fails. Returns null only for a missing or corrupt row. */
-async function readStored(db: PrismaClient): Promise<MapsSettingsStored | null> {
+async function readStored(db: MapsDb): Promise<MapsSettingsStored | null> {
   const row = await db.systemSettings.findUnique({ where: { key: MAPS_SETTINGS_KEY } });
   if (!row) return null;
   try {
@@ -157,6 +161,17 @@ export async function refreshMapsConfigCache(
   }
 }
 
+/** Re-read SystemSettings when the process cache is missing or past TTL (multi-instance). */
+export async function refreshMapsConfigCacheIfStale(
+  db: PrismaClient,
+  env: Record<string, string | undefined> = process.env,
+): Promise<MapsEffectiveConfig> {
+  if (!isMapsConfigCacheStale(env)) {
+    return getMapsConfigCache() ?? builtInMapsConfig(env);
+  }
+  return refreshMapsConfigCache(db, env);
+}
+
 function publicFromEffective(effective: MapsEffectiveConfig): MapsSettingsPublic {
   return {
     enabled: effective.tiles.enabled,
@@ -176,29 +191,32 @@ export async function patchMapsSettings(
   db: PrismaClient,
   patch: MapsSettingsPatch,
 ): Promise<MapsSettingsPublic> {
-  const current = (await readStored(db)) ?? {};
-  const next: MapsSettingsStored = { ...current };
+  await db.$transaction(async (tx) => {
+    const current = (await readStored(tx)) ?? {};
+    const merged: MapsSettingsStored = { ...current };
 
-  if (patch.enabled !== undefined) next.enabled = patch.enabled;
-  if (patch.tileUrl !== undefined) next.tileUrl = patch.tileUrl?.trim() || null;
-  if (patch.attribution !== undefined) next.attribution = patch.attribution?.trim() || null;
-  if (patch.maxZoom !== undefined) {
-    next.maxZoom =
-      patch.maxZoom != null && patch.maxZoom > 0 ? Math.floor(patch.maxZoom) : null;
-  }
-  if (patch.geocodingProvider !== undefined) {
-    next.geocodingProvider = patch.geocodingProvider?.trim() || null;
-  }
-  if (patch.geocodingBaseUrl !== undefined) {
-    next.geocodingBaseUrl = patch.geocodingBaseUrl?.trim() || null;
-  }
+    if (patch.enabled !== undefined) merged.enabled = patch.enabled;
+    if (patch.tileUrl !== undefined) merged.tileUrl = patch.tileUrl?.trim() || null;
+    if (patch.attribution !== undefined) merged.attribution = patch.attribution?.trim() || null;
+    if (patch.maxZoom !== undefined) {
+      merged.maxZoom =
+        patch.maxZoom != null && patch.maxZoom > 0 ? Math.floor(patch.maxZoom) : null;
+    }
+    if (patch.geocodingProvider !== undefined) {
+      merged.geocodingProvider = patch.geocodingProvider?.trim() || null;
+    }
+    if (patch.geocodingBaseUrl !== undefined) {
+      merged.geocodingBaseUrl = patch.geocodingBaseUrl?.trim() || null;
+    }
 
-  await db.systemSettings.upsert({
-    where: { key: MAPS_SETTINGS_KEY },
-    create: { key: MAPS_SETTINGS_KEY, value_json: JSON.stringify(next) },
-    update: { value_json: JSON.stringify(next) },
+    await tx.systemSettings.upsert({
+      where: { key: MAPS_SETTINGS_KEY },
+      create: { key: MAPS_SETTINGS_KEY, value_json: JSON.stringify(merged) },
+      update: { value_json: JSON.stringify(merged) },
+    });
   });
 
   const effective = await refreshMapsConfigCache(db);
+  await publishMapsConfigInvalidation();
   return publicFromEffective(effective);
 }

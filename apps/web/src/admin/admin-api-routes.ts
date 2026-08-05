@@ -7,6 +7,7 @@ import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } fr
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { assertCoordinatePairing, buildEventStaticMapPath, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
 import { resolveMapTileConfig } from "../maps/config.js";
+import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
 import { plainMapAttribution } from "../maps/static-map.js";
 import { createWeatherServiceFromDb } from "../weather/weather-org-settings.js";
 import type { WeatherSummaryDto } from "../weather/types.js";
@@ -194,6 +195,7 @@ async function resolveCreateEventOrgId(
 export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const includeArchived = c.req.query("includeArchived") === "true";
+  await refreshMapsConfigCacheIfStale(db);
   const events = await listAdminEvents(db, auth.userId, { includeArchived });
   const countByEvent = await countAttendeesByEvent(db, events.map((e) => e.id));
   const actorIds = events.flatMap((e) => [e.created_by_user_id, e.archived_by_user_id].filter((id): id is string => !!id));

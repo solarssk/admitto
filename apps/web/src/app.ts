@@ -26,6 +26,7 @@ import {
 } from "./ticket-page.js";
 import { EventStaticMapService } from "./maps/event-static-map-service.js";
 import { resolveGeocodingConfig, resolveMapTileConfig, setMapsConfigCache } from "./maps/config.js";
+import { startMapsConfigInvalidationSubscriber } from "./maps/maps-config-invalidate.js";
 import {
   builtInMapsConfig,
   refreshMapsConfigCache,
@@ -437,6 +438,8 @@ export function createApp(options: CreateAppOptions = {}) {
     console.error("maps config cache refresh failed:", err);
     setMapsConfigCache(builtInMapsConfig());
   });
+  // Other instances that save maps settings publish on Redis; mark this process stale.
+  startMapsConfigInvalidationSubscriber();
 
   const app = new Hono();
   // Catch route errors once with enough request context in System logs. Keep raw exception

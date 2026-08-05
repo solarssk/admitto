@@ -5,6 +5,7 @@ import type { PrismaClient } from "@admitto/db";
 import { isMapReady } from "@admitto/location";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { resolveMapTileConfig } from "./config.js";
+import { refreshMapsConfigCacheIfStale } from "./maps-org-settings.js";
 import {
   buildStaticMapCacheKey,
   buildUnavailableStaticMapPng,
@@ -149,6 +150,7 @@ export class EventStaticMapService {
     eventId: string,
     options: GetForEventOptions = {},
   ): Promise<ResolveEventStaticMapResult> {
+    await refreshMapsConfigCacheIfStale(db);
     const tileConfig = resolveMapTileConfig();
     if (!tileConfig.enabled) {
       return { ok: false, reason: "disabled" };

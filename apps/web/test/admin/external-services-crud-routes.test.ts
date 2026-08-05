@@ -1,0 +1,231 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Context } from "hono";
+import type { PrismaClient } from "@admitto/db";
+
+const {
+  canManageInstance,
+  describeWeatherSettings,
+  patchWeatherSettings,
+  describeMapsSettings,
+  patchMapsSettings,
+  refreshMapsConfigCache,
+  writeAdminAuditLog,
+  adminAuditFromContext,
+} = vi.hoisted(() => ({
+  canManageInstance: vi.fn(async () => true),
+  describeWeatherSettings: vi.fn(),
+  patchWeatherSettings: vi.fn(),
+  describeMapsSettings: vi.fn(),
+  patchMapsSettings: vi.fn(),
+  refreshMapsConfigCache: vi.fn(async () => undefined),
+  writeAdminAuditLog: vi.fn(async () => undefined),
+  adminAuditFromContext: vi.fn(() => ({
+    operator: "user-1",
+    sessionId: "sess-1",
+    ip: "127.0.0.1",
+    timezone: "UTC",
+  })),
+}));
+
+vi.mock("@admitto/auth", () => ({
+  canManageInstance,
+}));
+
+vi.mock("@admitto/tickets", () => ({
+  writeAdminAuditLog,
+}));
+
+vi.mock("../../src/admin/admin-helpers.js", () => ({
+  adminAuditFromContext,
+}));
+
+vi.mock("../../src/weather/weather-org-settings.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/weather/weather-org-settings.js")>();
+  return {
+    ...actual,
+    describeWeatherSettings,
+    patchWeatherSettings,
+  };
+});
+
+vi.mock("../../src/maps/maps-org-settings.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/maps/maps-org-settings.js")>();
+  return {
+    ...actual,
+    describeMapsSettings,
+    patchMapsSettings,
+    refreshMapsConfigCache,
+  };
+});
+
+import {
+  handleGetExternalServices,
+  handlePutMapsSettings,
+  handlePutWeatherSettings,
+} from "../../src/admin/external-services-routes.js";
+
+function mockContext(body?: unknown): Context {
+  return {
+    get: () => ({ userId: "user-1" }),
+    req: {
+      json: async () => {
+        if (body === undefined) throw new SyntaxError("bad json");
+        return body;
+      },
+    },
+    json: (payload: unknown, status?: number) =>
+      Response.json(payload, { status: status ?? 200 }),
+  } as unknown as Context;
+}
+
+const db = {} as PrismaClient;
+
+const weatherPublic = {
+  enabled: true,
+  provider: "metno" as const,
+  baseUrl: "https://api.open-meteo.com",
+  apiKey: { configured: false, source: "none" as const },
+  attribution: "Weather data by MET Norway",
+  attributionUrl: "https://www.met.no/en",
+  commercialNotice: "notice",
+  horizonDays: 9,
+  contactConfigured: true,
+};
+
+const mapsPublic = {
+  enabled: true,
+  tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  attribution: "© OSM",
+  maxZoom: 19,
+  geocodingProvider: "nominatim",
+  geocodingBaseUrl: "https://nominatim.openstreetmap.org",
+};
+
+describe("external-services GET/PUT routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    canManageInstance.mockResolvedValue(true);
+    describeWeatherSettings.mockResolvedValue(weatherPublic);
+    describeMapsSettings.mockResolvedValue(mapsPublic);
+    patchWeatherSettings.mockResolvedValue(weatherPublic);
+    patchMapsSettings.mockResolvedValue(mapsPublic);
+  });
+
+  it("forbids GET for non-superadmins", async () => {
+    canManageInstance.mockResolvedValueOnce(false);
+    const res = await handleGetExternalServices(mockContext({}), db);
+    expect(res.status).toBe(403);
+  });
+
+  it("returns serialized weather + maps on GET", async () => {
+    const res = await handleGetExternalServices(mockContext({}), db);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      weather: { provider: string; api_key: { configured: boolean } };
+      maps: { max_zoom: number };
+    };
+    expect(body.weather.provider).toBe("metno");
+    expect(body.weather.api_key.configured).toBe(false);
+    expect(body.maps.max_zoom).toBe(19);
+    expect(refreshMapsConfigCache).toHaveBeenCalled();
+  });
+
+  it("rejects invalid JSON on weather PUT", async () => {
+    const res = await handlePutWeatherSettings(mockContext(undefined), db);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_json" });
+  });
+
+  it("rejects invalid weather base URL", async () => {
+    const res = await handlePutWeatherSettings(
+      mockContext({ provider: "openmeteo", baseUrl: "not-a-url" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_base_url" });
+  });
+
+  it("requires API key for commercial Open-Meteo when enabling", async () => {
+    const res = await handlePutWeatherSettings(
+      mockContext({
+        enabled: true,
+        provider: "openmeteo",
+        baseUrl: "https://customer-api.open-meteo.com",
+      }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "api_key_required" });
+    expect(patchWeatherSettings).not.toHaveBeenCalled();
+  });
+
+  it("clears blank weather baseUrl to the built-in default for key checks", async () => {
+    describeWeatherSettings.mockResolvedValue({
+      ...weatherPublic,
+      provider: "openmeteo",
+      baseUrl: "https://customer-api.open-meteo.com",
+      apiKey: { configured: false, source: "none" },
+    });
+    patchWeatherSettings.mockResolvedValue({
+      ...weatherPublic,
+      provider: "openmeteo",
+      baseUrl: "https://api.open-meteo.com",
+    });
+    const res = await handlePutWeatherSettings(
+      mockContext({ provider: "openmeteo", baseUrl: "" }),
+      db,
+    );
+    expect(res.status).toBe(200);
+    expect(patchWeatherSettings).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ baseUrl: "" }),
+    );
+  });
+
+  it("persists weather settings and writes an audit log", async () => {
+    const res = await handlePutWeatherSettings(
+      mockContext({ enabled: false, provider: "metno" }),
+      db,
+    );
+    expect(res.status).toBe(200);
+    expect(patchWeatherSettings).toHaveBeenCalled();
+    expect(writeAdminAuditLog).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ actionType: "weather_settings_updated" }),
+    );
+  });
+
+  it("rejects incompatible maps tile URLs", async () => {
+    const res = await handlePutMapsSettings(
+      mockContext({ tileUrl: "http://tiles.internal.example/{z}/{x}/{y}.png" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_tile_url" });
+  });
+
+  it("rejects invalid geocoding base URLs", async () => {
+    const res = await handlePutMapsSettings(
+      mockContext({ geocodingBaseUrl: "ftp://bad.example" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_geocoding_base_url" });
+  });
+
+  it("persists maps settings and writes an audit log", async () => {
+    const res = await handlePutMapsSettings(
+      mockContext({ enabled: false, maxZoom: 12 }),
+      db,
+    );
+    expect(res.status).toBe(200);
+    expect(patchMapsSettings).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ enabled: false, maxZoom: 12 }),
+    );
+    expect(writeAdminAuditLog).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ actionType: "maps_settings_updated" }),
+    );
+  });
+});
