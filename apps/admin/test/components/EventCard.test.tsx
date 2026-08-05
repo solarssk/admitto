@@ -289,6 +289,18 @@ describe("EventCard", () => {
     ).toBeTruthy();
   });
 
+  it("shows unavailable weather chip when the provider fails", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "unavailable", attribution: "Weather data by MET Norway" },
+      },
+    );
+    expect(screen.getByLabelText("Weather unavailable")).toBeTruthy();
+    expect(screen.getByText("-°")).toBeTruthy();
+  });
+
   it("does not render Archive or Unarchive actions", () => {
     renderCard({ showStatusBadge: true, showAttendeeCount: true });
     expect(screen.queryByRole("button", { name: /Archive/i })).toBeNull();

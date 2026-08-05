@@ -4,14 +4,18 @@ import {
   FORECAST_HORIZON_DAYS_OPENMETEO,
   InMemoryWeatherCache,
   WeatherService,
+  WeatherProviderError,
   eventDateYmd,
   forecastHorizonDays,
+  getWeatherService,
   isOpenMeteoCommercialHost,
   mergeWeatherConfig,
   metNoSymbolToWeatherCode,
   pickDailyForecast,
   pickMetNoDailyForecast,
+  resetWeatherServiceForTests,
   resolveWeatherEnvConfig,
+  summarizeMany,
   weatherApiKeyRequired,
   weatherCacheKey,
   weatherConfigCacheScope,
@@ -346,6 +350,114 @@ describe("WeatherService.summarize", () => {
       date: "2026-08-08T12:00:00.000Z",
     });
     expect(result?.status).toBe("unavailable");
+  });
+
+  it("returns unavailable for invalid event dates and far-past days", async () => {
+    const now = new Date("2026-08-05T12:00:00.000Z");
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      now: () => now,
+      fetchFn: async () => {
+        throw new Error("should not fetch");
+      },
+    });
+    expect(
+      (await service.summarize({ ...pin, date: "not-a-date" }))?.status,
+    ).toBe("unavailable");
+    expect(
+      (await service.summarize({ ...pin, date: "2026-08-01T12:00:00.000Z" }))?.status,
+    ).toBe("unavailable");
+  });
+
+  it("probeLive succeeds for Open-Meteo and requires Support contact for MET Norway", async () => {
+    const okFetch: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          daily: {
+            time: [new Date().toISOString().slice(0, 10)],
+            weather_code: [1],
+            temperature_2m_max: [20],
+            temperature_2m_min: [10],
+          },
+        }),
+        { status: 200 },
+      );
+    const openmeteo = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      fetchFn: okFetch,
+    });
+    await expect(openmeteo.probeLive()).resolves.toMatchObject({ ok: true });
+
+    const metno = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "metno" }),
+      cache: new InMemoryWeatherCache(),
+      contactConfigured: false,
+      userAgent: null,
+      fetchFn: async () => new Response("no", { status: 403 }),
+    });
+    await expect(metno.probeLive()).resolves.toMatchObject({
+      ok: false,
+      error: "support_contact_required",
+    });
+  });
+
+  it("probeLive maps WeatherProviderError kinds", async () => {
+    const timeout = new Error("aborted");
+    timeout.name = "TimeoutError";
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      fetchFn: async () => {
+        throw timeout;
+      },
+    });
+    await expect(service.probeLive()).resolves.toMatchObject({
+      ok: false,
+      error: "timeout",
+    });
+  });
+
+  it("summarizeMany preserves order under concurrency", async () => {
+    const now = new Date("2026-08-05T12:00:00.000Z");
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      now: () => now,
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            daily: {
+              time: ["2026-08-08"],
+              weather_code: [2],
+              temperature_2m_max: [18],
+              temperature_2m_min: [9],
+            },
+          }),
+          { status: 200 },
+        ),
+    });
+    const results = await summarizeMany(
+      [
+        { ...pin, date: "2026-08-08T12:00:00.000Z" },
+        { latitude: null, longitude: null, date: "2026-08-08T12:00:00.000Z", timezone: "UTC" },
+        { ...pin, date: "2026-09-01T12:00:00.000Z" },
+      ],
+      service,
+      2,
+    );
+    expect(results[0]?.status).toBe("ok");
+    expect(results[1]).toBeNull();
+    expect(results[2]?.status).toBe("too_far");
+  });
+
+  it("getWeatherService reuses a singleton until reset", () => {
+    resetWeatherServiceForTests();
+    const a = getWeatherService();
+    const b = getWeatherService();
+    expect(a).toBe(b);
+    resetWeatherServiceForTests();
   });
 });
 

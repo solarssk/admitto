@@ -261,4 +261,139 @@ describe("ExternalServicesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect(el<HTMLInputElement>("external-maps-max-zoom").value).toBe("19");
   });
+
+  it("saves Open-Meteo draft with baseUrl and typed API key", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
+      target: { value: "openmeteo" },
+    });
+    fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
+      target: { value: "https://api.open-meteo.com" },
+    });
+    fireEvent.change(el<HTMLInputElement>("external-weather-api-key"), {
+      target: { value: "org-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSaveWeather).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "openmeteo",
+          baseUrl: "https://api.open-meteo.com",
+          apiKey: "org-token",
+        }),
+      );
+    });
+  });
+
+  it("saves with clearApiKey when Clear organisation API key is checked", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        weather: {
+          ...sampleResponse().weather,
+          provider: "openmeteo",
+          api_key: { configured: true, source: "organization" },
+        },
+      }),
+    );
+    await renderLoaded();
+    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
+      target: { value: "openmeteo" },
+    });
+    fireEvent.click(el<HTMLInputElement>("external-weather-clear-api-key"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSaveWeather).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "openmeteo", apiKey: "" }),
+      );
+    });
+  });
+
+  it("blocks save when tile URL lacks {z}/{x}/{y}", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-maps-tile-url"), {
+      target: { value: "https://tiles.example.com/no-placeholders.png" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText("Tile URL should include {z}/{x}/{y} placeholders.")).toBeTruthy();
+    });
+    expect(mockSaveMaps).not.toHaveBeenCalled();
+  });
+
+  it("toasts maps-only save failure without leaking ApiError.message", async () => {
+    mockSaveMaps.mockRejectedValueOnce(new ApiError(500, "secret_maps"));
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-maps-geocoding-base-url"), {
+      target: { value: "https://nominatim.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not save maps settings/);
+    });
+    expect(screen.queryByText("secret_maps")).toBeNull();
+  });
+
+  it("toasts weather test failure from provider response", async () => {
+    mockTestWeather.mockResolvedValueOnce({ ok: false, error: "Provider unreachable." });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toContain("Provider unreachable.");
+    });
+  });
+
+  it("toasts operator-safe error when weather test throws", async () => {
+    mockTestWeather.mockRejectedValueOnce(new ApiError(500, "secret_probe"));
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Could not test the weather connection/,
+      );
+    });
+    expect(screen.queryByText("secret_probe")).toBeNull();
+  });
+
+  it("toasts maps test failure", async () => {
+    mockTestMaps.mockResolvedValueOnce({ ok: false, error: "Nominatim down." });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[1]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toContain("Nominatim down.");
+    });
+  });
+
+  it("saves both weather and maps when both dirty", async () => {
+    await renderLoaded();
+    fireEvent.click(el<HTMLInputElement>("external-weather-enabled"));
+    fireEvent.change(el<HTMLInputElement>("external-maps-geocoding-base-url"), {
+      target: { value: "https://nominatim.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSaveWeather).toHaveBeenCalled();
+      expect(mockSaveMaps).toHaveBeenCalled();
+    });
+  });
+
+  it("tests Open-Meteo connection with draft base URL and key", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
+      target: { value: "openmeteo" },
+    });
+    fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
+      target: { value: "https://api.open-meteo.com" },
+    });
+    fireEvent.change(el<HTMLInputElement>("external-weather-api-key"), {
+      target: { value: "probe-key" },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(mockTestWeather).toHaveBeenCalledWith({
+        provider: "openmeteo",
+        baseUrl: "https://api.open-meteo.com",
+        apiKey: "probe-key",
+      });
+    });
+  });
 });

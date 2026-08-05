@@ -456,6 +456,101 @@ describe("collectAdminHealth", () => {
     expect(weather?.summary).toBe("Support contact required");
   });
 
+  it("marks weather not_configured when disabled", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    resolveEffectiveWeatherConfig.mockResolvedValue({
+      enabled: false,
+      provider: "metno",
+      baseUrl: "https://api.open-meteo.com",
+      apiKey: null,
+      timeoutMs: 5000,
+      cacheTtlMs: 21600000,
+    });
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
+    expect(weather?.status).toBe("not_configured");
+    expect(weather?.summary).toBe("Weather disabled");
+  });
+
+  it("labels Open-Meteo passively and includes api_key detail", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+    resolveEffectiveWeatherConfig.mockResolvedValue({
+      enabled: true,
+      provider: "openmeteo",
+      baseUrl: "https://api.open-meteo.com",
+      apiKey: null,
+      timeoutMs: 5000,
+      cacheTtlMs: 21600000,
+    });
+
+    const report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+    });
+    const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
+    expect(weather?.label).toBe("Weather, Open-Meteo");
+    expect(weather?.details.some((d) => d.key === "api_key" && d.value === "none")).toBe(true);
+  });
+
+  it("live weather probe reports ok, degraded, and down", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    createWeatherServiceFromDb.mockResolvedValue({
+      probeLive: vi.fn(async () => ({ ok: true, latencyMs: 10 })),
+    });
+    let report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    expect(report.groups[1]!.checks.find((c) => c.id === "weather")?.status).toBe("ok");
+
+    createWeatherServiceFromDb.mockResolvedValue({
+      probeLive: vi.fn(async () => ({ ok: true, latencyMs: 2_000 })),
+    });
+    report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    expect(report.groups[1]!.checks.find((c) => c.id === "weather")?.status).toBe("degraded");
+
+    createWeatherServiceFromDb.mockResolvedValue({
+      probeLive: vi.fn(async () => ({
+        ok: false,
+        latencyMs: 5,
+        error: "support_contact_required",
+      })),
+    });
+    report = await collectAdminHealth({
+      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      live: true,
+    });
+    const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
+    expect(weather?.status).toBe("down");
+    expect(weather?.summary).toBe("Support contact required");
+  });
+
   it("emits one Identity provider row per configured IDP", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({

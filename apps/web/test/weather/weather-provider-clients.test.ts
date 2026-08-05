@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MetNoClient, pickMetNoDailyForecast } from "../../src/weather/met-no-client.js";
+import { MetNoClient, metNoSymbolToWeatherCode, pickMetNoDailyForecast } from "../../src/weather/met-no-client.js";
 import {
   OpenMeteoClient,
   WeatherProviderError,
@@ -155,5 +155,122 @@ describe("MetNoClient", () => {
         "UTC",
       ),
     ).toBeNull();
+  });
+
+  it("maps remaining MET symbols including unknown fallback", () => {
+    expect(metNoSymbolToWeatherCode("fog")).toBe(45);
+    expect(metNoSymbolToWeatherCode("lightrainanddrizzle")).toBe(51);
+    expect(metNoSymbolToWeatherCode("sleet")).toBe(66);
+    expect(metNoSymbolToWeatherCode("snow")).toBe(71);
+    expect(metNoSymbolToWeatherCode("rainshower_day")).toBe(80);
+    expect(metNoSymbolToWeatherCode("weirdstuff")).toBe(3);
+  });
+
+  it("maps TimeoutError and network failures for MET Norway", async () => {
+    const timeout = new Error("slow");
+    timeout.name = "TimeoutError";
+    await expect(
+      new MetNoClient({
+        timeoutMs: 100,
+        userAgent: "Admitto/test",
+        fetchFn: async () => {
+          throw timeout;
+        },
+      }).fetchDayForecast(59.91, 10.75, "2026-08-10", "UTC"),
+    ).rejects.toMatchObject({ kind: "timeout" });
+
+    await expect(
+      new MetNoClient({
+        timeoutMs: 100,
+        userAgent: "Admitto/test",
+        fetchFn: async () => {
+          throw new Error("ECONNRESET");
+        },
+      }).fetchDayForecast(59.91, 10.75, "2026-08-10", "UTC"),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+
+    await expect(
+      new MetNoClient({
+        timeoutMs: 100,
+        userAgent: "Admitto/test",
+        fetchFn: async () => new Response("no", { status: 403 }),
+      }).fetchDayForecast(59.91, 10.75, "2026-08-10", "UTC"),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+
+    await expect(
+      new MetNoClient({
+        timeoutMs: 100,
+        userAgent: "Admitto/test",
+        fetchFn: async () => new Response("not-json", { status: 200 }),
+      }).fetchDayForecast(59.91, 10.75, "2026-08-10", "UTC"),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+  });
+
+  it("probe hits the Oslo pin for today", async () => {
+    const fetchFn = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          properties: {
+            timeseries: [
+              {
+                time: `${new Date().toISOString().slice(0, 10)}T12:00:00Z`,
+                data: {
+                  instant: { details: { air_temperature: 12 } },
+                  next_1_hours: { summary: { symbol_code: "cloudy" } },
+                },
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const client = new MetNoClient({
+      timeoutMs: 5_000,
+      userAgent: "Admitto/test",
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    await client.probe("UTC");
+    expect(String(fetchFn.mock.calls[0]![0])).toContain("lat=59.9100");
+    expect(String(fetchFn.mock.calls[0]![0])).toContain("lon=10.7500");
+  });
+});
+
+describe("OpenMeteoClient extra branches", () => {
+  it("maps non-timeout errors and invalid JSON, and probe fetches Berlin", async () => {
+    await expect(
+      new OpenMeteoClient({
+        config: defaultWeatherConfig(),
+        fetchFn: async () => {
+          throw new Error("boom");
+        },
+      }).fetchDayForecast(52.5, 13.4, "2026-08-10"),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+
+    await expect(
+      new OpenMeteoClient({
+        config: defaultWeatherConfig(),
+        fetchFn: async () => new Response("{", { status: 200 }),
+      }).fetchDayForecast(52.5, 13.4, "2026-08-10"),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+
+    const fetchFn = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          daily: {
+            time: [new Date().toISOString().slice(0, 10)],
+            weather_code: [1],
+            temperature_2m_max: [20],
+            temperature_2m_min: [10],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    await new OpenMeteoClient({
+      config: defaultWeatherConfig(),
+      fetchFn: fetchFn as unknown as typeof fetch,
+    }).probe();
+    expect(String(fetchFn.mock.calls[0]![0])).toContain("52.52");
   });
 });

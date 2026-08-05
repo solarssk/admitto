@@ -11,6 +11,8 @@ import {
   patchMapsSettings,
   refreshMapsConfigCache,
   refreshMapsConfigCacheIfStale,
+  resolveEffectiveMapsConfig,
+  describeMapsSettings,
   MAPS_SETTINGS_KEY,
 } from "../../src/maps/maps-org-settings.js";
 
@@ -105,5 +107,91 @@ describe("refreshMapsConfigCache", () => {
     const result = await refreshMapsConfigCache(db);
     expect(result.tiles.enabled).toBe(false);
     spy.mockRestore();
+  });
+});
+
+describe("resolveEffectiveMapsConfig / describeMapsSettings", () => {
+  it("falls back to defaults when the stored JSON is corrupt", async () => {
+    const db = fakeDb("not-json{{{");
+    const effective = await resolveEffectiveMapsConfig(db);
+    expect(effective.tiles.enabled).toBe(true);
+    expect(effective.tiles.tileUrl).toContain("openstreetmap.org");
+  });
+
+  it("applies stored fields including null clears", async () => {
+    const db = fakeDb(
+      JSON.stringify({
+        enabled: false,
+        tileUrl: null,
+        attribution: "  ",
+        maxZoom: 12,
+        geocodingProvider: "nominatim",
+        geocodingBaseUrl: "https://nominatim.example.com/",
+      }),
+    );
+    const described = await describeMapsSettings(db);
+    expect(described.enabled).toBe(false);
+    expect(described.maxZoom).toBe(12);
+    expect(described.geocodingBaseUrl).toBe("https://nominatim.example.com");
+    expect(described.attribution).toContain("OpenStreetMap");
+  });
+
+  it("rejects incompatible stored tile URLs", async () => {
+    const db = fakeDb(
+      JSON.stringify({
+        tileUrl: "http://tiles.internal.example/{z}/{x}/{y}.png",
+      }),
+    );
+    const effective = await resolveEffectiveMapsConfig(db);
+    expect(effective.tiles.tileUrl).toContain("openstreetmap.org");
+  });
+});
+
+describe("patchMapsSettings clearing branches", () => {
+  it("clears blank maxZoom, provider, and geocoding base URL to null", async () => {
+    const row = {
+      key: MAPS_SETTINGS_KEY,
+      value_json: JSON.stringify({
+        enabled: true,
+        maxZoom: 19,
+        geocodingProvider: "nominatim",
+        geocodingBaseUrl: "https://nominatim.openstreetmap.org",
+      }),
+    };
+    const db = {
+      systemSettings: {
+        findUnique: vi.fn(async () => row),
+        upsert: vi.fn(async () => row),
+      },
+      $transaction: vi.fn(async (fn: (tx: PrismaClient) => Promise<unknown>) => {
+        const tx = {
+          systemSettings: {
+            findUnique: vi.fn(async () => row),
+            upsert: vi.fn(async ({ update }: { update: { value_json: string } }) => {
+              row.value_json = update.value_json;
+              return row;
+            }),
+          },
+        } as unknown as PrismaClient;
+        return fn(tx);
+      }),
+    } as unknown as PrismaClient;
+
+    await patchMapsSettings(db, {
+      maxZoom: 0,
+      geocodingProvider: "  ",
+      geocodingBaseUrl: "  ",
+      attribution: "Custom",
+    });
+    const stored = JSON.parse(row.value_json) as {
+      maxZoom: number | null;
+      geocodingProvider: string | null;
+      geocodingBaseUrl: string | null;
+      attribution: string;
+    };
+    expect(stored.maxZoom).toBeNull();
+    expect(stored.geocodingProvider).toBeNull();
+    expect(stored.geocodingBaseUrl).toBeNull();
+    expect(stored.attribution).toBe("Custom");
   });
 });

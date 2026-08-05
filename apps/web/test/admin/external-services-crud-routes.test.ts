@@ -228,4 +228,54 @@ describe("external-services GET/PUT routes", () => {
       expect.objectContaining({ actionType: "maps_settings_updated" }),
     );
   });
+
+  it("forbids weather PUT for non-superadmins", async () => {
+    canManageInstance.mockResolvedValueOnce(false);
+    const res = await handlePutWeatherSettings(mockContext({ enabled: false }), db);
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects weather PUT validation_failed", async () => {
+    const res = await handlePutWeatherSettings(mockContext({ provider: "smtp" }), db);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "validation_failed" });
+  });
+
+  it("forbids maps PUT for non-superadmins", async () => {
+    canManageInstance.mockResolvedValueOnce(false);
+    const res = await handlePutMapsSettings(mockContext({ enabled: false }), db);
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects maps PUT invalid_json and validation_failed", async () => {
+    expect((await handlePutMapsSettings(mockContext(undefined), db)).status).toBe(400);
+    const res = await handlePutMapsSettings(mockContext({ maxZoom: 99 }), db);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "validation_failed" });
+  });
+
+  it("accepts weather PUT clearing apiKey when weather is disabled", async () => {
+    describeWeatherSettings.mockResolvedValue({
+      ...weatherPublic,
+      enabled: false,
+      provider: "openmeteo",
+      baseUrl: "https://customer-api.open-meteo.com",
+      apiKey: { configured: true, source: "organization" },
+    });
+    patchWeatherSettings.mockResolvedValue({
+      ...weatherPublic,
+      enabled: false,
+      provider: "openmeteo",
+      apiKey: { configured: false, source: "none" },
+    });
+    const res = await handlePutWeatherSettings(
+      mockContext({ enabled: false, provider: "openmeteo", apiKey: "" }),
+      db,
+    );
+    expect(res.status).toBe(200);
+    expect(patchWeatherSettings).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ apiKey: "" }),
+    );
+  });
 });

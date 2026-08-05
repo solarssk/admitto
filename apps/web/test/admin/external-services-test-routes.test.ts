@@ -218,4 +218,59 @@ describe("external-services connection tests", () => {
     expect(res.status).toBe(403);
     expect(nominatimSearch).not.toHaveBeenCalled();
   });
+
+  function mockContextMaybeThrow(body: unknown | "throw"): Context {
+    return {
+      get: () => ({ userId: "user-1" }),
+      req: {
+        json: async () => {
+          if (body === "throw") throw new SyntaxError("bad");
+          return body;
+        },
+      },
+      json: (payload: unknown, status?: number) =>
+        Response.json(payload, { status: status ?? 200 }),
+    } as unknown as Context;
+  }
+
+  it("rejects weather and maps test invalid_json and validation_failed", async () => {
+    expect((await handlePostWeatherTest(mockContextMaybeThrow("throw"), db)).status).toBe(400);
+    expect(
+      (await handlePostWeatherTest(mockContext({ provider: "nope" }), db)).status,
+    ).toBe(400);
+    expect((await handlePostMapsTest(mockContextMaybeThrow("throw"), db)).status).toBe(400);
+    expect((await handlePostMapsTest(mockContext({}), db)).status).toBe(400);
+  });
+
+  it("rejects maps test with an invalid geocoding URL", async () => {
+    const res = await handlePostMapsTest(mockContext({ geocodingBaseUrl: "ftp://bad" }), db);
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/valid http/i);
+  });
+
+  it("returns generic weather probe failure when probeLive fails", async () => {
+    weatherProbeLive.mockResolvedValueOnce({ ok: false, latencyMs: 12, error: "timeout" });
+    const res = await handlePostWeatherTest(mockContext({ provider: "metno" }), db);
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/Could not reach the weather provider/);
+  });
+
+  it("passes an explicit draft apiKey into WeatherService", async () => {
+    weatherProbeLive.mockResolvedValueOnce({ ok: true, latencyMs: 5 });
+    await handlePostWeatherTest(
+      mockContext({
+        provider: "openmeteo",
+        baseUrl: "https://api.open-meteo.com",
+        apiKey: "draft-key",
+      }),
+      db,
+    );
+    expect(weatherServiceCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ apiKey: "draft-key" }),
+      }),
+    );
+  });
 });

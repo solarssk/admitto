@@ -596,4 +596,46 @@ describe("renderTicket weather", () => {
     expect(html).not.toContain("id=\"weather-heading\"");
     expect(html).not.toContain("Forecast available");
   });
+
+  it("renders ok temp without min as a single °C", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "ok",
+        temp_c: 22,
+        weather_code: 61,
+        attribution: "Weather data by Open-Meteo.com",
+      },
+    });
+    expect(html).toContain("22°C");
+    expect(html).not.toContain("14-22°C");
+  });
+
+  it("renders too_far from opens_in_days when horizon is missing", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "too_far",
+        opens_in_days: 3,
+        attribution: "Weather data by MET Norway",
+      },
+    });
+    expect(html).toContain("Forecast available in 3 days");
+  });
+
+  it("omits the block for unavailable status", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: { status: "unavailable", attribution: "Weather data by MET Norway" },
+    });
+    expect(html).not.toContain("id=\"weather-heading\"");
+  });
+
+  it("uses singular day wording for horizon_days=1", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "too_far",
+        horizon_days: 1,
+        attribution: "Weather data by MET Norway",
+      },
+    });
+    expect(html).toContain("Forecast available 1 day");
+  });
 });
