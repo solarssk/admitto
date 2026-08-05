@@ -105,6 +105,7 @@ describe("event bounce ingest settings routes", () => {
     previousPrivateMailOverride = process.env[envKey];
     delete process.env[envKey];
     vi.mocked(requireSuperadmin).mockResolvedValue(null);
+    vi.mocked(describeMailConfig).mockClear();
     vi.mocked(describeMailConfig).mockResolvedValue({
       provider: { value: "smtp", source: "organization", locked: false },
       smtpPassword: { value: "••••", source: "organization", locked: false },
@@ -151,9 +152,12 @@ describe("event bounce ingest settings routes", () => {
     expect(json.imap_password).toEqual({
       set: true,
       masked: "••••",
+      source: "db",
+      locked: false,
       from_smtp: false,
     });
     expect(JSON.stringify(json)).not.toContain("encrypted-blob");
+    expect(describeMailConfig).toHaveBeenCalledTimes(1);
   });
 
   it("GET returns 404 when the event is missing", async () => {
@@ -195,11 +199,16 @@ describe("event bounce ingest settings routes", () => {
     expect(res.status).toBe(200);
     const json = (await res.json()) as {
       imap_username: string | null;
-      imap_password: { from_smtp?: boolean; set: boolean };
+      imap_password: Record<string, unknown>;
     };
     expect(json.imap_username).toBeNull();
-    expect(json.imap_password.from_smtp).toBe(true);
-    expect(json.imap_password.set).toBe(true);
+    expect(json.imap_password).toEqual({
+      set: true,
+      masked: "••••",
+      source: "db",
+      locked: false,
+      from_smtp: true,
+    });
   });
 
   it("GET when describeMailConfig throws reports smtp_reuse_available false", async () => {
@@ -335,6 +344,7 @@ describe("event bounce ingest settings routes", () => {
         metadata: expect.objectContaining({ secrets_rotated: true }),
       }),
     );
+    expect(describeMailConfig).toHaveBeenCalledTimes(1);
   });
 
   it("PUT clear_imap_password clears the stored secret and audits secrets_cleared", async () => {
@@ -816,9 +826,14 @@ describe("event bounce ingest settings routes", () => {
       db as never,
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { imap_password: { set: boolean; from_smtp?: boolean } };
-    expect(json.imap_password.set).toBe(false);
-    expect(json.imap_password.from_smtp).toBe(true);
+    const json = (await res.json()) as { imap_password: Record<string, unknown> };
+    expect(json.imap_password).toEqual({
+      set: false,
+      masked: null,
+      source: "default",
+      locked: false,
+      from_smtp: true,
+    });
   });
 
   it("POST test returns 404 when the event is missing", async () => {

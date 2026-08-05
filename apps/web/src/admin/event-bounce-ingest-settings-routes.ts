@@ -5,7 +5,11 @@
 import type { Context } from "hono";
 import { encryptToString } from "@admitto/crypto";
 import type { PrismaClient, BounceIngestSettings, Prisma } from "@admitto/db";
-import { describeMailConfig } from "@admitto/mailer-config";
+import {
+  describeMailConfig,
+  type ConfigDescriptor,
+  type FieldDescriptor,
+} from "@admitto/mailer-config";
 import { isBlockedMailHost } from "@admitto/mailer";
 import {
   DEFAULT_BOUNCE_FOLDERS,
@@ -21,6 +25,7 @@ import {
   requireEventId,
   requireSuperadmin,
 } from "./admin-helpers.js";
+import { serializeSecretField } from "./mail-settings-shared.js";
 
 const putBodySchema = z
   .object({
@@ -72,12 +77,14 @@ async function loadEventOrg(
   return event ? { organizationId: event.organization_id } : null;
 }
 
-async function effectiveProviderIsSmtp(db: PrismaClient, eventId: string): Promise<boolean> {
+async function describeEffectiveMailConfig(
+  db: PrismaClient,
+  eventId: string,
+): Promise<ConfigDescriptor | null> {
   try {
-    const desc = await describeMailConfig(eventId, db);
-    return desc.provider.value === "smtp";
+    return await describeMailConfig(eventId, db);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -88,15 +95,19 @@ function foldersToJson(folders: string[] | string | undefined): string[] {
 
 function serializeSettings(
   row: BounceIngestSettings | null,
-  opts: {
-    smtpReuseAvailable: boolean;
-    smtpPasswordSet: boolean;
-  },
+  mailDescription: ConfigDescriptor | null,
 ) {
   const reuse = row?.reuse_smtp_credentials ?? false;
-  const imapPasswordSet = reuse
-    ? opts.smtpPasswordSet
-    : Boolean(row?.imap_password_enc);
+  const smtpReuseAvailable = mailDescription?.provider.value === "smtp";
+  const fromSmtp = reuse && smtpReuseAvailable;
+  const dedicatedPasswordDescriptor = {
+    value: row?.imap_password_enc ? ("••••" as const) : null,
+    source: row?.imap_password_enc ? ("event" as const) : ("default" as const),
+    locked: false,
+  } satisfies FieldDescriptor<"••••" | null>;
+  const passwordDescriptor = fromSmtp
+    ? mailDescription.smtpPassword
+    : dedicatedPasswordDescriptor;
 
   return {
     configured: Boolean(row?.imap_host),
@@ -105,24 +116,14 @@ function serializeSettings(
     imap_port: row?.imap_port ?? 993,
     imap_username: reuse ? null : (row?.imap_username ?? null),
     imap_password: {
-      set: imapPasswordSet,
-      masked: imapPasswordSet ? "••••" : null,
-      from_smtp: reuse && opts.smtpReuseAvailable,
+      ...serializeSecretField(passwordDescriptor),
+      from_smtp: fromSmtp,
     },
     reuse_smtp_credentials: reuse,
-    smtp_reuse_available: opts.smtpReuseAvailable,
+    smtp_reuse_available: smtpReuseAvailable,
     folders: row ? parseFolders(row.folders) : [...DEFAULT_BOUNCE_FOLDERS],
     poll_interval_minutes: row?.poll_interval_minutes ?? 5,
   };
-}
-
-async function smtpPasswordPresence(db: PrismaClient, eventId: string): Promise<boolean> {
-  try {
-    const desc = await describeMailConfig(eventId, db);
-    return desc.provider.value === "smtp" && desc.smtpPassword.value !== null;
-  } catch {
-    return false;
-  }
 }
 
 /** Shared GET/PUT/POST gate: event id, superadmin, event exists. */
@@ -268,13 +269,12 @@ export async function handleGetEventBounceIngestSettings(
   const { eventId, organizationId } = gated;
 
   const row = await db.bounceIngestSettings.findUnique({ where: { event_id: eventId } });
-  const smtpReuseAvailable = await effectiveProviderIsSmtp(db, eventId);
-  const smtpPasswordSet = await smtpPasswordPresence(db, eventId);
+  const mailDescription = await describeEffectiveMailConfig(db, eventId);
 
   return c.json({
     eventId,
     organizationId,
-    ...serializeSettings(row, { smtpReuseAvailable, smtpPasswordSet }),
+    ...serializeSettings(row, mailDescription),
   });
 }
 
@@ -295,7 +295,8 @@ export async function handlePutEventBounceIngestSettings(
   }
 
   const existing = await db.bounceIngestSettings.findUnique({ where: { event_id: eventId } });
-  const smtpReuseAvailable = await effectiveProviderIsSmtp(db, eventId);
+  const mailDescription = await describeEffectiveMailConfig(db, eventId);
+  const smtpReuseAvailable = mailDescription?.provider.value === "smtp";
   const nextReuse = body.reuse_smtp_credentials ?? existing?.reuse_smtp_credentials ?? false;
 
   if (nextReuse && !smtpReuseAvailable) {
@@ -349,11 +350,10 @@ export async function handlePutEventBounceIngestSettings(
     console.error("[audit] bounce_ingest_settings_updated log failed", auditErr);
   }
 
-  const smtpPasswordSet = await smtpPasswordPresence(db, eventId);
   return c.json({
     eventId,
     organizationId,
-    ...serializeSettings(row, { smtpReuseAvailable, smtpPasswordSet }),
+    ...serializeSettings(row, mailDescription),
   });
 }
 

@@ -126,7 +126,7 @@ function serializePlainField<T>(fd: FieldDescriptor<T>) {
   };
 }
 
-function serializeSecretField(fd: FieldDescriptor<"••••" | null>) {
+export function serializeSecretField(fd: FieldDescriptor<"••••" | null>) {
   return {
     set: fd.value === "••••",
     masked: fd.value,
