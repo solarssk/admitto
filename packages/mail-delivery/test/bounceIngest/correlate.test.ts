@@ -49,6 +49,22 @@ describe("findDeliveriesForBounceBatch", () => {
     expect(map.get("ok@example.com")?.map((r) => r.id)).toEqual(["ok"]);
   });
 
+  it("skips rows whose recipient_email normalizes to empty", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      { id: "blank", recipient_email: "   ", queued_at: new Date("2026-08-02") },
+      { id: "ok", recipient_email: "ok@example.com", queued_at: new Date("2026-08-01") },
+    ]);
+    const db = { emailDelivery: { findMany } } as never;
+
+    const map = await findDeliveriesForBounceBatch(db, {
+      eventId: "evt_1",
+      recipientEmails: ["ok@example.com"],
+    });
+
+    expect(map.get("ok@example.com")?.map((r) => r.id)).toEqual(["ok"]);
+    expect(map.size).toBe(1);
+  });
+
   it("returns an empty map when there are no emails", async () => {
     const findMany = vi.fn();
     const db = { emailDelivery: { findMany } } as never;
@@ -85,6 +101,15 @@ describe("findDeliveryForBounce", () => {
     const db = { emailDelivery: { findMany } } as never;
     expect(await findDeliveryForBounce(db, { eventId: "evt_1", recipientEmail: "  " })).toBeNull();
     expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the batch lookup finds no rows", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { emailDelivery: { findMany } } as never;
+    expect(
+      await findDeliveryForBounce(db, { eventId: "evt_1", recipientEmail: "missing@example.com" }),
+    ).toBeNull();
+    expect(findMany).toHaveBeenCalledTimes(1);
   });
 });
 

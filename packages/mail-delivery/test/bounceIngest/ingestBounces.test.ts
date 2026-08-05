@@ -205,6 +205,67 @@ describe("ingestBounces", () => {
     expect(updateMany.mock.calls.map((c) => c[0].where.id)).toEqual(["del_newer", "del_older"]);
   });
 
+  it("counts errors when the batch delivery lookup fails", async () => {
+    const row = settings();
+    const log = vi.fn();
+    const db = eventScopedDb(row, {
+      emailDelivery: {
+        findMany: vi.fn().mockRejectedValue(new Error("batch lookup down")),
+        updateMany: vi.fn(),
+      },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () =>
+        mockProvider([
+          {
+            uid: "601",
+            receivedAt: new Date(),
+            subject: "undeliverable",
+            bodyText: HARD_BODY,
+          },
+        ]),
+      log,
+    });
+
+    expect(summary.errors).toBe(1);
+    expect(summary.bouncesApplied).toBe(0);
+    expect(db.emailDelivery.updateMany).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(/batch delivery lookup failed: batch lookup down/),
+    );
+  });
+
+  it("stringifies non-Error batch delivery lookup failures", async () => {
+    const row = settings();
+    const log = vi.fn();
+    const db = eventScopedDb(row, {
+      emailDelivery: {
+        findMany: vi.fn().mockRejectedValue("lookup blew up"),
+        updateMany: vi.fn(),
+      },
+    }) as never;
+
+    await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () =>
+        mockProvider([
+          {
+            uid: "602",
+            receivedAt: new Date(),
+            subject: "undeliverable",
+            bodyText: HARD_BODY,
+          },
+        ]),
+      log,
+    });
+
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(/batch delivery lookup failed: lookup blew up/),
+    );
+  });
+
   it("sets connectFailed when provider.connect throws", async () => {
     const row = settings();
     const db = eventScopedDb(row) as never;
