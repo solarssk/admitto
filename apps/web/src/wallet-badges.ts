@@ -15,6 +15,9 @@ const assetCache = new Map<string, Buffer>();
 function assetRoots(): string[] {
   const here = dirname(fileURLToPath(import.meta.url));
   return [
+    // Product brand SVGs: single source under @admitto/ui (mark + full logo for mail).
+    join(process.cwd(), "packages/ui/src/assets"),
+    join(here, "../../../packages/ui/src/assets"),
     join(here, "assets"),
     join(process.cwd(), "apps/web/dist/src/assets"),
     join(process.cwd(), "apps/web/src/assets"),

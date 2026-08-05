@@ -60,12 +60,10 @@ html:has(.shell), body:has(.shell) {
   font-weight: 700;
   letter-spacing: -0.3px;
   color: var(--text-primary);
-  /* 0 + 28 (brand mark) + 14, plus .sidebar's own 14px top padding, totals var(--topbar-h)
-     (56px) so this row's outer box lines up with .topbar's height (#454) — and splitting
-     the padding 0/14 instead of evenly centers the mark at 28px from .sidebar's top, the
-     same distance .topbar__menu's own centered position sits at, so the two don't drift
-     apart when both are visible at once (the mobile/tablet drawer open over the topbar). */
-  padding: 0 6px 14px;
+  /* 0 + 32 (brand mark) + 10, plus .sidebar's own 14px top padding, totals var(--topbar-h)
+     (56px) so this row's outer box lines up with .topbar's height (#454) — mark vertical
+     center stays near the topbar menu button center when the drawer is open over the topbar. */
+  padding: 0 6px 10px;
   /* .sidebar's flex `gap: 6px` (shared with every other sidebar row spacing) would push
      .sidebar__event's border-top 6px below the 56px mark above, so it no longer lines up
      with .topbar's border-bottom despite the row itself totaling exactly 56px. Cancel just
@@ -78,30 +76,30 @@ html:has(.shell), body:has(.shell) {
   text-decoration: none;
 }
 
-/* Mark is always the same 28px (24px in the topbar). The text-only wordmark sits beside
+/* Mark is always the same 32px (28px in the topbar). The text-only wordmark sits beside
    it when there is room — never scale the combined logo SVG, or the mark looks smaller
-   than the collapsed-rail icon. */
+   than the collapsed-rail icon. Sources: `@admitto/ui/assets/admitto-*.svg`. */
 .brand-link__mark {
   display: block;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
 }
 
 .brand-link__wordmark {
   display: block;
-  height: 28px;
+  height: 32px;
   width: auto;
   flex-shrink: 0;
 }
 
 .topbar__brand .brand-link__mark {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
 }
 
 .topbar__brand .brand-link__wordmark {
-  height: 24px;
+  height: 28px;
 }
 
 .sidebar__close-btn {
@@ -368,8 +366,8 @@ html:has(.shell), body:has(.shell) {
 }
 
 .topbar__brand-mark {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
 }
 
