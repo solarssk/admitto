@@ -294,20 +294,28 @@ describe("UserEditModal sign-in security", () => {
     expect(screen.queryByRole("button", { name: "Unlink" })).toBeNull();
   });
 
-  it("unlinks SSO after confirmation", async () => {
+  it("unlinks SSO after confirmation, requiring a new password in the same step", async () => {
     const { onClose, onUpdated } = renderModal({ has_sso: true });
     await screen.findByRole("button", { name: "Unlink" });
 
     fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
     const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    const confirmButton = within(dialog).getByRole("button", { name: "Unlink" });
+    expect(confirmButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(screen.getByLabelText("New temporary password"), {
+      target: { value: "long-enough-password" },
+    });
+    fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(mockUnlinkUserExternalIdentity).toHaveBeenCalledWith("usr-1");
+      expect(mockUnlinkUserExternalIdentity).toHaveBeenCalledWith("usr-1", {
+        new_password: "long-enough-password",
+      });
     });
     expect(onUpdated).toHaveBeenCalledWith(
       { ...user, has_sso: true },
-      "SSO unlinked. User must sign in with a local password.",
+      "SSO unlinked. User must sign in with the new local password.",
     );
     expect(onClose).toHaveBeenCalled();
   });

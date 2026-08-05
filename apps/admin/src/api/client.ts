@@ -217,14 +217,16 @@ function jsonPostInit(body: unknown): RequestInit {
   };
 }
 
-function jsonDeleteInit(): RequestInit {
+function jsonDeleteInit(body?: unknown): RequestInit {
   return {
     method: "DELETE",
     credentials: "same-origin",
     headers: {
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       Origin: window.location.origin,
       "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   };
 }
 
@@ -1842,8 +1844,14 @@ export async function resetUserMfa(id: string): Promise<{ ok: boolean }> {
   return parseJson<{ ok: boolean }>(res);
 }
 
-export async function unlinkUserExternalIdentity(id: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/external-identity`, jsonDeleteInit());
+export async function unlinkUserExternalIdentity(
+  id: string,
+  body: ResetUserPasswordBody,
+): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/external-identity`,
+    jsonDeleteInit(body),
+  );
   return parseJson<{ ok: boolean }>(res);
 }
 

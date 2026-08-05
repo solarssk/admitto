@@ -402,6 +402,28 @@ describe("PATCH /api/admin/users/:id profile", () => {
     expect(user.phone_country_code).toBeNull();
     expect(user.phone_number).toBeNull();
   });
+
+  it("also clears the phone fields when the edit modal sends null instead of an empty string", async () => {
+    // The Edit user modal always sends both phone fields, using null (not "") to mean "cleared" -
+    // typeof body.phone_country_code === "string" alone silently dropped a null, so a previously
+    // saved number could never actually be removed.
+    const setRes = await app.request(`/api/admin/users/${targetId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: "+48", phone_number: "500100200" }),
+    });
+    expect(setRes.status).toBe(200);
+
+    const clearRes = await app.request(`/api/admin/users/${targetId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: null, phone_number: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: targetId } });
+    expect(user.phone_country_code).toBeNull();
+    expect(user.phone_number).toBeNull();
+  });
 });
 
 describe("PATCH /api/admin/users/:id email", () => {
@@ -876,6 +898,46 @@ describe("POST /api/admin/users/:id/roles - exclusive role types", () => {
     }
   });
 
+  it("returns 409 managed_by_idp instead of silently deleting an OIDC-managed assignment on an implicit switch", async () => {
+    // Same guard the explicit DELETE .../roles/:assignmentId revoke already enforces
+    // (managed_by_idp), applied to the implicit revoke a role-type switch performs - otherwise
+    // granting an unrelated new role type is a back door around that guard.
+    const created = await prisma.user.create({
+      data: { email: "oidc-role-switch@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const oldAssignment = await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        user_id: created.id,
+        provider_id: PROVIDER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: eventId,
+        role_assignment_id: oldAssignment.id,
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "admin", scope_type: "organization", scope_id: ORG_USERS }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("managed_by_idp");
+
+      const stillThere = await prisma.roleAssignment.findUnique({ where: { id: oldAssignment.id } });
+      expect(stillThere).toBeTruthy();
+    } finally {
+      await prisma.oidcRoleGrant.deleteMany({ where: { user_id: created.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
   it("adds another scope without removing existing ones when the role type is unchanged", async () => {
     const created = await prisma.user.create({
       data: { email: "role-add-scope@example.com", password_hash: await hashPassword(PASSWORD) },
@@ -966,12 +1028,45 @@ describe("POST /api/admin/users/:id/roles - exclusive role types", () => {
 });
 
 describe("DELETE /api/admin/users/:id/external-identity", () => {
-  it("unlinks SSO for another user", async () => {
+  it("unlinks SSO for another user and sets the new password in the same request", async () => {
     const created = await prisma.user.create({
       data: { email: "sso-unlink@example.com", password_hash: await hashPassword(PASSWORD) },
     });
     await prisma.externalIdentity.create({
       data: { provider_id: PROVIDER_ID, subject: "sso-unlink-subject", user_id: created.id },
+    });
+    const session = await createSession(prisma, { userId: created.id, stage: SESSION_STAGE.FULL });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+
+      const linked = await prisma.externalIdentity.findMany({ where: { user_id: created.id } });
+      expect(linked).toHaveLength(0);
+
+      const user = await prisma.user.findUnique({ where: { id: created.id } });
+      expect(user?.must_change_password).toBe(true);
+      expect(await verifyPassword(NEW_PASSWORD, user!.password_hash!)).toBe(true);
+
+      const revoked = await prisma.session.findUnique({ where: { id: session.session.id } });
+      expect(revoked?.revoked_at).not.toBeNull();
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.session.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("returns 400 invalid_request when unlinking without a new password", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-no-pass@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-no-pass-subject", user_id: created.id },
     });
 
     try {
@@ -979,10 +1074,10 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
         method: "DELETE",
         headers: { Cookie: superCookie, ...sameOrigin },
       });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
 
       const linked = await prisma.externalIdentity.findMany({ where: { user_id: created.id } });
-      expect(linked).toHaveLength(0);
+      expect(linked).toHaveLength(1);
     } finally {
       await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
       await prisma.user.deleteMany({ where: { id: created.id } });

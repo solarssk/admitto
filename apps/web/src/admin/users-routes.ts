@@ -398,11 +398,15 @@ function buildPatchUserData(
   if (typeof body?.display_name === "string") {
     data.display_name = body.display_name.trim() || null;
   }
-  if (typeof body?.phone_country_code === "string") {
-    data.phone_country_code = body.phone_country_code.trim() || null;
+  // null (not just a string) is a valid, intentional value here - the edit modal always sends
+  // one or the other for both phone fields, using null to mean "clear it". Treating null the
+  // same as "field omitted" silently ignored every attempt to clear a previously-set number.
+  if (typeof body?.phone_country_code === "string" || body?.phone_country_code === null) {
+    data.phone_country_code =
+      typeof body.phone_country_code === "string" ? body.phone_country_code.trim() || null : null;
   }
-  if (typeof body?.phone_number === "string") {
-    data.phone_number = body.phone_number.trim() || null;
+  if (typeof body?.phone_number === "string" || body?.phone_number === null) {
+    data.phone_number = typeof body.phone_number === "string" ? body.phone_number.trim() || null : null;
   }
   if (typeof body?.is_active === "boolean") {
     if (body.is_active === false && id === actorId) {
@@ -666,44 +670,58 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
-  let assignment;
+  let outcome;
   try {
-    assignment = await db.$transaction(async (tx) => {
-      const replaced = await tx.roleAssignment.findMany({
-        where: { user_id: id, role: { not: parsed.role } },
-      });
-      if (replaced.length > 0) {
-        for (const old of replaced) {
-          await assertLastSuperadminRemovalAllowed(tx, old);
+    outcome = await db.$transaction(
+      async (tx) => {
+        // Refetched (with oidc_role_grants) inside the transaction, same as
+        // handleDeleteUserRole's "current" - both freshness and the isolation level below close
+        // the TOCTOU window between this check and the delete a few lines down.
+        const replaced = await tx.roleAssignment.findMany({
+          where: { user_id: id, role: { not: parsed.role } },
+          include: { oidc_role_grants: { select: { id: true } } },
+        });
+        // An implicit role-type switch must not be able to do what an explicit revoke can't:
+        // handleDeleteUserRole refuses to remove an IdP-managed assignment (managed_by_idp), so
+        // silently deleting one here as a side effect of granting an unrelated new role would be
+        // an easy way around that guard.
+        if (replaced.some((old) => old.oidc_role_grants.length > 0)) {
+          return "managed_by_idp" as const;
         }
-        await tx.roleAssignment.deleteMany({ where: { id: { in: replaced.map((a) => a.id) } } });
-      }
+        if (replaced.length > 0) {
+          for (const old of replaced) {
+            await assertLastSuperadminRemovalAllowed(tx, old);
+          }
+          await tx.roleAssignment.deleteMany({ where: { id: { in: replaced.map((a) => a.id) } } });
+        }
 
-      const created = await tx.roleAssignment.create({
-        data: {
-          user_id: id,
-          role: parsed.role,
-          scope_type: parsed.scopeType,
-          scope_id: parsed.scopeId,
-        },
-      });
-      await writeAdminAuditLog(tx, {
-        organizationId: orgId,
-        actorUserId: actorId,
-        sessionId: audit.sessionId,
-        ip: audit.ip,
-        timezone: audit.timezone,
-        actionType: replaced.length > 0 ? "role_changed" : "role_granted",
-        metadata: {
-          userId: id,
-          role: parsed.role,
-          scopeType: parsed.scopeType,
-          scopeId: parsed.scopeId,
-          ...(replaced.length > 0 ? { replacedRoles: replaced.map((a) => a.role) } : {}),
-        },
-      });
-      return created;
-    });
+        const created = await tx.roleAssignment.create({
+          data: {
+            user_id: id,
+            role: parsed.role,
+            scope_type: parsed.scopeType,
+            scope_id: parsed.scopeId,
+          },
+        });
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: actorId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          timezone: audit.timezone,
+          actionType: replaced.length > 0 ? "role_changed" : "role_granted",
+          metadata: {
+            userId: id,
+            role: parsed.role,
+            scopeType: parsed.scopeType,
+            scopeId: parsed.scopeId,
+            ...(replaced.length > 0 ? { replacedRoles: replaced.map((a) => a.role) } : {}),
+          },
+        });
+        return created;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   } catch (err) {
     if (err instanceof LastSuperadminError) {
       return c.json({ code: "last_superadmin" }, 409);
@@ -713,6 +731,11 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
     }
     throw err;
   }
+
+  if (outcome === "managed_by_idp") {
+    return c.json({ code: "managed_by_idp" }, 409);
+  }
+  const assignment = outcome;
 
   emitSystemLog("security", "info", "role_granted", {
     targetUserId: target.id,
@@ -876,11 +899,11 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
 }
 
 /** DELETE /api/admin/users/:id/external-identity — unlink SSO, forcing local-password sign-in
- * from then on. Does not touch password_hash: a JIT-provisioned SSO user already has one (a
- * random placeholder, set so the column is never null - see resolve-user.ts), so unlinking alone
- * can leave them with no password anyone actually knows. The confirming admin is expected to
- * pair this with Reset password when that's the case; this route has no way to tell the two
- * apart (see the has_sso column note in users-routes.ts's serializeUserRow). */
+ * from then on. A JIT-provisioned SSO user's password_hash is a random placeholder nobody knows
+ * (see resolve-user.ts), and this route has no stored signal to tell that case apart from a user
+ * who already has a real local password. So a new password is always required here and set in
+ * the same transaction as the unlink - unlinking without one would silently lock the target out
+ * with no working sign-in method at all. */
 export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -897,11 +920,30 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
   const linked = await db.externalIdentity.findMany({ where: { user_id: id }, select: { id: true } });
   if (linked.length === 0) return c.json({ error: "not_found" }, 404);
 
+  // Checked only once there's actually something to unlink - a request for an already-local or
+  // nonexistent user should still 404 without forcing the caller to supply a throwaway password.
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
+  if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
+  if (isPasswordTooCommon(newPassword)) {
+    return c.json(passwordTooCommonJsonBody(), 400);
+  }
+
+  const hash = await hashPassword(newPassword);
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
   await db.$transaction(async (tx) => {
     await tx.externalIdentity.deleteMany({ where: { user_id: id } });
+    await tx.user.update({
+      where: { id },
+      data: { password_hash: hash, must_change_password: true },
+    });
+    await tx.session.updateMany({
+      where: { user_id: id, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    await revokeAllTrustedDevicesForUser(tx, id);
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
       actorUserId: actorId,
@@ -910,6 +952,15 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
       timezone: audit.timezone,
       actionType: "user_sso_unlinked",
       metadata: { userId: id, count: linked.length },
+    });
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: actorId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "user_password_reset",
+      metadata: { userId: id, reason: "sso_unlink" },
     });
   });
 

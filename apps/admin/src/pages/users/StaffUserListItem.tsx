@@ -42,7 +42,12 @@ function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
   return (
     <div className="users-page__roles">
       <Badge variant={roleBadgeVariant(primary.role)} title={roleScopeTitle(primary)}>
-        {user.roles.some((role) => role.is_oidc) && <i className="ti ti-cloud" aria-hidden="true" />}{" "}
+        {user.roles.some((role) => role.is_oidc) && (
+          <>
+            <i className="ti ti-cloud" aria-hidden="true" />
+            <span className="sr-only">Managed by identity provider</span>
+          </>
+        )}{" "}
         {roleLabel(primary.role)}
       </Badge>
     </div>

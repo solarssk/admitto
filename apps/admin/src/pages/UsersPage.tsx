@@ -455,11 +455,11 @@ export function UsersPage() {
         </p>
       )}
 
-      {tab === "roles" && (
-        <Card title="Role assignments">
-          <RoleAssignmentsTab onAssignmentsChanged={() => void load()} onCountChange={setRolesCount} />
-        </Card>
-      )}
+      {/* Always mounted (not just once "roles" becomes active) so its count is ready for the tab
+          label immediately on page load - same convention as ActiveSessionsTab below. */}
+      <Card title="Role assignments" hidden={tab !== "roles"}>
+        <RoleAssignmentsTab onAssignmentsChanged={() => void load()} onCountChange={setRolesCount} />
+      </Card>
 
       {superadmin && (
         // Always mounted (not just once "sessions" becomes active) so its session count is

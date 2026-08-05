@@ -69,6 +69,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const [revokeSessionsBusy, setRevokeSessionsBusy] = useState(false);
   const [unlinkSsoOpen, setUnlinkSsoOpen] = useState(false);
   const [unlinkSsoBusy, setUnlinkSsoBusy] = useState(false);
+  const [unlinkSsoPassword, setUnlinkSsoPassword] = useState("");
+  const [unlinkSsoError, setUnlinkSsoError] = useState<string | null>(null);
   const [disableConfirmOpen, setDisableConfirmOpen] = useState(false);
   const [toggleActiveBusy, setToggleActiveBusy] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -91,6 +93,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setNewPassword("");
     setRevokeSessionsOpen(false);
     setUnlinkSsoOpen(false);
+    setUnlinkSsoPassword("");
+    setUnlinkSsoError(null);
     setDisableConfirmOpen(false);
     setDeleteConfirm(false);
     setDeleteError(null);
@@ -104,6 +108,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setNewPassword("");
     setRevokeSessionsOpen(false);
     setUnlinkSsoOpen(false);
+    setUnlinkSsoPassword("");
+    setUnlinkSsoError(null);
     setDisableConfirmOpen(false);
     setDeleteConfirm(false);
     setDeleteError(null);
@@ -120,7 +126,14 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         if (controller.signal.aborted) return;
         setEvents(eventList);
         setOrganizations(orgList);
-        setNewOrgId((current) => current || orgList[0]?.id || "");
+        // Default to the first org this user isn't already assigned to - the picker only ever
+        // renders pickableOrganizations (same filter below, in the render body), so seeding
+        // newOrgId from the raw, unfiltered orgList could default it to a value with no matching
+        // <option>.
+        const assignedOrgIds = new Set(
+          (user?.roles ?? []).filter((r) => r.scope_type === "organization").map((r) => r.scope_id),
+        );
+        setNewOrgId((current) => current || orgList.find((org) => !assignedOrgIds.has(org.id))?.id || "");
       })
       .catch(() => {
         if (!controller.signal.aborted) {
@@ -129,7 +142,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         }
       });
     return () => controller.abort();
-  }, [open]);
+  }, [open, user]);
 
   useEffect(() => {
     if (!open || !user) return;
@@ -170,6 +183,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setNewPassword("");
     setRevokeSessionsOpen(false);
     setUnlinkSsoOpen(false);
+    setUnlinkSsoPassword("");
+    setUnlinkSsoError(null);
     setDisableConfirmOpen(false);
     setDeleteConfirm(false);
     setDeleteError(null);
@@ -321,15 +336,21 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleUnlinkSso = async () => {
-    if (!user) return;
+    if (!user || unlinkSsoPassword.length < PASSWORD_MIN_LENGTH) return;
     setUnlinkSsoBusy(true);
+    setUnlinkSsoError(null);
     try {
-      await unlinkUserExternalIdentity(user.id);
+      await unlinkUserExternalIdentity(user.id, { new_password: unlinkSsoPassword });
       setUnlinkSsoOpen(false);
-      onUpdated(user, "SSO unlinked. User must sign in with a local password.");
+      setUnlinkSsoPassword("");
+      onUpdated(user, "SSO unlinked. User must sign in with the new local password.");
       onClose();
     } catch (err) {
-      setError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
+      if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
+        setUnlinkSsoError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+      } else {
+        setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
+      }
     } finally {
       setUnlinkSsoBusy(false);
     }
@@ -434,7 +455,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       </Select>
     );
 
-  const scopeReady = newRole === "operator" ? !!newEventId : newRole === "admin" ? !!newOrgId : true;
+  const scopeReady =
+    newRole === "operator" ? !!newEventId : newRole === "admin" ? !!newOrgId : newRole === "superadmin";
   const roleActionDisabled = roleBusy || !scopeReady || (isSelf && isRoleTypeChange);
   const roleActionLabel = isRoleTypeChange ? "Change" : "Add";
   const roleActionIcon = isRoleTypeChange ? "refresh" : "plus";
@@ -897,15 +919,33 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={unlinkSsoOpen}
         title="Unlink SSO"
-        message={`Unlink SSO for ${displayTitle}? They'll need a local password to sign in - use Reset password too if they don't already have one.`}
+        message={`Unlink SSO for ${displayTitle}? Set the new local password they'll sign in with below - their SSO sign-in stops working immediately.`}
+        errorMessage={unlinkSsoError}
         confirmLabel="Unlink"
         confirmVariant="danger"
         loading={unlinkSsoBusy}
+        disableConfirm={unlinkSsoPassword.length < PASSWORD_MIN_LENGTH}
         onConfirm={() => void handleUnlinkSso()}
         onCancel={() => {
-          if (!unlinkSsoBusy) setUnlinkSsoOpen(false);
+          if (unlinkSsoBusy) return;
+          setUnlinkSsoOpen(false);
+          setUnlinkSsoPassword("");
+          setUnlinkSsoError(null);
         }}
-      />
+      >
+        <Input
+          id="unlink-sso-password"
+          label="New temporary password"
+          icon={<i className="ti ti-key" aria-hidden="true" />}
+          type="password"
+          minLength={PASSWORD_MIN_LENGTH}
+          hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+          value={unlinkSsoPassword}
+          disabled={unlinkSsoBusy}
+          onChange={(e) => setUnlinkSsoPassword(e.target.value)}
+          {...NO_AUTOFILL_PROPS}
+        />
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={roleChangeConfirmOpen}
