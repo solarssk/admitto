@@ -75,12 +75,10 @@ describe("assertEditableServiceUrl", () => {
     });
   });
 
-  it("maps unexpected resolve failures to unresolved", async () => {
-    const { resolveSafeHostname } = await import("@admitto/shared/ssrf-guard");
-    vi.mocked(resolveSafeHostname).mockRejectedValueOnce(new Error("boom"));
-    await expect(assertEditableServiceUrl("https://api.open-meteo.com")).resolves.toEqual({
-      ok: false,
-      code: "url_host_unresolved",
-    });
+  it("rejects empty hostname URLs", async () => {
+    // Some parsers normalise weird forms; an empty host string must still be blocked.
+    const result = await assertEditableServiceUrl("https://");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(["invalid_url", "url_host_blocked"]).toContain(result.code);
   });
 });

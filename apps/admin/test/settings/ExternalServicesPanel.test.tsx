@@ -560,4 +560,67 @@ describe("ExternalServicesPanel", () => {
       expect(screen.getByTestId("loc").textContent).toBe("/admin/settings?tab=general");
     });
   });
+
+  it("maps maps probe machine codes to safe toast copy", async () => {
+    mockTestMaps.mockResolvedValueOnce({ ok: false, error: "url_host_blocked" });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[1]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/private or local network/i);
+    });
+  });
+
+  it("maps unknown machine probe codes to the generic maps fallback", async () => {
+    mockTestMaps.mockResolvedValueOnce({ ok: false, error: "some_unknown_code" });
+    await renderLoaded();
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[1]!);
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Could not test the maps connection/,
+      );
+    });
+    expect(screen.queryByText("some_unknown_code")).toBeNull();
+  });
+
+  it("tests Open-Meteo with clearApiKey and no typed key", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        weather: {
+          provider: "openmeteo",
+          api_key: { configured: true, source: "organization" },
+        },
+      }),
+    );
+    await renderLoaded();
+    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
+      target: { value: "openmeteo" },
+    });
+    const clear = el<HTMLInputElement>("external-weather-clear-api-key");
+    fireEvent.click(clear);
+    fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
+    await waitFor(() => {
+      expect(mockTestWeather).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "openmeteo",
+          clearApiKey: true,
+        }),
+      );
+    });
+    expect(mockTestWeather.mock.calls.at(-1)?.[0]).not.toHaveProperty("apiKey");
+  });
+
+  it("keeps weather draft when maps save fails and vice versa", async () => {
+    mockSaveMaps.mockRejectedValueOnce(new ApiError(500, "maps_only_secret"));
+    await renderLoaded();
+    fireEvent.click(el<HTMLInputElement>("external-weather-enabled"));
+    fireEvent.change(el<HTMLInputElement>("external-maps-geocoding-base-url"), {
+      target: { value: "https://nominatim.example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not save maps settings/);
+    });
+    expect(mockSaveWeather).toHaveBeenCalled();
+    expect(el<HTMLInputElement>("external-weather-enabled").checked).toBe(false);
+  });
 });

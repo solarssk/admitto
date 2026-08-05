@@ -304,4 +304,62 @@ describe("external-services connection tests", () => {
       }),
     );
   });
+
+  it("rejects blank maps geocoding URLs and unresolved hostnames", async () => {
+    const blank = await handlePostMapsTest(mockContext({ geocodingBaseUrl: "   " }), db);
+    expect(((await blank.json()) as { error?: string }).error).toMatch(/valid public http/i);
+
+    const { resolveSafeHostname, SafeHostnameError } = await import("@admitto/shared/ssrf-guard");
+    vi.mocked(resolveSafeHostname).mockRejectedValueOnce(
+      new SafeHostnameError("hostname_unresolved", "hostname could not be resolved"),
+    );
+    const unresolved = await handlePostMapsTest(
+      mockContext({ geocodingBaseUrl: "https://missing.example" }),
+      db,
+    );
+    expect(((await unresolved.json()) as { error?: string }).error).toMatch(/Could not resolve/i);
+  });
+
+  it("rejects unresolved weather base URLs with operator-safe copy", async () => {
+    const { resolveSafeHostname, SafeHostnameError } = await import("@admitto/shared/ssrf-guard");
+    vi.mocked(resolveSafeHostname).mockRejectedValueOnce(
+      new SafeHostnameError("hostname_unresolved", "hostname could not be resolved"),
+    );
+    const res = await handlePostWeatherTest(
+      mockContext({
+        provider: "openmeteo",
+        baseUrl: "https://missing.example",
+      }),
+      db,
+    );
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatch(/Could not resolve the weather base URL hostname/i);
+    expect(weatherProbeLive).not.toHaveBeenCalled();
+  });
+
+  it("keeps stored API key when draft apiKey is blank whitespace", async () => {
+    weatherProbeLive.mockResolvedValueOnce({ ok: true, latencyMs: 3 });
+    resolveEffectiveWeatherConfig.mockResolvedValueOnce({
+      enabled: true,
+      provider: "openmeteo",
+      baseUrl: "https://api.open-meteo.com",
+      apiKey: "stored-key",
+      timeoutMs: 5000,
+      cacheTtlMs: 1000,
+    });
+    await handlePostWeatherTest(
+      mockContext({
+        provider: "openmeteo",
+        baseUrl: "https://api.open-meteo.com",
+        apiKey: "   ",
+      }),
+      db,
+    );
+    expect(weatherServiceCtor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ apiKey: "stored-key" }),
+      }),
+    );
+  });
 });

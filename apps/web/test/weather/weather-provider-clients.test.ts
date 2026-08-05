@@ -367,4 +367,86 @@ describe("pickMetNoDailyForecast symbol branches", () => {
     });
     expect(day?.weather_code).toEqual(expect.any(Number));
   });
+
+  it("returns null for missing/empty timeseries and uses cloudy fallback without symbols", () => {
+    expect(pickMetNoDailyForecast({}, "2026-08-10", "UTC")).toBeNull();
+    expect(
+      pickMetNoDailyForecast({ properties: { timeseries: "nope" as unknown as [] } }, "2026-08-10", "UTC"),
+    ).toBeNull();
+    expect(
+      pickMetNoDailyForecast({ properties: { timeseries: [] } }, "2026-08-10", "UTC"),
+    ).toBeNull();
+
+    const tempsOnly = pickMetNoDailyForecast(
+      {
+        properties: {
+          timeseries: [
+            {
+              time: "2026-08-10T12:00:00Z",
+              data: { instant: { details: { air_temperature: 15 } } },
+            },
+          ],
+        },
+      },
+      "2026-08-10",
+      "UTC",
+    );
+    expect(tempsOnly).toMatchObject({ weather_code: metNoSymbolToWeatherCode("cloudy"), temp_max_c: 15 });
+  });
+
+  it("falls back when localHour Intl formatting fails", () => {
+    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementationOnce(() => {
+      throw new RangeError("invalid");
+    });
+    try {
+      const day = pickMetNoDailyForecast(
+        {
+          properties: {
+            timeseries: [
+              {
+                time: "2026-08-10T12:00:00Z",
+                data: {
+                  instant: { details: { air_temperature: 11 } },
+                  next_1_hours: { summary: { symbol_code: "cloudy" } },
+                },
+              },
+            ],
+          },
+        },
+        "2026-08-10",
+        "UTC",
+      );
+      expect(day).toMatchObject({ temp_max_c: 11 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("ymdInTimezone falls back when Intl rejects the zone", () => {
+    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => {
+      throw new RangeError("invalid time zone");
+    });
+    try {
+      const day = pickMetNoDailyForecast(
+        {
+          properties: {
+            timeseries: [
+              {
+                time: "2026-08-10T12:00:00Z",
+                data: {
+                  instant: { details: { air_temperature: 9 } },
+                  next_1_hours: { summary: { symbol_code: "cloudy" } },
+                },
+              },
+            ],
+          },
+        },
+        "2026-08-10",
+        "Bad/Zone",
+      );
+      expect(day).toMatchObject({ date: "2026-08-10", temp_min_c: 9 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

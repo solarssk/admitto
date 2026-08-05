@@ -172,6 +172,20 @@ describe("external-services GET/PUT routes", () => {
     expect(patchWeatherSettings).not.toHaveBeenCalled();
   });
 
+  it("rejects unresolved weather base URL hosts", async () => {
+    const { resolveSafeHostname, SafeHostnameError } = await import("@admitto/shared/ssrf-guard");
+    vi.mocked(resolveSafeHostname).mockRejectedValueOnce(
+      new SafeHostnameError("hostname_unresolved", "hostname could not be resolved"),
+    );
+    const res = await handlePutWeatherSettings(
+      mockContext({ provider: "openmeteo", baseUrl: "https://missing.example" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "url_host_unresolved" });
+    expect(patchWeatherSettings).not.toHaveBeenCalled();
+  });
+
   it("requires API key for commercial Open-Meteo when enabling", async () => {
     const res = await handlePutWeatherSettings(
       mockContext({

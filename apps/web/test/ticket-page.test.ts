@@ -660,4 +660,24 @@ describe("renderTicket weather", () => {
     });
     expect(html).not.toContain("id=\"weather-heading\"");
   });
+
+  it("renders storm, snow, rain, and fog weather icons", () => {
+    const cases: Array<{ code: number; unique: string }> = [
+      { code: 95, unique: "m13 12-3 5h4l-3 5" },
+      { code: 71, unique: "M8 20h.01M12 20h.01M16 20h.01" },
+      { code: 61, unique: "m8 19-1 2m5-2-1 2m5-2-1 2" },
+      { code: 45, unique: "M4 14h16M5 18h14M6 10h12" },
+    ];
+    for (const { code, unique } of cases) {
+      const html = renderTicket(base, "data:image/png;base64,xx", null, {
+        weather: {
+          status: "ok",
+          temp_c: 5,
+          weather_code: code,
+          attribution: "Weather data by Open-Meteo.com",
+        },
+      });
+      expect(html).toContain(unique);
+    }
+  });
 });

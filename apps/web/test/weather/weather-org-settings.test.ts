@@ -5,8 +5,13 @@ import {
   describeWeatherSettings,
   patchWeatherSettings,
   resolveEffectiveWeatherConfig,
+  createWeatherServiceFromDb,
   WEATHER_SETTINGS_KEY,
 } from "../../src/weather/weather-org-settings.js";
+import {
+  isGeocodingContactConfigured,
+  buildGeocodingUserAgent,
+} from "../../src/maps/user-agent.js";
 
 vi.mock("../../src/maps/user-agent.js", () => ({
   isGeocodingContactConfigured: vi.fn(async () => true),
@@ -78,6 +83,49 @@ describe("resolveEffectiveWeatherConfig", () => {
     } as unknown as PrismaClient;
     const cfg = await resolveEffectiveWeatherConfig(db, {});
     expect(cfg.provider).toBe("metno");
+  });
+
+  it("treats undecryptable apiKeyEnc as no key", async () => {
+    const cfg = await resolveEffectiveWeatherConfig(
+      fakeWeatherDb(
+        JSON.stringify({
+          provider: "openmeteo",
+          apiKeyEnc: "not-a-valid-encrypted-blob",
+        }),
+      ),
+      {},
+    );
+    expect(cfg.apiKey).toBeNull();
+  });
+
+  it("ignores non-object stored JSON shapes", async () => {
+    const cfg = await resolveEffectiveWeatherConfig(
+      fakeWeatherDb(JSON.stringify([1, 2, 3])),
+      {},
+    );
+    expect(cfg.provider).toBe("metno");
+  });
+});
+
+describe("createWeatherServiceFromDb", () => {
+  it("builds a service with Support contact User-Agent when configured", async () => {
+    vi.mocked(isGeocodingContactConfigured).mockClear();
+    vi.mocked(buildGeocodingUserAgent).mockClear();
+    vi.mocked(isGeocodingContactConfigured).mockResolvedValueOnce(true);
+    vi.mocked(buildGeocodingUserAgent).mockResolvedValueOnce("Admitto/test (x@example.com)");
+    const service = await createWeatherServiceFromDb(fakeWeatherDb(null), { NODE_ENV: "test" });
+    expect(service.enabled).toBe(true);
+    expect(service.configSnapshot.provider).toBe("metno");
+    expect(buildGeocodingUserAgent).toHaveBeenCalled();
+  });
+
+  it("passes a null User-Agent when Support contact is missing", async () => {
+    vi.mocked(isGeocodingContactConfigured).mockClear();
+    vi.mocked(buildGeocodingUserAgent).mockClear();
+    vi.mocked(isGeocodingContactConfigured).mockResolvedValueOnce(false);
+    const service = await createWeatherServiceFromDb(fakeWeatherDb(null), { NODE_ENV: "test" });
+    expect(buildGeocodingUserAgent).not.toHaveBeenCalled();
+    expect(service.configSnapshot.provider).toBe("metno");
   });
 });
 

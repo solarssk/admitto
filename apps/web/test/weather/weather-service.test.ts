@@ -603,6 +603,78 @@ describe("WeatherService.summarize", () => {
     expect(a).toBe(b);
     resetWeatherServiceForTests();
   });
+
+  it("exposes enabled/configSnapshot and defaults now/contact from userAgent", () => {
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      userAgent: "  Admitto/test  ",
+    });
+    expect(service.enabled).toBe(true);
+    expect(service.configSnapshot.provider).toBe("openmeteo");
+  });
+
+  it("probeLive returns unavailable for non-Error throws", async () => {
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+    });
+    (service as unknown as { openMeteo: { probe: () => Promise<void> } }).openMeteo = {
+      probe: async () => {
+        throw "string-fail";
+      },
+    };
+    await expect(service.probeLive()).resolves.toMatchObject({
+      ok: false,
+      error: "unavailable",
+    });
+  });
+
+  it("probeLive succeeds for MET Norway when contact is ready", async () => {
+    const fetchFn = vi.fn(async (_input: string | URL) =>
+      new Response(
+        JSON.stringify({
+          properties: {
+            timeseries: [
+              {
+                time: `${new Date().toISOString().slice(0, 10)}T12:00:00Z`,
+                data: {
+                  instant: { details: { air_temperature: 10 } },
+                  next_1_hours: { summary: { symbol_code: "cloudy" } },
+                },
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "metno" }),
+      cache: new InMemoryWeatherCache(),
+      userAgent: "Admitto/test (test@example.com)",
+      contactConfigured: true,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    await expect(service.probeLive()).resolves.toMatchObject({ ok: true });
+    expect(fetchFn).toHaveBeenCalled();
+  });
+
+  it("throws unavailable when MET Norway client is built without a User-Agent", () => {
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "metno" }),
+      cache: new InMemoryWeatherCache(),
+      contactConfigured: true,
+      userAgent: "   ",
+    });
+    expect(() =>
+      (
+        service as unknown as {
+          metNoClient: () => unknown;
+        }
+      ).metNoClient(),
+    ).toThrow(/unavailable/);
+  });
 });
 
 describe("helpers", () => {
