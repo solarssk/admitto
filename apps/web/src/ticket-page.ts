@@ -8,6 +8,9 @@ import {
   resolveGoogleMapsUrl,
 } from "@admitto/location";
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
+import { weatherCodeInfo } from "./weather/weather-codes.js";
+import type { WeatherSummaryDto } from "./weather/types.js";
+import { WEATHER_ATTRIBUTION_TEXT, WEATHER_ATTRIBUTION_URL } from "./weather/config.js";
 
 function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
@@ -25,12 +28,31 @@ const DIRECTIONS_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none"
 const ACCESSIBILITY_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="4" r="2"/><path d="m18 9-4.5-1.5L11 13"/><path d="M6 10h7"/><circle cx="10" cy="18" r="3.5"/><path d="M13.5 17.5H18l2 3"/></svg>`;
 /** Neutral map glyph: not Google/Apple brand marks (trademark-restricted). */
 const MAP_LINK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 6-3 6 3 6-3v13l-6 3-6-3-6 3V7Z"/><path d="M9 4v13"/><path d="M15 7v13"/></svg>`;
+const WEATHER_SUN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></svg>`;
+const WEATHER_CLOUD_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0-.9-8.9A6 6 0 1 0 7 16.5"/></svg>`;
+const WEATHER_RAIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a6 6 0 1 1 10.6-4.4A4.5 4.5 0 1 1 17.5 19H7"/><path d="m8 19-1 2m5-2-1 2m5-2-1 2"/></svg>`;
+const WEATHER_SNOW_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a6 6 0 1 1 10.6-4.4A4.5 4.5 0 1 1 17.5 19H7"/><path d="M8 20h.01M12 20h.01M16 20h.01"/></svg>`;
+const WEATHER_STORM_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a6 6 0 1 1 10.6-4.4A4.5 4.5 0 1 1 17.5 19H7"/><path d="m13 12-3 5h4l-3 5"/></svg>`;
+const WEATHER_FOG_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h16M5 18h14M6 10h12"/><path d="M17.5 8a4.5 4.5 0 1 0-.9-8.9A5.5 5.5 0 1 0 7.2 8"/></svg>`;
+/** Tabler outline `cloud-question` (same glyph as admin `ti-cloud-question`). */
+const WEATHER_QUESTION_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 18.004h-7.843c-2.572 -.004 -4.657 -2.011 -4.657 -4.487c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99"/><path d="M19 22v.01"/><path d="M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483"/></svg>`;
 
+function weatherIconSvg(weatherCode: number | null | undefined): string {
+  const info = weatherCodeInfo(weatherCode);
+  if (info.icon.includes("sun")) return WEATHER_SUN_ICON;
+  if (info.icon.includes("storm")) return WEATHER_STORM_ICON;
+  if (info.icon.includes("snow")) return WEATHER_SNOW_ICON;
+  if (info.icon.includes("rain") || info.icon.includes("drizzle")) return WEATHER_RAIN_ICON;
+  if (info.icon.includes("mist")) return WEATHER_FOG_ICON;
+  return WEATHER_CLOUD_ICON;
+}
 
 export type TicketPageOptions = {
   displayToken?: string | null;
   /** When false, omit the static map (`LOCATION_MAPS_ENABLED=false`). Google/Apple links still render when coordinates exist. Defaults to true. */
   staticMapEnabled?: boolean;
+  /** Event-day weather summary; omit or null to hide the weather block. */
+  weather?: WeatherSummaryDto | null;
 };
 
 /** Mask an internal ticket token for display, or fall back to a Mode B public ref. */
@@ -146,6 +168,58 @@ function renderDirectionsAddressHtml(event: ResolvedTicket["event"]): string {
     : "";
 }
 
+/**
+ * Event-day weather after map buttons: section label (like Getting there), condition
+ * icon + copy, attribution bottom-right.
+ */
+function renderTicketWeatherHtml(weather: WeatherSummaryDto | null | undefined): string {
+  if (!weather) return "";
+  const attrUrl = esc(weather.attribution_url || WEATHER_ATTRIBUTION_URL);
+  const attrText = esc(weather.attribution || WEATHER_ATTRIBUTION_TEXT);
+  const credit = `<a class="ticket__weather-credit" href="${attrUrl}" rel="noopener noreferrer">${attrText}</a>`;
+  const heading = `<h2 class="ticket__weather-heading" id="weather-heading">Weather on the day</h2>`;
+
+  if (weather.status === "ok" && weather.temp_c != null) {
+    const info = weatherCodeInfo(weather.weather_code);
+    const range =
+      weather.temp_min_c != null
+        ? `${weather.temp_min_c}-${weather.temp_c}°C`
+        : `${weather.temp_c}°C`;
+    return `<div class="ticket__weather-block" aria-labelledby="weather-heading">
+      ${heading}
+      <div class="ticket__weather-main">
+        <span class="ticket__weather-icon" aria-hidden="true">${weatherIconSvg(weather.weather_code)}</span>
+        <div class="ticket__weather-copy">
+          <p class="ticket__weather-title">${esc(info.label)}</p>
+          <p class="ticket__weather-temp">${esc(range)}</p>
+        </div>
+      </div>
+      <p class="ticket__weather-credit-row">${credit}</p>
+    </div>`;
+  }
+
+  if (weather.status === "too_far") {
+    const horizon = weather.horizon_days ?? weather.opens_in_days ?? 0;
+    const line1 =
+      horizon > 0
+        ? `Forecast available ${horizon} day${horizon === 1 ? "" : "s"}`
+        : "Forecast available soon";
+    return `<div class="ticket__weather-block" aria-labelledby="weather-heading">
+      ${heading}
+      <div class="ticket__weather-main">
+        <span class="ticket__weather-icon" aria-hidden="true">${WEATHER_QUESTION_ICON}</span>
+        <div class="ticket__weather-copy">
+          <p class="ticket__weather-title">${esc(line1)}</p>
+          <p class="ticket__weather-temp">before the event</p>
+        </div>
+      </div>
+      <p class="ticket__weather-credit-row">${credit}</p>
+    </div>`;
+  }
+
+  return "";
+}
+
 export function renderTicket(
   resolved: ResolvedTicket,
   qrDataUrl: string,
@@ -192,16 +266,21 @@ export function renderTicket(
   const accessibilityHtml = accessibilityText
     ? `<div class="ticket__travel-note"><h3>${ACCESSIBILITY_ICON}<span>Accessibility</span></h3><p>${esc(accessibilityText)}</p></div>`
     : "";
+  const weatherHtml = renderTicketWeatherHtml(options.weather);
+  // Order: map → map buttons → weather (then directions / accessibility).
   const gettingThereHtml = hasGettingThere
     ? `<section class="ticket__getting-there" aria-labelledby="getting-there-heading">
       <h2 id="getting-there-heading">Getting there</h2>
       ${addressHtml}
       ${staticMapHtml}
       ${mapsLinks}
+      ${weatherHtml}
       ${directionsHtml}
       ${accessibilityHtml}
     </section>`
-    : "";
+    : weatherHtml
+      ? `<section class="ticket__getting-there" aria-label="Weather on the day">${weatherHtml}</section>`
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="en">

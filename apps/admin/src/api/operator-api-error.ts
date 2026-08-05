@@ -4,6 +4,8 @@ const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 
 /** Known API error codes and operator-safe literals mapped to UI copy. */
 const CODE_MESSAGES: Record<string, string> = {
+  api_key_required:
+    "API key is required for the Open-Meteo customer API (customer-api.open-meteo.com).",
   already_assigned: "This role assignment already exists.",
   already_enrolled: "Two-factor authentication is already enabled.",
   authentication_required: "Your session has expired. Sign in again.",

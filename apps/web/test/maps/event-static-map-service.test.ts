@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import {
   querySystemLogs,
@@ -7,9 +7,25 @@ import {
 import { EventStaticMapService } from "../../src/maps/event-static-map-service.js";
 import type { StaticMapCache } from "../../src/maps/static-map-cache.js";
 import { StaticMapRenderError } from "../../src/maps/static-map.js";
+import {
+  defaultGeocodingConfig,
+  defaultMapTileConfig,
+  setMapsConfigCache,
+} from "../../src/maps/config.js";
 
 const SAMPLE_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
 const PLACEHOLDER_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xfe]);
+
+function setMapsEnabled(enabled: boolean) {
+  setMapsConfigCache({
+    tiles: { ...defaultMapTileConfig(), enabled },
+    geocoding: defaultGeocodingConfig(),
+  });
+}
+
+afterEach(() => {
+  setMapsConfigCache(null);
+});
 
 function fakeCache(initial: Record<string, Buffer> = {}): StaticMapCache & {
   store: Record<string, Buffer>;
@@ -53,21 +69,15 @@ function serviceOpts(overrides: ConstructorParameters<typeof EventStaticMapServi
 }
 
 describe("EventStaticMapService.getForEvent", () => {
-  it("returns disabled when LOCATION_MAPS_ENABLED=false", async () => {
-    const prev = process.env["LOCATION_MAPS_ENABLED"];
-    process.env["LOCATION_MAPS_ENABLED"] = "false";
-    try {
-      const service = new EventStaticMapService(serviceOpts());
-      await expect(
-        service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 15 }), "evt"),
-      ).resolves.toEqual({
-        ok: false,
-        reason: "disabled",
-      });
-    } finally {
-      if (prev === undefined) delete process.env["LOCATION_MAPS_ENABLED"];
-      else process.env["LOCATION_MAPS_ENABLED"] = prev;
-    }
+  it("returns disabled when maps are turned off in organisation settings", async () => {
+    setMapsEnabled(false);
+    const service = new EventStaticMapService(serviceOpts());
+    await expect(
+      service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 15 }), "evt"),
+    ).resolves.toEqual({
+      ok: false,
+      reason: "disabled",
+    });
   });
 
   it("returns not_found when the event is missing", async () => {
@@ -169,30 +179,23 @@ describe("EventStaticMapService.getForEvent", () => {
     );
   });
 
-  it("caps listPreview zoom at MAP_TILE_MAX_ZOOM when below the list hard-cap", async () => {
-    const prevEnabled = process.env["LOCATION_MAPS_ENABLED"];
-    const prevMax = process.env["MAP_TILE_MAX_ZOOM"];
-    process.env["LOCATION_MAPS_ENABLED"] = "true";
-    process.env["MAP_TILE_MAX_ZOOM"] = "10";
-    try {
-      const renderPng = vi.fn(async () => SAMPLE_PNG);
-      const service = new EventStaticMapService(serviceOpts({ renderPng }));
+  it("caps listPreview zoom at configured maxZoom when below the list hard-cap", async () => {
+    setMapsConfigCache({
+      tiles: { ...defaultMapTileConfig(), enabled: true, maxZoom: 10 },
+      geocoding: defaultGeocodingConfig(),
+    });
+    const renderPng = vi.fn(async () => SAMPLE_PNG);
+    const service = new EventStaticMapService(serviceOpts({ renderPng }));
 
-      await service.getForEvent(
-        fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
-        "evt-provider-cap",
-        { listPreview: true },
-      );
-      expect(renderPng).toHaveBeenCalledWith(
-        expect.objectContaining({ zoom: 10 }),
-        expect.any(Object),
-      );
-    } finally {
-      if (prevEnabled === undefined) delete process.env["LOCATION_MAPS_ENABLED"];
-      else process.env["LOCATION_MAPS_ENABLED"] = prevEnabled;
-      if (prevMax === undefined) delete process.env["MAP_TILE_MAX_ZOOM"];
-      else process.env["MAP_TILE_MAX_ZOOM"] = prevMax;
-    }
+    await service.getForEvent(
+      fakeDb({ latitude: 52.2297, longitude: 21.0122, map_zoom: 15 }),
+      "evt-provider-cap",
+      { listPreview: true },
+    );
+    expect(renderPng).toHaveBeenCalledWith(
+      expect.objectContaining({ zoom: 10 }),
+      expect.any(Object),
+    );
   });
 
   it("retries once then returns a real PNG on the second attempt", async () => {
@@ -382,17 +385,11 @@ describe("EventStaticMapService.getForEvent", () => {
   });
 
   it("uses default cache and render seams when constructed without options", async () => {
-    const prev = process.env["LOCATION_MAPS_ENABLED"];
-    process.env["LOCATION_MAPS_ENABLED"] = "false";
-    try {
-      const service = new EventStaticMapService();
-      await expect(
-        service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 15 }), "evt"),
-      ).resolves.toEqual({ ok: false, reason: "disabled" });
-    } finally {
-      if (prev === undefined) delete process.env["LOCATION_MAPS_ENABLED"];
-      else process.env["LOCATION_MAPS_ENABLED"] = prev;
-    }
+    setMapsEnabled(false);
+    const service = new EventStaticMapService();
+    await expect(
+      service.getForEvent(fakeDb({ latitude: 1, longitude: 2, map_zoom: 15 }), "evt"),
+    ).resolves.toEqual({ ok: false, reason: "disabled" });
   });
 
   it("coalesces concurrent cold-cache renders for the same key", async () => {

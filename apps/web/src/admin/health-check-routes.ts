@@ -29,6 +29,10 @@ import { resolveProductVersion } from "../ops/product-version.js";
 import { readAdminBuildMeta } from "./admin-build-meta.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveGeocodingConfig, resolveMapTileConfig } from "../maps/config.js";
+import {
+  createWeatherServiceFromDb,
+  resolveEffectiveWeatherConfig,
+} from "../weather/weather-org-settings.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 export type { HealthOverallStatus, HealthRowStatus };
@@ -984,6 +988,93 @@ function mapTilesRow(env: NodeJS.ProcessEnv, checkedAt: string): HealthCheckRow 
   };
 }
 
+const WEATHER_DEGRADED_MS = 1_500;
+
+async function weatherRow(
+  db: PrismaClient,
+  live: boolean,
+  env: NodeJS.ProcessEnv,
+  checkedAt: string,
+): Promise<HealthCheckRow> {
+  const config = await resolveEffectiveWeatherConfig(db, env);
+  const label = config.provider === "metno" ? "Weather, MET Norway" : "Weather, Open-Meteo";
+  const endpoint =
+    config.provider === "metno"
+      ? safeEndpointDisplay("https://api.met.no/weatherapi/locationforecast/2.0/compact")
+      : safeEndpointDisplay(`${config.baseUrl}/v1/forecast`);
+
+  if (!config.enabled) {
+    return {
+      id: "weather",
+      label,
+      status: "not_configured",
+      summary: "Weather disabled",
+      details: detailsFromEntries([
+        ["status", "not_configured"],
+        ["provider", config.provider],
+        ["endpoint", endpoint],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+
+  if (!live) {
+    const details: Array<[string, string]> = [
+      ["status", "ok"],
+      ["provider", config.provider],
+      ["endpoint", endpoint ?? "unknown"],
+      ["last_checked", checkedAt],
+    ];
+    if (config.provider === "openmeteo") {
+      details.splice(3, 0, ["api_key", config.apiKey ? "configured" : "none"]);
+    }
+    return {
+      id: "weather",
+      label,
+      status: "ok",
+      summary: "Provider available",
+      details: detailsFromEntries(details),
+    };
+  }
+
+  const service = await createWeatherServiceFromDb(db, env);
+  const probe = await service.probeLive();
+  if (!probe.ok) {
+    return {
+      id: "weather",
+      label,
+      status: "down",
+      summary:
+        probe.error === "support_contact_required"
+          ? "Support contact required"
+          : "Unreachable",
+      details: detailsFromEntries([
+        ["status", "down"],
+        ["provider", config.provider],
+        ["endpoint", endpoint],
+        ["live_check", probe.error ?? "failed"],
+        ["latency_ms", String(probe.latencyMs)],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+  const degraded = probe.latencyMs >= WEATHER_DEGRADED_MS;
+  return {
+    id: "weather",
+    label,
+    status: degraded ? "degraded" : "ok",
+    summary: degraded ? `Slow to respond · ${probe.latencyMs} ms` : "Reachable",
+    details: detailsFromEntries([
+      ["status", degraded ? "degraded" : "ok"],
+      ["provider", config.provider],
+      ["endpoint", endpoint],
+      ["latency_ms", String(probe.latencyMs)],
+      ["live_check", "ok"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
 function plannedRow(id: string, label: string, summary: string): HealthCheckRow {
   return {
     id,
@@ -1211,7 +1302,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
-  const [setup, gauges, email, idpRows, cfAccess, address, dbProbe, engine, fileStorage] =
+  const [setup, gauges, email, idpRows, cfAccess, address, weather, dbProbe, engine, fileStorage] =
     await Promise.all([
       collectSetupChecks(deps.db, deps.rateLimitStore, deps.injectedBaseUrl).catch(
         () => setupFallback,
@@ -1221,6 +1312,17 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
       cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
       addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
+      weatherRow(deps.db, live, env, checkedAt).catch(() => ({
+        id: "weather",
+        label: "Weather",
+        status: "degraded" as const,
+        summary: "Could not evaluate weather provider",
+        details: detailsFromEntries([
+          ["status", "degraded"],
+          ["reason", "lookup_failed"],
+          ["last_checked", checkedAt],
+        ]),
+      })),
       checkDatabase(deps.db).catch(() => ({ status: "down" as const, latency_ms: 0 })),
       readPostgresEngine(deps.db),
       fileStorageRow(env, checkedAt, live),
@@ -1247,7 +1349,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ),
     address,
     mapTilesRow(env, checkedAt),
-    plannedRow("weather", "Weather, Open-Meteo", "Coming in a later release"),
+    weather,
     ...idpRows,
     cfAccess,
   ];

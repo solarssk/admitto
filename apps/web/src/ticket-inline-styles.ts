@@ -39,6 +39,17 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__wallet-help p:last-child { margin-bottom: 0; }
 .ticket__getting-there { padding: 2px 24px 22px; border-top: 1px solid var(--border, #e6e7e9); }
 .ticket__getting-there h2 { color: var(--text-muted, #64748b); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; margin: 20px 0 10px; text-transform: uppercase; }
+.ticket__weather-block { margin-top: 16px; padding-top: 4px; border-top: 1px solid var(--border, #e6e7e9); }
+.ticket__weather-heading { color: var(--text-muted, #64748b); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; margin: 16px 0 12px; text-transform: uppercase; }
+.ticket__weather-main { display: flex; align-items: center; gap: 14px; }
+.ticket__weather-icon { flex: 0 0 auto; width: 40px; height: 40px; color: var(--text-secondary, #475569); }
+.ticket__weather-icon svg { display: block; width: 100%; height: 100%; }
+.ticket__weather-copy { min-width: 0; flex: 1 1 auto; }
+.ticket__weather-title { margin: 0; color: var(--text-primary, #1d273b); font-size: 1.0625rem; font-weight: 600; line-height: 1.25; }
+.ticket__weather-temp { margin: 4px 0 0; color: var(--text-secondary, #475569); font-size: 0.9375rem; line-height: 1.3; }
+.ticket__weather-credit-row { margin: 10px 0 0; text-align: right; }
+.ticket__weather-credit { color: var(--text-muted, #64748b); font-size: 0.75rem; text-decoration: none; }
+.ticket__weather-credit:hover { text-decoration: underline; text-underline-offset: 2px; }
 .ticket__address { color: var(--text-secondary, #475569); font-size: 0.875rem; line-height: 1.4; margin: 0 0 12px; display: flex; flex-direction: column; gap: 2px; }
 .ticket__address-line { display: block; overflow-wrap: anywhere; word-break: break-word; }
 .ticket__address-locality { overflow-wrap: anywhere; word-break: break-word; }

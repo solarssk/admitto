@@ -58,6 +58,20 @@ export interface EventDto {
    * `MAP_TILE_ATTRIBUTION` / default OSM). List PNGs omit burn-in so the pin stays centered.
    */
   map_attribution?: string | null;
+  /**
+   * Event-day forecast from Open-Meteo when weather is enabled and the event has a pin.
+   * Omitted when weather is disabled or there are no coordinates.
+   */
+  weather?: {
+    status: "ok" | "too_far" | "unavailable";
+    temp_c?: number;
+    temp_min_c?: number;
+    weather_code?: number;
+    opens_in_days?: number;
+    horizon_days?: number;
+    attribution?: string;
+    attribution_url?: string;
+  } | null;
   organization_id: string;
   attendee_count?: number;
   archived_at: string | null;
@@ -932,6 +946,68 @@ export interface MapTileConfigDto {
    * so the Location tab can show the Support-contact notice before any search runs. */
   contact_configured: boolean;
 }
+
+/** Organisation Settings → External services (ADR 0040). */
+export type WeatherProviderId = "openmeteo" | "metno";
+
+export interface ExternalServicesWeatherDto {
+  enabled: boolean;
+  provider: WeatherProviderId;
+  base_url: string;
+  api_key: { configured: boolean; source: "organization" | "none" };
+  attribution: string;
+  attribution_url: string;
+  commercial_notice: string;
+  horizon_days: number;
+  contact_configured: boolean;
+}
+
+export interface ExternalServicesMapsDto {
+  enabled: boolean;
+  tile_url: string;
+  attribution: string;
+  max_zoom: number;
+  geocoding_provider: string;
+  geocoding_base_url: string;
+}
+
+export interface ExternalServicesResponse {
+  weather: ExternalServicesWeatherDto;
+  maps: ExternalServicesMapsDto;
+}
+
+export interface SaveWeatherSettingsBody {
+  enabled?: boolean;
+  provider?: WeatherProviderId;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+}
+
+export interface SaveMapsSettingsBody {
+  enabled?: boolean;
+  tileUrl?: string | null;
+  attribution?: string | null;
+  maxZoom?: number | null;
+  geocodingProvider?: string | null;
+  geocodingBaseUrl?: string | null;
+}
+
+/** POST /api/admin/external-services/weather/test (draft, no persist). */
+export interface WeatherConnectionTestBody {
+  provider: WeatherProviderId;
+  baseUrl?: string;
+  apiKey?: string;
+  clearApiKey?: boolean;
+}
+
+/** POST /api/admin/external-services/maps/test (draft, no persist). */
+export interface MapsConnectionTestBody {
+  geocodingBaseUrl: string;
+}
+
+export type ExternalServicesConnectionTestResponse = BounceIngestTestResponse & {
+  latency_ms?: number;
+};
 
 export type SessionRole = "superadmin" | "admin" | "operator";
 export type SettingSource = "env" | "db" | "default";

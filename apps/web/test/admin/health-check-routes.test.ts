@@ -327,7 +327,7 @@ describe("mapTilesServiceLabel", () => {
 });
 
 describe("collectAdminHealth", () => {
-  it("builds core and external groups with planned placeholders", async () => {
+  it("builds core and external groups including weather", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
@@ -378,8 +378,9 @@ describe("collectAdminHealth", () => {
       "Address lookup, Nominatim",
     );
     expect(external.find((c) => c.id === "map_tiles")?.label).toBe("Map tiles, OpenStreetMap");
-    expect(external.find((c) => c.id === "weather")?.label).toBe("Weather, Open-Meteo");
-    expect(external.find((c) => c.id === "weather")?.status).toBe("planned");
+    expect(external.find((c) => c.id === "weather")?.label).toBe("Weather, MET Norway");
+    expect(external.find((c) => c.id === "weather")?.status).toBe("ok");
+    expect(external.find((c) => c.id === "weather")?.summary).toBe("Provider available");
     expect(external.find((c) => c.id === "identity_providers")?.label).toBe("Identity provider");
     expect(external.find((c) => c.id === "identity_providers")?.status).toBe("not_configured");
     expect(external.find((c) => c.id === "cloudflare_access")?.label).toBe("Cloudflare Access");
@@ -1192,6 +1193,8 @@ describe("collectAdminHealth", () => {
     const disabled = await collectAdminHealth({
       db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
       rateLimitStore: {} as never,
+      // Explicit env bag so resolveMapTileConfig consults LOCATION_MAPS_* (not process defaults).
+      env: envWithUpload({ LOCATION_MAPS_ENABLED: "false" }),
     });
     expect(disabled.groups[1]!.checks.find((c) => c.id === "map_tiles")?.status).toBe(
       "not_configured",

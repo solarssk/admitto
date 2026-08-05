@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@admitto/auth": "*",
+    "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/import": "*",
     "@admitto/location": "*",

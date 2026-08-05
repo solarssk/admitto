@@ -41,6 +41,7 @@ function ticketFor(logoUrl: string | null) {
       id: "e1",
       title: "Launch Event",
       date: new Date("2026-09-01T09:00:00Z"),
+      timezone: "UTC",
       location: null,
       logoUrl,
       ...EMPTY_EVENT_LOCATION,
@@ -91,6 +92,7 @@ describe("renderTicket", () => {
           id: "event-1",
           title: "Launch Event",
           date: new Date("2026-09-01T09:00:00Z"),
+      timezone: "UTC",
           location: null,
           logoUrl: null,
           ...EMPTY_EVENT_LOCATION,
@@ -371,6 +373,7 @@ describe("getTicketPageSecurityHeaders", () => {
           id: "e1",
           title: "Launch",
           date: new Date("2026-09-01T09:00:00Z"),
+      timezone: "UTC",
           location: null,
           logoUrl: null,
           ...EMPTY_EVENT_LOCATION,
@@ -417,6 +420,7 @@ describe("getTicketPageSecurityHeaders", () => {
           id: "e1",
           title: "Launch",
           date: new Date("2026-09-01T09:00:00Z"),
+      timezone: "UTC",
           location: null,
           logoUrl: null,
           ...EMPTY_EVENT_LOCATION,
@@ -530,5 +534,51 @@ describe("resolveDisplayToken", () => {
   it("returns null when neither token nor public ref is set", () => {
     expect(resolveDisplayToken(undefined, undefined)).toBeNull();
     expect(resolveDisplayToken(null, null)).toBeNull();
+  });
+});
+
+describe("renderTicket weather", () => {
+  const base = ticketFor(null);
+
+  it("renders ok forecast under Getting there with clear copy", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "ok",
+        temp_c: 22,
+        temp_min_c: 14,
+        weather_code: 0,
+        attribution: "Weather data by Open-Meteo.com",
+        attribution_url: "https://open-meteo.com/",
+      },
+    });
+    expect(html).toContain("ticket__weather-heading");
+    expect(html).toContain("Weather on the day");
+    expect(html).toContain("ticket__weather-icon");
+    expect(html).toContain("Clear");
+    expect(html).toContain("14-22°C");
+    expect(html).toContain("ticket__weather-credit-row");
+    expect(html).toContain("open-meteo.com");
+  });
+
+  it("renders too_far placeholder with section heading", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: {
+        status: "too_far",
+        opens_in_days: 13,
+        horizon_days: 9,
+        attribution: "Weather data by MET Norway",
+      },
+    });
+    expect(html).toContain("Weather on the day");
+    expect(html).toContain("Forecast available 9 days");
+    expect(html).toContain("before the event");
+    expect(html).not.toContain("Forecast available 13 days");
+    expect(html).toContain("ticket__weather-credit-row");
+  });
+
+  it("omits weather when not provided", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx");
+    expect(html).not.toContain("id=\"weather-heading\"");
+    expect(html).not.toContain("Forecast available");
   });
 });

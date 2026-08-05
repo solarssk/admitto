@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { listCheckInEvents } from "@admitto/auth";
-import { serializeEventDto } from "./admin-api-routes.js";
+import { attachWeatherToEventDtos, serializeEventDto } from "./admin-api-routes.js";
 import {
   checkInScan,
   admitAttendee,
@@ -40,12 +40,14 @@ export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Prom
   const events = await listCheckInEvents(db, auth.userId);
 
   if (!includeAttendeeCount) {
-    return c.json({ events: events.map((e) => serializeEventDto(e)) });
+    const dtos = events.map((e) => serializeEventDto(e));
+    return c.json({ events: await attachWeatherToEventDtos(db, events, dtos) });
   }
 
   const countByEvent = await countAttendeesByEvent(db, events.map((e) => e.id));
+  const dtos = events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0));
   return c.json({
-    events: events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0)),
+    events: await attachWeatherToEventDtos(db, events, dtos),
   });
 }
 

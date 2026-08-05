@@ -1,7 +1,8 @@
 import { Link } from "react-router";
-import { Badge, Card } from "@admitto/ui";
+import { Badge, Card, Tooltip } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { eventCardDateParts, eventCardStatus } from "../utils/event-card-status.js";
+import { weatherConditionLabel, weatherIconClass } from "../utils/weather-icon.js";
 
 export interface EventCardProps {
   event: EventDto;
@@ -16,6 +17,64 @@ export interface EventCardProps {
 export function eventGridClassName(count: number): string {
   if (count > 0) return "event-grid event-grid--cols-2";
   return "event-grid";
+}
+
+type WeatherChip = { label: string; tooltip: string; icon: string; text: string };
+
+function weatherChip(event: EventDto): WeatherChip | null {
+  const w = event.weather;
+  if (!w) {
+    if (event.has_coordinates === true) {
+      return {
+        label: "No weather",
+        tooltip:
+          "No forecast for this event. Weather may be off under Organisation settings > External services, or the event day is outside the provider horizon.",
+        icon: "ti ti-cloud-off",
+        text: "-°",
+      };
+    }
+    return null;
+  }
+  if (w.status === "ok" && w.temp_c != null) {
+    const condition = weatherConditionLabel(w.weather_code);
+    const range =
+      w.temp_min_c != null ? `${w.temp_min_c}° to ${w.temp_c}°C` : `${w.temp_c}°C`;
+    const credit = w.attribution?.trim() || "Weather data";
+    return {
+      label: `Forecast ${w.temp_c}°C`,
+      tooltip: `${condition}, ${range}.\n${credit}.`,
+      icon: weatherIconClass(w.weather_code),
+      text: `${w.temp_c}°`,
+    };
+  }
+  if (w.status === "too_far") {
+    const horizon = w.horizon_days ?? 0;
+    const opensIn = w.opens_in_days ?? 0;
+    const when =
+      horizon > 0
+        ? `Forecast available ${horizon} day${horizon === 1 ? "" : "s"} before the event`
+        : "Forecast not available yet";
+    const countdown =
+      opensIn > 0
+        ? ` Shows in about ${opensIn} day${opensIn === 1 ? "" : "s"}.`
+        : "";
+    return {
+      label: when,
+      tooltip: `${when}.${countdown}`,
+      icon: "ti ti-cloud-question",
+      text: "-°",
+    };
+  }
+  if (w.status === "unavailable") {
+    return {
+      label: "Weather unavailable",
+      tooltip:
+        "Forecast could not be loaded. Check the weather provider under Organisation settings > External services (MET Norway needs Support contact for the API User-Agent).",
+      icon: "ti ti-cloud-off",
+      text: "-°",
+    };
+  }
+  return null;
 }
 
 /** Event card shared by the admin (`/admin`) and operator (`/operator`) pickers.
@@ -44,6 +103,7 @@ export function EventCard({
   const attendeeCount = event.attendee_count;
   const mapPlaceholderLabel = hasPin && !mapSrc ? "Maps unavailable" : "No location";
   const mapAttribution = event.map_attribution?.trim() || "© OpenStreetMap";
+  const weather = weatherChip(event);
 
   return (
     <Link to={href} state={{ event }} className="event-card-link">
@@ -68,10 +128,14 @@ export function EventCard({
               <span>{mapPlaceholderLabel}</span>
             </div>
           )}
-          <div className="event-card__weather" aria-label="Weather forecast coming soon">
-            <i className="ti ti-cloud" aria-hidden="true" />
-            <span>—°</span>
-          </div>
+          {weather && (
+            <Tooltip content={weather.tooltip} className="event-card__weather-tip">
+              <div className="event-card__weather" aria-label={weather.label}>
+                <i className={weather.icon} aria-hidden="true" />
+                <span>{weather.text}</span>
+              </div>
+            </Tooltip>
+          )}
         </div>
 
         <div className="event-card__body">

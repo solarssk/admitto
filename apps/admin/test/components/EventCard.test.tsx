@@ -248,9 +248,45 @@ describe("EventCard", () => {
     expect(document.querySelector(".event-card__map-attribution")).toBeNull();
   });
 
-  it("includes a weather coming-soon placeholder on the map", () => {
-    renderCard();
-    expect(screen.getByLabelText("Weather forecast coming soon")).toBeTruthy();
+  it("hides the weather chip when weather is omitted and there is no pin", () => {
+    renderCard({}, { ...baseEvent, has_coordinates: false, map_preview_path: null });
+    expect(document.querySelector(".event-card__weather")).toBeNull();
+  });
+
+  it("shows a no-weather chip with a tooltip when a pin exists but weather is omitted", () => {
+    renderCard({}, { ...baseEvent, has_coordinates: true, weather: undefined });
+    expect(screen.getByLabelText("No weather")).toBeTruthy();
+  });
+
+  it("shows forecast temperature when weather status is ok", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 22,
+          temp_min_c: 14,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    expect(screen.getByLabelText("Forecast 22°C")).toBeTruthy();
+    expect(screen.getByText("22°")).toBeTruthy();
+  });
+
+  it("shows a soft chip when forecast is too far out", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "too_far", opens_in_days: 5, horizon_days: 9 },
+      },
+    );
+    expect(
+      screen.getByLabelText("Forecast available 9 days before the event"),
+    ).toBeTruthy();
   });
 
   it("does not render Archive or Unarchive actions", () => {

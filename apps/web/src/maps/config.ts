@@ -1,14 +1,14 @@
 /**
- * Deployment-level config for the Location tab's map tiles and geocoding provider.
- * All values are operator-configured env vars (self-hosting deploy config), never
- * per-organization or request-supplied - same trust model as BASE_URL/DATABASE_URL.
+ * Map tile and geocoding config. Organisation Settings → External services (UI) is the
+ * operator source of truth via the process cache refreshed from SystemSettings. Built-in
+ * defaults apply when no UI row exists. Env-like bags remain for unit tests.
  */
 
 import { isLocationMapsEnabled } from "@admitto/location";
 
 type EnvLike = Record<string, string | undefined>;
 
-/** Default OSM raster tiles. Override with MAP_TILE_URL for CARTO / a self-hosted tile server. */
+/** Default OSM raster tiles. */
 const DEFAULT_MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const DEFAULT_MAP_TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
@@ -29,6 +29,22 @@ export interface GeocodingConfig {
   provider: string;
   baseUrl: string;
   timeoutMs: number;
+}
+
+export interface MapsRuntimeConfig {
+  tiles: MapTileConfig;
+  geocoding: GeocodingConfig;
+}
+
+/** Live process cache (UI / SystemSettings). Null until boot refresh or first save. */
+let mapsRuntimeCache: MapsRuntimeConfig | null = null;
+
+export function getMapsConfigCache(): MapsRuntimeConfig | null {
+  return mapsRuntimeCache;
+}
+
+export function setMapsConfigCache(config: MapsRuntimeConfig | null): void {
+  mapsRuntimeCache = config;
 }
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -74,11 +90,48 @@ export function isStaffSpaCompatibleTileUrl(raw: string, env: EnvLike = process.
   return false;
 }
 
-/** Map tile server config for the Leaflet-based Location tab (and any future map view). */
+/** Built-in OSM defaults (operator path when no UI row; ignores LOCATION_MAPS_*). */
+export function defaultMapTileConfig(_env: EnvLike = process.env): MapTileConfig {
+  return {
+    enabled: true,
+    tileUrl: DEFAULT_MAP_TILE_URL,
+    attribution: DEFAULT_MAP_TILE_ATTRIBUTION,
+    maxZoom: DEFAULT_MAP_TILE_MAX_ZOOM,
+  };
+}
+
+/** Built-in Nominatim defaults. Timeout may still follow env for infra tuning. */
+export function defaultGeocodingConfig(env: EnvLike = process.env): GeocodingConfig {
+  return {
+    provider: DEFAULT_GEOCODING_PROVIDER,
+    baseUrl: DEFAULT_GEOCODING_BASE_URL,
+    timeoutMs: parsePositiveInt(env["GEOCODING_TIMEOUT_MS"], DEFAULT_GEOCODING_TIMEOUT_MS),
+  };
+}
+
+/**
+ * Resolve map tiles for the live process: UI cache when loaded, otherwise env-like bag
+ * (tests) or built-in defaults.
+ */
 export function resolveMapTileConfig(env: EnvLike = process.env): MapTileConfig {
+  if (mapsRuntimeCache && env === process.env) return mapsRuntimeCache.tiles;
+  // Live process without cache yet: built-in defaults (UI loads at boot). Env bags are
+  // only for unit tests that pass an explicit object.
+  if (env === process.env) return defaultMapTileConfig(env);
+
   const rawUrl = env["MAP_TILE_URL"]?.trim();
   const tileUrl =
     rawUrl && isStaffSpaCompatibleTileUrl(rawUrl, env) ? rawUrl : DEFAULT_MAP_TILE_URL;
+  const hasMapsEnv =
+    env["LOCATION_MAPS_ENABLED"] != null ||
+    env["MAP_TILE_URL"] != null ||
+    env["MAP_TILE_ATTRIBUTION"] != null ||
+    env["MAP_TILE_MAX_ZOOM"] != null;
+
+  if (!hasMapsEnv) {
+    return defaultMapTileConfig(env);
+  }
+
   return {
     enabled: isLocationMapsEnabled(env),
     tileUrl,
@@ -87,9 +140,20 @@ export function resolveMapTileConfig(env: EnvLike = process.env): MapTileConfig 
   };
 }
 
-/** Geocoding provider config. Only "nominatim" is implemented; the env var exists so a
- * future provider can be swapped in without an app.ts wiring change. */
+/** Geocoding config: UI cache when loaded, else env-like / defaults. */
 export function resolveGeocodingConfig(env: EnvLike = process.env): GeocodingConfig {
+  if (mapsRuntimeCache && env === process.env) return mapsRuntimeCache.geocoding;
+  if (env === process.env) return defaultGeocodingConfig(env);
+
+  const hasGeoEnv =
+    env["GEOCODING_PROVIDER"] != null ||
+    env["GEOCODING_BASE_URL"] != null ||
+    env["GEOCODING_TIMEOUT_MS"] != null;
+
+  if (!hasGeoEnv) {
+    return defaultGeocodingConfig(env);
+  }
+
   return {
     provider: env["GEOCODING_PROVIDER"]?.trim() || DEFAULT_GEOCODING_PROVIDER,
     baseUrl: (env["GEOCODING_BASE_URL"]?.trim() || DEFAULT_GEOCODING_BASE_URL).replace(/\/$/, ""),

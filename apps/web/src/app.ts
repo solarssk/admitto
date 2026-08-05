@@ -25,7 +25,12 @@ import {
   resolveDisplayToken,
 } from "./ticket-page.js";
 import { EventStaticMapService } from "./maps/event-static-map-service.js";
-import { resolveGeocodingConfig, resolveMapTileConfig } from "./maps/config.js";
+import { resolveGeocodingConfig, resolveMapTileConfig, setMapsConfigCache } from "./maps/config.js";
+import {
+  builtInMapsConfig,
+  refreshMapsConfigCache,
+} from "./maps/maps-org-settings.js";
+import { createWeatherServiceFromDb } from "./weather/weather-org-settings.js";
 import {
   parseEventIdFromStaticMapFilename,
   staticMapCacheControl,
@@ -242,6 +247,13 @@ import {
   handlePostGeocodingTimezone,
 } from "./admin/geocoding-routes.js";
 import { handleGetMapsConfig } from "./admin/maps-config-routes.js";
+import {
+  handleGetExternalServices,
+  handlePutWeatherSettings,
+  handlePutMapsSettings,
+  handlePostWeatherTest,
+  handlePostMapsTest,
+} from "./admin/external-services-routes.js";
 import { buildGeocodingUserAgent } from "./maps/user-agent.js";
 import { NominatimProvider } from "./maps/nominatim-provider.js";
 import { createGeocodingCache } from "./maps/geocoding-cache.js";
@@ -406,16 +418,21 @@ export function createApp(options: CreateAppOptions = {}) {
   const checkinAuthDeps = { prisma: db, config: checkinGateConfig };
   const mailDeliveryDeps = options.mailDeliveryDeps ?? {};
   const mailProbeDeps = options.mailProbeDeps ?? {};
-  const geocodingConfig = resolveGeocodingConfig();
   const geocodingProvider: GeocodingProvider =
     options.geocodingProvider ??
     new NominatimProvider({
-      baseUrl: geocodingConfig.baseUrl,
-      timeoutMs: geocodingConfig.timeoutMs,
+      baseUrl: () => resolveGeocodingConfig().baseUrl,
+      timeoutMs: () => resolveGeocodingConfig().timeoutMs,
       buildUserAgent: () => buildGeocodingUserAgent(db),
     });
   const geocodingService = new GeocodingService(geocodingProvider, createGeocodingCache());
   const eventStaticMapService = options.eventStaticMapService ?? new EventStaticMapService();
+
+  // UI maps settings into the sync cache used by list cards / static maps / health.
+  void refreshMapsConfigCache(db).catch((err) => {
+    console.error("maps config cache refresh failed:", err);
+    setMapsConfigCache(builtInMapsConfig());
+  });
 
   const app = new Hono();
   // Catch route errors once with enough request context in System logs. Keep raw exception
@@ -610,11 +627,25 @@ export function createApp(options: CreateAppOptions = {}) {
     const displayToken = resolveDisplayToken(internalToken, agencyPublicRef);
 
     const mapTiles = resolveMapTileConfig();
+    let weather = null;
+    try {
+      const weatherService = await createWeatherServiceFromDb(db);
+      weather = await weatherService.summarize({
+        latitude: resolvedForDisplay.event.latitude,
+        longitude: resolvedForDisplay.event.longitude,
+        date: resolvedForDisplay.event.date,
+        timezone: resolvedForDisplay.event.timezone || "UTC",
+      });
+    } catch (err) {
+      console.error("weather summarize failed for ticket page:", err);
+      weather = null;
+    }
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
         staticMapEnabled: mapTiles.enabled,
+        weather,
       }),
       200,
       theme,
@@ -755,6 +786,35 @@ export function createApp(options: CreateAppOptions = {}) {
     (c) => handlePostGeocodingTimezone(c),
   );
   app.get("/api/admin/maps/config", staffAdminGate, (c) => handleGetMapsConfig(c, db));
+  app.get("/api/admin/external-services", staffAdminGate, (c) => handleGetExternalServices(c, db));
+  app.put(
+    "/api/admin/external-services/weather",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutWeatherSettings(c, db),
+  );
+  app.put(
+    "/api/admin/external-services/maps",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutMapsSettings(c, db),
+  );
+  app.post(
+    "/api/admin/external-services/weather/test",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePostWeatherTest(c, db),
+  );
+  app.post(
+    "/api/admin/external-services/maps/test",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePostMapsTest(c, db),
+  );
   app.post(
     "/api/admin/events/:eventId/branding-upload",
     jsonPostCsrf,
