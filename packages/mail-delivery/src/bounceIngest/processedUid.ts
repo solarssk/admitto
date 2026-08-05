@@ -45,7 +45,10 @@ export async function listProcessedUids(
   return new Set(rows.map((r) => r.uid));
 }
 
-/** Delete BounceIngestProcessedUid rows older than the IMAP lookback window. */
+/**
+ * Delete UID markers older than the IMAP lookback window. A successful ingest
+ * bounds this table to UIDs seen during the rolling lookback period.
+ */
 export async function pruneProcessedUidsOlderThan(
   db: PrismaClient,
   since: Date = lookbackSince(),

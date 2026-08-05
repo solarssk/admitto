@@ -217,6 +217,7 @@ async function ingestEvent(
   db: PrismaClient,
   settings: BounceIngestSettings,
   options: IngestBouncesOptions,
+  since: Date,
 ): Promise<IngestSummary> {
   const summary = emptySummary();
   const log = options.log ?? console.error;
@@ -233,7 +234,6 @@ async function ingestEvent(
   }
 
   summary.eventsProcessed += 1;
-  const since = lookbackSince();
 
   try {
     for (const folder of parseFolders(settings.folders)) {
@@ -299,26 +299,28 @@ export async function ingestBounces(
   db: PrismaClient,
   options: IngestBouncesOptions = {},
 ): Promise<IngestSummary> {
+  const since = lookbackSince();
   const resolved = await resolveRowsToProcess(db, options);
+
+  // Keep UID retention aligned with this run's IMAP lookback, including no-op
+  // runs after all event settings are disabled.
+  try {
+    await pruneProcessedUidsOlderThan(db, since);
+  } catch (err) {
+    (options.log ?? console.error)(
+      `[bounce-ingest] prune processed UIDs failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   if ("noop" in resolved) return resolved.noop;
 
   const perEvent = await mapSettledInChunks(resolved.rows, INGEST_EVENT_CONCURRENCY, (settings) =>
-    ingestEvent(db, settings, options),
+    ingestEvent(db, settings, options, since),
   );
 
   const summary = emptySummary();
   for (const part of perEvent) {
     mergeSummaries(summary, part);
-  }
-
-  // Drop UID markers older than the IMAP lookback window (best-effort; do not
-  // inflate summary.errors / CLI exit - prune is maintenance, not ingest failure).
-  try {
-    await pruneProcessedUidsOlderThan(db);
-  } catch (err) {
-    (options.log ?? console.error)(
-      `[bounce-ingest] prune processed UIDs failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
   }
 
   return summary;

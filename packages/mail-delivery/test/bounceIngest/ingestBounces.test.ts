@@ -86,6 +86,9 @@ describe("ingestBounces", () => {
       bounceIngestSettings: {
         findUnique: vi.fn().mockResolvedValue(null),
       },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
     } as never;
 
     const summary = await ingestBounces(db, { eventId: "evt_missing" });
@@ -98,6 +101,9 @@ describe("ingestBounces", () => {
     const db = {
       bounceIngestSettings: {
         findUnique: vi.fn().mockResolvedValue(row),
+      },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     } as never;
 
@@ -337,15 +343,27 @@ describe("ingestBounces", () => {
     expect(summary.messagesSeen).toBe(2);
   });
 
-  it("returns none_enabled when no eventId and nothing is enabled", async () => {
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([]),
-      },
-    } as never;
+  it("prunes UIDs at the IMAP lookback boundary even when nothing is enabled", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-05T10:00:00.000Z"));
+    try {
+      const deleteMany = vi.fn().mockResolvedValue({ count: 3 });
+      const db = {
+        bounceIngestSettings: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+        bounceIngestProcessedUid: { deleteMany },
+      } as never;
 
-    const summary = await ingestBounces(db, {});
-    expect(summary.noopReason).toBe("none_enabled");
+      const summary = await ingestBounces(db, {});
+
+      expect(summary.noopReason).toBe("none_enabled");
+      expect(deleteMany).toHaveBeenCalledWith({
+        where: { processed_at: { lt: new Date("2026-07-22T10:00:00.000Z") } },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("skips already-processed UIDs", async () => {
@@ -675,6 +693,9 @@ describe("ingestBounces", () => {
     const db = {
       bounceIngestSettings: {
         findUnique: vi.fn().mockResolvedValue(row),
+      },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     } as never;
 
