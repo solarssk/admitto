@@ -1,7 +1,6 @@
 /**
  * Redis→in-memory fail-open cache for daily forecast summaries (same shape as geocoding).
  */
-import { createHash } from "node:crypto";
 import {
   InMemoryTtlStringCache,
   RedisTtlStringCache,
@@ -90,19 +89,18 @@ export async function resetSharedWeatherCacheForTests(): Promise<void> {
 }
 
 /**
- * Scope forecasts by provider + Open-Meteo host/credentials so a settings change cannot
- * reuse another host's day row. API key is hashed (never stored cleartext in Redis keys).
+ * Scope forecasts by provider + Open-Meteo host so a base-URL change cannot reuse
+ * another host's day row. Do not fingerprint the API key here: CodeQL treats SHA-*/MD5
+ * of secrets as insufficient password hashing, and forecast payloads for a given host
+ * do not depend on which organisation key fetched them.
  */
 export function weatherConfigCacheScope(config: {
   provider: string;
   baseUrl: string;
-  apiKey: string | null;
 }): string {
   if (config.provider === "metno") return "metno";
   const base = config.baseUrl.replace(/\/$/, "").toLowerCase();
-  if (!config.apiKey) return `om:${base}:n`;
-  const digest = createHash("sha256").update(config.apiKey).digest("hex").slice(0, 12);
-  return `om:${base}:k${digest}`;
+  return `om:${base}`;
 }
 
 /** Round coords so nearby events share a cache entry (~1 km). */
