@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **Bounce IMAP MIME extraction uses libmime / libqp / iconv-lite** for quoted-printable, base64, and charset decoding (including ISO-8859-1 and windows-1252 NDR parts), instead of a UTF-8-only hand-rolled decoder. RFC 2047 encoded-words in part headers are decoded before walking the MIME tree.
+- **Bounce IMAP MIME extraction uses libmime / libqp / iconv-lite** for quoted-printable, base64, and charset decoding (including ISO-8859-1 and windows-1252 NDR parts), instead of a UTF-8-only hand-rolled decoder. RFC 2047 encoded-words in part headers are decoded before walking the MIME tree. JS string sources are encoded as UTF-8 octets before the binary walk so unescaped non-ASCII in 8bit bodies (e.g. `boîte`) is preserved.
 
 ### Fixed
 - **Also verify bounce only counts NDRs that arrived for this check**, not an older hard bounce for the same test address still sitting in the 14-day IMAP window (which previously could report success while forwarding was broken).

@@ -62,10 +62,15 @@ export function stripHtmlTagsSafely(html: string): string {
     .join("\n");
 }
 
-/** Keep source as binary-safe string until charset is known (latin1 = byte↔char 1:1). */
+/** Keep source as a latin1 byte string until charset is known.
+ * Buffers/Uint8Arrays are treated as raw octets. JS strings are Unicode: encode
+ * as UTF-8 first so 8bit/7bit and libqp see real octets (e.g. `î` → C3 AE), not
+ * UTF-16 code units misread as latin1 bytes (`î` → EE → mojibake). */
 function sourceToBinaryString(source: Buffer | Uint8Array | string | undefined): string {
   if (!source) return "";
-  if (typeof source === "string") return source.slice(0, MAX_BODY_BYTES);
+  if (typeof source === "string") {
+    return Buffer.from(source, "utf8").subarray(0, MAX_BODY_BYTES).toString("binary");
+  }
   const buf = Buffer.from(source).subarray(0, MAX_BODY_BYTES);
   return buf.toString("binary");
 }
