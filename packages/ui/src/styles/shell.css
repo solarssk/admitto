@@ -78,9 +78,9 @@ html:has(.shell), body:has(.shell) {
   text-decoration: none;
 }
 
-/* Full product wordmark (mark + Admitto in one SVG). The separate .brand-link__mark is
-   for the collapsed rail only — see the (max-width) block below. Height matches the
-   previous 28px mark so the brand row still aligns with the topbar (#454). */
+/* Full product wordmark (mark + Admitto in one SVG). Used on the expanded desktop
+   sidebar and the mobile topbar. Collapsed / tablet rail keeps the mark alone at a
+   fixed 28px so it cannot stretch to the rail width. */
 .brand-link__logo {
   display: block;
   height: 28px;
@@ -90,10 +90,17 @@ html:has(.shell), body:has(.shell) {
 
 .brand-link__mark {
   display: none;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
 }
 
 .topbar__brand .brand-link__logo {
+  height: 24px;
+}
+
+.topbar__brand .brand-link__mark {
+  width: 24px;
   height: 24px;
 }
 
@@ -772,14 +779,17 @@ html:has(.shell), body:has(.shell) {
     font-size: 20px;
   }
 
-  /* Collapsed sidebar rail: mark only. Do not apply to .topbar__brand — that link is
-     shown while the drawer is closed on mobile/tablet and should keep the full wordmark. */
-  .shell:not(.shell--nav-open) .sidebar__brand .brand-link__logo {
+  /* Tablet sidebar (rail or temporarily expanded): always the 28px mark, never the
+     wordmark. Swapping logo↔mark when toggling labels made the brand jump in size;
+     the rail is also too narrow for the wordmark. Desktop (≥1280px) keeps the logo. */
+  .sidebar__brand .brand-link__logo {
     display: none;
   }
 
-  .shell:not(.shell--nav-open) .sidebar__brand .brand-link__mark {
+  .sidebar__brand .brand-link__mark {
     display: block;
+    width: 28px;
+    height: 28px;
   }
 
   .shell:not(.shell--nav-open) .nav-item span,
