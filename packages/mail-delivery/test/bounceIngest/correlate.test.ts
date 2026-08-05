@@ -33,6 +33,22 @@ describe("findDeliveriesForBounceBatch", () => {
     expect(map.size).toBe(2);
   });
 
+  it("skips rows with a null recipient_email", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      { id: "null_email", recipient_email: null, queued_at: new Date("2026-08-02") },
+      { id: "ok", recipient_email: "ok@example.com", queued_at: new Date("2026-08-01") },
+    ]);
+    const db = { emailDelivery: { findMany } } as never;
+
+    const map = await findDeliveriesForBounceBatch(db, {
+      eventId: "evt_1",
+      recipientEmails: ["ok@example.com"],
+    });
+
+    expect(map.size).toBe(1);
+    expect(map.get("ok@example.com")?.id).toBe("ok");
+  });
+
   it("returns an empty map when there are no emails", async () => {
     const findMany = vi.fn();
     const db = { emailDelivery: { findMany } } as never;

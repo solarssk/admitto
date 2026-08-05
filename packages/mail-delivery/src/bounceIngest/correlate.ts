@@ -42,6 +42,7 @@ export async function findDeliveriesForBounceBatch(
 
   const byRecipient = new Map<string, EmailDelivery>();
   for (const row of rows) {
+    if (!row.recipient_email) continue;
     const key = normalizeBounceRecipientEmail(row.recipient_email);
     if (!key || byRecipient.has(key)) continue;
     byRecipient.set(key, row);
