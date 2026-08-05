@@ -555,7 +555,7 @@ describe("renderTicket weather", () => {
     expect(html).toContain("Weather on the day");
     expect(html).toContain("ticket__weather-icon");
     expect(html).toContain("Clear");
-    expect(html).toContain("14-22°C");
+    expect(html).toContain("14-22°C (57-72°F)");
     expect(html).toContain("ticket__weather-credit-row");
     expect(html).toContain("open-meteo.com");
   });
@@ -597,7 +597,7 @@ describe("renderTicket weather", () => {
     expect(html).not.toContain("Forecast available");
   });
 
-  it("renders ok temp without min as a single °C", () => {
+  it("renders ok temp without min as Celsius and Fahrenheit", () => {
     const html = renderTicket(base, "data:image/png;base64,xx", null, {
       weather: {
         status: "ok",
@@ -606,7 +606,7 @@ describe("renderTicket weather", () => {
         attribution: "Weather data by Open-Meteo.com",
       },
     });
-    expect(html).toContain("22°C");
+    expect(html).toContain("22°C (72°F)");
     expect(html).not.toContain("14-22°C");
   });
 
