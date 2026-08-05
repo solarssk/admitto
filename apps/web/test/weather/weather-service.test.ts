@@ -4,7 +4,6 @@ import {
   FORECAST_HORIZON_DAYS_OPENMETEO,
   InMemoryWeatherCache,
   WeatherService,
-  WeatherProviderError,
   eventDateYmd,
   forecastHorizonDays,
   getWeatherService,
