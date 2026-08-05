@@ -19,21 +19,20 @@ const {
 }));
 
 vi.mock("@admitto/auth", () => ({
-  canManageInstance: (...args: unknown[]) => canManageInstance(...args),
+  canManageInstance,
 }));
 
 vi.mock("../../src/weather/weather-org-settings.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/weather/weather-org-settings.js")>();
   return {
     ...actual,
-    resolveEffectiveWeatherConfig: (...args: unknown[]) =>
-      resolveEffectiveWeatherConfig(...args),
+    resolveEffectiveWeatherConfig,
   };
 });
 
 vi.mock("../../src/maps/user-agent.js", () => ({
-  isGeocodingContactConfigured: (...args: unknown[]) => isGeocodingContactConfigured(...args),
-  buildGeocodingUserAgent: (...args: unknown[]) => buildGeocodingUserAgent(...args),
+  isGeocodingContactConfigured,
+  buildGeocodingUserAgent,
 }));
 
 vi.mock("../../src/weather/weather-service.js", () => ({
