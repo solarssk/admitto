@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 
 /** Props for {@link CreateTemplateDialog}. */
 export interface CreateTemplateDialogProps {
@@ -19,6 +20,8 @@ export function CreateTemplateDialog({
 }: Readonly<CreateTemplateDialogProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   const submittingRef = useRef(false);
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +58,7 @@ export function CreateTemplateDialog({
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={busy ? undefined : onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
+      <div className="add-attendee-modal__scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           New template
         </h2>
@@ -87,6 +91,7 @@ export function CreateTemplateDialog({
             {busy ? "Creating…" : "Create"}
           </Button>
         </div>
+      </div>
       </div>
     </dialog>
   );

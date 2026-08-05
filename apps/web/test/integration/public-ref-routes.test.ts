@@ -117,7 +117,7 @@ describe("Mode B public routes — public_ref", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Weather on the day");
-    expect(html).toContain("12-18°C (54-64°F)");
+    expect(html).toContain("12-18°C");
     expect(summarize).toHaveBeenCalledWith(
       expect.objectContaining({
         timezone: "UTC",

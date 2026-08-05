@@ -1,11 +1,5 @@
 import { Link } from "react-router";
 import { Badge, Card, Tooltip } from "@admitto/ui";
-import {
-  formatTempForUnit,
-  formatTempRangeForUnit,
-  tempUnitFromTimeZone,
-  type TempUnit,
-} from "@admitto/shared";
 import type { EventDto } from "../api/types.js";
 import { eventCardDateParts, eventCardStatus } from "../utils/event-card-status.js";
 import { weatherConditionLabel, weatherIconClass } from "../utils/weather-icon.js";
@@ -16,11 +10,6 @@ export interface EventCardProps {
   touch?: boolean;
   showStatusBadge?: boolean;
   showAttendeeCount?: boolean;
-  /**
-   * IANA timezone for °C/°F on the weather chip (operator browser zone).
-   * Defaults to `Intl` resolved timezone when omitted.
-   */
-  operatorTimeZone?: string;
 }
 
 /** Responsive column count for an `.event-grid` of event cards, shared by the
@@ -36,16 +25,16 @@ function formatDayCount(n: number): string {
   return `${n} day${n === 1 ? "" : "s"}`;
 }
 
-function weatherChipOk(w: NonNullable<EventDto["weather"]>, unit: TempUnit): WeatherChip {
+function weatherChipOk(w: NonNullable<EventDto["weather"]>): WeatherChip {
   const condition = weatherConditionLabel(w.weather_code);
-  const range = formatTempRangeForUnit(w.temp_min_c, w.temp_c!, unit);
+  const range =
+    w.temp_min_c != null ? `${w.temp_min_c}° to ${w.temp_c}°C` : `${w.temp_c}°C`;
   const credit = w.attribution?.trim() || "Weather data";
-  const primary = formatTempForUnit(w.temp_c!, unit);
   return {
-    label: `Forecast ${primary}`,
+    label: `Forecast ${w.temp_c}°C`,
     tooltip: `${condition}, ${range}.\n${credit}.`,
     icon: weatherIconClass(w.weather_code),
-    text: primary,
+    text: `${w.temp_c}°`,
   };
 }
 
@@ -65,7 +54,7 @@ function weatherChipTooFar(w: NonNullable<EventDto["weather"]>): WeatherChip {
   };
 }
 
-function weatherChip(event: EventDto, unit: TempUnit): WeatherChip | null {
+function weatherChip(event: EventDto): WeatherChip | null {
   const w = event.weather;
   if (!w) {
     if (event.has_coordinates === true) {
@@ -79,7 +68,7 @@ function weatherChip(event: EventDto, unit: TempUnit): WeatherChip | null {
     }
     return null;
   }
-  if (w.status === "ok" && w.temp_c != null) return weatherChipOk(w, unit);
+  if (w.status === "ok" && w.temp_c != null) return weatherChipOk(w);
   if (w.status === "too_far") return weatherChipTooFar(w);
   if (w.status === "unavailable") {
     return {
@@ -102,7 +91,6 @@ export function EventCard({
   touch,
   showStatusBadge,
   showAttendeeCount,
-  operatorTimeZone,
 }: Readonly<EventCardProps>) {
   const cardClassName = [
     "event-card",
@@ -120,10 +108,7 @@ export function EventCard({
   const attendeeCount = event.attendee_count;
   const mapPlaceholderLabel = hasPin && !mapSrc ? "Maps unavailable" : "No location";
   const mapAttribution = event.map_attribution?.trim() || "© OpenStreetMap";
-  // Prop is test-only; production always uses the browser IANA zone.
-  const timeZone =
-    operatorTimeZone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const weather = weatherChip(event, tempUnitFromTimeZone(timeZone));
+  const weather = weatherChip(event);
 
   return (
     <Link to={href} state={{ event }} className="event-card-link">

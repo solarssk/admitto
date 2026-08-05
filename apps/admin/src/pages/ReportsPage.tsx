@@ -68,7 +68,7 @@ interface ReportsExportMenuProps {
  * "+ Add attendee"/"Send tickets") so it keeps sitting beside the title instead of forcing the
  * header to stack (reports-pageheader override in reports-page.css). */
 function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Readonly<ReportsExportMenuProps>) {
-  const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="reports-export-menu" ref={rootRef}>
@@ -86,7 +86,11 @@ function ReportsExportMenu({ exportingCsv, disabled, isDesktop, onExport }: Read
         {isDesktop ? "Export report" : "Export"}
       </Button>
       {open && (
-        <div className="reports-export-menu__panel" role="menu" ref={panelRef}>
+        <div
+          className={`reports-export-menu__panel${openUpward ? " reports-export-menu__panel--up" : ""}`}
+          role="menu"
+          ref={panelRef}
+        >
           {EXPORT_FORMATS.map((format) => {
             const busy = format.key === "csv" && exportingCsv;
             return (

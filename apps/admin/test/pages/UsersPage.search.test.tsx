@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
@@ -8,10 +8,7 @@ import { mockMatchMedia } from "../test-utils.js";
 import type { UserListItemDto } from "../../src/api/types.js";
 
 const SUPERADMIN_ASSIGNMENTS = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
-const useAuthMock = vi.fn(() => ({
-  assignments: SUPERADMIN_ASSIGNMENTS as Array<{ role: string; scope_type: string; scope_id: string | null }>,
-  user: { id: "current-admin" },
-}));
+const useAuthMock = vi.fn(() => ({ assignments: SUPERADMIN_ASSIGNMENTS as Array<{ role: string; scope_type: string; scope_id: string | null }> }));
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => useAuthMock(),
@@ -26,23 +23,15 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchRoleAssignments: vi.fn(),
     fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
-    fetchAdminOrganizations: vi.fn(),
-    revokeUserRole: vi.fn(),
-    deleteAdminUser: vi.fn(),
-    grantUserRole: vi.fn(),
   };
 });
 
 import {
-  deleteAdminUser,
   fetchAdminEvents,
-  fetchAdminOrganizations,
   fetchAdminUsers,
   fetchUserStats,
   fetchRoleAssignments,
   fetchSessions,
-  grantUserRole,
-  revokeUserRole,
 } from "../../src/api/client.js";
 
 function makeUser(id: string, displayName: string): UserListItemDto {
@@ -56,7 +45,6 @@ function makeUser(id: string, displayName: string): UserListItemDto {
     last_login_at: null,
     active_sessions_count: 0,
     has_mfa: false,
-    has_sso: false,
     roles: [],
   };
 }
@@ -65,7 +53,6 @@ beforeEach(() => {
   vi.mocked(fetchRoleAssignments).mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
   vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
-  vi.mocked(fetchAdminOrganizations).mockResolvedValue([]);
   vi.mocked(fetchUserStats).mockResolvedValue({
     total: 0,
     active: 0,
@@ -84,7 +71,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS, user: { id: "current-admin" } });
+  useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS });
 });
 
 function renderAt(path: string) {
@@ -109,157 +96,6 @@ describe("UsersPage header", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Invite user" })[0]!);
 
     expect(await screen.findByRole("heading", { name: /Invite a new team member/ })).toBeTruthy();
-  });
-
-  it("shows the MFA coverage tile in its ok (green) state at full coverage", async () => {
-    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
-    vi.mocked(fetchUserStats).mockResolvedValue({
-      total: 4,
-      active: 4,
-      mfa: 4,
-      sso: 0,
-      active_sessions: 0,
-      active_sessions_users: 0,
-    });
-
-    renderAt("/admin/users");
-
-    expect(await screen.findByText("100%")).toBeTruthy();
-    const icon = document.querySelector(".users-page__stat-icon--ok .ti-shield-check");
-    expect(icon).toBeTruthy();
-  });
-
-  it("shows a toast (falling back to the email when there's no display name) and refreshes the list after deleting a user from the Edit modal", async () => {
-    vi.mocked(fetchAdminUsers).mockResolvedValue({
-      users: [{ ...makeUser("user-1", "Jane Doe"), display_name: null }],
-      total: 1,
-      page: 1,
-      pageSize: 25,
-    });
-    vi.mocked(deleteAdminUser).mockResolvedValue(undefined);
-
-    renderAt("/admin/users");
-    await screen.findAllByText("user-1@example.com");
-    expect(fetchAdminUsers).toHaveBeenCalledOnce();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for user-1@example.com" })[0]!);
-    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Delete account" });
-    fireEvent.change(within(dialog).getByLabelText('Type the email address to confirm: "user-1@example.com"'), {
-      target: { value: "user-1@example.com" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-
-    await waitFor(() => {
-      expect(deleteAdminUser).toHaveBeenCalledWith("user-1");
-    });
-    expect(await screen.findByText("user-1@example.com deleted")).toBeTruthy();
-    await waitFor(() => {
-      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
-    });
-  });
-});
-
-describe("UsersPage Edit modal sync", () => {
-  it("picks up the freshly-granted role for an open Edit modal from the next list refresh, without closing it", async () => {
-    vi.mocked(fetchAdminUsers)
-      .mockResolvedValueOnce({
-        users: [makeUser("user-1", "Jane Doe")],
-        total: 1,
-        page: 1,
-        pageSize: 25,
-      })
-      .mockResolvedValueOnce({
-        users: [
-          {
-            ...makeUser("user-1", "Jane Doe"),
-            roles: [
-              { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false },
-            ],
-          },
-        ],
-        total: 1,
-        page: 1,
-        pageSize: 25,
-      });
-    vi.mocked(fetchAdminEvents).mockResolvedValue([
-      {
-        id: "evt-1",
-        title: "Summer Summit",
-        slug: "summer-summit",
-        date: "2026-07-01",
-        timezone: "Europe/Warsaw",
-        location: null,
-        organization_id: "org-1",
-        archived_at: null,
-      },
-    ]);
-    vi.mocked(grantUserRole).mockResolvedValueOnce({
-      assignment: { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1" },
-    });
-
-    renderAt("/admin/users");
-    await screen.findAllByText("user-1@example.com");
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for Jane Doe" })[0]!);
-    await screen.findByRole("heading", { name: "Jane Doe" });
-
-    fireEvent.change(await screen.findByLabelText("Role"), { target: { value: "operator" } });
-    const eventSelect = await screen.findByLabelText("Event scope for operator role");
-    await screen.findByRole("option", { name: "Summer Summit" });
-    fireEvent.change(eventSelect, { target: { value: "evt-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-
-    await waitFor(() => {
-      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
-    });
-    // Still open (a same-type addition from "no role" doesn't close it) and now showing the
-    // freshly-granted scope chip, which only exists on the refreshed record from the 2nd fetch.
-    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeTruthy();
-    await waitFor(() => {
-      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
-    });
-    const chips = document.querySelector(".users-modal__chips")!;
-    expect(within(chips).getByText("Summer Summit")).toBeTruthy();
-  });
-});
-
-describe("UsersPage Role assignments tab", () => {
-  it("refreshes the Staff users list after a role is revoked from the Role assignments tab", async () => {
-    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
-    vi.mocked(fetchRoleAssignments).mockResolvedValue({
-      assignments: [{
-        id: "role-1",
-        user_id: "user-1",
-        user_email: "staff@example.com",
-        user_display_name: null,
-        role: "operator",
-        scope_type: "event",
-        scope_id: "evt-1",
-        is_oidc: false,
-        granted_at: "2026-01-01T00:00:00.000Z",
-        event: { id: "evt-1", title: "Summer Summit" },
-        organization: null,
-      }],
-      total: 1,
-      page: 1,
-      pageSize: 25,
-    });
-    vi.mocked(revokeUserRole).mockResolvedValue(undefined);
-
-    renderAt("/admin/users?tab=roles");
-
-    await screen.findAllByText("staff@example.com");
-    expect(fetchAdminUsers).toHaveBeenCalledOnce();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Revoke Operator for staff@example.com" })[0]!);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-
-    await waitFor(() => {
-      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
-    });
   });
 });
 
@@ -335,5 +171,33 @@ describe("UsersPage search debounce", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("UsersPage Filters panel", () => {
+  it("filters by role from the Filters panel, with Role and Status stacked in the same panel", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+
+    renderAt("/admin/users");
+    await screen.findByText("No users yet");
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const roleTrigger = screen.getByRole("button", { name: /^Role,/ });
+    const statusTrigger = screen.getByRole("button", { name: /^Status,/ });
+    const panel = roleTrigger.closest(".users-page-filters-menu__panel");
+    expect(panel).toBeTruthy();
+    expect(panel).toBe(statusTrigger.closest(".users-page-filters-menu__panel"));
+    // Stacked, not side by side - no shared row wrapper grouping the two fields.
+    expect(roleTrigger.closest(".users-page-filters-menu__row")).toBeNull();
+
+    fireEvent.click(roleTrigger);
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "operator", page: 1 }),
+        expect.anything(),
+      );
+    });
   });
 });

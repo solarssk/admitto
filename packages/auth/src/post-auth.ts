@@ -6,7 +6,10 @@ export interface RoleAssignmentLike {
 
 const DEFAULT_OPERATOR_PATH = "/operator";
 const DEFAULT_ADMIN_PATH = "/admin";
-const NO_ACCESS_PATH = "/login";
+/** Landing page when assignments grant no admin/operator surface. My Account only requires a
+ * valid session (not a role), so a no-usable-role user lands there (with a notice) instead of
+ * bouncing back to the login form with no explanation. */
+const NO_ROLE_PATH = "/account";
 
 /** Whether an assignment grants admin-panel access (matches `canAccessAdminPanel` rules). */
 export function isAdminRoleAssignment(a: RoleAssignmentLike): boolean {
@@ -26,7 +29,7 @@ function isOperatorOnly(assignments: RoleAssignmentLike[]): boolean {
 
 /** Default post-login landing path from role assignments. */
 export function resolvePostAuthPath(assignments: RoleAssignmentLike[]): string {
-  if (assignments.length === 0) return NO_ACCESS_PATH;
+  if (assignments.length === 0) return NO_ROLE_PATH;
   if (assignments.some(isAdminRoleAssignment)) {
     return DEFAULT_ADMIN_PATH;
   }
@@ -36,5 +39,5 @@ export function resolvePostAuthPath(assignments: RoleAssignmentLike[]): string {
   if (assignments.some((a) => a.role === "operator")) {
     return DEFAULT_OPERATOR_PATH;
   }
-  return NO_ACCESS_PATH;
+  return NO_ROLE_PATH;
 }

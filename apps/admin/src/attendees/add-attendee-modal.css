@@ -25,12 +25,38 @@
   position: relative;
   width: min(100%, 480px);
   max-height: calc(100vh - 32px);
-  overflow: auto;
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: 12px;
+  /* Scrolling lives on .add-attendee-modal__scroll below, not here - same reasoning and same
+   * split as .identity-modal__panel/__scroll (staff.css): overflow: auto directly on this
+   * rounded box renders the native scrollbar as a hard rectangle cutting across the rounded
+   * corner instead of following it. This is the one shared shell behind 10 modals (Edit user,
+   * Invite user, Add attendee, ...), so this fix (and any future one like it) belongs here
+   * once, not re-litigated per modal. */
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.add-attendee-modal__scroll {
+  overflow: auto;
+  /* No scrollbar-gutter: stable here - unlike .main-scroll (shell.css), where content height
+   * varies across navigations on the same view, each of these 10 modals either always needs to
+   * scroll or (the common case) never does, so there's no toggling to guard against. Reserving
+   * it unconditionally instead left every short modal ~15px narrower than it should be on the
+   * right - a permanent dead gutter for a scrollbar that was never going to appear. Matches
+   * .identity-modal__scroll (staff.css), which doesn't reserve it either. */
+  /* Without this, scrolling past this panel's own end with a trackpad rubber-bands into the
+   * page behind it instead of just stopping. Pair with useOverscrollBounceGuard(scrollRef) in
+   * the component for the element's own bounce past its edge, which this property alone
+   * doesn't suppress in every browser. */
+  overscroll-behavior: contain;
   padding: 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* Wider variant for panels with denser content (e.g. multiple grouped Cards) than the base
@@ -83,10 +109,10 @@
 }
 
 /* .at-notice carries no margin of its own (packages/ui) - it normally relies on a flex/grid
- * parent's `gap`, but here it sits directly in the panel between the title and the fields
- * block below, neither of which is a gap container, so it would otherwise touch the fields
- * with zero breathing room. */
-.add-attendee-modal__panel > .at-notice {
+ * parent's `gap`, but here it sits directly in the scroll wrapper between the title and the
+ * fields block below, neither of which is a gap container, so it would otherwise touch the
+ * fields with zero breathing room. */
+.add-attendee-modal__scroll > .at-notice {
   margin-bottom: var(--space-4);
 }
 

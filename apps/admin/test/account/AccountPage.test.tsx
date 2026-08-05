@@ -1467,3 +1467,31 @@ describe("AccountPage profile: sign-in method", () => {
     });
   });
 });
+
+describe("AccountPage: no role assigned", () => {
+  it("shows a notice when the account has no role assignments", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText(/doesn't have any role assigned yet/)).toBeTruthy();
+    });
+    // Password/2FA still work with no role — the notice is informational, not a lockout.
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+  });
+
+  it("hides the notice once a role is assigned", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "admin", is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Roles")).toBeTruthy();
+    });
+    expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
+  });
+});

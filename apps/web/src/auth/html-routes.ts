@@ -54,7 +54,9 @@ export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Resp
       const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
       try {
         const landing = await resolvePostLoginRedirectForUser(db, validated.userId, next ?? undefined);
-        // Avoid /login → /login redirect loop when user has a session but no staff landing (e.g. roles removed).
+        // Avoid a /login → /login redirect loop for the one case that can still legitimately
+        // resolve back here: an explicit ?next=/login(?...) passthrough (e.g. the oidc_failed
+        // fallback banner). A no-role session no longer lands on /login at all - see NO_ROLE_PATH.
         if (landing !== "/login" && !landing.startsWith("/login?")) {
           return c.redirect(landing, 302);
         }

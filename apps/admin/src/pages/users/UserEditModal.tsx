@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { Avatar, Button, IconButton, Input, ModalBackdrop, Notice, Select } from "@admitto/ui";
+import { useEffect, useId, useRef, useState } from "react";
+import { Avatar, Button, IconButton, Input, ModalBackdrop, Notice } from "@admitto/ui";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
   ApiError,
@@ -16,23 +16,19 @@ import {
   unlinkUserExternalIdentity,
 } from "../../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
-import type {
-  EventDto,
-  GrantUserRoleBody,
-  RoleAssignmentDto,
-  SecurityAuditLogEntryDto,
-  UserListItemDto,
-} from "../../api/types.js";
+import type { EventDto, RoleAssignmentDto, SecurityAuditLogEntryDto, UserListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { GeoCell } from "../../components/GeoCell.js";
 import { MoreActionsMenuItem } from "../../components/MoreActionsMenuItem.js";
+import { PhoneCountrySelect } from "../../components/PhoneCountrySelect.js";
+import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useDropdownMenu } from "../../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 import { roleLabel } from "../../auth/role-labels.js";
 import { useAuth } from "../../auth/AuthProvider.js";
+import { useOverscrollBounceGuard } from "../../hooks/useOverscrollBounceGuard.js";
 import { formatRelativeTime } from "../../utils/event-dates.js";
 import { isValidEmailFormat } from "../../utils/email.js";
-import { COUNTRY_CALLING_CODES } from "../../utils/countryCallingCodes.js";
 import { NO_AUTOFILL_PROPS } from "../../settings/mailTransportFormParts.js";
 import "../../attendees/add-attendee-modal.css";
 
@@ -46,412 +42,15 @@ type UserEditModalProps = {
 
 type AssignRole = "" | "superadmin" | "admin" | "operator";
 
-/** Whether the currently-picked role type has everything it needs to be granted: an event for
- * operator, an organization for admin, nothing extra for superadmin - and never true for "no
- * role picked yet". */
-function isRoleScopeReady(role: AssignRole, eventId: string, orgId: string): boolean {
-  if (role === "operator") return !!eventId;
-  if (role === "admin") return !!orgId;
-  return role === "superadmin";
-}
-
-function mapSaveProfileError(err: unknown): string {
-  if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
-    return "A user with this email already exists.";
-  }
-  return operatorApiErrorMessage(err, "Failed to save changes.");
-}
-
-/** Resolves what the Add/Change button should actually send - an org for admin, an event for
- * operator, nothing extra for superadmin - or an error message when the required scope isn't
- * picked yet. Kept pure (no state writes) so handleAddRole's own try/catch stays simple. */
-function resolveRoleGrantRequest(
-  role: Exclude<AssignRole, "">,
-  orgId: string,
-  eventId: string,
-): { body: GrantUserRoleBody } | { error: string } {
-  if (role === "admin") {
-    if (!orgId) return { error: "Select an organization for the admin role." };
-    return { body: { role: "admin", scope_type: "organization", scope_id: orgId } };
-  }
-  if (role === "operator") {
-    if (!eventId) return { error: "Select an event for the operator role." };
-    return { body: { role: "operator", scope_type: "event", scope_id: eventId } };
-  }
-  return { body: { role: "superadmin", scope_type: "instance" } };
-}
-
-function mapAddRoleError(err: unknown): string {
-  if (err instanceof ApiError && hasApiErrorCode(err, "cannot_change_own_role")) {
-    return "You cannot change your own role. Ask another superadmin.";
-  }
-  return operatorApiErrorMessage(err, "Failed to assign role.");
-}
-
-function mapResetPasswordError(err: unknown): string {
-  if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
-    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
-  }
-  return operatorApiErrorMessage(err, "Failed to reset password.");
-}
-
-function mapUnlinkSsoError(err: unknown): string {
-  if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
-    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
-  }
-  return operatorApiErrorMessage(err, "Failed to unlink SSO.");
-}
-
-/** The Add/Change button shared by the "granting superadmin" and "granting admin/operator with a
- * scope picker" layouts below - factored out so those two layouts don't repeat every prop. */
-function RoleActionButton({
-  icon,
-  disabled,
-  title,
-  onClick,
-  label,
-}: Readonly<{ icon: string; disabled: boolean; title?: string; onClick: () => void; label: string }>) {
-  return (
-    <Button
-      type="button"
-      variant="secondary"
-      icon={<i className={`ti ti-${icon}`} aria-hidden="true" />}
-      disabled={disabled}
-      title={title}
-      onClick={onClick}
-    >
-      {label}
-    </Button>
-  );
-}
-
-/** The header's "More actions" kebab menu (Reset MFA / Reset password / Revoke sessions /
- * Disable-Enable / Delete account) - each item just closes the menu and opens its own confirm
- * dialog or inline form; the parent owns all of that state. */
-function UserMoreActionsMenu({
-  moreActions,
-  disabled,
-  user,
-  isSelf,
-  onResetMfa,
-  onResetPassword,
-  onRevokeSessions,
-  onToggleActive,
-  onDelete,
-}: Readonly<{
-  moreActions: ReturnType<typeof useDropdownMenu<HTMLButtonElement>>;
-  disabled: boolean;
-  user: UserListItemDto;
-  isSelf: boolean;
-  onResetMfa: () => void;
-  onResetPassword: () => void;
-  onRevokeSessions: () => void;
-  onToggleActive: () => void;
-  onDelete: () => void;
-}>) {
-  const pick = (action: () => void) => () => {
-    moreActions.setOpen(false);
-    action();
-  };
-  return (
-    <div className="more-actions-menu" ref={moreActions.rootRef}>
-      <Button
-        ref={moreActions.triggerRef}
-        type="button"
-        variant="ghost"
-        className="users-modal__more-btn"
-        aria-label="More actions"
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={moreActions.open}
-        onClick={() => moreActions.setOpen((o) => !o)}
-        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
-      />
-      {moreActions.open && (
-        <div className="more-actions-menu__panel" role="menu" ref={moreActions.panelRef}>
-          <MoreActionsMenuItem
-            icon="refresh"
-            label="Reset MFA"
-            hint="Clear two-factor authentication"
-            onClick={pick(onResetMfa)}
-          />
-          <MoreActionsMenuItem
-            icon="key"
-            label="Reset password"
-            hint="Set a new temporary password"
-            onClick={pick(onResetPassword)}
-          />
-          <MoreActionsMenuItem
-            icon="logout"
-            label="Revoke sessions"
-            hint="Sign out of every active session"
-            disabled={user.active_sessions_count === 0}
-            onClick={pick(onRevokeSessions)}
-          />
-          <MoreActionsMenuItem
-            icon={user.is_active ? "ban" : "circle-check"}
-            variant={user.is_active ? "danger" : undefined}
-            label={user.is_active ? "Disable account" : "Enable account"}
-            hint={user.is_active ? "Block sign-in for this account" : "Allow sign-in again"}
-            disabled={user.is_active && isSelf}
-            tooltip={user.is_active && isSelf ? "You cannot disable your own account." : undefined}
-            onClick={pick(onToggleActive)}
-          />
-          <hr className="more-actions-menu__divider" />
-          <MoreActionsMenuItem
-            icon="trash"
-            variant="danger"
-            label="Delete account"
-            hint="Permanently remove this account"
-            disabled={isSelf}
-            tooltip={isSelf ? "You cannot delete your own account." : undefined}
-            onClick={pick(onDelete)}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** The modal's "Role & access" section - current role select, the chip list of scopes already
- * granted (of the current role type), a warning when switching type, and the Add/Change area
- * (built by the parent as `roleAssignArea`, since it needs the event/organization picker state). */
-function RoleAccessSection({
-  user,
-  newRole,
-  setNewRole,
-  roleBusy,
-  isSelf,
-  currentRoleType,
-  isRoleTypeChange,
-  displayTitle,
-  scopeChipLabel,
-  onRemoveRole,
-  roleAssignArea,
-}: Readonly<{
-  user: UserListItemDto;
-  newRole: AssignRole;
-  setNewRole: (role: AssignRole) => void;
-  roleBusy: boolean;
-  isSelf: boolean;
-  currentRoleType: AssignRole;
-  isRoleTypeChange: boolean;
-  displayTitle: string;
-  scopeChipLabel: (assignment: RoleAssignmentDto) => string;
-  onRemoveRole: (assignmentId: string) => void;
-  roleAssignArea: ReactNode;
-}>) {
-  return (
-    <section className="users-modal__section">
-      <h3 className="users-modal__section-title">Role & access</h3>
-      <div className="users-modal__field">
-        <label htmlFor="edit-user-assign-role" className="users-modal__field-label">
-          Role
-        </label>
-        <Select
-          id="edit-user-assign-role"
-          value={newRole}
-          disabled={roleBusy || isSelf}
-          title={isSelf ? "You cannot change your own role." : undefined}
-          onChange={(e) => setNewRole(e.target.value as AssignRole)}
-        >
-          {currentRoleType === "" && <option value="">No role assigned</option>}
-          <option value="superadmin">{roleLabel("superadmin")}</option>
-          <option value="admin">{roleLabel("admin")}</option>
-          <option value="operator">{roleLabel("operator")}</option>
-        </Select>
-      </div>
-
-      {!isRoleTypeChange && currentRoleType !== "superadmin" && user.roles.length > 0 && (
-        <div className="users-modal__chips">
-          {user.roles.map((assignment) => (
-            <span key={assignment.id} className="users-modal__chip">
-              <i
-                className={`ti ti-${assignment.scope_type === "event" ? "calendar-event" : "building"}`}
-                aria-hidden="true"
-              />
-              {assignment.is_oidc && (
-                <i className="ti ti-cloud" aria-hidden="true" title="Managed by identity provider" />
-              )}
-              {scopeChipLabel(assignment)}
-              {!assignment.is_oidc && (
-                <button
-                  type="button"
-                  className="users-modal__chip-remove"
-                  disabled={roleBusy || isSelf}
-                  title={isSelf ? "You cannot remove your own role assignment." : undefined}
-                  onClick={() => onRemoveRole(assignment.id)}
-                  aria-label={`Remove ${roleLabel(currentRoleType)} for ${scopeChipLabel(assignment)}`}
-                >
-                  <i className="ti ti-x" aria-hidden="true" />
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {isRoleTypeChange && (
-        <Notice variant="warning">
-          Changing to {roleLabel(newRole)} removes {isSelf ? "your" : `${displayTitle}'s`} current{" "}
-          {roleLabel(currentRoleType)} access.
-        </Notice>
-      )}
-
-      {roleAssignArea}
-    </section>
-  );
-}
-
-/** The modal's "Sign-in security" section - sign-in method/MFA/active-sessions status chips, then
- * either the Recent logins list or (swapped in when resetPasswordOpen) the Reset password form. */
-function SignInSecuritySection({
-  user,
-  isSelf,
-  unlinkSsoBusy,
-  onUnlinkClick,
-  resetPasswordOpen,
-  recentLoginsLoaded,
-  recentLogins,
-  resetPasswordTitleId,
-  newPassword,
-  setNewPassword,
-  resetPasswordBusy,
-  onCancelResetPassword,
-  onResetPassword,
-}: Readonly<{
-  user: UserListItemDto;
-  isSelf: boolean;
-  unlinkSsoBusy: boolean;
-  onUnlinkClick: () => void;
-  resetPasswordOpen: boolean;
-  recentLoginsLoaded: boolean;
-  recentLogins: SecurityAuditLogEntryDto[];
-  resetPasswordTitleId: string;
-  newPassword: string;
-  setNewPassword: (value: string) => void;
-  resetPasswordBusy: boolean;
-  onCancelResetPassword: () => void;
-  onResetPassword: () => void;
-}>) {
-  return (
-    <section className="users-modal__section">
-      <h3 className="users-modal__section-title">Sign-in security</h3>
-      <div className="users-modal__status-grid">
-        <div className="users-modal__status-chip">
-          <span className="users-modal__status-chip-icon users-modal__status-chip-icon--neutral">
-            <i className={`ti ti-${user.has_sso ? "cloud-lock" : "key"}`} aria-hidden="true" />
-          </span>
-          <span className="users-modal__status-chip-body">
-            <strong>Sign-in method</strong>
-            <span>{user.has_sso ? "SSO" : "Local password"}</span>
-          </span>
-          {user.has_sso && (
-            <button
-              type="button"
-              className="users-modal__unlink-btn"
-              disabled={unlinkSsoBusy || isSelf}
-              title={isSelf ? "You cannot unlink SSO from your own account." : "Unlink SSO"}
-              onClick={onUnlinkClick}
-            >
-              Unlink
-            </button>
-          )}
-        </div>
-        <div className="users-modal__status-chip">
-          <span
-            className={`users-modal__status-chip-icon users-modal__status-chip-icon--${user.has_mfa ? "ok" : "warn"}`}
-          >
-            <i className={`ti ti-shield-${user.has_mfa ? "check" : "off"}`} aria-hidden="true" />
-          </span>
-          <span className="users-modal__status-chip-body">
-            <strong>MFA</strong>
-            <span>{user.has_mfa ? "TOTP enrolled" : "Not enrolled"}</span>
-          </span>
-        </div>
-        <div className="users-modal__status-chip">
-          <span
-            className={`users-modal__status-chip-icon users-modal__status-chip-icon--${user.active_sessions_count > 0 ? "ok" : "neutral"}`}
-          >
-            <i
-              className={`ti ti-plug-connected${user.active_sessions_count > 0 ? "" : "-x"}`}
-              aria-hidden="true"
-            />
-          </span>
-          <span className="users-modal__status-chip-body">
-            <strong>Active sessions</strong>
-            <span>
-              {user.active_sessions_count > 0
-                ? `${user.active_sessions_count} session${user.active_sessions_count === 1 ? "" : "s"}`
-                : "None"}
-            </span>
-          </span>
-        </div>
-      </div>
-
-      {resetPasswordOpen ? (
-        <section className="users-modal__subsection" aria-labelledby={resetPasswordTitleId}>
-          <h3 className="users-modal__subsection-title" id={resetPasswordTitleId}>
-            Reset password
-          </h3>
-          <Input
-            id="reset-password"
-            label="New temporary password"
-            icon={<i className="ti ti-key" aria-hidden="true" />}
-            type="password"
-            minLength={PASSWORD_MIN_LENGTH}
-            hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
-            value={newPassword}
-            disabled={resetPasswordBusy}
-            onChange={(e) => setNewPassword(e.target.value)}
-            {...NO_AUTOFILL_PROPS}
-          />
-          <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
-          <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
-            <Button type="button" variant="secondary" disabled={resetPasswordBusy} onClick={onCancelResetPassword}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              disabled={resetPasswordBusy || newPassword.length < PASSWORD_MIN_LENGTH}
-              onClick={onResetPassword}
-            >
-              {resetPasswordBusy ? "Resetting…" : "Reset password"}
-            </Button>
-          </div>
-        </section>
-      ) : (
-        recentLoginsLoaded && (
-          <div className="users-modal__logins">
-            <p className="users-modal__subsection-title" style={{ margin: "0 0 var(--space-1)" }}>
-              Recent logins
-            </p>
-            {recentLogins.length === 0 && (
-              <p className="users-modal__empty-line">
-                <i className="ti ti-history" aria-hidden="true" /> No recent logins
-              </p>
-            )}
-            {recentLogins.map((entry) => (
-              <div key={entry.id} className="users-modal__login-row">
-                <span className="users-modal__login-icon users-modal__login-icon--ok">
-                  <i className="ti ti-circle-check" aria-hidden="true" />
-                </span>
-                <span className="users-modal__login-main">
-                  <span className="users-modal__login-status">Signed in</span>
-                  <span className="users-modal__login-geo">
-                    <GeoCell location={entry.country} />
-                    {entry.ip && <span className="users-modal__login-ip">{entry.ip}</span>}
-                  </span>
-                </span>
-                <span className="users-modal__login-time">{formatRelativeTime(entry.created_at)}</span>
-              </div>
-            ))}
-          </div>
-        )
-      )}
-    </section>
-  );
+/** A role grant staged locally by "Add" but not yet sent to the server - only "Save changes"
+ * actually calls grantUserRole, see the section comment above handleAddClick. */
+interface PendingRoleAdd {
+  key: string;
+  role: "superadmin" | "admin" | "operator";
+  scopeType: "instance" | "organization" | "event";
+  scopeId: string | null;
+  label: string;
+  icon: string;
 }
 
 export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Readonly<UserEditModalProps>) {
@@ -459,6 +58,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const titleId = useId();
   const resetPasswordTitleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [phoneCountryCode, setPhoneCountryCode] = useState("");
@@ -472,6 +73,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const [newRole, setNewRole] = useState<AssignRole>("");
   const [newOrgId, setNewOrgId] = useState("");
   const [newEventId, setNewEventId] = useState("");
+  const [pendingAdds, setPendingAdds] = useState<PendingRoleAdd[]>([]);
+  const [pendingRemoveIds, setPendingRemoveIds] = useState<ReadonlySet<string>>(new Set());
   const [roleBusy, setRoleBusy] = useState(false);
   const [roleChangeConfirmOpen, setRoleChangeConfirmOpen] = useState(false);
   const [resetMfaOpen, setResetMfaOpen] = useState(false);
@@ -501,6 +104,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setNewRole((user.roles[0]?.role as AssignRole) ?? "");
     setNewOrgId("");
     setNewEventId("");
+    setPendingAdds([]);
+    setPendingRemoveIds(new Set());
     setRoleChangeConfirmOpen(false);
     setResetMfaOpen(false);
     setResetPasswordOpen(false);
@@ -516,6 +121,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
 
   useEffect(() => {
     if (open) return;
+    setPendingAdds([]);
+    setPendingRemoveIds(new Set());
     setRoleChangeConfirmOpen(false);
     setResetMfaOpen(false);
     setResetPasswordOpen(false);
@@ -558,12 +165,17 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     return () => controller.abort();
   }, [open, user]);
 
+  const userEmail = user?.email;
   useEffect(() => {
-    if (!open || !user) return;
+    // Keyed on email, not the whole user object: a role/scope add refreshes user with a new
+    // object reference (so the chip list re-syncs, see the effect above), which doesn't change
+    // who we're querying logins for - re-running this fetch anyway made the section
+    // unmount/remount (a visible flash) on every single role change for no reason.
+    if (!open || !userEmail) return;
     setRecentLoginsLoaded(false);
     const controller = new AbortController();
     fetchSecurityAuditLog(
-      { eventType: "auth.login.success", userId: user.id, pageSize: 3 },
+      { eventType: "auth.login.success", search: userEmail, pageSize: 3 },
       controller.signal,
     )
       .then((res) => {
@@ -577,7 +189,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         setRecentLoginsLoaded(true);
       });
     return () => controller.abort();
-  }, [open, user]);
+  }, [open, userEmail]);
 
   const headActionsDisabled =
     submitting ||
@@ -608,6 +220,14 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   useModalFocusTrap(panelRef, open, handleClose);
   const moreActions = useDropdownMenu<HTMLButtonElement>();
 
+  // Profile fields and staged Role & access edits (pendingAdds/pendingRemoveIds) all commit
+  // together here, in one click - previously, Add/Remove each called the API immediately, which
+  // refreshed the Staff users list behind this modal on every single click (visible as a
+  // flicker) instead of once, on a deliberate save (PO review). Removes run before adds so
+  // clearing a scope and re-adding it in the same sitting nets out correctly. Each item is
+  // dropped from its pending list only once its own request succeeds, so a failure partway
+  // through (e.g. the email PATCH rejected, or a scope deleted by someone else mid-edit) leaves
+  // just the unfinished remainder staged for a retry instead of resubmitting everything.
   const saveProfile = async () => {
     if (!user) return;
     setSubmitting(true);
@@ -619,10 +239,34 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         phone_country_code: phoneCountryCode || null,
         phone_number: phoneNumber.trim() || null,
       });
-      onUpdated(updated, "Profile updated");
+
+      for (const assignmentId of pendingRemoveIds) {
+        await revokeUserRole(user.id, assignmentId);
+        setPendingRemoveIds((prev) => {
+          const next = new Set(prev);
+          next.delete(assignmentId);
+          return next;
+        });
+      }
+      for (const add of pendingAdds) {
+        await grantUserRole(user.id, {
+          role: add.role,
+          scope_type: add.scopeType,
+          scope_id: add.scopeId,
+        });
+        setPendingAdds((prev) => prev.filter((p) => p.key !== add.key));
+      }
+
+      onUpdated(updated, "Changes saved");
       onClose();
     } catch (err) {
-      setError(mapSaveProfileError(err));
+      if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
+        setError("A user with this email already exists.");
+      } else if (err instanceof ApiError && hasApiErrorCode(err, "cannot_change_own_role")) {
+        setError("You cannot change your own role. Ask another superadmin.");
+      } else {
+        setError(operatorApiErrorMessage(err, "Failed to save changes."));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -644,51 +288,97 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     }
   };
 
-  const handleAddRole = async () => {
+  // Switching role TYPE (e.g. Operator -> Admin) is destructive - it drops every current
+  // assignment of the old type server-side - and already has its own explicit confirm dialog
+  // below (roleChangeConfirmOpen), the same "one deliberate, immediately-committed action"
+  // pattern as Reset password/Disable/Delete elsewhere in this modal. Unlike a same-type
+  // scope Add/Remove (handleAddClick/handleMarkForRemoval below), it stays immediate rather
+  // than staged - mixing a destructive type swap with a batch of not-yet-saved scope edits for
+  // the type it's about to replace would leave those edits pointing at a role that no longer
+  // applies. roleActionDisabled below guards this by disabling "Change" while anything is
+  // pending, so the two flows can't overlap in the first place.
+  const handleChangeRoleType = async () => {
     if (!user || !newRole || roleBusy) return;
-    const request = resolveRoleGrantRequest(newRole, newOrgId, newEventId);
-    if ("error" in request) {
-      setError(request.error);
-      return;
-    }
     setRoleBusy(true);
     setError(null);
     try {
-      await grantUserRole(user.id, request.body);
+      if (newRole === "superadmin") {
+        await grantUserRole(user.id, { role: "superadmin", scope_type: "instance" });
+      } else if (newRole === "admin") {
+        if (!newOrgId) {
+          setError("Select an organization for the admin role.");
+          return;
+        }
+        await grantUserRole(user.id, { role: "admin", scope_type: "organization", scope_id: newOrgId });
+      } else if (newRole === "operator") {
+        if (!newEventId) {
+          setError("Select an event for the operator role.");
+          return;
+        }
+        await grantUserRole(user.id, { role: "operator", scope_type: "event", scope_id: newEventId });
+      }
       onUpdated(user, "Role updated");
       setRoleChangeConfirmOpen(false);
       setNewEventId("");
       setNewOrgId("");
-      // A same-type scope addition (e.g. a second event grant) keeps the modal open, same as
-      // removing a scope chip does, so several can be added in one sitting - the still-open
-      // modal picks up the fresh assignment through Staff users' own list refresh. A type change
-      // is different: it replaces the whole role identity, and if Staff users is currently
-      // filtered by the target's old role, the refreshed (filtered) list can drop the target
-      // entirely, leaving nothing for the parent's user-sync effect to find - so the modal would
-      // otherwise sit open showing the just-replaced role and scopes as if nothing happened.
-      if (isRoleTypeChange) {
-        onClose();
-      }
     } catch (err) {
-      setError(mapAddRoleError(err));
+      if (err instanceof ApiError && hasApiErrorCode(err, "cannot_change_own_role")) {
+        setError("You cannot change your own role. Ask another superadmin.");
+      } else {
+        setError(operatorApiErrorMessage(err, "Failed to assign role."));
+      }
     } finally {
       setRoleBusy(false);
     }
   };
 
-  const handleRemoveRole = async (assignmentId: string) => {
-    if (!user || roleBusy) return;
-    setRoleBusy(true);
+  /** Stages a same-type scope grant locally (Role & access "Add") - committed only by
+   * saveProfile, on "Save changes". No confirm needed: unlike a type change, this can't destroy
+   * anything, and it can still be undone for free by removing the chip before saving. */
+  const handleAddClick = () => {
+    if (!newRole) return;
     setError(null);
-    try {
-      await revokeUserRole(user.id, assignmentId);
-      onClose();
-      onUpdated(user, "Role removed");
-    } catch (err) {
-      setError(operatorApiErrorMessage(err, "Failed to remove role."));
-    } finally {
-      setRoleBusy(false);
+    if (newRole === "superadmin") {
+      setPendingAdds((prev) => [
+        ...prev,
+        { key: crypto.randomUUID(), role: "superadmin", scopeType: "instance", scopeId: null, label: "Instance-wide", icon: "crown" },
+      ]);
+    } else if (newRole === "admin") {
+      if (!newOrgId) {
+        setError("Select an organization for the admin role.");
+        return;
+      }
+      const org = organizations.find((o) => o.id === newOrgId);
+      setPendingAdds((prev) => [
+        ...prev,
+        { key: crypto.randomUUID(), role: "admin", scopeType: "organization", scopeId: newOrgId, label: org?.name ?? newOrgId, icon: "building" },
+      ]);
+    } else if (newRole === "operator") {
+      if (!newEventId) {
+        setError("Select an event for the operator role.");
+        return;
+      }
+      const ev = events.find((e) => e.id === newEventId);
+      setPendingAdds((prev) => [
+        ...prev,
+        { key: crypto.randomUUID(), role: "operator", scopeType: "event", scopeId: newEventId, label: ev?.title ?? newEventId, icon: "calendar-event" },
+      ]);
     }
+    setNewEventId("");
+    setNewOrgId("");
+  };
+
+  /** Stages an existing (already-granted) assignment for removal - the chip below hides it
+   * immediately, but revokeUserRole only runs once saveProfile actually saves. */
+  const handleMarkForRemoval = (assignmentId: string) => {
+    setError(null);
+    setPendingRemoveIds((prev) => new Set(prev).add(assignmentId));
+  };
+
+  /** Un-stages a not-yet-saved pending add - nothing was ever sent to the server, so this is a
+   * plain local removal from the list, no confirmation or request involved. */
+  const handleCancelPendingAdd = (key: string) => {
+    setPendingAdds((prev) => prev.filter((p) => p.key !== key));
   };
 
   const handleResetMfa = async () => {
@@ -717,7 +407,11 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       onUpdated(user, "Password reset. Sessions revoked.");
       onClose();
     } catch (err) {
-      setError(mapResetPasswordError(err));
+      if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
+        setError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+      } else {
+        setError(operatorApiErrorMessage(err, "Failed to reset password."));
+      }
     } finally {
       setResetPasswordBusy(false);
     }
@@ -749,7 +443,11 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       onUpdated(user, "SSO unlinked. User must sign in with the new local password.");
       onClose();
     } catch (err) {
-      setUnlinkSsoError(mapUnlinkSsoError(err));
+      if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
+        setUnlinkSsoError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+      } else {
+        setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
+      }
     } finally {
       setUnlinkSsoBusy(false);
     }
@@ -789,7 +487,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // or more organizations, or an operator over one or more events, never a mix. user.roles can
   // therefore only ever hold assignments of one role type at a time; scopeChipLabel/groupRoles
   // below work over "the" current type, not several.
-  const currentRoleType = (user.roles[0]?.role as AssignRole) ?? "";
+  const currentRoleType = user.roles[0]?.role ?? "";
   const isRoleTypeChange = newRole !== "" && currentRoleType !== "" && newRole !== currentRoleType;
 
   /** Resolves a role assignment's raw scope_id to the human label shown elsewhere in the admin
@@ -807,91 +505,94 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     return assignment.scope_id ?? assignment.scope_type;
   }
 
-  // Scopes already granted (of the current role type) shouldn't also show up as pickable -
-  // they're already a chip below, with their own remove control.
+  // Scopes already granted (of the current role type), minus any staged for removal, plus any
+  // staged as a not-yet-saved pending add, shouldn't also show up as pickable - they're already
+  // a chip below, with their own remove control.
   const assignedEventIds = new Set(
-    user.roles.filter((r) => r.scope_type === "event").map((r) => r.scope_id),
+    user.roles.filter((r) => r.scope_type === "event" && !pendingRemoveIds.has(r.id)).map((r) => r.scope_id),
   );
   const assignedOrgIds = new Set(
-    user.roles.filter((r) => r.scope_type === "organization").map((r) => r.scope_id),
+    user.roles.filter((r) => r.scope_type === "organization" && !pendingRemoveIds.has(r.id)).map((r) => r.scope_id),
   );
-  const pickableEvents = events.filter((e) => !assignedEventIds.has(e.id));
-  const pickableOrganizations = organizations.filter((org) => !assignedOrgIds.has(org.id));
+  const pendingEventIds = new Set(pendingAdds.filter((p) => p.scopeType === "event").map((p) => p.scopeId));
+  const pendingOrgIds = new Set(pendingAdds.filter((p) => p.scopeType === "organization").map((p) => p.scopeId));
+  const pickableEvents = events.filter((e) => !assignedEventIds.has(e.id) && !pendingEventIds.has(e.id));
+  const pickableOrganizations = organizations.filter(
+    (org) => !assignedOrgIds.has(org.id) && !pendingOrgIds.has(org.id),
+  );
+
+  const roleOptions = [
+    { id: "superadmin", label: roleLabel("superadmin"), icon: "crown" },
+    { id: "admin", label: roleLabel("admin"), icon: "building" },
+    { id: "operator", label: roleLabel("operator"), icon: "calendar-event" },
+  ];
 
   const scopePickerControl =
     newRole === "operator" ? (
-      <Select
+      <SearchableSelect
         id="edit-user-event-scope"
-        aria-label="Event scope for operator role"
+        label="Event scope for operator role"
+        placeholder="Select event…"
+        searchPlaceholder="Search events…"
+        emptyLabel="No events found"
         value={newEventId}
+        options={pickableEvents.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" }))}
         disabled={roleBusy}
-        onChange={(e) => setNewEventId(e.target.value)}
-      >
-        <option value="">Select event…</option>
-        {pickableEvents.map((e) => (
-          <option key={e.id} value={e.id}>
-            {e.title}
-          </option>
-        ))}
-      </Select>
+        onChange={setNewEventId}
+      />
     ) : (
-      <Select
+      <SearchableSelect
         id="edit-user-org-scope"
-        aria-label="Organization scope for admin role"
+        label="Organization scope for admin role"
+        placeholder={pickableOrganizations.length === 0 ? "No organizations available" : "Select organization…"}
+        searchPlaceholder="Search organizations…"
+        emptyLabel="No organizations found"
         value={newOrgId}
+        options={pickableOrganizations.map((org) => ({ id: org.id, label: org.name, icon: "building" }))}
         disabled={roleBusy || pickableOrganizations.length === 0}
-        onChange={(e) => setNewOrgId(e.target.value)}
-      >
-        {pickableOrganizations.length === 0 ? (
-          <option value="">No organizations available</option>
-        ) : (
-          pickableOrganizations.map((org) => (
-            <option key={org.id} value={org.id}>
-              {org.name}
-            </option>
-          ))
-        )}
-      </Select>
+        onChange={setNewOrgId}
+      />
     );
 
-  const scopeReady = isRoleScopeReady(newRole, newEventId, newOrgId);
-  const roleActionDisabled = roleBusy || !scopeReady || (isSelf && isRoleTypeChange);
+  const scopeReady =
+    newRole === "operator" ? !!newEventId : newRole === "admin" ? !!newOrgId : newRole === "superadmin";
+  // A type change is immediate and destructive (see handleChangeRoleType's own comment) -
+  // blocked while anything from the same-type Add/Remove flow is still only staged locally, so
+  // the two can't tangle: saving afterwards would otherwise try to grant/revoke scopes for a
+  // role type that no longer applies.
+  const hasPendingRoleChanges = pendingAdds.length > 0 || pendingRemoveIds.size > 0;
+  const roleActionDisabled =
+    roleBusy || !scopeReady || (isSelf && isRoleTypeChange) || (isRoleTypeChange && hasPendingRoleChanges);
   const roleActionLabel = isRoleTypeChange ? "Change" : "Add";
   const roleActionIcon = isRoleTypeChange ? "refresh" : "plus";
+  const roleActionTitle =
+    isSelf && isRoleTypeChange
+      ? "You cannot change your own role."
+      : isRoleTypeChange && hasPendingRoleChanges
+        ? "Save or discard your pending scope changes first."
+        : undefined;
   const handleRoleActionClick = () => {
     if (isRoleTypeChange) {
       setRoleChangeConfirmOpen(true);
     } else {
-      void handleAddRole();
+      handleAddClick();
     }
   };
-  const roleActionTitle = isSelf && isRoleTypeChange ? "You cannot change your own role." : undefined;
   const roleActionButton = (
-    <RoleActionButton
-      icon={roleActionIcon}
+    <Button
+      type="button"
+      variant="secondary"
+      icon={<i className={`ti ti-${roleActionIcon}`} aria-hidden="true" />}
       disabled={roleActionDisabled}
       title={roleActionTitle}
       onClick={handleRoleActionClick}
-      label={roleActionLabel}
-    />
+    >
+      {roleActionLabel}
+    </Button>
   );
-  let roleAssignArea: ReactNode;
-  if (newRole !== "superadmin") {
-    roleAssignArea = (
-      <div className="users-modal__role-assign">
-        {scopePickerControl}
-        {roleActionButton}
-      </div>
-    );
-  } else if (currentRoleType === "superadmin") {
-    roleAssignArea = (
-      <Notice variant="info">
-        Superadmin already covers every event and organization in this instance, so there are no scopes to add.
-      </Notice>
-    );
-  } else {
-    roleAssignArea = roleActionButton;
-  }
+  // Superadmin already covering everything means there's no scope picker or button to sit
+  // beside the Role field - let it take the full row instead of sitting stranded at 10rem.
+  const isSoloRole = newRole === "superadmin" && currentRoleType === "superadmin";
 
   return (
     <>
@@ -900,6 +601,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
          * panel, matching the Identity providers modal's own backdrop (identity-modal.css). */}
         <ModalBackdrop />
         <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--wide">
+        <div ref={scrollRef} className="add-attendee-modal__scroll">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
               <Avatar name={displayTitle} size="sm" />
@@ -909,17 +611,98 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
               </div>
             </div>
             <div className="users-modal__head-actions">
-              <UserMoreActionsMenu
-                moreActions={moreActions}
-                disabled={headActionsDisabled || resetPasswordOpen}
-                user={user}
-                isSelf={isSelf}
-                onResetMfa={() => setResetMfaOpen(true)}
-                onResetPassword={() => setResetPasswordOpen(true)}
-                onRevokeSessions={() => setRevokeSessionsOpen(true)}
-                onToggleActive={handleToggleActiveClick}
-                onDelete={() => setDeleteConfirm(true)}
-              />
+              <div className="more-actions-menu" ref={moreActions.rootRef}>
+                <Button
+                  ref={moreActions.triggerRef}
+                  type="button"
+                  variant="ghost"
+                  className="users-modal__more-btn"
+                  aria-label="More actions"
+                  disabled={headActionsDisabled || resetPasswordOpen}
+                  aria-haspopup="menu"
+                  aria-expanded={moreActions.open}
+                  onClick={() => moreActions.setOpen((o) => !o)}
+                  icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
+                />
+                {moreActions.open && (
+                  <div
+                    className={`more-actions-menu__panel${moreActions.openUpward ? " more-actions-menu__panel--up" : ""}`}
+                    role="menu"
+                    ref={moreActions.panelRef}
+                  >
+                    <MoreActionsMenuItem
+                      icon="refresh"
+                      label="Reset MFA"
+                      hint="Clear two-factor authentication"
+                      onClick={() => {
+                        moreActions.setOpen(false);
+                        setResetMfaOpen(true);
+                      }}
+                    />
+                    <MoreActionsMenuItem
+                      icon="key"
+                      label="Reset password"
+                      hint="Set a new temporary password"
+                      onClick={() => {
+                        moreActions.setOpen(false);
+                        setResetPasswordOpen(true);
+                      }}
+                    />
+                    <MoreActionsMenuItem
+                      icon="unlink"
+                      label="Unlink SSO"
+                      hint="Require a local password to sign in"
+                      disabled={!user.has_sso || isSelf}
+                      tooltip={
+                        !user.has_sso
+                          ? "This account doesn't use SSO."
+                          : isSelf
+                            ? "You cannot unlink SSO from your own account."
+                            : undefined
+                      }
+                      onClick={() => {
+                        moreActions.setOpen(false);
+                        setUnlinkSsoOpen(true);
+                      }}
+                    />
+                    <MoreActionsMenuItem
+                      icon="logout"
+                      label="Revoke sessions"
+                      hint="Sign out of every active session"
+                      disabled={user.active_sessions_count === 0}
+                      onClick={() => {
+                        moreActions.setOpen(false);
+                        setRevokeSessionsOpen(true);
+                      }}
+                    />
+                    <MoreActionsMenuItem
+                      icon={user.is_active ? "ban" : "circle-check"}
+                      variant={user.is_active ? "danger" : undefined}
+                      label={user.is_active ? "Disable account" : "Enable account"}
+                      hint={user.is_active ? "Block sign-in for this account" : "Allow sign-in again"}
+                      disabled={user.is_active && isSelf}
+                      tooltip={user.is_active && isSelf ? "You cannot disable your own account." : undefined}
+                      onClick={() => {
+                        moreActions.setOpen(false);
+                        handleToggleActiveClick();
+                      }}
+                    />
+                    <hr className="more-actions-menu__divider" />
+                    <MoreActionsMenuItem
+                      icon="trash"
+                      variant="danger"
+                      label="Delete account"
+                      hint="Permanently remove this account"
+                      disabled={isSelf}
+                      tooltip={isSelf ? "You cannot delete your own account." : undefined}
+                      onClick={() => {
+                        moreActions.setOpen(false);
+                        setDeleteConfirm(true);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
               <IconButton
                 label="Close"
                 disabled={headActionsDisabled}
@@ -962,20 +745,13 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
                     Phone number
                   </label>
                   <div className="users-modal__phone-row">
-                    <Select
+                    <PhoneCountrySelect
                       id="edit-phone-country-code"
-                      aria-label="Phone country code"
+                      label="Phone country code"
                       value={phoneCountryCode}
                       disabled={submitting}
-                      onChange={(e) => setPhoneCountryCode(e.target.value)}
-                    >
-                      <option value="">No code</option>
-                      {COUNTRY_CALLING_CODES.map((c) => (
-                        <option key={c.name} value={c.dialCode}>
-                          {c.name} ({c.dialCode})
-                        </option>
-                      ))}
-                    </Select>
+                      onChange={setPhoneCountryCode}
+                    />
                     <Input
                       id="edit-phone-number"
                       icon={<i className="ti ti-phone" aria-hidden="true" />}
@@ -991,38 +767,214 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
               </div>
             </section>
 
-            <RoleAccessSection
-              user={user}
-              newRole={newRole}
-              setNewRole={setNewRole}
-              roleBusy={roleBusy}
-              isSelf={isSelf}
-              currentRoleType={currentRoleType}
-              isRoleTypeChange={isRoleTypeChange}
-              displayTitle={displayTitle}
-              scopeChipLabel={scopeChipLabel}
-              onRemoveRole={(assignmentId) => void handleRemoveRole(assignmentId)}
-              roleAssignArea={roleAssignArea}
-            />
+            <section className="users-modal__section">
+              <h3 className="users-modal__section-title">Role & access</h3>
+              <div
+                className={`users-modal__role-assign${isSoloRole ? " users-modal__role-assign--solo" : ""}`}
+              >
+                <SearchableSelect
+                  id="edit-user-assign-role"
+                  label="Role"
+                  placeholder="No role assigned"
+                  searchPlaceholder="Search roles…"
+                  emptyLabel="No roles found"
+                  value={newRole}
+                  options={roleOptions}
+                  disabled={roleBusy || isSelf}
+                  title={isSelf ? "You cannot change your own role." : undefined}
+                  onChange={(id) => setNewRole(id as AssignRole)}
+                />
+                {newRole === "superadmin"
+                  ? currentRoleType !== "superadmin" && roleActionButton
+                  : (
+                    <>
+                      {scopePickerControl}
+                      {roleActionButton}
+                    </>
+                  )}
+              </div>
 
-            <SignInSecuritySection
-              user={user}
-              isSelf={isSelf}
-              unlinkSsoBusy={unlinkSsoBusy}
-              onUnlinkClick={() => setUnlinkSsoOpen(true)}
-              resetPasswordOpen={resetPasswordOpen}
-              recentLoginsLoaded={recentLoginsLoaded}
-              recentLogins={recentLogins}
-              resetPasswordTitleId={resetPasswordTitleId}
-              newPassword={newPassword}
-              setNewPassword={setNewPassword}
-              resetPasswordBusy={resetPasswordBusy}
-              onCancelResetPassword={() => {
-                setResetPasswordOpen(false);
-                setNewPassword("");
-              }}
-              onResetPassword={() => void handleResetPassword()}
-            />
+              {!isRoleTypeChange &&
+                currentRoleType !== "superadmin" &&
+                (user.roles.length > 0 || pendingAdds.length > 0) && (
+                  <div className="users-modal__chips">
+                    {user.roles
+                      .filter((assignment) => !pendingRemoveIds.has(assignment.id))
+                      .map((assignment) => (
+                        <span key={assignment.id} className="users-modal__chip">
+                          <i
+                            className={`ti ti-${assignment.scope_type === "event" ? "calendar-event" : "building"}`}
+                            aria-hidden="true"
+                          />
+                          {assignment.is_oidc && (
+                            <i className="ti ti-cloud" aria-hidden="true" title="Managed by identity provider" />
+                          )}
+                          {scopeChipLabel(assignment)}
+                          {!assignment.is_oidc && (
+                            <button
+                              type="button"
+                              className="users-modal__chip-remove"
+                              disabled={isSelf}
+                              title={isSelf ? "You cannot remove your own role assignment." : undefined}
+                              onClick={() => handleMarkForRemoval(assignment.id)}
+                              aria-label={`Remove ${roleLabel(currentRoleType)} for ${scopeChipLabel(assignment)}`}
+                            >
+                              <i className="ti ti-x" aria-hidden="true" />
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                    {pendingAdds.map((add) => (
+                      <span
+                        key={add.key}
+                        className="users-modal__chip users-modal__chip--pending"
+                        title="Not saved yet - click Save changes to apply."
+                      >
+                        <i className={`ti ti-${add.icon}`} aria-hidden="true" />
+                        {add.label}
+                        <button
+                          type="button"
+                          className="users-modal__chip-remove"
+                          onClick={() => handleCancelPendingAdd(add.key)}
+                          aria-label={`Cancel adding ${roleLabel(add.role)} for ${add.label}`}
+                        >
+                          <i className="ti ti-x" aria-hidden="true" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+              {isRoleTypeChange && (
+                <Notice variant="warning">
+                  Changing to {roleLabel(newRole)} removes {isSelf ? "your" : `${displayTitle}'s`} current{" "}
+                  {roleLabel(currentRoleType)} access.
+                </Notice>
+              )}
+
+              {newRole === "superadmin" && currentRoleType === "superadmin" && (
+                <Notice variant="info">
+                  Superadmin already covers every event and organization in this instance, so there are no scopes to add.
+                </Notice>
+              )}
+            </section>
+
+            <section className="users-modal__section">
+              <h3 className="users-modal__section-title">Sign-in security</h3>
+              <div className="users-modal__status-grid">
+                <div className="users-modal__status-chip">
+                  <span className="users-modal__status-chip-icon users-modal__status-chip-icon--neutral">
+                    <i className={`ti ti-${user.has_sso ? "cloud-lock" : "key"}`} aria-hidden="true" />
+                  </span>
+                  <span className="users-modal__status-chip-body">
+                    <strong>Sign-in method</strong>
+                    <span>{user.has_sso ? "SSO" : "Local password"}</span>
+                  </span>
+                </div>
+                <div className="users-modal__status-chip">
+                  <span
+                    className={`users-modal__status-chip-icon users-modal__status-chip-icon--${user.has_mfa ? "ok" : "warn"}`}
+                  >
+                    <i className={`ti ti-shield-${user.has_mfa ? "check" : "off"}`} aria-hidden="true" />
+                  </span>
+                  <span className="users-modal__status-chip-body">
+                    <strong>MFA</strong>
+                    <span>{user.has_mfa ? "TOTP enrolled" : "Not enrolled"}</span>
+                  </span>
+                </div>
+                <div className="users-modal__status-chip">
+                  <span
+                    className={`users-modal__status-chip-icon users-modal__status-chip-icon--${user.active_sessions_count > 0 ? "ok" : "neutral"}`}
+                  >
+                    <i
+                      className={`ti ti-plug-connected${user.active_sessions_count > 0 ? "" : "-x"}`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span className="users-modal__status-chip-body">
+                    <strong>Active sessions</strong>
+                    <span>
+                      {user.active_sessions_count > 0
+                        ? `${user.active_sessions_count} session${user.active_sessions_count === 1 ? "" : "s"}`
+                        : "None"}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {!resetPasswordOpen ? (
+                <>
+                  {recentLoginsLoaded && (
+                    <div className="users-modal__logins">
+                      <p className="users-modal__subsection-title" style={{ margin: "0 0 var(--space-1)" }}>
+                        Recent logins
+                      </p>
+                      {recentLogins.length === 0 && (
+                        <p className="users-modal__empty-line">
+                          <i className="ti ti-history" aria-hidden="true" />
+                          No recent logins
+                        </p>
+                      )}
+                      {recentLogins.map((entry) => (
+                        <div key={entry.id} className="users-modal__login-row">
+                          <span className="users-modal__login-icon users-modal__login-icon--ok">
+                            <i className="ti ti-circle-check" aria-hidden="true" />
+                          </span>
+                          <span className="users-modal__login-main">
+                            <span className="users-modal__login-status">Signed in</span>
+                            <span className="users-modal__login-geo">
+                              <GeoCell location={entry.country} />
+                              {entry.ip && <span className="users-modal__login-ip">{entry.ip}</span>}
+                            </span>
+                          </span>
+                          <span className="users-modal__login-time">{formatRelativeTime(entry.created_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <section className="users-modal__subsection" aria-labelledby={resetPasswordTitleId}>
+                  <h3 className="users-modal__subsection-title" id={resetPasswordTitleId}>
+                    Reset password
+                  </h3>
+                  <Input
+                    id="reset-password"
+                    label="New temporary password"
+                    icon={<i className="ti ti-key" aria-hidden="true" />}
+                    type="password"
+                    minLength={PASSWORD_MIN_LENGTH}
+                    hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+                    value={newPassword}
+                    disabled={resetPasswordBusy}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    {...NO_AUTOFILL_PROPS}
+                  />
+                  <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
+                  <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={resetPasswordBusy}
+                      onClick={() => {
+                        setResetPasswordOpen(false);
+                        setNewPassword("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      disabled={resetPasswordBusy || newPassword.length < PASSWORD_MIN_LENGTH}
+                      onClick={() => void handleResetPassword()}
+                    >
+                      {resetPasswordBusy ? "Resetting…" : "Reset password"}
+                    </Button>
+                  </div>
+                </section>
+              )}
+            </section>
           </div>
 
           <div className="add-attendee-modal__actions" style={{ justifyContent: "flex-end" }}>
@@ -1033,10 +985,11 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
                 disabled={submitting || !isValidEmailFormat(email.trim())}
                 onClick={() => void saveProfile()}
               >
-                {submitting ? "Saving…" : "Save"}
+                {submitting ? "Saving changes…" : "Save changes"}
               </Button>
             </div>
           </div>
+        </div>
         </div>
       </dialog>
 
@@ -1136,7 +1089,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         confirmLabel="Change role"
         confirmVariant="danger"
         loading={roleBusy}
-        onConfirm={() => void handleAddRole()}
+        onConfirm={() => void handleChangeRoleType()}
         onCancel={() => {
           if (!roleBusy) setRoleChangeConfirmOpen(false);
         }}

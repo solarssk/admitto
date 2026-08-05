@@ -2,7 +2,9 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UserListItemDto } from "../../../src/api/types.js";
-import { StaffUserTableRow } from "../../../src/pages/users/StaffUserListItem.js";
+import { StaffUserCard, StaffUserTableRow } from "../../../src/pages/users/StaffUserListItem.js";
+
+afterEach(() => cleanup());
 
 afterEach(cleanup);
 
@@ -16,7 +18,6 @@ const user: UserListItemDto = {
   last_login_at: null,
   active_sessions_count: 0,
   has_mfa: false,
-  has_sso: false,
   roles: [],
 };
 
@@ -25,7 +26,7 @@ describe("StaffUserTableRow", () => {
     render(
       <table>
         <tbody>
-          <StaffUserTableRow user={user} onEdit={vi.fn()} onRevokeSessions={vi.fn()} />
+          <StaffUserTableRow user={user} onEdit={vi.fn()} />
         </tbody>
       </table>,
     );
@@ -38,7 +39,7 @@ describe("StaffUserTableRow", () => {
     render(
       <table>
         <tbody>
-          <StaffUserTableRow user={{ ...user, is_active: true }} onEdit={vi.fn()} onRevokeSessions={vi.fn()} />
+          <StaffUserTableRow user={{ ...user, is_active: true }} onEdit={vi.fn()} />
         </tbody>
       </table>,
     );
@@ -63,7 +64,6 @@ describe("StaffUserTableRow", () => {
               ],
             }}
             onEdit={vi.fn()}
-            onRevokeSessions={vi.fn()}
           />
         </tbody>
       </table>,
@@ -81,7 +81,6 @@ describe("StaffUserTableRow", () => {
             <StaffUserTableRow
               user={{ ...user, last_login_at: "2026-01-01T12:30:00.000Z" }}
               onEdit={vi.fn()}
-              onRevokeSessions={vi.fn()}
             />
           </tbody>
         </table>,
@@ -103,7 +102,6 @@ describe("StaffUserTableRow", () => {
               roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: true }],
             }}
             onEdit={vi.fn()}
-            onRevokeSessions={vi.fn()}
           />
         </tbody>
       </table>,
@@ -112,65 +110,35 @@ describe("StaffUserTableRow", () => {
     expect(screen.getByTitle("Event scope · managed by identity provider")).toBeTruthy();
   });
 
-  it("falls back to the raw scope_type for a role badge title outside the known scope labels", () => {
-    render(
-      <table>
-        <tbody>
-          <StaffUserTableRow
-            user={{
-              ...user,
-              roles: [{ id: "role-1", role: "operator", scope_type: "future-scope", scope_id: "x", is_oidc: false }],
-            }}
-            onEdit={vi.fn()}
-            onRevokeSessions={vi.fn()}
-          />
-        </tbody>
-      </table>,
-    );
-
-    expect(screen.getByTitle("future-scope")).toBeTruthy();
-  });
-
-  it("shows SSO sign-in, a disabled status, a session count badge, and a plain (non-OIDC) role title", () => {
-    render(
-      <table>
-        <tbody>
-          <StaffUserTableRow
-            user={{
-              ...user,
-              has_sso: true,
-              is_active: false,
-              active_sessions_count: 3,
-              roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }],
-            }}
-            onEdit={vi.fn()}
-            onRevokeSessions={vi.fn()}
-          />
-        </tbody>
-      </table>,
-    );
-
-    expect(screen.getByText("SSO")).toBeTruthy();
-    expect(screen.getByText("Disabled")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
-    expect(screen.getByTitle("Event scope")).toBeTruthy();
-  });
-
-  it("calls onEdit and onRevokeSessions from the row's own action buttons", () => {
+  it("calls onEdit from the row's own action button", () => {
     const onEdit = vi.fn();
-    const onRevokeSessions = vi.fn();
     render(
       <table>
         <tbody>
-          <StaffUserTableRow user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
+          <StaffUserTableRow user={user} onEdit={onEdit} />
         </tbody>
       </table>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Edit profile for/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Reset sessions for/ }));
 
     expect(onEdit).toHaveBeenCalledWith(user);
-    expect(onRevokeSessions).toHaveBeenCalledWith(user);
+  });
+});
+
+describe("StaffUserCard", () => {
+  it("shows Edit as a small icon button next to the status badge, not a full-width labeled footer", () => {
+    const onEdit = vi.fn();
+    render(<StaffUserCard user={user} onEdit={onEdit} />);
+
+    const editBtn = screen.getByRole("button", { name: "Edit profile for new-staff@example.com" });
+    expect(editBtn.className).toContain("at-iconbtn--sm");
+    expect(screen.queryByText("Edit")).toBeNull();
+    // No separate Reset sessions shortcut here - it's one click further in, via Edit's own
+    // "More actions" menu, so it doesn't duplicate that control.
+    expect(screen.queryByRole("button", { name: /Reset sessions/ })).toBeNull();
+
+    fireEvent.click(editBtn);
+    expect(onEdit).toHaveBeenCalledWith(user);
   });
 });

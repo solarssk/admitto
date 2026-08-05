@@ -6,6 +6,7 @@ import {
 } from "@admitto/location";
 import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "../attendees/add-attendee-modal.css";
 
 export interface FixMapsLinkModalValues {
@@ -48,6 +49,8 @@ export function FixMapsLinkModal({
 }: Readonly<FixMapsLinkModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   const [googleUrl, setGoogleUrl] = useState(initial.google_maps_url_override);
   const [appleUrl, setAppleUrl] = useState(initial.apple_maps_url_override);
   const [googleError, setGoogleError] = useState<string | null>(null);
@@ -99,6 +102,7 @@ export function FixMapsLinkModal({
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 520px)" }}>
+      <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           Fix a wrong map link
         </h2>
@@ -151,6 +155,7 @@ export function FixMapsLinkModal({
             </Button>
           </div>
         </div>
+      </div>
       </div>
     </dialog>
   );

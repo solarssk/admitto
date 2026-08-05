@@ -485,7 +485,7 @@ function BulkMoreActionsMenu({
   revokablePassCount: number;
   onDelete: () => void;
 }>) {
-  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   const isDesktop = useIsDesktop();
 
   return (
@@ -505,7 +505,11 @@ function BulkMoreActionsMenu({
         {isDesktop ? "More actions" : "More"}
       </Button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+        <div
+          className={`more-actions-menu__panel${openUpward ? " more-actions-menu__panel--up" : ""}`}
+          role="menu"
+          ref={panelRef}
+        >
           {/* Below 768px only — "Send tickets" doesn't fit as its own button next to the
            * count and "Check in" (attendees.css), so it lives here instead on mobile, first
            * in the list since it's still one of the two most common bulk actions. */}

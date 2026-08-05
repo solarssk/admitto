@@ -13,6 +13,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingFontVariantDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "../attendees/add-attendee-modal.css";
 
 const FONT_FILE_RE = /\.(woff2?|ttf|otf)$/i;
@@ -177,6 +178,8 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   const { addToast } = useToast();
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   const rowSeqRef = useRef(0);
   // Bumped whenever a new load starts for a given row id - an in-flight load whose generation has
   // since moved on (the user picked another file for that row before the first one finished) just
@@ -441,6 +444,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 640px)" }}>
+      <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           {initialFamily ? `Edit "${initialFamily.name}"` : "Create font family"}
         </h2>
@@ -571,6 +575,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
             Save font family
           </Button>
         </div>
+      </div>
       </div>
     </dialog>
   );

@@ -715,6 +715,11 @@ export function AccountPage() {
 
   return (
     <>
+      {account.roles.length === 0 && (
+        <Notice variant="warning" role="alert" className="account-warn-block">
+          Your account doesn't have any role assigned yet, so there's nothing to access yet. You can still update your password and two-factor settings below. Contact an administrator to request access.
+        </Notice>
+      )}
       <Card title="Profile" footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
         setProfileSaving(true);
         const localeChanged = preferredLocale !== account.preferred_locale;

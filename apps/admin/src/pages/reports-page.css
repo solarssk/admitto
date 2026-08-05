@@ -49,6 +49,13 @@
   gap: 2px;
 }
 
+/* Anchored above the trigger instead of below - see .searchable-select__panel--up's own
+   comment (searchable-select.css); same useDropdownMenu-driven decision. */
+.reports-export-menu__panel--up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
 .reports-export-menu__item {
   display: flex;
   align-items: center;

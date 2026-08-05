@@ -9,6 +9,7 @@ import { DatePicker } from "../components/DatePicker.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "../attendees/add-attendee-modal.css";
 
@@ -26,6 +27,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const titleId = useId();
   const timezoneId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
@@ -101,6 +104,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
+      <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-calendar-plus" aria-hidden="true" /> New event
         </h2>
@@ -196,6 +200,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             </Button>
           </div>
         </div>
+      </div>
       </div>
     </dialog>
   );

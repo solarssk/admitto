@@ -1,26 +1,67 @@
-import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, EmptyState, IconButton, Skeleton, Tooltip, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Badge, Button, EmptyState, HintLabel, IconButton, Skeleton, Tooltip, useToast } from "@admitto/ui";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
-import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
+import { fetchAdminEvents, fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
-import type { RoleAssignmentListItemDto } from "../../api/types.js";
+import type { EventDto, RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
+import { FiltersMenu } from "../../components/FiltersMenu.js";
 import { paginationHandlers, PaginationFooter } from "../../components/PaginationFooter.js";
+import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
-import { formatUtcDateTime } from "../../utils/event-dates.js";
+import { formatUtcDateTime, zonedTimeLabel } from "../../utils/event-dates.js";
 
 const SKELETON_ROWS = 4;
-// GET /api/admin/role-assignments caps pageSize at 50 server-side - options here must not
-// exceed that, or a larger picked size silently returns a partial page with unreachable rows.
-const PAGE_SIZE_OPTIONS = [25, 50] as const;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const SEARCH_DEBOUNCE_MS = 300;
+
+/** Cached per locale+zone, same shape as Active sessions' own "Logged in" column - this table
+ * has no live-poll ticking it every render, so a per-render `new Map()` here would be needless. */
+const hourMinuteFormatCache = new Map<string, Intl.DateTimeFormat>();
+
+function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
+  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+  const key = `${locale}\0${timeZone}`;
+  let format = hourMinuteFormatCache.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
+    hourMinuteFormatCache.set(key, format);
+  }
+  return format;
+}
+
+/** The grant instant, converted to whoever is currently viewing the table's own browser
+ * timezone - a role grant has no captured actor timezone (unlike Audit log entries), so this
+ * matches Active sessions' own "no known actor zone" convention rather than fabricating one. */
+function viewerLocalTime(iso: string): string {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
+  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
+}
+
+const GRANTED_HINT = "Top: when this role was granted, in UTC. Below: the same moment in your own local time.";
 
 function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
   if (row.scope_type === "organization" && row.organization) return row.organization.name;
   return row.scope_id ?? "-";
+}
+
+/** Small icon-in-circle badge for the Scope column, same `.at-avatar` shape Staff users and
+ * Active sessions already use for their own User column - event vs organization here instead
+ * of a person's initials. */
+function ScopeCell({ row }: Readonly<{ row: RoleAssignmentListItemDto }>) {
+  const isOrg = row.scope_type === "organization";
+  return (
+    <div className="users-page__user-cell">
+      <span className="at-avatar at-avatar--sm" title={isOrg ? "Organization scope" : "Event scope"}>
+        <i className={`ti ti-${isOrg ? "building" : "calendar-event"}`} aria-hidden="true" />
+      </span>
+      {scopeLabel(row)}
+    </div>
+  );
 }
 
 type AssignmentRowProps = {
@@ -32,7 +73,9 @@ type AssignmentRowProps = {
 function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProps>) {
   return (
     <tr>
-      <td>{scopeLabel(row)}</td>
+      <td>
+        <ScopeCell row={row} />
+      </td>
       <td>
         <div>{row.user_display_name ?? row.user_email}</div>
         {row.user_display_name && <div className="users-page__user-email">{row.user_email}</div>}
@@ -45,7 +88,10 @@ function AssignmentTableRow({ row, canRevoke, onRevoke }: Readonly<AssignmentRow
           </span>
         )}
       </td>
-      <td>{formatUtcDateTime(row.granted_at)}</td>
+      <td>
+        {formatUtcDateTime(row.granted_at)}
+        <div className="sessions-subdued">{viewerLocalTime(row.granted_at)}</div>
+      </td>
       <td>
         {canRevoke ? (
           <Tooltip content="Revoke assignment">
@@ -73,16 +119,34 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
           <div className="users-page__user-name">{row.user_display_name ?? row.user_email}</div>
           {row.user_display_name && <div className="users-page__user-email">{row.user_email}</div>}
         </div>
-        <Badge variant={roleBadgeVariant(row.role)}>{roleLabel(row.role)}</Badge>
+        <div className="sessions-card-head-end">
+          <Badge variant={roleBadgeVariant(row.role)}>{roleLabel(row.role)}</Badge>
+          {canRevoke && (
+            <Tooltip content="Revoke assignment">
+              <IconButton
+                icon={<i className="ti ti-trash" aria-hidden="true" />}
+                label={`Revoke ${roleLabel(row.role)} for ${row.user_display_name ?? row.user_email}`}
+                size="sm"
+                className="users-page__icon-danger"
+                onClick={() => onRevoke(row)}
+              />
+            </Tooltip>
+          )}
+        </div>
       </div>
       <dl className="users-page__card-meta">
         <div>
           <dt>Scope</dt>
-          <dd>{scopeLabel(row)}</dd>
+          <dd>
+            <ScopeCell row={row} />
+          </dd>
         </div>
         <div>
           <dt>Granted</dt>
-          <dd>{formatUtcDateTime(row.granted_at)}</dd>
+          <dd>
+            {formatUtcDateTime(row.granted_at)}
+            <div className="sessions-subdued">{viewerLocalTime(row.granted_at)}</div>
+          </dd>
         </div>
         {row.is_oidc && (
           <div>
@@ -95,11 +159,6 @@ function AssignmentCard({ row, canRevoke, onRevoke }: Readonly<AssignmentRowProp
           </div>
         )}
       </dl>
-      {canRevoke && (
-        <Button type="button" variant="danger" className="users-page__card-revoke" onClick={() => onRevoke(row)}>
-          Revoke assignment
-        </Button>
-      )}
     </article>
   );
 }
@@ -125,7 +184,10 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [searchInput, setSearchInput] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [events, setEvents] = useState<EventDto[]>([]);
+  const [eventFilter, setEventFilter] = useState("");
   const [confirmTarget, setConfirmTarget] = useState<RoleAssignmentListItemDto | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -140,11 +202,20 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
     return () => window.clearTimeout(timer);
   }, [searchInput, searchQuery]);
 
+  useEffect(() => {
+    fetchAdminEvents({ includeArchived: true })
+      .then(setEvents)
+      .catch(() => {});
+  }, []);
+
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchRoleAssignments({ q: searchQuery || undefined, page, pageSize }, signal);
+      const data = await fetchRoleAssignments(
+        { q: searchQuery || undefined, eventId: eventFilter || undefined, page, pageSize },
+        signal,
+      );
       if (signal?.aborted) return;
       setRows(data.assignments);
       setTotal(data.total);
@@ -155,7 +226,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [searchQuery, page, pageSize, onCountChange]);
+  }, [searchQuery, eventFilter, page, pageSize, onCountChange]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -202,15 +273,56 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
         <label className="users-page__search">
           <i className="ti ti-search" aria-hidden="true" />
           <input
+            ref={searchInputRef}
             id="role-assignments-search"
             name="role-assignments-search"
-            type="search"
+            type="text"
             aria-label="Search role assignments by user name or email"
             placeholder="Search name or email"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
           />
+          {searchInput.length > 0 && (
+            <button
+              type="button"
+              className="users-page__search-clear"
+              onClick={() => {
+                setSearchInput("");
+                searchInputRef.current?.focus();
+              }}
+              aria-label="Clear search"
+            >
+              <i className="ti ti-x" aria-hidden="true" />
+            </button>
+          )}
         </label>
+        <Tooltip content="Filter by event">
+          <FiltersMenu activeCount={eventFilter ? 1 : 0} className="users-page-filters-menu">
+            <div className="users-page-filters-menu__field">
+              <label htmlFor="role-assignments-event-filter">Event</label>
+              <SearchableSelect
+                id="role-assignments-event-filter"
+                label="Event"
+                placeholder="All events"
+                searchPlaceholder="Search events…"
+                emptyLabel="No events found"
+                value={eventFilter}
+                options={[
+                  { id: "", label: "All events" },
+                  ...events.map((e) => ({
+                    id: e.id,
+                    label: `${e.title}${e.archived_at ? " (archived)" : ""}`,
+                    icon: "calendar-event",
+                  })),
+                ]}
+                onChange={(id) => {
+                  setEventFilter(id);
+                  setPage(1);
+                }}
+              />
+            </div>
+          </FiltersMenu>
+        </Tooltip>
       </div>
 
       {loading && showLoadingSkeleton && (
@@ -254,20 +366,27 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
         </div>
       )}
 
-      {!loading && !error && rows.length === 0 && searchQuery && (
+      {!loading && !error && rows.length === 0 && (searchQuery || eventFilter) && (
         <EmptyState
           icon={<i className="ti ti-filter-off" aria-hidden="true" />}
-          title="No role assignments match your search"
-          description="Try a different name or email."
+          title="No role assignments match your filters"
+          description="Try a different name, email, or event."
           action={
-            <Button type="button" variant="secondary" onClick={() => setSearchInput("")}>
-              Clear search
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setSearchInput("");
+                setEventFilter("");
+              }}
+            >
+              Clear filters
             </Button>
           }
         />
       )}
 
-      {!loading && !error && rows.length === 0 && !searchQuery && (
+      {!loading && !error && rows.length === 0 && !searchQuery && !eventFilter && (
         <EmptyState
           icon={<i className="ti ti-shield" aria-hidden="true" />}
           title="No role assignments yet"
@@ -284,7 +403,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
                   <th>Scope</th>
                   <th>User</th>
                   <th>Role</th>
-                  <th>Granted</th>
+                  <th><HintLabel hint={GRANTED_HINT}>Granted</HintLabel></th>
                   <th><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>

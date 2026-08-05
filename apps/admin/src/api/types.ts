@@ -1113,6 +1113,8 @@ export interface CreateAdminUserBody {
   email: string;
   password: string;
   display_name?: string | null;
+  phone_country_code?: string | null;
+  phone_number?: string | null;
   must_change_password?: boolean;
 }
 

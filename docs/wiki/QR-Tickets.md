@@ -23,7 +23,7 @@ Prepare a synthetic attendee with an active pass. Save and test the ticket email
 3. Send a template test to an approved test address.
 4. Send the ticket to the synthetic attendee.
 5. Open **View your ticket** from the received message.
-6. Confirm that the browser ticket shows the correct event and attendee information. When the event has a saved location, also check the address, directions/accessibility notes, and map links; a saved map pin adds the map image. When weather is enabled and the pin exists, the ticket also shows the forecast for the event day (Celsius and Fahrenheit together, for example `18°C (64°F)`), or “Forecast available N days before the event” when the day is still outside the provider horizon.
+6. Confirm that the browser ticket shows the correct event and attendee information. When the event has a saved location, also check the address, directions/accessibility notes, and map links; a saved map pin adds the map image. When weather is enabled and the pin exists, the ticket also shows the forecast for the event day, or “Forecast available N days before the event” when the day is still outside the provider horizon.
 7. Scan its QR code in the correct test event.
 8. Confirm the expected check-in result, then correct the synthetic check-in if needed.
 

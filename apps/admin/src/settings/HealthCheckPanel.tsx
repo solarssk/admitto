@@ -199,7 +199,7 @@ function HealthCheckMoreActions({
   onExport: () => void;
   onCopy: () => void;
 }>) {
-  const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -217,7 +217,11 @@ function HealthCheckMoreActions({
         More actions
       </Button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+        <div
+          className={`more-actions-menu__panel${openUpward ? " more-actions-menu__panel--up" : ""}`}
+          role="menu"
+          ref={panelRef}
+        >
           <MoreActionsMenuItem
             icon="download"
             label="Export"

@@ -12,6 +12,7 @@ import {
 } from "./customData.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "./add-attendee-modal.css";
 
@@ -29,6 +30,8 @@ function isValidEmail(value: string): boolean {
 export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
@@ -188,6 +191,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
+      <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
         </h2>
@@ -302,6 +306,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             </Button>
           </div>
         </div>
+      </div>
       </div>
     </dialog>
   );
