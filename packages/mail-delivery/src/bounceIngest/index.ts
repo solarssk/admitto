@@ -73,15 +73,21 @@ async function maybeMarkSeen(
   }
 }
 
+/** Shared folder-poll state so helpers stay under Sonar’s parameter-count limit. */
+type FolderProcessCtx = {
+  db: PrismaClient;
+  settings: BounceIngestSettings;
+  summary: IngestSummary;
+  log: (msg: string) => void;
+  deliveryByRecipient: Map<string, EmailDelivery>;
+};
+
 async function applyParsedLine(
-  db: PrismaClient,
-  settings: BounceIngestSettings,
-  summary: IngestSummary,
+  ctx: FolderProcessCtx,
   message: InboundMessage,
   line: ParsedBounceLine,
-  log: (msg: string) => void,
-  deliveryByRecipient: Map<string, EmailDelivery>,
 ): Promise<void> {
+  const { db, settings, summary, log, deliveryByRecipient } = ctx;
   try {
     const key = normalizeBounceRecipientEmail(line.recipientEmail);
     const delivery = deliveryByRecipient.get(key) ?? null;
@@ -105,16 +111,13 @@ async function applyParsedLine(
 
 /** Process one fetched message. Caller already skipped processed UIDs before FETCH. */
 async function processMessage(
-  db: PrismaClient,
-  settings: BounceIngestSettings,
-  summary: IngestSummary,
+  ctx: FolderProcessCtx,
   folder: string,
   message: InboundMessage,
   lines: ParsedBounceLine[],
-  log: (msg: string) => void,
   markedSeenUids: string[],
-  deliveryByRecipient: Map<string, EmailDelivery>,
 ): Promise<void> {
+  const { db, settings, summary, log } = ctx;
   summary.messagesSeen += 1;
 
   if (lines.length === 0) {
@@ -128,7 +131,7 @@ async function processMessage(
   }
 
   for (const line of lines) {
-    await applyParsedLine(db, settings, summary, message, line, log, deliveryByRecipient);
+    await applyParsedLine(ctx, message, line);
   }
 
   await markUidProcessed(db, settings.event_id, folder, message.uid);
@@ -193,19 +196,10 @@ async function processFolder(
   }
 
   const markedSeenUids: string[] = [];
+  const ctx: FolderProcessCtx = { db, settings, summary, log, deliveryByRecipient };
   for (const { message, lines } of parsed) {
     try {
-      await processMessage(
-        db,
-        settings,
-        summary,
-        folder,
-        message,
-        lines,
-        log,
-        markedSeenUids,
-        deliveryByRecipient,
-      );
+      await processMessage(ctx, folder, message, lines, markedSeenUids);
     } catch (err) {
       summary.errors += 1;
       log(
