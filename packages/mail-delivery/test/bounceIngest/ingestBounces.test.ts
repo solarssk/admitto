@@ -86,6 +86,9 @@ describe("ingestBounces", () => {
       bounceIngestSettings: {
         findUnique: vi.fn().mockResolvedValue(null),
       },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
     } as never;
 
     const summary = await ingestBounces(db, { eventId: "evt_missing" });
@@ -98,6 +101,9 @@ describe("ingestBounces", () => {
     const db = {
       bounceIngestSettings: {
         findUnique: vi.fn().mockResolvedValue(row),
+      },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     } as never;
 
@@ -337,15 +343,79 @@ describe("ingestBounces", () => {
     expect(summary.messagesSeen).toBe(2);
   });
 
-  it("returns none_enabled when no eventId and nothing is enabled", async () => {
+  it("prunes UIDs at the IMAP lookback boundary even when nothing is enabled", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-05T10:00:00.000Z"));
+    try {
+      const deleteMany = vi.fn().mockResolvedValue({ count: 3 });
+      const db = {
+        bounceIngestSettings: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+        bounceIngestProcessedUid: { deleteMany },
+      } as never;
+
+      const summary = await ingestBounces(db, {});
+
+      expect(summary.noopReason).toBe("none_enabled");
+      // Lookback is 2026-07-22T10:00Z; prune keeps the whole UTC boundary day.
+      expect(deleteMany).toHaveBeenCalledWith({
+        where: { processed_at: { lt: new Date("2026-07-22T00:00:00.000Z") } },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs prune failures without failing the ingest run", async () => {
+    const deleteMany = vi.fn().mockRejectedValue(new Error("prune db down"));
+    const log = vi.fn();
     const db = {
       bounceIngestSettings: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      bounceIngestProcessedUid: { deleteMany },
     } as never;
 
-    const summary = await ingestBounces(db, {});
+    const summary = await ingestBounces(db, { log });
+
     expect(summary.noopReason).toBe("none_enabled");
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/prune processed UIDs failed: prune db down/));
+  });
+
+  it("stringifies non-Error prune failures in the log line", async () => {
+    const deleteMany = vi.fn().mockRejectedValue("prune blew up");
+    const log = vi.fn();
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      bounceIngestProcessedUid: { deleteMany },
+    } as never;
+
+    await ingestBounces(db, { log });
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/prune processed UIDs failed: prune blew up/));
+  });
+
+  it("falls back to console.error when prune fails without a custom log", async () => {
+    const deleteMany = vi.fn().mockRejectedValue(new Error("prune db down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      bounceIngestProcessedUid: { deleteMany },
+    } as never;
+
+    try {
+      const summary = await ingestBounces(db, {});
+      expect(summary.noopReason).toBe("none_enabled");
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/prune processed UIDs failed: prune db down/),
+      );
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("skips already-processed UIDs", async () => {
@@ -675,6 +745,9 @@ describe("ingestBounces", () => {
     const db = {
       bounceIngestSettings: {
         findUnique: vi.fn().mockResolvedValue(row),
+      },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     } as never;
 
