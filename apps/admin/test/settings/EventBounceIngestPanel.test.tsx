@@ -314,9 +314,7 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     await screen.findByLabelText("IMAP host");
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
 
     expect(await screen.findByText(/Could not test the IMAP connection/)).toBeTruthy();
   });

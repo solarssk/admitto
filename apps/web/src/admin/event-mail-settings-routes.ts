@@ -44,7 +44,6 @@ import {
 } from "./admin-helpers.js";
 import {
   putMailSettingsBodySchema,
-  testMailTransportBodySchema,
   parseTestMailTransportBody,
   serializeDescriptor,
   descriptorForKey,
@@ -288,56 +287,89 @@ export async function handlePostEventMailSettingsTest(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  let body: z.infer<typeof testMailTransportBodySchema>;
-  {
-    const parsed = parseTestMailTransportBody(rawBody);
-    if (!parsed.ok) {
-      return c.json({ error: "validation_failed", detail: parsed.detail }, 400);
-    }
-    body = parsed.data;
+  const parsed = parseTestMailTransportBody(rawBody);
+  if (!parsed.ok) {
+    return c.json({ error: "validation_failed", detail: parsed.detail }, 400);
   }
-
+  const body = parsed.data;
   const audit = adminAuditFromContext(c);
 
   if (!body.verifyBounce) {
-    const outcome = await runTransportTest(
-      () =>
-        sendEventTransportTestEmail(
-          { eventId, toAddress: body.to },
-          db,
-          process.env,
-          mailDeliveryDeps,
-        ),
-      "[admin] event mail transport test",
-    );
-
-    try {
-      await writeAdminAuditLog(db, {
-        organizationId: org.organizationId,
-        actorUserId: audit.operator!,
-        sessionId: audit.sessionId,
-        ip: audit.ip,
-        timezone: audit.timezone,
-        actionType: "event_mail_transport_tested",
-        metadata: { eventId, result: outcome.resultStatus },
-      });
-    } catch (auditErr) {
-      console.error("[audit] event_mail_transport_tested log failed", auditErr);
-    }
-
-    return transportTestResponse(c, outcome);
+    return handlePlainEventTransportTest(c, db, {
+      eventId,
+      organizationId: org.organizationId,
+      toAddress: body.to,
+      audit,
+      mailDeliveryDeps,
+    });
   }
 
+  return handleEventBounceVerifyTest(c, db, {
+    eventId,
+    organizationId: org.organizationId,
+    toAddress: body.to,
+    audit,
+    mailDeliveryDeps,
+  });
+}
+
+async function handlePlainEventTransportTest(
+  c: Context,
+  db: PrismaClient,
+  args: {
+    eventId: string;
+    organizationId: string;
+    toAddress: string;
+    audit: ReturnType<typeof adminAuditFromContext>;
+    mailDeliveryDeps: MailDeliveryDeps;
+  },
+): Promise<Response> {
+  const outcome = await runTransportTest(
+    () =>
+      sendEventTransportTestEmail(
+        { eventId: args.eventId, toAddress: args.toAddress },
+        db,
+        process.env,
+        args.mailDeliveryDeps,
+      ),
+    "[admin] event mail transport test",
+  );
+
+  try {
+    await writeAdminAuditLog(db, {
+      organizationId: args.organizationId,
+      actorUserId: args.audit.operator!,
+      sessionId: args.audit.sessionId,
+      ip: args.audit.ip,
+      timezone: args.audit.timezone,
+      actionType: "event_mail_transport_tested",
+      metadata: { eventId: args.eventId, result: outcome.resultStatus },
+    });
+  } catch (auditErr) {
+    console.error("[audit] event_mail_transport_tested log failed", auditErr);
+  }
+
+  return transportTestResponse(c, outcome);
+}
+
+async function handleEventBounceVerifyTest(
+  c: Context,
+  db: PrismaClient,
+  args: {
+    eventId: string;
+    organizationId: string;
+    toAddress: string;
+    audit: ReturnType<typeof adminAuditFromContext>;
+    mailDeliveryDeps: MailDeliveryDeps;
+  },
+): Promise<Response> {
   let outcome: TransportTestOutcome;
   try {
     const probe = await runEventBounceProbe(
-      {
-        eventId,
-        toAddress: body.to,
-      },
+      { eventId: args.eventId, toAddress: args.toAddress },
       db,
       process.env,
-      mailDeliveryDeps,
+      args.mailDeliveryDeps,
     );
 
     const sendOk = isSendSuccess(probe.sendResult.status) && !probe.sendResult.error;
@@ -366,12 +398,12 @@ export async function handlePostEventMailSettingsTest(
   if (bounceStatus === "ok") {
     emitSystemLog("mail", "info", "mail_bounce_probe_ok", {
       context: "[admin] event mail bounce probe",
-      eventId,
+      eventId: args.eventId,
     });
   } else {
     emitSystemLog("mail", "error", "mail_bounce_probe_failed", {
       context: "[admin] event mail bounce probe",
-      eventId,
+      eventId: args.eventId,
       status: bounceStatus,
       error: outcome.bounceProbe?.message ?? outcome.errorMessage,
     });
@@ -379,14 +411,14 @@ export async function handlePostEventMailSettingsTest(
 
   try {
     await writeAdminAuditLog(db, {
-      organizationId: org.organizationId,
-      actorUserId: audit.operator!,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
+      organizationId: args.organizationId,
+      actorUserId: args.audit.operator!,
+      sessionId: args.audit.sessionId,
+      ip: args.audit.ip,
+      timezone: args.audit.timezone,
       actionType: "event_mail_bounce_probed",
       metadata: {
-        eventId,
+        eventId: args.eventId,
         result: bounceStatus,
         send: outcome.resultStatus,
       },

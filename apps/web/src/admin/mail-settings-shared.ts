@@ -324,7 +324,7 @@ export function transportTestResponse(c: Context, outcome: TransportTestOutcome)
       status: "sent";
       provider: MailerProvider;
       providerMessageId?: string;
-      bounceProbe?: TransportTestOutcome["bounceProbe"];
+      bounceProbe?: NonNullable<TransportTestOutcome["bounceProbe"]>;
     });
   }
 
@@ -339,7 +339,7 @@ export function transportTestResponse(c: Context, outcome: TransportTestOutcome)
     error: string;
     provider?: MailerProvider;
     retryable?: boolean;
-    bounceProbe?: TransportTestOutcome["bounceProbe"];
+    bounceProbe?: NonNullable<TransportTestOutcome["bounceProbe"]>;
   });
 }
 

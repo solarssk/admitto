@@ -52,6 +52,10 @@ function isHardBounce(line: ParsedBounceLine): boolean {
   return line.smtpCode.startsWith("5");
 }
 
+function failedProbe(sendResult: SendResult, message: string): BounceProbeResult {
+  return { status: "failed", message, sendResult };
+}
+
 async function openProbeProvider(
   db: PrismaClient,
   settings: BounceIngestSettings,
@@ -148,6 +152,112 @@ async function scanFolderForHardBounce(
   return null;
 }
 
+async function sendProbeTransportTest(
+  eventId: string,
+  toAddress: string,
+  db: PrismaClient,
+  env: NodeJS.ProcessEnv,
+  deps: MailDeliveryDeps,
+): Promise<{ ok: true; sendResult: SendResult } | { ok: false; result: BounceProbeResult }> {
+  try {
+    const sendResult = await sendEventTransportTestEmail({ eventId, toAddress }, db, env, deps);
+    if (!isSendSuccess(sendResult.status) || sendResult.error) {
+      return {
+        ok: false,
+        result: failedProbe(sendResult, sendResult.error ?? "Send failed before bounce wait."),
+      };
+    }
+    return { ok: true, sendResult };
+  } catch (err) {
+    // Same operator-safe mapping as plain Send test (`runTransportTest`): setup failures
+    // must not bubble as 500 from the admin route.
+    const raw = err instanceof Error ? err.message : undefined;
+    const message = transportTestErrorForAdmin(raw);
+    let provider: MailerProvider = "export_only";
+    try {
+      provider = (await resolveMailConfig(eventId, db, env)).provider;
+    } catch {
+      /* pre-config failure — keep neutral export_only */
+    }
+    return {
+      ok: false,
+      result: failedProbe(
+        { status: "rejected", provider, error: message, retryable: false },
+        message,
+      ),
+    };
+  }
+}
+
+async function softCloseProvider(provider: InboundMailProvider): Promise<void> {
+  try {
+    await provider.close();
+  } catch {
+    /* ignore */
+  }
+}
+
+type PollHit = { smtpCode: string; reason: string };
+
+async function pollForHardBounce(args: {
+  db: PrismaClient;
+  eventId: string;
+  folders: string[];
+  since: Date;
+  notBefore: Date;
+  want: string;
+  provider: InboundMailProvider;
+  timeoutMs: number;
+  pollMs: number;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
+}): Promise<{ hit: PollHit | null; everConnected: boolean; lastImapError?: string }> {
+  const examinedUids = new Set<string>();
+  let everConnected = false;
+  let reconnectUsed = false;
+  let lastImapError: string | undefined;
+  const deadline = args.now() + args.timeoutMs;
+
+  try {
+    while (args.now() < deadline) {
+      try {
+        if (!everConnected) {
+          await args.provider.connect();
+          everConnected = true;
+        }
+
+        const hit = await scanFoldersForHardBounce(args.db, {
+          eventId: args.eventId,
+          folders: args.folders,
+          since: args.since,
+          notBefore: args.notBefore,
+          want: args.want,
+          provider: args.provider,
+          examinedUids,
+        });
+        if (hit) return { hit, everConnected, lastImapError };
+      } catch (err) {
+        lastImapError = err instanceof Error ? err.message : String(err);
+        console.error(`[bounce-probe] IMAP poll failed: ${lastImapError}`);
+
+        if (everConnected && !reconnectUsed) {
+          reconnectUsed = true;
+          everConnected = false;
+          await softCloseProvider(args.provider);
+        }
+      }
+
+      const remaining = deadline - args.now();
+      if (remaining <= 0) break;
+      await args.sleep(Math.min(args.pollMs, remaining));
+    }
+  } finally {
+    await softCloseProvider(args.provider);
+  }
+
+  return { hit: null, everConnected, lastImapError };
+}
+
 /**
  * Send a transport-level test message (no EmailDelivery / Attendee row, same as a plain Send
  * test), then poll the event's bounce IMAP mailbox until a hard bounce for that To address
@@ -179,40 +289,9 @@ export async function runEventBounceProbe(
     throw new BounceProbeSetupError("Turn bounce detection On and save before verifying bounce.");
   }
 
-  let sendResult: SendResult;
-  try {
-    sendResult = await sendEventTransportTestEmail({ eventId, toAddress }, db, env, deps);
-  } catch (err) {
-    // Same operator-safe mapping as plain Send test (`runTransportTest`): setup failures
-    // (no provider, export_only without sink, blocked/unresolvable SMTP host) must not
-    // bubble as 500 from the admin route.
-    const raw = err instanceof Error ? err.message : undefined;
-    const message = transportTestErrorForAdmin(raw);
-    let provider: MailerProvider = "export_only";
-    try {
-      provider = (await resolveMailConfig(eventId, db, env)).provider;
-    } catch {
-      /* pre-config failure — keep neutral export_only */
-    }
-    return {
-      status: "failed",
-      message,
-      sendResult: {
-        status: "rejected",
-        provider,
-        error: message,
-        retryable: false,
-      },
-    };
-  }
-
-  if (!isSendSuccess(sendResult.status) || sendResult.error) {
-    return {
-      status: "failed",
-      message: sendResult.error ?? "Send failed before bounce wait.",
-      sendResult,
-    };
-  }
+  const sendOutcome = await sendProbeTransportTest(eventId, toAddress, db, env, deps);
+  if (!sendOutcome.ok) return sendOutcome.result;
+  const { sendResult } = sendOutcome;
 
   const recipient = toAddress.trim().toLowerCase();
   const folders = parseFolders(bounceSettings.folders);
@@ -220,7 +299,6 @@ export async function runEventBounceProbe(
   // SMTP clocks are real-world. Narrow SEARCH + receivedAt so a stale same-recipient NDR in
   // the 14-day ingest window cannot make "Also verify bounce" succeed without a fresh bounce.
   const notBefore = new Date(Date.now() - BOUNCE_PROBE_SINCE_SKEW_MS);
-  const since = notBefore;
 
   let provider: InboundMailProvider;
   try {
@@ -231,79 +309,38 @@ export async function runEventBounceProbe(
   } catch (err) {
     const raw = err instanceof Error ? err.message : String(err);
     console.error(`[bounce-probe] IMAP open failed: ${raw}`);
-    return {
-      status: "failed",
-      message: "Could not open the bounce mailbox. Check IMAP settings and try again.",
+    return failedProbe(
       sendResult,
-    };
+      "Could not open the bounce mailbox. Check IMAP settings and try again.",
+    );
   }
 
-  const examinedUids = new Set<string>();
-  let everConnected = false;
-  let reconnectUsed = false;
-  let lastImapError: string | undefined;
   const waitSeconds = Math.max(1, Math.round(timeoutMs / 1000));
+  const { hit, everConnected, lastImapError } = await pollForHardBounce({
+    db,
+    eventId,
+    folders,
+    since: notBefore,
+    notBefore,
+    want: recipient,
+    provider,
+    timeoutMs,
+    pollMs,
+    sleep,
+    now,
+  });
 
-  try {
-    const deadline = now() + timeoutMs;
-    while (now() < deadline) {
-      try {
-        if (!everConnected) {
-          await provider.connect();
-          everConnected = true;
-        }
-
-        const hit = await scanFoldersForHardBounce(db, {
-          eventId,
-          folders,
-          since,
-          notBefore,
-          want: recipient,
-          provider,
-          examinedUids,
-        });
-        if (hit) {
-          return {
-            status: "ok",
-            message: `Bounce received (${hit.smtpCode}). Detection can read delivery failures from the bounce mailbox.`,
-            smtpCode: hit.smtpCode,
-            sendResult,
-          };
-        }
-      } catch (err) {
-        lastImapError = err instanceof Error ? err.message : String(err);
-        console.error(`[bounce-probe] IMAP poll failed: ${lastImapError}`);
-
-        // Mid-loop disconnect: allow one reconnect attempt for the remainder of the wait.
-        if (everConnected && !reconnectUsed) {
-          reconnectUsed = true;
-          everConnected = false;
-          try {
-            await provider.close();
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-
-      const remaining = deadline - now();
-      if (remaining <= 0) break;
-      await sleep(Math.min(pollMs, remaining));
-    }
-  } finally {
-    try {
-      await provider.close();
-    } catch {
-      /* ignore */
-    }
+  if (hit) {
+    return {
+      status: "ok",
+      message: `Bounce received (${hit.smtpCode}). Detection can read delivery failures from the bounce mailbox.`,
+      smtpCode: hit.smtpCode,
+      sendResult,
+    };
   }
 
   if (!everConnected) {
-    return {
-      status: "failed",
-      message: imapTestErrorForAdmin(lastImapError),
-      sendResult,
-    };
+    return failedProbe(sendResult, imapTestErrorForAdmin(lastImapError));
   }
 
   return {
