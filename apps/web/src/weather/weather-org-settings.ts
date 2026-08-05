@@ -17,7 +17,7 @@ import {
   type WeatherProviderId,
 } from "./config.js";
 import { WeatherService } from "./weather-service.js";
-import { createWeatherCache } from "./weather-cache.js";
+import { getSharedWeatherCache } from "./weather-cache.js";
 import {
   buildGeocodingUserAgent,
   isGeocodingContactConfigured,
@@ -125,7 +125,7 @@ export async function createWeatherServiceFromDb(
   const userAgent = contactConfigured ? await buildGeocodingUserAgent(db, env) : null;
   return new WeatherService({
     config,
-    cache: createWeatherCache(env),
+    cache: getSharedWeatherCache(env),
     userAgent,
     contactConfigured,
   });

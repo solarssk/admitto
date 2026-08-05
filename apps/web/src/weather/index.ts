@@ -36,5 +36,7 @@ export type { DayForecast, WeatherSummaryDto, WeatherSummaryStatus } from "./typ
 export {
   InMemoryWeatherCache,
   createWeatherCache,
+  getSharedWeatherCache,
+  resetSharedWeatherCacheForTests,
   weatherCacheKey,
 } from "./weather-cache.js";

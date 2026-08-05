@@ -62,11 +62,30 @@ export class RedisWeatherCache extends WeatherCacheAdapter {
 
 type EnvLike = Record<string, string | undefined>;
 
+/** Fresh cache instance (tests / explicit inject). Prefer `getSharedWeatherCache` in request paths. */
 export function createWeatherCache(env: EnvLike = process.env): WeatherCache {
   if (env["NODE_ENV"] === "test") return new InMemoryWeatherCache();
   const url = env["REDIS_URL"]?.trim();
   if (url) return new RedisWeatherCache(url);
   return new InMemoryWeatherCache();
+}
+
+/**
+ * Process-wide weather cache. Request handlers must reuse this so Redis clients are not
+ * opened per ticket/list call (and so the in-memory fallback actually caches across requests).
+ */
+let sharedWeatherCache: WeatherCache | null = null;
+
+export function getSharedWeatherCache(env: EnvLike = process.env): WeatherCache {
+  sharedWeatherCache ??= createWeatherCache(env);
+  return sharedWeatherCache;
+}
+
+/** @internal */
+export async function resetSharedWeatherCacheForTests(): Promise<void> {
+  const previous = sharedWeatherCache as WeatherCacheAdapter | null;
+  sharedWeatherCache = null;
+  await previous?.disconnect();
 }
 
 /** Round coords so nearby events share a cache entry (~1 km). Include provider so

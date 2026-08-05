@@ -12,7 +12,7 @@ import { MetNoClient } from "./met-no-client.js";
 import { OpenMeteoClient, WeatherProviderError } from "./open-meteo-client.js";
 import type { WeatherSummaryDto } from "./types.js";
 import {
-  createWeatherCache,
+  getSharedWeatherCache,
   weatherCacheKey,
   type WeatherCache,
 } from "./weather-cache.js";
@@ -85,7 +85,7 @@ export class WeatherService {
 
   constructor(options: WeatherServiceOptions = {}) {
     this.config = options.config ?? resolveWeatherEnvConfig();
-    this.cache = options.cache ?? createWeatherCache();
+    this.cache = options.cache ?? getSharedWeatherCache();
     this.fetchFn = options.fetchFn ?? fetch;
     this.openMeteo = new OpenMeteoClient({
       config: this.config,
