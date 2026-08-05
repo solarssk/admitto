@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bounce / NDR IMAP ingest loop — same shape as nightly-db-backup-loop.sh.
+# Bounce / NDR IMAP ingest loop - same shape as nightly-db-backup-loop.sh.
 # Runs compiled Admitto CLI on the app image (entrypoint overridden in compose).
 
 set -eu
@@ -10,6 +10,12 @@ log() {
   message="$1"
   printf '%s\n' "$message"
 }
+
+# Positive integer only (reject empty, zero, leading zeros, decimals, non-digits).
+if ! printf '%s' "$SLEEP_SECONDS" | grep -Eq '^[1-9][0-9]*$'; then
+  log "[bounce-ingest] error: BOUNCE_INGEST_INTERVAL_SECONDS must be a positive integer (got: ${SLEEP_SECONDS})"
+  exit 1
+fi
 
 run_once() {
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

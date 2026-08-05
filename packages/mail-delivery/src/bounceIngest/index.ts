@@ -3,7 +3,7 @@ import { applyBounceResult } from "./applyBounceResult.js";
 import { findDeliveryForBounce, truncateEmailForLog } from "./correlate.js";
 import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
-import { isUidProcessed, markUidProcessed } from "./processedUid.js";
+import { isUidProcessed, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
 import { lookbackSince, parseFolders, resolveImapConnectConfig } from "./resolveAuth.js";
 import type { InboundMailProvider, InboundMessage, IngestSummary, ParsedBounceLine } from "./types.js";
 
@@ -191,34 +191,25 @@ async function resolveRowsToProcess(
   db: PrismaClient,
   options: IngestBouncesOptions,
 ): Promise<{ rows: BounceIngestSettings[] } | { noop: IngestSummary }> {
-  const where = options.eventId ? { event_id: options.eventId } : { enabled: true };
-  const rows = await db.bounceIngestSettings.findMany({ where });
+  if (options.eventId) {
+    const row = await db.bounceIngestSettings.findUnique({
+      where: { event_id: options.eventId },
+    });
+    if (!row) return { noop: emptySummary({ noopReason: "not_configured" }) };
+    if (!row.enabled) return { noop: emptySummary({ noopReason: "disabled" }) };
+    return { rows: [row] };
+  }
 
+  const rows = await db.bounceIngestSettings.findMany({ where: { enabled: true } });
   if (rows.length === 0) {
-    if (options.eventId) {
-      const any = await db.bounceIngestSettings.findUnique({
-        where: { event_id: options.eventId },
-      });
-      if (!any) return { noop: emptySummary({ noopReason: "not_configured" }) };
-      if (!any.enabled) return { noop: emptySummary({ noopReason: "disabled" }) };
-    }
     return { noop: emptySummary({ noopReason: "none_enabled" }) };
   }
-
-  if (options.eventId && rows.length === 1 && !rows[0]!.enabled) {
-    return { noop: emptySummary({ noopReason: "disabled" }) };
-  }
-
-  const toProcess = options.eventId ? rows.filter((r) => r.enabled) : rows;
-  if (toProcess.length === 0) {
-    return { noop: emptySummary({ noopReason: "disabled" }) };
-  }
-  return { rows: toProcess };
+  return { rows };
 }
 
 /**
  * Ingest bounce/NDR messages for all enabled event settings (or one event).
- * No-op when nothing is configured / enabled — not an error.
+ * No-op when nothing is configured / enabled - not an error.
  */
 export async function ingestBounces(
   db: PrismaClient,
@@ -231,6 +222,17 @@ export async function ingestBounces(
   for (const settings of resolved.rows) {
     await ingestEvent(db, settings, summary, options);
   }
+
+  // Drop UID markers older than the IMAP lookback window (best-effort; do not
+  // inflate summary.errors / CLI exit - prune is maintenance, not ingest failure).
+  try {
+    await pruneProcessedUidsOlderThan(db);
+  } catch (err) {
+    (options.log ?? console.error)(
+      `[bounce-ingest] prune processed UIDs failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   return summary;
 }
 
@@ -274,7 +276,7 @@ export type {
   ImapConnectConfig,
 } from "./types.js";
 export { parseBounceLines, parseRfc3464DsnBlocks } from "./parseBounceLine.js";
-export { findDeliveryForBounce, truncateEmailForLog } from "./correlate.js";
+export { findDeliveryForBounce, truncateEmailForLog, NON_TERMINAL } from "./correlate.js";
 export { applyBounceResult } from "./applyBounceResult.js";
 export type { ApplyBounceOutcome } from "./applyBounceResult.js";
 export { ImapInboundProvider, extractPlainTextFromSource, MAX_BODY_BYTES } from "./imapProvider.js";

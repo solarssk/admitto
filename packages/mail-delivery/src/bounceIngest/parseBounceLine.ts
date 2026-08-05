@@ -89,8 +89,10 @@ function parseAddressTypeValue(raw: string | undefined): string | null {
 }
 
 function parseDsnFields(block: string): Map<string, string> {
+  // RFC 5322 folded header lines: unfold before splitting into field records.
+  const unfolded = block.replace(/\n[ \t]+/g, " ");
   const fields = new Map<string, string>();
-  for (const line of block.split("\n")) {
+  for (const line of unfolded.split("\n")) {
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
     const name = line.slice(0, colon);
@@ -175,8 +177,11 @@ export function parseRfc3464DsnBlocks(text: string): ParsedBounceLine[] {
   return out;
 }
 
-function inferRecipientEmail(body: string): string | null {
-  const fromDsn = parseRfc3464DsnBlocks(body)[0]?.recipientEmail;
+function inferRecipientEmail(
+  body: string,
+  dsnLines: readonly ParsedBounceLine[],
+): string | null {
+  const fromDsn = dsnLines[0]?.recipientEmail;
   if (fromDsn) return fromDsn;
 
   const nearOrphan = RE_NEAR_ORPHAN.exec(body);
@@ -194,8 +199,13 @@ function inferRecipientEmail(body: string): string | null {
   return null;
 }
 
-function parsePostfixFallback(normalized: string, out: ParsedBounceLine[], seen: Set<string>): void {
-  const inferredEmail = inferRecipientEmail(normalized);
+function parsePostfixFallback(
+  normalized: string,
+  out: ParsedBounceLine[],
+  seen: Set<string>,
+  dsnLines: readonly ParsedBounceLine[],
+): void {
+  const inferredEmail = inferRecipientEmail(normalized, dsnLines);
 
   const withEnhanced = new RegExp(
     String.raw`${EMAIL_RE}\s+failed:\s+${HOST_SAID}(\d{3})\s+(\d\.\d\.\d)\s+\S+:\s+(.+?)${REPLY_TAIL}`,
@@ -240,14 +250,15 @@ export function parseBounceLines(bodyText: string): ParsedBounceLine[] {
   const seen = new Set<string>();
 
   // Prefer machine-readable DSN (RFC 3464) over human prose.
-  for (const line of parseRfc3464DsnBlocks(normalized)) {
+  const dsnLines = parseRfc3464DsnBlocks(normalized);
+  for (const line of dsnLines) {
     const key = lineKey(line);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(line);
   }
 
-  parsePostfixFallback(normalized, out, seen);
+  parsePostfixFallback(normalized, out, seen, dsnLines);
 
   return out;
 }

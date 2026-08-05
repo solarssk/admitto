@@ -15,6 +15,7 @@ import {
   Notice,
   Select,
   Switch,
+  Tooltip,
   useToast,
 } from "@admitto/ui";
 import {
@@ -28,7 +29,7 @@ import type {
   MailSecretFieldDto,
   SaveEventBounceIngestSettingsBody,
 } from "../api/types.js";
-import { whenShown } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
 
@@ -96,6 +97,17 @@ function secretFieldFromApi(data: EventBounceIngestSettingsResponse): MailSecret
   };
 }
 
+function bounceTestBlockedReason(
+  isArchived: boolean,
+  dirty: boolean,
+  configured: boolean,
+): string | undefined {
+  if (isArchived) return "This event is archived.";
+  if (dirty) return "Save your changes first.";
+  if (!configured) return "Save your bounce detection settings first.";
+  return undefined;
+}
+
 export type EventBounceIngestPanelHandle = {
   /** Persist settings. Resolves `true` on success, `false` on validation/API failure. */
   save: () => Promise<boolean>;
@@ -119,6 +131,7 @@ export const EventBounceIngestPanel = forwardRef<
 ) {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
+  const showLoading = useDelayedLoading(loading);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [apiData, setApiData] = useState<EventBounceIngestSettingsResponse | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft());
@@ -274,7 +287,7 @@ export const EventBounceIngestPanel = forwardRef<
 
   if (loading) {
     return whenShown(
-      true,
+      showLoading,
       <Card title={<HintLabel hint={BOUNCE_CARD_HINT}>Bounce detection</HintLabel>}>
         <p className="settings-card-intro">Loading…</p>
       </Card>,
@@ -296,7 +309,13 @@ export const EventBounceIngestPanel = forwardRef<
 
   const smtpReuseAvailable = apiData?.smtp_reuse_available ?? false;
   const reuseOn = draft.reuseSmtp && smtpReuseAvailable;
-  const testBlocked = dirty || !apiData?.configured;
+  const testBlockedReason = bounceTestBlockedReason(
+    isArchived,
+    dirty,
+    apiData?.configured ?? false,
+  );
+  const testBlocked = Boolean(testBlockedReason);
+  const testReasonId = "event-bounce-ingest-test-reason";
 
   return (
     <div className="event-bounce-ingest">
@@ -421,15 +440,23 @@ export const EventBounceIngestPanel = forwardRef<
                   ))}
                 </Select>
                 <div className="event-bounce-ingest__test-control">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={isArchived || testing || testBlocked}
-                    onClick={() => void handleTest()}
-                    icon={<i className="ti ti-plug" aria-hidden="true" />}
-                  >
-                    {testing ? "Testing…" : "Test connection"}
-                  </Button>
+                  <Tooltip content={testBlockedReason}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={testing || testBlocked}
+                      aria-describedby={testBlockedReason ? testReasonId : undefined}
+                      onClick={() => void handleTest()}
+                      icon={<i className="ti ti-plug" aria-hidden="true" />}
+                    >
+                      {testing ? "Testing…" : "Test connection"}
+                    </Button>
+                  </Tooltip>
+                  {testBlockedReason && (
+                    <span id={testReasonId} className="sr-only">
+                      {testBlockedReason}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -460,7 +487,8 @@ export const EventBounceIngestPanel = forwardRef<
       >
         <EmptyState
           icon={<i className="ti ti-clock" aria-hidden="true" />}
-          title="No runs yet"
+          title="Not tracked yet"
+          description="Last-run status is not available in this version."
         />
       </Card>
     </div>

@@ -47,6 +47,32 @@ function mockProvider(messages: InboundMessage[]): InboundMailProvider {
   };
 }
 
+/** Minimal Prisma stubs for event-scoped ingest (findUnique) + UID prune. */
+function eventScopedDb(
+  row: BounceIngestSettings,
+  extras: {
+    bounceIngestProcessedUid?: Record<string, unknown>;
+    emailDelivery?: Record<string, unknown>;
+  } = {},
+) {
+  return {
+    bounceIngestSettings: {
+      findUnique: vi.fn().mockResolvedValue(row),
+    },
+    bounceIngestProcessedUid: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      ...extras.bounceIngestProcessedUid,
+    },
+    emailDelivery: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      ...extras.emailDelivery,
+    },
+  };
+}
+
 const HARD_BODY =
   "user@example.com failed: host mx.example.com (203.0.113.1) said: 550 5.1.1 user@example.com: User unknown (in reply to RCPT TO command)";
 
@@ -57,7 +83,6 @@ describe("ingestBounces", () => {
   it("returns not_configured when no settings row exists for eventId", async () => {
     const db = {
       bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue(null),
       },
     } as never;
@@ -71,7 +96,6 @@ describe("ingestBounces", () => {
     const row = settings({ enabled: false });
     const db = {
       bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
         findUnique: vi.fn().mockResolvedValue(row),
       },
     } as never;
@@ -105,21 +129,12 @@ describe("ingestBounces", () => {
       recipient_email: "user@example.com",
       event_id: "evt_1",
     });
-    const updateDelivery = vi.fn().mockResolvedValue({});
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
 
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: findUniqueUid,
-        upsert,
-      },
-      emailDelivery: {
-        findFirst: findFirstDelivery,
-        update: updateDelivery,
-      },
-    } as never;
+    const db = eventScopedDb(row, {
+      bounceIngestProcessedUid: { findUnique: findUniqueUid, upsert },
+      emailDelivery: { findFirst: findFirstDelivery, updateMany },
+    }) as never;
 
     const provider = mockProvider(messages);
     const summary = await ingestBounces(db, {
@@ -132,17 +147,13 @@ describe("ingestBounces", () => {
     expect(summary.bouncesApplied).toBe(1);
     expect(summary.unparsed).toBe(1);
     expect(summary.connectFailed).toBe(false);
-    expect(updateDelivery).toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledTimes(2);
   });
 
   it("sets connectFailed when provider.connect throws", async () => {
     const row = settings();
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-    } as never;
+    const db = eventScopedDb(row) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -175,29 +186,22 @@ describe("ingestBounces", () => {
       },
     ];
 
-    let uidCalls = 0;
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        upsert: vi.fn().mockImplementation(async () => {
-          uidCalls += 1;
-          if (uidCalls === 1) throw new Error("db blip");
-          return {};
-        }),
-      },
+    let findCalls = 0;
+    const db = eventScopedDb(row, {
       emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "del_x",
-          status: "sent",
-          recipient_email: "user@example.com",
-          event_id: "evt_1",
+        findFirst: vi.fn().mockImplementation(async () => {
+          findCalls += 1;
+          if (findCalls === 1) throw new Error("db blip");
+          return {
+            id: "del_x",
+            status: "sent",
+            recipient_email: "other@example.com",
+            event_id: "evt_1",
+          };
         }),
-        update: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-    } as never;
+    }) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -205,7 +209,8 @@ describe("ingestBounces", () => {
       log: () => undefined,
     });
 
-    expect(summary.errors).toBeGreaterThanOrEqual(1);
+    expect(summary.errors).toBe(1);
+    expect(summary.bouncesApplied).toBe(1);
     expect(summary.messagesSeen).toBe(2);
   });
 
@@ -230,19 +235,16 @@ describe("ingestBounces", () => {
         bodyText: HARD_BODY,
       },
     ];
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
+    const db = eventScopedDb(row, {
       bounceIngestProcessedUid: {
         findUnique: vi.fn().mockResolvedValue({ id: "processed_1" }),
         upsert: vi.fn(),
       },
       emailDelivery: {
         findFirst: vi.fn(),
-        update: vi.fn(),
+        updateMany: vi.fn(),
       },
-    } as never;
+    }) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -257,19 +259,7 @@ describe("ingestBounces", () => {
 
   it("counts noMatchingDelivery when no EmailDelivery row exists", async () => {
     const row = settings();
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        upsert: vi.fn().mockResolvedValue({}),
-      },
-      emailDelivery: {
-        findFirst: vi.fn().mockResolvedValue(null),
-        update: vi.fn(),
-      },
-    } as never;
+    const db = eventScopedDb(row) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -287,20 +277,13 @@ describe("ingestBounces", () => {
 
     expect(summary.noMatchingDelivery).toBe(1);
     expect(summary.bouncesApplied).toBe(0);
-    expect(db.emailDelivery.update).not.toHaveBeenCalled();
+    expect(db.emailDelivery.updateMany).not.toHaveBeenCalled();
   });
 
   it("counts softBouncesLogged for a 4xx diagnostic", async () => {
     const row = settings();
-    const updateDelivery = vi.fn().mockResolvedValue({});
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        upsert: vi.fn().mockResolvedValue({}),
-      },
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const db = eventScopedDb(row, {
       emailDelivery: {
         findFirst: vi.fn().mockResolvedValue({
           id: "del_soft",
@@ -308,9 +291,9 @@ describe("ingestBounces", () => {
           recipient_email: "user@example.com",
           event_id: "evt_1",
         }),
-        update: updateDelivery,
+        updateMany,
       },
-    } as never;
+    }) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -328,6 +311,7 @@ describe("ingestBounces", () => {
 
     expect(summary.softBouncesLogged).toBe(1);
     expect(summary.bouncesApplied).toBe(0);
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it("continues to the next folder when fetch throws", async () => {
@@ -349,14 +333,7 @@ describe("ingestBounces", () => {
       fetchCandidateMessages: fetch,
       markSeen: vi.fn().mockResolvedValue(undefined),
     };
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        upsert: vi.fn().mockResolvedValue({}),
-      },
+    const db = eventScopedDb(row, {
       emailDelivery: {
         findFirst: vi.fn().mockResolvedValue({
           id: "del_1",
@@ -364,9 +341,9 @@ describe("ingestBounces", () => {
           recipient_email: "user@example.com",
           event_id: "evt_1",
         }),
-        update: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-    } as never;
+    }) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -381,14 +358,7 @@ describe("ingestBounces", () => {
 
   it("counts errors when applyBounceResult throws", async () => {
     const row = settings();
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        upsert: vi.fn().mockResolvedValue({}),
-      },
+    const db = eventScopedDb(row, {
       emailDelivery: {
         findFirst: vi.fn().mockResolvedValue({
           id: "del_1",
@@ -396,9 +366,9 @@ describe("ingestBounces", () => {
           recipient_email: "user@example.com",
           event_id: "evt_1",
         }),
-        update: vi.fn().mockRejectedValue(new Error("update failed")),
+        updateMany: vi.fn().mockRejectedValue(new Error("update failed")),
       },
-    } as never;
+    }) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -421,19 +391,7 @@ describe("ingestBounces", () => {
   it("swallows markSeen failures on unparsed messages", async () => {
     const row = settings();
     const markSeen = vi.fn().mockRejectedValue(new Error("flags failed"));
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        upsert: vi.fn().mockResolvedValue({}),
-      },
-      emailDelivery: {
-        findFirst: vi.fn(),
-        update: vi.fn(),
-      },
-    } as never;
+    const db = eventScopedDb(row) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",
@@ -458,11 +416,10 @@ describe("ingestBounces", () => {
     expect(summary.errors).toBe(0);
   });
 
-  it("returns disabled when eventId matches only a disabled row in the filter path", async () => {
+  it("returns disabled when eventId matches a disabled settings row", async () => {
     const row = settings({ enabled: false });
     const db = {
       bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
         findUnique: vi.fn().mockResolvedValue(row),
       },
     } as never;
@@ -470,19 +427,6 @@ describe("ingestBounces", () => {
     const summary = await ingestBounces(db, { eventId: "evt_1" });
     expect(summary.noopReason).toBe("disabled");
     expect(summary.eventsProcessed).toBe(0);
-  });
-
-  it("returns disabled when findMany is empty but a disabled row exists", async () => {
-    const row = settings({ enabled: false });
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([]),
-        findUnique: vi.fn().mockResolvedValue(row),
-      },
-    } as never;
-
-    const summary = await ingestBounces(db, { eventId: "evt_1" });
-    expect(summary.noopReason).toBe("disabled");
   });
 
   it("ingests all enabled events when eventId is omitted", async () => {
@@ -496,10 +440,11 @@ describe("ingestBounces", () => {
       bounceIngestProcessedUid: {
         findUnique: vi.fn().mockResolvedValue(null),
         upsert: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       emailDelivery: {
         findFirst: vi.fn().mockResolvedValue(null),
-        update: vi.fn(),
+        updateMany: vi.fn(),
       },
     } as never;
 
@@ -532,19 +477,7 @@ describe("ingestBounces", () => {
         fetchCandidateMessages: vi.fn().mockResolvedValue([]),
       };
     });
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn(),
-        upsert: vi.fn(),
-      },
-      emailDelivery: {
-        findFirst: vi.fn(),
-        update: vi.fn(),
-      },
-    } as never;
+    const db = eventScopedDb(row) as never;
 
     await ingestBounces(db, { eventId: "evt_1", log: () => undefined });
 
@@ -556,14 +489,7 @@ describe("ingestBounces", () => {
   it("swallows provider.close failures", async () => {
     const row = settings();
     const markSeen = vi.fn().mockRejectedValue(new Error("flags failed"));
-    const db = {
-      bounceIngestSettings: {
-        findMany: vi.fn().mockResolvedValue([row]),
-      },
-      bounceIngestProcessedUid: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        upsert: vi.fn().mockResolvedValue({}),
-      },
+    const db = eventScopedDb(row, {
       emailDelivery: {
         findFirst: vi.fn().mockResolvedValue({
           id: "del_1",
@@ -571,9 +497,9 @@ describe("ingestBounces", () => {
           recipient_email: "user@example.com",
           event_id: "evt_1",
         }),
-        update: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
-    } as never;
+    }) as never;
 
     const summary = await ingestBounces(db, {
       eventId: "evt_1",

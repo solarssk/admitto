@@ -13,9 +13,8 @@ import type {
   MailSettingsFieldsDto,
   MailTransportTestSendResponse,
 } from "../api/types.js";
-import { ApiError } from "../api/client.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { emptyMailDraft, emptySecretEdits, type MailDraft, type SecretEdits } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
@@ -1000,8 +999,13 @@ function useBounceWaitCountdown(active: boolean, totalSeconds = BOUNCE_VERIFY_WA
       return;
     }
     setRemaining(totalSeconds);
+    let secondsLeft = totalSeconds;
     const id = window.setInterval(() => {
-      setRemaining((seconds) => (seconds <= 0 ? 0 : seconds - 1));
+      secondsLeft -= 1;
+      setRemaining(secondsLeft);
+      if (secondsLeft <= 0) {
+        window.clearInterval(id);
+      }
     }, 1000);
     return () => window.clearInterval(id);
   }, [active, totalSeconds]);
@@ -1295,10 +1299,6 @@ export function buildTestResult(
 }
 
 export function testSendErrorMessage(err: unknown): string {
-  if (err instanceof ApiError && err.status === 400 && hasApiErrorCode(err, "validation_failed")) {
-    // Prefer server detail when present (bad recipient vs other schema failures).
-    return operatorApiErrorMessage(err, "Enter a valid email address.");
-  }
   return operatorApiErrorMessage(err, "Send failed.");
 }
 

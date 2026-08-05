@@ -524,7 +524,7 @@ describe("MailTransportPanel — SMTP Test connection", () => {
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
     });
-    expect(document.querySelector(".smtp-connection-probe__hint")).toBeNull();
+    expect(screen.getByText("Save your changes first.")).toBeTruthy();
   });
 
   it("shows a success notice when the probe succeeds", async () => {

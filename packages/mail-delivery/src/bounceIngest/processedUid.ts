@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@admitto/db";
+import { lookbackSince } from "./resolveAuth.js";
 
 /** Record that an IMAP UID was already handled for this event/folder (idempotent ingest). */
 export async function markUidProcessed(
@@ -29,4 +30,15 @@ export async function isUidProcessed(
     select: { id: true },
   });
   return row !== null;
+}
+
+/** Delete BounceIngestProcessedUid rows older than the IMAP lookback window. */
+export async function pruneProcessedUidsOlderThan(
+  db: PrismaClient,
+  since: Date = lookbackSince(),
+): Promise<number> {
+  const result = await db.bounceIngestProcessedUid.deleteMany({
+    where: { processed_at: { lt: since } },
+  });
+  return result.count;
 }

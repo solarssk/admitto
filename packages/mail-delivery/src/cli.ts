@@ -160,7 +160,7 @@ async function cmdIngestBounces(prisma: PrismaClient): Promise<number> {
       2,
     ),
   );
-  return summary.connectFailed ? 1 : 0;
+  return summary.errors > 0 || summary.connectFailed ? 1 : 0;
 }
 
 /** Run `deliveries --event <id>` with optional status/purpose/attendee filters. */

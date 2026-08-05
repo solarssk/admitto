@@ -9,7 +9,11 @@ import {
   type EventMailSettingsCardHandle,
 } from "../../src/settings/EventMailSettingsCard.js";
 import { renderWithToast } from "../test-utils.js";
-import type { EventMailSettingsResponse, MailSettingsFieldsDto } from "../../src/api/types.js";
+import type {
+  EventBounceIngestSettingsResponse,
+  EventMailSettingsResponse,
+  MailSettingsFieldsDto,
+} from "../../src/api/types.js";
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
   { role: "superadmin", scope_type: "instance", scope_id: null },
@@ -173,6 +177,26 @@ function renderCardWithRoutes() {
   );
 }
 
+function configuredBounceResponse(
+  overrides: Partial<EventBounceIngestSettingsResponse> = {},
+): EventBounceIngestSettingsResponse {
+  return {
+    eventId: "evt-1",
+    organizationId: "org-1",
+    configured: true,
+    enabled: true,
+    imap_host: "imap.example.com",
+    imap_port: 993,
+    imap_username: "bounce@example.com",
+    imap_password: { set: true, masked: "••••" },
+    reuse_smtp_credentials: false,
+    smtp_reuse_available: true,
+    folders: ["INBOX"],
+    poll_interval_minutes: 5,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
   mockFetch.mockReset();
@@ -181,20 +205,17 @@ beforeEach(() => {
   mockClear.mockReset();
   mockTest.mockReset();
   mockProbe.mockReset();
-  mockFetchBounce.mockResolvedValue({
-    eventId: "evt-1",
-    organizationId: "org-1",
-    configured: false,
-    enabled: false,
-    imap_host: null,
-    imap_port: null,
-    imap_username: null,
-    imap_password: { set: false, masked: null },
-    reuse_smtp_credentials: false,
-    smtp_reuse_available: false,
-    folders: ["INBOX"],
-    poll_interval_minutes: 5,
-  });
+  mockFetchBounce.mockResolvedValue(
+    configuredBounceResponse({
+      configured: false,
+      enabled: false,
+      imap_host: null,
+      imap_port: null,
+      imap_username: null,
+      imap_password: { set: false, masked: null },
+      smtp_reuse_available: false,
+    }),
+  );
   // jsdom does not implement scrollIntoView.
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -575,20 +596,7 @@ describe("EventMailSettingsCard — test send", () => {
   });
 
   it("disables Also verify bounce when the form has unsaved changes", async () => {
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
-      configured: true,
-      enabled: true,
-      imap_host: "imap.example.com",
-      imap_port: 993,
-      imap_username: "bounce@example.com",
-      imap_password: { set: true, masked: "••••" },
-      reuse_smtp_credentials: false,
-      smtp_reuse_available: true,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
     await screen.findByText(SMTP_SUMMARY_TEXT);
@@ -602,20 +610,7 @@ describe("EventMailSettingsCard — test send", () => {
   });
 
   it("disables Also verify bounce when the event is archived", async () => {
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
-      configured: true,
-      enabled: true,
-      imap_host: "imap.example.com",
-      imap_port: 993,
-      imap_username: "bounce@example.com",
-      imap_password: { set: true, masked: "••••" },
-      reuse_smtp_credentials: false,
-      smtp_reuse_available: true,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard(true);
     await screen.findByText(SMTP_SUMMARY_TEXT);
@@ -625,20 +620,7 @@ describe("EventMailSettingsCard — test send", () => {
   });
 
   it("turns off Also verify bounce when bounce detection becomes unavailable", async () => {
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
-      configured: true,
-      enabled: true,
-      imap_host: "imap.example.com",
-      imap_port: 993,
-      imap_username: "bounce@example.com",
-      imap_password: { set: true, masked: "••••" },
-      reuse_smtp_credentials: false,
-      smtp_reuse_available: true,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());
     const { rerender } = render(
       <EventMailSettingsCard eventId="evt-1" isArchived={false} />,
@@ -657,20 +639,16 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.click(bounceSwitch);
     await waitFor(() => expect((bounceSwitch as HTMLInputElement).checked).toBe(true));
 
-    mockFetchBounce.mockResolvedValue({
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse({
       eventId: "evt-2",
-      organizationId: "org-1",
       configured: false,
       enabled: false,
       imap_host: null,
       imap_port: null,
       imap_username: null,
       imap_password: { set: false, masked: null },
-      reuse_smtp_credentials: false,
       smtp_reuse_available: false,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    }));
     rerender(<EventMailSettingsCard eventId="evt-2" isArchived={false} />);
     await screen.findByText(SMTP_SUMMARY_TEXT);
 
@@ -680,20 +658,15 @@ describe("EventMailSettingsCard — test send", () => {
   });
 
   it("refreshBounceReady re-enables Also verify bounce after settings become ready", async () => {
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse({
       configured: false,
       enabled: false,
       imap_host: null,
       imap_port: null,
       imap_username: null,
       imap_password: { set: false, masked: null },
-      reuse_smtp_credentials: false,
       smtp_reuse_available: false,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    }));
     mockFetch.mockResolvedValue(inheritedResponse());
     const ref = createRef<EventMailSettingsCardHandle>();
     renderWithToast(
@@ -705,20 +678,7 @@ describe("EventMailSettingsCard — test send", () => {
     const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
     expect(isDisabled(bounceSwitch)).toBe(true);
 
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
-      configured: true,
-      enabled: true,
-      imap_host: "imap.example.com",
-      imap_port: 993,
-      imap_username: "bounce@example.com",
-      imap_password: { set: true, masked: "••••" },
-      reuse_smtp_credentials: false,
-      smtp_reuse_available: true,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     await act(async () => {
       ref.current?.refreshBounceReady();
     });
@@ -726,20 +686,7 @@ describe("EventMailSettingsCard — test send", () => {
   });
 
   it("sends with verifyBounce when the switch is on and bounce is ready", async () => {
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
-      configured: true,
-      enabled: true,
-      imap_host: "imap.example.com",
-      imap_port: 993,
-      imap_username: "bounce@example.com",
-      imap_password: { set: true, masked: "••••" },
-      reuse_smtp_credentials: false,
-      smtp_reuse_available: true,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());
     let resolveSend!: (value: {
       status: "sent";
@@ -788,20 +735,7 @@ describe("EventMailSettingsCard — test send", () => {
   });
 
   it("shows transport-ok but bounce-unverified when the probe times out", async () => {
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
-      configured: true,
-      enabled: true,
-      imap_host: "imap.example.com",
-      imap_port: 993,
-      imap_username: "bounce@example.com",
-      imap_password: { set: true, masked: "••••" },
-      reuse_smtp_credentials: false,
-      smtp_reuse_available: true,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());
     mockTest.mockResolvedValue({
       status: "sent",
@@ -832,20 +766,7 @@ describe("EventMailSettingsCard — test send", () => {
   });
 
   it("shows transport-ok but bounce-unverified when the probe fails", async () => {
-    mockFetchBounce.mockResolvedValue({
-      eventId: "evt-1",
-      organizationId: "org-1",
-      configured: true,
-      enabled: true,
-      imap_host: "imap.example.com",
-      imap_port: 993,
-      imap_username: "bounce@example.com",
-      imap_password: { set: true, masked: "••••" },
-      reuse_smtp_credentials: false,
-      smtp_reuse_available: true,
-      folders: ["INBOX"],
-      poll_interval_minutes: 5,
-    });
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
     mockFetch.mockResolvedValue(inheritedResponse());
     mockTest.mockResolvedValue({
       status: "sent",
@@ -896,7 +817,7 @@ describe("EventMailSettingsCard — SMTP Test connection", () => {
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
     });
-    expect(document.querySelector(".smtp-connection-probe__hint")).toBeNull();
+    expect(screen.getByText("Save your changes first.")).toBeTruthy();
   });
 
   it("calls probeEventMailSmtpConnection on click", async () => {

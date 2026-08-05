@@ -141,6 +141,24 @@ describe("parseBounceLines", () => {
     expect(lines[0]!.reason.toLowerCase()).toContain("user unknown");
   });
 
+  it("unfolds RFC 5322 folded Diagnostic-Code lines", () => {
+    const body = [
+      "Final-Recipient: rfc822; nobody@example.org",
+      "Action: failed",
+      "Status: 5.1.1",
+      "Diagnostic-Code: smtp; 550 5.1.1 User unknown;",
+      "\tmailbox does not exist",
+    ].join("\n");
+    const lines = parseRfc3464DsnBlocks(body);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      recipientEmail: "nobody@example.org",
+      smtpCode: "550",
+      enhancedCode: "5.1.1",
+    });
+    expect(lines[0]!.reason.toLowerCase()).toContain("mailbox does not exist");
+  });
+
   it("treats Action delayed as soft (4xx) for applyBounceResult", () => {
     const body = [
       "Final-Recipient: rfc822; full@example.org",

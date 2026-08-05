@@ -947,8 +947,13 @@ describe("EventSettingsPage Mail tab — one shared Save/Reset for transport + b
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
+    await act(async () => {
+      await Promise.resolve();
+    });
+
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.queryByText(/Revert to organization mail/)).toBeNull();
+    expect(saveEventBounceIngestSettings).not.toHaveBeenCalled();
   });
 
   it("clicking the Mail tab Reset button reverts the mail draft", async () => {

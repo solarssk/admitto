@@ -158,6 +158,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: { in: [ORG_A, ORG_B] } } });
+  await prisma.bounceIngestSettings.deleteMany({ where: { event_id: EVENT } });
   await prisma.mailSettings.deleteMany({
     where: { scope_id: { in: [ORG_A, ORG_B, EVENT, EVENT_ARCHIVED, EVENT_B] } },
   });
@@ -1028,8 +1029,6 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
     const body = (await res.json()) as { error?: string; detail?: string };
     expect(body.error).toBe("bounce_probe_unavailable");
     expect(body.detail).toMatch(/On/i);
-
-    await prisma.bounceIngestSettings.deleteMany({ where: { event_id: EVENT } });
   });
 });
 

@@ -107,40 +107,25 @@ async function openProbeProvider(
  * Uses the same parseBounceLines path as production ingest, but does not create or update
  * EmailDelivery / Attendee rows (plain Send test also leaves no delivery trail).
  */
-async function findHardBounceForRecipient(
+async function scanFoldersForHardBounce(
   db: PrismaClient,
-  params: {
+  args: {
     eventId: string;
-    recipientEmail: string;
-    createProvider?: (settings: BounceIngestSettings) => Promise<InboundMailProvider>;
-    env?: NodeJS.ProcessEnv;
+    folders: string[];
+    since: Date;
+    want: string;
+    provider: InboundMailProvider;
   },
 ): Promise<{ smtpCode: string; reason: string } | null> {
-  const settings = await db.bounceIngestSettings.findUnique({
-    where: { event_id: params.eventId },
-  });
-  if (!settings?.imap_host || !settings.enabled) return null;
-
-  const provider = await openProbeProvider(db, settings, params);
-  const want = params.recipientEmail.trim().toLowerCase();
-  try {
-    await provider.connect();
-    for (const folder of parseFolders(settings.folders)) {
-      const hit = await scanFolderForHardBounce(db, {
-        eventId: params.eventId,
-        folder,
-        since: lookbackSince(),
-        want,
-        provider,
-      });
-      if (hit) return hit;
-    }
-  } finally {
-    try {
-      await provider.close();
-    } catch {
-      /* ignore */
-    }
+  for (const folder of args.folders) {
+    const hit = await scanFolderForHardBounce(db, {
+      eventId: args.eventId,
+      folder,
+      since: args.since,
+      want: args.want,
+      provider: args.provider,
+    });
+    if (hit) return hit;
   }
   return null;
 }
@@ -259,25 +244,42 @@ export async function runEventBounceProbe(
   }
 
   const recipient = toAddress.trim().toLowerCase();
-  const deadline = now() + timeoutMs;
-  while (now() < deadline) {
-    const hit = await findHardBounceForRecipient(db, {
-      eventId,
-      recipientEmail: recipient,
-      createProvider: ingestOptions.createProvider,
-      env: ingestOptions.env ?? env,
-    });
-    if (hit) {
-      return {
-        status: "ok",
-        message: `Bounce received (${hit.smtpCode}). Detection can read delivery failures from the bounce mailbox.`,
-        smtpCode: hit.smtpCode,
-        sendResult,
-      };
+  const folders = parseFolders(bounceSettings.folders);
+  const since = lookbackSince();
+  const provider = await openProbeProvider(db, bounceSettings, {
+    createProvider: ingestOptions.createProvider,
+    env: ingestOptions.env ?? env,
+  });
+
+  try {
+    await provider.connect();
+    const deadline = now() + timeoutMs;
+    while (now() < deadline) {
+      const hit = await scanFoldersForHardBounce(db, {
+        eventId,
+        folders,
+        since,
+        want: recipient,
+        provider,
+      });
+      if (hit) {
+        return {
+          status: "ok",
+          message: `Bounce received (${hit.smtpCode}). Detection can read delivery failures from the bounce mailbox.`,
+          smtpCode: hit.smtpCode,
+          sendResult,
+        };
+      }
+      const remaining = deadline - now();
+      if (remaining <= 0) break;
+      await sleep(Math.min(pollMs, remaining));
     }
-    const remaining = deadline - now();
-    if (remaining <= 0) break;
-    await sleep(Math.min(pollMs, remaining));
+  } finally {
+    try {
+      await provider.close();
+    } catch {
+      /* ignore */
+    }
   }
 
   const waitSeconds = Math.max(1, Math.round(timeoutMs / 1000));

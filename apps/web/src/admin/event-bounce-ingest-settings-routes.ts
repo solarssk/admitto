@@ -328,21 +328,25 @@ export async function handlePutEventBounceIngestSettings(
   });
 
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId,
-    actorUserId: audit.operator!,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    timezone: audit.timezone,
-    actionType: "bounce_ingest_settings_updated",
-    metadata: {
-      eventId,
-      fields_changed: [...new Set(applied.fieldsChanged)],
-      secrets_rotated: applied.secretsRotated,
-      secrets_cleared: applied.secretsCleared,
-      reuse_smtp_credentials: row.reuse_smtp_credentials,
-    },
-  });
+  try {
+    await writeAdminAuditLog(db, {
+      organizationId,
+      actorUserId: audit.operator!,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "bounce_ingest_settings_updated",
+      metadata: {
+        eventId,
+        fields_changed: [...new Set(applied.fieldsChanged)],
+        secrets_rotated: applied.secretsRotated,
+        secrets_cleared: applied.secretsCleared,
+        reuse_smtp_credentials: row.reuse_smtp_credentials,
+      },
+    });
+  } catch (auditErr) {
+    console.error("[audit] bounce_ingest_settings_updated log failed", auditErr);
+  }
 
   const smtpPasswordSet = await smtpPasswordPresence(db, eventId);
   return c.json({
@@ -369,18 +373,22 @@ export async function handlePostEventBounceIngestSettingsTest(
   const result = await testBounceImapConnection(db, row);
 
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    organizationId,
-    actorUserId: audit.operator!,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    timezone: audit.timezone,
-    actionType: "bounce_ingest_settings_tested",
-    metadata: {
-      eventId,
-      ok: result.ok,
-    },
-  });
+  try {
+    await writeAdminAuditLog(db, {
+      organizationId,
+      actorUserId: audit.operator!,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "bounce_ingest_settings_tested",
+      metadata: {
+        eventId,
+        ok: result.ok,
+      },
+    });
+  } catch (auditErr) {
+    console.error("[audit] bounce_ingest_settings_tested log failed", auditErr);
+  }
 
   if (!result.ok) {
     return c.json({ ok: false, error: imapTestErrorForAdmin(result.error) });

@@ -1,5 +1,6 @@
 import type { PrismaClient, EmailDelivery } from "@admitto/db";
 import { sanitizeDeliveryError } from "../sanitizeError.js";
+import { NON_TERMINAL } from "./correlate.js";
 import type { ParsedBounceLine } from "./types.js";
 
 export type ApplyBounceOutcome = "hard_bounced" | "soft_logged" | "skipped";
@@ -16,6 +17,8 @@ function buildErrorMessage(line: ParsedBounceLine): string {
 /**
  * Map SMTP class → delivery update.
  * 5xx → bounced (terminal). 4xx → log only; do not flip status (ADR 0039 §8).
+ * Hard bounce uses updateMany with a non-terminal status filter so a concurrent
+ * worker cannot overwrite an already-terminal row.
  */
 export async function applyBounceResult(
   db: PrismaClient,
@@ -40,8 +43,11 @@ export async function applyBounceResult(
   }
 
   const now = new Date();
-  await db.emailDelivery.update({
-    where: { id: delivery.id },
+  const updated = await db.emailDelivery.updateMany({
+    where: {
+      id: delivery.id,
+      status: { in: [...NON_TERMINAL] },
+    },
     data: {
       status: "bounced",
       retryable: false,
@@ -50,6 +56,13 @@ export async function applyBounceResult(
       error: buildErrorMessage(line),
     },
   });
+
+  if (updated.count === 0) {
+    log(
+      `[bounce-ingest] skipped already-terminal delivery=${delivery.id} code=${buildErrorCode(line)}`,
+    );
+    return "skipped";
+  }
 
   return "hard_bounced";
 }

@@ -243,8 +243,11 @@ describe("extractPlainTextFromSource", () => {
       ].join("\r\n");
     }
     const text = extractPlainTextFromSource(inner);
-    // Depth cap returns no leaves; fallback may still see the nested blob as raw body.
-    // Either way we must not throw.
-    expect(typeof text).toBe("string");
+    // Depth cap yields no MIME leaves, so extract falls back to the raw body blob
+    // (multipart wrappers still visible) rather than a clean single-line leaf.
+    expect(text).toContain('boundary="B0"');
+    expect(text).not.toBe(
+      "deep-secret@example.org failed: host mx.example.com said: 550 5.1.1 User unknown",
+    );
   });
 });

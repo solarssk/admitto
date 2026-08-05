@@ -36,7 +36,6 @@ function mockProvider(messages: InboundMessage[]): InboundMailProvider {
     close: vi.fn().mockResolvedValue(undefined),
     fetchCandidateMessages: vi.fn().mockResolvedValue(messages),
     markSeen: vi.fn().mockResolvedValue(undefined),
-    probeFolder: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -95,7 +94,6 @@ describe("runEventBounceProbe", () => {
     const messages: InboundMessage[] = [
       {
         uid: "1",
-        folder: "INBOX",
         subject: "Undeliverable",
         bodyText: HARD_BODY,
         receivedAt: new Date(),

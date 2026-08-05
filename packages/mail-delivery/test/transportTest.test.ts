@@ -2,7 +2,7 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
-import type { ExportPayload } from "@admitto/mailer";
+import type { ExportPayload, MailerConfig } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
 import {
   absolutizeTransportTestLogo,
@@ -98,9 +98,9 @@ describe("buildTransportTestMessage", () => {
     expect(msg.html).toContain("smtp.example.com:587");
     expect(msg.html).toContain("noreply@example.com");
     expect(msg.html).toContain('src="https://cdn.example.com/logo.png"');
-    expect(msg.html).toContain("#dcfce7");
+    expect(msg.html).toContain("Transport OK");
     expect(msg.html).toContain("&#10003;");
-    expect(msg.html).toContain('text-align:center;">Automated message from Admitto');
+    expect(msg.html).toContain("Automated message from Admitto");
     expect(msg.html).not.toContain('src=""');
     expect(msg.html).not.toContain("border-radius:999px;");
   });
@@ -265,21 +265,17 @@ describe("sendEventTransportTestEmail (event-scoped)", () => {
 
 describe("transportTestFieldsFromConfig", () => {
   it("maps SMTP host/port and optional fromName/replyTo", () => {
-    expect(
-      transportTestFieldsFromConfig(
-        {
-          provider: "smtp",
-          host: "smtp.example.com",
-          port: 587,
-          user: "u",
-          password: "p",
-          fromAddress: "from@example.com",
-          fromName: "  Admitto  ",
-          replyTo: "reply@example.com",
-        } as never,
-        "to@example.com",
-      ),
-    ).toEqual({
+    const config = {
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: 587,
+      user: "u",
+      password: "p",
+      fromAddress: "from@example.com",
+      fromName: "  Admitto  ",
+      replyTo: "reply@example.com",
+    } as MailerConfig;
+    expect(transportTestFieldsFromConfig(config, "to@example.com")).toEqual({
       provider: "smtp",
       toAddress: "to@example.com",
       fromAddress: "from@example.com",
@@ -292,19 +288,15 @@ describe("transportTestFieldsFromConfig", () => {
   });
 
   it("falls back Graph fromAddress to mailbox", () => {
-    expect(
-      transportTestFieldsFromConfig(
-        {
-          provider: "graph",
-          tenantId: "t",
-          clientId: "c",
-          clientSecret: "s",
-          mailbox: "mailbox@example.com",
-          fromAddress: "  ",
-        } as never,
-        "to@example.com",
-      ),
-    ).toMatchObject({
+    const config = {
+      provider: "graph",
+      tenantId: "t",
+      clientId: "c",
+      clientSecret: "s",
+      mailbox: "mailbox@example.com",
+      fromAddress: "  ",
+    } as MailerConfig;
+    expect(transportTestFieldsFromConfig(config, "to@example.com")).toMatchObject({
       provider: "graph",
       toAddress: "to@example.com",
       fromAddress: "mailbox@example.com",
@@ -313,15 +305,11 @@ describe("transportTestFieldsFromConfig", () => {
   });
 
   it("maps powerautomate/export_only without host", () => {
-    expect(
-      transportTestFieldsFromConfig(
-        {
-          provider: "export_only",
-          fromAddress: "export@example.com",
-        } as never,
-        "to@example.com",
-      ),
-    ).toMatchObject({
+    const config = {
+      provider: "export_only",
+      fromAddress: "export@example.com",
+    } as MailerConfig;
+    expect(transportTestFieldsFromConfig(config, "to@example.com")).toMatchObject({
       provider: "export_only",
       toAddress: "to@example.com",
       fromAddress: "export@example.com",

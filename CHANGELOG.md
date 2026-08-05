@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Also verify bounce keeps one IMAP login for the whole wait**, instead of reconnecting every few seconds (hosted providers often throttle that rate and the probe then times out).
+- **Bounce detection “Last automatic check” no longer pretends there were zero runs.** The card says last-run status is not available in this version (sidecar history is not exposed in the UI yet).
+- **Bounce-ingest sidecar rejects a bad `BOUNCE_INGEST_INTERVAL_SECONDS`** (empty, zero, or non-integer) at startup instead of spinning or exiting from `sleep`.
 - **Send test email no longer looks identical on every click.** Each transport test gets a unique subject and body stamp, so corporate SMTP relays that suppress duplicate From/To/Subject/body (e.g. a second send to the same address) actually deliver again.
 - **Health check version/commit matches the sidebar.** Overview and Markdown export use the running staff SPA build (`__APP_VERSION__` / `__APP_COMMIT__`); the API prefers `apps/admin/dist/build-meta.json` written at Vite build time over live `git HEAD`, so a stale lab SPA no longer disagrees with Health after a git pull.
 - **Attendee PDF export truncates long emails with an ellipsis** instead of wrapping mid-word (e.g. splitting a domain across two lines) and overlapping the next row. pdfkit only applies `ellipsis` when a cell `height` is set; Email/Name stay wide for paper checklists, and Admitted at stays wide enough for `YYYY-MM-DD HH:mm`.

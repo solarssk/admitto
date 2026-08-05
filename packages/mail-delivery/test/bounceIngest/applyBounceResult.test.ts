@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EmailDelivery } from "@admitto/db";
 import { applyBounceResult } from "../../src/bounceIngest/applyBounceResult.js";
+import { NON_TERMINAL } from "../../src/bounceIngest/correlate.js";
 import type { ParsedBounceLine } from "../../src/bounceIngest/types.js";
 
 function delivery(partial: Partial<EmailDelivery> = {}): EmailDelivery {
@@ -35,8 +36,8 @@ function delivery(partial: Partial<EmailDelivery> = {}): EmailDelivery {
 
 describe("applyBounceResult", () => {
   it("maps 5xx to bounced with error fields", async () => {
-    const update = vi.fn().mockResolvedValue({});
-    const db = { emailDelivery: { update } } as never;
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const db = { emailDelivery: { updateMany } } as never;
     const line: ParsedBounceLine = {
       recipientEmail: "user@example.com",
       smtpCode: "550",
@@ -46,9 +47,12 @@ describe("applyBounceResult", () => {
 
     const outcome = await applyBounceResult(db, delivery(), line, () => undefined);
     expect(outcome).toBe("hard_bounced");
-    expect(update).toHaveBeenCalledWith(
+    expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "del_1" },
+        where: {
+          id: "del_1",
+          status: { in: [...NON_TERMINAL] },
+        },
         data: expect.objectContaining({
           status: "bounced",
           retryable: false,
@@ -56,14 +60,14 @@ describe("applyBounceResult", () => {
         }),
       }),
     );
-    expect(update.mock.calls[0]![0].data.error).toMatch(/User unknown/);
-    expect(update.mock.calls[0]![0].data.failed_at).toBeInstanceOf(Date);
+    expect(updateMany.mock.calls[0]![0].data.error).toMatch(/User unknown/);
+    expect(updateMany.mock.calls[0]![0].data.failed_at).toBeInstanceOf(Date);
   });
 
   it("logs soft 4xx without updating status", async () => {
-    const update = vi.fn();
+    const updateMany = vi.fn();
     const log = vi.fn();
-    const db = { emailDelivery: { update } } as never;
+    const db = { emailDelivery: { updateMany } } as never;
     const line: ParsedBounceLine = {
       recipientEmail: "user@example.com",
       smtpCode: "452",
@@ -72,7 +76,39 @@ describe("applyBounceResult", () => {
 
     const outcome = await applyBounceResult(db, delivery(), line, log);
     expect(outcome).toBe("soft_logged");
-    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalled();
+  });
+
+  it("skips non-bounce SMTP codes such as 250", async () => {
+    const updateMany = vi.fn();
+    const log = vi.fn();
+    const db = { emailDelivery: { updateMany } } as never;
+    const line: ParsedBounceLine = {
+      recipientEmail: "user@example.com",
+      smtpCode: "250",
+      reason: "OK",
+    };
+
+    const outcome = await applyBounceResult(db, delivery(), line, log);
+    expect(outcome).toBe("skipped");
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalled();
+  });
+
+  it("skips when updateMany matches no non-terminal row", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const log = vi.fn();
+    const db = { emailDelivery: { updateMany } } as never;
+    const line: ParsedBounceLine = {
+      recipientEmail: "user@example.com",
+      smtpCode: "550",
+      reason: "User unknown",
+    };
+
+    const outcome = await applyBounceResult(db, delivery({ status: "bounced" }), line, log);
+    expect(outcome).toBe("skipped");
+    expect(updateMany).toHaveBeenCalled();
     expect(log).toHaveBeenCalled();
   });
 });

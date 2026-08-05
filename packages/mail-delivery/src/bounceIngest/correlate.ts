@@ -1,7 +1,8 @@
 import type { PrismaClient, EmailDelivery } from "@admitto/db";
 import { redactEmail } from "@admitto/shared";
 
-const NON_TERMINAL = ["queued", "accepted", "sent"] as const;
+/** Delivery statuses that may still be flipped to bounced by IMAP ingest. */
+export const NON_TERMINAL = ["queued", "accepted", "sent"] as const;
 const MAX_EMAIL_LEN = 320;
 
 /**

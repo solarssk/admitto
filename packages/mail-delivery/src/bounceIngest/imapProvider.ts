@@ -54,6 +54,17 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
   apos: "'",
 };
 
+/** Accept only Unicode scalar values: integers 0..0x10FFFF outside the surrogate range.
+ * Invalid numeric entities keep the original match (never throw via fromCodePoint). */
+function isSafeHtmlEntityCodePoint(code: number): boolean {
+  return (
+    Number.isInteger(code) &&
+    code >= 0 &&
+    code <= 0x10ffff &&
+    !(code >= 0xd800 && code <= 0xdfff)
+  );
+}
+
 /** Decodes `&#347;` / `&#x159;` numeric references and the handful of named entities MTAs
  * actually emit. Left undecoded otherwise (never throws) - bounce NDRs are diagnostic text,
  * not attacker-controlled markup, so a best-effort decode is enough. */
@@ -61,11 +72,11 @@ function decodeHtmlEntities(text: string): string {
   return text.replace(/&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, ref: string) => {
     if (ref.startsWith("#x") || ref.startsWith("#X")) {
       const code = Number.parseInt(ref.slice(2), 16);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      return isSafeHtmlEntityCodePoint(code) ? String.fromCodePoint(code) : match;
     }
     if (ref.startsWith("#")) {
       const code = Number.parseInt(ref.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      return isSafeHtmlEntityCodePoint(code) ? String.fromCodePoint(code) : match;
     }
     return NAMED_HTML_ENTITIES[ref.toLowerCase()] ?? match;
   });

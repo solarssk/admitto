@@ -231,7 +231,7 @@ describe("runEventBounceProbe (unit)", () => {
     );
 
     expect(result.status).toBe("timeout");
-    expect(result.message).toMatch(/90 seconds|IMAP/i);
+    expect(result.message).toMatch(/within 1 seconds|IMAP/i);
   });
 
   it("ignores soft bounces and keeps polling until timeout", async () => {

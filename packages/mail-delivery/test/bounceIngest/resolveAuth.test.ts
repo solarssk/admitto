@@ -63,11 +63,10 @@ describe("parseFolders", () => {
 
 describe("lookbackSince", () => {
   it("is exactly LOOKBACK_DAYS before the given now", () => {
+    expect(LOOKBACK_DAYS).toBe(14);
     const now = new Date("2026-08-05T12:00:00.000Z");
     const since = lookbackSince(now);
-    expect(since.toISOString()).toBe(
-      new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString(),
-    );
+    expect(since.toISOString()).toBe("2026-07-22T12:00:00.000Z");
   });
 });
 

@@ -161,6 +161,7 @@ describe("EventBounceIngestPanel", () => {
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
     });
+    expect(screen.getByText("Save your changes first.")).toBeTruthy();
     expect(mockTest).not.toHaveBeenCalled();
   });
 
@@ -188,6 +189,7 @@ describe("EventBounceIngestPanel", () => {
     expect(isDisabled(screen.getByLabelText("Port"))).toBe(true);
     expect(isDisabled(screen.getByRole("switch", { name: "On" }))).toBe(true);
     expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
+    expect(screen.getByText("This event is archived.")).toBeTruthy();
   });
 
   it("toasts save failure without leaking server detail", async () => {
@@ -291,6 +293,7 @@ describe("EventBounceIngestPanel", () => {
     await screen.findByLabelText("IMAP host");
 
     expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
+    expect(screen.getByText("Save your bounce detection settings first.")).toBeTruthy();
   });
 
   it("shows unavailable SMTP reuse hint when smtp_reuse_available is false", async () => {
