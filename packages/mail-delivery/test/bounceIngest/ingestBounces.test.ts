@@ -396,6 +396,27 @@ describe("ingestBounces", () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/prune processed UIDs failed: prune blew up/));
   });
 
+  it("falls back to console.error when prune fails without a custom log", async () => {
+    const deleteMany = vi.fn().mockRejectedValue(new Error("prune db down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      bounceIngestProcessedUid: { deleteMany },
+    } as never;
+
+    try {
+      const summary = await ingestBounces(db, {});
+      expect(summary.noopReason).toBe("none_enabled");
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/prune processed UIDs failed: prune db down/),
+      );
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
   it("skips already-processed UIDs", async () => {
     const row = settings();
     const messages: InboundMessage[] = [
