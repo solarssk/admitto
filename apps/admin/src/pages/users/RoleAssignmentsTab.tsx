@@ -5,7 +5,7 @@ import { fetchRoleAssignments, revokeUserRole } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { RoleAssignmentListItemDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
-import { PaginationFooter } from "../../components/PaginationFooter.js";
+import { paginationHandlers, PaginationFooter } from "../../components/PaginationFooter.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
@@ -272,12 +272,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
             totalPages={totalPages}
             totalRows={total}
             pageSizeOptions={PAGE_SIZE_OPTIONS}
-            onPageSizeChange={(size) => {
-              setPageSize(size);
-              setPage(1);
-            }}
-            onPrevious={() => setPage((p) => Math.max(1, p - 1))}
-            onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+            {...paginationHandlers(setPage, setPageSize, totalPages)}
           />
         </>
       )}

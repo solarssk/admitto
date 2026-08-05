@@ -46,4 +46,32 @@ describe("InviteUserModal", () => {
     expect(screen.getByRole("button", { name: "Sending…" })).toHaveProperty("disabled", true);
     expect(screen.getByLabelText("Email address")).toHaveProperty("disabled", true);
   });
+
+  it("shows a validation message for an invalid_request response", async () => {
+    const { ApiError } = await import("../../../src/api/client.js");
+    vi.mocked(createAdminUser).mockRejectedValueOnce(new ApiError("invalid_request"));
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(
+      await screen.findByText("Check the email address and the temporary password (at least 12 characters)."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send" })).toHaveProperty("disabled", false);
+  });
+
+  it("falls back to a generic message for a non-API error", async () => {
+    vi.mocked(createAdminUser).mockRejectedValueOnce(new Error("network down"));
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(
+      await screen.findByText("Failed to invite user. Check the email address and password."),
+    ).toBeTruthy();
+  });
 });

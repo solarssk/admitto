@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UserListItemDto } from "../../../src/api/types.js";
 import { StaffUserTableRow } from "../../../src/pages/users/StaffUserListItem.js";
+
+afterEach(cleanup);
 
 const user: UserListItemDto = {
   id: "user-1",
@@ -50,5 +52,42 @@ describe("StaffUserTableRow", () => {
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("titles an OIDC-managed role badge with its scope and a managed-by-identity-provider note", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow
+            user={{
+              ...user,
+              roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: true }],
+            }}
+            onEdit={vi.fn()}
+            onRevokeSessions={vi.fn()}
+          />
+        </tbody>
+      </table>,
+    );
+
+    expect(screen.getByTitle("Event scope · managed by identity provider")).toBeTruthy();
+  });
+
+  it("calls onEdit and onRevokeSessions from the row's own action buttons", () => {
+    const onEdit = vi.fn();
+    const onRevokeSessions = vi.fn();
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
+        </tbody>
+      </table>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Edit profile for/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Reset sessions for/ }));
+
+    expect(onEdit).toHaveBeenCalledWith(user);
+    expect(onRevokeSessions).toHaveBeenCalledWith(user);
   });
 });

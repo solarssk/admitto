@@ -84,6 +84,21 @@ function renderAt(path: string) {
   );
 }
 
+describe("UsersPage header", () => {
+  it("opens the Invite user modal from the header button", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+
+    renderAt("/admin/users");
+    await screen.findByText("No users yet");
+
+    // "Invite user" also appears as the empty state's own call-to-action button - both wire to
+    // the same setInviteOpen(true), this exercises the page header's own copy specifically.
+    fireEvent.click(screen.getAllByRole("button", { name: "Invite user" })[0]!);
+
+    expect(await screen.findByRole("heading", { name: /Invite a new team member/ })).toBeTruthy();
+  });
+});
+
 describe("UsersPage search debounce", () => {
   it("debounces the search box before refetching with the trimmed term", async () => {
     vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });

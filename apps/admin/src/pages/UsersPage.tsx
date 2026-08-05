@@ -15,7 +15,7 @@ import { fetchAdminUsers, fetchUserStats, revokeUserSessions } from "../api/clie
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto, UserStatsDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { PaginationFooter } from "../components/PaginationFooter.js";
+import { paginationHandlers, PaginationFooter } from "../components/PaginationFooter.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
@@ -428,12 +428,7 @@ export function UsersPage() {
                 totalPages={totalPages}
                 totalRows={total}
                 pageSizeOptions={PAGE_SIZE_OPTIONS}
-                onPageSizeChange={(size) => {
-                  setPageSize(size);
-                  setPage(1);
-                }}
-                onPrevious={() => setPage((p) => Math.max(1, p - 1))}
-                onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
+                {...paginationHandlers(setPage, setPageSize, totalPages)}
               />
             </>
           )}
