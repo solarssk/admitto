@@ -16,6 +16,7 @@ const user: UserListItemDto = {
   last_login_at: null,
   active_sessions_count: 0,
   has_mfa: false,
+  has_sso: false,
   roles: [],
 };
 
@@ -71,6 +72,50 @@ describe("StaffUserTableRow", () => {
     );
 
     expect(screen.getByTitle("Event scope · managed by identity provider")).toBeTruthy();
+  });
+
+  it("falls back to the raw scope_type for a role badge title outside the known scope labels", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow
+            user={{
+              ...user,
+              roles: [{ id: "role-1", role: "operator", scope_type: "future-scope", scope_id: "x", is_oidc: false }],
+            }}
+            onEdit={vi.fn()}
+            onRevokeSessions={vi.fn()}
+          />
+        </tbody>
+      </table>,
+    );
+
+    expect(screen.getByTitle("future-scope")).toBeTruthy();
+  });
+
+  it("shows SSO sign-in, a disabled status, a session count badge, and a plain (non-OIDC) role title", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow
+            user={{
+              ...user,
+              has_sso: true,
+              is_active: false,
+              active_sessions_count: 3,
+              roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }],
+            }}
+            onEdit={vi.fn()}
+            onRevokeSessions={vi.fn()}
+          />
+        </tbody>
+      </table>,
+    );
+
+    expect(screen.getByText("SSO")).toBeTruthy();
+    expect(screen.getByText("Disabled")).toBeTruthy();
+    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByTitle("Event scope")).toBeTruthy();
   });
 
   it("calls onEdit and onRevokeSessions from the row's own action buttons", () => {

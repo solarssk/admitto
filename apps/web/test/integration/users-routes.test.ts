@@ -304,6 +304,11 @@ describe("GET /api/admin/users/stats security", () => {
     expect(res.status).toBe(403);
   });
 
+  it("returns 403 for an org admin (superadmin-only, not just staff-admin-gated)", async () => {
+    const res = await app.request("/api/admin/users/stats", { headers: { Cookie: adminCookie } });
+    expect(res.status).toBe(403);
+  });
+
   it("returns instance-wide counts unaffected by pagination", async () => {
     const res = await app.request("/api/admin/users/stats", { headers: { Cookie: superCookie } });
     expect(res.status).toBe(200);
