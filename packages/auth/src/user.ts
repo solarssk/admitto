@@ -6,11 +6,21 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/** Pragmatic format check (not full RFC 5322) - one @, something on each side, a dot in the
+ * domain part. Applied where an operator submits a new email (invite, edit); intentionally not
+ * applied to normalizeEmail itself, which is also used to look up/normalize already-stored or
+ * IdP-asserted addresses that must keep working even if unusual. */
+export function isValidEmailFormat(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 /** Input for creating a local password-based user. */
 export interface CreateUserInput {
   email: string;
   password: string;
   displayName?: string;
+  phoneCountryCode?: string;
+  phoneNumber?: string;
   isActive?: boolean;
   mustChangePassword?: boolean;
 }
@@ -27,6 +37,8 @@ export async function createUser(
       email,
       password_hash,
       display_name: input.displayName ?? null,
+      phone_country_code: input.phoneCountryCode ?? null,
+      phone_number: input.phoneNumber ?? null,
       is_active: input.isActive ?? true,
       must_change_password: input.mustChangePassword ?? false,
     },

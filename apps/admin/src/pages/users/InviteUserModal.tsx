@@ -13,6 +13,7 @@ import type { EventDto, UserListItemDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 import { roleLabel } from "../../auth/role-labels.js";
 import { NO_AUTOFILL_PROPS } from "../../settings/mailTransportFormParts.js";
+import { isValidEmailFormat } from "../../utils/email.js";
 import "../../attendees/add-attendee-modal.css";
 
 export type InviteUserCreatedResult = {
@@ -101,6 +102,10 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
 
   const handleSubmit = async () => {
     if (submitting || !email.trim() || !password || password.length < PASSWORD_MIN_LENGTH) return;
+    if (!isValidEmailFormat(email.trim())) {
+      setError("Enter a valid email address.");
+      return;
+    }
     if (initialRole === "operator" && !eventId) {
       setError("Select an event for the operator role.");
       return;
@@ -153,11 +158,16 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
 
   return (
     <dialog className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId} open>
-      <ModalBackdrop onClose={handleClose} />
+      {/* No onClose: losing a half-typed invite to a stray click outside the panel is worse
+       * than requiring Cancel/Escape, matching the Edit user modal's own backdrop. */}
+      <ModalBackdrop />
       <div ref={panelRef} className="add-attendee-modal__panel">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Invite a new team member
         </h2>
+        <p className="add-attendee-modal__subtitle">
+          Enter their email and a temporary password. Everything else is optional.
+        </p>
         {error && (
           <Notice variant="error" role="alert">{error}</Notice>
         )}
@@ -258,7 +268,11 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             <Button
               type="button"
               variant="primary"
-              disabled={submitting || !email.trim() || password.length < PASSWORD_MIN_LENGTH}
+              disabled={
+                submitting ||
+                !isValidEmailFormat(email.trim()) ||
+                password.length < PASSWORD_MIN_LENGTH
+              }
               onClick={() => void handleSubmit()}
             >
               {submitting ? "Sending…" : "Send"}

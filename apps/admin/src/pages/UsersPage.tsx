@@ -104,6 +104,7 @@ export function UsersPage() {
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [sessionsCount, setSessionsCount] = useState<number | undefined>(undefined);
+  const [rolesCount, setRolesCount] = useState<number | undefined>(undefined);
   const [stats, setStats] = useState<UserStatsDto | null>(null);
 
   // The URL is the source of truth for the active tab (e.g. the Security tab's
@@ -172,6 +173,16 @@ export function UsersPage() {
     return () => controller.abort();
   }, [load]);
 
+  // Keep an open Edit user modal in sync with the list: adding a role scope no longer closes
+  // the modal (so several scopes can be added in one sitting), so its `user` prop must pick up
+  // the fresh roles from the next `load()` itself, the same way the modal already relies on a
+  // fresh `users` array after a Role assignments tab revoke (#440).
+  useEffect(() => {
+    if (!editUser) return;
+    const fresh = users.find((u) => u.id === editUser.id);
+    if (fresh && fresh !== editUser) setEditUser(fresh);
+  }, [users, editUser]);
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const filtersActive =
     searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all";
@@ -202,7 +213,7 @@ export function UsersPage() {
 
   const tabs = [
     ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: total }] : []),
-    { id: "roles" as const, label: "Role assignments" },
+    { id: "roles" as const, label: "Role assignments", count: rolesCount },
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
 
@@ -446,7 +457,7 @@ export function UsersPage() {
 
       {tab === "roles" && (
         <Card title="Role assignments">
-          <RoleAssignmentsTab onAssignmentsChanged={() => void load()} />
+          <RoleAssignmentsTab onAssignmentsChanged={() => void load()} onCountChange={setRolesCount} />
         </Card>
       )}
 

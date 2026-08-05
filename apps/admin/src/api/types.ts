@@ -1080,6 +1080,8 @@ export interface UserListItemDto {
   id: string;
   email: string;
   display_name: string | null;
+  phone_country_code: string | null;
+  phone_number: string | null;
   is_active: boolean;
   must_change_password: boolean;
   created_at: string;
@@ -1118,6 +1120,8 @@ export interface PatchAdminUserBody {
   is_active?: boolean;
   display_name?: string | null;
   email?: string;
+  phone_country_code?: string | null;
+  phone_number?: string | null;
 }
 
 export interface GrantUserRoleBody {

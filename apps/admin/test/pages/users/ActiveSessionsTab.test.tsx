@@ -121,6 +121,25 @@ describe("ActiveSessionsTab rendering", () => {
     expect(screen.queryByText("admin@example.com")).toBeNull();
   });
 
+  it("filters sessions by user name or email as you type, no debounce needed (client-side)", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "s-jane", userEmail: "jane@example.com", userDisplayName: "Jane Doe" }),
+        makeSession({ id: "s-bob", userEmail: "bob@example.com", userDisplayName: "Bob Smith" }),
+      ],
+    });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.change(screen.getByLabelText("Search sessions by user name or email"), {
+      target: { value: "jane" },
+    });
+
+    expect(screen.getByText("Jane Doe")).toBeTruthy();
+    expect(screen.queryByText("Bob Smith")).toBeNull();
+  });
+
   it("changing rows-per-page resets to page 1 and updates the page slice", async () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       makeSession({ id: `s${i}`, userEmail: `user${i}@example.com` }),

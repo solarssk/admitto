@@ -14,6 +14,7 @@ import {
   findUserByEmail,
   hashPassword,
   isPasswordTooCommon,
+  isValidEmailFormat,
   passwordTooCommonJsonBody,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
@@ -117,6 +118,8 @@ function serializeUserRow(user: UserWithRoles, sessionStats: SessionStats) {
     id: user.id,
     email: user.email,
     display_name: user.display_name,
+    phone_country_code: user.phone_country_code,
+    phone_number: user.phone_number,
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     created_at: user.created_at.toISOString(),
@@ -314,11 +317,18 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   const password = typeof body?.password === "string" ? body.password : "";
   const displayName =
     typeof body?.display_name === "string" ? body.display_name.trim() || null : null;
+  const phoneCountryCode =
+    typeof body?.phone_country_code === "string" ? body.phone_country_code.trim() || undefined : undefined;
+  const phoneNumber =
+    typeof body?.phone_number === "string" ? body.phone_number.trim() || undefined : undefined;
   const mustChange = body?.must_change_password === true;
 
   const email = normalizeEmail(emailRaw);
   if (!email || password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "invalid_request" }, 400);
+  }
+  if (!isValidEmailFormat(email)) {
+    return c.json({ code: "invalid_email", error: "invalid_email" }, 400);
   }
   if (isPasswordTooCommon(password)) {
     return c.json(passwordTooCommonJsonBody(), 400);
@@ -340,6 +350,8 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
         email,
         password,
         displayName: displayName ?? undefined,
+        phoneCountryCode,
+        phoneNumber,
         isActive: true,
         mustChangePassword: mustChange,
       });
@@ -386,6 +398,12 @@ function buildPatchUserData(
   if (typeof body?.display_name === "string") {
     data.display_name = body.display_name.trim() || null;
   }
+  if (typeof body?.phone_country_code === "string") {
+    data.phone_country_code = body.phone_country_code.trim() || null;
+  }
+  if (typeof body?.phone_number === "string") {
+    data.phone_number = body.phone_number.trim() || null;
+  }
   if (typeof body?.is_active === "boolean") {
     if (body.is_active === false && id === actorId) {
       return { conflict: "self_deactivate" };
@@ -394,7 +412,7 @@ function buildPatchUserData(
   }
   if (typeof body?.email === "string") {
     const email = normalizeEmail(body.email);
-    if (!email) return { conflict: "invalid_email" };
+    if (!email || !isValidEmailFormat(email)) return { conflict: "invalid_email" };
     data.email = email;
   }
   return { data };
@@ -495,7 +513,7 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
 
   const parsed = buildPatchUserData(body, id, actorId);
   if ("conflict" in parsed) {
-    if (parsed.conflict === "invalid_email") return c.json({ error: "invalid_request" }, 400);
+    if (parsed.conflict === "invalid_email") return c.json({ code: "invalid_email", error: "invalid_email" }, 400);
     return c.json({ code: "cannot_deactivate_self" }, 409);
   }
   const { data } = parsed;
@@ -620,12 +638,47 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   });
   if (existing) return c.json({ code: "already_assigned" }, 409);
 
+  // Roles are exclusive by type - superadmin, admin, and operator never combine on one person
+  // (only the scope list within a type is cumulative, e.g. an admin over several orgs). Granting
+  // a different type than whatever this user currently holds replaces it rather than adding a
+  // second function. Changing your *own* type is refused outright, same reasoning as
+  // cannot_remove_own_role: you could revoke the only access that lets you do this at all.
+  const otherTypeAssignments = await db.roleAssignment.findMany({
+    where: { user_id: id, role: { not: parsed.role } },
+  });
+  if (otherTypeAssignments.length > 0 && id === actorId) {
+    return c.json({ code: "cannot_change_own_role" }, 409);
+  }
+
+  // A role-type switch implicitly revokes every assignment of the target's OLD type -
+  // assertRoleGrantAllowed above only authorized the NEW grant, so without this check an
+  // org-scoped admin could use their own event's grant authority to silently strip a target's
+  // unrelated admin/superadmin assignment they have no authority over. Same rule
+  // handleDeleteUserRole already applies to an explicit revoke, applied here to every implicit
+  // one; non-superadmins can only ever grant operator/event roles, so this always denies (403)
+  // when the assignment being replaced is admin- or superadmin-scoped, same as a direct revoke
+  // of one would.
+  for (const old of otherTypeAssignments) {
+    const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, old);
+    if (revokeDenied) return revokeDenied;
+  }
+
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
   let assignment;
   try {
     assignment = await db.$transaction(async (tx) => {
+      const replaced = await tx.roleAssignment.findMany({
+        where: { user_id: id, role: { not: parsed.role } },
+      });
+      if (replaced.length > 0) {
+        for (const old of replaced) {
+          await assertLastSuperadminRemovalAllowed(tx, old);
+        }
+        await tx.roleAssignment.deleteMany({ where: { id: { in: replaced.map((a) => a.id) } } });
+      }
+
       const created = await tx.roleAssignment.create({
         data: {
           user_id: id,
@@ -640,17 +693,21 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
         sessionId: audit.sessionId,
         ip: audit.ip,
         timezone: audit.timezone,
-        actionType: "role_granted",
+        actionType: replaced.length > 0 ? "role_changed" : "role_granted",
         metadata: {
           userId: id,
           role: parsed.role,
           scopeType: parsed.scopeType,
           scopeId: parsed.scopeId,
+          ...(replaced.length > 0 ? { replacedRoles: replaced.map((a) => a.role) } : {}),
         },
       });
       return created;
     });
   } catch (err) {
+    if (err instanceof LastSuperadminError) {
+      return c.json({ code: "last_superadmin" }, 409);
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ code: "already_assigned" }, 409);
     }
@@ -699,6 +756,10 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
   if (!assignment) {
     return respondRoleDeleteGone(c, db, id, assignmentId, actorIsSuperadmin);
   }
+  // Checked only once the assignment is confirmed to exist and belong to :id - an :id that
+  // merely matches the actor's own id but names someone else's assignment must still fall
+  // through to the ordinary not-found/permission handling below, not this guard.
+  if (id === actorId) return c.json({ code: "cannot_remove_own_role" }, 409);
 
   const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, assignment);
   if (revokeDenied) return revokeDenied;
@@ -809,6 +870,54 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
     targetEmail: user.email,
     actorUserId,
     actorEmail: await resolveActorEmailForLog(db, actorUserId),
+  });
+
+  return c.json({ ok: true });
+}
+
+/** DELETE /api/admin/users/:id/external-identity — unlink SSO, forcing local-password sign-in
+ * from then on. Does not touch password_hash: a JIT-provisioned SSO user already has one (a
+ * random placeholder, set so the column is never null - see resolve-user.ts), so unlinking alone
+ * can leave them with no password anyone actually knows. The confirming admin is expected to
+ * pair this with Reset password when that's the case; this route has no way to tell the two
+ * apart (see the has_sso column note in users-routes.ts's serializeUserRow). */
+export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+
+  const id = c.req.param("id") ?? "";
+  if (!id) return c.json({ error: "user id required" }, 400);
+
+  const actorId = c.get("auth").userId;
+  if (id === actorId) return c.json({ code: "cannot_unlink_own_sso" }, 409);
+
+  const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
+  if (!user) return c.json({ error: "not_found" }, 404);
+
+  const linked = await db.externalIdentity.findMany({ where: { user_id: id }, select: { id: true } });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
+
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  await db.$transaction(async (tx) => {
+    await tx.externalIdentity.deleteMany({ where: { user_id: id } });
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: actorId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "user_sso_unlinked",
+      metadata: { userId: id, count: linked.length },
+    });
+  });
+
+  emitSystemLog("security", "info", "user_sso_unlinked", {
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actorUserId: actorId,
+    actorEmail: await resolveActorEmailForLog(db, actorId),
   });
 
   return c.json({ ok: true });

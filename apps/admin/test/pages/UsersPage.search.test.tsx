@@ -138,8 +138,12 @@ describe("UsersPage header", () => {
     expect(fetchAdminUsers).toHaveBeenCalledOnce();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for user-1@example.com" })[0]!);
-    fireEvent.click(await screen.findByRole("button", { name: "Delete account" }));
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
     const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.change(within(dialog).getByLabelText('Type the email address to confirm: "user-1@example.com"'), {
+      target: { value: "user-1@example.com" },
+    });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {

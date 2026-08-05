@@ -1842,6 +1842,11 @@ export async function resetUserMfa(id: string): Promise<{ ok: boolean }> {
   return parseJson<{ ok: boolean }>(res);
 }
 
+export async function unlinkUserExternalIdentity(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/external-identity`, jsonDeleteInit());
+  return parseJson<{ ok: boolean }>(res);
+}
+
 export async function resetUserPassword(
   id: string,
   body: ResetUserPasswordBody,
@@ -1864,13 +1869,14 @@ export async function revokeUserSessions(
 }
 
 export async function fetchRoleAssignments(
-  params: { page?: number; pageSize?: number } = {},
+  params: { q?: string; page?: number; pageSize?: number } = {},
   signal?: AbortSignal,
 ): Promise<RoleAssignmentsListResponse> {
-  const q = new URLSearchParams();
-  if (params.page != null) q.set("page", String(params.page));
-  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
-  const qs = q.toString();
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.page != null) search.set("page", String(params.page));
+  if (params.pageSize != null) search.set("pageSize", String(params.pageSize));
+  const qs = search.toString();
   const queryPart = qs ? `?${qs}` : "";
   const res = await fetch(`/api/admin/role-assignments${queryPart}`, {
     credentials: "same-origin",
