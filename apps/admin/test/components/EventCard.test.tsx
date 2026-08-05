@@ -261,7 +261,7 @@ describe("EventCard", () => {
 
   it("shows forecast temperature when weather status is ok", () => {
     renderCard(
-      {},
+      { operatorTimeZone: "Europe/Warsaw" },
       {
         ...baseEvent,
         weather: {
@@ -274,12 +274,12 @@ describe("EventCard", () => {
       },
     );
     expect(screen.getByLabelText("Forecast 22°C")).toBeTruthy();
-    expect(screen.getByText("22°")).toBeTruthy();
+    expect(screen.getByText("22°C")).toBeTruthy();
   });
 
   it("falls back to Weather data when ok forecast has blank attribution", () => {
     renderCard(
-      {},
+      { operatorTimeZone: "Europe/Warsaw" },
       {
         ...baseEvent,
         weather: {
@@ -292,6 +292,59 @@ describe("EventCard", () => {
     );
     const chip = screen.getByLabelText("Forecast 20°C");
     expect(getTooltipText(chip)).toMatch(/Weather data/);
+  });
+
+  it("shows Fahrenheit on the weather chip for Americas operator timezones", () => {
+    renderCard(
+      { operatorTimeZone: "America/New_York" },
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 18,
+          temp_min_c: 12,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    expect(screen.getByLabelText("Forecast 64°F")).toBeTruthy();
+    expect(screen.getByText("64°F")).toBeTruthy();
+    const chip = screen.getByLabelText("Forecast 64°F");
+    expect(getTooltipText(chip)).toMatch(/54° to 64°F/);
+  });
+
+  it("falls back to the browser IANA timezone when operatorTimeZone is omitted", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 22,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    // Production never passes operatorTimeZone; unit follows the runtime zone (°C or °F).
+    expect(screen.getByText(/^22°C$|^72°F$/)).toBeTruthy();
+  });
+
+  it("treats blank operatorTimeZone as omitted", () => {
+    renderCard(
+      { operatorTimeZone: "   " },
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 22,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    expect(screen.getByText(/^22°C$|^72°F$/)).toBeTruthy();
   });
 
   it("uses singular day wording for too_far horizon and opens-in of 1", () => {
@@ -341,7 +394,7 @@ describe("EventCard", () => {
 
   it("shows a single °C when ok forecast omits temp_min_c", () => {
     renderCard(
-      {},
+      { operatorTimeZone: "Europe/Warsaw" },
       {
         ...baseEvent,
         weather: {
@@ -355,7 +408,7 @@ describe("EventCard", () => {
     const chip = screen.getByLabelText("Forecast 18°C");
     expect(getTooltipText(chip)).toMatch(/18°C/);
     expect(getTooltipText(chip)).not.toMatch(/to 18/);
-    expect(screen.getByText("18°")).toBeTruthy();
+    expect(screen.getByText("18°C")).toBeTruthy();
   });
 
   it("shows soft too_far copy without horizon or opens-in countdown", () => {
