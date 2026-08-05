@@ -1,14 +1,19 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ToastProvider } from "@admitto/ui";
 import {
   EventMailSettingsCard,
   type EventMailSettingsCardHandle,
 } from "../../src/settings/EventMailSettingsCard.js";
 import { renderWithToast } from "../test-utils.js";
-import type { EventMailSettingsResponse, MailSettingsFieldsDto } from "../../src/api/types.js";
+import type {
+  EventBounceIngestSettingsResponse,
+  EventMailSettingsResponse,
+  MailSettingsFieldsDto,
+} from "../../src/api/types.js";
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
   { role: "superadmin", scope_type: "instance", scope_id: null },
@@ -23,24 +28,30 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return {
     ...actual,
     fetchEventMailSettings: vi.fn(),
+    fetchEventBounceIngestSettings: vi.fn(),
     saveEventMailSettings: vi.fn(),
     clearEventMailSettings: vi.fn(),
     sendEventMailTransportTest: vi.fn(),
+    probeEventMailSmtpConnection: vi.fn(),
   };
 });
 
 import {
   ApiError,
   clearEventMailSettings,
+  fetchEventBounceIngestSettings,
   fetchEventMailSettings,
+  probeEventMailSmtpConnection,
   saveEventMailSettings,
   sendEventMailTransportTest,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchEventMailSettings);
+const mockFetchBounce = vi.mocked(fetchEventBounceIngestSettings);
 const mockSave = vi.mocked(saveEventMailSettings);
 const mockClear = vi.mocked(clearEventMailSettings);
 const mockTest = vi.mocked(sendEventMailTransportTest);
+const mockProbe = vi.mocked(probeEventMailSmtpConnection);
 
 function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLInputElement | HTMLButtonElement).disabled;
@@ -166,12 +177,45 @@ function renderCardWithRoutes() {
   );
 }
 
+function configuredBounceResponse(
+  overrides: Partial<EventBounceIngestSettingsResponse> = {},
+): EventBounceIngestSettingsResponse {
+  return {
+    eventId: "evt-1",
+    organizationId: "org-1",
+    configured: true,
+    enabled: true,
+    imap_host: "imap.example.com",
+    imap_port: 993,
+    imap_username: "bounce@example.com",
+    imap_password: { set: true, masked: "••••" },
+    reuse_smtp_credentials: false,
+    smtp_reuse_available: true,
+    folders: ["INBOX"],
+    poll_interval_minutes: 5,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
   mockFetch.mockReset();
+  mockFetchBounce.mockReset();
   mockSave.mockReset();
   mockClear.mockReset();
   mockTest.mockReset();
+  mockProbe.mockReset();
+  mockFetchBounce.mockResolvedValue(
+    configuredBounceResponse({
+      configured: false,
+      enabled: false,
+      imap_host: null,
+      imap_port: null,
+      imap_username: null,
+      imap_password: { set: false, masked: null },
+      smtp_reuse_available: false,
+    }),
+  );
   // jsdom does not implement scrollIntoView.
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -329,6 +373,35 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     );
   });
 
+  it("calls onSaved after a successful dedicated save", async () => {
+    const onSaved = vi.fn();
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockSave.mockResolvedValue(dedicatedResponse());
+    const ref = createRef<EventMailSettingsCardHandle>();
+    renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard ref={ref} eventId="evt-1" isArchived={false} onSaved={onSaved} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
+    fireEvent.click(screen.getByRole("radio", { name: "SMTP (recommended)" }));
+    fireEvent.change(screen.getByLabelText("From address"), {
+      target: { value: "dedicated@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.dedicated.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Port"), { target: { value: "587" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "dedicated-user" } });
+    await act(async () => {
+      await ref.current?.save();
+    });
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
   it("Reset reverts the toggle and discards the draft", async () => {
     mockFetch.mockResolvedValue(inheritedResponse());
     const { ref } = renderCard();
@@ -432,12 +505,14 @@ describe("EventMailSettingsCard — reverting to organization", () => {
     await screen.findByText(DEDICATED_HINT);
 
     fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
+    let saveResult: string | undefined;
     await act(async () => {
-      await ref.current?.save();
+      saveResult = await ref.current?.save();
     });
+    expect(saveResult).toBe("confirm_pending");
 
     // Reverting to org mail is destructive (deletes the event's dedicated transport and
-    // secrets) — it goes through a ConfirmDialog rather than saving immediately.
+    // secrets) - it goes through a ConfirmDialog rather than saving immediately.
     expect(mockClear).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
 
@@ -493,8 +568,10 @@ describe("EventMailSettingsCard — test send", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
 
-    await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
-    await screen.findByText(/Sent successfully via SMTP/);
+    await waitFor(() =>
+      expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com", { verifyBounce: false }),
+    );
+    await screen.findByText(/Your Admitto mail configuration is working/);
   });
 
   it("shows the mailbox for a successful Graph test send", async () => {
@@ -508,7 +585,9 @@ describe("EventMailSettingsCard — test send", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
 
-    await waitFor(() => expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com"));
+    await waitFor(() =>
+      expect(mockTest).toHaveBeenCalledWith("evt-1", "tester@example.com", { verifyBounce: false }),
+    );
     await screen.findByText("Mailbox");
     expect(screen.getByText("shared@example.com")).toBeTruthy();
   });
@@ -536,6 +615,266 @@ describe("EventMailSettingsCard — test send", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
 
     expect(isDisabled(screen.getByRole("button", { name: /Send test/ }))).toBe(true);
+  });
+
+  it("disables Also verify bounce when bounce detection is not configured", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    expect(isDisabled(bounceSwitch)).toBe(true);
+  });
+
+  it("disables Also verify bounce when the form has unsaved changes", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+
+    fireEvent.click(screen.getByRole("radio", { name: "Dedicated" }));
+
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(true));
+  });
+
+  it("disables Also verify bounce when the event is archived", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    mockFetch.mockResolvedValue(inheritedResponse());
+    renderCard(true);
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    expect(isDisabled(bounceSwitch)).toBe(true);
+  });
+
+  it("keeps Also verify bounce disabled when bounce settings fail to load", async () => {
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockFetchBounce.mockRejectedValueOnce(new Error("network error"));
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(true));
+    expect((bounceSwitch as HTMLInputElement).checked).toBe(false);
+  });
+
+  it("turns off Also verify bounce when bounce detection becomes unavailable", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    mockFetch.mockResolvedValue(inheritedResponse());
+    const { rerender } = render(
+      <EventMailSettingsCard eventId="evt-1" isArchived={false} />,
+      {
+        wrapper: ({ children }) => (
+          <ToastProvider>
+            <MemoryRouter>{children}</MemoryRouter>
+          </ToastProvider>
+        ),
+      },
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+    fireEvent.click(bounceSwitch);
+    await waitFor(() => expect((bounceSwitch as HTMLInputElement).checked).toBe(true));
+
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse({
+      eventId: "evt-2",
+      configured: false,
+      enabled: false,
+      imap_host: null,
+      imap_port: null,
+      imap_username: null,
+      imap_password: { set: false, masked: null },
+      smtp_reuse_available: false,
+    }));
+    rerender(<EventMailSettingsCard eventId="evt-2" isArchived={false} />);
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const nextSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect((nextSwitch as HTMLInputElement).checked).toBe(false));
+    expect(isDisabled(nextSwitch)).toBe(true);
+  });
+
+  it("refreshBounceReady re-enables Also verify bounce after settings become ready", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse({
+      configured: false,
+      enabled: false,
+      imap_host: null,
+      imap_port: null,
+      imap_username: null,
+      imap_password: { set: false, masked: null },
+      smtp_reuse_available: false,
+    }));
+    mockFetch.mockResolvedValue(inheritedResponse());
+    const ref = createRef<EventMailSettingsCardHandle>();
+    renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard ref={ref} eventId="evt-1" isArchived={false} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    expect(isDisabled(bounceSwitch)).toBe(true);
+
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    await act(async () => {
+      ref.current?.refreshBounceReady();
+    });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+  });
+
+  it("sends with verifyBounce when the switch is on and bounce is ready", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    mockFetch.mockResolvedValue(inheritedResponse());
+    let resolveSend!: (value: {
+      status: "sent";
+      provider: "smtp";
+      bounceProbe: { status: "ok"; message: string };
+    }) => void;
+    mockTest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+    fireEvent.click(bounceSwitch);
+    await waitFor(() => expect((bounceSwitch as HTMLInputElement).checked).toBe(true));
+
+    fireEvent.change(screen.getByLabelText("Recipient"), {
+      target: { value: "nobody@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
+
+    await waitFor(() =>
+      expect(mockTest).toHaveBeenCalledWith("evt-1", "nobody@example.com", { verifyBounce: true }),
+    );
+    expect(screen.getByRole("button", { name: /^Waiting for bounce…$/ })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toMatch(/Waiting for bounce… 90s remaining/);
+
+    await act(async () => {
+      resolveSend({
+        status: "sent",
+        provider: "smtp",
+        bounceProbe: {
+          status: "ok",
+          message: "Bounce received. Delivery marked bounced.",
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText(/Bounce received/).length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("Transport and bounce detection are working")).toBeTruthy();
+  });
+
+  it("shows transport-ok but bounce-unverified when the probe times out", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockTest.mockResolvedValue({
+      status: "sent",
+      provider: "smtp",
+      providerMessageId: "<mid@example.com>",
+      bounceProbe: {
+        status: "timeout",
+        message:
+          "Mail was accepted by the transport, but no matching bounce appeared in IMAP within 90 seconds. Check the bounce folder, forward rule, and try again.",
+      },
+    });
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+    fireEvent.click(bounceSwitch);
+    fireEvent.change(screen.getByLabelText("Recipient"), {
+      target: { value: "nobody@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Mail transport works, but bounce was not verified")).toBeTruthy();
+    });
+    expect(document.querySelector(".mail-preview--warn")).toBeTruthy();
+    expect(screen.getAllByText(/no matching bounce appeared in IMAP/).length).toBeGreaterThan(0);
+  });
+
+  it("shows transport-ok but bounce-unverified when the probe fails", async () => {
+    mockFetchBounce.mockResolvedValue(configuredBounceResponse());
+    mockFetch.mockResolvedValue(inheritedResponse());
+    mockTest.mockResolvedValue({
+      status: "sent",
+      provider: "smtp",
+      providerMessageId: "<mid@example.com>",
+      bounceProbe: {
+        status: "failed",
+        message:
+          "Mail was accepted by the transport, but the bounce check failed. Review IMAP settings and the bounce mailbox rule.",
+      },
+    });
+    renderCard();
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+    fireEvent.click(bounceSwitch);
+    fireEvent.change(screen.getByLabelText("Recipient"), {
+      target: { value: "nobody@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send test/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Mail transport works, but bounce was not verified")).toBeTruthy();
+    });
+    expect(document.querySelector(".mail-preview--warn")).toBeTruthy();
+    expect(
+      screen.getAllByText(/bounce check failed/).length,
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe("EventMailSettingsCard — SMTP Test connection", () => {
+  it("enables Test connection for a saved dedicated SMTP transport", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    renderCard();
+    await screen.findByLabelText("SMTP host");
+    expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(false);
+  });
+
+  it("disables Test connection when dedicated SMTP has unsaved changes", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    renderCard();
+    await screen.findByLabelText("SMTP host");
+    fireEvent.change(screen.getByLabelText("SMTP host"), {
+      target: { value: "smtp.dirty.example.com" },
+    });
+    await waitFor(() => {
+      expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
+    });
+    expect(screen.getByText("Save your changes first.")).toBeTruthy();
+  });
+
+  it("calls probeEventMailSmtpConnection on click", async () => {
+    mockFetch.mockResolvedValue(dedicatedResponse());
+    mockProbe.mockResolvedValueOnce({
+      ok: true,
+      message: "Connected. SMTP account verified.",
+    });
+    renderCard();
+    await screen.findByLabelText("SMTP host");
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => {
+      expect(screen.getByText("Connected. SMTP account verified.")).toBeTruthy();
+    });
+    expect(mockProbe).toHaveBeenCalledWith("evt-1");
   });
 });
 

@@ -19,7 +19,12 @@ export {
   type MailDestinationErrorCode,
 } from "./ssrfGuard.js";
 export { createMailer, closeMailer, type CreateMailerDeps } from "./factory.js";
-export { probeMailTransport, MAIL_PROBE_TIMEOUT_MS, type MailProbeResult } from "./probe.js";
+export {
+  probeMailTransport,
+  MAIL_PROBE_TIMEOUT_MS,
+  type MailProbeResult,
+  type ProbeMailTransportDeps,
+} from "./probe.js";
 
 const MAX_BATCH_CONCURRENCY = 20;
 

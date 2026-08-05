@@ -33,9 +33,34 @@ export function purposeLabel(purpose: string): string {
   return purpose === "resend" ? "Resend" : "Initial";
 }
 
-/** Tabler icon name for the Delivery history row: ticket for the first send, forward for resends. */
-export function deliveryHistoryIcon(purpose: string): "ticket" | "mail-forward" {
+/** Tabler icon for a Delivery history row.
+ * Failure terminal states use `mail-exclamation` (envelope + !) so the shape itself reads as
+ * "something went wrong", not only the red tint. Otherwise the purpose icon stays: ticket for
+ * the first send, mail-forward for resends. */
+export function deliveryHistoryIcon(
+  purpose: string,
+  status?: string,
+): "ticket" | "mail-forward" | "mail-exclamation" {
+  if (status === "bounced" || status === "failed" || status === "rejected") {
+    return "mail-exclamation";
+  }
   return purpose === "resend" ? "mail-forward" : "ticket";
+}
+
+/** Compact header counters for Attendee Detail → Delivery history (icon + number only).
+ * "Sent" covers accepted / sent / delivered (transport accepted or later); bounced is its own
+ * terminal status and is not double-counted. Failed / rejected / queued are omitted from the
+ * chips so the header stays two short icons on mobile. */
+export function countDeliveryOutcomes(
+  deliveries: ReadonlyArray<{ status: string }>,
+): { sent: number; bounced: number } {
+  let sent = 0;
+  let bounced = 0;
+  for (const d of deliveries) {
+    if (d.status === "bounced") bounced += 1;
+    else if (d.status === "accepted" || d.status === "sent" || d.status === "delivered") sent += 1;
+  }
+  return { sent, bounced };
 }
 
 export function templateLabel(row: Pick<DeliveryDto, "template_name">): string {

@@ -5,6 +5,7 @@ import { resolveSetupComplete } from "@admitto/auth";
 import {
   describeMailConfigForOrg,
   describeMailConfigForOrgWizard,
+  resolveMailConfigForOrg,
   setMailSettings,
   validateOrgMailSettingsUpdate,
   type ConfigDescriptor,
@@ -17,12 +18,17 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 import {
   putMailSettingsBodySchema,
   testMailTransportBodySchema,
+  parseTestMailTransportBody,
   serializeDescriptor,
   descriptorForKey,
   isProductionEnv,
   classifyMailSettingsFields,
   runTransportTest,
   transportTestResponse,
+  runSmtpConnectionProbe,
+  SMTP_PROBE_NOT_SMTP_MESSAGE,
+  MAIL_PROVIDER_UNCONFIGURED,
+  type MailSmtpProbeDeps,
 } from "./mail-settings-shared.js";
 
 export { MAX_MAIL_SETTINGS_BODY_BYTES } from "./mail-settings-shared.js";
@@ -133,11 +139,20 @@ export async function handlePostMailSettingsTest(
   const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
-  let body: z.infer<typeof testMailTransportBodySchema>;
+  let rawBody: unknown;
   try {
-    body = testMailTransportBodySchema.parse(await c.req.json());
+    rawBody = await c.req.json();
   } catch {
     return c.json({ error: "validation_failed" }, 400);
+  }
+
+  let body: z.infer<typeof testMailTransportBodySchema>;
+  {
+    const parsed = parseTestMailTransportBody(rawBody);
+    if (!parsed.ok) {
+      return c.json({ error: "validation_failed", detail: parsed.detail }, 400);
+    }
+    body = parsed.data;
   }
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
@@ -164,4 +179,54 @@ export async function handlePostMailSettingsTest(
   }
 
   return transportTestResponse(c, outcome);
+}
+
+/** POST /api/admin/mail-settings/probe — SMTP verify only (no message send). */
+export async function handlePostMailSettingsProbe(
+  c: Context,
+  db: PrismaClient,
+  probeDeps: MailSmtpProbeDeps = {},
+): Promise<Response> {
+  const forbidden = await requireSuperadmin(c, db);
+  if (forbidden) return forbidden;
+
+  const orgId = await resolveInstanceOrganizationId(db, process.env);
+  const audit = adminAuditFromContext(c);
+  const mailEnv = (await isFirstRunWizard(db)) ? ({} as NodeJS.ProcessEnv) : process.env;
+
+  let config;
+  try {
+    config = await resolveMailConfigForOrg(orgId, db, mailEnv);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : undefined;
+    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
+      return c.json({ ok: false, error: "mail transport not configured" }, 400);
+    }
+    throw err;
+  }
+
+  if (config.provider !== "smtp") {
+    return c.json({ ok: false, error: SMTP_PROBE_NOT_SMTP_MESSAGE }, 400);
+  }
+
+  const outcome = await runSmtpConnectionProbe(config, "[admin] mail smtp probe", probeDeps);
+
+  try {
+    await writeAdminAuditLog(db, {
+      organizationId: orgId,
+      actorUserId: audit.operator!,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "mail_smtp_probed",
+      metadata: { result: outcome.ok ? "ok" : "failed" },
+    });
+  } catch (auditErr) {
+    console.error("[audit] mail_smtp_probed log failed", auditErr);
+  }
+
+  if (outcome.ok) {
+    return c.json({ ok: true, message: outcome.message });
+  }
+  return c.json({ ok: false, error: outcome.error });
 }

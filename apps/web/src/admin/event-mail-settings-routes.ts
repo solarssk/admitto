@@ -21,11 +21,20 @@ import type { PrismaClient } from "@admitto/db";
 import type { z } from "zod";
 import {
   describeMailConfig,
+  resolveMailConfig,
   setMailSettings,
   validateEventMailSettingsUpdate,
   type MailSettingsInput,
 } from "@admitto/mailer-config";
-import { sendEventTransportTestEmail, type MailDeliveryDeps } from "@admitto/mail-delivery";
+import {
+  sendEventTransportTestEmail,
+  runEventBounceProbe,
+  BounceProbeSetupError,
+  transportTestErrorForAdmin,
+  type MailDeliveryDeps,
+} from "@admitto/mail-delivery";
+import { isSendSuccess } from "@admitto/mailer";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -35,13 +44,18 @@ import {
 } from "./admin-helpers.js";
 import {
   putMailSettingsBodySchema,
-  testMailTransportBodySchema,
+  parseTestMailTransportBody,
   serializeDescriptor,
   descriptorForKey,
   isProductionEnv,
   classifyMailSettingsFields,
   runTransportTest,
   transportTestResponse,
+  runSmtpConnectionProbe,
+  SMTP_PROBE_NOT_SMTP_MESSAGE,
+  MAIL_PROVIDER_UNCONFIGURED,
+  type MailSmtpProbeDeps,
+  type TransportTestOutcome,
 } from "./mail-settings-shared.js";
 
 async function loadEventOrg(
@@ -266,20 +280,204 @@ export async function handlePostEventMailSettingsTest(
   const org = await loadEventOrg(db, eventId);
   if (!org) return c.json({ error: "not_found" }, 404);
 
-  let body: z.infer<typeof testMailTransportBodySchema>;
+  let rawBody: unknown;
   try {
-    body = testMailTransportBodySchema.parse(await c.req.json());
+    rawBody = await c.req.json();
   } catch {
     return c.json({ error: "validation_failed" }, 400);
   }
 
+  const parsed = parseTestMailTransportBody(rawBody);
+  if (!parsed.ok) {
+    return c.json({ error: "validation_failed", detail: parsed.detail }, 400);
+  }
+  const body = parsed.data;
   const audit = adminAuditFromContext(c);
 
+  if (!body.verifyBounce) {
+    return handlePlainEventTransportTest(c, db, {
+      eventId,
+      organizationId: org.organizationId,
+      toAddress: body.to,
+      audit,
+      mailDeliveryDeps,
+    });
+  }
+
+  return handleEventBounceVerifyTest(c, db, {
+    eventId,
+    organizationId: org.organizationId,
+    toAddress: body.to,
+    audit,
+    mailDeliveryDeps,
+  });
+}
+
+async function handlePlainEventTransportTest(
+  c: Context,
+  db: PrismaClient,
+  args: {
+    eventId: string;
+    organizationId: string;
+    toAddress: string;
+    audit: ReturnType<typeof adminAuditFromContext>;
+    mailDeliveryDeps: MailDeliveryDeps;
+  },
+): Promise<Response> {
   const outcome = await runTransportTest(
-    () => sendEventTransportTestEmail({ eventId, toAddress: body.to }, db, process.env, mailDeliveryDeps),
+    () =>
+      sendEventTransportTestEmail(
+        { eventId: args.eventId, toAddress: args.toAddress },
+        db,
+        process.env,
+        args.mailDeliveryDeps,
+      ),
     "[admin] event mail transport test",
   );
 
+  try {
+    await writeAdminAuditLog(db, {
+      organizationId: args.organizationId,
+      actorUserId: args.audit.operator!,
+      sessionId: args.audit.sessionId,
+      ip: args.audit.ip,
+      timezone: args.audit.timezone,
+      actionType: "event_mail_transport_tested",
+      metadata: { eventId: args.eventId, result: outcome.resultStatus },
+    });
+  } catch (auditErr) {
+    console.error("[audit] event_mail_transport_tested log failed", auditErr);
+  }
+
+  return transportTestResponse(c, outcome);
+}
+
+async function handleEventBounceVerifyTest(
+  c: Context,
+  db: PrismaClient,
+  args: {
+    eventId: string;
+    organizationId: string;
+    toAddress: string;
+    audit: ReturnType<typeof adminAuditFromContext>;
+    mailDeliveryDeps: MailDeliveryDeps;
+  },
+): Promise<Response> {
+  let outcome: TransportTestOutcome;
+  try {
+    const probe = await runEventBounceProbe(
+      { eventId: args.eventId, toAddress: args.toAddress },
+      db,
+      process.env,
+      args.mailDeliveryDeps,
+    );
+
+    const sendOk = isSendSuccess(probe.sendResult.status) && !probe.sendResult.error;
+    outcome = {
+      resultStatus: sendOk ? "sent" : "failed",
+      errorMessage: sendOk
+        ? undefined
+        : transportTestErrorForAdmin(probe.sendResult.error),
+      resultProvider: probe.sendResult.provider,
+      resultProviderMessageId: probe.sendResult.providerMessageId,
+      resultRetryable: probe.sendResult.retryable,
+      bounceProbe: {
+        status: probe.status,
+        message: probe.message,
+        ...(probe.smtpCode !== undefined ? { smtpCode: probe.smtpCode } : {}),
+      },
+    };
+  } catch (err) {
+    if (err instanceof BounceProbeSetupError) {
+      return c.json({ error: "bounce_probe_unavailable", detail: err.message }, 400);
+    }
+    throw err;
+  }
+
+  const bounceStatus = outcome.bounceProbe?.status ?? "failed";
+  if (bounceStatus === "ok") {
+    emitSystemLog("mail", "info", "mail_bounce_probe_ok", {
+      context: "[admin] event mail bounce probe",
+      eventId: args.eventId,
+    });
+  } else {
+    emitSystemLog("mail", "error", "mail_bounce_probe_failed", {
+      context: "[admin] event mail bounce probe",
+      eventId: args.eventId,
+      status: bounceStatus,
+      error: outcome.bounceProbe?.message ?? outcome.errorMessage,
+    });
+  }
+
+  try {
+    await writeAdminAuditLog(db, {
+      organizationId: args.organizationId,
+      actorUserId: args.audit.operator!,
+      sessionId: args.audit.sessionId,
+      ip: args.audit.ip,
+      timezone: args.audit.timezone,
+      actionType: "event_mail_bounce_probed",
+      metadata: {
+        eventId: args.eventId,
+        result: bounceStatus,
+        send: outcome.resultStatus,
+      },
+    });
+  } catch (auditErr) {
+    console.error("[audit] event_mail_bounce_probed log failed", auditErr);
+  }
+
+  return transportTestResponse(c, outcome);
+}
+
+/** POST /api/admin/events/:eventId/mail-settings/probe — SMTP verify for dedicated event transport. */
+export async function handlePostEventMailSettingsProbe(
+  c: Context,
+  db: PrismaClient,
+  probeDeps: MailSmtpProbeDeps = {},
+): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await requireSuperadmin(c, db);
+  if (forbidden) return forbidden;
+
+  const org = await loadEventOrg(db, eventId);
+  if (!org) return c.json({ error: "not_found" }, 404);
+
+  if (!(await hasEventMailOverride(db, eventId))) {
+    return c.json(
+      {
+        ok: false,
+        error: "Configure and save a dedicated SMTP transport for this event first.",
+      },
+      400,
+    );
+  }
+
+  let config;
+  try {
+    config = await resolveMailConfig(eventId, db, process.env);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : undefined;
+    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
+      return c.json({ ok: false, error: "mail transport not configured" }, 400);
+    }
+    throw err;
+  }
+
+  if (config.provider !== "smtp") {
+    return c.json({ ok: false, error: SMTP_PROBE_NOT_SMTP_MESSAGE }, 400);
+  }
+
+  const outcome = await runSmtpConnectionProbe(
+    config,
+    "[admin] event mail smtp probe",
+    probeDeps,
+  );
+
+  const audit = adminAuditFromContext(c);
   try {
     await writeAdminAuditLog(db, {
       organizationId: org.organizationId,
@@ -287,12 +485,15 @@ export async function handlePostEventMailSettingsTest(
       sessionId: audit.sessionId,
       ip: audit.ip,
       timezone: audit.timezone,
-      actionType: "event_mail_transport_tested",
-      metadata: { eventId, result: outcome.resultStatus },
+      actionType: "event_mail_smtp_probed",
+      metadata: { eventId, result: outcome.ok ? "ok" : "failed" },
     });
   } catch (auditErr) {
-    console.error("[audit] event_mail_transport_tested log failed", auditErr);
+    console.error("[audit] event_mail_smtp_probed log failed", auditErr);
   }
 
-  return transportTestResponse(c, outcome);
+  if (outcome.ok) {
+    return c.json({ ok: true, message: outcome.message });
+  }
+  return c.json({ ok: false, error: outcome.error });
 }

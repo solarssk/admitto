@@ -219,6 +219,7 @@ import {
   handleGetMailSettings,
   handlePutMailSettings,
   handlePostMailSettingsTest,
+  handlePostMailSettingsProbe,
   MAX_MAIL_SETTINGS_BODY_BYTES,
 } from "./admin/mail-settings-routes.js";
 import {
@@ -226,7 +227,14 @@ import {
   handlePutEventMailSettings,
   handleDeleteEventMailSettings,
   handlePostEventMailSettingsTest,
+  handlePostEventMailSettingsProbe,
 } from "./admin/event-mail-settings-routes.js";
+import type { MailSmtpProbeDeps } from "./admin/mail-settings-shared.js";
+import {
+  handleGetEventBounceIngestSettings,
+  handlePutEventBounceIngestSettings,
+  handlePostEventBounceIngestSettingsTest,
+} from "./admin/event-bounce-ingest-settings-routes.js";
 import { handleGetEventLocation, handlePutEventLocation } from "./admin/event-location-routes.js";
 import {
   handlePostGeocodingReverse,
@@ -332,6 +340,8 @@ export interface CreateAppOptions {
   rateLimitStore?: RateLimitStore;
   adminDistRoot?: string;
   mailDeliveryDeps?: MailDeliveryDeps;
+  /** Test-only injection for SMTP connection probe (nodemailer verify). */
+  mailProbeDeps?: MailSmtpProbeDeps;
   /** Test-only injection point — bypasses the real Nominatim HTTP adapter. */
   geocodingProvider?: GeocodingProvider;
   /** Test-only injection point - static map PNG resolver for `/m/:eventId.png`. */
@@ -395,6 +405,7 @@ export function createApp(options: CreateAppOptions = {}) {
   };
   const checkinAuthDeps = { prisma: db, config: checkinGateConfig };
   const mailDeliveryDeps = options.mailDeliveryDeps ?? {};
+  const mailProbeDeps = options.mailProbeDeps ?? {};
   const geocodingConfig = resolveGeocodingConfig();
   const geocodingProvider: GeocodingProvider =
     options.geocodingProvider ??
@@ -687,6 +698,30 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminEventMailSettingsRateLimit,
     guardArchivedEvent((c) => handlePostEventMailSettingsTest(c, db, mailDeliveryDeps)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/mail-settings/probe",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminEventMailSettingsRateLimit,
+    guardArchivedEvent((c) => handlePostEventMailSettingsProbe(c, db, mailProbeDeps)),
+  );
+  app.get("/api/admin/events/:eventId/bounce-ingest-settings", staffAdminGate, (c) =>
+    handleGetEventBounceIngestSettings(c, db),
+  );
+  app.put(
+    "/api/admin/events/:eventId/bounce-ingest-settings",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePutEventBounceIngestSettings(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/bounce-ingest-settings/test",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminEventMailSettingsRateLimit,
+    guardArchivedEvent((c) => handlePostEventBounceIngestSettingsTest(c, db)),
   );
   app.get("/api/admin/events/:eventId/location", staffAdminGate, (c) => handleGetEventLocation(c, db));
   app.put(
@@ -1054,6 +1089,13 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminMailSettingsRateLimit,
     (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
+  );
+  app.post(
+    "/api/admin/mail-settings/probe",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminMailSettingsRateLimit,
+    (c) => handlePostMailSettingsProbe(c, db, mailProbeDeps),
   );
   app.get("/api/admin/setup/checks", staffAdminGate, (c) =>
     handleGetSetupChecks(c, db, rateLimitStore, mailInjectedBaseUrl),

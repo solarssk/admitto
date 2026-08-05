@@ -113,6 +113,19 @@ const TRANSPORT_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }>
     message: "Mail server hostname could not be resolved. Check the SMTP host.",
   },
   {
+    pattern: /destination is a private, loopback, or link-local address/i,
+    message:
+      "The SMTP host resolves to a private address. For a local lab set ALLOW_PRIVATE_MAIL_DESTINATIONS=true, otherwise use a public host.",
+  },
+  {
+    pattern: /hostname could not be resolved/i,
+    message: "Mail server hostname could not be resolved. Check the SMTP host.",
+  },
+  {
+    pattern: /Mailbox doesn'?t exist|NonExistentMailbox|NO \[NONEXISTENT\]/i,
+    message: "That folder was not found on the mailbox. Check Folders to check (names vary by server).",
+  },
+  {
     pattern: /\b535\b|\b534\b|authentication failed|invalid login|invalid credentials/i,
     message: "SMTP authentication failed. Check username and password.",
   },
@@ -180,4 +193,21 @@ export function transportTestErrorForAdmin(message: string | undefined): string 
   if (generic !== "send failed") return generic;
 
   return "Send failed. Check transport settings or ask your administrator to review server logs.";
+}
+
+/**
+ * Bounce IMAP connection test — same sanitization as transport test, with IMAP wording
+ * (never leak getaddrinfo / hostnames to the admin UI).
+ */
+export function imapTestErrorForAdmin(message: string | undefined): string {
+  if (!message?.trim()) {
+    return "Could not connect. Check IMAP settings and try again.";
+  }
+
+  const smtpFacing = transportTestErrorForAdmin(message);
+  return smtpFacing
+    .replaceAll("SMTP host", "IMAP host")
+    .replaceAll("SMTP authentication", "IMAP authentication")
+    .replace(/^Send failed\./, "Could not connect.")
+    .replaceAll("Check transport settings", "Check IMAP settings");
 }

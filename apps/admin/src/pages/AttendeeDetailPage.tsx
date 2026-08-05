@@ -75,7 +75,7 @@ import {
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
-import { formatDeliveryHistoryTime, deliveryHistoryIcon, rowTimestamp } from "../communication/delivery-format.js";
+import { formatDeliveryHistoryTime, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
@@ -486,6 +486,7 @@ function AttendeeOverviewTab({
 }>) {
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
+  const deliveryCounts = countDeliveryOutcomes(detail.deliveries);
 
   // React Router reuses this same AttendeeDetailPage/AttendeeOverviewTab instance across
   // :attendeeId param changes - without this, a delivery modal left open while navigating to a
@@ -495,6 +496,22 @@ function AttendeeOverviewTab({
     setDetailsRow(null);
   }, [detail.id]);
 
+  const deliveryHistoryActions =
+    detail.deliveries.length > 0 ? (
+      <div
+        className="attendee-delivery-stats"
+        aria-label={`Delivery summary: ${deliveryCounts.sent} sent, ${deliveryCounts.bounced} bounced`}
+      >
+        <span className="attendee-delivery-stats__item attendee-delivery-stats__item--sent" title="Sent">
+          <i className="ti ti-mail-check" aria-hidden="true" />
+          <span>{deliveryCounts.sent}</span>
+        </span>
+        <span className="attendee-delivery-stats__item attendee-delivery-stats__item--bounced" title="Bounced">
+          <i className="ti ti-mail-x" aria-hidden="true" />
+          <span>{deliveryCounts.bounced}</span>
+        </span>
+      </div>
+    ) : undefined;
   return (
     <div className="attendee-detail-grid">
       <div className="attendee-detail-main">
@@ -597,7 +614,7 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        <Card title="Delivery history">
+        <Card title="Delivery history" actions={deliveryHistoryActions}>
           {detail.deliveries.length === 0 ? (
             <EmptyState
               icon={<i className="ti ti-mail-off" aria-hidden="true" />}
@@ -605,47 +622,51 @@ function AttendeeOverviewTab({
               description="Ticket emails and resends will appear here once one is sent."
             />
           ) : (
-            <ul className="attendee-deliveries">
-              {detail.deliveries.map((delivery) => {
-                const iconTone = resolveStatusMeta(delivery.status).variant;
-                return (
-                  <li className="attendee-delivery" key={delivery.id}>
-                    <span
-                      className={`attendee-delivery__icon attendee-delivery__icon--${iconTone}`}
-                      aria-hidden="true"
-                    >
-                      <i className={`ti ti-${deliveryHistoryIcon(delivery.purpose)}`} />
-                    </span>
-                    <div className="attendee-delivery__body">
-                      <div className="attendee-delivery__subject">
-                        {delivery.rendered_subject ?? "Ticket email"}
-                      </div>
-                      {delivery.recipient_email && (
-                        <div className="attendee-delivery__to">
-                          <span aria-hidden="true">→</span> {delivery.recipient_email}
+            <div className="attendee-deliveries-scroll">
+              <ul className="attendee-deliveries">
+                {detail.deliveries.map((delivery) => {
+                  const statusMeta = resolveStatusMeta(delivery.status);
+                  const iconTone = statusMeta.variant;
+                  return (
+                    <li className="attendee-delivery" key={delivery.id}>
+                      <Tooltip content={statusMeta.label} className="attendee-delivery__icon-tip">
+                        <span
+                          className={`attendee-delivery__icon attendee-delivery__icon--${iconTone}`}
+                          aria-label={statusMeta.label}
+                        >
+                          <i
+                            className={`ti ti-${deliveryHistoryIcon(delivery.purpose, delivery.status)}`}
+                            aria-hidden="true"
+                          />
+                        </span>
+                      </Tooltip>
+                      <div className="attendee-delivery__body">
+                        <div className="attendee-delivery__subject">
+                          {delivery.rendered_subject ?? "Ticket email"}
                         </div>
-                      )}
-                      {delivery.error_code && (
-                        <p className="attendee-delivery__error">{delivery.error_code}</p>
-                      )}
-                    </div>
-                    <span className="attendee-delivery__time mono">
-                      {formatDeliveryHistoryTime(
-                        rowTimestamp(delivery),
-                        delivery.client_timezone,
-                        event.timezone,
-                      )}
-                    </span>
-                    <MailStatusBadge status={delivery.status} />
-                    <DeliveryRowMenu
-                      row={delivery}
-                      onViewSentMessage={setSentMessageRow}
-                      onViewDetails={setDetailsRow}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+                        {delivery.recipient_email && (
+                          <div className="attendee-delivery__to">
+                            <span aria-hidden="true">→</span> {delivery.recipient_email}
+                          </div>
+                        )}
+                      </div>
+                      <span className="attendee-delivery__time mono">
+                        {formatDeliveryHistoryTime(
+                          rowTimestamp(delivery),
+                          delivery.client_timezone,
+                          event.timezone,
+                        )}
+                      </span>
+                      <DeliveryRowMenu
+                        row={delivery}
+                        onViewSentMessage={setSentMessageRow}
+                        onViewDetails={setDetailsRow}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </Card>
       </div>
@@ -661,6 +682,7 @@ function AttendeeOverviewTab({
           eventId={event.id}
           eventTimezone={event.timezone}
           row={detailsRow}
+          showOpenAttendee={false}
           onClose={() => setDetailsRow(null)}
           onViewSentMessage={(row) => {
             setDetailsRow(null);

@@ -30,7 +30,8 @@
     "@admitto/mailer": "*",
     "@admitto/mailer-config": "*",
     "@admitto/shared": "*",
-    "@admitto/tickets": "*"
+    "@admitto/tickets": "*",
+    "imapflow": "^1.6.5"
   },
   "devDependencies": {
     "@prisma/client": "^7.9.1",

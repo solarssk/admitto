@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientSafeDeliveryError, sanitizeDeliveryError, transportTestErrorForAdmin } from "../src/sanitizeError.js";
+import { clientSafeDeliveryError, sanitizeDeliveryError, transportTestErrorForAdmin, imapTestErrorForAdmin } from "../src/sanitizeError.js";
 
 describe("clientSafeDeliveryError", () => {
   it("returns generic message for Graph OAuth errors", () => {
@@ -66,6 +66,23 @@ describe("transportTestErrorForAdmin", () => {
   it("maps DNS failure", () => {
     expect(transportTestErrorForAdmin("getaddrinfo ENOTFOUND smtp.example.com")).toBe(
       "Mail server hostname could not be resolved. Check the SMTP host.",
+    );
+  });
+
+  it("maps DNS failure for IMAP bounce test without leaking hostname", () => {
+    expect(imapTestErrorForAdmin("getaddrinfo ENOTFOUND dc01.example.com")).toBe(
+      "Mail server hostname could not be resolved. Check the IMAP host.",
+    );
+    expect(imapTestErrorForAdmin("getaddrinfo ENOTFOUND dc01.example.com")).not.toContain(
+      "dc01",
+    );
+  });
+
+  it("maps missing IMAP folder without leaking server chatter", () => {
+    expect(
+      imapTestErrorForAdmin("Command failed: Mailbox doesn't exist: Admitto (0.001 + 0.000 secs)."),
+    ).toBe(
+      "That folder was not found on the mailbox. Check Folders to check (names vary by server).",
     );
   });
 

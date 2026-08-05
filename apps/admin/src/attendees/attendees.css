@@ -640,12 +640,72 @@
   margin-top: var(--space-2);
 }
 
+.attendee-deliveries-scroll {
+  /* ~5 rows before scrolling, so 30 deliveries do not stretch the attendee page. */
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Same slim on-theme scrollbar as .overview-timeline / .timezone-select__list (staff.css). */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.attendee-deliveries-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.attendee-deliveries-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.attendee-deliveries-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.attendee-deliveries-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
 .attendee-deliveries {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Compact sent / bounced counters in the Delivery history card header (icon + number only -
+ * no word labels, so the header stays on one line on a phone-width side column). */
+.attendee-delivery-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.attendee-delivery-stats__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.attendee-delivery-stats__item i {
+  font-size: 15px;
+}
+
+.attendee-delivery-stats__item--sent {
+  color: var(--status-ok-fg);
+}
+
+.attendee-delivery-stats__item--bounced {
+  color: var(--status-error-fg);
 }
 
 .attendee-delivery {
@@ -660,6 +720,10 @@
 
 .attendee-delivery:last-child {
   border-bottom: 0;
+}
+
+.attendee-delivery__icon-tip {
+  flex: none;
 }
 
 .attendee-delivery__icon {
@@ -740,18 +804,8 @@
   white-space: nowrap;
 }
 
-.attendee-delivery .delivery-row-menu,
-.attendee-delivery .at-badge {
+.attendee-delivery .delivery-row-menu {
   flex: none;
-}
-
-.attendee-delivery__error {
-  margin: 2px 0 0;
-  color: var(--status-error);
-  font-size: var(--fs-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 @media (max-width: 1100px) {

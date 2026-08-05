@@ -55,6 +55,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchTicketTypes: vi.fn().mockResolvedValue([]),
     updateTicketType: vi.fn(),
     fetchEventMailSettings: vi.fn(),
+    fetchEventBounceIngestSettings: vi.fn(),
+    saveEventBounceIngestSettings: vi.fn(),
     fetchEventLocation: vi.fn(),
     fetchMapTileConfig: vi.fn(),
     saveEventLocation: vi.fn(),
@@ -106,6 +108,8 @@ import {
   deleteEvent,
   fetchEventImageAssets,
   fetchEventMailSettings,
+  fetchEventBounceIngestSettings,
+  saveEventBounceIngestSettings,
   fetchEventLocation,
   fetchEventSettings,
   fetchTicketTypes,
@@ -122,6 +126,7 @@ import {
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
 import type {
+  EventBounceIngestSettingsResponse,
   EventLocationDto,
   EventMailSettingsResponse,
   MailSettingsFieldsDto,
@@ -236,6 +241,23 @@ function dedicatedMailSettingsResponse(): EventMailSettingsResponse {
   return { ...inheritedMailSettingsResponse(), hasEventOverride: true };
 }
 
+function emptyBounceIngestSettingsResponse(): EventBounceIngestSettingsResponse {
+  return {
+    eventId: "evt-1",
+    organizationId: "org-1",
+    configured: false,
+    enabled: false,
+    imap_host: null,
+    imap_port: null,
+    imap_username: null,
+    imap_password: { set: false, masked: null },
+    reuse_smtp_credentials: false,
+    smtp_reuse_available: false,
+    folders: ["INBOX", "Junk Email"],
+    poll_interval_minutes: 5,
+  };
+}
+
 beforeEach(() => {
   // The ticket-type staleness tests queue one-off mock implementations. Resetting them before
   // every test prevents an unconsumed async response in a failed test from affecting the next one.
@@ -250,6 +272,20 @@ beforeEach(() => {
   vi.mocked(fetchEventImageAssets).mockResolvedValue([]);
   vi.mocked(fetchTicketTypes).mockResolvedValue([]);
   vi.mocked(fetchEventMailSettings).mockResolvedValue(inheritedMailSettingsResponse());
+  vi.mocked(fetchEventBounceIngestSettings).mockResolvedValue(emptyBounceIngestSettingsResponse());
+  vi.mocked(saveEventBounceIngestSettings).mockImplementation(async (_eventId, body) => ({
+    ...emptyBounceIngestSettingsResponse(),
+    ...body,
+    configured: Boolean(body.imap_host),
+    imap_password: { set: Boolean(body.imap_password), masked: body.imap_password ? "••••" : null },
+    folders: body.folders ?? ["INBOX", "Junk Email"],
+    poll_interval_minutes: body.poll_interval_minutes ?? 5,
+    enabled: body.enabled ?? false,
+    imap_host: body.imap_host ?? null,
+    imap_port: body.imap_port ?? 993,
+    imap_username: body.imap_username ?? null,
+    reuse_smtp_credentials: body.reuse_smtp_credentials ?? false,
+  }));
   vi.mocked(fetchEventLocation).mockResolvedValue(emptyLocation);
   vi.mocked(fetchMapTileConfig).mockResolvedValue(mapTileConfig);
   vi.mocked(saveEventLocation).mockResolvedValue(emptyLocation);
@@ -831,14 +867,13 @@ describe("EventSettingsPage Mailing tab (superadmin-only)", () => {
   });
 });
 
-describe("EventSettingsPage Mail tab — Save/Reset pair lives in the card's own SettingsFooter", () => {
-  // Regression coverage: the Mail tab used to render its own Save/Reset footer inside
+describe("EventSettingsPage Mail tab — one shared Save/Reset for transport + bounce", () => {
+  // Regression coverage: the Mail tab used to render a Save/Reset footer inside
   // EventMailSettingsCard *in addition to* a hoisted page-header Save button — two ways to
-  // save the same form, and the bottom one could scroll out of view. The pair now lives
-  // exactly once, in a SettingsFooter at the bottom of the card (matching the instance-level
-  // Mail transport panel's own layout) — the page header has no per-tab Save/Reset at all.
-  // The "Organization" / "Dedicated" mode toggle lives in the card's
-  // header instead (moved there from the card body).
+  // save the same form. Bounce detection later added a second footer. The pair now lives
+  // exactly once, at the bottom of the Mail tab (transport + bounce share it) — the page
+  // header has no per-tab Save/Reset at all. The "Organization" / "Dedicated" mode toggle
+  // lives in the card's header instead (moved there from the card body).
   async function openMailTab() {
     await screen.findByRole("tab", { name: "Mailing" });
     fireEvent.click(screen.getByRole("tab", { name: "Mailing" }));
@@ -868,7 +903,7 @@ describe("EventSettingsPage Mail tab — Save/Reset pair lives in the card's own
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
   });
 
-  it("clicking the card's Save button drives its own save flow", async () => {
+  it("clicking the Mail tab Save button drives the mail card's own save flow", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchEventMailSettings).mockResolvedValue(dedicatedMailSettingsResponse());
     renderSettings();
@@ -887,7 +922,60 @@ describe("EventSettingsPage Mail tab — Save/Reset pair lives in the card's own
     expect(screen.getByText(/Revert to organization mail/)).toBeTruthy();
   });
 
-  it("clicking the card's Reset button reverts the mail draft", async () => {
+  it("does not open Revert when saving bounce-only edits while already on organization mail", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openMailTab();
+    await screen.findByText("Bounce detection");
+
+    fireEvent.change(screen.getByLabelText("IMAP host"), {
+      target: { value: "imap.example.com" },
+    });
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveEventBounceIngestSettings).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText(/Revert to organization mail/)).toBeNull();
+  });
+
+  it("still saves bounce when mail Save opens Revert confirm", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchEventMailSettings).mockResolvedValue(dedicatedMailSettingsResponse());
+    renderSettings();
+    await openMailTab();
+    await screen.findByText("Bounce detection");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Organization" }));
+    fireEvent.change(screen.getByLabelText("IMAP host"), {
+      target: { value: "imap.example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText(/Revert to organization mail/)).toBeTruthy();
+    await waitFor(() => expect(saveEventBounceIngestSettings).toHaveBeenCalled());
+  });
+
+  it("does not open Revert when Save is clicked with nothing dirty on organization mail", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await openMailTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText(/Revert to organization mail/)).toBeNull();
+    expect(saveEventBounceIngestSettings).not.toHaveBeenCalled();
+  });
+
+  it("clicking the Mail tab Reset button reverts the mail draft", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await openMailTab();
