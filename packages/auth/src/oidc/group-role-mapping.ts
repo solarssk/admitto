@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { hasScope } from "@admitto/db";
 import { logOidcSuperadminRevokeBlocked } from "../audit.js";
@@ -53,7 +54,7 @@ const SERIALIZATION_RETRY_ATTEMPTS = 8;
 
 function serializationRetryDelayMs(attempt: number): number {
   const base = Math.min(200, 25 * 2 ** attempt);
-  return base + Math.floor(Math.random() * 25);
+  return base + randomInt(25);
 }
 
 function sleep(ms: number): Promise<void> {
