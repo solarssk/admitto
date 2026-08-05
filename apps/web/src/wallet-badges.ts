@@ -15,9 +15,14 @@ const assetCache = new Map<string, Buffer>();
 function assetRoots(): string[] {
   const here = dirname(fileURLToPath(import.meta.url));
   return [
-    // Product brand SVGs: single source under @admitto/ui (mark + full logo for mail).
+    // Product brand SVGs (mark + full logo): emitted into @admitto/ui dist/assets on
+    // `npm run build -w @admitto/ui`. Production image copies packages/ui/dist only
+    // (not packages/ui/src), so dist must be first. src/ is for local tsx / pre-build.
+    join(process.cwd(), "packages/ui/dist/assets"),
+    join(here, "../../../packages/ui/dist/assets"),
     join(process.cwd(), "packages/ui/src/assets"),
     join(here, "../../../packages/ui/src/assets"),
+    // Wallet badges (and any product SVG copied into the web package).
     join(here, "assets"),
     join(process.cwd(), "apps/web/dist/src/assets"),
     join(process.cwd(), "apps/web/src/assets"),
