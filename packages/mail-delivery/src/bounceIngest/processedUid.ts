@@ -46,8 +46,8 @@ export async function listProcessedUids(
 }
 
 /**
- * Delete UID markers older than the IMAP lookback window. A successful ingest
- * bounds this table to UIDs seen during the rolling lookback period.
+ * Delete UID markers older than `since` (callers should pass
+ * `uidRetentionCutoff(lookbackSince())` so the cutoff respects IMAP day granularity).
  */
 export async function pruneProcessedUidsOlderThan(
   db: PrismaClient,

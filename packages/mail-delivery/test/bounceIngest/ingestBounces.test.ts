@@ -358,8 +358,9 @@ describe("ingestBounces", () => {
       const summary = await ingestBounces(db, {});
 
       expect(summary.noopReason).toBe("none_enabled");
+      // Lookback is 2026-07-22T10:00Z; prune keeps the whole UTC boundary day.
       expect(deleteMany).toHaveBeenCalledWith({
-        where: { processed_at: { lt: new Date("2026-07-22T10:00:00.000Z") } },
+        where: { processed_at: { lt: new Date("2026-07-22T00:00:00.000Z") } },
       });
     } finally {
       vi.useRealTimers();

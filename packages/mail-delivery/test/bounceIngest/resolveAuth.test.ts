@@ -9,6 +9,7 @@ import {
   lookbackSince,
   parseFolders,
   resolveImapConnectConfig,
+  uidRetentionCutoff,
 } from "../../src/bounceIngest/resolveAuth.js";
 
 vi.mock("@admitto/crypto", () => ({
@@ -67,6 +68,14 @@ describe("lookbackSince", () => {
     const now = new Date("2026-08-05T12:00:00.000Z");
     const since = lookbackSince(now);
     expect(since.toISOString()).toBe("2026-07-22T12:00:00.000Z");
+  });
+});
+
+describe("uidRetentionCutoff", () => {
+  it("keeps the UTC calendar day of the IMAP lookback boundary", () => {
+    const since = lookbackSince(new Date("2026-08-05T10:00:00.000Z"));
+    expect(since.toISOString()).toBe("2026-07-22T10:00:00.000Z");
+    expect(uidRetentionCutoff(since).toISOString()).toBe("2026-07-22T00:00:00.000Z");
   });
 });
 

@@ -28,6 +28,18 @@ export function lookbackSince(now: Date = new Date()): Date {
   return new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 }
 
+/**
+ * Cutoff for deleting processed UID markers.
+ *
+ * IMAP `SEARCH SINCE` is day-granular on many servers (same caveat as bounce
+ * probe). Pruning at the exact `lookbackSince()` timestamp can drop markers
+ * from earlier on the boundary calendar day that the same run's search still
+ * returns. Keep the whole UTC day of `since`.
+ */
+export function uidRetentionCutoff(since: Date): Date {
+  return new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()));
+}
+
 export class BounceAuthError extends Error {
   constructor(message: string) {
     super(message);

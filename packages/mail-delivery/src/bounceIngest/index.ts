@@ -9,7 +9,7 @@ import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
 import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
 import { openBounceImapProvider } from "./openProvider.js";
-import { lookbackSince, parseFolders, resolveImapConnectConfig } from "./resolveAuth.js";
+import { lookbackSince, parseFolders, resolveImapConnectConfig, uidRetentionCutoff } from "./resolveAuth.js";
 import type { InboundMailProvider, InboundMessage, IngestSummary, ParsedBounceLine } from "./types.js";
 
 export interface IngestBouncesOptions {
@@ -303,9 +303,10 @@ export async function ingestBounces(
   const resolved = await resolveRowsToProcess(db, options);
 
   // Keep UID retention aligned with this run's IMAP lookback, including no-op
-  // runs after all event settings are disabled.
+  // runs after all event settings are disabled. Use a day-aligned cutoff so
+  // SEARCH SINCE (day-granular) cannot revive a just-pruned boundary-day UID.
   try {
-    await pruneProcessedUidsOlderThan(db, since);
+    await pruneProcessedUidsOlderThan(db, uidRetentionCutoff(since));
   } catch (err) {
     (options.log ?? console.error)(
       `[bounce-ingest] prune processed UIDs failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -380,6 +381,7 @@ export { ImapInboundProvider, extractPlainTextFromSource, MAX_BODY_BYTES } from 
 export {
   parseFolders,
   lookbackSince,
+  uidRetentionCutoff,
   resolveImapConnectConfig,
   BounceAuthError,
   DEFAULT_BOUNCE_FOLDERS,
