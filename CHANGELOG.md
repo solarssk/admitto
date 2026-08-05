@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Also verify bounce only counts NDRs that arrived for this check**, not an older hard bounce for the same test address still sitting in the 14-day IMAP window (which previously could report success while forwarding was broken).
+- **Also verify bounce returns a failed probe result when the bounce mailbox cannot be opened** (bad credentials / unreachable host after the test send), instead of a generic server error.
 - **Bounce detection matches NDR recipients without caring about email letter case**, so a manually added attendee like `John.Doe@Example.com` still gets marked bounced when the MTA reports `john.doe@example.com`.
 - **Also verify bounce no longer reports a false timeout** when the bounce-ingest sidecar has already seen the same mailbox UID; the probe examines messages in its own session instead of sharing “already processed” credit with the sidecar.
 - **Also verify bounce treats a brief IMAP disconnect as a retry**, instead of turning a transient mailbox error into a generic 500 for the admin.

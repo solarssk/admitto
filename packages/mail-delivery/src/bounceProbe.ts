@@ -6,7 +6,6 @@ import { parseBounceLines } from "./bounceIngest/parseBounceLine.js";
 import { ImapInboundProvider } from "./bounceIngest/imapProvider.js";
 import { markUidProcessed } from "./bounceIngest/processedUid.js";
 import {
-  lookbackSince,
   parseFolders,
   resolveImapConnectConfig,
 } from "./bounceIngest/resolveAuth.js";
@@ -17,6 +16,8 @@ import { sendEventTransportTestEmail } from "./transportTest.js";
 
 export const BOUNCE_PROBE_TIMEOUT_MS = 90_000;
 export const BOUNCE_PROBE_POLL_MS = 5_000;
+/** Allow small SMTP/IMAP clock skew when filtering NDRs to this probe run. */
+export const BOUNCE_PROBE_SINCE_SKEW_MS = 60_000;
 
 export type BounceProbeStatus = "ok" | "timeout" | "failed";
 
@@ -65,7 +66,8 @@ async function openProbeProvider(
 }
 
 /**
- * One IMAP pass: look for a hard (5xx) bounce whose recipient matches `recipientEmail`.
+ * One IMAP pass: look for a hard (5xx) bounce whose recipient matches `recipientEmail`
+ * and whose IMAP `receivedAt` is not older than this probe (`notBefore`).
  * Uses the same parseBounceLines path as production ingest, but does not create or update
  * EmailDelivery / Attendee rows (plain Send test also leaves no delivery trail).
  *
@@ -73,6 +75,9 @@ async function openProbeProvider(
  * the probe's NDR before this poll sees it, which would yield a false timeout. Session-local
  * `examinedUids` avoids re-parsing the same UID within this probe; a hard-bounce hit still
  * calls markUidProcessed so the sidecar does not keep counting noMatchingDelivery.
+ *
+ * IMAP SEARCH SINCE is day-granular on many servers, so `receivedAt >= notBefore` is what
+ * keeps an older same-recipient NDR from counting as success for this probe.
  */
 async function scanFoldersForHardBounce(
   db: PrismaClient,
@@ -80,6 +85,7 @@ async function scanFoldersForHardBounce(
     eventId: string;
     folders: string[];
     since: Date;
+    notBefore: Date;
     want: string;
     provider: InboundMailProvider;
     examinedUids: Set<string>;
@@ -90,6 +96,7 @@ async function scanFoldersForHardBounce(
       eventId: args.eventId,
       folder,
       since: args.since,
+      notBefore: args.notBefore,
       want: args.want,
       provider: args.provider,
       examinedUids: args.examinedUids,
@@ -105,19 +112,23 @@ async function scanFolderForHardBounce(
     eventId: string;
     folder: string;
     since: Date;
+    notBefore: Date;
     want: string;
     provider: InboundMailProvider;
     examinedUids: Set<string>;
   },
 ): Promise<{ smtpCode: string; reason: string } | null> {
   // Do not pass skipUids from BounceIngestProcessedUid (sidecar race). Fetch all candidates;
-  // filter only with the in-session examined set.
+  // filter only with the in-session examined set + probe-start receivedAt gate.
   const messages = await args.provider.fetchCandidateMessages(args.folder, args.since);
+  const notBeforeMs = args.notBefore.getTime();
 
   for (const message of messages) {
     const examKey = `${args.folder}\0${message.uid}`;
     if (args.examinedUids.has(examKey)) continue;
     args.examinedUids.add(examKey);
+
+    if (message.receivedAt.getTime() < notBeforeMs) continue;
 
     const hit = parseBounceLines(message.bodyText).find(
       (line) => line.recipientEmail.trim().toLowerCase() === args.want && isHardBounce(line),
@@ -205,11 +216,27 @@ export async function runEventBounceProbe(
 
   const recipient = toAddress.trim().toLowerCase();
   const folders = parseFolders(bounceSettings.folders);
-  const since = lookbackSince();
-  const provider = await openProbeProvider(db, bounceSettings, {
-    createProvider: ingestOptions.createProvider,
-    env: ingestOptions.env ?? env,
-  });
+  // Wall clock (not the injectable `now` used for the wait deadline): IMAP internalDate and
+  // SMTP clocks are real-world. Narrow SEARCH + receivedAt so a stale same-recipient NDR in
+  // the 14-day ingest window cannot make "Also verify bounce" succeed without a fresh bounce.
+  const notBefore = new Date(Date.now() - BOUNCE_PROBE_SINCE_SKEW_MS);
+  const since = notBefore;
+
+  let provider: InboundMailProvider;
+  try {
+    provider = await openProbeProvider(db, bounceSettings, {
+      createProvider: ingestOptions.createProvider,
+      env: ingestOptions.env ?? env,
+    });
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    console.error(`[bounce-probe] IMAP open failed: ${raw}`);
+    return {
+      status: "failed",
+      message: "Could not open the bounce mailbox. Check IMAP settings and try again.",
+      sendResult,
+    };
+  }
 
   const examinedUids = new Set<string>();
   let everConnected = false;
@@ -230,6 +257,7 @@ export async function runEventBounceProbe(
           eventId,
           folders,
           since,
+          notBefore,
           want: recipient,
           provider,
           examinedUids,

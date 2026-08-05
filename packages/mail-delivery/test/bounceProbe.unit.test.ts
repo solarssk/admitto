@@ -310,6 +310,66 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.message).not.toMatch(/ECONNREFUSED/);
   });
 
+  it("returns failed when opening the IMAP provider throws before connect", async () => {
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 30,
+        pollMs: 5,
+        sleep: async () => undefined,
+        ingestOptions: {
+          createProvider: async () => {
+            throw new Error("IMAP password decrypt failed");
+          },
+        },
+      },
+      baseDb() as never,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toMatch(/open the bounce mailbox|IMAP settings/i);
+    expect(result.message).not.toMatch(/decrypt/i);
+  });
+
+  it("ignores a stale same-recipient hard bounce from before this probe", async () => {
+    let t = 0;
+    const stale: InboundMessage = {
+      uid: "old",
+      receivedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      subject: "Undeliverable",
+      bodyText: HARD_BODY,
+    };
+    const fetch = vi.fn().mockResolvedValue([stale]);
+    const provider: InboundMailProvider = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      fetchCandidateMessages: fetch,
+    };
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 30,
+        pollMs: 5,
+        now: () => {
+          const v = t;
+          t += 20;
+          return v;
+        },
+        sleep: async () => undefined,
+        ingestOptions: { createProvider: async () => provider },
+      },
+      baseDb() as never,
+    );
+
+    expect(result.status).toBe("timeout");
+    expect(fetch).toHaveBeenCalled();
+    const sinceArg = fetch.mock.calls[0]?.[1] as Date;
+    expect(sinceArg.getTime()).toBeGreaterThan(Date.now() - 5 * 60 * 1000);
+  });
+
   it("ignores soft bounces and keeps polling until timeout", async () => {
     let t = 0;
     const messages: InboundMessage[] = [
