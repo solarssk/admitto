@@ -213,7 +213,7 @@ type FreeTextMatchFields = {
 const FREE_TEXT_MATCHERS: ReadonlyArray<{
   id: string;
   pattern: RegExp;
-  extract: (match: RegExpMatchArray, inferredEmail: string | null) => FreeTextMatchFields | null;
+  extract: (match: RegExpMatchArray, inferredEmail: string | null) => FreeTextMatchFields;
 }> = [
   {
     id: "postfix-enhanced",
@@ -281,7 +281,6 @@ function parsePostfixFallback(
   for (const matcher of FREE_TEXT_MATCHERS) {
     for (const match of normalized.matchAll(matcher.pattern)) {
       const fields = matcher.extract(match, inferredEmail);
-      if (!fields) continue;
       pushLine(out, seen, fields.email, fields.code, fields.enhanced, fields.reason);
     }
   }
