@@ -261,7 +261,7 @@ describe("EventCard", () => {
 
   it("shows forecast temperature when weather status is ok", () => {
     renderCard(
-      {},
+      { operatorTimeZone: "Europe/Warsaw" },
       {
         ...baseEvent,
         weather: {
@@ -279,7 +279,7 @@ describe("EventCard", () => {
 
   it("falls back to Weather data when ok forecast has blank attribution", () => {
     renderCard(
-      {},
+      { operatorTimeZone: "Europe/Warsaw" },
       {
         ...baseEvent,
         weather: {
@@ -292,6 +292,26 @@ describe("EventCard", () => {
     );
     const chip = screen.getByLabelText("Forecast 20°C");
     expect(getTooltipText(chip)).toMatch(/Weather data/);
+  });
+
+  it("shows Fahrenheit on the weather chip for Americas operator timezones", () => {
+    renderCard(
+      { operatorTimeZone: "America/New_York" },
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 18,
+          temp_min_c: 12,
+          weather_code: 0,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    expect(screen.getByLabelText("Forecast 64°F")).toBeTruthy();
+    expect(screen.getByText("64°")).toBeTruthy();
+    const chip = screen.getByLabelText("Forecast 64°F");
+    expect(getTooltipText(chip)).toMatch(/54° to 64°F/);
   });
 
   it("uses singular day wording for too_far horizon and opens-in of 1", () => {
@@ -341,7 +361,7 @@ describe("EventCard", () => {
 
   it("shows a single °C when ok forecast omits temp_min_c", () => {
     renderCard(
-      {},
+      { operatorTimeZone: "Europe/Warsaw" },
       {
         ...baseEvent,
         weather: {
