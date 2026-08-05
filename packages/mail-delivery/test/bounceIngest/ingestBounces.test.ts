@@ -366,6 +366,36 @@ describe("ingestBounces", () => {
     }
   });
 
+  it("logs prune failures without failing the ingest run", async () => {
+    const deleteMany = vi.fn().mockRejectedValue(new Error("prune db down"));
+    const log = vi.fn();
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      bounceIngestProcessedUid: { deleteMany },
+    } as never;
+
+    const summary = await ingestBounces(db, { log });
+
+    expect(summary.noopReason).toBe("none_enabled");
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/prune processed UIDs failed: prune db down/));
+  });
+
+  it("stringifies non-Error prune failures in the log line", async () => {
+    const deleteMany = vi.fn().mockRejectedValue("prune blew up");
+    const log = vi.fn();
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      bounceIngestProcessedUid: { deleteMany },
+    } as never;
+
+    await ingestBounces(db, { log });
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/prune processed UIDs failed: prune blew up/));
+  });
+
   it("skips already-processed UIDs", async () => {
     const row = settings();
     const messages: InboundMessage[] = [
