@@ -150,8 +150,12 @@ function OrgMailSummary({
  * Mail tab the real Save/Reset pair lives in a shared tab footer (transport + bounce).
  * Standalone renders (unit tests) still embed SettingsFooter when `embeddedFooter` is true. */
 export type EventMailSettingsCardHandle = {
-  save: () => Promise<void>;
+  /** Persist dedicated override, or open revert confirm. Resolves `true` when the caller may
+   * continue (saved / already-org noop), `false` when validation failed or revert is pending. */
+  save: () => Promise<boolean>;
   reset: () => void;
+  /** Re-fetch bounce-ingest readiness (Also verify bounce) after the bounce panel saves. */
+  refreshBounceReady: () => void;
 };
 
 /** Per-event dedicated transport override — inherits the organization's mail settings by
@@ -235,6 +239,8 @@ export const EventMailSettingsCard = forwardRef<
   const [probeResult, setProbeResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [bounceVerify, setBounceVerify] = useState(false);
   const [bounceIngestReady, setBounceIngestReady] = useState(false);
+  const [bounceReadyKey, setBounceReadyKey] = useState(0);
+  const refreshBounceReady = useCallback(() => setBounceReadyKey((n) => n + 1), []);
   // First switch into "dedicated" (no saved override yet) starts the draft blank rather
   // than prefilled with the organization's values — prefilled-but-unedited would silently
   // save as a full duplicate of the org's config the moment Save is clicked. Only the
@@ -306,7 +312,7 @@ export const EventMailSettingsCard = forwardRef<
       }
     })();
     return () => ac.abort();
-  }, [eventId]);
+  }, [eventId, bounceReadyKey]);
 
   useEffect(() => {
     if (!bounceIngestReady && bounceVerify) setBounceVerify(false);
@@ -329,13 +335,13 @@ export const EventMailSettingsCard = forwardRef<
     return Boolean(fd && "locked" in fd && fd.locked);
   };
 
-  const handleSave = async () => {
-    if (!apiData) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!apiData) return false;
     if (mode === "dedicated") {
       const validation = validateMailDraft(draft);
       if (!validation.valid) {
         setValidationErrors(validation.errors);
-        return;
+        return false;
       }
       setValidationErrors([]);
       setSaving(true);
@@ -349,24 +355,26 @@ export const EventMailSettingsCard = forwardRef<
         const data = await saveEventMailSettings(eventId, body);
         applyResponse(data);
         addToast("Event mail settings saved.", "success");
+        return true;
       } catch (err) {
         addToast(operatorApiErrorMessage(err, "Failed to save mail settings."), "error");
+        return false;
       } finally {
         setSaving(false);
       }
-      return;
     }
 
     // Organization selected: only clear a dedicated override when one is actually pending /
     // saved. Already-inherited org with nothing dirty must be a no-op (shared Mail-tab Save
     // also persists bounce settings and must not open Revert for that).
     if (savedMode === "org" && !apiData.hasEventOverride) {
-      return;
+      return true;
     }
 
     setValidationErrors([]);
     setRevertError(null);
     setConfirmRevertOpen(true);
+    return false;
   };
 
   const handleConfirmRevert = async () => {
@@ -395,6 +403,7 @@ export const EventMailSettingsCard = forwardRef<
   useImperativeHandle(ref, () => ({
     save: handleSave,
     reset: handleReset,
+    refreshBounceReady,
   }));
 
   const hasUnsavedChanges =

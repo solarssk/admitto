@@ -1112,6 +1112,7 @@ export function EventSettingsPage() {
               isArchived={isArchived}
               onDirtyChange={setBounceDirty}
               onSavingChange={setBounceSaving}
+              onSaved={() => mailCardRef.current?.refreshBounceReady()}
             />
           </EventMailSettingsCard>
           {!isArchived && (
@@ -1129,7 +1130,12 @@ export function EventSettingsPage() {
                   // Persist only what is dirty. Do not call mail save as a no-op fallback:
                   // org-mode save used to open "Revert to organization mail" even when the
                   // event already inherits org transport and the admin only edited bounce.
-                  if (mailDirty) await mailCardRef.current?.save();
+                  // If mail validation fails or opens a confirm dialog, stop before bounce
+                  // so the operator does not see a bounce-save success toast alongside errors.
+                  if (mailDirty) {
+                    const mailOk = await mailCardRef.current?.save();
+                    if (mailOk === false) return;
+                  }
                   if (bounceDirty) await bouncePanelRef.current?.save();
                 })();
               }}

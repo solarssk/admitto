@@ -1,4 +1,5 @@
 import type { PrismaClient, EmailDelivery } from "@admitto/db";
+import { redactEmail } from "@admitto/shared";
 
 const NON_TERMINAL = ["queued", "accepted", "sent"] as const;
 const MAX_EMAIL_LEN = 320;
@@ -8,9 +9,9 @@ const MAX_EMAIL_LEN = 320;
  *
  * Known v1 limitation (ADR 0039): if the same recipient has two in-flight rows
  * for the same event (e.g. resend queued before the initial bounce arrives),
- * we take the most recent by queued_at — no per-delivery VERP.
+ * we take the most recent by queued_at - no per-delivery VERP.
  *
- * `recipientEmail` is untrusted parser output — bound Prisma param only; truncated for logs.
+ * `recipientEmail` is untrusted parser output: bound Prisma param only; redacted for logs.
  */
 export async function findDeliveryForBounce(
   db: PrismaClient,
@@ -29,7 +30,7 @@ export async function findDeliveryForBounce(
   });
 }
 
-/** Truncate an email for log lines (never log full unexpected long strings). */
+/** Redact an email for log lines (no full local-part; also bound length). */
 export function truncateEmailForLog(email: string): string {
-  return email.slice(0, 80);
+  return redactEmail(email.trim().toLowerCase().slice(0, MAX_EMAIL_LEN));
 }

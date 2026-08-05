@@ -97,7 +97,8 @@ function secretFieldFromApi(data: EventBounceIngestSettingsResponse): MailSecret
 }
 
 export type EventBounceIngestPanelHandle = {
-  save: () => Promise<void>;
+  /** Persist settings. Resolves `true` on success, `false` on validation/API failure. */
+  save: () => Promise<boolean>;
   reset: () => void;
 };
 
@@ -109,9 +110,11 @@ export const EventBounceIngestPanel = forwardRef<
     isArchived: boolean;
     onDirtyChange?: (dirty: boolean) => void;
     onSavingChange?: (saving: boolean) => void;
+    /** Called after a successful save so the parent can refresh Also verify bounce readiness. */
+    onSaved?: () => void;
   }>
 >(function EventBounceIngestPanel(
-  { eventId, isArchived, onDirtyChange, onSavingChange },
+  { eventId, isArchived, onDirtyChange, onSavingChange, onSaved },
   ref,
 ) {
   const { addToast } = useToast();
@@ -194,11 +197,11 @@ export const EventBounceIngestPanel = forwardRef<
     setTestResult(null);
   }, [baseline]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     const port = Number.parseInt(draft.imapPort, 10);
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
       addToast("IMAP port must be a number between 1 and 65535.", "error");
-      return;
+      return false;
     }
 
     const body: SaveEventBounceIngestSettingsBody = {
@@ -233,12 +236,15 @@ export const EventBounceIngestPanel = forwardRef<
       setSecrets(emptySecretEdits());
       setTestResult(null);
       addToast("Bounce detection settings saved.", "success");
+      onSaved?.();
+      return true;
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to save bounce detection settings."), "error");
+      return false;
     } finally {
       setSaving(false);
     }
-  }, [addToast, apiData?.smtp_reuse_available, draft, eventId, secrets.smtpPassword]);
+  }, [addToast, apiData?.smtp_reuse_available, draft, eventId, onSaved, secrets.smtpPassword]);
 
   useImperativeHandle(ref, () => ({
     save: handleSave,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { findDeliveryForBounce } from "../../src/bounceIngest/correlate.js";
+import { findDeliveryForBounce, truncateEmailForLog } from "../../src/bounceIngest/correlate.js";
 
 describe("findDeliveryForBounce", () => {
   it("queries newest non-terminal row for event + recipient", async () => {
@@ -27,5 +27,13 @@ describe("findDeliveryForBounce", () => {
     const db = { emailDelivery: { findFirst } } as never;
     expect(await findDeliveryForBounce(db, { eventId: "evt_1", recipientEmail: "  " })).toBeNull();
     expect(findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe("truncateEmailForLog", () => {
+  it("redacts the local part so unmatched bounce recipients are not fully logged", () => {
+    const out = truncateEmailForLog("nobody@example.com");
+    expect(out).toBe("n***@example.com");
+    expect(out).not.toContain("nobody");
   });
 });

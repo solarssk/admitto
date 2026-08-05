@@ -679,6 +679,52 @@ describe("EventMailSettingsCard — test send", () => {
     expect(isDisabled(nextSwitch)).toBe(true);
   });
 
+  it("refreshBounceReady re-enables Also verify bounce after settings become ready", async () => {
+    mockFetchBounce.mockResolvedValue({
+      eventId: "evt-1",
+      organizationId: "org-1",
+      configured: false,
+      enabled: false,
+      imap_host: null,
+      imap_port: null,
+      imap_username: null,
+      imap_password: { set: false, masked: null },
+      reuse_smtp_credentials: false,
+      smtp_reuse_available: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+    });
+    mockFetch.mockResolvedValue(inheritedResponse());
+    const ref = createRef<EventMailSettingsCardHandle>();
+    renderWithToast(
+      <MemoryRouter>
+        <EventMailSettingsCard ref={ref} eventId="evt-1" isArchived={false} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(SMTP_SUMMARY_TEXT);
+    const bounceSwitch = await screen.findByRole("switch", { name: "Also verify bounce" });
+    expect(isDisabled(bounceSwitch)).toBe(true);
+
+    mockFetchBounce.mockResolvedValue({
+      eventId: "evt-1",
+      organizationId: "org-1",
+      configured: true,
+      enabled: true,
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password: { set: true, masked: "••••" },
+      reuse_smtp_credentials: false,
+      smtp_reuse_available: true,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+    });
+    await act(async () => {
+      ref.current?.refreshBounceReady();
+    });
+    await waitFor(() => expect(isDisabled(bounceSwitch)).toBe(false));
+  });
+
   it("sends with verifyBounce when the switch is on and bounce is ready", async () => {
     mockFetchBounce.mockResolvedValue({
       eventId: "evt-1",

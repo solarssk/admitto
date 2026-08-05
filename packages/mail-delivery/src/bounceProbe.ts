@@ -1,5 +1,10 @@
 import type { PrismaClient, BounceIngestSettings } from "@admitto/db";
-import { closeMailer, createMailer, isSendSuccess, type SendResult } from "@admitto/mailer";
+import {
+  closeMailer,
+  createMailer,
+  isSendSuccess,
+  type SendResult,
+} from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { parseBounceLines } from "./bounceIngest/parseBounceLine.js";
 import { ImapInboundProvider } from "./bounceIngest/imapProvider.js";
@@ -10,7 +15,7 @@ import {
   resolveImapConnectConfig,
 } from "./bounceIngest/resolveAuth.js";
 import type { InboundMailProvider, ParsedBounceLine } from "./bounceIngest/types.js";
-import { sanitizeDeliveryError } from "./sanitizeError.js";
+import { sanitizeDeliveryError, transportTestErrorForAdmin } from "./sanitizeError.js";
 import type { MailDeliveryDeps } from "./send.js";
 import { buildEventTransportTestMessage } from "./transportTest.js";
 
@@ -205,26 +210,44 @@ export async function runEventBounceProbe(
 
   await cleanupLegacyBounceProbeAttendee(db, eventId);
 
-  const mailConfig = await resolveMailConfig(eventId, db, env);
-  const { subject, html } = await buildEventTransportTestMessage(eventId, db, env, {
-    provider: mailConfig.provider,
-    toAddress,
-    mailConfig,
-  });
-
-  const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
   let sendResult: SendResult;
   try {
-    sendResult = await mailer.send({
-      to: toAddress,
-      subject,
-      html,
+    const mailConfig = await resolveMailConfig(eventId, db, env);
+    const { subject, html } = await buildEventTransportTestMessage(eventId, db, env, {
+      provider: mailConfig.provider,
+      toAddress,
+      mailConfig,
     });
-    if (sendResult.error) {
-      sendResult = { ...sendResult, error: sanitizeDeliveryError(sendResult.error) };
+
+    const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
+    try {
+      sendResult = await mailer.send({
+        to: toAddress,
+        subject,
+        html,
+      });
+      if (sendResult.error) {
+        sendResult = { ...sendResult, error: sanitizeDeliveryError(sendResult.error) };
+      }
+    } finally {
+      await closeMailer(mailer);
     }
-  } finally {
-    await closeMailer(mailer);
+  } catch (err) {
+    // Same operator-safe mapping as plain Send test (`runTransportTest`): setup failures
+    // (no provider, export_only without sink, blocked/unresolvable SMTP host) must not
+    // bubble as 500 from the admin route.
+    const raw = err instanceof Error ? err.message : undefined;
+    const message = transportTestErrorForAdmin(raw);
+    return {
+      status: "failed",
+      message,
+      sendResult: {
+        status: "rejected",
+        provider: "smtp",
+        error: message,
+        retryable: false,
+      },
+    };
   }
 
   if (!isSendSuccess(sendResult.status) || sendResult.error) {
@@ -257,10 +280,10 @@ export async function runEventBounceProbe(
     await sleep(Math.min(pollMs, remaining));
   }
 
+  const waitSeconds = Math.max(1, Math.round(timeoutMs / 1000));
   return {
     status: "timeout",
-    message:
-      "Mail was accepted by the transport, but no matching bounce appeared in IMAP within 90 seconds. Check the bounce folder, forward rule, and try again.",
+    message: `Mail was accepted by the transport, but no matching bounce appeared in IMAP within ${waitSeconds} seconds. Check the bounce folder, forward rule, and try again.`,
     sendResult,
   };
 }

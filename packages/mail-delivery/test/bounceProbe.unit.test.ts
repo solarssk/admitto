@@ -159,6 +159,26 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.message).toMatch(/SMTP rejected recipient|Send failed/i);
   });
 
+  it("returns failed with operator-safe copy when mailer setup throws", async () => {
+    vi.mocked(createMailer).mockRejectedValueOnce(
+      new Error("destination is a private, loopback, or link-local address"),
+    );
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        ingestOptions: { createProvider: async () => mockProvider([]) },
+      },
+      baseDb() as never,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toMatch(/ALLOW_PRIVATE_MAIL_DESTINATIONS|private address/i);
+    expect(result.message).not.toMatch(/getaddrinfo|ECONNREFUSED/i);
+    expect(result.sendResult.status).toBe("rejected");
+  });
+
   it("reports ok when IMAP yields a hard bounce for the recipient", async () => {
     let tick = 0;
     const messages: InboundMessage[] = [

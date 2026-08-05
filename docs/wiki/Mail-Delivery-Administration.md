@@ -75,7 +75,7 @@ When a hard failure NDR is forwarded into the mailbox, the next ingest run updat
 ### Common problems
 
 - **Test connection failed:** check host/port/credentials and that the first configured folder exists on the server.
-- **Status never becomes Bounced:** confirm the forward rule, that ingest is On, and that the NDR body still contains a Postfix-style `failed: host … said: …` line Admitto can parse.
+- **Status never becomes Bounced:** confirm the forward rule, that ingest is On, and that the NDR contains a supported diagnostic format (RFC 3464 delivery-status fields, or a recognized provider diagnostic line such as Postfix / mailhop / Synology).
 
 ## Steps
 

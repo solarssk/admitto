@@ -1,5 +1,5 @@
 import { ImapFlow } from "imapflow";
-import { assertSafeMailDestination } from "@admitto/mailer";
+import { resolveSafeMailDestination } from "@admitto/mailer";
 import type { InboundMailProvider, InboundMessage, ImapConnectConfig } from "./types.js";
 
 /** Cap body text so one oversized message cannot stall the run. */
@@ -219,13 +219,15 @@ export class ImapInboundProvider implements InboundMailProvider {
 
   constructor(private readonly config: ImapConnectConfig) {}
 
-  /** Same SSRF guard SMTP uses (@admitto/mailer) - IMAP host is event-scoped admin config, so an
-   * unvalidated destination would let a saved host reach internal/loopback/metadata addresses
-   * from the server. Rechecked here (not just at save-time) to also close the DNS-rebinding gap. */
+  /** Same SSRF guard + DNS pin SMTP uses (@admitto/mailer). Resolve once, connect to that IP,
+   * keep `servername` as the configured hostname for SNI/cert checks. Without pinning, ImapFlow
+   * would re-resolve the hostname at connect time and reopen a DNS-rebinding gap. */
   async connect(): Promise<void> {
-    await assertSafeMailDestination(this.config.host);
+    const records = await resolveSafeMailDestination(this.config.host);
+    const connectHost = records[0]!.address;
     const client = new ImapFlow({
-      host: this.config.host,
+      host: connectHost,
+      servername: this.config.host,
       port: this.config.port,
       secure: true,
       auth: {

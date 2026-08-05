@@ -7,7 +7,7 @@ import type { ParsedBounceLine } from "./types.js";
  * Original-Recipient, Action, Status, Diagnostic-Code). Human Postfix-style
  * diagnostic lines remain as a fallback when MTAs omit a structured DSN part.
  *
- * Returns [] when nothing matches — never throws.
+ * Returns [] when nothing matches - never throws.
  */
 
 const MAX_EMAIL_LEN = 320;

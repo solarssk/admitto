@@ -57,6 +57,7 @@ describe("ImapInboundProvider.connect", () => {
   });
 
   it("connects when the host passes the SSRF guard", async () => {
+    const { ImapFlow } = await import("imapflow");
     const { ImapInboundProvider } = await import("../../src/bounceIngest/imapProvider.js");
     const provider = new ImapInboundProvider({
       host: "mail.example.com",
@@ -67,6 +68,14 @@ describe("ImapInboundProvider.connect", () => {
 
     await expect(provider.connect()).resolves.toBeUndefined();
     expect(connectMock).toHaveBeenCalledTimes(1);
+    expect(ImapFlow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: "93.184.216.34",
+        servername: "mail.example.com",
+        port: 993,
+        secure: true,
+      }),
+    );
   });
 
   it("fetch/markSeen/probeFolder/close work against a connected mock client", async () => {
