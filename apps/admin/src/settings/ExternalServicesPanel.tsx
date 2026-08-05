@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useNavigate } from "react-router";
 import {
   Button,
@@ -251,6 +259,14 @@ function toastExternalServicesSaveResult(
   addToast(failures.join(" "), "error");
 }
 
+/** Form fields only mount after drafts load. */
+function patchDraft<T>(
+  setter: Dispatch<SetStateAction<T | null>>,
+  patch: (current: T) => T,
+): void {
+  setter((current) => patch(current as T));
+}
+
 /**
  * Organisation Settings → External services (ADR 0040).
  * Weather and Maps are editable; distinct from Event Settings → Integrations.
@@ -331,15 +347,37 @@ export function ExternalServicesPanel() {
       !data.weather.contact_configured,
   );
 
+  if (showLoading && !data) {
+    return (
+      <Card title="External services">
+        <p className="settings-card-intro">Loading…</p>
+      </Card>
+    );
+  }
+
+  if (loadError && !data) {
+    return (
+      <EmptyState
+        title="Could not load external services"
+        description={loadError}
+        action={
+          <Button variant="secondary" onClick={() => void load()}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+
+  if (!data || !weatherDraft || !mapsDraft) return null;
+
   function handleReset() {
-    if (!weatherSavedRef.current || !mapsSavedRef.current) return;
-    setWeatherDraft({ ...weatherSavedRef.current });
-    setMapsDraft({ ...mapsSavedRef.current });
+    setWeatherDraft({ ...weatherSavedRef.current! });
+    setMapsDraft({ ...mapsSavedRef.current! });
     setValidationErrors([]);
   }
 
   async function handleTestWeather() {
-    if (!weatherDraft) return;
     const body: {
       provider: WeatherProviderId;
       baseUrl?: string;
@@ -370,7 +408,6 @@ export function ExternalServicesPanel() {
   }
 
   async function handleTestMaps() {
-    if (!mapsDraft) return;
     setMapsTesting(true);
     try {
       const result = await testMapsConnection({
@@ -392,11 +429,10 @@ export function ExternalServicesPanel() {
   }
 
   async function handleSave() {
-    if (!weatherDraft || !mapsDraft || !data) return;
-    if (!weatherSavedRef.current || !mapsSavedRef.current) return;
-
-    const saveWeather = weatherDirty(weatherDraft, weatherSavedRef.current);
-    const saveMaps = mapsDirty(mapsDraft, mapsSavedRef.current);
+    const savedWeather = weatherSavedRef.current!;
+    const savedMaps = mapsSavedRef.current!;
+    const saveWeather = weatherDirty(weatherDraft, savedWeather);
+    const saveMaps = mapsDirty(mapsDraft, savedMaps);
     const errors = collectSaveValidationErrors({
       apiKeyMissing,
       saveWeather,
@@ -422,7 +458,7 @@ export function ExternalServicesPanel() {
         tileUrl: mapsDraft.tileUrl.trim(),
         attribution: mapsDraft.attribution.trim(),
         maxZoom,
-        geocodingProvider: mapsDraft.geocodingProvider.trim() || "nominatim",
+        geocodingProvider: normalizeMapsProvider(mapsDraft.geocodingProvider),
         geocodingBaseUrl: mapsDraft.geocodingBaseUrl.trim(),
       };
 
@@ -433,13 +469,13 @@ export function ExternalServicesPanel() {
 
       if (weatherResult.status === "fulfilled" && weatherResult.value) {
         const w = weatherDraftFrom(weatherResult.value);
-        setData((prev) => (prev ? { ...prev, weather: weatherResult.value! } : prev));
+        setData((prev) => ({ ...prev!, weather: weatherResult.value! }));
         setWeatherDraft(w);
         weatherSavedRef.current = w;
       }
       if (mapsResult.status === "fulfilled" && mapsResult.value) {
         const m = mapsDraftFrom(mapsResult.value);
-        setData((prev) => (prev ? { ...prev, maps: mapsResult.value! } : prev));
+        setData((prev) => ({ ...prev!, maps: mapsResult.value! }));
         setMapsDraft(m);
         mapsSavedRef.current = m;
       }
@@ -455,30 +491,6 @@ export function ExternalServicesPanel() {
     }
   }
 
-  if (showLoading && !data) {
-    return (
-      <Card title="External services">
-        <p className="settings-card-intro">Loading…</p>
-      </Card>
-    );
-  }
-
-  if (loadError && !data) {
-    return (
-      <EmptyState
-        title="Could not load external services"
-        description={loadError}
-        action={
-          <Button variant="secondary" onClick={() => void load()}>
-            Retry
-          </Button>
-        }
-      />
-    );
-  }
-
-  if (!data || !weatherDraft || !mapsDraft) return null;
-
   return (
     <div className="settings-sections">
       <Card
@@ -490,7 +502,7 @@ export function ExternalServicesPanel() {
             checked={weatherDraft.enabled}
             disabled={saving}
             onChange={(e) =>
-              setWeatherDraft((d) => (d ? { ...d, enabled: e.target.checked } : d))
+              patchDraft(setWeatherDraft, (d) => ({ ...d, enabled: e.target.checked }))
             }
           />
         }
@@ -511,14 +523,10 @@ export function ExternalServicesPanel() {
                     value={weatherDraft.provider}
                     disabled={saving || weatherTesting}
                     onChange={(e) =>
-                      setWeatherDraft((d) =>
-                        d
-                          ? {
-                              ...d,
-                              provider: normalizeWeatherProvider(e.target.value),
-                            }
-                          : d,
-                      )
+                      patchDraft(setWeatherDraft, (d) => ({
+                        ...d,
+                        provider: normalizeWeatherProvider(e.target.value),
+                      }))
                     }
                   >
                     <option value="metno">MET Norway</option>
@@ -570,7 +578,7 @@ export function ExternalServicesPanel() {
                     placeholder="https://api.open-meteo.com"
                     {...NO_AUTOFILL_PROPS}
                     onChange={(e) =>
-                      setWeatherDraft((d) => (d ? { ...d, baseUrl: e.target.value } : d))
+                      patchDraft(setWeatherDraft, (d) => ({ ...d, baseUrl: e.target.value }))
                     }
                   />
                 </div>
@@ -592,9 +600,11 @@ export function ExternalServicesPanel() {
                     )}
                     {...NO_AUTOFILL_PROPS}
                     onChange={(e) =>
-                      setWeatherDraft((d) =>
-                        d ? { ...d, apiKey: e.target.value, clearApiKey: false } : d,
-                      )
+                      patchDraft(setWeatherDraft, (d) => ({
+                        ...d,
+                        apiKey: e.target.value,
+                        clearApiKey: false,
+                      }))
                     }
                   />
                   {data.weather.api_key.configured && !apiKeyRequired && (
@@ -606,15 +616,11 @@ export function ExternalServicesPanel() {
                         checked={weatherDraft.clearApiKey}
                         disabled={saving}
                         onChange={(e) =>
-                          setWeatherDraft((d) =>
-                            d
-                              ? {
-                                  ...d,
-                                  clearApiKey: e.target.checked,
-                                  apiKey: e.target.checked ? "" : d.apiKey,
-                                }
-                              : d,
-                          )
+                          patchDraft(setWeatherDraft, (d) => ({
+                            ...d,
+                            clearApiKey: e.target.checked,
+                            apiKey: e.target.checked ? "" : d.apiKey,
+                          }))
                         }
                       />
                       <span>Clear organisation API key</span>
@@ -646,7 +652,7 @@ export function ExternalServicesPanel() {
             checked={mapsDraft.enabled}
             disabled={saving}
             onChange={(e) =>
-              setMapsDraft((d) => (d ? { ...d, enabled: e.target.checked } : d))
+              patchDraft(setMapsDraft, (d) => ({ ...d, enabled: e.target.checked }))
             }
           />
         }
@@ -665,14 +671,10 @@ export function ExternalServicesPanel() {
                     value={normalizeMapsProvider(mapsDraft.geocodingProvider)}
                     disabled={saving || mapsTesting}
                     onChange={(e) =>
-                      setMapsDraft((d) =>
-                        d
-                          ? {
-                              ...d,
-                              geocodingProvider: normalizeMapsProvider(e.target.value),
-                            }
-                          : d,
-                      )
+                      patchDraft(setMapsDraft, (d) => ({
+                        ...d,
+                        geocodingProvider: normalizeMapsProvider(e.target.value),
+                      }))
                     }
                   >
                     <option value="nominatim">OpenStreetMap (Nominatim)</option>
@@ -700,7 +702,7 @@ export function ExternalServicesPanel() {
                   disabled={saving}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
-                    setMapsDraft((d) => (d ? { ...d, tileUrl: e.target.value } : d))
+                    patchDraft(setMapsDraft, (d) => ({ ...d, tileUrl: e.target.value }))
                   }
                 />
                 <p className="at-hint">{MAPS_TILE_URL_DESC}</p>
@@ -716,7 +718,7 @@ export function ExternalServicesPanel() {
                   disabled={saving}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
-                    setMapsDraft((d) => (d ? { ...d, attribution: e.target.value } : d))
+                    patchDraft(setMapsDraft, (d) => ({ ...d, attribution: e.target.value }))
                   }
                 />
                 <p className="at-hint">{MAPS_ATTRIBUTION_DESC}</p>
@@ -733,7 +735,7 @@ export function ExternalServicesPanel() {
                   disabled={saving}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
-                    setMapsDraft((d) => (d ? { ...d, maxZoom: e.target.value } : d))
+                    patchDraft(setMapsDraft, (d) => ({ ...d, maxZoom: e.target.value }))
                   }
                 />
                 <p className="at-hint">{MAPS_MAX_ZOOM_DESC}</p>
@@ -747,7 +749,10 @@ export function ExternalServicesPanel() {
                   disabled={saving || mapsTesting}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
-                    setMapsDraft((d) => (d ? { ...d, geocodingBaseUrl: e.target.value } : d))
+                    patchDraft(setMapsDraft, (d) => ({
+                      ...d,
+                      geocodingBaseUrl: e.target.value,
+                    }))
                   }
                 />
                 <p className="at-hint">{MAPS_GEOCODING_URL_DESC}</p>

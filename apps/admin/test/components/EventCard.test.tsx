@@ -277,6 +277,43 @@ describe("EventCard", () => {
     expect(screen.getByText("22°")).toBeTruthy();
   });
 
+  it("falls back to Weather data when ok forecast has blank attribution", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: {
+          status: "ok",
+          temp_c: 20,
+          weather_code: 0,
+          attribution: "   ",
+        },
+      },
+    );
+    const chip = screen.getByLabelText("Forecast 20°C");
+    expect(getTooltipText(chip)).toMatch(/Weather data/);
+  });
+
+  it("uses singular day wording for too_far horizon and opens-in of 1", () => {
+    renderCard(
+      {},
+      {
+        ...baseEvent,
+        weather: { status: "too_far", horizon_days: 1, opens_in_days: 1 },
+      },
+    );
+    const chip = screen.getByLabelText("Forecast available 1 day before the event");
+    expect(getTooltipText(chip)).toMatch(/Shows in about 1 day\./);
+    expect(getTooltipText(chip)).not.toMatch(/1 days/);
+  });
+
+  it("falls back to default map attribution when blank", () => {
+    renderCard({}, { ...baseEvent, map_attribution: "   " });
+    expect(document.querySelector(".event-card__map-attribution")?.textContent).toBe(
+      "© OpenStreetMap",
+    );
+  });
+
   it("shows a soft chip when forecast is too far out", () => {
     renderCard(
       {},
