@@ -293,6 +293,7 @@ import {
   handlePostUserRole,
   handleDeleteUserRole,
   handlePostResetUserMfa,
+  handleDeleteUserExternalIdentity,
   handlePostResetUserPassword,
   handlePostRevokeUserSessions,
 } from "./admin/users-routes.js";
@@ -1257,6 +1258,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/admin/users/:id/reset-2fa", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostResetUserMfa(c, db),
+  );
+  app.delete("/api/admin/users/:id/external-identity", jsonPostCsrf, staffAdminGate, (c) =>
+    handleDeleteUserExternalIdentity(c, db),
   );
   app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostResetUserPassword(c, db),
