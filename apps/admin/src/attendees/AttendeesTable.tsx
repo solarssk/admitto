@@ -426,6 +426,36 @@ function RetryMenuItem({
   );
 }
 
+/** Mobile-only "Send tickets" menu item - desktop already has its own direct bulk-bar button for
+ * this (attendees.css), so this only needs to render below 768px. */
+function BulkSendTicketsMenuItem({
+  isDesktop,
+  archived,
+  bulkSendBusy,
+  canBulkSend,
+  selectedCount,
+  onClick,
+}: Readonly<{
+  isDesktop: boolean;
+  archived: boolean;
+  bulkSendBusy: boolean;
+  canBulkSend: boolean;
+  selectedCount: number;
+  onClick: () => void;
+}>) {
+  if (isDesktop) return null;
+  return (
+    <MoreActionsMenuItem
+      icon="send"
+      label={bulkSendBusy ? "Sending…" : "Send tickets"}
+      hint={`Email tickets to ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+      disabled={archived || bulkSendBusy || !canBulkSend}
+      tooltip={bulkSendTicketsTooltip(archived, canBulkSend)}
+      onClick={onClick}
+    />
+  );
+}
+
 /** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
  * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
  * matching the design mockup's More actions panel and the same danger-item treatment already
@@ -529,19 +559,17 @@ function BulkMoreActionsMenu({
           {/* Below 768px only — "Send tickets" doesn't fit as its own button next to the
            * count and "Check in" (attendees.css), so it lives here instead on mobile, first
            * in the list since it's still one of the two most common bulk actions. */}
-          {!isDesktop && (
-            <MoreActionsMenuItem
-              icon="send"
-              label={bulkSendBusy ? "Sending…" : "Send tickets"}
-              hint={`Email tickets to ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
-              disabled={archived || bulkSendBusy || !canBulkSend}
-              tooltip={bulkSendTicketsTooltip(archived, canBulkSend)}
-              onClick={() => {
-                setOpen(false);
-                onBulkSendTickets();
-              }}
-            />
-          )}
+          <BulkSendTicketsMenuItem
+            isDesktop={isDesktop}
+            archived={archived}
+            bulkSendBusy={bulkSendBusy}
+            canBulkSend={canBulkSend}
+            selectedCount={selectedCount}
+            onClick={() => {
+              setOpen(false);
+              onBulkSendTickets();
+            }}
+          />
           {/* Not ArchivedGuard'd — exporting a selection is read-only, so it stays legal
            * after an event is archived. */}
           <MoreActionsMenuItem

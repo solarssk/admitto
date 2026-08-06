@@ -15,7 +15,6 @@ import { roleLabel } from "../auth/role-labels.js";
 import { fetchAdminUsers, fetchUserStats } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto, UserStatsDto } from "../api/types.js";
-import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { paginationHandlers, PaginationFooter } from "../components/PaginationFooter.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";

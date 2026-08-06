@@ -192,10 +192,6 @@
   box-shadow: var(--ring);
 }
 
-.users-page__search input:focus {
-  outline: none;
-}
-
 /* Search + a single "Filters" trigger button (FiltersMenu, shared with Attendees/Audit/Reports)
  * - the actual role/status/event selects live in its floating panel, not inline in this row, so
  * the row itself never wraps or changes height regardless of viewport. */

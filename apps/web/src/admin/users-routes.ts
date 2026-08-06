@@ -483,19 +483,24 @@ function mapPatchUserTransactionError(c: Context, err: unknown): Response {
   throw err;
 }
 
+type PatchUserTransactionParams = {
+  id: string;
+  data: Prisma.UserUpdateInput;
+  actionType: string;
+  orgId: string;
+  audit: OpsAuditContext;
+  actorId: string;
+};
+
 /** Runs handlePatchUser's update transaction and, on success, the post-commit session revoke.
  * Returns the response to send immediately (not-found, or a mapped transaction error), or null
  * to continue with the caller's own success response. */
 async function runPatchUserTransaction(
   c: Context,
   db: PrismaClient,
-  id: string,
-  data: Prisma.UserUpdateInput,
-  actionType: string,
-  orgId: string,
-  audit: OpsAuditContext,
-  actorId: string,
+  params: PatchUserTransactionParams,
 ): Promise<Response | null> {
+  const { id, data, actionType, orgId, audit, actorId } = params;
   try {
     const outcome = await db.$transaction(
       (tx) => applyUserPatch(tx, id, data, actionType, orgId, audit, actorId),
@@ -544,7 +549,7 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const audit = adminAuditFromContext(c);
   const actionType = patchUserActionType(data, before);
 
-  const early = await runPatchUserTransaction(c, db, id, data, actionType, orgId, audit, actorId);
+  const early = await runPatchUserTransaction(c, db, { id, data, actionType, orgId, audit, actorId });
   if (early) return early;
 
   if (actionType === "user_deactivated" || actionType === "user_reactivated") {
