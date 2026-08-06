@@ -120,6 +120,13 @@
   margin-bottom: var(--space-4);
 }
 
+/* Active sessions' search+filter row lives in the Card header's actions slot (next to the
+ * title), not stacked above the table like Staff users/Role assignments - no bottom margin
+ * needed there, the card header already spaces itself from the body. */
+.users-page__toolbar--card-actions {
+  margin-bottom: 0;
+}
+
 .users-page__search {
   /* 12rem, not a wider guess - matches Audit/Security logs' own search field basis
      (.audit-log-filter, staff.css), the reference this row's Search+Filters layout is meant to
@@ -852,4 +859,3 @@
   font-weight: var(--text-card-title-weight);
   color: var(--text-primary);
 }
-

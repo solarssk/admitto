@@ -154,16 +154,18 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
       <Card
         title="Sessions"
         actions={
-          <Segmented
-            ariaLabel="Filter sessions by role"
-            value={filter}
-            onChange={(f) => {
-              setFilter(f);
-              setPage(1);
-            }}
-            options={FILTER_OPTIONS}
-            className="sessions-filter-toggle"
-          />
+          <div className="users-page__toolbar users-page__toolbar--card-actions">
+            <Segmented
+              ariaLabel="Filter sessions by role"
+              value={filter}
+              onChange={(f) => {
+                setFilter(f);
+                setPage(1);
+              }}
+              options={FILTER_OPTIONS}
+              className="sessions-filter-toggle"
+            />
+          </div>
         }
       >
         <div className="users-page__toolbar">

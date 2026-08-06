@@ -90,7 +90,7 @@ function renderModal(userOverride: Partial<UserListItemDto> = {}) {
   const onClose = vi.fn();
   const onUpdated = vi.fn();
   const onDeleted = vi.fn();
-  render(
+  const { unmount } = render(
     <UserEditModal
       open
       user={{ ...user, ...userOverride }}
@@ -99,7 +99,7 @@ function renderModal(userOverride: Partial<UserListItemDto> = {}) {
       onDeleted={onDeleted}
     />,
   );
-  return { onClose, onUpdated, onDeleted };
+  return { onClose, onUpdated, onDeleted, unmount };
 }
 
 beforeEach(() => {
@@ -131,6 +131,15 @@ describe("UserEditModal header", () => {
     renderModal();
     await screen.findByRole("heading", { name: "Staff User" });
     expect(screen.getByText("staff@example.com")).toBeTruthy();
+  });
+
+  it("renders nothing while open but the target user hasn't loaded yet", async () => {
+    render(
+      <UserEditModal open user={null} onClose={vi.fn()} onUpdated={vi.fn()} onDeleted={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(mockFetchAdminEvents).toHaveBeenCalled());
+    expect(document.body.textContent).toBe("");
   });
 
   it("closes via the Close button when nothing is busy", async () => {
@@ -198,6 +207,73 @@ describe("UserEditModal profile - display name and email", () => {
       );
     });
   });
+
+  it("does not update state (or warn) when unmounted before the events/organizations fetch resolves", async () => {
+    let resolveEvents!: (value: EventDto[]) => void;
+    mockFetchAdminEvents.mockReturnValueOnce(new Promise((resolve) => { resolveEvents = resolve; }));
+    let resolveOrgs!: (value: Array<{ id: string; name: string }>) => void;
+    mockFetchAdminOrganizations.mockReturnValueOnce(new Promise((resolve) => { resolveOrgs = resolve; }));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { unmount } = renderModal();
+    await waitFor(() => expect(mockFetchAdminEvents).toHaveBeenCalled());
+    unmount();
+    resolveEvents([event]);
+    resolveOrgs([{ id: "org-1", name: "Operations" }]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("does not update state (or warn) when unmounted before recent logins resolve", async () => {
+    let resolveLogins!: (value: { entries: never[]; total: number; page: number; pageSize: number }) => void;
+    mockFetchSecurityAuditLog.mockReturnValueOnce(new Promise((resolve) => { resolveLogins = resolve; }));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { unmount } = renderModal();
+    await waitFor(() => expect(mockFetchSecurityAuditLog).toHaveBeenCalled());
+    unmount();
+    resolveLogins({ entries: [], total: 0, page: 1, pageSize: 3 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("does not update state (or warn) when unmounted before a rejected events/organizations fetch settles", async () => {
+    let rejectEvents!: (err: Error) => void;
+    mockFetchAdminEvents.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectEvents = reject; }));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { unmount } = renderModal();
+    await waitFor(() => expect(mockFetchAdminEvents).toHaveBeenCalled());
+    unmount();
+    rejectEvents(new Error("network down"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("does not update state (or warn) when unmounted before a rejected recent-logins fetch settles", async () => {
+    let rejectLogins!: (err: Error) => void;
+    mockFetchSecurityAuditLog.mockReturnValueOnce(new Promise((_resolve, reject) => { rejectLogins = reject; }));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { unmount } = renderModal();
+    await waitFor(() => expect(mockFetchSecurityAuditLog).toHaveBeenCalled());
+    unmount();
+    rejectLogins(new Error("network down"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
 });
 
 describe("UserEditModal role & access - exclusive roles", () => {
@@ -264,6 +340,18 @@ describe("UserEditModal role & access - exclusive roles", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Summer Summit" }));
     expect(
       screen.getByRole("button", { name: "Event scope for operator role, Summer Summit" }),
+    ).toBeTruthy();
+  });
+
+  it("defaults the organization scope picker past an org the target is already assigned to", async () => {
+    // org-1 ("Operations") is first in the fetched list and already assigned - the picker must
+    // not default to it (pickableOrganizations excludes already-assigned orgs entirely).
+    renderModal({
+      roles: [{ id: "role-1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false }],
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Organization scope for admin role, Events" }),
     ).toBeTruthy();
   });
 
