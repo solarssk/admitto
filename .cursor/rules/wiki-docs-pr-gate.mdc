@@ -31,7 +31,7 @@ or, if no wiki files changed:
 3. A Checklist bullet that only *mentions* Wiki does **not** pass.
 4. If you changed Wiki and left "No Wiki update needed" checked → CI fails.
 5. If you checked "Wiki updated" with zero `docs/wiki/` files → CI fails.
-6. After fixing only the PR body (no new commit), **re-run the failed `wiki-docs` job** (`gh run rerun <id> --failed`). Editing the body alone does not re-trigger CI.
+6. After fixing only the PR body: **do not rely on `gh run rerun`**. Re-runs reuse the original `pull_request` event payload (stale body). Push a new commit on the PR head (empty commit is fine) so CI fetches the updated body.
 
 ## Stacked PRs
 

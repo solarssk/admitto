@@ -178,8 +178,8 @@ accepted). A Checklist bullet that merely mentions "Wiki updated" does **not** p
 other option present and unchecked. If wiki files changed, the checked option must be
 `Wiki updated`; if none changed, it must be `No Wiki update needed` with a real reason.
 **Agents: this is a hard handoff gate** (same priority as local tests before push). See
-`.cursor/rules/wiki-docs-pr-gate.mdc`. Body-only fixes need `gh run rerun <id> --failed` on
-`wiki-docs`; stacked PRs each need their own correct checkbox.
+`.cursor/rules/wiki-docs-pr-gate.mdc`. Body-only fixes need a **new push** on the PR head
+(`gh run rerun` keeps the stale event body); stacked PRs each need their own correct checkbox.
 
 For workflow pages, use the same reader-facing structure: `What this page helps you do`, `Before
 you start`, `Steps`, `Expected result`, `Important decisions`, `What changes after this action`,
