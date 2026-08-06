@@ -1,10 +1,18 @@
 #!/bin/sh
 # Bounce / NDR IMAP ingest loop - same shape as nightly-db-backup-loop.sh.
 # Runs compiled Admitto CLI on the app image (entrypoint overridden in compose).
+# Sleep is a wake tick; per-event Check every (poll_interval_minutes) gates due work.
 
 set -eu
 
-SLEEP_SECONDS="${BOUNCE_INGEST_INTERVAL_SECONDS:-300}"
+# Prefer explicit tick. Legacy BOUNCE_INGEST_INTERVAL_SECONDS still accepted as the tick.
+if [ -n "${BOUNCE_INGEST_TICK_SECONDS:-}" ]; then
+  SLEEP_SECONDS="${BOUNCE_INGEST_TICK_SECONDS}"
+elif [ -n "${BOUNCE_INGEST_INTERVAL_SECONDS:-}" ]; then
+  SLEEP_SECONDS="${BOUNCE_INGEST_INTERVAL_SECONDS}"
+else
+  SLEEP_SECONDS=60
+fi
 
 log() {
   message="$1"
@@ -13,7 +21,7 @@ log() {
 
 # Positive integer only (reject empty, zero, leading zeros, decimals, non-digits).
 if ! printf '%s' "$SLEEP_SECONDS" | grep -Eq '^[1-9][0-9]*$'; then
-  log "[bounce-ingest] error: BOUNCE_INGEST_INTERVAL_SECONDS must be a positive integer (got: ${SLEEP_SECONDS})"
+  log "[bounce-ingest] error: BOUNCE_INGEST_TICK_SECONDS (or BOUNCE_INGEST_INTERVAL_SECONDS) must be a positive integer (got: ${SLEEP_SECONDS})"
   exit 1
 fi
 

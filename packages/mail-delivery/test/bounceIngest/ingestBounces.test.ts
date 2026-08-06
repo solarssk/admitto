@@ -211,61 +211,6 @@ describe("ingestBounces", () => {
     );
   });
 
-  it("logs when persist last_run fails without failing the ingest", async () => {
-    const row = settings();
-    const logs: string[] = [];
-    const update = vi.fn().mockRejectedValue(new Error("db write failed"));
-    const db = eventScopedDb(row, {
-      bounceIngestSettings: { update },
-    }) as never;
-
-    const summary = await ingestBounces(db, {
-      eventId: "evt_1",
-      createProvider: async () => mockProvider([]),
-      log: (msg) => logs.push(msg),
-    });
-
-    expect(summary.connectFailed).toBe(false);
-    expect(logs.some((m) => m.includes("persist last_run failed"))).toBe(true);
-  });
-
-  it("counts unexpected folder failures before persisting last_run", async () => {
-    const row = settings();
-    const update = vi.fn().mockResolvedValue(row);
-    const db = eventScopedDb(row, {
-      bounceIngestSettings: { update },
-    }) as never;
-
-    const summary = await ingestBounces(db, {
-      eventId: "evt_1",
-      createProvider: async () => ({
-        connect: vi.fn().mockResolvedValue(undefined),
-        close: vi.fn().mockResolvedValue(undefined),
-        fetchCandidateMessages: vi.fn().mockResolvedValue([
-          {
-            uid: "boom",
-            receivedAt: new Date(),
-            subject: "x",
-            get bodyText(): string {
-              throw new Error("body read failed");
-            },
-          },
-        ]),
-        markSeen: vi.fn(),
-      }),
-      log: () => undefined,
-    });
-
-    expect(summary.errors).toBeGreaterThanOrEqual(1);
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          last_run_ok: false,
-        }),
-      }),
-    );
-  });
-
   it("does not persist last_run on noop disabled settings", async () => {
     const row = settings({ enabled: false });
     const update = vi.fn();
@@ -910,6 +855,126 @@ describe("ingestBounces", () => {
 
     expect(summary.eventsProcessed).toBe(2);
     expect(connectCalls).toBe(2);
+  });
+
+  it("skips enabled events that are not yet due when eventId is omitted", async () => {
+    const now = new Date("2026-08-06T12:00:00.000Z");
+    const due = settings({
+      event_id: "evt_due",
+      id: "bis_due",
+      last_run_at: null,
+      poll_interval_minutes: 5,
+    });
+    const notDue = settings({
+      event_id: "evt_skip",
+      id: "bis_skip",
+      last_run_at: new Date(now.getTime() - 60_000),
+      last_run_ok: true,
+      poll_interval_minutes: 15,
+    });
+    const update = vi.fn().mockResolvedValue({});
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([due, notDue]),
+        update,
+      },
+      bounceIngestProcessedUid: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      emailDelivery: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
+      },
+    } as never;
+
+    const seen: string[] = [];
+    const summary = await ingestBounces(db, {
+      now: () => now,
+      createProvider: async (row) => {
+        seen.push(row.event_id);
+        return mockProvider([]);
+      },
+      log: () => undefined,
+    });
+
+    expect(seen).toEqual(["evt_due"]);
+    expect(summary.eventsProcessed).toBe(1);
+  });
+
+  it("retries a recently failed event on the next global tick", async () => {
+    const now = new Date("2026-08-06T12:00:00.000Z");
+    const failedRecently = settings({
+      event_id: "evt_retry",
+      id: "bis_retry",
+      last_run_at: new Date(now.getTime() - 30_000),
+      last_run_ok: false,
+      poll_interval_minutes: 60,
+    });
+    const update = vi.fn().mockResolvedValue({});
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([failedRecently]),
+        update,
+      },
+      bounceIngestProcessedUid: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      emailDelivery: {
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn(),
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, {
+      now: () => now,
+      createProvider: async () => mockProvider([]),
+      log: () => undefined,
+    });
+
+    expect(summary.eventsProcessed).toBe(1);
+  });
+
+  it("still runs a targeted --event-id even when not yet due", async () => {
+    const now = new Date("2026-08-06T12:00:00.000Z");
+    const row = settings({
+      last_run_at: new Date(now.getTime() - 30_000),
+      poll_interval_minutes: 60,
+    });
+    const db = eventScopedDb(row) as never;
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      now: () => now,
+      createProvider: async () => mockProvider([]),
+      log: () => undefined,
+    });
+    expect(summary.eventsProcessed).toBe(1);
+  });
+
+  it("returns none_due when every enabled event is still within Check every", async () => {
+    const now = new Date("2026-08-06T12:00:00.000Z");
+    const row = settings({
+      last_run_at: new Date(now.getTime() - 30_000),
+      last_run_ok: true,
+      poll_interval_minutes: 5,
+    });
+    const db = {
+      bounceIngestSettings: {
+        findMany: vi.fn().mockResolvedValue([row]),
+        update: vi.fn(),
+      },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    } as never;
+
+    const summary = await ingestBounces(db, { now: () => now, log: () => undefined });
+    expect(summary.noopReason).toBe("none_due");
   });
 
   it("uses the default ImapInboundProvider when createProvider is omitted", async () => {

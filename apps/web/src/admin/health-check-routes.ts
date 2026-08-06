@@ -20,7 +20,10 @@ import {
 } from "@admitto/auth";
 import { describeMailConfigForOrg, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
-import { evaluateBounceIngestHealth, parseBounceIngestIntervalSeconds, bounceIngestStaleMsFromIntervalSeconds } from "@admitto/mail-delivery";
+import {
+  evaluateBounceIngestHealth,
+  parseBounceIngestTickSeconds,
+} from "@admitto/mail-delivery";
 import type { GeocodingProvider } from "@admitto/location";
 import { resolveUploadDir } from "@admitto/storage";
 import type { HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
@@ -1308,10 +1311,14 @@ async function bounceIngestRow(
   env: NodeJS.ProcessEnv,
 ): Promise<HealthCheckRow> {
   const rows = await db.bounceIngestSettings.findMany({
-    select: { enabled: true, last_run_at: true, last_run_ok: true },
+    select: {
+      enabled: true,
+      last_run_at: true,
+      last_run_ok: true,
+      poll_interval_minutes: true,
+    },
   });
-  const staleMs = bounceIngestStaleMsFromIntervalSeconds(parseBounceIngestIntervalSeconds(env));
-  const evaled = evaluateBounceIngestHealth(rows, now, staleMs);
+  const evaled = evaluateBounceIngestHealth(rows, now, parseBounceIngestTickSeconds(env));
   return {
     id: "bounce_ingest",
     label: "Bounce detection",

@@ -71,7 +71,7 @@ When a hard failure NDR is forwarded into the mailbox, the next ingest run updat
 - Soft / temporary SMTP failures (`4xx`) are logged and do not flip a successful send to Bounced.
 - Messages are not deleted from the mailbox; Admitto records processed IMAP UIDs so accidental "mark as read" in a mail client does not skip a bounce.
 - **Last automatic check** on the bounce panel shows the latest bounce-ingest run for this event (not Test connection). Organisation Settings → Health includes a soft Bounce detection row for enabled events.
-- The deploy bounce-ingest poll interval (`BOUNCE_INGEST_INTERVAL_SECONDS`) is separate from the **Check every** field in Settings.
+- **Check every** sets how often bounce-ingest should poll this event's mailbox. The deploy process wakes on a short tick and skips events that are not yet due. Soft Health uses both Check every and the deploy tick when deciding whether a successful run looks stale.
 
 ### Common problems
 

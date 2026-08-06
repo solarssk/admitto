@@ -75,8 +75,11 @@ export {
   persistBounceIngestLastRun,
   serializeBounceIngestLastRun,
   evaluateBounceIngestHealth,
+  isBounceIngestDue,
+  bounceIngestStaleMsForPoll,
   bounceIngestStaleMsFromIntervalSeconds,
-  parseBounceIngestIntervalSeconds,
+  bounceIngestStaleMsForEvent,
+  parseBounceIngestTickSeconds,
   BOUNCE_INGEST_STALE_MS,
 } from "./bounceIngest/index.js";
 export type {

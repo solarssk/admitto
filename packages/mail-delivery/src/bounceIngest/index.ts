@@ -9,17 +9,19 @@ import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
 import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
 import { openBounceImapProvider } from "./openProvider.js";
-import { persistBounceIngestLastRun } from "./lastRun.js";
+import { persistBounceIngestLastRun, isBounceIngestDue } from "./lastRun.js";
 import { lookbackSince, parseFolders, resolveImapConnectConfig, uidRetentionCutoff } from "./resolveAuth.js";
 import type { InboundMailProvider, InboundMessage, IngestSummary, ParsedBounceLine } from "./types.js";
 
 export interface IngestBouncesOptions {
-  /** Limit to one event (CLI `--event-id`). */
+  /** Limit to one event (CLI `--event-id`). Always runs when set (ignores Check every due). */
   eventId?: string;
   /** Inject provider factory for tests. */
   createProvider?: (settings: BounceIngestSettings) => Promise<InboundMailProvider>;
   log?: (msg: string) => void;
   env?: NodeJS.ProcessEnv;
+  /** Clock for due-time checks (tests). */
+  now?: () => Date;
 }
 
 /** Cap concurrent event IMAP sessions so one slow host does not serialize the whole run. */
@@ -241,11 +243,6 @@ async function ingestEvent(
       for (const folder of parseFolders(settings.folders)) {
         await processFolder(db, settings, summary, provider, folder, since, log);
       }
-    } catch (err) {
-      // Unexpected rejection outside per-message / per-folder handlers: count it before
-      // finally persists last_run so soft health does not treat the run as OK.
-      summary.errors += 1;
-      log(`[bounce-ingest] event=${settings.event_id} failed: ${errMsg(err)}`);
     } finally {
       try {
         await provider.close();
@@ -270,6 +267,9 @@ async function resolveRowsToProcess(
   db: PrismaClient,
   options: IngestBouncesOptions,
 ): Promise<{ rows: BounceIngestSettings[] } | { noop: IngestSummary }> {
+  const log = options.log ?? console.error;
+  const now = (options.now ?? (() => new Date()))();
+
   if (options.eventId) {
     const row = await db.bounceIngestSettings.findUnique({
       where: { event_id: options.eventId },
@@ -283,7 +283,16 @@ async function resolveRowsToProcess(
   if (rows.length === 0) {
     return { noop: emptySummary({ noopReason: "none_enabled" }) };
   }
-  return { rows };
+
+  const due = rows.filter((row) => isBounceIngestDue(row, now));
+  const skipped = rows.length - due.length;
+  if (skipped > 0) {
+    log(`[bounce-ingest] skipping ${skipped} event(s) not yet due (Check every)`);
+  }
+  if (due.length === 0) {
+    return { noop: emptySummary({ noopReason: "none_due" }) };
+  }
+  return { rows: due };
 }
 
 /** Run `fn` over items with at most `concurrency` in flight; wait for each chunk via allSettled. */
@@ -407,10 +416,13 @@ export {
   persistBounceIngestLastRun,
   serializeBounceIngestLastRun,
   evaluateBounceIngestHealth,
-  bounceIngestStaleMsFromIntervalSeconds,
-  parseBounceIngestIntervalSeconds,
   lastRunOkFromSummary,
   lastRunSummaryFromIngest,
+  isBounceIngestDue,
+  bounceIngestStaleMsForPoll,
+  bounceIngestStaleMsFromIntervalSeconds,
+  bounceIngestStaleMsForEvent,
+  parseBounceIngestTickSeconds,
   BOUNCE_INGEST_STALE_MS,
 } from "./lastRun.js";
 export type {

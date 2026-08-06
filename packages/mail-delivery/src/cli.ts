@@ -143,6 +143,10 @@ async function cmdIngestBounces(prisma: PrismaClient): Promise<number> {
     console.log("none enabled");
     return 0;
   }
+  if (summary.noopReason === "none_due") {
+    console.log("none due");
+    return 0;
+  }
 
   console.log(
     JSON.stringify(
