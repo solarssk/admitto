@@ -394,6 +394,7 @@ describe("UserEditModal role & access - exclusive roles", () => {
       }),
     );
     const onClose = vi.fn();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const { rerender } = render(
       <UserEditModal open user={user} onClose={onClose} onUpdated={vi.fn()} onDeleted={vi.fn()} />,
     );
@@ -412,6 +413,9 @@ describe("UserEditModal role & access - exclusive roles", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it("requires confirmation before changing an existing role to a different type", async () => {

@@ -74,21 +74,6 @@
   gap: var(--space-3);
 }
 
-/* Wider variant for panels with denser content (e.g. multiple grouped Cards) than the base
- * single-column form width above comfortably fits - same width step used by the delivery
- * modals' own --wide modifier (delivery-modals.css). */
-.add-attendee-modal__panel--wide {
-  width: min(100%, 640px);
-}
-
-/* Vertical field stack for a Card body's own form fields (distinct from .users-modal__roles,
- * which is a list of role rows) - users-page.css, imported by the same modal. */
-.users-modal__profile-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
 .add-attendee-modal__title {
   display: flex;
   align-items: center;
