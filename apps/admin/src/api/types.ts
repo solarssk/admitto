@@ -796,7 +796,7 @@ export interface EventBounceIngestSettingsResponse {
   /** Null until bounce-ingest records a run (not updated by Test connection). */
   lastRun: EventBounceIngestLastRunDto | null;
   /** Newest-first recent automatic checks (capped server-side). */
-  recentRuns: EventBounceIngestLastRunDto[];
+  recentRuns?: EventBounceIngestLastRunDto[];
 }
 
 export interface SaveEventBounceIngestSettingsBody {
