@@ -318,22 +318,22 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                 </span>
                 <div className="sessions-pagesize">
                   <label htmlFor="sessions-pagesize-select">Rows per page</label>
-                  <select
+                  <SearchableSelect
                     id="sessions-pagesize-select"
-                    name="sessions-pagesize-select"
-                    className="at-select sessions-pagesize-select"
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
+                    label="Rows per page"
+                    placeholder="Rows per page"
+                    searchPlaceholder="Search…"
+                    emptyLabel="No options found"
+                    value={String(pageSize)}
+                    options={PAGE_SIZE_OPTIONS.map((size) => ({
+                      id: String(size),
+                      label: String(size),
+                    }))}
+                    onChange={(id) => {
+                      setPageSize(Number(id));
                       setPage(1);
                     }}
-                  >
-                    {PAGE_SIZE_OPTIONS.map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
               <div className="sessions-footer__pager">
