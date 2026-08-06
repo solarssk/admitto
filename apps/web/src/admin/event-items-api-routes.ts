@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { Prisma } from "@admitto/db";
+import { Prisma, isSerializationFailure } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import {
@@ -190,15 +190,7 @@ async function loadEventItemInEvent(db: PrismaClient, eventId: string, itemId: s
   return row;
 }
 
-/** Postgres Serializable transaction conflict (concurrent badge/ops-config writes). */
-export function isSerializationFailure(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: string }).code === "P2034"
-  );
-}
+export { isSerializationFailure } from "@admitto/db";
 
 const SERIALIZATION_RETRY_ATTEMPTS = 3;
 

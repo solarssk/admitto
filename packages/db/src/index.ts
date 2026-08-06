@@ -86,3 +86,7 @@ export {
 export {
   backfillEmailDeliveryTemplateLabelSnapshot,
 } from './backfill-email-delivery-template-label-snapshot.js';
+
+export {
+  isSerializationFailure,
+} from './errors.js';
