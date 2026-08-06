@@ -26,10 +26,10 @@ describe("CustomDataFieldInput", () => {
       />,
     );
 
-    const input = screen.getByLabelText("Diet") as HTMLSelectElement;
-    expect(input.options[0]?.text).toBe("-");
+    fireEvent.click(screen.getByRole("button", { name: /^Diet,/ }));
+    expect(screen.getByRole("button", { name: "-" })).toBeTruthy();
 
-    fireEvent.change(input, { target: { value: type === "select" ? "Vegan" : "true" } });
+    fireEvent.click(screen.getByRole("button", { name: type === "select" ? "Vegan" : "Yes" }));
     expect(onChange).toHaveBeenCalledWith(type === "select" ? "Vegan" : "true");
   });
 
@@ -42,6 +42,7 @@ describe("CustomDataFieldInput", () => {
       />,
     );
 
-    expect((screen.getByLabelText("Diet *") as HTMLSelectElement).options[0]?.text).toBe("Choose…");
+    fireEvent.click(screen.getByRole("button", { name: /^Diet \*,/ }));
+    expect(screen.getByRole("button", { name: "Choose…" })).toBeTruthy();
   });
 });

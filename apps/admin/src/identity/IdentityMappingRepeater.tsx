@@ -1,4 +1,5 @@
-import { Button, Input, Select } from "@admitto/ui";
+import { Button, Input } from "@admitto/ui";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import {
   MAPPING_ROLES,
   MAPPING_SCOPES,
@@ -55,52 +56,52 @@ export function IdentityMappingRepeater({
               />
             </div>
             <div className="identity-mappings__cell">
-              <Select
-                label="Role"
-                value={row.role}
-                aria-invalid={roleInvalid || undefined}
-                className={roleInvalid ? "at-select--invalid" : undefined}
-                onChange={(e) => updateRow(index, { role: e.target.value as MappingRow["role"] })}
-              >
-                {roleInvalid && (
-                  <option value={row.role}>
-                    {row.role} (invalid, pick a role)
-                  </option>
-                )}
-                {MAPPING_ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </Select>
+              <div className="at-field">
+                <label className="at-label" htmlFor={`identity-mapping-role-${row.id}`}>
+                  Role
+                </label>
+                <SearchableSelect
+                  id={`identity-mapping-role-${row.id}`}
+                  label="Role"
+                  placeholder="Select role…"
+                  searchPlaceholder="Search roles…"
+                  emptyLabel="No roles found"
+                  value={row.role}
+                  options={[
+                    ...(roleInvalid ? [{ id: row.role, label: `${row.role} (invalid, pick a role)` }] : []),
+                    ...MAPPING_ROLES.map((role) => ({ id: role, label: role })),
+                  ]}
+                  onChange={(id) => updateRow(index, { role: id as MappingRow["role"] })}
+                />
+              </div>
               {rowError.role && (
                 <span className="at-hint at-hint--error">{rowError.role}</span>
               )}
             </div>
             <div className="identity-mappings__cell">
-              <Select
-                label="Scope"
-                value={row.scope_type}
-                aria-invalid={scopeInvalid || undefined}
-                className={scopeInvalid ? "at-select--invalid" : undefined}
-                onChange={(e) =>
-                  updateRow(index, {
-                    scope_type: e.target.value as MappingRow["scope_type"],
-                    scope_id: e.target.value === "instance" ? "" : row.scope_id,
-                  })
-                }
-              >
-                {scopeInvalid && (
-                  <option value={row.scope_type}>
-                    {row.scope_type} (invalid, pick a scope)
-                  </option>
-                )}
-                {MAPPING_SCOPES.map((scope) => (
-                  <option key={scope} value={scope}>
-                    {scope}
-                  </option>
-                ))}
-              </Select>
+              <div className="at-field">
+                <label className="at-label" htmlFor={`identity-mapping-scope-${row.id}`}>
+                  Scope
+                </label>
+                <SearchableSelect
+                  id={`identity-mapping-scope-${row.id}`}
+                  label="Scope"
+                  placeholder="Select scope…"
+                  searchPlaceholder="Search scopes…"
+                  emptyLabel="No scopes found"
+                  value={row.scope_type}
+                  options={[
+                    ...(scopeInvalid ? [{ id: row.scope_type, label: `${row.scope_type} (invalid, pick a scope)` }] : []),
+                    ...MAPPING_SCOPES.map((scope) => ({ id: scope, label: scope })),
+                  ]}
+                  onChange={(id) =>
+                    updateRow(index, {
+                      scope_type: id as MappingRow["scope_type"],
+                      scope_id: id === "instance" ? "" : row.scope_id,
+                    })
+                  }
+                />
+              </div>
               {rowError.scope_type && (
                 <span className="at-hint at-hint--error">{rowError.scope_type}</span>
               )}
