@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Select, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
   cancelMfaEnroll,
@@ -986,20 +986,29 @@ export function AccountPage() {
             hint={`${displayName.length}/120 characters`}
           />
           <Input id="account-email" label="Email" value={account.email} disabled hint="Email cannot be changed here." />
-          <Select
-            id="account-locale"
-            label="Regional format"
-            value={preferredLocale ?? ""}
-            onChange={(e) => setPreferredLocale(e.target.value || null)}
-            disabled={profileSaving}
-            hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
-          >
-            {LOCALE_OPTIONS.map((opt) => (
-              <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
-                {opt.label}: {opt.example}
-              </option>
-            ))}
-          </Select>
+          <div className="at-field">
+            <label className="at-label" htmlFor="account-locale">
+              Regional format
+            </label>
+            <SearchableSelect
+              id="account-locale"
+              label="Regional format"
+              placeholder={`${LOCALE_OPTIONS[0]!.label}: ${LOCALE_OPTIONS[0]!.example}`}
+              searchPlaceholder="Search regional formats…"
+              emptyLabel="No regional formats found"
+              showLabel={false}
+              value={preferredLocale ?? ""}
+              options={LOCALE_OPTIONS.map((opt) => ({
+                id: opt.value ?? "",
+                label: `${opt.label}: ${opt.example}`,
+              }))}
+              disabled={profileSaving}
+              onChange={(id) => setPreferredLocale(id || null)}
+            />
+            <span className="at-hint">
+              {`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
+            </span>
+          </div>
           <div className="at-field">
             <label className="at-label" htmlFor="account-phone-number">Phone number</label>
             <div className="account-phone-row">
