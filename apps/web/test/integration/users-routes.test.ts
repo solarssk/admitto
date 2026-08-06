@@ -480,14 +480,25 @@ describe("PATCH /api/admin/users/:id email", () => {
   });
 
   it("returns 409 email_conflict for a duplicate email", async () => {
-    const res = await app.request(`/api/admin/users/${patchUserId}`, {
-      method: "PATCH",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: EMAIL_TARGET }),
+    // A self-contained colliding pair, rather than reusing a shared fixture's current email -
+    // other describe blocks in this file mutate targetId's own email over the course of the
+    // suite, so asserting a collision against it here would depend on run order.
+    const collision = "users-patch-email-conflict@example.com";
+    const other = await prisma.user.create({
+      data: { email: collision, password_hash: await hashPassword(PASSWORD) },
     });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("email_conflict");
+    try {
+      const res = await app.request(`/api/admin/users/${patchUserId}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: collision }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("email_conflict");
+    } finally {
+      await prisma.user.deleteMany({ where: { id: other.id } });
+    }
   });
 
   it("returns 400 invalid_email for a blank email", async () => {

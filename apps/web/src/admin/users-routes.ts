@@ -474,6 +474,13 @@ async function applyUserPatch(
 
 /** Maps handlePatchUser's transaction errors to their HTTP response; rethrows anything else. */
 function mapPatchUserTransactionError(c: Context, err: unknown): Response {
+  // Not independently reachable via this route today: requireSuperadmin already requires the
+  // actor to be an active superadmin, and the self-deactivate guard above rejects id === actorId
+  // before the transaction starts - so a non-self target only ever reaches this transaction while
+  // at least one OTHER active superadmin (the actor) still exists, meaning the target can never
+  // be the last one. Same reasoning already documented on the DELETE .../roles/:assignmentId
+  // anti-lockout test below; kept as defense-in-depth in case that invariant ever changes.
+  /* v8 ignore if */
   if (err instanceof LastSuperadminError) {
     return c.json({ code: "last_superadmin" }, 409);
   }
@@ -509,6 +516,12 @@ async function runPatchUserTransaction(
         : undefined,
     );
 
+    // Race guard: the target existed at handlePatchUser's own `before` fetch, but this
+    // transaction's own tx.user.findUnique (inside applyUserPatch) found nothing - only reachable
+    // if a concurrent request deletes the same user in the narrow window between those two reads.
+    // Not deterministically triggerable from an integration test without controlling transaction
+    // timing; kept for real-world safety.
+    /* v8 ignore if */
     if (outcome === null) return c.json({ error: "not_found" }, 404);
 
     // Revoke after commit: session last_seen_at updates during a Serializable tx

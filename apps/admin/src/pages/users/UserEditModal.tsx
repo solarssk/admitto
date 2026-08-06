@@ -798,9 +798,13 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         return;
       }
       const org = organizations.find((o) => o.id === newOrgId);
+      // newOrgId only ever comes from picking an option built off `organizations` itself, so
+      // this lookup always succeeds - the `?? newOrgId` fallback is defense-in-depth only.
+      /* v8 ignore next */
+      const orgLabel = org?.name ?? newOrgId;
       setPendingAdds((prev) => [
         ...prev,
-        { key: crypto.randomUUID(), role: "admin", scopeType: "organization", scopeId: newOrgId, label: org?.name ?? newOrgId, icon: "building" },
+        { key: crypto.randomUUID(), role: "admin", scopeType: "organization", scopeId: newOrgId, label: orgLabel, icon: "building" },
       ]);
     } else if (newRole === "operator") {
       // Same isRoleScopeReady reasoning as above, for newEventId.
@@ -810,9 +814,12 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         return;
       }
       const ev = events.find((e) => e.id === newEventId);
+      // Same reasoning as the admin branch's orgLabel above, for newEventId/events.
+      /* v8 ignore next */
+      const eventLabel = ev?.title ?? newEventId;
       setPendingAdds((prev) => [
         ...prev,
-        { key: crypto.randomUUID(), role: "operator", scopeType: "event", scopeId: newEventId, label: ev?.title ?? newEventId, icon: "calendar-event" },
+        { key: crypto.randomUUID(), role: "operator", scopeType: "event", scopeId: newEventId, label: eventLabel, icon: "calendar-event" },
       ]);
     }
     setNewEventId("");
@@ -1026,14 +1033,16 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // the two can't tangle: saving afterwards would otherwise try to grant/revoke scopes for a
   // role type that no longer applies.
   const hasPendingRoleChanges = pendingAdds.length > 0 || pendingRemoveIds.size > 0;
+  // isSelf && isRoleTypeChange can never both be true - see resolveRoleActionTitle's own
+  // comment above. Computed on its own line (rather than inline below) so the whole expression,
+  // including its nested `isRoleTypeChange` branch, is covered by a single ignore.
+  /* v8 ignore next */
+  const selfChangingOwnRoleType = isSelf && isRoleTypeChange;
   const roleActionDisabled =
     roleBusy ||
     submitting ||
     !scopeReady ||
-    // isSelf && isRoleTypeChange can never both be true - see resolveRoleActionTitle's own
-    // comment above.
-    /* v8 ignore next */
-    (isSelf && isRoleTypeChange) ||
+    selfChangingOwnRoleType ||
     (isRoleTypeChange && hasPendingRoleChanges);
   const roleActionLabel = isRoleTypeChange ? "Change" : "Add";
   const roleActionIcon = isRoleTypeChange ? "refresh" : "plus";
