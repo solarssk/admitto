@@ -5859,7 +5859,7 @@ output.mail-field-hint {
 /* Source/Level selects, inline in the toolbar on desktop (moved into a Filters dropdown on
    mobile, see FiltersMenu below) - .at-select's own width:100% would otherwise have each one
    claim the full toolbar row on its own. */
-select.system-log-panel__field {
+.system-log-panel__field .searchable-select {
   width: auto;
   max-width: 11rem;
   flex: 0 1 auto;

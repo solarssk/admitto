@@ -18,6 +18,7 @@ import { DatePicker } from "../components/DatePicker.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { GeoCell, geoLocationText } from "../components/GeoCell.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -945,36 +946,6 @@ function exportSecurityLogRows(filters: SecurityLogFilters) {
 const AUDIT_INITIAL_FILTERS: AuditLogFilters = { actionType: "", eventId: "", search: "", start: "", end: "" };
 const SECURITY_INITIAL_FILTERS: SecurityLogFilters = { eventType: "", search: "", start: "", end: "" };
 
-interface LogFilterFieldProps {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  allLabel: string;
-  options: ReadonlyArray<{ value: string; label: string }>;
-}
-
-/** One labeled <select> inside a view's FiltersMenu - shared by Audit's Action/Event selects and
- * Security's Event-type select, all three otherwise identical in shape (label + select + an
- * "All ..." option + a mapped option list). */
-function LogFilterField({ id, label, value, onChange, allLabel, options }: Readonly<LogFilterFieldProps>) {
-  return (
-    <div className="audit-log-filters-menu__field">
-      <label className="audit-log-filter__label" htmlFor={id}>
-        {label}
-      </label>
-      <select id={id} name={id} className="at-select" value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{allLabel}</option>
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 interface AuditFilterFieldsProps {
   filters: AuditLogFilters;
   setFilters: Dispatch<SetStateAction<AuditLogFilters>>;
@@ -990,28 +961,48 @@ function AuditFilterFields({ filters, setFilters, setPage, events }: Readonly<Au
     .map((event) => ({ value: event.id, label: event.title }));
   return (
     <>
-      <LogFilterField
-        id="audit-log-filter-action"
-        label="Action"
-        allLabel="All actions"
-        value={filters.actionType}
-        onChange={(value) => {
-          setFilters((f) => ({ ...f, actionType: value }));
-          setPage(1);
-        }}
-        options={ACTION_OPTIONS.map((type) => ({ value: type, label: actionLabel(type) }))}
-      />
-      <LogFilterField
-        id="audit-log-filter-scope"
-        label="Event"
-        allLabel="All events"
-        value={filters.eventId}
-        onChange={(value) => {
-          setFilters((f) => ({ ...f, eventId: value }));
-          setPage(1);
-        }}
-        options={eventOptions}
-      />
+      <div className="audit-log-filters-menu__field">
+        <label className="audit-log-filter__label" htmlFor="audit-log-filter-action">
+          Action
+        </label>
+        <SearchableSelect
+          id="audit-log-filter-action"
+          label="Action"
+          placeholder="All actions"
+          searchPlaceholder="Search actions…"
+          emptyLabel="No actions found"
+          value={filters.actionType || "all"}
+          options={[
+            { id: "all", label: "All actions" },
+            ...ACTION_OPTIONS.map((type) => ({ id: type, label: actionLabel(type) })),
+          ]}
+          onChange={(value) => {
+            setFilters((f) => ({ ...f, actionType: value === "all" ? "" : value }));
+            setPage(1);
+          }}
+        />
+      </div>
+      <div className="audit-log-filters-menu__field">
+        <label className="audit-log-filter__label" htmlFor="audit-log-filter-scope">
+          Event
+        </label>
+        <SearchableSelect
+          id="audit-log-filter-scope"
+          label="Event"
+          placeholder="All events"
+          searchPlaceholder="Search events…"
+          emptyLabel="No events found"
+          value={filters.eventId || "all"}
+          options={[
+            { id: "all", label: "All events" },
+            ...eventOptions.map((o) => ({ id: o.value, label: o.label, icon: "calendar-event" })),
+          ]}
+          onChange={(value) => {
+            setFilters((f) => ({ ...f, eventId: value === "all" ? "" : value }));
+            setPage(1);
+          }}
+        />
+      </div>
     </>
   );
 }
@@ -1025,17 +1016,27 @@ interface SecurityFilterFieldsProps {
 /** Security's own Event-type select - mirrors AuditFilterFields above. */
 function SecurityFilterFields({ filters, setFilters, setPage }: Readonly<SecurityFilterFieldsProps>) {
   return (
-    <LogFilterField
-      id="security-audit-log-filter-event"
-      label="Event"
-      allLabel="All event types"
-      value={filters.eventType}
-      onChange={(value) => {
-        setFilters((f) => ({ ...f, eventType: value }));
-        setPage(1);
-      }}
-      options={SECURITY_EVENT_TYPE_OPTIONS.map((type) => ({ value: type, label: securityEventLabel(type) }))}
-    />
+    <div className="audit-log-filters-menu__field">
+      <label className="audit-log-filter__label" htmlFor="security-audit-log-filter-event">
+        Event
+      </label>
+      <SearchableSelect
+        id="security-audit-log-filter-event"
+        label="Event"
+        placeholder="All event types"
+        searchPlaceholder="Search event types…"
+        emptyLabel="No event types found"
+        value={filters.eventType || "all"}
+        options={[
+          { id: "all", label: "All event types" },
+          ...SECURITY_EVENT_TYPE_OPTIONS.map((type) => ({ id: type, label: securityEventLabel(type) })),
+        ]}
+        onChange={(value) => {
+          setFilters((f) => ({ ...f, eventType: value === "all" ? "" : value }));
+          setPage(1);
+        }}
+      />
+    </div>
   );
 }
 
