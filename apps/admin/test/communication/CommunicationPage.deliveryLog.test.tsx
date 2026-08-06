@@ -291,7 +291,8 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
 
     // Exact match - the Card header's own "Clear filters" button also matches a loose /Filters/i.
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "failed" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
         "evt-1",
@@ -300,7 +301,8 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
       );
     });
 
-    fireEvent.change(screen.getByLabelText("Purpose"), { target: { value: "resend" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Purpose,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Resend" }));
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
         "evt-1",
@@ -309,7 +311,8 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
       );
     });
 
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "default" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Default ticket template" }));
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
         "evt-1",
@@ -371,11 +374,14 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     await screen.findByText("Guest One");
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const templateSelect = screen.getByLabelText("Template") as HTMLSelectElement;
-    const optionLabels = Array.from(templateSelect.options).map((o) => o.textContent);
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    const templateList = screen.getByRole("list", { name: "Template" });
+    const optionLabels = within(templateList)
+      .getAllByRole("button")
+      .map((o) => o.textContent);
     expect(optionLabels).toEqual(["All templates", "Default ticket template", "VIP invite"]);
 
-    fireEvent.change(templateSelect, { target: { value: "tmpl-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "VIP invite" }));
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
         "evt-1",
@@ -433,7 +439,8 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "failed" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
         "evt-1",
@@ -1079,7 +1086,8 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     // Changing the filter while the first (page-load) request is still pending re-runs the
     // mount effect, aborting it before it ever settles.
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "sent" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Sent" }));
 
     await screen.findByText("Guest One");
     expect(screen.queryByText("Failed to load deliveries.")).toBeNull();
@@ -1104,7 +1112,8 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     renderPage();
     await goToDeliveryLogTab();
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    fireEvent.change(screen.getByLabelText("Status"), { target: { value: "sent" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Sent" }));
     await screen.findByText("Guest One");
     expect(await screen.findByText(/Showing 1.*1 of 1/)).toBeTruthy();
 
