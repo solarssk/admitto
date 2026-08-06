@@ -201,6 +201,15 @@ describe("bounceIngestStaleMs helpers", () => {
         BOUNCE_INGEST_INTERVAL_SECONDS: "3600",
       }),
     ).toBe(90);
+    expect(parseBounceIngestTickSeconds({ BOUNCE_INGEST_TICK_SECONDS: "" })).toBe(60);
+    expect(parseBounceIngestTickSeconds({ BOUNCE_INGEST_TICK_SECONDS: "0" })).toBe(60);
+    expect(parseBounceIngestTickSeconds({ BOUNCE_INGEST_TICK_SECONDS: "abc" })).toBe(60);
+  });
+
+  it("defaults non-positive deploy tick seconds to the 60s wake interval", () => {
+    expect(bounceIngestStaleMsFromIntervalSeconds(null)).toBe(BOUNCE_INGEST_STALE_MS);
+    expect(bounceIngestStaleMsFromIntervalSeconds(0)).toBe(BOUNCE_INGEST_STALE_MS);
+    expect(bounceIngestStaleMsFromIntervalSeconds(Number.NaN)).toBe(BOUNCE_INGEST_STALE_MS);
   });
 });
 
