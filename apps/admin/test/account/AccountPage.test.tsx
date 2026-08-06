@@ -1419,17 +1419,18 @@ describe("AccountPage toasts", () => {
 });
 
 describe("AccountPage profile: sign-in method", () => {
-  it("shows 'Local password' for accounts with only local password", async () => {
+  it("shows only the Local icon for accounts with only a local password", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password")).toBeTruthy();
+      expect(screen.getByText("Local")).toBeTruthy();
     });
+    expect(screen.queryByText("SSO")).toBeFalsy();
   });
 
-  it("shows 'Identity provider (SSO)' for accounts without local password", async () => {
+  it("shows only the SSO icon for accounts without a local password", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: false,
@@ -1439,11 +1440,12 @@ describe("AccountPage profile: sign-in method", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
+      expect(screen.getByText("SSO")).toBeTruthy();
     });
+    expect(screen.queryByText("Local")).toBeFalsy();
   });
 
-  it("shows 'Local password + Identity provider' when both are present", async () => {
+  it("shows both Local and SSO icons when both are present", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: true,
@@ -1453,8 +1455,9 @@ describe("AccountPage profile: sign-in method", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password + Identity provider")).toBeTruthy();
+      expect(screen.getByText("Local")).toBeTruthy();
     });
+    expect(screen.getByText("SSO")).toBeTruthy();
   });
 
   it("shows 'Regional format' label for locale select", async () => {
@@ -1465,6 +1468,40 @@ describe("AccountPage profile: sign-in method", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
+  });
+});
+
+describe("AccountPage profile: role badge", () => {
+  it("renders a role badge using the shared role label and color, without the ' (IdP)' text suffix", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Administrator")).toBeTruthy();
+    });
+    expect(screen.queryByText(/\(IdP\)/)).toBeFalsy();
+    const badge = screen.getByText("Administrator").closest(".at-badge");
+    expect(badge?.className).toContain("at-badge--warn");
+  });
+
+  it("prefixes an IdP-managed role badge with a cloud icon", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "superadmin", scope_type: "instance", scope_id: null, is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Superadmin")).toBeTruthy();
+    });
+    const badge = screen.getByText("Superadmin").closest(".at-badge");
+    expect(badge?.querySelector(".ti-cloud")).toBeTruthy();
+    expect(badge?.className).toContain("at-badge--error");
   });
 });
 

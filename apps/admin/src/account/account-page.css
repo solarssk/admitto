@@ -68,6 +68,13 @@
   color: var(--text-muted);
 }
 
+/* Local + SSO shown side by side when an account has both */
+.account-signin-methods {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+}
+
 /* Compact 2FA status row: badge + action on one line */
 .account-mfa-status-row {
   display: flex;

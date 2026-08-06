@@ -14,6 +14,7 @@ import {
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AccountDto, AccountRoleDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
+import { roleBadgeVariant, roleLabel } from "../auth/role-labels.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
@@ -88,11 +89,20 @@ function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
 }
 
-function signInMethod(account: AccountDto): string {
-  const hasOidc = account.roles.some((r) => r.is_oidc);
-  if (account.has_local_password && hasOidc) return "Local password + Identity provider";
-  if (!account.has_local_password) return "Identity provider (SSO)";
-  return "Local password";
+function accountHasOidc(account: AccountDto): boolean {
+  return account.roles.some((r) => r.is_oidc);
+}
+
+/** Icon-based sign-in method, mirroring SessionSignIn's Local/SSO treatment used elsewhere in
+ * Users & roles - shows both spans when the account has both a local password and an
+ * IdP-managed role, since no existing component renders that dual case. */
+function AccountSignInMethods({ account }: Readonly<{ account: AccountDto }>) {
+  return (
+    <span className="account-signin-methods">
+      {account.has_local_password && <SessionSignIn authMethod="local" />}
+      {accountHasOidc(account) && <SessionSignIn authMethod="oidc" />}
+    </span>
+  );
 }
 
 function redirectToLoginIfUnauthorized(err: unknown): boolean {
@@ -787,7 +797,7 @@ export function AccountPage() {
             </div>
             <div className="account-info-row">
               <dt>Sign-in</dt>
-              <dd><span>{signInMethod(account)}</span></dd>
+              <dd><AccountSignInMethods account={account} /></dd>
             </div>
             {account.roles.length > 0 && (
               <div className="account-info-row">
@@ -795,7 +805,15 @@ export function AccountPage() {
                 <dd>
                   <div className="account-role-list">
                     {account.roles.map((r) => (
-                      <Badge key={r.id} variant="neutral">{r.role}{r.is_oidc ? " (IdP)" : ""}</Badge>
+                      <Badge key={r.id} variant={roleBadgeVariant(r.role)}>
+                        {r.is_oidc && (
+                          <>
+                            <i className="ti ti-cloud" aria-hidden="true" />
+                            <span className="sr-only">Managed by identity provider</span>
+                          </>
+                        )}{" "}
+                        {roleLabel(r.role)}
+                      </Badge>
                     ))}
                   </div>
                   <span className="account-info-hint">Roles are read-only. Contact an administrator to change access.</span>
