@@ -70,13 +70,18 @@ export function useDropdownMenu<
     /* v8 ignore if */
     if (!trigger || !panel) return;
     const triggerRect = trigger.getBoundingClientRect();
-    // Clamped to whichever is smaller: the viewport, or the nearest ancestor that actually
-    // clips overflow (e.g. a modal's own `overflow: auto` scrollport). Comparing against the
-    // viewport alone let a trigger near the bottom of a tall, scrolled modal open "downward"
-    // because the viewport had room, even though the modal's own edge clipped the panel first.
-    const clipBottom = Math.min(window.innerHeight, nearestClippingAncestor(trigger).getBoundingClientRect().bottom);
+    // Clamped to whichever is smaller/larger: the viewport, or the nearest ancestor that
+    // actually clips overflow (e.g. a modal's own `overflow: auto` scrollport). Comparing
+    // against the viewport alone let a trigger near the bottom of a tall, scrolled modal open
+    // "downward" because the viewport had room, even though the modal's own edge clipped the
+    // panel first - and symmetrically, a trigger near a nested scrollport's own top (which can
+    // sit below the viewport top in a centered/nested scrollport) could be judged to have ample
+    // room above when the scrollport's own edge would clip it first.
+    const clipRect = nearestClippingAncestor(trigger).getBoundingClientRect();
+    const clipTop = Math.max(0, clipRect.top);
+    const clipBottom = Math.min(window.innerHeight, clipRect.bottom);
     const spaceBelow = clipBottom - triggerRect.bottom;
-    const spaceAbove = triggerRect.top;
+    const spaceAbove = triggerRect.top - clipTop;
     const panelHeight = panel.getBoundingClientRect().height;
     // Only flip when upward genuinely has more room - never flip into an even tighter fit.
     setOpenUpward(panelHeight > spaceBelow && spaceAbove > spaceBelow);
