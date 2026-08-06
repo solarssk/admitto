@@ -1,7 +1,9 @@
 import { randomInt } from "node:crypto";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { hasScope } from "@admitto/db";
+import { hasScope, isSerializationFailure } from "@admitto/db";
 import { logOidcSuperadminRevokeBlocked } from "../audit.js";
+
+export { isSerializationFailure } from "@admitto/db";
 
 /** RoleAssignment requires NULL scope_id for instance scope (DB CHECK). */
 export function roleAssignmentScopeId(scopeType: string, scopeId: string | null): string | null {
@@ -37,16 +39,6 @@ function isUniqueViolation(err: unknown): boolean {
     "code" in err &&
     (err as { code: string }).code === "P2002"
   );
-}
-
-/** Prisma Serializable transaction conflict (concurrent superadmin floor-guard revokes). */
-export function isSerializationFailure(err: unknown): boolean {
-  if (typeof err !== "object" || err === null || !("code" in err)) return false;
-  if ((err as { code: string }).code === "P2034") return true;
-  const cause = (err as {
-    meta?: { driverAdapterError?: { cause?: { originalCode?: string; kind?: string } } };
-  }).meta?.driverAdapterError?.cause;
-  return cause?.originalCode === "40001" || cause?.kind === "TransactionWriteConflict";
 }
 
 /** Enough attempts for two concurrent Serializable revokes under CI load. */

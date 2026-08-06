@@ -12,9 +12,21 @@ function serializationError(): Prisma.PrismaClientKnownRequestError {
   });
 }
 
+function driverAdapterWrappedSerializationError(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError("could not serialize access", {
+    code: "P2028",
+    clientVersion: "test",
+    meta: { driverAdapterError: { cause: { originalCode: "40001" } } },
+  });
+}
+
 describe("isSerializationFailure", () => {
   it("is true for a P2034-coded error", () => {
     expect(isSerializationFailure(serializationError())).toBe(true);
+  });
+
+  it("is true for a driver-adapter-wrapped conflict (Prisma 7 driver adapters)", () => {
+    expect(isSerializationFailure(driverAdapterWrappedSerializationError())).toBe(true);
   });
 
   it("is false for other error codes and non-error values", () => {
@@ -40,6 +52,20 @@ describe("runSerializableTransaction", () => {
     const $transaction = vi
       .fn()
       .mockRejectedValueOnce(serializationError())
+      .mockResolvedValueOnce("ok");
+
+    const result = await runSerializableTransaction(fakeDb($transaction), async () => "unused", {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+
+    expect(result).toBe("ok");
+    expect($transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a driver-adapter-wrapped serialization failure and returns the eventual success", async () => {
+    const $transaction = vi
+      .fn()
+      .mockRejectedValueOnce(driverAdapterWrappedSerializationError())
       .mockResolvedValueOnce("ok");
 
     const result = await runSerializableTransaction(fakeDb($transaction), async () => "unused", {
