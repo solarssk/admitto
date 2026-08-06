@@ -5,6 +5,7 @@ export interface ExternalIdentityClaims {
   email?: string;
   name?: string;
   groups?: string[];
+  phone?: string;
 }
 
 function claimValue(payload: JWTPayload, claimName: string): unknown {
@@ -30,14 +31,28 @@ function asStringArray(value: unknown): string[] {
   return [];
 }
 
+/** Composes "given family" from separate claims, for IdPs that omit a combined name claim. */
+function fallbackName(
+  payload: JWTPayload,
+  provider: Pick<IdentityProvider, "claim_given_name" | "claim_family_name">,
+): string | undefined {
+  const givenName = asString(claimValue(payload, provider.claim_given_name));
+  const familyName = asString(claimValue(payload, provider.claim_family_name));
+  return asString([givenName, familyName].filter(Boolean).join(" "));
+}
+
 /** Extract mapped claims from a validated ID token payload. */
 export function extractClaims(
   payload: JWTPayload,
-  provider: Pick<IdentityProvider, "claim_email" | "claim_name" | "claim_groups">,
+  provider: Pick<
+    IdentityProvider,
+    "claim_email" | "claim_name" | "claim_groups" | "claim_given_name" | "claim_family_name" | "claim_phone"
+  >,
 ): ExternalIdentityClaims {
   return {
     email: asString(claimValue(payload, provider.claim_email)),
-    name: asString(claimValue(payload, provider.claim_name)),
+    name: asString(claimValue(payload, provider.claim_name)) ?? fallbackName(payload, provider),
     groups: asStringArray(claimValue(payload, provider.claim_groups)),
+    phone: asString(claimValue(payload, provider.claim_phone)),
   };
 }

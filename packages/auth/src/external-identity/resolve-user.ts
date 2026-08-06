@@ -58,6 +58,10 @@ async function createJitUser(
       email,
       password_hash,
       display_name: claims.name ?? null,
+      // Raw IdP value as-is (e.g. E.164 "+14155552671") - no attempt to split it into
+      // phone_country_code + phone_number, same "no library for an internal-only field"
+      // call already made for this field in apps/admin/src/utils/countryCallingCodes.ts.
+      phone_number: claims.phone ?? null,
       is_active: true,
     },
   });
@@ -68,6 +72,20 @@ function groupsEqual(a: string[], b: string[]): boolean {
   const sortedA = [...a].sort((x, y) => x.localeCompare(y));
   const sortedB = [...b].sort((x, y) => x.localeCompare(y));
   return sortedA.every((value, index) => value === sortedB.at(index));
+}
+
+/**
+ * Whether a User field re-synced from a fresh IdP claim should overwrite the current value:
+ * only when the claim actually changed AND the current value still matches what we synced last
+ * time (i.e. nobody has manually overridden it since, e.g. via UserEditModal.tsx - that override
+ * wins over the IdP on every later login).
+ */
+function shouldResyncField(
+  nextValue: string | null,
+  lastSyncedValue: string | null,
+  currentValue: string | null,
+): boolean {
+  return nextValue !== lastSyncedValue && currentValue === lastSyncedValue;
 }
 
 /**
@@ -95,16 +113,30 @@ export async function resolveOrCreateUserFromExternalIdentity(
       }
       const nextGroups = claims.groups ?? [];
       const groupsChanged = !groupsEqual(existing.groups ?? [], nextGroups);
+      const nextName = claims.name ?? existing.name;
+      const nextPhone = claims.phone ?? existing.phone;
+      const userUpdate: Prisma.UserUpdateInput = {};
+      if (shouldResyncField(nextName, existing.name, existing.user.display_name)) {
+        userUpdate.display_name = nextName;
+      }
+      if (shouldResyncField(nextPhone, existing.phone, existing.user.phone_number)) {
+        userUpdate.phone_number = nextPhone;
+      }
       await tx.externalIdentity.update({
         where: { id: existing.id },
         data: {
           email: claims.email ?? existing.email,
-          name: claims.name ?? existing.name,
+          name: nextName,
+          phone: nextPhone,
           groups: nextGroups,
           last_login_at: new Date(),
         },
       });
-      return { user: existing.user, isNew: false, linked: false, groupsChanged };
+      const user =
+        Object.keys(userUpdate).length > 0
+          ? await tx.user.update({ where: { id: existing.user_id }, data: userUpdate })
+          : existing.user;
+      return { user, isNew: false, linked: false, groupsChanged };
     }
 
     if (context?.currentUserId) {
@@ -119,6 +151,7 @@ export async function resolveOrCreateUserFromExternalIdentity(
           user_id: user.id,
           email: claims.email ?? null,
           name: claims.name ?? null,
+          phone: claims.phone ?? null,
           groups: claims.groups ?? [],
           last_login_at: new Date(),
         },
@@ -143,6 +176,7 @@ export async function resolveOrCreateUserFromExternalIdentity(
         user_id: user.id,
         email: claims.email ?? null,
         name: claims.name ?? null,
+        phone: claims.phone ?? null,
         groups: claims.groups ?? [],
         last_login_at: new Date(),
       },

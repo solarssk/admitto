@@ -18,6 +18,9 @@ export interface IdentityProviderInput {
   claim_email?: string;
   claim_name?: string;
   claim_groups?: string;
+  claim_given_name?: string;
+  claim_family_name?: string;
+  claim_phone?: string;
   enabled?: boolean;
   provider_type?: string;
   login_button_label?: string | null;
@@ -38,6 +41,9 @@ export interface IdentityProviderFormView {
   claim_email: string;
   claim_name: string;
   claim_groups: string;
+  claim_given_name: string;
+  claim_family_name: string;
+  claim_phone: string;
   enabled: boolean;
   login_button_label: string | null;
 }
@@ -58,6 +64,9 @@ export function toProviderFormView(provider: IdentityProvider): IdentityProvider
     claim_email: provider.claim_email,
     claim_name: provider.claim_name,
     claim_groups: provider.claim_groups,
+    claim_given_name: provider.claim_given_name,
+    claim_family_name: provider.claim_family_name,
+    claim_phone: provider.claim_phone,
     enabled: provider.enabled,
     login_button_label: provider.login_button_label,
   };
@@ -158,6 +167,9 @@ export async function createIdentityProviderWithEndpoints(
       claim_email: input.claim_email ?? "email",
       claim_name: input.claim_name ?? "name",
       claim_groups: input.claim_groups ?? "groups",
+      claim_given_name: input.claim_given_name ?? "given_name",
+      claim_family_name: input.claim_family_name ?? "family_name",
+      claim_phone: input.claim_phone ?? "phone_number",
       enabled: input.enabled ?? false,
       login_button_label:
         input.login_button_label === undefined
@@ -200,6 +212,9 @@ export async function updateIdentityProviderWithEndpoints(
       claim_email: input.claim_email ?? existing.claim_email,
       claim_name: input.claim_name ?? existing.claim_name,
       claim_groups: input.claim_groups ?? existing.claim_groups,
+      claim_given_name: input.claim_given_name ?? existing.claim_given_name,
+      claim_family_name: input.claim_family_name ?? existing.claim_family_name,
+      claim_phone: input.claim_phone ?? existing.claim_phone,
       enabled: input.enabled ?? existing.enabled,
       login_button_label:
         input.login_button_label === undefined
@@ -252,7 +267,7 @@ export function buildOidcAuthorizeUrl(
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", provider.client_id);
   url.searchParams.set("redirect_uri", params.redirectUri);
-  url.searchParams.set("scope", "openid email profile");
+  url.searchParams.set("scope", "openid email profile phone");
   url.searchParams.set("state", params.state);
   url.searchParams.set("nonce", params.nonce);
   url.searchParams.set("code_challenge", params.codeChallenge);
