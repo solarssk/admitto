@@ -63,11 +63,32 @@ describe("buildGeocodingUserAgent", () => {
   it("prefers support_contact_email over support_contact_name", async () => {
     await prisma.organization.update({
       where: { id: ORG_ID },
+      data: { support_contact_name: "Ops Team", support_contact_email: "ops@customer.org" },
+    });
+    const ua = await buildGeocodingUserAgent(prisma);
+    expect(ua).toContain("ops@customer.org");
+    expect(ua).not.toContain("Ops Team");
+  });
+
+  it("omits reserved documentation emails from the User-Agent and falls back to name", async () => {
+    await prisma.organization.update({
+      where: { id: ORG_ID },
       data: { support_contact_name: "Ops Team", support_contact_email: "ops@example.com" },
     });
     const ua = await buildGeocodingUserAgent(prisma);
-    expect(ua).toContain("ops@example.com");
-    expect(ua).not.toContain("Ops Team");
+    expect(ua).toContain("Ops Team");
+    expect(ua).not.toContain("ops@example.com");
+    expect(ua).not.toContain("@example.com");
+  });
+
+  it("omits reserved documentation emails when no name is set", async () => {
+    await prisma.organization.update({
+      where: { id: ORG_ID },
+      data: { support_contact_email: "ops@example.com" },
+    });
+    const ua = await buildGeocodingUserAgent(prisma);
+    expect(ua).toContain("no-contact-configured");
+    expect(ua).not.toContain("@example.com");
   });
 
   it("falls back to support_contact_name when email is unset", async () => {

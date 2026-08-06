@@ -6,6 +6,7 @@ import type { Context } from "hono";
 /** Exact public ticket assets: keep the allowlist tight so these routes never shadow SPA `/assets/*`. */
 const ASSET_NAMES = new Set([
   "admitto-mark.svg",
+  "admitto-logo.svg",
   "apple-wallet-badge.svg",
   "google-wallet-badge.svg",
 ]);
@@ -14,6 +15,14 @@ const assetCache = new Map<string, Buffer>();
 function assetRoots(): string[] {
   const here = dirname(fileURLToPath(import.meta.url));
   return [
+    // Product brand SVGs (mark + full logo): emitted into @admitto/ui dist/assets on
+    // `npm run build -w @admitto/ui`. Production image copies packages/ui/dist only
+    // (not packages/ui/src), so dist must be first. src/ is for local tsx / pre-build.
+    join(process.cwd(), "packages/ui/dist/assets"),
+    join(here, "../../../packages/ui/dist/assets"),
+    join(process.cwd(), "packages/ui/src/assets"),
+    join(here, "../../../packages/ui/src/assets"),
+    // Wallet badges (and any product SVG copied into the web package).
     join(here, "assets"),
     join(process.cwd(), "apps/web/dist/src/assets"),
     join(process.cwd(), "apps/web/src/assets"),
@@ -52,10 +61,14 @@ function serveTicketAsset(c: Context, name: string): Response | Promise<Response
   return c.body(new Uint8Array(body));
 }
 
-/** GET handlers for Admitto mark + Wallet badges on the public ticket page.
+/** GET handlers for Admitto mark/logo + Wallet badges on the public ticket page.
  * Registered as exact paths so they do not shadow the staff SPA's `/assets/*` bundle. */
 export function handleGetAdmittoMark(c: Context): Response | Promise<Response> {
   return serveTicketAsset(c, "admitto-mark.svg");
+}
+
+export function handleGetAdmittoLogo(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "admitto-logo.svg");
 }
 
 export function handleGetAppleWalletBadge(c: Context): Response | Promise<Response> {

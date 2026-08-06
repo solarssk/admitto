@@ -13,10 +13,11 @@
     },
     "./styles.css": "./src/styles/styles.css",
     "./shell.css": "./src/styles/shell.css",
-    "./ticket.css": "./src/styles/ticket.css"
+    "./ticket.css": "./src/styles/ticket.css",
+    "./assets/*": "./src/assets/*"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/assets && cp -R src/assets/. dist/assets/",
     "prebuild": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/auth",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/auth",

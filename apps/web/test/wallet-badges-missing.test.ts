@@ -20,6 +20,7 @@ describe("wallet badge assets when files are missing", () => {
     const app = createApp();
     for (const path of [
       "/assets/admitto-mark.svg",
+      "/assets/admitto-logo.svg",
       "/assets/apple-wallet-badge.svg",
       "/assets/google-wallet-badge.svg",
     ]) {

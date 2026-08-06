@@ -37,7 +37,7 @@ import {
   staticMapCacheControl,
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
-import { handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
+import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
 import {
   resolveBaseUrl,
   resolveCheckinToken,
@@ -670,6 +670,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/apple-touch-icon.png", handleGetAppleTouchIcon);
   app.get("/apple-touch-icon-precomposed.png", handleGetAppleTouchIconPrecomposed);
   app.get("/assets/admitto-mark.svg", handleGetAdmittoMark);
+  app.get("/assets/admitto-logo.svg", handleGetAdmittoLogo);
   app.get("/assets/apple-wallet-badge.svg", handleGetAppleWalletBadge);
   app.get("/assets/google-wallet-badge.svg", handleGetGoogleWalletBadge);
   app.get("/readyz", readyzRateLimit, (c) =>

@@ -60,12 +60,12 @@ html:has(.shell), body:has(.shell) {
   font-weight: 700;
   letter-spacing: -0.3px;
   color: var(--text-primary);
-  /* 0 + 28 (brand mark) + 14, plus .sidebar's own 14px top padding, totals var(--topbar-h)
-     (56px) so this row's outer box lines up with .topbar's height (#454) — and splitting
-     the padding 0/14 instead of evenly centers the mark at 28px from .sidebar's top, the
-     same distance .topbar__menu's own centered position sits at, so the two don't drift
-     apart when both are visible at once (the mobile/tablet drawer open over the topbar). */
-  padding: 0 6px 14px;
+  /* 0 + 32 (brand mark) + 10, plus .sidebar's own 14px top padding, totals var(--topbar-h)
+     (56px) so this row's outer box lines up with .topbar's height (#454). margin-top:-2px
+     keeps the 32px mark's vertical center on the same 28px line as .topbar__menu (2.25rem
+     button centered in the 56px topbar) — without it the larger mark sat 2px low. */
+  padding: 0 6px 10px;
+  margin-top: -2px;
   /* .sidebar's flex `gap: 6px` (shared with every other sidebar row spacing) would push
      .sidebar__event's border-top 6px below the 56px mark above, so it no longer lines up
      with .topbar's border-bottom despite the row itself totaling exactly 56px. Cancel just
@@ -78,15 +78,30 @@ html:has(.shell), body:has(.shell) {
   text-decoration: none;
 }
 
-/* "Admitto" has no descenders (g/y/p/q/j), so its ink sits slightly higher than the
-   solid, edge-to-edge brand mark next to it even though both boxes are centered — a
-   1px nudge corrects that optical bias. Shared by BrandLink so the sidebar and topbar
-   wordmarks stay pixel-consistent (#454). */
-.brand-link__label {
-  /* Always the app's own typeface, never the org theme's --font-sans - this is Admitto's own
-     wordmark, not customer-branded content, so a staff org's custom font pick must not reach it. */
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  transform: translateY(1px);
+/* Mark is always the same 32px (28px in the topbar). The text-only wordmark sits beside
+   it when there is room — never scale the combined logo SVG, or the mark looks smaller
+   than the collapsed-rail icon. Sources: `@admitto/ui/assets/admitto-*.svg`. */
+.brand-link__mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.brand-link__wordmark {
+  display: block;
+  height: 32px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.topbar__brand .brand-link__mark {
+  width: 28px;
+  height: 28px;
+}
+
+.topbar__brand .brand-link__wordmark {
+  height: 28px;
 }
 
 .sidebar__close-btn {
@@ -353,8 +368,8 @@ html:has(.shell), body:has(.shell) {
 }
 
 .topbar__brand-mark {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
 }
 
@@ -764,14 +779,13 @@ html:has(.shell), body:has(.shell) {
     font-size: 20px;
   }
 
-  /* Visually hide label text (nav items + brand wordmark + Administration group label)
-     while keeping it in the accessibility tree, so the rail's links keep the same
-     accessible name as the full sidebar — only sighted users see icon-only, and only while
-     collapsed. Same clip-rect technique as .sr-only (staff.css), scoped here since it must
-     also reach the brand link's label and the section label's text span, neither of which
-     otherwise uses that class. */
+  /* Tablet sidebar: mark only (same 28px as desktop). Hide the text wordmark so the
+     rail and the temporarily expanded labelled sidebar keep one brand size. */
+  .sidebar__brand .brand-link__wordmark {
+    display: none;
+  }
+
   .shell:not(.shell--nav-open) .nav-item span,
-  .shell:not(.shell--nav-open) .brand-link__label,
   .shell:not(.shell--nav-open) .sidebar__section-label-text {
     position: absolute;
     width: 1px;

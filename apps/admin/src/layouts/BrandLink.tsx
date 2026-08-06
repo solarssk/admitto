@@ -1,5 +1,6 @@
 import { NavLink } from "react-router";
 import { BrandMark } from "./BrandMark.js";
+import admittoWordmarkUrl from "@admitto/ui/assets/admitto-wordmark.svg";
 
 type BrandLinkProps = Readonly<{
   to: string;
@@ -8,14 +9,23 @@ type BrandLinkProps = Readonly<{
   markClassName?: string;
 }>;
 
-/** Admitto brand mark + wordmark link. Shared by every shell's sidebar brand row, and by
- * StaffShell's topbar (shown only on mobile/tablet while the drawer is closed, so the brand
- * stays visible without opening it — CSS toggles which instance is shown, see shell.css). */
+/** Admitto brand link: fixed-size mark always, plus text-only wordmark when the chrome
+ * has room (desktop sidebar / mobile topbar). Tablet rail hides the wordmark via CSS so
+ * the mark never changes size when collapsing.
+ * Assets: `@admitto/ui/assets/admitto-mark.svg` + `admitto-wordmark.svg`. */
 export function BrandLink({ to, end, className, markClassName }: BrandLinkProps) {
+  const markClass = ["brand-link__mark", markClassName].filter(Boolean).join(" ");
   return (
-    <NavLink to={to} className={className} end={end}>
-      <BrandMark className={markClassName} />
-      <span className="brand-link__label">Admitto</span>
+    <NavLink to={to} className={className} end={end} aria-label="Admitto">
+      <BrandMark className={markClass} />
+      <img
+        className="brand-link__wordmark"
+        src={admittoWordmarkUrl}
+        width={78}
+        height={36}
+        alt=""
+        decoding="async"
+      />
     </NavLink>
   );
 }

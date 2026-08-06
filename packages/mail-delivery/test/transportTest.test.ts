@@ -118,15 +118,17 @@ describe("buildTransportTestMessage", () => {
     expect(msg.html).not.toContain("<img ");
   });
 
-  it("renders Admitto mark + wordmark for the product logo fallback", () => {
+  it("renders the Admitto wordmark SVG for the product logo fallback", () => {
     const msg = buildTransportTestMessage(new Date("2026-08-04T20:09:47.000Z"), {
       scope: "event",
       eventTitle: "Demo Night",
-      logoUrl: "https://tickets.example.com/assets/admitto-mark.svg",
+      logoUrl: "https://tickets.example.com/assets/admitto-logo.svg",
       logoKind: "admitto",
     });
-    expect(msg.html).toContain('src="https://tickets.example.com/assets/admitto-mark.svg"');
-    expect(msg.html).toContain(">Admitto</td>");
+    expect(msg.html).toContain('src="https://tickets.example.com/assets/admitto-logo.svg"');
+    expect(msg.html).toContain('alt="Admitto"');
+    expect(msg.html).toContain('width="118"');
+    expect(msg.html).not.toContain(">Admitto</td>");
     expect(msg.html).not.toContain('width="140"');
   });
 
@@ -203,10 +205,10 @@ describe("resolveTransportTestHeaderLogo", () => {
     });
   });
 
-  it("falls back to the Admitto mark under BASE_URL when branding is missing", () => {
+  it("falls back to the Admitto wordmark under BASE_URL when branding is missing", () => {
     expect(resolveTransportTestHeaderLogo(null, { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" })).toEqual(
       {
-        url: "https://tickets.example.com/assets/admitto-mark.svg",
+        url: "https://tickets.example.com/assets/admitto-logo.svg",
         kind: "admitto",
       },
     );
