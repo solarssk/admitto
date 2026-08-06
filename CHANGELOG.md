@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounce free-text NDR dialects are a matcher table** in `parseBounceLine` (Postfix / mailhop / Synology / orphan `failed:`), so new MTA formats can be added without growing one inline function. Bounce probe reuses the same IMAP open helper as ingest.
 
 ### Fixed
+- **Event item / ops-config admin API now retries on every Postgres serialization conflict, not just Prisma's direct `P2034` code.** Under Prisma's driver adapters, a genuine conflict can instead surface wrapped (Postgres `40001` / `TransactionWriteConflict`), which this endpoint previously treated as a hard failure instead of retrying — now it uses the same detection already relied on for OIDC role-grant revokes.
 - **Bounce-ingest System Logs POST aborts after 2 seconds**, so a hung app cannot stall the mailbox poll from the ingest `finally` block.
 - **Audit log shows friendly labels** for bounce detection and other previously unmapped actions (support contact, weather/maps settings, SMTP/bounce probes, location, session device label) instead of raw snake_case.
 - **System Logs retention notice** has clearer spacing below the Copy / Clear view footer.
