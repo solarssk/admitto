@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Select, Skeleton, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, ticketTypeChartColor, useToast } from "@admitto/ui";
 import {
   ApiError,
   eventReportsPrintUrl,
@@ -15,6 +15,7 @@ import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -270,7 +271,7 @@ function HourlyChart({
   );
 }
 
-/** Sentinel select/key value for the "(none)" bucket - <select> options (and React list keys) are
+/** Sentinel select/key value for the "(none)" bucket - filter option ids (and React list keys) are
  * always strings, but a row's ticket_type (and its matching by_ticket_type entry) can genuinely
  * be null. Real keys are always rendered/matched with a "type:" prefix (below) so this sentinel
  * can never collide with an actual stored ticket_type value - including an unmatched/legacy one,
@@ -496,43 +497,43 @@ function AdmissionLog({
       actions={
         <FiltersMenu activeCount={activeFilterCount} className="reports-log-filters-menu" size="sm">
           <div className="reports-log-filters-menu__field">
-            <Select
+            <SearchableSelect
               id="reports-log-ticket-type-filter"
-              aria-label="Filter by ticket type"
+              label="Filter by ticket type"
+              placeholder="All ticket types"
+              searchPlaceholder="Search ticket types…"
+              emptyLabel="No ticket types found"
               value={typeFilter}
-              onChange={(e) => {
-                setTypeFilter(e.target.value);
+              options={[
+                { id: "all", label: "All ticket types" },
+                ...byTicketType.map((row) => ({ id: encodeTypeFilterValue(row.key), label: row.type })),
+              ]}
+              onChange={(value) => {
+                setTypeFilter(value);
                 setPage(1);
               }}
-            >
-              <option value="all">All ticket types</option>
-              {byTicketType.map((row) => (
-                <option key={encodeTypeFilterValue(row.key)} value={encodeTypeFilterValue(row.key)}>
-                  {row.type}
-                </option>
-              ))}
-            </Select>
+            />
           </div>
           <div className="reports-log-filters-menu__field">
-            <Select
+            <SearchableSelect
               id="reports-log-operator-filter"
-              aria-label="Filter by operator"
+              label="Filter by operator"
+              placeholder="All operators"
+              searchPlaceholder="Search operators…"
+              emptyLabel="No operators found"
               value={operatorFilter}
-              onChange={(e) => {
-                setOperatorFilter(e.target.value);
+              options={[
+                { id: "all", label: "All operators" },
+                ...byOperator.map((row) => ({
+                  id: encodeOperatorFilterValue(row.operator_user_id),
+                  label: operatorDisplayLabel(row),
+                })),
+              ]}
+              onChange={(value) => {
+                setOperatorFilter(value);
                 setPage(1);
               }}
-            >
-              <option value="all">All operators</option>
-              {byOperator.map((row) => (
-                <option
-                  key={encodeOperatorFilterValue(row.operator_user_id)}
-                  value={encodeOperatorFilterValue(row.operator_user_id)}
-                >
-                  {operatorDisplayLabel(row)}
-                </option>
-              ))}
-            </Select>
+            />
           </div>
         </FiltersMenu>
       }
@@ -650,22 +651,19 @@ function AdmissionLog({
         <div className="reports-log-foot__controls">
           <label className="reports-log-pagesize">
             <span>Rows per page</span>
-            <select
+            <SearchableSelect
               id="reports-log-pagesize-select"
-              name="reports-log-pagesize-select"
-              className="at-select reports-log-pagesize-select"
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
+              label="Rows per page"
+              placeholder="Rows per page"
+              searchPlaceholder="Search…"
+              emptyLabel="No options found"
+              value={String(pageSize)}
+              options={LOG_PAGE_SIZE_OPTIONS.map((size) => ({ id: String(size), label: String(size) }))}
+              onChange={(id) => {
+                setPageSize(Number(id));
                 setPage(1);
               }}
-            >
-              {LOG_PAGE_SIZE_OPTIONS.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           {total > pageSize && (
             <div className="reports-log-pager">
