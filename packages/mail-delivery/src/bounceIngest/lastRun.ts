@@ -18,8 +18,36 @@ export type BounceIngestLastRunDto = BounceIngestLastRunSummary & {
   ok: boolean;
 };
 
-/** Soft health: enabled configs with last_run older than this are stale (PR1 default). */
+/** Soft health: enabled configs with last_run older than this are stale (floor). */
 export const BOUNCE_INGEST_STALE_MS = 15 * 60 * 1000;
+
+/** Deploy loop default when env is unset (matches bounce-ingest-loop.sh). */
+const DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS = 300;
+
+/**
+ * Soft-health stale window from the deploy bounce-ingest interval.
+ * Uses 2× the interval so a successful run stays healthy until the next scheduled tick
+ * (and a little slack for runtime), floored at {@link BOUNCE_INGEST_STALE_MS}.
+ */
+export function bounceIngestStaleMsFromIntervalSeconds(
+  intervalSeconds: number | null | undefined,
+): number {
+  const seconds =
+    typeof intervalSeconds === "number" && Number.isFinite(intervalSeconds) && intervalSeconds > 0
+      ? Math.floor(intervalSeconds)
+      : DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS;
+  return Math.max(BOUNCE_INGEST_STALE_MS, seconds * 2 * 1000);
+}
+
+/** Parse `BOUNCE_INGEST_INTERVAL_SECONDS` for soft-health stale windows. */
+export function parseBounceIngestIntervalSeconds(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env["BOUNCE_INGEST_INTERVAL_SECONDS"];
+  if (raw === undefined || raw === "") return DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS;
+}
 
 export function lastRunOkFromSummary(summary: IngestSummary): boolean {
   return !summary.connectFailed && summary.errors === 0;

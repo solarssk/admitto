@@ -241,6 +241,11 @@ async function ingestEvent(
       for (const folder of parseFolders(settings.folders)) {
         await processFolder(db, settings, summary, provider, folder, since, log);
       }
+    } catch (err) {
+      // Unexpected rejection outside per-message / per-folder handlers: count it before
+      // finally persists last_run so soft health does not treat the run as OK.
+      summary.errors += 1;
+      log(`[bounce-ingest] event=${settings.event_id} failed: ${errMsg(err)}`);
     } finally {
       try {
         await provider.close();
@@ -402,6 +407,8 @@ export {
   persistBounceIngestLastRun,
   serializeBounceIngestLastRun,
   evaluateBounceIngestHealth,
+  bounceIngestStaleMsFromIntervalSeconds,
+  parseBounceIngestIntervalSeconds,
   lastRunOkFromSummary,
   lastRunSummaryFromIngest,
   BOUNCE_INGEST_STALE_MS,

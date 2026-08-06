@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { IngestSummary } from "../../src/bounceIngest/types.js";
 import {
   BOUNCE_INGEST_STALE_MS,
+  bounceIngestStaleMsFromIntervalSeconds,
   evaluateBounceIngestHealth,
   lastRunOkFromSummary,
   lastRunSummaryFromIngest,
   persistBounceIngestLastRun,
+  parseBounceIngestIntervalSeconds,
   serializeBounceIngestLastRun,
 } from "../../src/bounceIngest/lastRun.js";
 
@@ -124,6 +126,26 @@ describe("persistBounceIngestLastRun", () => {
   });
 });
 
+describe("bounceIngestStaleMsFromIntervalSeconds", () => {
+  it("floors short intervals at BOUNCE_INGEST_STALE_MS", () => {
+    expect(bounceIngestStaleMsFromIntervalSeconds(300)).toBe(BOUNCE_INGEST_STALE_MS);
+    expect(bounceIngestStaleMsFromIntervalSeconds(null)).toBe(BOUNCE_INGEST_STALE_MS);
+  });
+
+  it("uses 2× interval when longer than the floor", () => {
+    expect(bounceIngestStaleMsFromIntervalSeconds(3600)).toBe(7_200_000);
+  });
+});
+
+describe("parseBounceIngestIntervalSeconds", () => {
+  it("defaults to 300 and rejects non-positive values", () => {
+    expect(parseBounceIngestIntervalSeconds({})).toBe(300);
+    expect(parseBounceIngestIntervalSeconds({ BOUNCE_INGEST_INTERVAL_SECONDS: "0" })).toBe(300);
+    expect(parseBounceIngestIntervalSeconds({ BOUNCE_INGEST_INTERVAL_SECONDS: "abc" })).toBe(300);
+    expect(parseBounceIngestIntervalSeconds({ BOUNCE_INGEST_INTERVAL_SECONDS: "3600" })).toBe(3600);
+  });
+});
+
 describe("evaluateBounceIngestHealth", () => {
   const now = new Date("2026-08-06T12:00:00.000Z");
 
@@ -145,6 +167,27 @@ describe("evaluateBounceIngestHealth", () => {
         BOUNCE_INGEST_STALE_MS,
       ),
     ).toMatchObject({ status: "ok", enabledCount: 1, problemCount: 0 });
+  });
+
+  it("keeps hourly deploy intervals healthy within 2× the interval", () => {
+    const hourlyStale = bounceIngestStaleMsFromIntervalSeconds(3600);
+    expect(hourlyStale).toBe(2 * 3600 * 1000);
+    const almostStale = new Date(now.getTime() - hourlyStale + 60_000);
+    expect(
+      evaluateBounceIngestHealth(
+        [{ enabled: true, last_run_at: almostStale, last_run_ok: true }],
+        now,
+        hourlyStale,
+      ),
+    ).toMatchObject({ status: "ok" });
+    const stale = new Date(now.getTime() - hourlyStale - 1);
+    expect(
+      evaluateBounceIngestHealth(
+        [{ enabled: true, last_run_at: stale, last_run_ok: true }],
+        now,
+        hourlyStale,
+      ),
+    ).toMatchObject({ status: "degraded", problemCount: 1 });
   });
 
   it("returns degraded when last run failed, is missing, or is stale", () => {

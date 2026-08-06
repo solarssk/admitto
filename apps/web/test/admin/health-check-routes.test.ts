@@ -483,6 +483,41 @@ describe("collectAdminHealth", () => {
     });
   });
 
+  it("keeps bounce_ingest ok for a fresh run when deploy interval is hourly", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: {
+        $queryRaw: vi.fn().mockRejectedValue(new Error("no db")),
+        bounceIngestSettings: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              enabled: true,
+              // 20 minutes ago - stale under the 15m floor, but healthy under 2× hourly
+              last_run_at: new Date("2026-08-03T11:40:00.000Z"),
+              last_run_ok: true,
+            },
+          ]),
+        },
+      } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      env: envWithUpload({
+        GIT_COMMIT: "deadbeef",
+        BOUNCE_INGEST_INTERVAL_SECONDS: "3600",
+      }),
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[1]!.checks.find((c) => c.id === "bounce_ingest")).toMatchObject({
+      status: "ok",
+    });
+  });
+
   it("marks passive MET Norway weather degraded without Support contact", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({

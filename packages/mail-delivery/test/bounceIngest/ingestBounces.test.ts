@@ -229,6 +229,43 @@ describe("ingestBounces", () => {
     expect(logs.some((m) => m.includes("persist last_run failed"))).toBe(true);
   });
 
+  it("counts unexpected folder failures before persisting last_run", async () => {
+    const row = settings();
+    const update = vi.fn().mockResolvedValue(row);
+    const db = eventScopedDb(row, {
+      bounceIngestSettings: { update },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => ({
+        connect: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        fetchCandidateMessages: vi.fn().mockResolvedValue([
+          {
+            uid: "boom",
+            receivedAt: new Date(),
+            subject: "x",
+            get bodyText(): string {
+              throw new Error("body read failed");
+            },
+          },
+        ]),
+        markSeen: vi.fn(),
+      }),
+      log: () => undefined,
+    });
+
+    expect(summary.errors).toBeGreaterThanOrEqual(1);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          last_run_ok: false,
+        }),
+      }),
+    );
+  });
+
   it("does not persist last_run on noop disabled settings", async () => {
     const row = settings({ enabled: false });
     const update = vi.fn();
