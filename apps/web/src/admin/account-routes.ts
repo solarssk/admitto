@@ -221,6 +221,8 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       is_active: true,
       must_change_password: true,
       password_hash: true,
+      phone_country_code: true,
+      phone_number: true,
     },
   });
   if (!user) return c.json({ error: "unauthorized" }, 401);
@@ -250,6 +252,8 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     has_local_password: hasLocalPassword(user.password_hash),
+    phone_country_code: user.phone_country_code,
+    phone_number: user.phone_number,
     roles: assignments.map((a) => ({
       id: a.id,
       role: a.role,
@@ -274,13 +278,23 @@ const profileSchema = z
       .refine((v) => isSupportedLocale(v), { message: "Unsupported locale" })
       .nullable()
       .optional(),
+    // Both nullable (not just optional) - the account page always sends one or the other for
+    // both phone fields, using null to mean "clear it", same convention as the admin-side
+    // PATCH /api/admin/users/:id (buildPatchUserData in users-routes.ts).
+    phone_country_code: z.string().max(8).nullable().optional(),
+    phone_number: z.string().max(40).nullable().optional(),
   })
   .strict()
-  .refine((d) => d.display_name !== undefined || d.preferred_locale !== undefined, {
-    message: "Nothing to update",
-  });
+  .refine(
+    (d) =>
+      d.display_name !== undefined ||
+      d.preferred_locale !== undefined ||
+      d.phone_country_code !== undefined ||
+      d.phone_number !== undefined,
+    { message: "Nothing to update" },
+  );
 
-/** PATCH /api/account/profile — update display name and/or preferred locale (no re-auth). */
+/** PATCH /api/account/profile — update display name, preferred locale, and/or phone (no re-auth). */
 export async function handlePatchAccountProfile(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -294,23 +308,36 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   const parsed = profileSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const data: { display_name?: string | null; preferred_locale?: string | null } = {};
+  const data: {
+    display_name?: string | null;
+    preferred_locale?: string | null;
+    phone_country_code?: string | null;
+    phone_number?: string | null;
+  } = {};
   if (parsed.data.display_name !== undefined) {
     data.display_name = parsed.data.display_name.trim() || null;
   }
   if (parsed.data.preferred_locale !== undefined) {
     data.preferred_locale = parsed.data.preferred_locale;
   }
+  if (parsed.data.phone_country_code !== undefined) {
+    data.phone_country_code = parsed.data.phone_country_code?.trim() || null;
+  }
+  if (parsed.data.phone_number !== undefined) {
+    data.phone_number = parsed.data.phone_number?.trim() || null;
+  }
 
   const updated = await db.user.update({
     where: { id: userId },
     data,
-    select: { display_name: true, preferred_locale: true },
+    select: { display_name: true, preferred_locale: true, phone_country_code: true, phone_number: true },
   });
 
   return c.json({
     display_name: updated.display_name,
     preferred_locale: sanitizePreferredLocale(updated.preferred_locale),
+    phone_country_code: updated.phone_country_code,
+    phone_number: updated.phone_number,
   });
 }
 

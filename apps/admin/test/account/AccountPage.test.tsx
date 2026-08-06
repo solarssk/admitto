@@ -74,6 +74,8 @@ const baseAccount: AccountDto = {
   is_active: true,
   must_change_password: false,
   has_local_password: true,
+  phone_country_code: null,
+  phone_number: null,
   roles: [],
   mfa_methods: [],
 };
@@ -1415,6 +1417,78 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset 2FA" }));
     dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByText(/Failed to reset 2FA/)).toBeNull();
+  });
+});
+
+describe("AccountPage profile: phone number", () => {
+  it("pre-fills the country code and number from the account, and saves changes to both", async () => {
+    mockLoadedAccount({ ...baseAccount, phone_country_code: "+48", phone_number: "500100200" });
+    mockPatchProfile.mockResolvedValueOnce({
+      display_name: baseAccount.display_name,
+      preferred_locale: baseAccount.preferred_locale,
+      phone_country_code: "+1",
+      phone_number: "5551234",
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Phone country code, Poland \+48/ })).toBeTruthy();
+    });
+    expect((document.getElementById("account-phone-number") as HTMLInputElement).value).toBe("500100200");
+
+    fireEvent.click(screen.getByRole("button", { name: /Phone country code/ }));
+    fireEvent.change(screen.getByLabelText("Search country or dial code"), {
+      target: { value: "United States" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /United States/ }));
+    fireEvent.change(document.getElementById("account-phone-number")!, { target: { value: "5551234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({
+        phone_country_code: "+1",
+        phone_number: "5551234",
+      });
+    });
+  });
+
+  it("sends null for only the field that was cleared (phone fields are diffed independently)", async () => {
+    mockLoadedAccount({ ...baseAccount, phone_country_code: "+48", phone_number: "500100200" });
+    mockPatchProfile.mockResolvedValueOnce({
+      display_name: baseAccount.display_name,
+      preferred_locale: baseAccount.preferred_locale,
+      phone_country_code: "+48",
+      phone_number: null,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect((document.getElementById("account-phone-number") as HTMLInputElement).value).toBe("500100200");
+    });
+
+    fireEvent.change(document.getElementById("account-phone-number")!, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ phone_number: null });
+    });
+  });
+
+  it("does not send phone fields when they are unchanged", async () => {
+    mockLoadedAccount();
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, display_name: "New Name" });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ display_name: "New Name" });
+    });
   });
 });
 

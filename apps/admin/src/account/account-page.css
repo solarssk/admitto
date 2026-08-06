@@ -26,6 +26,14 @@
   max-width: none;
 }
 
+/* Phone country code + number, side by side - same layout as the admin Edit user modal's
+   .users-modal__phone-row. */
+.account-phone-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
 /* Read-only profile info rows (dl/dt/dd) */
 .account-info-rows {
   margin: 0;

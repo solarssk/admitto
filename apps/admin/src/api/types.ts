@@ -1334,6 +1334,8 @@ export interface AccountDto {
   is_active: boolean;
   must_change_password: boolean;
   has_local_password: boolean;
+  phone_country_code: string | null;
+  phone_number: string | null;
   roles: AccountRoleDto[];
   mfa_methods: AccountMfaMethodDto[];
 }
@@ -1341,6 +1343,8 @@ export interface AccountDto {
 export interface PatchAccountProfileBody {
   display_name?: string;
   preferred_locale?: string | null;
+  phone_country_code?: string | null;
+  phone_number?: string | null;
 }
 
 export interface PatchAccountPasswordBody {

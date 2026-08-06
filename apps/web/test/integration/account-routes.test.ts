@@ -874,6 +874,88 @@ describe("PATCH /api/account/profile — preferred_locale", () => {
   });
 });
 
+describe("PATCH /api/account/profile — phone", () => {
+  afterEach(async () => {
+    await prisma.user.update({ where: { id: userId }, data: { phone_country_code: null, phone_number: null } });
+  });
+
+  it("GET /api/account returns null phone fields before the user sets any", async () => {
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { phone_country_code: string | null; phone_number: string | null };
+    expect(body.phone_country_code).toBeNull();
+    expect(body.phone_number).toBeNull();
+  });
+
+  it("sets phone_country_code and phone_number", async () => {
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: "+48", phone_number: "600123456" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { phone_country_code: string | null; phone_number: string | null };
+    expect(body.phone_country_code).toBe("+48");
+    expect(body.phone_number).toBe("600123456");
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.phone_country_code).toBe("+48");
+    expect(row.phone_number).toBe("600123456");
+  });
+
+  it("trims whitespace around phone_number", async () => {
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_number: "  600123456  " }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { phone_number: string | null };
+    expect(body.phone_number).toBe("600123456");
+  });
+
+  it("clears phone_number via an empty string", async () => {
+    await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: "+48", phone_number: "600123456" }),
+    });
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_number: "" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { phone_number: string | null };
+    expect(body.phone_number).toBeNull();
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.phone_number).toBeNull();
+  });
+
+  it("clears phone_country_code via explicit null", async () => {
+    await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: "+48", phone_number: "600123456" }),
+    });
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: null }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { phone_country_code: string | null; phone_number: string | null };
+    expect(body.phone_country_code).toBeNull();
+    // Only the field present in the request is touched - phone_number stays whatever it was.
+    expect(body.phone_number).toBe("600123456");
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.phone_country_code).toBeNull();
+    expect(row.phone_number).toBe("600123456");
+  });
+});
+
 describe("CSRF", () => {
   it("rejects PATCH without Origin", async () => {
     const res = await app.request("/api/account/profile", {

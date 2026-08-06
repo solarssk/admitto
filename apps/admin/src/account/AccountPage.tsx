@@ -16,6 +16,8 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { AccountDto, AccountRoleDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
+import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatRelativeTime, zonedTimeLabel } from "../utils/event-dates.js";
@@ -132,6 +134,8 @@ export function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [preferredLocale, setPreferredLocale] = useState<string | null>(null);
+  const [phoneCountryCode, setPhoneCountryCode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -173,6 +177,8 @@ export function AccountPage() {
       setAccount(data);
       setDisplayName(data.display_name ?? "");
       setPreferredLocale(data.preferred_locale);
+      setPhoneCountryCode(data.phone_country_code ?? "");
+      setPhoneNumber(data.phone_number ?? "");
       setPreferredLocaleStore(data.preferred_locale ?? undefined);
     } catch (err) {
       if (signal?.aborted) return;
@@ -250,7 +256,9 @@ export function AccountPage() {
   const otherSessions = sessions.filter((s) => !s.isCurrent);
   const profileDirty =
     displayName !== (account.display_name ?? "") ||
-    preferredLocale !== account.preferred_locale;
+    preferredLocale !== account.preferred_locale ||
+    phoneCountryCode !== (account.phone_country_code ?? "") ||
+    phoneNumber !== (account.phone_number ?? "");
   const passwordMismatch =
     confirmPassword.length > 0 && newPassword.length > 0 && confirmPassword !== newPassword;
   const passwordFormValid =
@@ -736,12 +744,18 @@ export function AccountPage() {
         setProfileSaving(true);
         const localeChanged = preferredLocale !== account.preferred_locale;
         try {
+          const phoneCountryCodeChanged = phoneCountryCode !== (account.phone_country_code ?? "");
+          const phoneNumberChanged = phoneNumber !== (account.phone_number ?? "");
           const result = await patchAccountProfile({
             ...(displayName !== (account.display_name ?? "") && { display_name: displayName }),
             ...(localeChanged && { preferred_locale: preferredLocale }),
+            ...(phoneCountryCodeChanged && { phone_country_code: phoneCountryCode || null }),
+            ...(phoneNumberChanged && { phone_number: phoneNumber || null }),
           });
           setDisplayName(result.display_name ?? "");
           setPreferredLocale(result.preferred_locale);
+          setPhoneCountryCode(result.phone_country_code ?? "");
+          setPhoneNumber(result.phone_number ?? "");
           setPreferredLocaleStore(result.preferred_locale ?? undefined);
           addToast(
             localeChanged
@@ -776,6 +790,28 @@ export function AccountPage() {
                 </option>
               ))}
             </Select>
+            <div className="mail-field-row">
+              <label className="mail-field-label" htmlFor="account-phone-number">Phone number</label>
+              <div className="account-phone-row">
+                <PhoneCountrySelect
+                  id="account-phone-country-code"
+                  label="Phone country code"
+                  value={phoneCountryCode}
+                  disabled={profileSaving}
+                  onChange={setPhoneCountryCode}
+                />
+                <Input
+                  id="account-phone-number"
+                  icon={<i className="ti ti-phone" aria-hidden="true" />}
+                  type="tel"
+                  value={phoneNumber}
+                  disabled={profileSaving}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  {...NO_AUTOFILL_PROPS}
+                />
+              </div>
+              <p className="mail-field-hint">For internal contact only - not shown on tickets.</p>
+            </div>
           </div>
           <dl className="account-info-rows">
             <div className="account-info-row">
