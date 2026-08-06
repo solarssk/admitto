@@ -12,7 +12,7 @@ export function normalizeEmail(email: string): string {
  * IdP-asserted addresses that must keep working even if unusual. */
 export function isValidEmailFormat(email: string): boolean {
   const at = email.indexOf("@");
-  if (at < 1 || email.indexOf("@", at + 1) !== -1) return false;
+  if (at < 1 || email.includes("@", at + 1)) return false;
   const local = email.slice(0, at);
   const domain = email.slice(at + 1);
   // No backtracking regex here on purpose: a single [^\s@]+\.[^\s@]+ pattern is ambiguous over

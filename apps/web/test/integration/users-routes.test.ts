@@ -1102,6 +1102,40 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
     expect(res.status).toBe(404);
   });
 
+  it("returns 404 for a user id that doesn't exist at all", async () => {
+    const res = await app.request("/api/admin/users/nonexistent-user-id/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 password_too_common for a blocklisted new password", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-common-pass@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-common-pass-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: "aaaaaaaaaaaa" }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("password_too_common");
+
+      const linked = await prisma.externalIdentity.findMany({ where: { user_id: created.id } });
+      expect(linked).toHaveLength(1);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
   it("returns 403 for a non-superadmin", async () => {
     const res = await app.request(`/api/admin/users/${targetId}/external-identity`, {
       method: "DELETE",
@@ -1153,6 +1187,27 @@ describe("POST /api/admin/users functional", () => {
     const row = await prisma.user.findUnique({ where: { email } });
     expect(row?.phone_country_code).toBe("+48");
     expect(row?.phone_number).toBe("500100200");
+
+    await prisma.user.delete({ where: { email } });
+  });
+
+  it("leaves phone fields unset when given as blank strings at creation", async () => {
+    const email = "created-user-blank-phone@example.com";
+    const res = await app.request("/api/admin/users", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password: "created-pass-1",
+        phone_country_code: "",
+        phone_number: "",
+      }),
+    });
+    expect(res.status).toBe(201);
+
+    const row = await prisma.user.findUnique({ where: { email } });
+    expect(row?.phone_country_code).toBeNull();
+    expect(row?.phone_number).toBeNull();
 
     await prisma.user.delete({ where: { email } });
   });
@@ -1241,6 +1296,22 @@ describe("POST /api/admin/users/:id/reset-2fa", () => {
     });
     expect(res.status).toBe(200);
     expect(await prisma.userMfaMethod.count({ where: { user_id: targetId } })).toBe(0);
+  });
+
+  it("returns 403 for a non-superadmin", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 404 for a user id that doesn't exist", async () => {
+    const res = await app.request("/api/admin/users/nonexistent-user-id/reset-2fa", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
   });
 });
 
@@ -1611,6 +1682,28 @@ describe("v0.4.10: unlimited instance superadmins", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code?: string };
     expect(body.code).toBe("already_assigned");
+  });
+
+  it("returns 400 invalid_request for a malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("invalid_request");
+  });
+
+  it("returns 400 invalid_request for an unrecognized role value", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+      body: JSON.stringify({ role: "bogus", scope_type: "instance" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("invalid_request");
   });
 });
 

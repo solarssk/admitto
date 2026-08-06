@@ -73,6 +73,30 @@ describe("RoleAssignmentsTab", () => {
     });
   });
 
+  it("shows a search-specific empty state with a button that clears the search", async () => {
+    fetchRoleAssignments.mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
+    renderWithToast(<RoleAssignmentsTab />);
+    await waitFor(() => expect(fetchRoleAssignments).toHaveBeenCalledOnce());
+
+    fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), {
+      target: { value: "nomatch" },
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    await waitFor(() => {
+      expect(fetchRoleAssignments).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: "nomatch", page: 1 }),
+        expect.anything(),
+      );
+    });
+    expect(await screen.findByText("No role assignments match your search")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(
+      (screen.getByLabelText("Search role assignments by user name or email") as HTMLInputElement).value,
+    ).toBe("");
+  });
+
   it("shows the capitalized role label, not the raw wire value, in the revoke confirmation", async () => {
     useAuthMock.mockReturnValue({
       assignments: [{ role: "superadmin", scope_type: "instance" }],

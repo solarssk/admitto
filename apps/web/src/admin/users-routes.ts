@@ -609,7 +609,99 @@ export async function handleDeleteUser(c: Context, db: PrismaClient): Promise<Re
   return c.json({ ok: true });
 }
 
+/** Pure authorization check (no Response-building) mirroring assertRoleGrantAllowed's rule, used
+ * inside performRoleTypeSwitch's transaction to re-verify the actor may revoke each assignment it
+ * actually refetched there. assertRoleRevokeAllowed (below) only runs once, before the
+ * transaction, against assignments queried at that earlier moment; a new assignment appearing in
+ * the window between that check and the transaction's own fresh refetch would otherwise be
+ * deleted without ever being authorized. Kept as its own small function rather than reusing
+ * assertRoleGrantAllowed directly, since that one needs a Context to build 403/404 responses and
+ * this one runs inside a transaction with only a generic "forbidden" outcome available. */
+async function canRevokeInTransaction(
+  tx: Prisma.TransactionClient,
+  actorId: string,
+  assignment: { role: string; scope_type: string; scope_id: string | null },
+): Promise<boolean> {
+  if (await canManageInstance(tx, actorId)) return true;
+  if (assignment.role !== "operator" || assignment.scope_type !== "event" || !assignment.scope_id) {
+    return false;
+  }
+  const event = await tx.event.findUnique({
+    where: { id: assignment.scope_id },
+    select: { organization_id: true },
+  });
+  if (!event) return false;
+  return hasScope(tx, actorId, "admin", "organization", event.organization_id);
+}
+
 /** POST /api/admin/users/:id/roles — grant role assignment. */
+/** The implicit role-type-switch transaction body for handlePostUserRole - refetches the
+ * target's old-type assignments (with oidc_role_grants) inside the transaction, same as
+ * handleDeleteUserRole's "current", so freshness plus the caller's Serializable isolation close
+ * the TOCTOU window between this check and the delete below. An implicit switch must not be able
+ * to do what an explicit revoke can't: handleDeleteUserRole refuses to remove an IdP-managed
+ * assignment (managed_by_idp), so silently deleting one here as a side effect of granting an
+ * unrelated new role would be an easy way around that guard. */
+async function performRoleTypeSwitch(
+  tx: Prisma.TransactionClient,
+  id: string,
+  parsed: { role: Role; scopeType: ScopeType; scopeId: string | null },
+  orgId: string,
+  actorId: string,
+  audit: OpsAuditContext,
+) {
+  const replaced = await tx.roleAssignment.findMany({
+    where: { user_id: id, role: { not: parsed.role } },
+    include: { oidc_role_grants: { select: { id: true } } },
+  });
+  if (replaced.some((old) => old.oidc_role_grants.length > 0)) {
+    return "managed_by_idp" as const;
+  }
+  if (replaced.length > 0) {
+    for (const old of replaced) {
+      if (!(await canRevokeInTransaction(tx, actorId, old))) {
+        return "forbidden" as const;
+      }
+      await assertLastSuperadminRemovalAllowed(tx, old);
+    }
+    await tx.roleAssignment.deleteMany({ where: { id: { in: replaced.map((a) => a.id) } } });
+  }
+
+  const created = await tx.roleAssignment.create({
+    data: {
+      user_id: id,
+      role: parsed.role,
+      scope_type: parsed.scopeType,
+      scope_id: parsed.scopeId,
+    },
+  });
+  await writeAdminAuditLog(tx, {
+    organizationId: orgId,
+    actorUserId: actorId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: replaced.length > 0 ? "role_changed" : "role_granted",
+    metadata: {
+      userId: id,
+      role: parsed.role,
+      scopeType: parsed.scopeType,
+      scopeId: parsed.scopeId,
+      ...(replaced.length > 0 ? { replacedRoles: replaced.map((a) => a.role) } : {}),
+    },
+  });
+  return created;
+}
+
+/** Maps handlePostUserRole's transaction failures to a response body, or null to rethrow. */
+function roleGrantConflictResponse(err: unknown): { code: string } | null {
+  if (err instanceof LastSuperadminError) return { code: "last_superadmin" };
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    return { code: "already_assigned" };
+  }
+  return null;
+}
+
 export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<Response> {
   const id = c.req.param("id") ?? "";
   if (!id) return c.json({ error: "user id required" }, 400);
@@ -673,67 +765,20 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   let outcome;
   try {
     outcome = await db.$transaction(
-      async (tx) => {
-        // Refetched (with oidc_role_grants) inside the transaction, same as
-        // handleDeleteUserRole's "current" - both freshness and the isolation level below close
-        // the TOCTOU window between this check and the delete a few lines down.
-        const replaced = await tx.roleAssignment.findMany({
-          where: { user_id: id, role: { not: parsed.role } },
-          include: { oidc_role_grants: { select: { id: true } } },
-        });
-        // An implicit role-type switch must not be able to do what an explicit revoke can't:
-        // handleDeleteUserRole refuses to remove an IdP-managed assignment (managed_by_idp), so
-        // silently deleting one here as a side effect of granting an unrelated new role would be
-        // an easy way around that guard.
-        if (replaced.some((old) => old.oidc_role_grants.length > 0)) {
-          return "managed_by_idp" as const;
-        }
-        if (replaced.length > 0) {
-          for (const old of replaced) {
-            await assertLastSuperadminRemovalAllowed(tx, old);
-          }
-          await tx.roleAssignment.deleteMany({ where: { id: { in: replaced.map((a) => a.id) } } });
-        }
-
-        const created = await tx.roleAssignment.create({
-          data: {
-            user_id: id,
-            role: parsed.role,
-            scope_type: parsed.scopeType,
-            scope_id: parsed.scopeId,
-          },
-        });
-        await writeAdminAuditLog(tx, {
-          organizationId: orgId,
-          actorUserId: actorId,
-          sessionId: audit.sessionId,
-          ip: audit.ip,
-          timezone: audit.timezone,
-          actionType: replaced.length > 0 ? "role_changed" : "role_granted",
-          metadata: {
-            userId: id,
-            role: parsed.role,
-            scopeType: parsed.scopeType,
-            scopeId: parsed.scopeId,
-            ...(replaced.length > 0 ? { replacedRoles: replaced.map((a) => a.role) } : {}),
-          },
-        });
-        return created;
-      },
+      (tx) => performRoleTypeSwitch(tx, id, parsed, orgId, actorId, audit),
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   } catch (err) {
-    if (err instanceof LastSuperadminError) {
-      return c.json({ code: "last_superadmin" }, 409);
-    }
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return c.json({ code: "already_assigned" }, 409);
-    }
+    const conflict = roleGrantConflictResponse(err);
+    if (conflict) return c.json(conflict, 409);
     throw err;
   }
 
   if (outcome === "managed_by_idp") {
     return c.json({ code: "managed_by_idp" }, 409);
+  }
+  if (outcome === "forbidden") {
+    return c.json({ error: "forbidden" }, 403);
   }
   const assignment = outcome;
 

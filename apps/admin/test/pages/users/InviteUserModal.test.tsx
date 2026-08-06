@@ -47,6 +47,24 @@ describe("InviteUserModal", () => {
     expect(screen.getByLabelText("Email address")).toHaveProperty("disabled", true);
   });
 
+  it("sends must_change_password: false when the switch is turned off", async () => {
+    vi.mocked(createAdminUser).mockResolvedValueOnce({
+      user: { id: "usr-1" } as never,
+    });
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByLabelText("Require password change on first login"));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(createAdminUser).toHaveBeenCalledWith(
+        expect.objectContaining({ must_change_password: false }),
+      );
+    });
+  });
+
   it("shows a taken-email message for an email_taken response", async () => {
     const { ApiError } = await import("../../../src/api/client.js");
     vi.mocked(createAdminUser).mockRejectedValueOnce(new ApiError("email_taken"));

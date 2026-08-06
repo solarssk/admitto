@@ -1997,6 +1997,10 @@ export async function exportAuditLog(params: AuditLogFilterParams, signal?: Abor
 
 export type SecurityAuditLogFilterParams = {
   eventType?: string;
+  /** Exact user id - preferred over `search` whenever the caller already knows it (e.g. the Edit
+   * user modal's Recent logins), since `search` matches email/display name by substring and can
+   * cross-match a second account. */
+  userId?: string;
   search?: string;
   start?: string;
   end?: string;
@@ -2005,6 +2009,7 @@ export type SecurityAuditLogFilterParams = {
 function securityAuditLogQuery(params: SecurityAuditLogFilterParams): URLSearchParams {
   const q = new URLSearchParams();
   if (params.eventType) q.set("event_type", params.eventType);
+  if (params.userId) q.set("user_id", params.userId);
   if (params.search) q.set("search", params.search);
   if (params.start) q.set("start", params.start);
   if (params.end) q.set("end", params.end);

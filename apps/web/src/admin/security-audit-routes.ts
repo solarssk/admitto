@@ -35,13 +35,18 @@ async function resolveSecuritySearchMatch(
 /** Shared by the count and list queries below. */
 async function buildSecurityAuditLogWhere(c: Context, db: PrismaClient): Promise<Prisma.SecurityAuditLogWhereInput> {
   const eventType = c.req.query("event_type")?.trim() || undefined;
+  const userId = c.req.query("user_id")?.trim() || undefined;
   const search = c.req.query("search")?.trim() || undefined;
   const start = parseDateBound(c.req.query("start"), "start");
   const end = parseDateBound(c.req.query("end"), "end");
 
   return {
     ...(eventType ? { event_type: eventType } : {}),
-    ...(search ? await resolveSecuritySearchMatch(db, search) : {}),
+    // Exact user_id (e.g. the Edit user modal's own Recent logins list) takes priority over the
+    // fuzzy email/display_name `search` below - contains-matching on free text can otherwise
+    // cross-match a second account whose email or name happens to contain this one's, showing
+    // one user's sign-in history to whoever's editing a completely different account.
+    ...(userId ? { user_id: userId } : search ? await resolveSecuritySearchMatch(db, search) : {}),
     ...(start || end
       ? {
           created_at: {

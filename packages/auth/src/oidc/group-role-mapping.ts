@@ -227,6 +227,15 @@ async function ensureOidcGrantForRule(
       return false;
     }
 
+    // Roles are exclusive by type (superadmin/admin/operator never combine on one person - see
+    // handlePostUserRole in apps/web/src/admin/users-routes.ts). An unattended login-time sync
+    // has no way to warn an admin before replacing their existing access the way the admin UI's
+    // explicit role-switch confirmation does, so it defers to whatever type the user already
+    // holds (manual or OIDC-owned) instead of creating a second, conflicting type.
+    if (await tx.roleAssignment.findFirst({ where: { user_id: userId, role: { not: rule.role } } })) {
+      return false;
+    }
+
     let assignment;
     try {
       assignment = await tx.roleAssignment.create({

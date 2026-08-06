@@ -4,7 +4,7 @@
  * (the /constants subpath), not its main entry, which pulls in server-only session/hashing code. */
 export function isValidEmailFormat(email: string): boolean {
   const at = email.indexOf("@");
-  if (at < 1 || email.indexOf("@", at + 1) !== -1) return false;
+  if (at < 1 || email.includes("@", at + 1)) return false;
   const local = email.slice(0, at);
   const domain = email.slice(at + 1);
   // Plain substring checks instead of a single backtracking regex - see the server-side copy in
