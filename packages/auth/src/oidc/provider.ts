@@ -267,7 +267,12 @@ export function buildOidcAuthorizeUrl(
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", provider.client_id);
   url.searchParams.set("redirect_uri", params.redirectUri);
-  url.searchParams.set("scope", "openid email profile phone");
+  // Deliberately not requesting "phone": an unconfigured/unconsented optional scope can make
+  // some IdPs reject the whole authorization request (invalid_scope), turning phone-claim sync
+  // into an SSO outage for every existing provider. claim_phone still reads whatever the token
+  // already contains under the scopes below - phone sync just stays inactive for IdPs that only
+  // expose phone_number behind their own "phone" scope.
+  url.searchParams.set("scope", "openid email profile");
   url.searchParams.set("state", params.state);
   url.searchParams.set("nonce", params.nonce);
   url.searchParams.set("code_challenge", params.codeChallenge);
