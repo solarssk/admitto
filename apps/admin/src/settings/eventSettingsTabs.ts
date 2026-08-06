@@ -22,7 +22,7 @@ export const EVENT_SETTINGS_TABS = [
 ] as const;
 
 /** Tabs whose contents are superadmin-only (technical/API concerns kept out of non-technical org-admin view). */
-export const SUPERADMIN_ONLY_TABS: ReadonlySet<EventSettingsTab> = new Set(["mail", "integrations"]);
+export const SUPERADMIN_ONLY_TABS: ReadonlySet<EventSettingsTab> = new Set(["mail", "wallet", "integrations"]);
 
 export function isEventSettingsTab(id: string): id is EventSettingsTab {
   return EVENT_SETTINGS_TABS.some((tab) => tab.id === id);

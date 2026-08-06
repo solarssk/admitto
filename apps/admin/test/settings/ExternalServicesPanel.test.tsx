@@ -12,6 +12,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchExternalServices: vi.fn(),
     saveWeatherSettings: vi.fn(),
     saveMapsSettings: vi.fn(),
+    saveWalletSettings: vi.fn(),
     testWeatherConnection: vi.fn(),
     testMapsConnection: vi.fn(),
   };
@@ -21,6 +22,7 @@ import {
   ApiError,
   fetchExternalServices,
   saveMapsSettings,
+  saveWalletSettings,
   saveWeatherSettings,
   testMapsConnection,
   testWeatherConnection,
@@ -29,6 +31,7 @@ import {
 const mockFetch = vi.mocked(fetchExternalServices);
 const mockSaveWeather = vi.mocked(saveWeatherSettings);
 const mockSaveMaps = vi.mocked(saveMapsSettings);
+const mockSaveWallet = vi.mocked(saveWalletSettings);
 const mockTestWeather = vi.mocked(testWeatherConnection);
 const mockTestMaps = vi.mocked(testMapsConnection);
 
@@ -42,6 +45,7 @@ function sampleResponse(
   overrides: {
     weather?: Partial<ExternalServicesResponse["weather"]>;
     maps?: Partial<ExternalServicesResponse["maps"]>;
+    wallet?: Partial<ExternalServicesResponse["wallet"]>;
   } = {},
 ): ExternalServicesResponse {
   return {
@@ -66,6 +70,10 @@ function sampleResponse(
       geocoding_base_url: "https://nominatim.openstreetmap.org",
       ...overrides.maps,
     },
+    wallet: {
+      api_key: { configured: false, source: "none" },
+      ...overrides.wallet,
+    },
   };
 }
 
@@ -84,6 +92,12 @@ beforeEach(() => {
     attribution: body.attribution ?? sampleResponse().maps.attribution,
     max_zoom: body.maxZoom ?? 19,
     geocoding_base_url: body.geocodingBaseUrl ?? sampleResponse().maps.geocoding_base_url,
+  }));
+  mockSaveWallet.mockImplementation(async (body) => ({
+    api_key: {
+      configured: body.apiKey !== null,
+      source: body.apiKey === null ? "none" : "organization",
+    },
   }));
   mockTestWeather.mockResolvedValue({ ok: true, message: "Weather reachable." });
   mockTestMaps.mockResolvedValue({ ok: true, message: "Maps reachable." });

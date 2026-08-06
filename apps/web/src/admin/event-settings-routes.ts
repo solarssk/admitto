@@ -71,6 +71,7 @@ const patchEventSchema = z
     timezone: timezoneField.optional(),
     event_hours_start: eventHoursField,
     event_hours_end: eventHoursField,
+    wallet_template_id: z.string().trim().max(200).nullish(),
     logo_url: z.string().trim().max(2000).nullish(),
     logo_original_url: z.string().trim().max(2000).nullish(),
     logo_crop: logoCropSchema,
@@ -88,6 +89,7 @@ type EventSettingsRow = {
   timezone: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
+  wallet_template_id: string | null;
   capacity: number | null;
   archived_at: Date | null;
   archived_by_timezone: string | null;
@@ -118,6 +120,7 @@ function serializeEventSettings(
     timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
     event_hours_start: event.event_hours_start,
     event_hours_end: event.event_hours_end,
+    wallet_template_id: event.wallet_template_id,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
@@ -151,6 +154,7 @@ const EVENT_SETTINGS_SELECT = {
   timezone: true,
   event_hours_start: true,
   event_hours_end: true,
+  wallet_template_id: true,
   capacity: true,
   archived_at: true,
   archived_by_timezone: true,
@@ -248,6 +252,7 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   timezone?: string;
   event_hours_start?: string | null;
   event_hours_end?: string | null;
+  wallet_template_id?: string | null;
   capacity?: number | null;
 } {
   const data: ReturnType<typeof buildBasicFieldsPatch> = {};
@@ -256,6 +261,7 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   if (patch.timezone !== undefined) data.timezone = patch.timezone;
   if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
   if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
+  if (patch.wallet_template_id !== undefined) data.wallet_template_id = patch.wallet_template_id;
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
 }
@@ -361,6 +367,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     timezone?: string;
     event_hours_start?: string | null;
     event_hours_end?: string | null;
+    wallet_template_id?: string | null;
     capacity?: number | null;
     logo_url?: string | null;
     logo_original_url?: string | null;

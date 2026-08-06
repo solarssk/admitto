@@ -164,6 +164,7 @@ export function toResolved(
       timezone: row.event.timezone || "UTC",
       eventHoursStart: row.event.event_hours_start,
       eventHoursEnd: row.event.event_hours_end,
+      walletTemplateId: row.event.wallet_template_id,
       location: loc?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
       formattedAddress: loc?.formatted_address ?? null,

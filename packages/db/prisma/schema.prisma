@@ -43,6 +43,9 @@ model Event {
   // field of its own. Independently optional - the admin UI pairs them but neither is required.
   event_hours_start    String?
   event_hours_end      String?
+  // PassCreator template for this event's wallet passes (ADR 0041). API key is org-level
+  // (Organisation Settings > External services); this is the only per-event wallet setting.
+  wallet_template_id   String?
   timezone             String              @default("UTC")
   capacity             Int?
   logo_url             String?

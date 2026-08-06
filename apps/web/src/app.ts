@@ -13,6 +13,7 @@ import {
   type WalletPassProvider,
   type WalletPassResult,
 } from "@admitto/wallet";
+import { resolveWalletApiKey } from "./wallet/wallet-org-settings.js";
 import type { GeocodingProvider } from "@admitto/location";
 import {
   getBrandingTheme,
@@ -625,9 +626,19 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, html, status, theme);
   }
 
-  const passCreatorConfig = resolvePassCreatorConfig();
-  const passCreatorClient: WalletPassProvider | null =
-    options.walletPassProvider ?? (passCreatorConfig ? new PassCreatorClient(passCreatorConfig) : null);
+  /** The API key belongs to the instance while the pass template belongs to the event. */
+  async function resolveWalletProvider(event: {
+    walletTemplateId: string | null;
+  }): Promise<WalletPassProvider | null> {
+    if (options.walletPassProvider) return options.walletPassProvider;
+    const apiKey = await resolveWalletApiKey(db);
+    if (!apiKey || !event.walletTemplateId) return null;
+    return new PassCreatorClient({
+      apiKey,
+      templateId: event.walletTemplateId,
+      baseUrl: resolvePassCreatorConfig()?.baseUrl,
+    });
+  }
 
   /** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
   function formatEventHours(event: { eventHoursStart: string | null; eventHoursEnd: string | null }): string | undefined {
@@ -666,10 +677,10 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!isAdmittable(attendee.status as AttendeeStatus)) {
       return c.redirect(backHref, 302);
     }
-    if (!passCreatorClient) {
+    const walletProvider = await resolveWalletProvider(event);
+    if (!walletProvider) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
-    const client = passCreatorClient;
 
     let existing: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
     try {
@@ -742,13 +753,13 @@ export function createApp(options: CreateAppOptions = {}) {
       input: WalletPassInput,
     ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
       try {
-        const result = await client.createPass(input);
+        const result = await walletProvider.createPass(input);
         return await markActive(input.userProvidedId, result);
       } catch (err) {
         const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
         const recovered =
           code === "wallet_provider_duplicate"
-            ? await client.findByUserProvidedId(input.userProvidedId).catch(() => null)
+            ? await walletProvider.findByUserProvidedId(input.userProvidedId).catch(() => null)
             : null;
         if (recovered) return markActive(input.userProvidedId, recovered);
 

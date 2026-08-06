@@ -62,6 +62,7 @@ type SettingsForm = {
   date: string;
   eventHoursStart: string;
   eventHoursEnd: string;
+  walletTemplateId: string;
   timezone: string;
   capacity: string;
   logoUrl: string;
@@ -74,6 +75,7 @@ type SettingsPatch = Partial<{
   date: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
+  wallet_template_id: string | null;
   timezone: string;
   capacity: number | null;
   logo_url: string | null;
@@ -116,6 +118,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     date: data.date.split("T")[0] ?? "",
     eventHoursStart: data.event_hours_start ?? "",
     eventHoursEnd: data.event_hours_end ?? "",
+    walletTemplateId: data.wallet_template_id ?? "",
     timezone: data.timezone,
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
@@ -145,6 +148,9 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   }
   if (form.eventHoursEnd !== original.eventHoursEnd) {
     patch.event_hours_end = form.eventHoursEnd.trim() || null;
+  }
+  if (form.walletTemplateId !== original.walletTemplateId) {
+    patch.wallet_template_id = form.walletTemplateId.trim() || null;
   }
   if (form.timezone !== original.timezone) patch.timezone = form.timezone;
   if (form.capacity.trim() !== original.capacity.trim()) {
@@ -1201,13 +1207,47 @@ export function EventSettingsPage() {
         </EventSettingsTabPanel>
       )}
 
-      <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
-        <EmptyState
-          icon={<i className="ti ti-wallet" aria-hidden="true" />}
-          title="Wallet passes are on the roadmap"
-          description="Attendees will be able to add their ticket to Apple Wallet or Google Wallet. This isn't built yet."
-        />
-      </EventSettingsTabPanel>
+      {isSa && (
+        <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
+          <Card title="Wallet" className="event-settings-card">
+            <div className="settings-field-stack">
+              <p className="settings-card-intro">
+                Lets attendees add their ticket to Apple Wallet or Google Wallet (PassCreator).
+                The API key is shared across the instance —{" "}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => navigate("/admin/settings?tab=external")}
+                >
+                  set it in Organisation Settings → External services
+                </button>
+                .
+              </p>
+              <div className="settings-field-group">
+                <Input
+                  label="Template ID"
+                  value={form.walletTemplateId}
+                  disabled={isArchived || saving}
+                  placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                  hint="From the PassCreator dashboard — which pass design this event's attendees get. Leave blank to keep wallet disabled for this event."
+                  {...NO_AUTOFILL_PROPS}
+                  onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
+                />
+              </div>
+            </div>
+          </Card>
+          {!isArchived && (
+            <SettingsFooter
+              validationErrors={[]}
+              validationErrorsRef={basicValidationErrorsRef}
+              hasUnsavedChanges={dirty}
+              saving={saving}
+              onReset={handleBasicReset}
+              onSave={() => void handleSave()}
+            />
+          )}
+        </EventSettingsTabPanel>
+      )}
 
       {isSa && (
         <EventSettingsTabPanel

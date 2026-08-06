@@ -182,6 +182,8 @@ export type ResolvedTicket = {
     /** Optional 24h "HH:MM" event start/end time, shown as a range on the ticket. */
     eventHoursStart: string | null;
     eventHoursEnd: string | null;
+    /** PassCreator template for this event's wallet passes; null disables wallet passes. */
+    walletTemplateId: string | null;
     /** Short venue display name (`EventLocation.venue_name`). */
     location: string | null;
     logoUrl: string | null;

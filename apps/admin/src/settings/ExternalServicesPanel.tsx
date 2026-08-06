@@ -22,6 +22,7 @@ import {
   fetchExternalServices,
   saveMapsSettings,
   saveWeatherSettings,
+  saveWalletSettings,
   testWeatherConnection,
   testMapsConnection,
 } from "../api/client.js";
@@ -60,6 +61,11 @@ const WEATHER_ATTRIBUTION: Record<
     url: "https://open-meteo.com/",
   },
 };
+
+const WALLET_CARD_HINT =
+  "One PassCreator API key for the whole instance. The template each event's passes use is set on that event's Settings → Wallet tab.";
+const WALLET_CARD_INTRO =
+  "Lets attendees add their ticket to Apple Wallet or Google Wallet (PassCreator).";
 
 const MAPS_CARD_INTRO =
   "Static map previews on event cards and tickets, plus address lookup on the Location tab.";
@@ -289,6 +295,29 @@ export function ExternalServicesPanel() {
   const mapsSavedRef = useRef<MapsDraft | null>(null);
   const [weatherTesting, setWeatherTesting] = useState(false);
   const [mapsTesting, setMapsTesting] = useState(false);
+
+  // Wallet is a single field with its own independent save (not part of the shared
+  // weather+maps hasUnsavedChanges/handleSave flow above).
+  const [walletApiKeyDraft, setWalletApiKeyDraft] = useState("");
+  const [walletClearApiKey, setWalletClearApiKey] = useState(false);
+  const [walletSaving, setWalletSaving] = useState(false);
+
+  async function handleSaveWallet() {
+    setWalletSaving(true);
+    try {
+      const wallet = await saveWalletSettings({
+        apiKey: walletClearApiKey ? null : walletApiKeyDraft.trim() || undefined,
+      });
+      setData((prev) => prev && { ...prev, wallet });
+      setWalletApiKeyDraft("");
+      setWalletClearApiKey(false);
+      addToast("Wallet settings saved.", "success");
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Could not save wallet settings."), "error");
+    } finally {
+      setWalletSaving(false);
+    }
+  }
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -763,6 +792,58 @@ export function ExternalServicesPanel() {
                 <p className="at-hint">{MAPS_GEOCODING_URL_DESC}</p>
               </div>
             </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title={<HintLabel hint={WALLET_CARD_HINT}>Wallet</HintLabel>}>
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">{WALLET_CARD_INTRO}</p>
+          <div className="at-field mail-secret-field">
+            <span className="at-label">API key</span>
+            <Input
+              type="text"
+              id="external-wallet-api-key"
+              name="wallet-org-api-key"
+              value={walletApiKeyDraft}
+              disabled={walletSaving || walletClearApiKey}
+              placeholder={apiKeyPlaceholder(false, data.wallet.api_key.configured)}
+              {...NO_AUTOFILL_PROPS}
+              onChange={(e) => {
+                setWalletApiKeyDraft(e.target.value);
+                setWalletClearApiKey(false);
+              }}
+            />
+            {data.wallet.api_key.configured && data.wallet.api_key.source === "organization" && (
+              <label className="form-check" style={{ marginTop: "var(--space-2)" }}>
+                <input
+                  type="checkbox"
+                  checked={walletClearApiKey}
+                  disabled={walletSaving}
+                  onChange={(e) => {
+                    setWalletClearApiKey(e.target.checked);
+                    if (e.target.checked) setWalletApiKeyDraft("");
+                  }}
+                />
+                <span>Clear organisation API key</span>
+              </label>
+            )}
+          </div>
+          {data.wallet.api_key.source === "env" && (
+            <Notice variant="info">
+              Currently using PASSCREATOR_API_KEY from the server environment. Saving a key here
+              overrides it.
+            </Notice>
+          )}
+          <div>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={walletSaving || (!walletApiKeyDraft.trim() && !walletClearApiKey)}
+              onClick={() => void handleSaveWallet()}
+            >
+              {walletSaving ? "Saving…" : "Save wallet settings"}
+            </Button>
           </div>
         </div>
       </Card>

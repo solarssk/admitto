@@ -13,6 +13,7 @@ import {
 const EMPTY_EVENT_LOCATION = {
   eventHoursStart: null,
   eventHoursEnd: null,
+  walletTemplateId: null,
   formattedAddress: null,
   addressComponents: null,
   latitude: null,

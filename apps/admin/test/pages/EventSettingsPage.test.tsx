@@ -764,12 +764,12 @@ describe("EventSettingsPage tabs", () => {
     ).toBeTruthy();
   });
 
-  it("switches to the Wallet tab and shows the roadmap placeholder", async () => {
+  it("switches to the Wallet tab and shows the Template ID field", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await screen.findByRole("tab", { name: "Wallet" });
     fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
-    expect(await screen.findByText("Wallet passes are on the roadmap")).toBeTruthy();
+    expect(await screen.findByLabelText("Template ID")).toBeTruthy();
   });
 
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {
@@ -860,7 +860,7 @@ describe("EventSettingsPage tabs", () => {
   it("deep links directly into a non-default tab via ?tab=", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    expect(await screen.findByText("Wallet passes are on the roadmap")).toBeTruthy();
+    expect(await screen.findByLabelText("Template ID")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Wallet" }).getAttribute("aria-selected")).toBe("true");
   });
 });

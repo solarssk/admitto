@@ -69,6 +69,7 @@ import type {
   ExternalServicesConnectionTestResponse,
   SaveWeatherSettingsBody,
   SaveMapsSettingsBody,
+  SaveWalletSettingsBody,
   DeliveryDetailDto,
   RenderedDeliveryDto,
   SessionsResponse,
@@ -479,6 +480,7 @@ export async function patchEvent(
     timezone: string;
     event_hours_start: string | null;
     event_hours_end: string | null;
+    wallet_template_id: string | null;
     location: string | null;
     capacity: number | null;
     logo_url: string | null;
@@ -1810,6 +1812,14 @@ export async function saveMapsSettings(
   const res = await fetch("/api/admin/external-services/maps", jsonPutInit(body));
   const data = await parseJson<{ maps: ExternalServicesResponse["maps"] }>(res);
   return data.maps;
+}
+
+export async function saveWalletSettings(
+  body: SaveWalletSettingsBody,
+): Promise<ExternalServicesResponse["wallet"]> {
+  const res = await fetch("/api/admin/external-services/wallet", jsonPutInit(body));
+  const data = await parseJson<{ wallet: ExternalServicesResponse["wallet"] }>(res);
+  return data.wallet;
 }
 
 /** Probe weather provider from a draft (no persist). */

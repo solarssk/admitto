@@ -36,6 +36,8 @@ Event settings are organised into tabs. Each card that needs saving (Basic infor
 7. Review **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. Logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add image**. Enter a normal image name; Admitto creates the `{{variable}}` for templates.
 8. Return to **Overview** and confirm that the event now shows the intended state.
 
+Superadmins can set the PassCreator **Template ID** on **Wallet** for this event's Apple and Google Wallet passes. Leave it blank to disable wallet passes for the event. The API key is configured once in **Organisation settings → External services**.
+
 Tab inventory:
 
 | Tab | Who | Purpose |
@@ -45,7 +47,7 @@ Tab inventory:
 | Ticket types | Organisation Admin | Event ticket-type catalog |
 | Images | Organisation Admin | Logo, header, mail image assets |
 | Mailing | Superadmin | Event mail transport and bounce detection |
-| Wallet | Planned | Not part of the current event workflow |
+| Wallet | Superadmin | PassCreator template for Apple and Google Wallet passes |
 | Integrations | Superadmin | Inbound tokens and related integrations |
 | Danger zone | Organisation Admin (Archive/Delete: Superadmin) | Bulk revoke and lifecycle actions |
 

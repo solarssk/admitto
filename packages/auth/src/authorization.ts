@@ -132,6 +132,7 @@ export interface EventSummary {
   /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
   event_hours_start: string | null;
   event_hours_end: string | null;
+  wallet_template_id: string | null;
   location: string | null;
   /** True when EventLocation has both latitude and longitude. */
   has_coordinates: boolean;
@@ -156,6 +157,7 @@ const eventSelect = {
   timezone: true,
   event_hours_start: true,
   event_hours_end: true,
+  wallet_template_id: true,
   location_details: {
     select: { venue_name: true, latitude: true, longitude: true, map_zoom: true },
   },

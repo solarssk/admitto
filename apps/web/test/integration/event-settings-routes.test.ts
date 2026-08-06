@@ -925,6 +925,26 @@ describe("PATCH /api/admin/events/:eventId", () => {
     }
   });
 
+  it("updates wallet_template_id and clears it with null", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { event: { wallet_template_id: string | null } };
+    expect(setBody.event.wallet_template_id).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as { event: { wallet_template_id: string | null } };
+    expect(clearBody.event.wallet_template_id).toBeNull();
+  });
+
   it("returns 400 when slug is sent (strict schema)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",
