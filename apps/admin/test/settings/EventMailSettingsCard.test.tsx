@@ -194,6 +194,7 @@ function configuredBounceResponse(
     folders: ["INBOX"],
     poll_interval_minutes: 5,
     lastRun: null,
+    recentRuns: [],
     ...overrides,
   };
 }

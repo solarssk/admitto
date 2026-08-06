@@ -77,6 +77,7 @@ model Event {
   location_details               EventLocation?
   bounce_ingest_settings         BounceIngestSettings?
   bounce_ingest_processed_uids   BounceIngestProcessedUid[]
+  bounce_ingest_runs             BounceIngestRun[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -563,6 +564,18 @@ model BounceIngestProcessedUid {
 
   @@unique([event_id, folder, uid])
   @@index([event_id, folder])
+}
+
+// Recent automatic bounce-ingest runs per event (short retention; last-run also on settings).
+model BounceIngestRun {
+  id         String   @id @default(cuid())
+  event_id   String
+  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  ran_at     DateTime @default(now())
+  ok         Boolean
+  summary    Json // same compact shape as BounceIngestSettings.last_run_summary
+
+  @@index([event_id, ran_at(sort: Desc)])
 }
 
 // Per-scope mail template storage (plain text — not encrypted).

@@ -256,6 +256,7 @@ function emptyBounceIngestSettingsResponse(): EventBounceIngestSettingsResponse 
     folders: ["INBOX", "Junk Email"],
     poll_interval_minutes: 5,
     lastRun: null,
+    recentRuns: [],
   };
 }
 

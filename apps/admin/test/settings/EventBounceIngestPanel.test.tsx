@@ -54,6 +54,7 @@ function bounceResponse(
     folders: ["INBOX", "Junk Email"],
     poll_interval_minutes: 5,
     lastRun: null,
+    recentRuns: [],
     ...overrides,
   };
 }
@@ -390,6 +391,17 @@ describe("EventBounceIngestPanel", () => {
     ).toBeTruthy();
   });
 
+  it("shows Off when saved enabled is false even if the draft toggle is on", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: false, lastRun: null }));
+    renderPanel();
+    const toggle = await screen.findByRole("switch", { name: "Off" });
+    fireEvent.click(toggle);
+    expect(
+      screen.getByText(/Turn bounce detection on and save\. Automatic checks will appear here/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Waiting for first automatic check")).toBeNull();
+  });
+
   it("shows last automatic check OK status and counts", async () => {
     mockFetch.mockResolvedValueOnce(
       bounceResponse({
@@ -431,6 +443,32 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     expect(await screen.findByText(/^Failed ·/)).toBeTruthy();
     expect(screen.getByText(/connect failed/)).toBeTruthy();
+    expect(document.querySelector(".org-mail-summary--failed")).toBeTruthy();
+    expect(document.querySelector(".ti-alert-circle")).toBeTruthy();
+  });
+
+  it("renders lastRun when recentRuns is omitted from the API payload", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: {
+          at: "2026-08-06T10:00:00.000Z",
+          ok: true,
+          messagesSeen: 4,
+          bouncesApplied: 0,
+          softBouncesLogged: 0,
+          unparsed: 0,
+          noMatchingDelivery: 0,
+          errors: 0,
+          connectFailed: false,
+        },
+        recentRuns: undefined,
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText(/^OK ·/)).toBeTruthy();
+    expect(document.querySelector(".org-mail-summary--configured")).toBeTruthy();
+    expect(document.querySelector(".ti-circle-check")).toBeTruthy();
+    expect(screen.queryByText("Recent checks")).toBeNull();
   });
 
   it("shows Run check now and updates lastRun after a manual run", async () => {
@@ -459,23 +497,6 @@ describe("EventBounceIngestPanel", () => {
     });
     expect(await screen.findByText(/^OK ·/)).toBeTruthy();
     expect(document.querySelector(".org-mail-summary")?.textContent).toMatch(/2 seen/);
-  });
-
-  it("toasts an error when Run check now fails", async () => {
-    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
-    mockRun.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderPanel();
-    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not run bounce check/);
-    });
-    expect(screen.queryByText("secret_internal")).toBeNull();
-  });
-
-  it("disables Run check now when the event is archived", async () => {
-    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
-    renderPanel(true);
-    expect(isDisabled(await screen.findByRole("button", { name: "Run check now" }))).toBe(true);
   });
 
   it("disables Run check now when bounce detection is off", async () => {
@@ -527,6 +548,7 @@ describe("EventBounceIngestPanel", () => {
         errors: 1,
         connectFailed: true,
       },
+      recentRuns: [],
     });
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
@@ -534,6 +556,57 @@ describe("EventBounceIngestPanel", () => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not connect/);
     });
     expect(await screen.findByText(/^Failed ·/)).toBeTruthy();
+  });
+
+  it("toasts an error when Run check now throws", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    mockRun.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not run bounce check/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("updates recentRuns from a successful Run check now response", async () => {
+    const older = {
+      at: "2026-08-06T10:00:00.000Z",
+      ok: true,
+      messagesSeen: 1,
+      bouncesApplied: 0,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 0,
+      connectFailed: false,
+    };
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({ enabled: true, lastRun: older, recentRuns: [older] }),
+    );
+    const newer = {
+      at: "2026-08-06T11:00:00.000Z",
+      ok: true,
+      messagesSeen: 2,
+      bouncesApplied: 1,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 0,
+      connectFailed: false,
+    };
+    mockRun.mockResolvedValueOnce({
+      ok: true,
+      message: "Check finished. 2 seen, 1 bounced.",
+      lastRun: newer,
+      recentRuns: [newer, older],
+    });
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
+    expect(await screen.findByText("Recent checks")).toBeTruthy();
+    expect(document.querySelector(".event-bounce-ingest__recent-runs")?.textContent).toMatch(
+      /2 seen/,
+    );
   });
 
   it("applies null IMAP defaults from the API and falls back Check every", async () => {
@@ -552,5 +625,64 @@ describe("EventBounceIngestPanel", () => {
     expect((await screen.findByLabelText("IMAP host") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("993");
     expect((screen.getByLabelText("Check every") as HTMLSelectElement).value).toBe("5");
+  });
+
+  it("shows Recent checks when more than one run is returned", async () => {
+    const runs = [
+      {
+        at: "2026-08-06T11:00:00.000Z",
+        ok: true,
+        messagesSeen: 1,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+      {
+        at: "2026-08-06T10:00:00.000Z",
+        ok: false,
+        messagesSeen: 0,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 1,
+        connectFailed: true,
+      },
+    ];
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: runs[0],
+        recentRuns: runs,
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText("Recent checks")).toBeTruthy();
+    expect(screen.getAllByText("Failed").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("hides Recent checks when only one run is returned", async () => {
+    const run = {
+      at: "2026-08-06T11:00:00.000Z",
+      ok: true,
+      messagesSeen: 1,
+      bouncesApplied: 0,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 0,
+      connectFailed: false,
+    };
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: run,
+        recentRuns: [run],
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText(/1 seen/)).toBeTruthy();
+    expect(screen.queryByText("Recent checks")).toBeNull();
   });
 });

@@ -57,14 +57,23 @@ function eventScopedDb(
     bounceIngestProcessedUid?: Record<string, unknown>;
     emailDelivery?: Record<string, unknown>;
     bounceIngestSettings?: Record<string, unknown>;
+    bounceIngestRun?: Record<string, unknown>;
   } = {},
 ) {
+  const bounceIngestSettings = {
+    findUnique: vi.fn().mockResolvedValue(row),
+    update: vi.fn().mockResolvedValue(row),
+    ...extras.bounceIngestSettings,
+  };
+  const bounceIngestRun = {
+    create: vi.fn().mockResolvedValue({}),
+    findMany: vi.fn().mockResolvedValue([]),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    ...extras.bounceIngestRun,
+  };
+  const tx = { bounceIngestSettings, bounceIngestRun };
   return {
-    bounceIngestSettings: {
-      findUnique: vi.fn().mockResolvedValue(row),
-      update: vi.fn().mockResolvedValue(row),
-      ...extras.bounceIngestSettings,
-    },
+    ...tx,
     bounceIngestProcessedUid: {
       findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn().mockResolvedValue(null),
@@ -77,6 +86,7 @@ function eventScopedDb(
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       ...extras.emailDelivery,
     },
+    $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<void>) => fn(tx)),
   };
 }
 
@@ -833,6 +843,11 @@ describe("ingestBounces", () => {
         findMany: vi.fn().mockResolvedValue([row1, row2]),
         update: vi.fn().mockResolvedValue({}),
       },
+      bounceIngestRun: {
+        create: vi.fn().mockResolvedValue({}),
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       bounceIngestProcessedUid: {
         findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue(null),
@@ -878,6 +893,11 @@ describe("ingestBounces", () => {
         findMany: vi.fn().mockResolvedValue([due, notDue]),
         update,
       },
+      bounceIngestRun: {
+        create: vi.fn().mockResolvedValue({}),
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       bounceIngestProcessedUid: {
         findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue(null),
@@ -919,6 +939,11 @@ describe("ingestBounces", () => {
         findMany: vi.fn().mockResolvedValue([failedRecently]),
         update,
       },
+      bounceIngestRun: {
+        create: vi.fn().mockResolvedValue({}),
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       bounceIngestProcessedUid: {
         findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue(null),
@@ -929,6 +954,16 @@ describe("ingestBounces", () => {
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn(),
       },
+      $transaction: vi.fn(async (fn) =>
+        fn({
+          bounceIngestSettings: { update },
+          bounceIngestRun: {
+            create: vi.fn().mockResolvedValue({}),
+            findMany: vi.fn().mockResolvedValue([]),
+            deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+          },
+        }),
+      ),
     } as never;
 
     const summary = await ingestBounces(db, {

@@ -1,0 +1,46 @@
+---
+description: Mandatory wiki-docs / Documentation impact gate before every PR handoff
+alwaysApply: true
+---
+
+# wiki-docs CI gate (do not skip)
+
+CI job `wiki-docs` runs `docs:pr-check` (`scripts/check-pr-docs-impact.mjs`). It fails the PR if the body is wrong. This has bitten the stack repeatedly. Treat it as a hard pre-push / pre-PR checklist item, same as local tests.
+
+## Before `gh pr create`, `gh pr edit`, or saying a PR is ready
+
+1. Diff the PR: any path under `docs/wiki/`?
+2. In the PR body, under `## Documentation impact`, check **exactly one** of these lines (both lines must remain present):
+
+```markdown
+## Documentation impact
+
+- [x] Wiki updated
+- [ ] No Wiki update needed — <specific reason>
+```
+
+or, if no wiki files changed:
+
+```markdown
+## Documentation impact
+
+- [ ] Wiki updated
+- [x] No Wiki update needed — <specific concrete reason>
+```
+
+3. A Checklist bullet that only *mentions* Wiki does **not** pass.
+4. If you changed Wiki and left "No Wiki update needed" checked → CI fails.
+5. If you checked "Wiki updated" with zero `docs/wiki/` files → CI fails.
+6. After fixing only the PR body: **do not rely on `gh run rerun`**. Re-runs reuse the original `pull_request` event payload (stale body). Push a new commit on the PR head (empty commit is fine) so CI fetches the updated body.
+
+## Stacked PRs
+
+Each PR in a stack has its **own** body. Fixing #728 does not fix #729/#730. When rebasing a stack that touches Wiki, re-verify Documentation impact on **every** PR that includes `docs/wiki/` in its base…head diff.
+
+## Local sanity
+
+```bash
+# After drafting the body, confirm before handoff:
+gh pr view <n> --json body --jq .body | rg -n 'Documentation impact|Wiki updated|No Wiki'
+git diff --name-only <base>...HEAD | rg '^docs/wiki/' || true
+```

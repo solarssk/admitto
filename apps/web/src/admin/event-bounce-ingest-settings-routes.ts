@@ -15,6 +15,7 @@ import {
   DEFAULT_BOUNCE_FOLDERS,
   imapTestErrorForAdmin,
   ingestBounces,
+  listBounceIngestRecentRuns,
   parseFolders,
   serializeBounceIngestLastRun,
   testBounceImapConnection,
@@ -278,12 +279,13 @@ export async function handleGetEventBounceIngestSettings(
 
   const row = await db.bounceIngestSettings.findUnique({ where: { event_id: eventId } });
   const mailDescription = await describeEffectiveMailConfig(db, eventId);
+  const recentRuns = await listBounceIngestRecentRuns(db, eventId);
 
   return c.json({
     eventId,
     organizationId,
     ...serializeSettings(row, mailDescription),
-    recentRuns: [],
+    recentRuns,
   });
 }
 
@@ -363,11 +365,9 @@ export async function handlePutEventBounceIngestSettings(
     eventId,
     organizationId,
     ...serializeSettings(row, mailDescription),
-    recentRuns: [],
+    recentRuns: await listBounceIngestRecentRuns(db, eventId),
   });
 }
-
-/** POST /api/admin/events/:eventId/bounce-ingest-settings/test */
 export async function handlePostEventBounceIngestSettingsTest(
   c: Context,
   db: PrismaClient,
@@ -500,5 +500,10 @@ export async function handlePostEventBounceIngestSettingsRun(
     console.error("[audit] bounce_ingest_manual_run log failed", auditErr);
   }
 
-  return c.json({ ok, lastRun, recentRuns: [], message });
+  return c.json({
+    ok,
+    lastRun,
+    recentRuns: await listBounceIngestRecentRuns(db, eventId),
+    message,
+  });
 }

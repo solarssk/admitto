@@ -103,12 +103,36 @@ function LastRunSummary({ run }: Readonly<{ run: EventBounceIngestLastRunDto }>)
   );
 }
 
+function RecentChecksList({ runs }: Readonly<{ runs: EventBounceIngestLastRunDto[] }>) {
+  if (runs.length <= 1) return null;
+  return (
+    <div className="event-bounce-ingest__recent-runs">
+      <h3 className="event-bounce-ingest__recent-runs-title">Recent checks</h3>
+      <ul className="event-bounce-ingest__recent-runs-list">
+        {runs.slice(0, 10).map((run) => (
+          <li key={run.at}>
+            <span className={run.ok ? "text-success" : "text-danger"}>
+              {run.ok ? "OK" : "Failed"}
+            </span>
+            <span className="text-secondary">
+              {" "}
+              · {formatEventDateTime(run.at, getBrowserTimeZone())} · {lastRunCountsLine(run)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function LastAutomaticCheckBody({
   lastRun,
   enabled,
+  recentRuns,
 }: Readonly<{
   lastRun: EventBounceIngestLastRunDto | null | undefined;
   enabled: boolean;
+  recentRuns: EventBounceIngestLastRunDto[] | null | undefined;
 }>) {
   if (!lastRun && !enabled) {
     return (
@@ -128,45 +152,11 @@ function LastAutomaticCheckBody({
       />
     );
   }
-  return <LastRunSummary run={lastRun} />;
-}
-
-function RunCheckNowButton({
-  blockedReason,
-  running,
-  onRun,
-}: Readonly<{
-  blockedReason: string | undefined;
-  running: boolean;
-  onRun: () => void;
-}>) {
-  if (blockedReason) {
-    return (
-      <Tooltip content={blockedReason}>
-        <span>
-          <Button type="button" variant="secondary" size="sm" disabled>
-            Run check now
-          </Button>
-        </span>
-      </Tooltip>
-    );
-  }
   return (
-    <Tooltip content="Poll the bounce mailbox once and update this card">
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        icon={
-          <i className={`ti ti-refresh${running ? " at-spin" : ""}`} aria-hidden="true" />
-        }
-        onClick={onRun}
-        disabled={running}
-        aria-busy={running}
-      >
-        Run check now
-      </Button>
-    </Tooltip>
+    <>
+      <LastRunSummary run={lastRun} />
+      <RecentChecksList runs={recentRuns ?? []} />
+    </>
   );
 }
 
@@ -418,7 +408,15 @@ export const EventBounceIngestPanel = forwardRef<
     setRunningCheck(true);
     try {
       const result = await runEventBounceIngestCheck(eventId);
-      setApiData((prev) => (prev ? { ...prev, lastRun: result.lastRun } : prev));
+      setApiData((prev) =>
+        prev
+          ? {
+              ...prev,
+              lastRun: result.lastRun,
+              recentRuns: result.recentRuns ?? prev.recentRuns,
+            }
+          : prev,
+      );
       addToast(result.message, result.ok ? "success" : "error");
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Could not run bounce check."), "error");
@@ -463,6 +461,7 @@ export const EventBounceIngestPanel = forwardRef<
     apiData?.configured ?? false,
     apiData?.enabled ?? false,
   );
+  const runBlocked = Boolean(runBlockedReason);
   const testReasonId = "event-bounce-ingest-test-reason";
 
   return (
@@ -630,14 +629,41 @@ export const EventBounceIngestPanel = forwardRef<
       <Card
         title={<HintLabel hint={LAST_RUN_HINT}>Last automatic check</HintLabel>}
         actions={
-          <RunCheckNowButton
-            blockedReason={runBlockedReason}
-            running={runningCheck}
-            onRun={() => void handleRunCheck()}
-          />
+          runBlocked ? (
+            <Tooltip content={runBlockedReason}>
+              <span>
+                <Button type="button" variant="secondary" size="sm" disabled>
+                  Run check now
+                </Button>
+              </span>
+            </Tooltip>
+          ) : (
+            <Tooltip content="Poll the bounce mailbox once and update this card">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                icon={
+                  <i
+                    className={`ti ti-refresh${runningCheck ? " at-spin" : ""}`}
+                    aria-hidden="true"
+                  />
+                }
+                onClick={() => void handleRunCheck()}
+                disabled={runningCheck}
+                aria-busy={runningCheck}
+              >
+                Run check now
+              </Button>
+            </Tooltip>
+          )
         }
       >
-        <LastAutomaticCheckBody lastRun={apiData?.lastRun} enabled={apiData?.enabled ?? false} />
+        <LastAutomaticCheckBody
+          lastRun={apiData?.lastRun}
+          enabled={apiData?.enabled ?? false}
+          recentRuns={apiData?.recentRuns}
+        />
       </Card>
     </div>
   );
