@@ -92,23 +92,37 @@ function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
 }
 
-/** How this account exists, not how the current browser session happens to be signed in - a
- * Local badge when it has a password, plus one badge per linked identity provider naming that
- * provider (not just a generic "SSO"), since an account can be both at once (a local account
- * that later linked an SSO identity, or vice versa). */
-function AccountSignInBadges({ account }: Readonly<{ account: AccountDto }>) {
+/** How this account exists, not how the current browser session happens to be signed in - "Local
+ * account" when it only has a password, or "Managed by <provider>" naming the actual linked
+ * identity provider(s) (not a generic "SSO") whenever any are linked, since the IdP is the
+ * source of truth for sign-in once linked even if a local fallback password also exists. Reuses
+ * the same disabled SearchableSelect shape as the Role field below for one consistent look. */
+function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
+  const providers = account.external_identities;
+  const isManaged = providers.length > 0;
+  const label = isManaged ? `Managed by ${providers.map((p) => p.provider_display_name).join(" + ")}` : "Local account";
+  const hint = !isManaged
+    ? "Signed in with a password you set. Manage it in the Password section below."
+    : account.has_local_password
+      ? "Signed in through your organization's identity provider, with a local password available as a fallback. Manage it in the Password section below."
+      : "Signed in through your organization's identity provider — password and two-factor authentication are managed there.";
+
   return (
-    <div className="account-signin-field">
-      {account.has_local_password && (
-        <Badge variant="neutral">
-          <i className="ti ti-key" aria-hidden="true" /> Local
-        </Badge>
-      )}
-      {account.external_identities.map((ei) => (
-        <Badge key={ei.id} variant="neutral">
-          <i className="ti ti-cloud-lock" aria-hidden="true" /> {ei.provider_display_name}
-        </Badge>
-      ))}
+    <div className="account-role-display">
+      <label className="at-label" htmlFor="account-type">Account type</label>
+      <SearchableSelect
+        id="account-type"
+        label="Account type"
+        placeholder="Account type"
+        searchPlaceholder=""
+        emptyLabel=""
+        value="current"
+        options={[{ id: "current", label, icon: isManaged ? "shield-lock" : "key" }]}
+        disabled
+        title="Account type is determined automatically and can't be changed here."
+        onChange={() => {}}
+      />
+      <p className="at-hint">{hint}</p>
     </div>
   );
 }
@@ -119,22 +133,19 @@ const ROLE_TYPE_OPTIONS = [
   { id: "operator", label: roleLabel("operator"), icon: "calendar-event" },
 ];
 
+const ROLE_ACCESS_DESCRIPTION: Record<string, string> = {
+  superadmin: "Superadmin has access to every event and organization in this instance.",
+  admin: "Admin has management access within the organizations listed below.",
+  operator: "Operator has check-in and event-day access for the events listed below.",
+};
+
 /** Read-only role display, borrowed from the admin Edit user modal's own "Role & access" section
  * (SearchableSelect, disabled - the same control that section already shows when an admin views
- * their own account) instead of a plain badge list. Scope names (event/organization titles)
- * aren't resolved here - self-service doesn't fetch the event/org lists that lookup needs - so
- * multiple scopes of the current role type collapse into a count instead of individual chips. */
+ * their own account) instead of a plain badge list, plus the actual scope names (event titles /
+ * organization names) as chips, resolved server-side from the account's own assignments. */
 function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
   const primary = account.roles[0];
   if (!primary) return <p className="at-hint">No role assigned.</p>;
-
-  const additionalScopes = account.roles.length - 1;
-  const anyOidc = account.roles.some((r) => r.is_oidc);
-  const hintParts: string[] = [];
-  if (additionalScopes > 0) {
-    hintParts.push(`+${additionalScopes} more ${primary.scope_type === "event" ? "event" : "organization"}${additionalScopes > 1 ? "s" : ""}`);
-  }
-  if (anyOidc) hintParts.push("Managed by identity provider");
 
   return (
     <div className="account-role-display">
@@ -151,11 +162,18 @@ function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
         title="Roles are read-only. Contact an administrator to change access."
         onChange={() => {}}
       />
-      {primary.role === "superadmin" ? (
-        <Notice variant="info">Superadmin has access to every event and organization in this instance.</Notice>
-      ) : (
-        hintParts.length > 0 && <p className="at-hint">{hintParts.join(" · ")}</p>
+      {primary.role !== "superadmin" && account.roles.length > 0 && (
+        <div className="account-scope-chips">
+          {account.roles.map((r) => (
+            <span key={r.id} className="account-scope-chip">
+              <i className={`ti ti-${r.scope_type === "event" ? "calendar-event" : "building"}`} aria-hidden="true" />
+              {r.is_oidc && <i className="ti ti-cloud-lock" aria-hidden="true" title="Managed by identity provider" />}
+              {r.scope_label ?? r.scope_id ?? "Unknown"}
+            </span>
+          ))}
+        </div>
       )}
+      <p className="at-hint">Only an administrator can change this. {ROLE_ACCESS_DESCRIPTION[primary.role]}</p>
     </div>
   );
 }
@@ -879,12 +897,7 @@ export function AccountPage() {
             <span className="at-hint">For internal contact only - not shown on tickets.</span>
           </div>
           <AccountRoleDisplay account={account} />
-          <div className="at-field">
-            <label className="at-label" htmlFor="account-signin">Sign-in</label>
-            <div id="account-signin">
-              <AccountSignInBadges account={account} />
-            </div>
-          </div>
+          <AccountTypeField account={account} />
         </div>
       </Card>
 

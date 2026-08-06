@@ -1493,19 +1493,19 @@ describe("AccountPage profile: phone number", () => {
   });
 });
 
-describe("AccountPage profile: sign-in method", () => {
-  it("shows only a Local badge for accounts with only a local password", async () => {
+describe("AccountPage profile: account type", () => {
+  it("shows 'Local account' and the password hint for accounts with only a local password", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, external_identities: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local")).toBeTruthy();
+      expect(screen.getByText("Local account")).toBeTruthy();
     });
-    expect(screen.queryByText("Okta")).toBeFalsy();
+    expect(screen.getByText(/Signed in with a password you set/)).toBeTruthy();
   });
 
-  it("shows one badge per linked identity provider, named, for accounts without a local password", async () => {
+  it("shows 'Managed by <provider>' and the IdP hint for accounts without a local password", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: false,
@@ -1515,12 +1515,12 @@ describe("AccountPage profile: sign-in method", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Okta")).toBeTruthy();
+      expect(screen.getByText("Managed by Okta")).toBeTruthy();
     });
-    expect(screen.queryByText("Local")).toBeFalsy();
+    expect(screen.getByText(/password and two-factor authentication are managed there/)).toBeTruthy();
   });
 
-  it("shows both a Local badge and a provider badge when the account has both", async () => {
+  it("prioritizes the linked provider and mentions the fallback password when the account has both", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: true,
@@ -1530,12 +1530,12 @@ describe("AccountPage profile: sign-in method", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local")).toBeTruthy();
+      expect(screen.getByText("Managed by Okta")).toBeTruthy();
     });
-    expect(screen.getByText("Okta")).toBeTruthy();
+    expect(screen.getByText(/local password available as a fallback/)).toBeTruthy();
   });
 
-  it("shows one badge per provider when multiple identities are linked", async () => {
+  it("joins multiple linked providers by name", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: false,
@@ -1548,9 +1548,8 @@ describe("AccountPage profile: sign-in method", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Okta")).toBeTruthy();
+      expect(screen.getByText("Managed by Okta + Authentik")).toBeTruthy();
     });
-    expect(screen.getByText("Authentik")).toBeTruthy();
   });
 
   it("shows 'Regional format' label for locale select", async () => {
@@ -1580,7 +1579,7 @@ describe("AccountPage profile: role display", () => {
   it("shows the role in a disabled, read-only control (not editable)", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
-      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false }],
+      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", scope_label: "Acme Events", is_oidc: false }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
@@ -1589,10 +1588,10 @@ describe("AccountPage profile: role display", () => {
     expect((trigger as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("shows an explanatory notice for a superadmin role instead of a scope count", async () => {
+  it("shows an explanatory hint for a superadmin role, with no scope chips", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
-      roles: [{ id: "r1", role: "superadmin", scope_type: "instance", scope_id: null, is_oidc: false }],
+      roles: [{ id: "r1", role: "superadmin", scope_type: "instance", scope_id: null, scope_label: null, is_oidc: false }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
@@ -1601,34 +1600,52 @@ describe("AccountPage profile: role display", () => {
       expect(screen.getByText("Superadmin")).toBeTruthy();
     });
     expect(screen.getByText(/Superadmin has access to every event and organization/)).toBeTruthy();
+    expect(document.querySelector(".account-scope-chip")).toBeNull();
   });
 
-  it("shows a scope count hint for multiple assignments of a non-superadmin role", async () => {
+  it("shows one named chip per scope for a non-superadmin role", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       roles: [
-        { id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false },
-        { id: "r2", role: "admin", scope_type: "organization", scope_id: "org-2", is_oidc: false },
+        { id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", scope_label: "Acme Events", is_oidc: false },
+        { id: "r2", role: "admin", scope_type: "organization", scope_id: "org-2", scope_label: "Beta Org", is_oidc: false },
       ],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("+1 more organization")).toBeTruthy();
+      expect(screen.getByText("Acme Events")).toBeTruthy();
     });
+    expect(screen.getByText("Beta Org")).toBeTruthy();
+    expect(screen.getByText(/Admin has management access within the organizations/)).toBeTruthy();
   });
 
-  it("notes when a role is managed by an identity provider", async () => {
+  it("marks a chip as identity-provider-managed when that assignment is IdP-sourced", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
-      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: true }],
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-1", scope_label: "Autumn Summit", is_oidc: true }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Managed by identity provider")).toBeTruthy();
+      expect(screen.getByText("Autumn Summit")).toBeTruthy();
+    });
+    const chip = screen.getByText("Autumn Summit").closest(".account-scope-chip");
+    expect(chip?.querySelector(".ti-cloud-lock")).toBeTruthy();
+  });
+
+  it("falls back to the raw scope id when a scope name isn't resolvable", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-deleted", scope_label: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("evt-deleted")).toBeTruthy();
     });
   });
 

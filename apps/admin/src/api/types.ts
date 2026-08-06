@@ -1317,6 +1317,7 @@ export interface AccountRoleDto {
   role: string;
   scope_type: string;
   scope_id: string | null;
+  scope_label: string | null;
   is_oidc: boolean;
 }
 

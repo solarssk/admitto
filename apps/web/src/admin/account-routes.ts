@@ -248,6 +248,25 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
 
   const oidcAssignmentIds = new Set(oidcGrants.map((g) => g.role_assignment_id));
 
+  // Resolve each assignment's scope_id to the human label shown on the account page (event
+  // title / organization name) - only the specific events/organizations this account is already
+  // assigned to, never a full list, so this needs no extra permission beyond viewing your own
+  // account.
+  const eventScopeIds = assignments.filter((a) => a.scope_type === "event" && a.scope_id).map((a) => a.scope_id!);
+  const orgScopeIds = assignments.filter((a) => a.scope_type === "organization" && a.scope_id).map((a) => a.scope_id!);
+  const [scopedEvents, scopedOrgs] = await Promise.all([
+    eventScopeIds.length ? db.event.findMany({ where: { id: { in: eventScopeIds } }, select: { id: true, title: true } }) : [],
+    orgScopeIds.length ? db.organization.findMany({ where: { id: { in: orgScopeIds } }, select: { id: true, name: true } }) : [],
+  ]);
+  const eventTitleById = new Map(scopedEvents.map((e) => [e.id, e.title]));
+  const orgNameById = new Map(scopedOrgs.map((o) => [o.id, o.name]));
+
+  function scopeLabel(a: (typeof assignments)[number]): string | null {
+    if (a.scope_type === "event") return (a.scope_id && eventTitleById.get(a.scope_id)) ?? null;
+    if (a.scope_type === "organization") return (a.scope_id && orgNameById.get(a.scope_id)) ?? null;
+    return null;
+  }
+
   return c.json({
     id: user.id,
     email: user.email,
@@ -263,6 +282,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       role: a.role,
       scope_type: a.scope_type,
       scope_id: a.scope_id,
+      scope_label: scopeLabel(a),
       is_oidc: oidcAssignmentIds.has(a.id),
     })),
     mfa_methods: mfaMethods.map((m) => ({

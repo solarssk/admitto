@@ -51,11 +51,15 @@ async function seed(client: PrismaClient) {
   await client.roleAssignment.deleteMany({ where: { OR: [{ scope_id: ORG_ACCOUNT }, { user: { email: EMAIL_ADMIN } }] } });
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_ACCOUNT } });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER, EMAIL_ADMIN] } } });
+  await client.event.deleteMany({ where: { id: "evt-account" } });
   await client.organization.deleteMany({ where: { id: ORG_ACCOUNT } });
   await client.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
 
   const password_hash = await hashPassword(PASSWORD);
   await client.organization.create({ data: { id: ORG_ACCOUNT, name: "Account Test Org", slug: "account-test" } });
+  await client.event.create({
+    data: { id: "evt-account", title: "Account Test Event", slug: "account-test-event", organization_id: ORG_ACCOUNT, date: new Date("2026-01-01") },
+  });
   await client.identityProvider.create({
     data: {
       id: PROVIDER_ID,
@@ -139,6 +143,31 @@ describe("GET /api/account", () => {
     expect(body.has_local_password).toBe(true);
     expect(body.must_change_password).toBe(true);
     expect(body).not.toHaveProperty("password_hash");
+  });
+
+  it("resolves an event-scoped role's scope_id to the event's title", async () => {
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    const body = (await res.json()) as { roles: Array<{ scope_type: string; scope_id: string | null; scope_label: string | null }> };
+    const eventRole = body.roles.find((r) => r.scope_type === "event");
+    expect(eventRole?.scope_id).toBe("evt-account");
+    expect(eventRole?.scope_label).toBe("Account Test Event");
+  });
+
+  it("returns a null scope_label for a role pointing at a since-deleted scope", async () => {
+    // operator/event, not admin/organization: this fixture's session isn't MFA-completed, and
+    // admin is in the default mfa_required_roles set - granting it here would make requireSession
+    // reject the existing session instead of exercising the scope_label resolution this test is
+    // actually about.
+    const created = await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "operator", scope_type: "event", scope_id: "evt-does-not-exist" },
+    });
+    try {
+      const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+      const body = (await res.json()) as { roles: Array<{ id: string; scope_label: string | null }> };
+      expect(body.roles.find((r) => r.id === created.id)?.scope_label).toBeNull();
+    } finally {
+      await prisma.roleAssignment.delete({ where: { id: created.id } });
+    }
   });
 
   it("returns an empty external_identities array when nothing is linked", async () => {
