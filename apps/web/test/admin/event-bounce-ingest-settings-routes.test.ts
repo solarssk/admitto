@@ -862,6 +862,45 @@ describe("event bounce ingest settings routes", () => {
     expect(json.message).toMatch(/finished with errors/i);
   });
 
+  it("POST run treats a missing persisted lastRun as ok:false", async () => {
+    const row = {
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: true,
+      last_run_at: null,
+      last_run_ok: null,
+      last_run_summary: null,
+    };
+    const findUnique = vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(null);
+    const db = baseDb({ bounceIngestSettings: { findUnique } });
+    vi.mocked(ingestBounces).mockResolvedValueOnce({
+      eventsProcessed: 1,
+      messagesSeen: 0,
+      bouncesApplied: 0,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 1,
+      connectFailed: true,
+    });
+
+    const res = await handlePostEventBounceIngestSettingsRun(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; lastRun: null };
+    expect(json.ok).toBe(false);
+    expect(json.lastRun).toBeNull();
+  });
+
   it("POST run still returns lastRun when audit logging fails", async () => {
     const row = {
       id: "bis_1",

@@ -1033,6 +1033,20 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/bounce-ingest-settings/run", () => {
+  it("is wired through createApp and rejects when bounce settings are missing", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT}/bounce-ingest-settings/run`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok?: boolean; error?: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/save your bounce detection settings/i);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/mail-settings/probe", () => {
   it("verifies dedicated SMTP without sending mail", async () => {
     await setMailSettings(

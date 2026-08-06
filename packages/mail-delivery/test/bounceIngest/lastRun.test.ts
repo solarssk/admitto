@@ -166,7 +166,45 @@ describe("evaluateBounceIngestHealth", () => {
         now,
         BOUNCE_INGEST_STALE_MS,
       ),
-    ).toMatchObject({ status: "ok", enabledCount: 1, problemCount: 0 });
+    ).toEqual({
+      status: "ok",
+      summary: "Automatic check ok",
+      enabledCount: 1,
+      problemCount: 0,
+    });
+  });
+
+  it("uses a plural ok summary when multiple events are healthy", () => {
+    const fresh = new Date(now.getTime() - 60_000);
+    expect(
+      evaluateBounceIngestHealth(
+        [
+          { enabled: true, last_run_at: fresh, last_run_ok: true },
+          { enabled: true, last_run_at: fresh, last_run_ok: true },
+        ],
+        now,
+        BOUNCE_INGEST_STALE_MS,
+      ),
+    ).toEqual({
+      status: "ok",
+      summary: "Automatic check ok · 2 events",
+      enabledCount: 2,
+      problemCount: 0,
+    });
+  });
+
+  it("uses a singular degraded summary for one problem event", () => {
+    expect(
+      evaluateBounceIngestHealth(
+        [{ enabled: true, last_run_at: null, last_run_ok: null }],
+        now,
+      ),
+    ).toEqual({
+      status: "degraded",
+      summary: "1 event needs attention",
+      enabledCount: 1,
+      problemCount: 1,
+    });
   });
 
   it("keeps hourly deploy intervals healthy within 2× the interval", () => {

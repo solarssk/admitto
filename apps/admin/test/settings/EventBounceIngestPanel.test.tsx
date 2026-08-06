@@ -484,4 +484,73 @@ describe("EventBounceIngestPanel", () => {
     const runButton = await screen.findByRole("button", { name: "Run check now" });
     expect(isDisabled(runButton)).toBe(true);
   });
+
+  it("toggles bounce detection On/Off and edits the IMAP username", async () => {
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.click(screen.getByRole("switch", { name: "On" }));
+    expect(screen.getByRole("switch", { name: "Off" })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "bounce-edited@example.com" },
+    });
+    expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe(
+      "bounce-edited@example.com",
+    );
+  });
+
+  it("cancels an in-progress password replace without saving", async () => {
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByPlaceholderText("New value")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByPlaceholderText("New value")).toBeNull();
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("toasts an error when Run check now returns ok:false", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    mockRun.mockResolvedValueOnce({
+      ok: false,
+      message: "Could not connect to the mailbox.",
+      lastRun: {
+        at: "2026-08-06T11:00:00.000Z",
+        ok: false,
+        messagesSeen: 0,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 1,
+        connectFailed: true,
+      },
+    });
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not connect/);
+    });
+    expect(await screen.findByText(/^Failed ·/)).toBeTruthy();
+  });
+
+  it("applies null IMAP defaults from the API and falls back Check every", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        imap_host: null,
+        imap_port: null,
+        imap_username: null,
+        folders: [],
+        poll_interval_minutes: 0,
+        configured: false,
+        enabled: false,
+      }),
+    );
+    renderPanel();
+    expect((await screen.findByLabelText("IMAP host") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("993");
+    expect((screen.getByLabelText("Check every") as HTMLSelectElement).value).toBe("5");
+  });
 });
