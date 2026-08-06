@@ -342,7 +342,8 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
       );
     });
 
-    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "50" }));
     await waitFor(() => {
       expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
         "evt-1",
