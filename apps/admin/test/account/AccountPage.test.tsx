@@ -236,10 +236,11 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Regional format")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^Regional format,/ })).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Regional format"), { target: { value: "pl-PL" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Regional format,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Polski:/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -1574,7 +1575,7 @@ describe("AccountPage profile: account type", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Regional format")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^Regional format,/ })).toBeTruthy();
     });
   });
 });

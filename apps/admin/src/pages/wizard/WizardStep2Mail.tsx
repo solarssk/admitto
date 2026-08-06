@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button, Input, Notice, Select, Switch, useToast } from "@admitto/ui";
+import { Button, Input, Notice, Switch, useToast } from "@admitto/ui";
 import {
   fetchMailSettings,
   saveMailSettings,
@@ -27,6 +27,7 @@ import {
 } from "../../settings/mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
 import { draftFromFields } from "../../settings/mailTransportFormParts.js";
+import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { useWizard } from "./WizardContext.js";
 
@@ -206,27 +207,32 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
             )}
 
             <div className="setup-wizard__mail-form">
-              <Select
-                className="setup-wizard__transport-select"
-                label="Transport"
-                value={provider}
-                disabled={fieldLocked("provider")}
-                onChange={(e) => {
-                  const next = e.target.value as MailProvider | "";
-                  if (next === "smtp" && draft.provider !== "smtp") {
-                    updateDraft({ provider: next, ...smtpProviderDraftDefaults() });
-                  } else {
-                    updateDraft({ provider: next });
-                  }
-                }}
-              >
-                <option value="">Not configured</option>
-                {providerOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </Select>
+              <div className="at-field">
+                <label className="at-label" htmlFor="wizard-mail-transport">
+                  Transport
+                </label>
+                <SearchableSelect
+                  id="wizard-mail-transport"
+                  label="Transport"
+                  placeholder="Not configured"
+                  searchPlaceholder="Search transports…"
+                  emptyLabel="No transports found"
+                  value={provider}
+                  disabled={fieldLocked("provider")}
+                  options={[
+                    { id: "", label: "Not configured" },
+                    ...providerOptions.map((opt) => ({ id: opt.value, label: opt.label })),
+                  ]}
+                  onChange={(id) => {
+                    const next = id as MailProvider | "";
+                    if (next === "smtp" && draft.provider !== "smtp") {
+                      updateDraft({ provider: next, ...smtpProviderDraftDefaults() });
+                    } else {
+                      updateDraft({ provider: next });
+                    }
+                  }}
+                />
+              </div>
 
               {provider === "graph" && (
                 <>
