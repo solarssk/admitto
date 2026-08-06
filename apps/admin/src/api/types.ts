@@ -795,6 +795,8 @@ export interface EventBounceIngestSettingsResponse {
   poll_interval_minutes: number;
   /** Null until bounce-ingest records a run (not updated by Test connection). */
   lastRun: EventBounceIngestLastRunDto | null;
+  /** Empty until run-history (PR5); kept for forward-compatible admin builds. */
+  recentRuns?: EventBounceIngestLastRunDto[];
 }
 
 export interface SaveEventBounceIngestSettingsBody {
@@ -818,6 +820,7 @@ export interface BounceIngestTestResponse {
 export interface BounceIngestRunResponse {
   ok: boolean;
   lastRun: EventBounceIngestLastRunDto | null;
+  recentRuns?: EventBounceIngestLastRunDto[];
   message: string;
   error?: string;
 }

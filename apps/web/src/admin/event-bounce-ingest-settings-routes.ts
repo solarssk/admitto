@@ -283,6 +283,7 @@ export async function handleGetEventBounceIngestSettings(
     eventId,
     organizationId,
     ...serializeSettings(row, mailDescription),
+    recentRuns: [],
   });
 }
 
@@ -362,6 +363,7 @@ export async function handlePutEventBounceIngestSettings(
     eventId,
     organizationId,
     ...serializeSettings(row, mailDescription),
+    recentRuns: [],
   });
 }
 
@@ -498,5 +500,5 @@ export async function handlePostEventBounceIngestSettingsRun(
     console.error("[audit] bounce_ingest_manual_run log failed", auditErr);
   }
 
-  return c.json({ ok, lastRun, message });
+  return c.json({ ok, lastRun, recentRuns: [], message });
 }

@@ -94,7 +94,7 @@ function draftFromApi(data: EventBounceIngestSettingsResponse): Draft {
     imapPort: String(data.imap_port ?? 993),
     imapUsername: data.imap_username ?? "",
     reuseSmtp: data.reuse_smtp_credentials,
-    folders: data.folders.join(", "),
+    folders: (data.folders ?? []).join(", "),
     pollIntervalMinutes: data.poll_interval_minutes || 5,
   };
 }
