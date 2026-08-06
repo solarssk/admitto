@@ -4132,7 +4132,8 @@ output.mail-field-hint {
   box-sizing: border-box;
 }
 
-.external-provider-and-test .at-select {
+.external-provider-and-test .at-select,
+.external-provider-and-test .searchable-select {
   flex: 1 1 auto;
   min-width: 0;
   max-width: none;
