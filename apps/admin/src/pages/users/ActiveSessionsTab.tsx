@@ -250,7 +250,12 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             icon={<i className="ti ti-filter-off" aria-hidden="true" />}
             title="No sessions match this filter"
             description="Try a different name or email, or select All to see every active staff session."
+            // total === 0 && sessions.length > 0 (the guard on this whole EmptyState above) can
+            // only happen when the client-side filter excluded something - i.e. searchInput or
+            // filter !== "all" is already true here, so the bare EmptyState fallback below can
+            // never actually render; kept only so this stays valid without an action at all.
             action={
+              /* v8 ignore next */
               searchInput || filter !== "all" || signInFilter !== "all" ? (
                 <Button
                   type="button"
