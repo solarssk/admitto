@@ -63,6 +63,11 @@ export function useDropdownMenu<
     }
     const trigger = triggerRef.current;
     const panel = panelRef.current;
+    // Type-narrowing only: triggerRef's element always renders regardless of `open`, and
+    // panelRef's `{open && <div ref={panelRef}>}` has already committed by the time this
+    // layout effect runs (it fires synchronously after DOM mutations, keyed on the same
+    // `open` this effect reads) - so both are already set whenever this line is reached.
+    /* v8 ignore if */
     if (!trigger || !panel) return;
     const triggerRect = trigger.getBoundingClientRect();
     // Clamped to whichever is smaller: the viewport, or the nearest ancestor that actually

@@ -56,6 +56,31 @@ describe("PhoneCountrySelect", () => {
     expect(screen.getByText("No countries match.")).toBeTruthy();
   });
 
+  it("selects the first filtered country on Enter", () => {
+    const onChange = vi.fn();
+    render(<PhoneCountrySelect id="test-code" label="Phone country code" value="" onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /Phone country code/ }));
+    const search = screen.getByLabelText("Search country or dial code");
+    fireEvent.change(search, { target: { value: "Poland" } });
+
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    expect(onChange).toHaveBeenCalledWith("+48");
+    expect(screen.queryByLabelText("Search country or dial code")).toBeNull();
+  });
+
+  it("does nothing on Enter when the search matches no country", () => {
+    const onChange = vi.fn();
+    render(<PhoneCountrySelect id="test-code" label="Phone country code" value="" onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: /Phone country code/ }));
+    const search = screen.getByLabelText("Search country or dial code");
+    fireEvent.change(search, { target: { value: "nowhere-matches-this" } });
+
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("disables the trigger when disabled", () => {
     render(
       <PhoneCountrySelect id="test-code" label="Phone country code" value="" disabled onChange={vi.fn()} />,

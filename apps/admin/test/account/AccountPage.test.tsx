@@ -1510,4 +1510,45 @@ describe("AccountPage: no role assigned", () => {
       expect(screen.getByText(/doesn't have any role assigned yet/)).toBeTruthy();
     });
   });
+
+  it("hides the notice for a valid instance-scoped superadmin assignment", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "superadmin", scope_type: "instance", scope_id: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Roles")).toBeTruthy();
+    });
+    expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
+  });
+
+  it("shows the notice for a superadmin assignment with the wrong scope type", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "superadmin", scope_type: "organization", scope_id: "org-1", is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText(/doesn't have any role assigned yet/)).toBeTruthy();
+    });
+  });
+
+  it("hides the notice for an operator assignment", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Roles")).toBeTruthy();
+    });
+    expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
+  });
 });

@@ -145,6 +145,20 @@ describe("ActiveSessionsTab rendering", () => {
     expect(screen.queryByText("Bob Smith")).toBeNull();
   });
 
+  it("clears the search box via its own inline clear button and refocuses it", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [makeSession()] });
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+    const searchInput = screen.getByLabelText("Search sessions by user name or email") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "jane" } });
+    expect(searchInput.value).toBe("jane");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(searchInput.value).toBe("");
+    expect(document.activeElement).toBe(searchInput);
+  });
+
   it("matches by email when the session has no display name", async () => {
     vi.mocked(fetchSessions).mockResolvedValue({
       sessions: [makeSession({ userEmail: "noname@example.com", userDisplayName: null })],

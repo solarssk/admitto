@@ -51,6 +51,23 @@ describe("StaffUserTableRow", () => {
     }
   });
 
+  it("renders the Disabled status badge with the neutral variant for an inactive account", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow user={{ ...user, is_active: false }} onEdit={vi.fn()} />
+        </tbody>
+      </table>,
+    );
+
+    const badges = screen.getAllByText("Disabled");
+    expect(badges.length).toBeGreaterThan(0);
+    for (const badge of badges) {
+      expect(badge.className).toContain("at-badge--neutral");
+      expect(badge.className).toContain("users-page__status-disabled");
+    }
+  });
+
   it("shows one role badge even when a person holds several scopes of that type", () => {
     render(
       <table>

@@ -86,6 +86,21 @@ describe("RoleAssignmentsTab", () => {
     }
   });
 
+  it("clears the search box via its own inline clear button and refocuses it", async () => {
+    fetchRoleAssignments.mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
+    renderWithToast(<RoleAssignmentsTab />);
+    await waitFor(() => expect(fetchRoleAssignments).toHaveBeenCalledOnce());
+
+    const searchInput = screen.getByLabelText("Search role assignments by user name or email") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "jane" } });
+    expect(searchInput.value).toBe("jane");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(searchInput.value).toBe("");
+    expect(document.activeElement).toBe(searchInput);
+  });
+
   it("shows a search-specific empty state with a button that clears the search", async () => {
     fetchRoleAssignments.mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
     vi.useFakeTimers();
@@ -152,6 +167,41 @@ describe("RoleAssignmentsTab", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog.textContent).toContain("Remove Administrator access for staff@example.com");
     expect(dialog.textContent).not.toContain("Remove admin access");
+  });
+
+  it("opens the revoke confirmation from the mobile card's own button, for an organization-scoped assignment", async () => {
+    useAuthMock.mockReturnValue({
+      assignments: [{ role: "superadmin", scope_type: "instance" }],
+      user: { id: "current-admin" },
+    });
+    fetchRoleAssignments.mockResolvedValue({
+      assignments: [{
+        id: "role-1",
+        user_id: "user-1",
+        user_email: "staff@example.com",
+        user_display_name: null,
+        role: "admin",
+        scope_type: "organization",
+        scope_id: "org-1",
+        is_oidc: false,
+        granted_at: "2026-01-01T00:00:00.000Z",
+        event: null,
+        organization: { id: "org-1", name: "Acme Events" },
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderWithToast(<RoleAssignmentsTab />);
+
+    await screen.findAllByText("staff@example.com");
+    expect(screen.getAllByText("Acme Events").length).toBeGreaterThan(0);
+    // Desktop table row and mobile card both render (CSS-only hidden, not conditionally
+    // mounted) - [0] is exercised by the test above, so this one fires the card's own onClick.
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke Administrator for staff@example.com" })[1]!);
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 
   it("never offers to revoke the signed-in superadmin's own assignment, even though they can manage everyone else's", async () => {

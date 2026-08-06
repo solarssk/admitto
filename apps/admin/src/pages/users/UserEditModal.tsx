@@ -62,11 +62,15 @@ function isRoleScopeReady(role: AssignRole, eventId: string, orgId: string): boo
   return role === "superadmin";
 }
 
+/** isSelf && isRoleTypeChange can never both be true: the Role select itself is disabled
+ * whenever isSelf is true (see RoleAccessSection's own disabled prop below), so a self-viewing
+ * admin can never actually set newRole away from their current type in the first place. */
 function resolveRoleActionTitle(
   isSelf: boolean,
   isRoleTypeChange: boolean,
   hasPendingRoleChanges: boolean,
 ): string | undefined {
+  /* v8 ignore if */
   if (isSelf && isRoleTypeChange) return "You cannot change your own role.";
   if (isRoleTypeChange && hasPendingRoleChanges) return "Save or discard your pending scope changes first.";
   return undefined;
@@ -87,7 +91,11 @@ function unlinkSsoTooltip(hasSso: boolean, isSelf: boolean): string | undefined 
   return undefined;
 }
 
+/** Whose access the role-type-change warning is about to remove. isSelf can never be true in
+ * practice: this label only renders while isRoleTypeChange is true, and the Role select itself
+ * is disabled whenever isSelf is true - see resolveRoleActionTitle's own comment above. */
 function roleChangeOwnerLabel(isSelf: boolean, displayTitle: string): string {
+  /* v8 ignore if */
   if (isSelf) return "your";
   return `${displayTitle}'s`;
 }
@@ -650,6 +658,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // through (e.g. the email PATCH rejected, or a scope deleted by someone else mid-edit) leaves
   // just the unfinished remainder staged for a retry instead of resubmitting everything.
   const saveProfile = async () => {
+    // Save is only rendered once the render gate below (`if (!open || !user) return null`) has
+    // passed, so user is always set here.
+    /* v8 ignore if */
     if (!user) return;
     setSubmitting(true);
     setError(null);
@@ -726,12 +737,17 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       if (newRole === "superadmin") {
         await grantUserRole(user.id, { role: "superadmin", scope_type: "instance" });
       } else if (newRole === "admin") {
+        // roleActionDisabled (below) already requires isRoleScopeReady, which for "admin" means
+        // newOrgId is set - this dialog can only open once that already held true.
+        /* v8 ignore if */
         if (!newOrgId) {
           setError("Select an organization for the admin role.");
           return;
         }
         await grantUserRole(user.id, { role: "admin", scope_type: "organization", scope_id: newOrgId });
       } else if (newRole === "operator") {
+        // Same reasoning as the admin branch above, for newEventId.
+        /* v8 ignore if */
         if (!newEventId) {
           setError("Select an event for the operator role.");
           return;
@@ -764,6 +780,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
    * saveProfile, on "Save changes". No confirm needed: unlike a type change, this can't destroy
    * anything, and it can still be undone for free by removing the chip before saving. */
   const handleAddClick = () => {
+    // roleActionDisabled (below) already requires isRoleScopeReady, which is false for an empty
+    // newRole - the Add button this handler is wired to can't be clicked to reach this point.
+    /* v8 ignore if */
     if (!newRole) return;
     setError(null);
     if (newRole === "superadmin") {
@@ -772,6 +791,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         { key: crypto.randomUUID(), role: "superadmin", scopeType: "instance", scopeId: null, label: "Instance-wide", icon: "crown" },
       ]);
     } else if (newRole === "admin") {
+      // Same isRoleScopeReady reasoning as above, for newOrgId.
+      /* v8 ignore if */
       if (!newOrgId) {
         setError("Select an organization for the admin role.");
         return;
@@ -782,6 +803,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         { key: crypto.randomUUID(), role: "admin", scopeType: "organization", scopeId: newOrgId, label: org?.name ?? newOrgId, icon: "building" },
       ]);
     } else if (newRole === "operator") {
+      // Same isRoleScopeReady reasoning as above, for newEventId.
+      /* v8 ignore if */
       if (!newEventId) {
         setError("Select an event for the operator role.");
         return;
@@ -810,6 +833,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleResetMfa = async () => {
+    // Only reachable from the More actions menu, itself only rendered once the render gate
+    // below (`if (!open || !user) return null`) has passed.
+    /* v8 ignore if */
     if (!user) return;
     setResetMfaBusy(true);
     try {
@@ -846,6 +872,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleRevokeSessions = async () => {
+    // Same render-gate reasoning as handleResetMfa above.
+    /* v8 ignore if */
     if (!user) return;
     setRevokeSessionsBusy(true);
     try {
@@ -882,6 +910,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const applyActiveChange = async (nextActive: boolean) => {
+    // Same render-gate reasoning as handleResetMfa above.
+    /* v8 ignore if */
     if (!user) return;
     setToggleActiveBusy(true);
     setError(null);
@@ -898,6 +928,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleToggleActiveClick = () => {
+    // Same render-gate reasoning as handleResetMfa above.
+    /* v8 ignore if */
     if (!user) return;
     if (user.is_active) {
       setDisableConfirmOpen(true);
@@ -923,6 +955,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
    * role" controls below, so no extra request is needed. Falls back to the id when the scope
    * isn't in the fetched list (e.g. a since-deleted event). */
   function scopeChipLabel(assignment: RoleAssignmentDto): string {
+    // Only ever called for assignments in the chip list below, which is itself hidden whenever
+    // currentRoleType === "superadmin" - and roles are exclusive by type (see the comment above
+    // currentRoleType), so an assignment reaching this function can never be instance-scoped.
+    /* v8 ignore if */
     if (assignment.scope_type === "instance") return "Instance-wide";
     if (assignment.scope_type === "event") {
       return events.find((e) => e.id === assignment.scope_id)?.title ?? assignment.scope_id ?? "Unknown event";
@@ -930,6 +966,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     if (assignment.scope_type === "organization") {
       return organizations.find((o) => o.id === assignment.scope_id)?.name ?? assignment.scope_id ?? "Unknown organization";
     }
+    // scope_type is a closed union already exhausted by the three checks above.
+    /* v8 ignore next */
     return assignment.scope_id ?? assignment.scope_type;
   }
 
@@ -992,6 +1030,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     roleBusy ||
     submitting ||
     !scopeReady ||
+    // isSelf && isRoleTypeChange can never both be true - see resolveRoleActionTitle's own
+    // comment above.
+    /* v8 ignore next */
     (isSelf && isRoleTypeChange) ||
     (isRoleTypeChange && hasPendingRoleChanges);
   const roleActionLabel = isRoleTypeChange ? "Change" : "Add";

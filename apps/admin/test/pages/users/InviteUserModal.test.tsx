@@ -11,7 +11,7 @@ vi.mock("../../../src/api/client.js", () => ({
   grantUserRole: vi.fn(),
 }));
 
-import { createAdminUser } from "../../../src/api/client.js";
+import { createAdminUser, fetchAdminEvents, fetchAdminOrganizations } from "../../../src/api/client.js";
 
 afterEach(() => {
   cleanup();
@@ -74,6 +74,84 @@ describe("InviteUserModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Operator" }));
 
     expect(screen.getByRole("button", { name: "Event scope, none selected" })).toBeTruthy();
+  });
+
+  it("reveals the organization scope picker after picking Administrator as the initial role", async () => {
+    vi.mocked(fetchAdminOrganizations).mockResolvedValueOnce([{ id: "org-1", name: "Acme Events" }]);
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: /^Organization scope,/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Initial role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
+
+    // Defaults to the first fetched org - unlike the event picker, which has no such default.
+    expect(await screen.findByRole("button", { name: "Organization scope, Acme Events" })).toBeTruthy();
+  });
+
+  it("shows an inline error and does not create the account when Operator is picked with no event selected", async () => {
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address *"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password *"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Initial role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Select an event for the operator role.")).toBeTruthy();
+    expect(createAdminUser).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline error and does not create the account when Administrator is picked with no organization available to default to", async () => {
+    vi.mocked(fetchAdminOrganizations).mockResolvedValueOnce([]);
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address *"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password *"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Initial role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Select an organization for the admin role.")).toBeTruthy();
+    expect(createAdminUser).not.toHaveBeenCalled();
+  });
+
+  it("resets the form when Cancel is clicked, so the fields are empty next time it opens", () => {
+    const onClose = vi.fn();
+    render(<InviteUserModal open onClose={onClose} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address *"), { target: { value: "new@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect((screen.getByLabelText("Email address *") as HTMLInputElement).value).toBe("");
+  });
+
+  it("lists actual fetched events as options once Operator is picked", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
+      { id: "evt-1", title: "Summer Summit", slug: "summer-summit", date: "2026-07-01", timezone: "UTC", location: null, organization_id: "org-1", archived_at: null },
+    ]);
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Initial role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Event scope, none selected" }));
+
+    expect(await screen.findByRole("button", { name: "Summer Summit" })).toBeTruthy();
+  });
+
+  it("shows a validation message for an already-taken email", async () => {
+    const { ApiError } = await import("../../../src/api/client.js");
+    vi.mocked(createAdminUser).mockRejectedValueOnce(new ApiError("email_taken"));
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address *"), { target: { value: "taken@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password *"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("A user with this email already exists.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send" })).toHaveProperty("disabled", false);
   });
 
   it("shows a validation message for an invalid_request response", async () => {

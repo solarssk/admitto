@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
@@ -23,15 +23,21 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchRoleAssignments: vi.fn(),
     fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
+    fetchAdminOrganizations: vi.fn(),
+    fetchSecurityAuditLog: vi.fn(),
+    revokeUserRole: vi.fn(),
   };
 });
 
 import {
   fetchAdminEvents,
+  fetchAdminOrganizations,
   fetchAdminUsers,
+  fetchSecurityAuditLog,
   fetchUserStats,
   fetchRoleAssignments,
   fetchSessions,
+  revokeUserRole,
 } from "../../src/api/client.js";
 
 function makeUser(id: string, displayName: string): UserListItemDto {
@@ -53,6 +59,8 @@ beforeEach(() => {
   vi.mocked(fetchRoleAssignments).mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
   vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  vi.mocked(fetchAdminOrganizations).mockResolvedValue([]);
+  vi.mocked(fetchSecurityAuditLog).mockResolvedValue({ entries: [], total: 0, page: 1, pageSize: 25 });
   vi.mocked(fetchUserStats).mockResolvedValue({
     total: 0,
     active: 0,
@@ -117,6 +125,22 @@ describe("UsersPage search debounce", () => {
         expect.anything(),
       );
     });
+  });
+
+  it("clears the search box via its own inline clear button and refocuses it", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+
+    renderAt("/admin/users");
+    await screen.findByText("No users yet");
+
+    const searchInput = screen.getByLabelText("Search users by name or email") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "jane" } });
+    expect(searchInput.value).toBe("jane");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(searchInput.value).toBe("");
+    expect(document.activeElement).toBe(searchInput);
   });
 
   it("does not reset to page 1 when the debounce timer fires with an unchanged search value while paginated", async () => {
@@ -198,6 +222,78 @@ describe("UsersPage Filters panel", () => {
         expect.objectContaining({ role: "operator", page: 1 }),
         expect.anything(),
       );
+    });
+
+    fireEvent.click(statusTrigger);
+    fireEvent.click(screen.getByRole("button", { name: "Disabled" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "operator", status: "disabled", page: 1 }),
+        expect.anything(),
+      );
+    });
+    // Both filters active at once - the trigger button badge reflects the combined count.
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("2");
+  });
+});
+
+describe("UsersPage cross-tab sync", () => {
+  it("refreshes the open Edit user modal after a revoke on the Role assignments tab", async () => {
+    // Revoking on the Role assignments tab wires onAssignmentsChanged to re-run load() (#440);
+    // the open Edit user modal then has to pick up the freshly-fetched `users` array itself -
+    // both halves of this only fire when the fetched user object is a genuinely new reference
+    // with different roles, not just a rerender.
+    const original = makeUser("user-1", "Jane Doe");
+    const updated = { ...original, roles: [] };
+    vi.mocked(fetchAdminUsers)
+      .mockResolvedValueOnce({ users: [original], total: 1, page: 1, pageSize: 25 })
+      .mockResolvedValue({ users: [updated], total: 1, page: 1, pageSize: 25 });
+    vi.mocked(fetchRoleAssignments).mockResolvedValue({
+      assignments: [{
+        id: "role-1",
+        user_id: "user-1",
+        user_email: "user-1@example.com",
+        user_display_name: "Jane Doe",
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+        is_oidc: false,
+        granted_at: "2026-01-01T00:00:00.000Z",
+        event: { id: "evt-1", title: "Summer Summit", slug: "summer-summit", organization_id: "org-1" },
+        organization: null,
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(revokeUserRole).mockResolvedValue();
+    useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS, user: { id: "current-admin" } });
+
+    renderAt("/admin/users");
+    await screen.findAllByText("Jane Doe");
+
+    // Desktop table row and mobile card both render (CSS-only hidden, not conditionally
+    // mounted), so this accessible name matches twice - either fires the same setEditUser.
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for Jane Doe" })[0]!);
+    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Role assignments/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /Revoke Operator for/ }))[0]!);
+    // Both the Edit user modal and the revoke confirmation are open at once here - scope to the
+    // confirmation specifically by its own title.
+    const dialog = await screen.findByRole("dialog", { name: "Revoke role assignment" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+    });
+    // The still-open Edit modal now reflects the revoke - the Role picker resets to "No role
+    // assigned" (it was seeded from the just-revoked Operator role) without the operator having
+    // to close and reopen the modal for it to notice.
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Jane Doe" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Role, none selected" })).toBeTruthy();
     });
   });
 });

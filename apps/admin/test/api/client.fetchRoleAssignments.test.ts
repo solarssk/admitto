@@ -44,4 +44,13 @@ describe("fetchRoleAssignments (client) — query string building", () => {
     const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/admin/role-assignments?q=staff%40example.com");
   });
+
+  it("includes eventId when given", async () => {
+    const fetchMock = stubFetch();
+
+    await fetchRoleAssignments({ eventId: "evt-1" });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/admin/role-assignments?eventId=evt-1");
+  });
 });
