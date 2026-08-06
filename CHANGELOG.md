@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Dropdown/combobox popovers inside modals** (Invite user, Edit user role picker, and every other `useDropdownMenu`-based menu) no longer get clipped by the modal's own scrolling body. The panel used to render as part of the scrollable content, growing a scrollbar while open and visibly jumping the scroll position when it closed; it now floats above the modal like a normal popover and closes automatically if the modal scrolls under it.
+- **Edit user "Role & access" row** - the Add/Change button next to the Role and scope dropdowns no longer sits visibly lower than them.
+
+### Changed
+- **Role/scope pickers** (Invite user, Edit user) show a visible "Initial role" / "Role" caption above the dropdown instead of no caption at all, and skip the search box entirely for short option lists (4 or fewer roles) - only longer lists (organizations, events) still show one.
+
 ### Added
 - **Bounce detection last automatic check.** Event settings → Mailing shows the latest bounce-ingest run (time, OK/Failed, message counts). **Run check now** in the card header triggers a one-off ingest and updates the card (Test connection still does not). Settings → Health adds a soft **Bounce detection** row (`not_configured` / `ok` / `degraded`) based on enabled events' last runs. Does not affect `/healthz`.
 - **Bounce detection Check every** now controls when each event is due for bounce-ingest. The deploy loop wakes on `BOUNCE_INGEST_TICK_SECONDS` (default 60; legacy `BOUNCE_INGEST_INTERVAL_SECONDS` still accepted as the tick) and skips events whose poll interval has not elapsed.

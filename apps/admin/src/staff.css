@@ -418,9 +418,11 @@
 }
 
 .user-menu__panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end") - not CSS - so the panel floats
+     over a scrolling modal body instead of being clipped by (and inflating the scroll height
+     of) its `overflow: auto` ancestor. See searchable-select.css's own panel rule for the full
+     story. */
   z-index: var(--z-dropdown);
   min-width: 216px;
   background: var(--surface-card);
@@ -431,14 +433,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-/* Anchored above the trigger instead of below - see .searchable-select__panel--up's own
-   comment (searchable-select.css); same useDropdownMenu-driven decision, shared by both
-   UserMenu and SystemStatus (.user-menu__panel.sys-status__panel). */
-.user-menu__panel--up {
-  top: auto;
-  bottom: calc(100% + 8px);
 }
 
 .sys-status__panel {
@@ -5466,12 +5460,10 @@ output.mail-field-hint {
 }
 
 .audit-log-filters-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  /* Filters is the last (rightmost) toolbar item - right:0 keeps the panel inside the card
-     instead of extending past the page edge, matching how the trigger itself sits flush right. */
-  right: 0;
-  left: auto;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end" - the trigger sits flush right, so
+     the panel extends leftward from there) - not CSS. See searchable-select.css's own panel
+     rule for the full story. */
   z-index: var(--z-dropdown);
   width: 260px;
   /* A <fieldset> ignores an explicit `width` once its content's min-content exceeds it (a
@@ -5898,10 +5890,9 @@ select.system-log-panel__field {
 }
 
 .system-log-filters-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  left: auto;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end") - not CSS. See
+     searchable-select.css's own panel rule for the full story. */
   z-index: var(--z-dropdown);
   width: 220px;
   min-width: 0;

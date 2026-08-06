@@ -6,11 +6,13 @@ import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
 afterEach(cleanup);
 
 /** Minimal dropdown harness - a trigger nested inside a genuinely `overflow-y: auto` ancestor,
- * matching a modal's own scrollport (e.g. `.add-attendee-modal__scroll`). Exposes `openUpward` as
- * a data attribute so geometry-driven tests can assert the flip decision without reaching into
+ * matching a modal's own scrollport (e.g. `.add-attendee-modal__scroll`), to prove the panel
+ * escapes it rather than being clipped/inflating its scroll height. Exposes `openUpward` as a
+ * data attribute so geometry-driven tests can assert the flip decision without reaching into
  * the hook's internals. */
 function TestMenu() {
-  const { open, setOpen, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, openUpward, panelStyle, rootRef, triggerRef, panelRef } =
+    useDropdownMenu<HTMLButtonElement>();
   return (
     <div data-testid="scrollport" style={{ overflowY: "auto" }}>
       <div ref={rootRef}>
@@ -18,7 +20,7 @@ function TestMenu() {
           Trigger
         </button>
         {open && (
-          <div ref={panelRef} role="menu" data-up={openUpward}>
+          <div ref={panelRef} role="menu" data-up={openUpward} style={panelStyle}>
             <button role="menuitem">Item</button>
           </div>
         )}
@@ -46,41 +48,53 @@ function TestMenuWithoutMenuItems() {
 }
 
 describe("useDropdownMenu", () => {
-  it("clamps the flip-direction check against the nearest overflow:auto ancestor, not just the viewport", () => {
-    // Regression coverage for nearestClippingAncestor: comparing against the viewport alone
-    // let a trigger near the bottom of a tall, scrolled modal open "downward" because the
-    // viewport had room, even though the modal's own edge clipped the panel first (bot review
-    // finding). This exercises the ancestor-found branch, not just the document.documentElement
-    // fallback every other consumer's test already covers.
+  it("positions the panel with position: fixed instead of position: absolute inside a scrolling ancestor", () => {
+    // Regression coverage for the PO-reported bug: an `absolute` panel is clipped by - and
+    // inflates the scroll height of - the nearest `overflow: auto` ancestor (e.g. a modal body),
+    // turning the popover into part of the scrollable content (a scrollbar appears) instead of
+    // floating over it, and "bounces" the scroll position when it closes. `position: fixed`'s
+    // containing block is the viewport, not this `overflow: auto` wrapper, so it escapes that
+    // clipping without a portal.
     render(<TestMenu />);
     fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
-    expect(screen.getByRole("menu")).toBeTruthy();
+    expect(screen.getByRole("menu").style.position).toBe("fixed");
   });
 
-  it("clamps upward room to the clipping ancestor's own top, not the viewport, when the trigger sits near a nested/centered scrollport's top edge", () => {
-    // A centered modal scrollport whose own top sits 300px below the viewport top - the trigger
-    // is only 10px from the scrollport's own top edge. The pre-fix spaceAbove measured from the
-    // viewport top alone would see 310px of "room" and wrongly flip a panel that doesn't fit
-    // below into space mostly outside the scrollport (bot review finding); the fix clamps
-    // spaceAbove to the scrollport's own top the same way spaceBelow is already clamped to its
-    // bottom, so this trigger correctly stays open downward instead.
-    vi.stubGlobal("innerHeight", 800);
+  it("flips the panel above the trigger when it doesn't fit below the viewport", () => {
+    vi.stubGlobal("innerHeight", 400);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
       this: HTMLElement,
     ) {
       const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
-      if (this.dataset.testid === "scrollport") return { ...base, top: 300, bottom: 500, height: 200 };
+      // Trigger sits near the bottom of a short viewport - only 40px of room below it, but a
+      // 250px-tall panel needs more than that, and there's ample room above.
       if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 250 };
-      return { ...base, top: 310, bottom: 340, height: 30 }; // trigger
+      return { ...base, top: 350, bottom: 360, height: 10 }; // trigger
     });
 
     render(<TestMenu />);
     fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
 
-    expect(screen.getByRole("menu").dataset.up).toBe("false");
+    expect(screen.getByRole("menu").dataset.up).toBe("true");
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = screen.getByRole("menu");
+
+    const innerScroll = new Event("scroll", { bubbles: true });
+    Object.defineProperty(innerScroll, "target", { value: menu });
+    fireEvent(window, innerScroll);
+    expect(screen.queryByRole("menu")).toBeTruthy();
+
+    const outsideScroll = new Event("scroll", { bubbles: true });
+    Object.defineProperty(outsideScroll, "target", { value: document.body });
+    fireEvent(window, outsideScroll);
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("ignores arrow-key roving focus in a popover with no role=menuitem children", () => {
