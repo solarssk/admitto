@@ -253,7 +253,8 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     const dialog = await screen.findByRole("dialog", { name: "Change role" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -269,7 +270,8 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     await screen.findByRole("dialog", { name: "Change role" });
 
