@@ -34,13 +34,14 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
 .ticket__qr img { width: 220px; height: 220px; display: block; }
 .ticket__token { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--text-muted, #64748b); font-size: 0.75rem; margin: 10px 0 0; word-break: break-all; }
 .ticket__perf { height: 0; border-top: 2px dashed var(--border, #e6e7e9); margin: 6px 0; }
+.ticket__wallet-error { margin: 12px 20px 0; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; font-size: 0.8125rem; text-align: center; }
 .ticket__wallets { padding: 16px 16px 8px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: flex-end; }
 /* Both frames share Google's 48dp minimum so the Google badge is never smaller than Apple.
  * Official Apple SVG paints ~47px of ink in a 48px box (1px empty under the pill). Scale the
  * Apple img to 49px inside a 48px clipped frame so the painted pill fills the frame — layout
  * only; do not edit brand artwork. */
 .wallet-badge-frame { display: block; height: 48px; overflow: hidden; line-height: 0; }
-.wallet-badge { display: block; height: 48px; width: auto; cursor: not-allowed; }
+.wallet-badge { display: block; height: 48px; width: auto; }
 .wallet-badge--apple { height: 49px; }
 .ticket__wallet-help { margin: 0 20px 14px; color: var(--text-muted, #64748b); font-size: 0.75rem; line-height: 1.45; text-align: center; }
 .ticket__wallet-help summary { cursor: pointer; list-style: none; padding: 0; font-weight: 500; color: var(--text-muted, #64748b); text-decoration: none; }

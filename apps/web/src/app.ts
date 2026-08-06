@@ -6,6 +6,12 @@ import { bodyLimit } from "hono/body-limit";
 import { Prisma, prisma as defaultPrisma, type PrismaClient, type AttendeeStatus } from "@admitto/db";
 import { recordTicketViewed } from "@admitto/mail-delivery";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
+import {
+  PassCreatorClient,
+  WalletProviderError,
+  type WalletPassInput,
+  type WalletPassProvider,
+} from "@admitto/wallet";
 import type { GeocodingProvider } from "@admitto/location";
 import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
@@ -17,6 +23,7 @@ import {
   loadEventTicketTypes,
 } from "@admitto/tickets";
 import {
+  formatDate,
   getTicketPageSecurityHeaders,
   renderTicket,
   renderNotFound,
@@ -42,6 +49,7 @@ import {
   resolveBaseUrl,
   resolveCheckinToken,
   resolveAllowCheckinBearer,
+  resolvePassCreatorConfig,
   validateCheckinBootConfig,
   resolveOpsHealthTokenOption,
   validateOpsHealthBootConfig,
@@ -372,6 +380,8 @@ export interface CreateAppOptions {
   geocodingProvider?: GeocodingProvider;
   /** Test-only injection point - static map PNG resolver for `/m/:eventId.png`. */
   eventStaticMapService?: Pick<EventStaticMapService, "getForEvent">;
+  /** Test-only injection point — bypasses PassCreator env config / real HTTP for wallet routes. */
+  walletPassProvider?: WalletPassProvider;
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;
@@ -608,6 +618,111 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, html, status, theme);
   }
 
+  const passCreatorConfig = resolvePassCreatorConfig();
+  const passCreatorClient: WalletPassProvider | null =
+    options.walletPassProvider ?? (passCreatorConfig ? new PassCreatorClient(passCreatorConfig) : null);
+
+  /** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
+  function formatEventHours(event: { eventHoursStart: string | null; eventHoursEnd: string | null }): string | undefined {
+    if (!event.eventHoursStart || !event.eventHoursEnd) return undefined;
+    return `${event.eventHoursStart}-${event.eventHoursEnd}`;
+  }
+
+  async function buildWalletPassInput(
+    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+  ): Promise<WalletPassInput> {
+    const display = await resolveTicketPageDisplay(resolved);
+    const { attendee, event } = display;
+    return {
+      attendeeName: attendee.name,
+      eventDateLabel: formatDate(event.date),
+      eventHoursLabel: formatEventHours(event),
+      eventLocationLabel: event.location || undefined,
+      ticketTypeLabel: attendee.ticket_type || "General",
+      userProvidedId: `admitto:${event.id}:${attendee.id}`,
+    };
+  }
+
+  /**
+   * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
+   * provider URL. Never a bare 500 - failures redirect back to the ticket page with a retry
+   * notice (ADR 0041 §3b).
+   */
+  async function handleWalletRedirect(
+    c: Context,
+    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+    platform: "apple" | "google",
+    backHref: string,
+  ): Promise<Response> {
+    const { attendee, event } = resolved;
+
+    if (!isAdmittable(attendee.status as AttendeeStatus)) {
+      return c.redirect(backHref, 302);
+    }
+    if (!passCreatorClient) {
+      return c.redirect(`${backHref}?walletError=1`, 302);
+    }
+
+    const existing = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
+    let providerUrls: { apple_url: string | null; android_url: string | null };
+
+    if (existing && existing.status === "active") {
+      providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
+    } else {
+      try {
+        const input = await buildWalletPassInput(resolved);
+        const result = await passCreatorClient.createPass(input);
+        await db.walletPass.upsert({
+          where: { attendee_id: attendee.id },
+          create: {
+            attendee_id: attendee.id,
+            provider: "passcreator",
+            provider_pass_id: result.providerPassId,
+            user_provided_id: input.userProvidedId,
+            download_url: result.downloadUrl,
+            apple_url: result.appleUrl,
+            android_url: result.androidUrl,
+            status: "active",
+            issued_at: new Date(),
+          },
+          update: {
+            provider: "passcreator",
+            provider_pass_id: result.providerPassId,
+            user_provided_id: input.userProvidedId,
+            download_url: result.downloadUrl,
+            apple_url: result.appleUrl,
+            android_url: result.androidUrl,
+            status: "active",
+            last_error_code: null,
+            issued_at: new Date(),
+          },
+        });
+        providerUrls = { apple_url: result.appleUrl, android_url: result.androidUrl };
+      } catch (err) {
+        const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
+        console.error("PassCreator createPass failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_create_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
+        });
+        await db.walletPass.upsert({
+          where: { attendee_id: attendee.id },
+          create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
+          update: { status: "failed", last_error_code: code },
+        });
+        return c.redirect(`${backHref}?walletError=1`, 302);
+      }
+    }
+
+    const url = platform === "apple" ? providerUrls.apple_url : providerUrls.android_url;
+    if (!url) {
+      return c.redirect(`${backHref}?walletError=1`, 302);
+    }
+    return c.redirect(url, 302);
+  }
+
   async function renderTicketPage(
     c: Context,
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
@@ -697,12 +812,19 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("weather summarize failed for ticket page:", err);
       weather = null;
     }
+    const walletBase =
+      route === "/t/:eventSlug/a/:ref"
+        ? `/t/${resolvedForDisplay.event.slug}/a/${agencyPublicRef}`
+        : `/t/${internalToken}`;
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
         staticMapEnabled: mapTiles.enabled,
         weather,
+        walletAppleHref: `${walletBase}/wallet/apple`,
+        walletGoogleHref: `${walletBase}/wallet/google`,
+        walletError: c.req.query("walletError") === "1",
       }),
       200,
       theme,
@@ -1647,6 +1769,26 @@ export function createApp(options: CreateAppOptions = {}) {
 
     return renderTicketPage(c, resolved, token);
   });
+
+  // On-demand wallet pass — Mode A (own ticket page, script-src 'none' so this is a plain <a href> nav)
+  for (const platform of ["apple", "google"] as const) {
+    app.get(`/t/:token/wallet/${platform}`, async (c) => {
+      const token = c.req.param("token");
+      const resolved = await resolveTicket(token, db).catch(() => null);
+      if (!resolved) return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      return handleWalletRedirect(c, resolved, platform, `/t/${token}`);
+    });
+  }
+
+  // On-demand wallet pass — Mode B (agency ticket page)
+  for (const platform of ["apple", "google"] as const) {
+    app.get(`/t/:eventSlug/a/:ref/wallet/${platform}`, async (c) => {
+      const { eventSlug, ref } = c.req.param();
+      const resolved = await findAttendeeForEventRoute(eventSlug, ref, db).catch(() => null);
+      if (resolved?.mode !== "agency") return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      return handleWalletRedirect(c, resolved, platform, `/t/${eventSlug}/a/${ref}`);
+    });
+  }
 
   // Mode B hosted QR — filename param is "{public_ref}.png"
   app.get("/q/:eventSlug/a/:filename", async (c) => {
