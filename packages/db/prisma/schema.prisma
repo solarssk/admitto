@@ -279,16 +279,39 @@ model Attendee {
 }
 
 model WalletPass {
-  id            String   @id @default(cuid())
-  attendee_id   String   @unique
-  attendee      Attendee @relation(fields: [attendee_id], references: [id])
-  pass_type_id  String
-  serial_number String
-  auth_token    String
-  pass_url      String?
-  status        String   @default("active")
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  id                String    @id @default(cuid())
+  attendee_id       String    @unique
+  attendee          Attendee  @relation(fields: [attendee_id], references: [id])
+
+  // Provider identity (ADR 0009, ADR 0041 §2). "passcreator" is the only provider today.
+  provider          String    @default("passcreator")
+  provider_pass_id  String?
+  user_provided_id  String?
+
+  download_url      String?
+  apple_url         String?
+  android_url       String?
+
+  // pending = not yet created (on-demand, first "Add to Wallet" click); active = created;
+  // voided/failed/expired per WalletPassStatus (packages/db/src/status.ts).
+  status            String    @default("pending")
+  last_error_code   String?
+  last_synced_at    DateTime?
+
+  issued_at         DateTime?
+  voided_at         DateTime?
+
+  // Legacy/native-provider seam (ADR 0009 §3) - nullable, unused while provider = passcreator.
+  pass_type_id      String?
+  serial_number     String?
+  auth_token        String?
+  pass_url          String?
+
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@unique([provider, provider_pass_id])
+  @@unique([provider, user_provided_id])
 }
 
 model EmailDelivery {

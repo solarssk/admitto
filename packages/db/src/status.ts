@@ -11,7 +11,9 @@ export type EmailDeliveryStatus =
   | 'bounced'
   | 'rejected';
 
-export type WalletPassStatus = 'active' | 'voided' | 'expired';
+// pending: not yet created (on-demand, before first "Add to Wallet" click). failed: last create/
+// update attempt errored (see WalletPass.last_error_code).
+export type WalletPassStatus = 'pending' | 'active' | 'voided' | 'failed' | 'expired';
 
 // CheckInStatus represents scanner validation outcomes.
 // Persisted to CheckIn: VALID / ALREADY_CHECKED_IN / REVOKED (resolved attendee required).
@@ -46,7 +48,7 @@ export const EMAIL_DELIVERY_STATUS = [
   'rejected',
 ] as const satisfies EmailDeliveryStatus[];
 
-export const WALLET_PASS_STATUS = ['active', 'voided', 'expired'] as const satisfies WalletPassStatus[];
+export const WALLET_PASS_STATUS = ['pending', 'active', 'voided', 'failed', 'expired'] as const satisfies WalletPassStatus[];
 
 export const CHECKIN_STATUS = [
   'VALID',
