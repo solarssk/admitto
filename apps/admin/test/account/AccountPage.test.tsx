@@ -19,6 +19,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     confirmMfaTotp: vi.fn(),
     resetMfa: vi.fn(),
     deleteAccountSession: vi.fn(),
+    unlinkAccountExternalIdentity: vi.fn(),
   };
 });
 
@@ -51,6 +52,7 @@ import {
   confirmMfaTotp,
   resetMfa,
   deleteAccountSession,
+  unlinkAccountExternalIdentity,
 } from "../../src/api/client.js";
 
 const mockDeleteSession = vi.mocked(deleteAccountSession);
@@ -63,6 +65,7 @@ const mockEnrollMfaTotp = vi.mocked(enrollMfaTotp);
 const mockCancelMfaEnroll = vi.mocked(cancelMfaEnroll);
 const mockConfirmMfaTotp = vi.mocked(confirmMfaTotp);
 const mockResetMfa = vi.mocked(resetMfa);
+const mockUnlinkExternalIdentity = vi.mocked(unlinkAccountExternalIdentity);
 
 const REVOKE_SESSION_BUTTON = /Revoke session for admin@example.com/;
 
@@ -1571,6 +1574,208 @@ describe("AccountPage profile: account type", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
+  });
+});
+
+const LINKED_ACCOUNT: AccountDto = {
+  ...baseAccount,
+  has_local_password: false,
+  external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
+};
+
+describe("AccountPage profile: SSO unlink", () => {
+  it("hides the Unlink SSO button when no identity is linked", async () => {
+    mockLoadedAccount();
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local account")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "Unlink SSO" })).toBeNull();
+  });
+
+  it("shows the Unlink SSO button when an identity is linked, opening a confirm dialog", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Unlink SSO from your account/)).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("enables the confirm button once the password reaches the minimum length", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "short" } });
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("cancel clears the password and closes the dialog without calling the API", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockUnlinkExternalIdentity).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
+  });
+
+  it("unlinks successfully, toasts, closes the dialog, and reloads the account", async () => {
+    mockFetchAccount.mockResolvedValueOnce(LINKED_ACCOUNT).mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockUnlinkExternalIdentity.mockResolvedValueOnce({ ok: true });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
+    });
+    expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({ new_password: "long-enough-password", code: undefined });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText("Local account")).toBeTruthy();
+    });
+  });
+
+  it("maps invalid_request to a specific password-length error and keeps the dialog open", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Password must be at least 12 characters.")).toBeTruthy();
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("opens a step-up dialog on totp_required", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+    expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+  });
+
+  it("shows an inline error in the step-up dialog for a wrong code and keeps it open", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "000000" } });
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(within(stepUpDialog).getByText("Invalid authenticator or backup code.")).toBeTruthy();
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("submits the step-up code and completes the unlink", async () => {
+    mockFetchAccount.mockResolvedValueOnce(LINKED_ACCOUNT).mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "123456" } });
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
+    });
+    expect(mockUnlinkExternalIdentity).toHaveBeenLastCalledWith({ new_password: "long-enough-password", code: "123456" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes the step-up dialog and toasts on a non-invalid_totp failure", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(429, "too many requests"));
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "123456" } });
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(screen.getByTestId("at-toast")).toBeTruthy();
   });
 });
 

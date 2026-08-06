@@ -96,6 +96,7 @@ import type {
   PatchAccountProfileBody,
   PatchAccountPasswordBody,
   PatchAccountPasswordResponse,
+  DeleteAccountExternalIdentityBody,
   MfaEnrollResponse,
   ConfirmMfaTotpBody,
   ResetMfaBody,
@@ -2116,6 +2117,13 @@ export async function patchAccountProfile(body: PatchAccountProfileBody): Promis
 export async function patchAccountPassword(body: PatchAccountPasswordBody): Promise<PatchAccountPasswordResponse> {
   const res = await fetch("/api/account/password", jsonPatchInit(body));
   return parseJson<PatchAccountPasswordResponse>(res);
+}
+
+export async function unlinkAccountExternalIdentity(
+  body: DeleteAccountExternalIdentityBody,
+): Promise<{ ok: boolean }> {
+  const res = await fetch("/api/account/external-identity", jsonDeleteInit(body));
+  return parseJson<{ ok: boolean }>(res);
 }
 
 export async function fetchAccountSessions(signal?: AbortSignal): Promise<SessionsResponse> {

@@ -1363,6 +1363,11 @@ export interface PatchAccountPasswordBody {
   code?: string;
 }
 
+export interface DeleteAccountExternalIdentityBody {
+  new_password: string;
+  code?: string;
+}
+
 export interface PatchAccountPasswordResponse {
   sessions_revoked: number;
 }

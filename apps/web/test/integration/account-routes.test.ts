@@ -120,9 +120,13 @@ beforeAll(async () => {
 afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
   await prisma.externalIdentity.deleteMany({ where: { user_id: userId } });
+  await prisma.oidcRoleGrant.deleteMany({ where: { user_id: userId } });
+  await prisma.roleAssignment.deleteMany({ where: { user_id: userId, NOT: { scope_id: "evt-account" } } });
   await prisma.session.deleteMany({ where: { user_id: userId, id: { not: userSessionId } } });
   await prisma.user.update({ where: { id: userId }, data: { password_hash: await hashPassword(PASSWORD), must_change_password: false } });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: adminUserId } });
+  await prisma.externalIdentity.deleteMany({ where: { user_id: adminUserId } });
+  await prisma.oidcRoleGrant.deleteMany({ where: { user_id: adminUserId } });
   await prisma.session.deleteMany({ where: { user_id: adminUserId, id: { not: adminSessionId } } });
   await prisma.user.update({ where: { id: adminUserId }, data: { password_hash: await hashPassword(ADMIN_PASSWORD) } });
 });
@@ -1055,6 +1059,179 @@ describe("PATCH /api/account/profile — phone", () => {
     const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     expect(row.phone_country_code).toBeNull();
     expect(row.phone_number).toBe("600123456");
+  });
+});
+
+describe("DELETE /api/account/external-identity", () => {
+  it("unlinks SSO, sets the new password, keeps the current session, and revokes others", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-subject", user_id: userId },
+    });
+    const other = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL, ip: "127.0.0.1" });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(0);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(await verifyPassword(NEW_PASSWORD, user.password_hash!)).toBe(true);
+    // Self-service, unlike the admin route: the caller chose this password deliberately.
+    expect(user.must_change_password).toBe(false);
+
+    const currentSession = await prisma.session.findUniqueOrThrow({ where: { id: userSessionId } });
+    expect(currentSession.revoked_at).toBeNull();
+    const otherSession = await prisma.session.findUniqueOrThrow({ where: { id: other.session.id } });
+    expect(otherSession.revoked_at).not.toBeNull();
+  });
+
+  it("clears OIDC-owned role grants (converting retained roles to manual ownership)", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-oidc-role-subject", user_id: userId },
+    });
+    // Same role/scope_type as the seeded fixture assignment, different scope_id - "operator", not
+    // "admin", since admin is in the default mfa_required_roles set and would make requireSession
+    // reject this fixture's non-MFA session entirely, unrelated to what this test actually checks.
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "operator", scope_type: "event", scope_id: "evt-account-2" },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        user_id: userId,
+        provider_id: PROVIDER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-account-2",
+        role_assignment_id: assignment.id,
+      },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: userId } })).toBe(0);
+    const remaining = await prisma.roleAssignment.findUnique({ where: { id: assignment.id } });
+    expect(remaining).not.toBeNull();
+  });
+
+  it("returns 400 invalid_request when unlinking without a new password, and the identity survives", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-no-pass-subject", user_id: userId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(1);
+  });
+
+  it("returns 400 password_too_common for a blocklisted new password, and the identity survives", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-common-pass-subject", user_id: userId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: "aaaaaaaaaaaa" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("password_too_common");
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(1);
+  });
+
+  it("returns 404 when nothing is linked", async () => {
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("DELETE /api/account/external-identity — step-up for MFA-required roles", () => {
+  beforeEach(() => rateLimitStore.reset());
+
+  it("returns 400 totp_required when no code is given for an MFA-required role", async () => {
+    await enrollConfirmedTotp();
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-subject", user_id: adminUserId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("totp_required");
+    expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
+  });
+
+  it("returns 401 invalid_totp for a wrong code", async () => {
+    await enrollConfirmedTotp();
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-wrong-subject", user_id: adminUserId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
+    expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
+  });
+
+  it("returns 429 after exceeding the step-up code rate limit", async () => {
+    await enrollConfirmedTotp();
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-ratelimit-subject", user_id: adminUserId },
+    });
+    const bucketKey = `mfa:totp:session:account-external-identity:${adminSessionId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
+  });
+
+  it("unlinks with a correct TOTP code", async () => {
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-ok-subject", user_id: adminUserId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, code: generateTotpCode(secret) }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(0);
   });
 });
 

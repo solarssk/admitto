@@ -11,8 +11,10 @@ import {
   patchAccountPassword,
   patchAccountProfile,
   resetMfa,
+  unlinkAccountExternalIdentity,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import type { AccountDto, AccountRoleDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { roleLabel } from "../auth/role-labels.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -105,7 +107,10 @@ function accountTypeHint(account: AccountDto, isManaged: boolean): string {
  * identity provider(s) (not a generic "SSO") whenever any are linked, since the IdP is the
  * source of truth for sign-in once linked even if a local fallback password also exists. Reuses
  * the same disabled SearchableSelect shape as the Role field below for one consistent look. */
-function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
+function AccountTypeField({
+  account,
+  onUnlinkClick,
+}: Readonly<{ account: AccountDto; onUnlinkClick: () => void }>) {
   const providers = account.external_identities;
   const isManaged = providers.length > 0;
   const label = isManaged ? `Managed by ${providers.map((p) => p.provider_display_name).join(" + ")}` : "Local account";
@@ -127,6 +132,11 @@ function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
         onChange={() => {}}
       />
       <p className="at-hint">{hint}</p>
+      {isManaged && (
+        <Button type="button" variant="secondary" size="sm" onClick={onUnlinkClick}>
+          Unlink SSO
+        </Button>
+      )}
     </div>
   );
 }
@@ -258,6 +268,13 @@ export function AccountPage() {
   const [showUriManual, setShowUriManual] = useState(false);
   const [qrRenderFailed, setQrRenderFailed] = useState(false);
   const [backupCodesSaved, setBackupCodesSaved] = useState(false);
+  const [unlinkSsoOpen, setUnlinkSsoOpen] = useState(false);
+  const [unlinkSsoBusy, setUnlinkSsoBusy] = useState(false);
+  const [unlinkSsoPassword, setUnlinkSsoPassword] = useState("");
+  const [unlinkSsoError, setUnlinkSsoError] = useState<string | null>(null);
+  const [unlinkStepUpOpen, setUnlinkStepUpOpen] = useState(false);
+  const [unlinkCode, setUnlinkCode] = useState("");
+  const [unlinkCodeError, setUnlinkCodeError] = useState<string | null>(null);
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -389,6 +406,19 @@ export function AccountPage() {
     const sessionsRevokedSuffix =
       sessions_revoked > 0 ? ` ${sessions_revoked} other session${sessionsRevokedPlural} revoked.` : "";
     addToast(`Password changed.${sessionsRevokedSuffix}`, "success");
+    await loadAccount();
+    await loadSessions();
+  }
+
+  /** Shared by the confirm dialog's own submit and the step-up dialog's confirm — `code` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
+  async function submitUnlinkSso(code?: string): Promise<void> {
+    await unlinkAccountExternalIdentity({ new_password: unlinkSsoPassword, code });
+    setUnlinkSsoPassword("");
+    setUnlinkCode("");
+    setUnlinkSsoOpen(false);
+    setUnlinkStepUpOpen(false);
+    addToast("SSO unlinked. Sign in with your new password next time.", "success");
     await loadAccount();
     await loadSessions();
   }
@@ -906,7 +936,7 @@ export function AccountPage() {
             <span className="at-hint">For internal contact only - not shown on tickets.</span>
           </div>
           <AccountRoleDisplay account={account} />
-          <AccountTypeField account={account} />
+          <AccountTypeField account={account} onUnlinkClick={() => setUnlinkSsoOpen(true)} />
         </div>
       </Card>
 
@@ -1008,6 +1038,105 @@ export function AccountPage() {
             spellCheck={false}
             value={passwordCode}
             onChange={(e) => setPasswordCode(e.target.value)}
+            {...stepUpCodeFieldAttrs}
+          />
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={unlinkSsoOpen}
+        title="Unlink SSO"
+        message="Unlink SSO from your account? Set the new local password you'll sign in with below - your SSO sign-in stops working immediately."
+        errorMessage={unlinkSsoError ?? undefined}
+        confirmLabel="Unlink"
+        confirmVariant="danger"
+        loading={unlinkSsoBusy}
+        disableConfirm={unlinkSsoPassword.length < PASSWORD_MIN_LENGTH}
+        onConfirm={async () => {
+          setUnlinkSsoBusy(true);
+          setUnlinkSsoError(null);
+          try {
+            await submitUnlinkSso();
+          } catch (err) {
+            if (hasApiErrorCode(err, "totp_required")) {
+              setUnlinkSsoOpen(false);
+              setUnlinkCodeError(null);
+              setUnlinkStepUpOpen(true);
+            } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
+              setUnlinkSsoError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+            } else {
+              setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
+            }
+          } finally {
+            setUnlinkSsoBusy(false);
+          }
+        }}
+        onCancel={() => {
+          if (unlinkSsoBusy) return;
+          setUnlinkSsoOpen(false);
+          setUnlinkSsoPassword("");
+          setUnlinkSsoError(null);
+        }}
+      >
+        <Input
+          id="unlink-sso-password"
+          label="New local password"
+          icon={<i className="ti ti-key" aria-hidden="true" />}
+          type="password"
+          minLength={PASSWORD_MIN_LENGTH}
+          hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+          value={unlinkSsoPassword}
+          disabled={unlinkSsoBusy}
+          onChange={(e) => setUnlinkSsoPassword(e.target.value)}
+          {...NO_AUTOFILL_PROPS}
+        />
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={unlinkStepUpOpen}
+        title="Enter your authenticator code"
+        message="This account requires a second factor to unlink SSO. Enter a code from your authenticator app, or a backup code."
+        confirmLabel="Unlink"
+        confirmVariant="danger"
+        loading={unlinkSsoBusy}
+        errorMessage={unlinkCodeError ?? undefined}
+        disableConfirm={!unlinkCode}
+        onConfirm={async () => {
+          setUnlinkSsoBusy(true);
+          setUnlinkCodeError(null);
+          try {
+            await submitUnlinkSso(unlinkCode);
+          } catch (err) {
+            if (hasApiErrorCode(err, "invalid_totp")) {
+              setUnlinkCodeError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
+            } else {
+              setUnlinkStepUpOpen(false);
+              setUnlinkCode("");
+              addToast(operatorApiErrorMessage(err, "Failed to unlink SSO."), "error");
+            }
+          } finally {
+            setUnlinkSsoBusy(false);
+          }
+        }}
+        onCancel={() => {
+          if (!unlinkSsoBusy) {
+            setUnlinkStepUpOpen(false);
+            setUnlinkCode("");
+            setUnlinkCodeError(null);
+          }
+        }}
+      >
+        <div className="mail-field-row">
+          <label className="mail-field-label" htmlFor="account-unlink-code">Authenticator or backup code</label>
+          <Input
+            id="account-unlink-code"
+            name="unlink-code"
+            type="text"
+            autoComplete="one-time-code"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={unlinkCode}
+            onChange={(e) => setUnlinkCode(e.target.value)}
             {...stepUpCodeFieldAttrs}
           />
         </div>

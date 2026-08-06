@@ -26,6 +26,7 @@ import {
   sanitizePreferredLocale,
 } from "@admitto/shared";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
@@ -369,6 +370,96 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
     phone_country_code: updated.phone_country_code,
     phone_number: updated.phone_number,
   });
+}
+
+const unlinkExternalIdentitySchema = z.object({ new_password: z.string(), code: z.string().optional() }).strict();
+
+/**
+ * DELETE /api/account/external-identity — self-service SSO unlink.
+ *
+ * Adapted from the admin-only `handleDeleteUserExternalIdentity` (users-routes.ts), not by
+ * dropping its actorId guard - that guard exists to stop an admin unlinking *their own* SSO
+ * through the admin route; here the caller unlinking their own identity is the entire point, so
+ * there's no equivalent guard to drop, and the admin route's other invariants don't carry over
+ * cleanly either:
+ * - Session revocation excludes the caller's own current session (`revokeSessionsExcludingCurrent`,
+ *   same helper `handlePatchAccountPassword` uses) instead of revoking every session - the admin
+ *   route revokes all of them because the admin isn't the one using the target's session.
+ * - `must_change_password` is NOT set - the caller just chose their own password deliberately,
+ *   unlike the admin flow where an admin sets a temporary password for someone else.
+ * - Gated by the same TOTP/recovery-code step-up as password change and MFA reset
+ *   (`withStepUpGate`) - self-service SSO unlink is at least as security-sensitive as those, and
+ *   the admin route has no equivalent because superadmin-only access is already a strong barrier
+ *   there.
+ *
+ * `new_password` is still always required, for the same reason the admin route requires it: a
+ * JIT-provisioned SSO user's `password_hash` is an unknown placeholder, so there's no reliable
+ * way to tell "already has a real local password" from "SSO-only" - always setting a new one in
+ * the same transaction is the only safe option.
+ */
+export async function handleDeleteAccountExternalIdentity(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
+
+  const linked = await db.externalIdentity.findMany({ where: { user_id: userId }, select: { id: true } });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = unlinkExternalIdentitySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const newPassword = parsed.data.new_password;
+  if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
+  if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
+
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-external-identity" },
+    async (tx, orgId, audit) => {
+      const password_hash = await hashPassword(newPassword);
+      await tx.externalIdentity.deleteMany({ where: { user_id: userId } });
+      // No FK to ExternalIdentity (keyed by provider_id/user_id) - deleting it converts any
+      // IdP-managed role assignments to manual ownership instead of leaving them orphaned.
+      await tx.oidcRoleGrant.deleteMany({ where: { user_id: userId } });
+      await tx.user.update({ where: { id: userId }, data: { password_hash } });
+      const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+      await revokeAllTrustedDevicesForUser(tx, userId);
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "account_sso_unlinked",
+        metadata: { count: linked.length, sessionsRevoked: revokedCount },
+      });
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "account_password_changed",
+        metadata: { sessionsRevoked: revokedCount, reason: "sso_unlink" },
+      });
+      return revokedCount;
+    },
+  );
+
+  if (!gated.ok) return gated.response;
+  return c.json({ ok: true });
 }
 
 const passwordSchema = z
