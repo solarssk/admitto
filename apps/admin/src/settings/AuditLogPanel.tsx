@@ -38,6 +38,7 @@ const ACTION_LABELS: Record<string, string> = {
   attendees_bulk_erased: "Attendees bulk erased (GDPR)",
   audit_log_exported: "Audit log exported",
   bounce_ingest_settings_tested: "Bounce detection connection tested",
+  bounce_ingest_manual_run: "Bounce detection check run manually",
   bounce_ingest_settings_updated: "Bounce detection settings updated",
   branding_font_uploaded: "Branding font uploaded",
   emergency_session_purge: "Emergency session purge",

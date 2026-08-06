@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchEventBounceIngestSettings,
   probeEventMailSmtpConnection,
+  runEventBounceIngestCheck,
   saveEventBounceIngestSettings,
   testEventBounceIngestConnection,
 } from "../../src/api/client.js";
@@ -78,6 +79,38 @@ describe("bounce ingest API client helpers", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/admin/events/evt-1/bounce-ingest-settings/test",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({}),
+      }),
+    );
+    expect(result).toEqual(body);
+  });
+
+  it("runEventBounceIngestCheck POSTs the run endpoint", async () => {
+    const body = {
+      ok: true,
+      message: "Check finished. 1 seen, 0 bounced.",
+      lastRun: {
+        at: "2026-08-06T10:00:00.000Z",
+        ok: true,
+        messagesSeen: 1,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runEventBounceIngestCheck("evt-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/bounce-ingest-settings/run",
       expect.objectContaining({
         method: "POST",
         credentials: "same-origin",

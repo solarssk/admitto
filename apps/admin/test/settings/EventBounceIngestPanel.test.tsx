@@ -16,12 +16,14 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventBounceIngestSettings: vi.fn(),
     saveEventBounceIngestSettings: vi.fn(),
     testEventBounceIngestConnection: vi.fn(),
+    runEventBounceIngestCheck: vi.fn(),
   };
 });
 
 import {
   ApiError,
   fetchEventBounceIngestSettings,
+  runEventBounceIngestCheck,
   saveEventBounceIngestSettings,
   testEventBounceIngestConnection,
 } from "../../src/api/client.js";
@@ -29,6 +31,7 @@ import {
 const mockFetch = vi.mocked(fetchEventBounceIngestSettings);
 const mockSave = vi.mocked(saveEventBounceIngestSettings);
 const mockTest = vi.mocked(testEventBounceIngestConnection);
+const mockRun = vi.mocked(runEventBounceIngestCheck);
 
 function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLInputElement | HTMLButtonElement).disabled;
@@ -67,6 +70,7 @@ beforeEach(() => {
   mockFetch.mockReset();
   mockSave.mockReset();
   mockTest.mockReset();
+  mockRun.mockReset();
   mockFetch.mockResolvedValue(bounceResponse());
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -403,7 +407,7 @@ describe("EventBounceIngestPanel", () => {
       }),
     );
     renderPanel();
-    expect(await screen.findByText("OK")).toBeTruthy();
+    expect(await screen.findByText(/^OK ·/)).toBeTruthy();
     expect(screen.getByText(/3 seen/)).toBeTruthy();
     expect(screen.getByText(/1 bounced/)).toBeTruthy();
   });
@@ -425,7 +429,44 @@ describe("EventBounceIngestPanel", () => {
       }),
     );
     renderPanel();
-    expect(await screen.findByText("Failed")).toBeTruthy();
+    expect(await screen.findByText(/^Failed ·/)).toBeTruthy();
     expect(screen.getByText(/connect failed/)).toBeTruthy();
+  });
+
+  it("shows Run check now and updates lastRun after a manual run", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    mockRun.mockResolvedValueOnce({
+      ok: true,
+      message: "Check finished. 2 seen, 1 bounced.",
+      lastRun: {
+        at: "2026-08-06T11:00:00.000Z",
+        ok: true,
+        messagesSeen: 2,
+        bouncesApplied: 1,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+    });
+    renderPanel();
+    const runButton = await screen.findByRole("button", { name: "Run check now" });
+    expect(isDisabled(runButton)).toBe(false);
+    await act(async () => {
+      fireEvent.click(runButton);
+    });
+    await waitFor(() => {
+      expect(mockRun).toHaveBeenCalledWith("evt-1");
+    });
+    expect(await screen.findByText(/^OK ·/)).toBeTruthy();
+    expect(document.querySelector(".org-mail-summary")?.textContent).toMatch(/2 seen/);
+  });
+
+  it("disables Run check now when bounce detection is off", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: false, lastRun: null }));
+    renderPanel();
+    const runButton = await screen.findByRole("button", { name: "Run check now" });
+    expect(isDisabled(runButton)).toBe(true);
   });
 });

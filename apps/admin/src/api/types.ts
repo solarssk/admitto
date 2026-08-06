@@ -815,6 +815,13 @@ export interface BounceIngestTestResponse {
   error?: string;
 }
 
+export interface BounceIngestRunResponse {
+  ok: boolean;
+  lastRun: EventBounceIngestLastRunDto | null;
+  message: string;
+  error?: string;
+}
+
 /** SMTP connection probe (nodemailer verify, no send) — org or event dedicated SMTP. */
 export type MailSmtpProbeResponse = BounceIngestTestResponse;
 

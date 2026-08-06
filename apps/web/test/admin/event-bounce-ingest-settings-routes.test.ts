@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Context } from "hono";
 import {
   handleGetEventBounceIngestSettings,
+  handlePostEventBounceIngestSettingsRun,
   handlePostEventBounceIngestSettingsTest,
   handlePutEventBounceIngestSettings,
 } from "../../src/admin/event-bounce-ingest-settings-routes.js";
@@ -11,6 +12,7 @@ import { describeMailConfig } from "@admitto/mailer-config";
 import { encryptToString } from "@admitto/crypto";
 import {
   imapTestErrorForAdmin,
+  ingestBounces,
   testBounceImapConnection,
 } from "@admitto/mail-delivery";
 
@@ -42,6 +44,7 @@ vi.mock("@admitto/mail-delivery", async (importOriginal) => {
   return {
     ...actual,
     testBounceImapConnection: vi.fn(),
+    ingestBounces: vi.fn(),
     imapTestErrorForAdmin: vi.fn((m) => m ?? "Could not connect."),
   };
 });
@@ -114,6 +117,7 @@ describe("event bounce ingest settings routes", () => {
     vi.mocked(writeAdminAuditLog).mockClear();
     vi.mocked(encryptToString).mockClear();
     vi.mocked(testBounceImapConnection).mockReset();
+    vi.mocked(ingestBounces).mockReset();
     vi.mocked(imapTestErrorForAdmin).mockImplementation((m) => m ?? "Could not connect.");
   });
 
@@ -655,6 +659,114 @@ describe("event bounce ingest settings routes", () => {
     expect(json.error).toBe("Authentication failed.");
     expect(imapTestErrorForAdmin).toHaveBeenCalledWith("AUTH failed: secret-internal-detail");
     expect(JSON.stringify(json)).not.toContain("secret-internal-detail");
+  });
+
+  it("POST run returns 400 when settings are not saved", async () => {
+    const db = baseDb({
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "bis_1",
+          event_id: "evt_1",
+          imap_host: null,
+          enabled: false,
+        }),
+      },
+    });
+
+    const res = await handlePostEventBounceIngestSettingsRun(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(400);
+    expect(ingestBounces).not.toHaveBeenCalled();
+  });
+
+  it("POST run returns 400 when bounce detection is disabled", async () => {
+    const db = baseDb({
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "bis_1",
+          event_id: "evt_1",
+          imap_host: "imap.example.com",
+          enabled: false,
+        }),
+      },
+    });
+
+    const res = await handlePostEventBounceIngestSettingsRun(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { ok: boolean; error: string };
+    expect(json.error).toMatch(/turn bounce detection on/i);
+    expect(ingestBounces).not.toHaveBeenCalled();
+  });
+
+  it("POST run ingests bounces and returns lastRun", async () => {
+    const row = {
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: true,
+      last_run_at: new Date("2026-08-06T10:00:00.000Z"),
+      last_run_ok: true,
+      last_run_summary: {
+        messagesSeen: 2,
+        bouncesApplied: 1,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+    };
+    const findUnique = vi
+      .fn()
+      .mockResolvedValueOnce(row)
+      .mockResolvedValueOnce(row);
+    const db = baseDb({
+      bounceIngestSettings: { findUnique },
+    });
+    vi.mocked(ingestBounces).mockResolvedValueOnce({
+      eventsProcessed: 1,
+      messagesSeen: 2,
+      bouncesApplied: 1,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 0,
+      connectFailed: false,
+    });
+
+    const res = await handlePostEventBounceIngestSettingsRun(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      ok: boolean;
+      message: string;
+      lastRun: { ok: boolean; messagesSeen: number } | null;
+    };
+    expect(json.ok).toBe(true);
+    expect(json.message).toMatch(/check finished/i);
+    expect(json.lastRun?.ok).toBe(true);
+    expect(json.lastRun?.messagesSeen).toBe(2);
+    expect(ingestBounces).toHaveBeenCalledWith(db, { eventId: "evt_1" });
+    expect(writeAdminAuditLog).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        actionType: "bounce_ingest_manual_run",
+        metadata: expect.objectContaining({ ok: true, eventId: "evt_1" }),
+      }),
+    );
   });
 
   it("PUT returns 404 when the event is missing", async () => {

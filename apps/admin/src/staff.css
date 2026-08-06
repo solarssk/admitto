@@ -4931,6 +4931,17 @@ output.mail-field-hint {
   border-color: var(--status-ok);
 }
 
+.org-mail-summary--failed {
+  background: var(--status-error-tint);
+  border-color: var(--status-error);
+}
+
+.org-mail-summary--failed .org-mail-summary__icon {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg, var(--status-error));
+  border-color: var(--status-error);
+}
+
 /* Icon (36px, flex:none) + body (flex:1) + the optional "Open instance settings" button all
    share one nowrap row by default - on narrow widths the button's own natural width leaves so
    little room for the body that its title/summary text wraps awkwardly, line after cramped
