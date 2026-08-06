@@ -320,7 +320,9 @@ docker compose exec db-backup sh -c 'gzip -t /backups/nightly-*.sql.gz'
 accepted as the tick). Per-event **Check every** (`poll_interval_minutes`) decides when each
 enabled event is due. Soft Settings → Health treats a successful run as stale after the larger of
 2× Check every and 2× the deploy tick (floored at 15 minutes). Each run writes `last_run_*` for
-the Event settings card and that Health row.
+the Event settings card and that Health row. When `OPS_HEALTH_TOKEN` is set, compose also points
+`BOUNCE_INGEST_APP_URL=http://app:3000` so each run can append `mail_bounce_ingest_*` lines to
+Settings → Logs (mail).
 
 Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
 ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.

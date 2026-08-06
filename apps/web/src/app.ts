@@ -338,6 +338,7 @@ import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
+import { handleOpsSystemLogIngest } from "./ops/system-log-ingest.js";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 
 /** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
@@ -479,6 +480,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const rateLimitStore = options.rateLimitStore ?? createRateLimitStore();
   const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
   const readyzRateLimit = rateLimit(rateLimitStore, "ops:readyz");
+  const opsSystemLogRateLimit = rateLimit(rateLimitStore, "ops:system-logs");
   const healthzRateLimit = createHealthzRateLimitMiddleware(rateLimitStore);
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
@@ -681,6 +683,9 @@ export function createApp(options: CreateAppOptions = {}) {
       opsHealthToken,
       env: process.env,
     }),
+  );
+  app.post("/api/ops/system-logs", opsSystemLogRateLimit, (c) =>
+    handleOpsSystemLogIngest(c, { opsHealthToken }),
   );
 
   app.post("/api/auth/login", jsonPostCsrf, loginRateLimitJson, (c) =>

@@ -360,3 +360,28 @@ describe("GET /readyz", () => {
     });
   });
 });
+
+describe("POST /api/ops/system-logs", () => {
+  it("is wired through createApp and accepts a Bearer ops token", async () => {
+    const app = createApp({
+      ...BASE_APP_OPTS,
+      prisma: createMockPrisma(),
+      rateLimitStore: new InMemoryRateLimitStore(),
+    });
+
+    const res = await app.request("/api/ops/system-logs", {
+      method: "POST",
+      headers: {
+        ...authHeaders(),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        source: "mail",
+        level: "info",
+        message: "mail_bounce_ingest_ok",
+      }),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true });
+  });
+});

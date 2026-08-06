@@ -80,6 +80,8 @@ export {
   bounceIngestStaleMsFromIntervalSeconds,
   bounceIngestStaleMsForEvent,
   parseBounceIngestTickSeconds,
+  reportBounceIngestSystemLog,
+  bounceIngestSystemLogEnv,
   BOUNCE_INGEST_STALE_MS,
 } from "./bounceIngest/index.js";
 export type {
@@ -93,4 +95,5 @@ export type {
   BounceIngestLastRunSummary,
   BounceIngestHealthInput,
   BounceIngestHealthResult,
+  ReportBounceIngestSystemLogOptions,
 } from "./bounceIngest/index.js";
