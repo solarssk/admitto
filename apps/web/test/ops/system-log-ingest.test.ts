@@ -126,4 +126,43 @@ describe("handleOpsSystemLogIngest", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("accepts X-Ops-Token and omits fields when none are safe", async () => {
+    const before = currentSystemLogCursor();
+    const app = appWithToken(TOKEN);
+    const res = await app.request("/api/ops/system-logs", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Ops-Token": TOKEN,
+      },
+      body: JSON.stringify({
+        source: "mail",
+        level: "info",
+        message: "mail_bounce_ingest_ok",
+        fields: { password: "drop", api_key: "drop" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const entries = querySystemLogs({ sinceId: before, source: "mail" });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.fields).toBeUndefined();
+  });
+
+  it("records an entry with no fields object when fields are omitted", async () => {
+    const before = currentSystemLogCursor();
+    const app = appWithToken(TOKEN);
+    const res = await app.request("/api/ops/system-logs", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        source: "mail",
+        level: "info",
+        message: "mail_bounce_ingest_ok",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const entries = querySystemLogs({ sinceId: before, source: "mail" });
+    expect(entries[0]!.fields).toBeUndefined();
+  });
 });

@@ -32,6 +32,18 @@ describe("bounceIngestSystemLogEnv", () => {
       opsHealthToken: "token-value",
     });
   });
+
+  it("falls back to ADMITTO_INTERNAL_URL when BOUNCE_INGEST_APP_URL is unset", () => {
+    expect(
+      bounceIngestSystemLogEnv({
+        ADMITTO_INTERNAL_URL: "http://internal:3000/",
+        OPS_HEALTH_TOKEN: "ops",
+      }),
+    ).toEqual({
+      appBaseUrl: "http://internal:3000",
+      opsHealthToken: "ops",
+    });
+  });
 });
 
 describe("reportBounceIngestSystemLog", () => {
@@ -78,6 +90,24 @@ describe("reportBounceIngestSystemLog", () => {
     });
   });
 
+  it("POSTs mail_bounce_ingest_failed when errors are present without connectFailed", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    await reportBounceIngestSystemLog({
+      eventId: "evt_1",
+      summary: summary({ errors: 2, connectFailed: false }),
+      appBaseUrl: "http://app:3000",
+      opsHealthToken: "ops-token",
+      fetchImpl: fetchImpl as never,
+      timeoutMs: 0,
+    });
+    const body = JSON.parse((fetchImpl.mock.calls[0]![1] as { body: string }).body) as {
+      message: string;
+      level: string;
+    };
+    expect(body.message).toBe("mail_bounce_ingest_failed");
+    expect(body.level).toBe("error");
+  });
+
   it("POSTs mail_bounce_ingest_failed on connect failure and does not throw on network error", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
     const log = vi.fn();
@@ -92,6 +122,20 @@ describe("reportBounceIngestSystemLog", () => {
       }),
     ).resolves.toBeUndefined();
     expect(log).toHaveBeenCalled();
+  });
+
+  it("stringifies non-Error network failures", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue("offline-string");
+    const log = vi.fn();
+    await reportBounceIngestSystemLog({
+      eventId: "evt_1",
+      summary: summary({ connectFailed: true }),
+      appBaseUrl: "http://app:3000",
+      opsHealthToken: "ops-token",
+      fetchImpl: fetchImpl as never,
+      log,
+    });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("offline-string"));
   });
 
   it("passes an AbortSignal so a hung app cannot stall the ingest tick", async () => {
