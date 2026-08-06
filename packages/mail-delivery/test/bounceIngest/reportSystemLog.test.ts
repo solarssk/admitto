@@ -44,6 +44,19 @@ describe("bounceIngestSystemLogEnv", () => {
       opsHealthToken: "ops",
     });
   });
+
+  it("treats blank BOUNCE_INGEST_APP_URL as unset", () => {
+    expect(
+      bounceIngestSystemLogEnv({
+        BOUNCE_INGEST_APP_URL: "   ",
+        ADMITTO_INTERNAL_URL: "http://internal:3000",
+        OPS_HEALTH_TOKEN: "ops",
+      }),
+    ).toEqual({
+      appBaseUrl: "http://internal:3000",
+      opsHealthToken: "ops",
+    });
+  });
 });
 
 describe("reportBounceIngestSystemLog", () => {
@@ -88,6 +101,26 @@ describe("reportBounceIngestSystemLog", () => {
       messagesSeen: 2,
       bouncesApplied: 1,
     });
+  });
+
+  it("uses global fetch when fetchImpl is omitted", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue({ ok: true, status: 200 } as Response);
+    try {
+      await reportBounceIngestSystemLog({
+        eventId: "evt_1",
+        summary: summary(),
+        appBaseUrl: "http://app:3000",
+        opsHealthToken: "ops-token",
+      });
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://app:3000/api/ops/system-logs",
+        expect.objectContaining({ method: "POST" }),
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it("POSTs mail_bounce_ingest_failed when errors are present without connectFailed", async () => {
