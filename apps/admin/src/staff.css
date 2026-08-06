@@ -5359,12 +5359,13 @@ output.mail-field-hint {
   white-space: nowrap;
 }
 
-.at-select.sessions-pagesize-select {
-  height: var(--control-h-sm);
+.sessions-pagesize .searchable-select {
   width: auto;
-  padding: 0 1.4rem 0 var(--space-2);
-  background-position: right 0.4rem center;
-  background-size: 12px;
+}
+
+.sessions-pagesize .searchable-select__trigger {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
   font-size: var(--fs-sm);
 }
 
@@ -5883,12 +5884,13 @@ output.mail-field-hint {
   white-space: nowrap;
 }
 
-.at-select.audit-log-pagesize-select {
-  height: var(--control-h-sm);
+.audit-log-pagesize .searchable-select {
   width: auto;
-  padding: 0 1.4rem 0 var(--space-2);
-  background-position: right 0.4rem center;
-  background-size: 12px;
+}
+
+.audit-log-pagesize .searchable-select__trigger {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-2);
   font-size: var(--fs-sm);
 }
 
