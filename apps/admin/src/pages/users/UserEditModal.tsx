@@ -1083,7 +1083,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
               <Button
                 type="button"
                 variant="primary"
-                disabled={submitting || !isValidEmailFormat(email.trim())}
+                disabled={headActionsDisabled || !isValidEmailFormat(email.trim())}
                 onClick={() => void saveProfile()}
               >
                 {submitting ? "Saving…" : "Save"}

@@ -1061,6 +1061,48 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
     }
   });
 
+  it("clears OIDC-owned role grants (converting retained roles to manual ownership) when unlinking SSO", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-oidc-role@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-oidc-role-subject", user_id: created.id },
+    });
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        user_id: created.id,
+        provider_id: PROVIDER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: eventId,
+        role_assignment_id: assignment.id,
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+
+      expect(await prisma.oidcRoleGrant.count({ where: { user_id: created.id } })).toBe(0);
+      const remaining = await prisma.roleAssignment.findUnique({ where: { id: assignment.id } });
+      expect(remaining).not.toBeNull();
+      expect(remaining?.role).toBe("operator");
+    } finally {
+      await prisma.oidcRoleGrant.deleteMany({ where: { user_id: created.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.session.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
   it("returns 400 invalid_request when unlinking without a new password", async () => {
     const created = await prisma.user.create({
       data: { email: "sso-unlink-no-pass@example.com", password_hash: await hashPassword(PASSWORD) },
@@ -1172,44 +1214,48 @@ describe("POST /api/admin/users functional", () => {
 
   it("saves an optional phone number given at creation", async () => {
     const email = "created-user-phone@example.com";
-    const res = await app.request("/api/admin/users", {
-      method: "POST",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password: "created-pass-1",
-        phone_country_code: "+48",
-        phone_number: "500100200",
-      }),
-    });
-    expect(res.status).toBe(201);
+    try {
+      const res = await app.request("/api/admin/users", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: "created-pass-1",
+          phone_country_code: "+48",
+          phone_number: "500100200",
+        }),
+      });
+      expect(res.status).toBe(201);
 
-    const row = await prisma.user.findUnique({ where: { email } });
-    expect(row?.phone_country_code).toBe("+48");
-    expect(row?.phone_number).toBe("500100200");
-
-    await prisma.user.delete({ where: { email } });
+      const row = await prisma.user.findUnique({ where: { email } });
+      expect(row?.phone_country_code).toBe("+48");
+      expect(row?.phone_number).toBe("500100200");
+    } finally {
+      await prisma.user.deleteMany({ where: { email } });
+    }
   });
 
   it("leaves phone fields unset when given as blank strings at creation", async () => {
     const email = "created-user-blank-phone@example.com";
-    const res = await app.request("/api/admin/users", {
-      method: "POST",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password: "created-pass-1",
-        phone_country_code: "",
-        phone_number: "",
-      }),
-    });
-    expect(res.status).toBe(201);
+    try {
+      const res = await app.request("/api/admin/users", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: "created-pass-1",
+          phone_country_code: "",
+          phone_number: "",
+        }),
+      });
+      expect(res.status).toBe(201);
 
-    const row = await prisma.user.findUnique({ where: { email } });
-    expect(row?.phone_country_code).toBeNull();
-    expect(row?.phone_number).toBeNull();
-
-    await prisma.user.delete({ where: { email } });
+      const row = await prisma.user.findUnique({ where: { email } });
+      expect(row?.phone_country_code).toBeNull();
+      expect(row?.phone_number).toBeNull();
+    } finally {
+      await prisma.user.deleteMany({ where: { email } });
+    }
   });
 
   it("returns 400 invalid_email for a malformed email", async () => {
