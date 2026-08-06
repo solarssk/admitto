@@ -1355,6 +1355,8 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   const gaugesFallback = {
     email_deliveries_queued: -1,
     email_deliveries_failed_retryable: -1,
+    bounce_ingest_enabled: -1,
+    bounce_ingest_problem: -1,
   };
   const idpFallback: HealthCheckRow[] = [
     {

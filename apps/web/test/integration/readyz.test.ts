@@ -74,6 +74,9 @@ function createMockPrisma(opts: MockPrismaOpts = {}): PrismaClient {
         return 0;
       }),
     },
+    bounceIngestSettings: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   } as unknown as PrismaClient;
 }
 
@@ -214,6 +217,8 @@ describe("GET /readyz", () => {
       gauges: {
         email_deliveries_queued: 2,
         email_deliveries_failed_retryable: 1,
+        bounce_ingest_enabled: 0,
+        bounce_ingest_problem: 0,
       },
     });
     expect(typeof body.version).toBe("string");
@@ -287,6 +292,8 @@ describe("GET /readyz", () => {
       gauges: {
         email_deliveries_queued: -1,
         email_deliveries_failed_retryable: -1,
+        bounce_ingest_enabled: -1,
+        bounce_ingest_problem: -1,
       },
     });
   });
@@ -305,6 +312,8 @@ describe("GET /readyz", () => {
       gauges: {
         email_deliveries_queued: -1,
         email_deliveries_failed_retryable: -1,
+        bounce_ingest_enabled: -1,
+        bounce_ingest_problem: -1,
       },
     });
   });
@@ -356,6 +365,8 @@ describe("GET /readyz", () => {
       gauges: {
         email_deliveries_queued: 7,
         email_deliveries_failed_retryable: 3,
+        bounce_ingest_enabled: 0,
+        bounce_ingest_problem: 0,
       },
     });
   });
