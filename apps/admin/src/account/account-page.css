@@ -83,6 +83,14 @@
   font-size: var(--fs-sm);
 }
 
+/* One "Connect <provider>" link per enabled, not-yet-linked identity provider - occupies the
+   same Account type action slot as the Unlink SSO button, just for the opposite state. */
+.account-connect-sso {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
 /* Compact 2FA status row: badge + action on one line */
 .account-mfa-status-row {
   display: flex;

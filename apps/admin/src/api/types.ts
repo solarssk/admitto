@@ -1334,6 +1334,11 @@ export interface AccountExternalIdentityDto {
   linked_at: string;
 }
 
+export interface AccountAvailableIdentityProviderDto {
+  id: string;
+  display_name: string;
+}
+
 export interface AccountDto {
   id: string;
   email: string;
@@ -1347,6 +1352,7 @@ export interface AccountDto {
   roles: AccountRoleDto[];
   mfa_methods: AccountMfaMethodDto[];
   external_identities: AccountExternalIdentityDto[];
+  available_identity_providers: AccountAvailableIdentityProviderDto[];
 }
 
 export interface PatchAccountProfileBody {

@@ -70,6 +70,7 @@ async function seed(client: PrismaClient) {
       token_endpoint: "https://iam-account.example.com/t",
       jwks_uri: "https://iam-account.example.com/j",
       display_name: "Account Test IdP",
+      enabled: true,
     },
   });
 
@@ -229,6 +230,32 @@ describe("GET /api/account", () => {
     expect(body.external_identities).toHaveLength(1);
     expect(body.external_identities[0]?.provider_id).toBe(PROVIDER_ID);
     expect(body.external_identities[0]?.provider_display_name).toBe("Account Test IdP");
+  });
+
+  it("lists an enabled provider as available to connect when nothing is linked", async () => {
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    const body = (await res.json()) as { available_identity_providers: Array<{ id: string; display_name: string }> };
+    expect(body.available_identity_providers).toEqual([{ id: PROVIDER_ID, display_name: "Account Test IdP" }]);
+  });
+
+  it("excludes an already-linked provider from available_identity_providers", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "account-get-available-subject", user_id: userId },
+    });
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    const body = (await res.json()) as { available_identity_providers: unknown[] };
+    expect(body.available_identity_providers).toEqual([]);
+  });
+
+  it("excludes a disabled provider from available_identity_providers", async () => {
+    await prisma.identityProvider.update({ where: { id: PROVIDER_ID }, data: { enabled: false } });
+    try {
+      const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+      const body = (await res.json()) as { available_identity_providers: unknown[] };
+      expect(body.available_identity_providers).toEqual([]);
+    } finally {
+      await prisma.identityProvider.update({ where: { id: PROVIDER_ID }, data: { enabled: true } });
+    }
   });
 });
 

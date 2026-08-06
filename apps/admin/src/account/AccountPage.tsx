@@ -132,10 +132,24 @@ function AccountTypeField({
         onChange={() => {}}
       />
       <p className="at-hint">{hint}</p>
-      {isManaged && (
+      {isManaged ? (
         <Button type="button" variant="secondary" size="sm" onClick={onUnlinkClick}>
           Unlink SSO
         </Button>
+      ) : (
+        account.available_identity_providers.length > 0 && (
+          <div className="account-connect-sso">
+            {account.available_identity_providers.map((p) => (
+              <a
+                key={p.id}
+                className="at-btn at-btn--secondary at-btn--sm"
+                href={`/account/oidc/${encodeURIComponent(p.id)}/link?next=/account`}
+              >
+                Connect {p.display_name}
+              </a>
+            ))}
+          </div>
+        )
       )}
     </div>
   );

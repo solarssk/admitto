@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
+  findEnabledOidcProviders,
   getOrStartTotpEnrollment,
   hashPassword,
   isPasswordTooCommon,
@@ -268,6 +269,13 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     return null;
   }
 
+  // Enabled providers not already linked to this account - the "Connect SSO" list. Same source
+  // the public login page's own SSO buttons use (loadLoginSsoProviders), just filtered against
+  // this account's existing external_identities instead of shown unconditionally.
+  const linkedProviderIds = new Set(externalIdentities.map((ei) => ei.provider_id));
+  const enabledProviders = await findEnabledOidcProviders(db);
+  const availableProviders = enabledProviders.filter((p) => !linkedProviderIds.has(p.id));
+
   return c.json({
     id: user.id,
     email: user.email,
@@ -297,6 +305,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       provider_display_name: ei.provider.display_name,
       linked_at: ei.linked_at.toISOString(),
     })),
+    available_identity_providers: availableProviders.map((p) => ({ id: p.id, display_name: p.display_name })),
   });
 }
 

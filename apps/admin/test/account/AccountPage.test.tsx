@@ -82,6 +82,7 @@ const baseAccount: AccountDto = {
   roles: [],
   mfa_methods: [],
   external_identities: [],
+  available_identity_providers: [],
 };
 
 const totpEnrolledAccount: AccountDto = {
@@ -1582,6 +1583,46 @@ const LINKED_ACCOUNT: AccountDto = {
   has_local_password: false,
   external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
 };
+
+describe("AccountPage profile: connect SSO", () => {
+  it("hides the connect section when no providers are available and nothing is linked", async () => {
+    mockLoadedAccount();
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local account")).toBeTruthy();
+    });
+    expect(screen.queryByRole("link", { name: /^Connect/ })).toBeNull();
+  });
+
+  it("shows a Connect link per available provider when nothing is linked yet", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      available_identity_providers: [
+        { id: "p1", display_name: "Okta" },
+        { id: "p2", display_name: "Authentik" },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    const oktaLink = (await screen.findByRole("link", { name: "Connect Okta" })) as HTMLAnchorElement;
+    expect(oktaLink.getAttribute("href")).toBe("/account/oidc/p1/link?next=/account");
+    const authentikLink = screen.getByRole("link", { name: "Connect Authentik" }) as HTMLAnchorElement;
+    expect(authentikLink.getAttribute("href")).toBe("/account/oidc/p2/link?next=/account");
+  });
+
+  it("does not show connect links once an identity is linked, even if other providers are available", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...LINKED_ACCOUNT,
+      available_identity_providers: [{ id: "p2", display_name: "Authentik" }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "Unlink SSO" });
+    expect(screen.queryByRole("link", { name: /^Connect/ })).toBeNull();
+  });
+});
 
 describe("AccountPage profile: SSO unlink", () => {
   it("hides the Unlink SSO button when no identity is linked", async () => {
