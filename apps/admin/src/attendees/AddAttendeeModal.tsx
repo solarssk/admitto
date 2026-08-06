@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop, Select } from "@admitto/ui";
+import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
@@ -10,6 +10,7 @@ import {
   validateCustomFieldsForm,
   type CustomDataFieldDef,
 } from "./customData.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -266,22 +267,28 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               setError(null);
             }}
           />
-          <Select
-            label="Ticket type"
-            value={ticketType}
-            disabled={submitting}
-            onChange={(e) => {
-              setTicketType(e.target.value);
-              setError(null);
-            }}
-          >
-            <option value="">-</option>
-            {ticketTypes.map((type) => (
-              <option key={type.key} value={type.key}>
-                {type.label}
-              </option>
-            ))}
-          </Select>
+          <div className="at-field">
+            <label className="at-label" htmlFor="add-attendee-ticket-type">
+              Ticket type
+            </label>
+            <SearchableSelect
+              id="add-attendee-ticket-type"
+              label="Ticket type"
+              placeholder="-"
+              searchPlaceholder="Search ticket types…"
+              emptyLabel="No ticket types found"
+              value={ticketType}
+              options={[
+                { id: "", label: "-" },
+                ...ticketTypes.map((type) => ({ id: type.key, label: type.label })),
+              ]}
+              disabled={submitting}
+              onChange={(id) => {
+                setTicketType(id);
+                setError(null);
+              }}
+            />
+          </div>
           {attributeFields.map((field) => (
             <CustomDataFieldInput
               key={field.source_field}

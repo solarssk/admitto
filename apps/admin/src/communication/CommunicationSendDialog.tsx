@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, ModalBackdrop, Select } from "@admitto/ui";
+import { Button, ModalBackdrop } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 
@@ -236,53 +237,79 @@ export function CommunicationSendDialog({
         {phase === "form" && (
           <>
             <p className="mail-field-hint">Choose recipients for this template.</p>
-            <Select
-              label="Recipients"
-              value={filterType}
-              onChange={(e) => {
-                setFilterType(e.target.value as BulkSendFilter["type"]);
-                setRecipientCount(null);
-                setError(null);
-              }}
-            >
-              <option value="all">All attendees</option>
-              <option value="no_delivery">No delivery for this template</option>
-              <option value="rsvp_status">By attendance status</option>
-              <option value="ticket_type">By ticket type</option>
-            </Select>
-            {filterType === "rsvp_status" && (
-              <Select
-                label="Attendance status"
-                value={rsvpStatus}
-                onChange={(e) => {
-                  setRsvpStatus(e.target.value as RsvpStatus);
-                  setRecipientCount(null);
-                }}
-              >
-                <option value="none">Registered</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="declined">Declined</option>
-                <option value="tentative">Tentative</option>
-                <option value="cancelled">Cancelled</option>
-              </Select>
-            )}
-            {filterType === "ticket_type" && (
-              <Select
-                label="Ticket type"
-                value={ticketType}
-                onChange={(e) => {
-                  setTicketType(e.target.value);
+            <div className="at-field">
+              <label className="at-label" htmlFor="communication-recipients">
+                Recipients
+              </label>
+              <SearchableSelect
+                id="communication-recipients"
+                label="Recipients"
+                placeholder="Select recipients…"
+                searchPlaceholder="Search recipients…"
+                emptyLabel="No recipients found"
+                value={filterType}
+                options={[
+                  { id: "all", label: "All attendees" },
+                  { id: "no_delivery", label: "No delivery for this template" },
+                  { id: "rsvp_status", label: "By attendance status" },
+                  { id: "ticket_type", label: "By ticket type" },
+                ]}
+                onChange={(id) => {
+                  setFilterType(id as BulkSendFilter["type"]);
                   setRecipientCount(null);
                   setError(null);
                 }}
-              >
-                <option value="">Choose…</option>
-                {ticketTypes.map((type) => (
-                  <option key={type.key} value={type.key}>
-                    {type.label}
-                  </option>
-                ))}
-              </Select>
+              />
+            </div>
+            {filterType === "rsvp_status" && (
+              <div className="at-field">
+                <label className="at-label" htmlFor="communication-rsvp-status">
+                  Attendance status
+                </label>
+                <SearchableSelect
+                  id="communication-rsvp-status"
+                  label="Attendance status"
+                  placeholder="Select status…"
+                  searchPlaceholder="Search statuses…"
+                  emptyLabel="No statuses found"
+                  value={rsvpStatus}
+                  options={[
+                    { id: "none", label: "Registered" },
+                    { id: "confirmed", label: "Confirmed" },
+                    { id: "declined", label: "Declined" },
+                    { id: "tentative", label: "Tentative" },
+                    { id: "cancelled", label: "Cancelled" },
+                  ]}
+                  onChange={(id) => {
+                    setRsvpStatus(id as RsvpStatus);
+                    setRecipientCount(null);
+                  }}
+                />
+              </div>
+            )}
+            {filterType === "ticket_type" && (
+              <div className="at-field">
+                <label className="at-label" htmlFor="communication-ticket-type">
+                  Ticket type
+                </label>
+                <SearchableSelect
+                  id="communication-ticket-type"
+                  label="Ticket type"
+                  placeholder="Choose…"
+                  searchPlaceholder="Search ticket types…"
+                  emptyLabel="No ticket types found"
+                  value={ticketType}
+                  options={[
+                    { id: "", label: "Choose…" },
+                    ...ticketTypes.map((type) => ({ id: type.key, label: type.label })),
+                  ]}
+                  onChange={(id) => {
+                    setTicketType(id);
+                    setRecipientCount(null);
+                    setError(null);
+                  }}
+                />
+              </div>
             )}
             {filterType === "ticket_type" && ticketTypesError && (
               <p className="mail-field-hint" role="alert">

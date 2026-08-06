@@ -36,11 +36,12 @@ describe("CommunicationSendDialog", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Recipients"), { target: { value: "rsvp_status" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "By attendance status" }));
 
-    expect(screen.getByRole("option", { name: "By attendance status" })).toBeTruthy();
-    expect(screen.getByLabelText("Attendance status")).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Registered" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Attendance status,/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Attendance status,/ }));
+    expect(screen.getByRole("button", { name: "Registered" })).toBeTruthy();
     expect(screen.queryByText("RSVP status")).toBeNull();
   });
 
@@ -54,7 +55,8 @@ describe("CommunicationSendDialog", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Recipients"), { target: { value: "ticket_type" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "By ticket type" }));
 
     const sendBtn = screen.getByRole("button", { name: "Send" });
     const countBtn = screen.getByRole("button", { name: "Count recipients" });
@@ -344,10 +346,12 @@ describe("CommunicationSendDialog", () => {
       <CommunicationSendDialog open eventId="evt-a" templateId="tpl-1" onClose={vi.fn()} />,
     );
 
-    fireEvent.change(screen.getByLabelText("Recipients"), { target: { value: "ticket_type" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "By ticket type" }));
 
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "VIP (Event A)" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "VIP (Event A)" })).toBeTruthy();
     });
 
     rerender(
@@ -359,7 +363,7 @@ describe("CommunicationSendDialog", () => {
     });
 
     // Event A's ticket type must not be selectable while Event B's fetch is still in flight.
-    expect(screen.queryByRole("option", { name: "VIP (Event A)" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "VIP (Event A)" })).toBeNull();
 
     await act(async () => {
       resolveEventB?.([
@@ -376,7 +380,7 @@ describe("CommunicationSendDialog", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole("option", { name: "General (Event B)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "General (Event B)" })).toBeTruthy();
   });
 
   it("clears the selected ticket type (not just the options list) when eventId changes while open", async () => {
@@ -407,11 +411,14 @@ describe("CommunicationSendDialog", () => {
       <CommunicationSendDialog open eventId="evt-a" templateId="tpl-1" onClose={vi.fn()} />,
     );
 
-    fireEvent.change(screen.getByLabelText("Recipients"), { target: { value: "ticket_type" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "By ticket type" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "VIP (Event A)" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "VIP (Event A)" })).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Ticket type"), { target: { value: "vip" } });
+    fireEvent.click(screen.getByRole("button", { name: "VIP (Event A)" }));
 
     // Selecting a value makes Count/Send actionable.
     await waitFor(() => {
@@ -422,13 +429,14 @@ describe("CommunicationSendDialog", () => {
 
     rerender(<CommunicationSendDialog open eventId="evt-b" templateId="tpl-1" onClose={vi.fn()} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
-      expect(screen.getByRole("option", { name: "General (Event B)" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "General (Event B)" })).toBeTruthy();
     });
 
     // The stale "vip" selection from event A must not still be silently active on event B -
     // the select reverts to its placeholder and Count/Send disable again until re-chosen.
-    expect((screen.getByLabelText("Ticket type") as HTMLSelectElement).value).toBe("");
+    expect(screen.getByRole("button", { name: "Ticket type, none selected" })).toBeTruthy();
     expect(screen.getByText("Choose a ticket type to count or send.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
       true,
