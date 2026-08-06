@@ -9,6 +9,7 @@ import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
   assertLastSuperadminDeactivationAllowed,
+  assertLastSuperadminDeleteAllowed,
   LastSuperadminError,
 } from "../../src/admin/users-lockout-guards.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
@@ -355,6 +356,12 @@ describe("PATCH /api/admin/users/:id anti-lockout", () => {
       prisma.$transaction((tx) => assertLastSuperadminDeactivationAllowed(tx, superId)),
     ).rejects.toBeInstanceOf(LastSuperadminError);
   });
+
+  it("blocks deleting the sole active superadmin in the DELETE guard", async () => {
+    await expect(
+      prisma.$transaction((tx) => assertLastSuperadminDeleteAllowed(tx, superId)),
+    ).rejects.toBeInstanceOf(LastSuperadminError);
+  });
 });
 
 describe("PATCH /api/admin/users/:id profile", () => {
@@ -452,6 +459,24 @@ describe("PATCH /api/admin/users/:id email", () => {
         orderBy: { created_at: "desc" },
       }),
     ).toMatchObject({ metadata: { userId: patchUserId } });
+  });
+
+  it("resubmitting the current email alongside another field records user_profile_updated, not user_email_changed", async () => {
+    // The Edit user modal always resends the current email on every save, not only when the
+    // admin actually edited it - the audit action type must compare against the prior value
+    // instead of treating "email present in the body" as "email changed" (bot review finding).
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: EMAIL_PATCH_NEW, display_name: "Renamed" }),
+    });
+    expect(res.status).toBe(200);
+
+    const latest = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, metadata: { path: ["userId"], equals: patchUserId } },
+      orderBy: { created_at: "desc" },
+    });
+    expect(latest?.action_type).toBe("user_profile_updated");
   });
 
   it("returns 409 email_conflict for a duplicate email", async () => {
@@ -564,6 +589,32 @@ describe("DELETE /api/admin/users/:id", () => {
       headers: { Cookie: superCookie, ...sameOrigin },
     });
     expect(res.status).toBe(404);
+  });
+
+  it("deletes an already-inactive superadmin without tripping the last-active-superadmin guard", async () => {
+    // Deleting an inactive superadmin can never reduce the ACTIVE superadmin count - they
+    // weren't counted in it to begin with - so this must succeed even with only one active
+    // superadmin (superId) instance-wide. The delete path previously reused the deactivation
+    // guard, which only checks "is the target a superadmin" and not whether they're already
+    // inactive, wrongly blocking this (bot review finding on #722).
+    const created = await prisma.user.create({
+      data: { email: "users-delete-inactive-superadmin@example.com", password_hash: await hashPassword(PASSWORD), is_active: false },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(200);
+      expect(await prisma.user.findUnique({ where: { id: created.id } })).toBeNull();
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
   });
 });
 

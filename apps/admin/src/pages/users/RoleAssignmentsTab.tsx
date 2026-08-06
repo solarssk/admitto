@@ -11,35 +11,14 @@ import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useAuth } from "../../auth/AuthProvider.js";
 import { isSuperadmin } from "../../auth/capabilities.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
-import { formatUtcDateTime, zonedTimeLabel } from "../../utils/event-dates.js";
+import { formatUtcDateTime, viewerLocalTime } from "../../utils/event-dates.js";
 
 const SKELETON_ROWS = 4;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+// GET /api/admin/role-assignments caps pageSize server-side at 50 (role-assignments-routes.ts) -
+// offering a larger value here would silently request more than the server delivers,
+// understating totalPages and leaving the tail of the list unreachable.
+const PAGE_SIZE_OPTIONS = [25, 50] as const;
 const SEARCH_DEBOUNCE_MS = 300;
-
-/** Cached per locale+zone, same shape as Active sessions' own "Logged in" column - this table
- * has no live-poll ticking it every render, so a per-render `new Map()` here would be needless. */
-const hourMinuteFormatCache = new Map<string, Intl.DateTimeFormat>();
-
-function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
-  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-  const key = `${locale}\0${timeZone}`;
-  let format = hourMinuteFormatCache.get(key);
-  if (!format) {
-    format = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
-    hourMinuteFormatCache.set(key, format);
-  }
-  return format;
-}
-
-/** The grant instant, converted to whoever is currently viewing the table's own browser
- * timezone - a role grant has no captured actor timezone (unlike Audit log entries), so this
- * matches Active sessions' own "no known actor zone" convention rather than fabricating one. */
-function viewerLocalTime(iso: string): string {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
-  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
-}
 
 const GRANTED_HINT = "Top: when this role was granted, in UTC. Below: the same moment in your own local time.";
 

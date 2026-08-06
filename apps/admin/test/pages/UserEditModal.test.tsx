@@ -157,6 +157,26 @@ describe("UserEditModal role & access - exclusive roles", () => {
     expect(screen.queryAllByRole("dialog")).toHaveLength(1);
   });
 
+  it("locks the Role select once a scope grant is staged for a previously roleless user", async () => {
+    renderModal();
+    await waitFor(() => {
+      expect(mockFetchAdminOrganizations).toHaveBeenCalledOnce();
+      expect(mockFetchAdminEvents).toHaveBeenCalledOnce();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await screen.findByText("Instance-wide");
+
+    // Switching role type now, with a scope grant already staged, would leave that staged add
+    // pointing at a type the picker no longer shows once Save changes submits it. isRoleTypeChange
+    // only guards this for a user who already had an assigned role (it requires a non-empty
+    // currentRoleType), so a previously roleless user could otherwise stage one type, restage the
+    // picker to a different type, and stage a second, conflicting add underneath it (bot review
+    // finding on #722) - the Role select itself is disabled instead once anything is pending.
+    expect(screen.getByRole("button", { name: /^Role,/ })).toHaveProperty("disabled", true);
+  });
+
   it("switches between organization and event scope controls for admin and operator", async () => {
     renderModal();
     await waitFor(() => expect(mockFetchAdminOrganizations).toHaveBeenCalledOnce());

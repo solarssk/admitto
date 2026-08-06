@@ -76,6 +76,31 @@ export function getBrowserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+/** Cached per locale+zone - shared by every "viewer's local time" secondary line (Active
+ * sessions, Role assignments) that ticks on every render of a live-updating table, so a
+ * per-render `new Intl.DateTimeFormat()` here would be needless. */
+const hourMinuteFormatCache = new Map<string, Intl.DateTimeFormat>();
+
+function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
+  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
+  const key = `${locale}\0${timeZone}`;
+  let format = hourMinuteFormatCache.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
+    hourMinuteFormatCache.set(key, format);
+  }
+  return format;
+}
+
+/** An instant, converted to whoever is currently viewing the table's own browser timezone - for
+ * rows with no captured actor/device timezone (unlike Audit log entries, which do), matching
+ * that panel's own "no known actor zone" convention rather than fabricating one. */
+export function viewerLocalTime(iso: string): string {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
+  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
+}
+
 /** Category 2 companion — "HH:MM (IANA, UTC±offset)", the secondary line under a Category 2 UTC
  * primary time showing the same instant in a specific known zone (an actor's or a delivery's
  * client_timezone) - not a full date, since this always sits directly under a line that already

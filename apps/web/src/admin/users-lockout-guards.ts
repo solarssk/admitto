@@ -40,3 +40,16 @@ export async function assertLastSuperadminDeactivationAllowed(tx: Prisma.Transac
   const superadmins = await countSuperadminAssignments(tx);
   if (superadmins <= 1) throw new LastSuperadminError();
 }
+
+/** Unlike deactivation, deleting an already-inactive superadmin can never reduce the active
+ * count - they weren't counted by countSuperadminAssignments (which only counts assignments
+ * whose user is_active) in the first place, so this only blocks deleting a currently-active
+ * superadmin down to zero. */
+export async function assertLastSuperadminDeleteAllowed(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  const activeSuperadmin = await tx.roleAssignment.count({
+    where: { user_id: userId, role: "superadmin", scope_type: "instance", scope_id: null, user: { is_active: true } },
+  });
+  if (activeSuperadmin === 0) return;
+  const superadmins = await countSuperadminAssignments(tx);
+  if (superadmins <= 1) throw new LastSuperadminError();
+}

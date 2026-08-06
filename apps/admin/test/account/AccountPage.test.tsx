@@ -1484,7 +1484,7 @@ describe("AccountPage: no role assigned", () => {
   it("hides the notice once a role is assigned", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
-      roles: [{ id: "r1", role: "admin", is_oidc: false }],
+      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
@@ -1493,5 +1493,21 @@ describe("AccountPage: no role assigned", () => {
       expect(screen.getByText("Roles")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
+  });
+
+  it("shows the notice for an admin assignment with no usable scope, even though roles is non-empty", async () => {
+    // A corrupt/legacy row: role: "admin" but no organization scope grants nothing, so this
+    // account has the same "nothing to access" experience as roles: [] and should get the same
+    // notice - a raw roles.length check would miss this (bot review finding).
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText(/doesn't have any role assigned yet/)).toBeTruthy();
+    });
   });
 });

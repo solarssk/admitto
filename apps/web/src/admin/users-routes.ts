@@ -32,6 +32,7 @@ import {
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import {
   assertLastSuperadminDeactivationAllowed,
+  assertLastSuperadminDeleteAllowed,
   assertLastSuperadminRemovalAllowed,
   LastSuperadminError,
 } from "./users-lockout-guards.js";
@@ -426,12 +427,15 @@ function buildPatchUserData(
  * (it's the more consequential change), then an email change, then a plain profile edit. */
 function patchUserActionType(
   data: Prisma.UserUpdateInput,
-  before: { is_active: boolean },
+  before: { is_active: boolean; email: string },
 ): string {
   if (typeof data.is_active === "boolean" && data.is_active !== before.is_active) {
     return data.is_active ? "user_reactivated" : "user_deactivated";
   }
-  if (typeof data.email === "string") return "user_email_changed";
+  // The Edit user modal always resubmits the current email alongside unrelated field changes,
+  // so a plain `typeof data.email === "string"` check logged every profile save as an email
+  // change - comparing against the prior value keeps the audit trail accurate.
+  if (typeof data.email === "string" && data.email !== before.email) return "user_email_changed";
   return "user_profile_updated";
 }
 
@@ -467,6 +471,51 @@ async function applyUserPatch(
   return current.is_active;
 }
 
+/** Maps handlePatchUser's transaction errors to their HTTP response; rethrows anything else. */
+function mapPatchUserTransactionError(c: Context, err: unknown): Response {
+  if (err instanceof LastSuperadminError) {
+    return c.json({ code: "last_superadmin" }, 409);
+  }
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    return c.json({ code: "email_conflict", error: "email_taken" }, 409);
+  }
+  throw err;
+}
+
+/** Runs handlePatchUser's update transaction and, on success, the post-commit session revoke.
+ * Returns the response to send immediately (not-found, or a mapped transaction error), or null
+ * to continue with the caller's own success response. */
+async function runPatchUserTransaction(
+  c: Context,
+  db: PrismaClient,
+  id: string,
+  data: Prisma.UserUpdateInput,
+  actionType: string,
+  orgId: string,
+  audit: OpsAuditContext,
+  actorId: string,
+): Promise<Response | null> {
+  try {
+    const outcome = await db.$transaction(
+      (tx) => applyUserPatch(tx, id, data, actionType, orgId, audit, actorId),
+      data.is_active === false
+        ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        : undefined,
+    );
+
+    if (outcome === null) return c.json({ error: "not_found" }, 404);
+
+    // Revoke after commit: session last_seen_at updates during a Serializable tx
+    // can cause serialization failures if sessions are updated in the same tx.
+    if (data.is_active === false && outcome) {
+      await revokeUserAuthState(db, id);
+    }
+    return null;
+  } catch (err) {
+    return mapPatchUserTransactionError(c, err);
+  }
+}
+
 /** PATCH /api/admin/users/:id — update profile / active flag (superadmin only). */
 export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
@@ -494,30 +543,8 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const audit = adminAuditFromContext(c);
   const actionType = patchUserActionType(data, before);
 
-  try {
-    const outcome = await db.$transaction(
-      (tx) => applyUserPatch(tx, id, data, actionType, orgId, audit, actorId),
-      data.is_active === false
-        ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-        : undefined,
-    );
-
-    if (outcome === null) return c.json({ error: "not_found" }, 404);
-
-    // Revoke after commit: session last_seen_at updates during a Serializable tx
-    // can cause serialization failures if sessions are updated in the same tx.
-    if (data.is_active === false && outcome) {
-      await revokeUserAuthState(db, id);
-    }
-  } catch (err) {
-    if (err instanceof LastSuperadminError) {
-      return c.json({ code: "last_superadmin" }, 409);
-    }
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return c.json({ code: "email_conflict", error: "email_taken" }, 409);
-    }
-    throw err;
-  }
+  const early = await runPatchUserTransaction(c, db, id, data, actionType, orgId, audit, actorId);
+  if (early) return early;
 
   if (actionType === "user_deactivated" || actionType === "user_reactivated") {
     emitSystemLog("security", "info", actionType, {
@@ -557,7 +584,7 @@ export async function handleDeleteUser(c: Context, db: PrismaClient): Promise<Re
   try {
     await db.$transaction(
       async (tx) => {
-        await assertLastSuperadminDeactivationAllowed(tx, id);
+        await assertLastSuperadminDeleteAllowed(tx, id);
         await tx.user.delete({ where: { id } });
         await writeAdminAuditLog(tx, {
           organizationId: orgId,

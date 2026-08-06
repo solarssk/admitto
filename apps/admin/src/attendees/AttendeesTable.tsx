@@ -410,6 +410,22 @@ function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): strin
   return undefined;
 }
 
+/** A catalog fetch's own "retry" menu item - shared by "Change ticket type" and "Revoke items"
+ * below, which each hide their retry the same way (not archived, the catalog is empty, the fetch
+ * itself errored, and a retry callback was actually given). */
+function RetryMenuItem({
+  show,
+  onRetry,
+  label,
+}: Readonly<{ show: boolean; onRetry: (() => void) | undefined; label: string }>) {
+  if (!show || !onRetry) return null;
+  return (
+    <button type="button" role="menuitem" className="more-actions-menu__retry link-btn" onClick={onRetry}>
+      {label}
+    </button>
+  );
+}
+
 /** Bulk "More actions" — Export selected, Change ticket type, and Delete, styled as a menu
  * (not bare buttons) so the destructive bulk action takes an extra click to even reach,
  * matching the design mockup's More actions panel and the same danger-item treatment already
@@ -556,16 +572,11 @@ function BulkMoreActionsMenu({
            * replaces while rows are selected — without this, the only way to retry was to
            * clear the selection first, losing the batch the operator was about to act on
            * (Codex review). */}
-          {!archived && changeTicketTypeDisabled && ticketTypesError && onRetryTicketTypes && (
-            <button
-              type="button"
-              role="menuitem"
-              className="more-actions-menu__retry link-btn"
-              onClick={onRetryTicketTypes}
-            >
-              Retry loading ticket types
-            </button>
-          )}
+          <RetryMenuItem
+            show={!archived && changeTicketTypeDisabled && !!ticketTypesError}
+            onRetry={onRetryTicketTypes}
+            label="Retry loading ticket types"
+          />
           {/* Fixed 5-value enum, unlike Change ticket type above - no per-event catalog to be
            * empty, so archived is the only disabled reason. */}
           <MoreActionsMenuItem
@@ -616,16 +627,11 @@ function BulkMoreActionsMenu({
               onBulkRevokeItems();
             }}
           />
-          {!archived && itemCount === 0 && itemsError && onRetryItems && (
-            <button
-              type="button"
-              role="menuitem"
-              className="more-actions-menu__retry link-btn"
-              onClick={onRetryItems}
-            >
-              Retry loading items
-            </button>
-          )}
+          <RetryMenuItem
+            show={!archived && itemCount === 0 && !!itemsError}
+            onRetry={onRetryItems}
+            label="Retry loading items"
+          />
           {/* Disabled once every selected attendee is already revoked/cancelled — a guaranteed
            * no-op otherwise, same "nothing to do" gate as "Revoke check-in" (PO review
            * follow-up, #549). A mixed selection stays enabled: the server already leaves an

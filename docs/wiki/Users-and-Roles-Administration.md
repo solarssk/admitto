@@ -31,6 +31,7 @@ The user sees only the administration or check-in surfaces allowed by the new as
 ## Important decisions
 
 - One user can have more than one assignment. Effective access is the combination of active assignments.
+- In the Edit user dialog, adding or removing a scope for the user's current role type is staged locally and only takes effect when you click **Save changes**. Switching to a different role type applies immediately, after its own confirmation, and cannot be combined with unsaved scope changes.
 - Disabling a user blocks the account; removing one assignment only removes that scope.
 - Do not remove or disable the last active Superadmin.
 - Local Admin and Superadmin accounts must follow the configured MFA policy. OIDC sessions follow the identity provider flow.

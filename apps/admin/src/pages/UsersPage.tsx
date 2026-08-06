@@ -29,7 +29,10 @@ import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
+// GET /api/admin/users caps pageSize server-side at 50 (users-routes.ts) - offering a larger
+// value here would silently request more than the server delivers, understating totalPages and
+// leaving the tail of the list unreachable.
+const PAGE_SIZE_OPTIONS = [25, 50] as const;
 const SKELETON_ROWS = 5;
 
 type UsersTab = "staff" | "roles" | "sessions";
