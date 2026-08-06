@@ -991,6 +991,13 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
 
   await db.$transaction(async (tx) => {
     await tx.externalIdentity.deleteMany({ where: { user_id: id } });
+    // OidcRoleGrant has no FK to ExternalIdentity (it's keyed by provider_id/user_id), so it
+    // survives the identity delete above on its own - deleting it here converts any IdP-managed
+    // role assignments to manual ownership instead of leaving them silently orphaned: still
+    // granted (RoleAssignment itself isn't touched), but no longer blocked from revoke/switch by
+    // the managed_by_idp guard, and no longer reachable by a future OIDC sync since no provider
+    // is linked to this user anymore.
+    await tx.oidcRoleGrant.deleteMany({ where: { user_id: id } });
     await tx.user.update({
       where: { id },
       data: { password_hash: hash, must_change_password: true },

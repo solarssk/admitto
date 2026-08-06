@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RoleAssignmentsTab } from "../../../src/pages/users/RoleAssignmentsTab.js";
 import { formatUtcDateTime } from "../../../src/utils/event-dates.js";
@@ -62,44 +62,60 @@ describe("RoleAssignmentsTab", () => {
 
   it("debounces the search box before refetching with the trimmed term", async () => {
     fetchRoleAssignments.mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
-    renderWithToast(<RoleAssignmentsTab />);
-    await waitFor(() => expect(fetchRoleAssignments).toHaveBeenCalledOnce());
+    vi.useFakeTimers();
+    try {
+      renderWithToast(<RoleAssignmentsTab />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(fetchRoleAssignments).toHaveBeenCalledOnce();
 
-    fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), {
-      target: { value: "jane" },
-    });
-    await new Promise((r) => setTimeout(r, 400));
+      fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), {
+        target: { value: "jane" },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
 
-    await waitFor(() => {
       expect(fetchRoleAssignments).toHaveBeenLastCalledWith(
         expect.objectContaining({ q: "jane", page: 1 }),
         expect.anything(),
       );
-    });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows a search-specific empty state with a button that clears the search", async () => {
     fetchRoleAssignments.mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
-    renderWithToast(<RoleAssignmentsTab />);
-    await waitFor(() => expect(fetchRoleAssignments).toHaveBeenCalledOnce());
+    vi.useFakeTimers();
+    try {
+      renderWithToast(<RoleAssignmentsTab />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(fetchRoleAssignments).toHaveBeenCalledOnce();
 
-    fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), {
-      target: { value: "nomatch" },
-    });
-    await new Promise((r) => setTimeout(r, 400));
-    await waitFor(() => {
+      fireEvent.change(screen.getByLabelText("Search role assignments by user name or email"), {
+        target: { value: "nomatch" },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
       expect(fetchRoleAssignments).toHaveBeenLastCalledWith(
         expect.objectContaining({ q: "nomatch", page: 1 }),
         expect.anything(),
       );
-    });
-    expect(await screen.findByText("No role assignments match your filters")).toBeTruthy();
+      expect(screen.getByText("No role assignments match your filters")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+      fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
 
-    expect(
-      (screen.getByLabelText("Search role assignments by user name or email") as HTMLInputElement).value,
-    ).toBe("");
+      expect(
+        (screen.getByLabelText("Search role assignments by user name or email") as HTMLInputElement).value,
+      ).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows the capitalized role label, not the raw wire value, in the revoke confirmation", async () => {
