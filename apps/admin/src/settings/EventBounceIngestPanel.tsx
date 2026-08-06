@@ -80,11 +80,10 @@ function lastRunCountsLine(run: EventBounceIngestLastRunDto): string {
 
 function LastRunSummary({ run }: Readonly<{ run: EventBounceIngestLastRunDto }>) {
   return (
-    <div
+    <output
       className={`org-mail-summary${
         run.ok ? " org-mail-summary--configured" : " org-mail-summary--failed"
       }`}
-      role="status"
     >
       <span className="org-mail-summary__icon">
         <i
@@ -100,7 +99,7 @@ function LastRunSummary({ run }: Readonly<{ run: EventBounceIngestLastRunDto }>)
         </strong>
         <span>{lastRunCountsLine(run)}</span>
       </div>
-    </div>
+    </output>
   );
 }
 

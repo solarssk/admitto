@@ -443,6 +443,32 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     expect(await screen.findByText(/^Failed ·/)).toBeTruthy();
     expect(screen.getByText(/connect failed/)).toBeTruthy();
+    expect(document.querySelector(".org-mail-summary--failed")).toBeTruthy();
+    expect(document.querySelector(".ti-alert-circle")).toBeTruthy();
+  });
+
+  it("renders lastRun when recentRuns is omitted from the API payload", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: {
+          at: "2026-08-06T10:00:00.000Z",
+          ok: true,
+          messagesSeen: 4,
+          bouncesApplied: 0,
+          softBouncesLogged: 0,
+          unparsed: 0,
+          noMatchingDelivery: 0,
+          errors: 0,
+          connectFailed: false,
+        },
+        recentRuns: undefined,
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText(/^OK ·/)).toBeTruthy();
+    expect(document.querySelector(".org-mail-summary--configured")).toBeTruthy();
+    expect(document.querySelector(".ti-circle-check")).toBeTruthy();
+    expect(screen.queryByText("Recent checks")).toBeNull();
   });
 
   it("shows Run check now and updates lastRun after a manual run", async () => {
@@ -465,9 +491,7 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     const runButton = await screen.findByRole("button", { name: "Run check now" });
     expect(isDisabled(runButton)).toBe(false);
-    await act(async () => {
-      fireEvent.click(runButton);
-    });
+    fireEvent.click(runButton);
     await waitFor(() => {
       expect(mockRun).toHaveBeenCalledWith("evt-1");
     });
