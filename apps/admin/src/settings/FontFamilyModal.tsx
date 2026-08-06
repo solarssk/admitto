@@ -5,13 +5,13 @@ import {
   Input,
   isReservedBrandingFontFamilyName,
   ModalBackdrop,
-  Select,
   useToast,
 } from "@admitto/ui";
 import { deleteUploadedFile, uploadThemeFont } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingFontVariantDto } from "../api/types.js";
 import { Segmented } from "../components/Segmented.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "../attendees/add-attendee-modal.css";
@@ -23,7 +23,7 @@ const FONT_FILE_RE = /\.(woff2?|ttf|otf)$/i;
 const PREVIEW_FAMILY = "__AdmittoFontFamilyPreview";
 
 // Covers every weight WEIGHT_KEYWORDS below can guess from a filename (100-900 in steps of 100) -
-// a guess outside this list would set a row's weight to a value the Select below has no matching
+// a guess outside this list would set a row's weight to a value the picker below has no matching
 // option for, showing the wrong weight selected while silently saving a different one.
 export const WEIGHT_OPTIONS = [
   { value: 100, label: "Thin 100" },
@@ -498,20 +498,18 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
                   className={`fontfam-row${duplicateRowIdSet.has(row.id) ? " fontfam-row--duplicate" : ""}`}
                   key={row.id}
                 >
-                  <Select
-                    aria-label="Weight"
-                    id={`fontfam-row-weight-${row.id}`}
-                    name={`fontfam-row-weight-${row.id}`}
-                    value={row.weight}
-                    style={{ width: 168 }}
-                    onChange={(e) => changeRowCombo(row.id, { weight: Number(e.target.value) })}
-                  >
-                    {WEIGHT_OPTIONS.map((w) => (
-                      <option key={w.value} value={w.value}>
-                        {w.label}
-                      </option>
-                    ))}
-                  </Select>
+                  <div style={{ width: 168 }}>
+                    <SearchableSelect
+                      id={`fontfam-row-weight-${row.id}`}
+                      label="Weight"
+                      placeholder="Select weight…"
+                      searchPlaceholder="Search weights…"
+                      emptyLabel="No weights found"
+                      value={String(row.weight)}
+                      options={WEIGHT_OPTIONS.map((w) => ({ id: String(w.value), label: w.label }))}
+                      onChange={(id) => changeRowCombo(row.id, { weight: Number(id) })}
+                    />
+                  </div>
                   <Segmented
                     ariaLabel="Style"
                     className="fontfam-row-style-toggle"
