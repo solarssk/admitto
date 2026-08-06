@@ -246,6 +246,45 @@ describe("UserEditModal role & access - exclusive roles", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("cancels the change-role confirmation without calling the API, leaving the old role in place", async () => {
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change role" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(mockGrantUserRole).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Change role" })).toBeNull();
+  });
+
+  it("Escape dismisses only the change-role confirmation, not the whole editor underneath it", async () => {
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    const { onClose } = renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    await screen.findByRole("dialog", { name: "Change role" });
+
+    // The confirm dialog and this modal both listen for Escape on document - without
+    // suspending this modal's own listener while a child confirm dialog is open, its handler
+    // (registered first) fired first and closed the whole editor, discarding unsaved profile
+    // edits (bot review finding).
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Change role" })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mockGrantUserRole).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Staff User" })).toBeTruthy();
+  });
+
   it("stages another scope of the same role type without confirmation or an API call", async () => {
     const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
     mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);

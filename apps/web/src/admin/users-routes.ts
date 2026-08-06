@@ -30,6 +30,7 @@ import {
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { runSerializableTransaction } from "./event-items-api-routes.js";
 import {
   assertLastSuperadminDeactivationAllowed,
   assertLastSuperadminDeleteAllowed,
@@ -799,7 +800,8 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
 
   let outcome;
   try {
-    outcome = await db.$transaction(
+    outcome = await runSerializableTransaction(
+      db,
       (tx) => performRoleTypeSwitch(tx, id, parsed, orgId, actorId, audit),
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );

@@ -630,7 +630,15 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     onClose();
   };
 
-  useModalFocusTrap(panelRef, open, handleClose);
+  // Every ConfirmDialog below is itself useModalFocusTrap'd once open, with its own Escape
+  // handler - both listeners live on `document`, so without this, this modal's own handler
+  // (registered first, since it mounts before any child dialog opens) fires first and closes
+  // the whole editor - discarding unsaved profile edits - instead of leaving the topmost
+  // dialog to handle Escape alone (bot review finding; same pattern as EventItemDrawer's own
+  // `!deleteConfirmOpen`).
+  const anyConfirmDialogOpen =
+    deleteConfirm || disableConfirmOpen || resetMfaOpen || revokeSessionsOpen || unlinkSsoOpen || roleChangeConfirmOpen;
+  useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose);
   const moreActions = useDropdownMenu<HTMLButtonElement>();
 
   // Profile fields and staged Role & access edits (pendingAdds/pendingRemoveIds) all commit
