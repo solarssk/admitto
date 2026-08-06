@@ -1326,6 +1326,13 @@ export interface AccountMfaMethodDto {
   last_used_at: string | null;
 }
 
+export interface AccountExternalIdentityDto {
+  id: string;
+  provider_id: string;
+  provider_display_name: string;
+  linked_at: string;
+}
+
 export interface AccountDto {
   id: string;
   email: string;
@@ -1338,6 +1345,7 @@ export interface AccountDto {
   phone_number: string | null;
   roles: AccountRoleDto[];
   mfa_methods: AccountMfaMethodDto[];
+  external_identities: AccountExternalIdentityDto[];
 }
 
 export interface PatchAccountProfileBody {

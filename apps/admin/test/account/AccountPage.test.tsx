@@ -78,6 +78,7 @@ const baseAccount: AccountDto = {
   phone_number: null,
   roles: [],
   mfa_methods: [],
+  external_identities: [],
 };
 
 const totpEnrolledAccount: AccountDto = {
@@ -1493,45 +1494,63 @@ describe("AccountPage profile: phone number", () => {
 });
 
 describe("AccountPage profile: sign-in method", () => {
-  it("shows only a Local password chip for accounts with only local password", async () => {
-    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, roles: [] });
+  it("shows only a Local badge for accounts with only a local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, external_identities: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password")).toBeTruthy();
+      expect(screen.getByText("Local")).toBeTruthy();
     });
-    expect(screen.queryByText("Identity provider (SSO)")).toBeFalsy();
+    expect(screen.queryByText("Okta")).toBeFalsy();
   });
 
-  it("shows only an Identity provider (SSO) chip for accounts without local password", async () => {
+  it("shows one badge per linked identity provider, named, for accounts without a local password", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: false,
-      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+      external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
+      expect(screen.getByText("Okta")).toBeTruthy();
     });
-    expect(screen.queryByText("Local password")).toBeFalsy();
+    expect(screen.queryByText("Local")).toBeFalsy();
   });
 
-  it("shows both chips when both are present", async () => {
+  it("shows both a Local badge and a provider badge when the account has both", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: true,
-      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+      external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password")).toBeTruthy();
+      expect(screen.getByText("Local")).toBeTruthy();
     });
-    expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
+    expect(screen.getByText("Okta")).toBeTruthy();
+  });
+
+  it("shows one badge per provider when multiple identities are linked", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      has_local_password: false,
+      external_identities: [
+        { id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" },
+        { id: "ei2", provider_id: "p2", provider_display_name: "Authentik", linked_at: "2026-01-02T00:00:00.000Z" },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Okta")).toBeTruthy();
+    });
+    expect(screen.getByText("Authentik")).toBeTruthy();
   });
 
   it("shows 'Regional format' label for locale select", async () => {

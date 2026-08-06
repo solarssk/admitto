@@ -43,6 +43,8 @@ let adminCookie = "";
 let adminSessionId = "";
 let prevInstanceOrgId: string | undefined;
 
+const PROVIDER_ID = "idp-account-test";
+
 async function seed(client: PrismaClient) {
   await client.session.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER, EMAIL_ADMIN] } } } });
   await client.userMfaMethod.deleteMany({ where: { user: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER, EMAIL_ADMIN] } } } });
@@ -50,9 +52,22 @@ async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_ACCOUNT } });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_USER, EMAIL_OIDC, EMAIL_OTHER, EMAIL_ADMIN] } } });
   await client.organization.deleteMany({ where: { id: ORG_ACCOUNT } });
+  await client.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
 
   const password_hash = await hashPassword(PASSWORD);
   await client.organization.create({ data: { id: ORG_ACCOUNT, name: "Account Test Org", slug: "account-test" } });
+  await client.identityProvider.create({
+    data: {
+      id: PROVIDER_ID,
+      provider_type: "oidc",
+      issuer: "https://iam-account.example.com/",
+      client_id: "test-client",
+      authorization_endpoint: "https://iam-account.example.com/a",
+      token_endpoint: "https://iam-account.example.com/t",
+      jwks_uri: "https://iam-account.example.com/j",
+      display_name: "Account Test IdP",
+    },
+  });
 
   const user = await client.user.create({ data: { email: EMAIL_USER, password_hash, must_change_password: true } });
   userId = user.id;
@@ -100,6 +115,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
+  await prisma.externalIdentity.deleteMany({ where: { user_id: userId } });
   await prisma.session.deleteMany({ where: { user_id: userId, id: { not: userSessionId } } });
   await prisma.user.update({ where: { id: userId }, data: { password_hash: await hashPassword(PASSWORD), must_change_password: false } });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: adminUserId } });
@@ -123,6 +139,23 @@ describe("GET /api/account", () => {
     expect(body.has_local_password).toBe(true);
     expect(body.must_change_password).toBe(true);
     expect(body).not.toHaveProperty("password_hash");
+  });
+
+  it("returns an empty external_identities array when nothing is linked", async () => {
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    const body = (await res.json()) as { external_identities: unknown[] };
+    expect(body.external_identities).toEqual([]);
+  });
+
+  it("returns the linked provider's display name, not its raw id", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "account-get-subject", user_id: userId },
+    });
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    const body = (await res.json()) as { external_identities: Array<{ provider_id: string; provider_display_name: string }> };
+    expect(body.external_identities).toHaveLength(1);
+    expect(body.external_identities[0]?.provider_id).toBe(PROVIDER_ID);
+    expect(body.external_identities[0]?.provider_display_name).toBe("Account Test IdP");
   });
 });
 

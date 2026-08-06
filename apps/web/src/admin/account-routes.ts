@@ -227,7 +227,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
   });
   if (!user) return c.json({ error: "unauthorized" }, 401);
 
-  const [assignments, oidcGrants, mfaMethods] = await Promise.all([
+  const [assignments, oidcGrants, mfaMethods, externalIdentities] = await Promise.all([
     db.roleAssignment.findMany({
       where: { user_id: userId },
       select: { id: true, role: true, scope_type: true, scope_id: true },
@@ -239,6 +239,10 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     db.userMfaMethod.findMany({
       where: { user_id: userId },
       select: { type: true, confirmed_at: true, last_used_at: true },
+    }),
+    db.externalIdentity.findMany({
+      where: { user_id: userId },
+      select: { id: true, provider_id: true, linked_at: true, provider: { select: { display_name: true } } },
     }),
   ]);
 
@@ -265,6 +269,12 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       type: m.type,
       confirmed: m.confirmed_at !== null,
       last_used_at: m.last_used_at?.toISOString() ?? null,
+    })),
+    external_identities: externalIdentities.map((ei) => ({
+      id: ei.id,
+      provider_id: ei.provider_id,
+      provider_display_name: ei.provider.display_name,
+      linked_at: ei.linked_at.toISOString(),
     })),
   });
 }

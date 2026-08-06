@@ -53,67 +53,22 @@
   }
 }
 
-/* Sign-in method + role, as their own section below the editable fields instead of a cramped
-   dt/dd table off to the side - same visual language as the admin Edit user modal's own
-   "Sign-in security"/"Role & access" sections (status chips, SearchableSelect). */
-.account-identity-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3, 0.75rem);
-  padding-top: var(--space-4, 1rem);
-  border-top: 1px solid var(--border);
-}
-
-.account-status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: var(--space-2, 0.5rem);
-}
-
-.account-status-chip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2, 0.5rem);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-2, 0.5rem);
-}
-
-.account-status-chip-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--at-gray-100);
-  color: var(--text-secondary);
-}
-
-.account-status-chip-body {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.account-status-chip-body strong {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.account-status-chip-body span {
-  font-size: var(--fs-sm);
-}
-
+/* Sign-in and Role sit in the same 2-column field grid as Display name/Email/Regional
+   format/Phone number, not a separate panel - Role directly under Regional format. */
 .account-role-display {
   display: flex;
   flex-direction: column;
   gap: var(--space-1, 0.25rem);
-  max-width: 24rem;
+}
+
+/* One badge per way this account can sign in - a Local badge, plus one per linked identity
+   provider (named, not just a generic "SSO"). Wraps instead of a fixed grid since the count
+   varies from zero (mid-onboarding) to several. */
+.account-signin-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
 }
 
 /* Compact 2FA status row: badge + action on one line */

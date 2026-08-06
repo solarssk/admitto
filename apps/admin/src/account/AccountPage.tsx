@@ -92,37 +92,23 @@ function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
 }
 
-function accountHasOidc(account: AccountDto): boolean {
-  return account.roles.some((r) => r.is_oidc);
-}
-
-/** Sign-in method, one status chip per method - shows both when an account has a local password
- * and an IdP-managed role, since a user can genuinely have both at once. */
-function AccountSignInStatus({ account }: Readonly<{ account: AccountDto }>) {
+/** How this account exists, not how the current browser session happens to be signed in - a
+ * Local badge when it has a password, plus one badge per linked identity provider naming that
+ * provider (not just a generic "SSO"), since an account can be both at once (a local account
+ * that later linked an SSO identity, or vice versa). */
+function AccountSignInBadges({ account }: Readonly<{ account: AccountDto }>) {
   return (
-    <div className="account-status-grid">
+    <div className="account-signin-field">
       {account.has_local_password && (
-        <div className="account-status-chip">
-          <span className="account-status-chip-icon account-status-chip-icon--neutral">
-            <i className="ti ti-key" aria-hidden="true" />
-          </span>
-          <span className="account-status-chip-body">
-            <strong>Sign-in method</strong>
-            <span>Local password</span>
-          </span>
-        </div>
+        <Badge variant="neutral">
+          <i className="ti ti-key" aria-hidden="true" /> Local
+        </Badge>
       )}
-      {accountHasOidc(account) && (
-        <div className="account-status-chip">
-          <span className="account-status-chip-icon account-status-chip-icon--neutral">
-            <i className="ti ti-cloud-lock" aria-hidden="true" />
-          </span>
-          <span className="account-status-chip-body">
-            <strong>Sign-in method</strong>
-            <span>Identity provider (SSO)</span>
-          </span>
-        </div>
-      )}
+      {account.external_identities.map((ei) => (
+        <Badge key={ei.id} variant="neutral">
+          <i className="ti ti-cloud-lock" aria-hidden="true" /> {ei.provider_display_name}
+        </Badge>
+      ))}
     </div>
   );
 }
@@ -892,10 +878,13 @@ export function AccountPage() {
             </div>
             <span className="at-hint">For internal contact only - not shown on tickets.</span>
           </div>
-        </div>
-        <div className="account-identity-panel">
-          <AccountSignInStatus account={account} />
           <AccountRoleDisplay account={account} />
+          <div className="at-field">
+            <label className="at-label" htmlFor="account-signin">Sign-in</label>
+            <div id="account-signin">
+              <AccountSignInBadges account={account} />
+            </div>
+          </div>
         </div>
       </Card>
 
