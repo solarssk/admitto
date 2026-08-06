@@ -59,11 +59,11 @@ const BOUNCE_REUSE_HINT_UNAVAILABLE =
   "Available when this event's mail transport is SMTP.";
 
 /** One-line field hint under Check every (keep short so the row stays single-line). */
-const CHECK_EVERY_HINT = "How often to plan mailbox checks for this event.";
+const CHECK_EVERY_HINT = "How often bounce-ingest checks this event's mailbox.";
 
 /** Longer deploy detail on the (i) next to the label. */
 const CHECK_EVERY_INFO =
-  "In this version the deploy bounce-ingest interval still controls how often automatic checks run.";
+  "Deploy wakes on a short tick and skips events that are not yet due.";
 
 const LAST_RUN_HINT =
   "Updated by automatic bounce-ingest checks or Run check now. Test connection does not update this card.";

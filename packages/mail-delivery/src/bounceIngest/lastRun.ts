@@ -21,13 +21,41 @@ export type BounceIngestLastRunDto = BounceIngestLastRunSummary & {
 /** Soft health: enabled configs with last_run older than this are stale (floor). */
 export const BOUNCE_INGEST_STALE_MS = 15 * 60 * 1000;
 
-/** Deploy loop default when env is unset (matches bounce-ingest-loop.sh). */
-const DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS = 300;
+const DEFAULT_POLL_INTERVAL_MINUTES = 5;
+const DEFAULT_BOUNCE_INGEST_TICK_SECONDS = 60;
+
+/** True when this event should run on the current bounce-ingest tick. */
+export function isBounceIngestDue(
+  row: {
+    last_run_at: Date | null;
+    last_run_ok: boolean | null;
+    poll_interval_minutes: number | null;
+  },
+  now: Date = new Date(),
+): boolean {
+  if (row.last_run_at == null) return true;
+  // Failed runs retry on the next global tick; poll interval applies only after success.
+  if (row.last_run_ok !== true) return true;
+  const minutes =
+    row.poll_interval_minutes != null && row.poll_interval_minutes > 0
+      ? row.poll_interval_minutes
+      : DEFAULT_POLL_INTERVAL_MINUTES;
+  return now.getTime() - row.last_run_at.getTime() >= minutes * 60_000;
+}
+
+/** Per-event stale window for soft health: 2× Check every, floored at BOUNCE_INGEST_STALE_MS. */
+export function bounceIngestStaleMsForPoll(pollIntervalMinutes: number | null | undefined): number {
+  const minutes =
+    pollIntervalMinutes != null && pollIntervalMinutes > 0
+      ? pollIntervalMinutes
+      : DEFAULT_POLL_INTERVAL_MINUTES;
+  return Math.max(BOUNCE_INGEST_STALE_MS, minutes * 2 * 60_000);
+}
 
 /**
- * Soft-health stale window from the deploy bounce-ingest interval.
- * Uses 2× the interval so a successful run stays healthy until the next scheduled tick
- * (and a little slack for runtime), floored at {@link BOUNCE_INGEST_STALE_MS}.
+ * Soft-health stale contribution from the deploy wake tick
+ * (`BOUNCE_INGEST_TICK_SECONDS`, or legacy `BOUNCE_INGEST_INTERVAL_SECONDS`).
+ * 2× tick, floored at {@link BOUNCE_INGEST_STALE_MS}.
  */
 export function bounceIngestStaleMsFromIntervalSeconds(
   intervalSeconds: number | null | undefined,
@@ -35,18 +63,27 @@ export function bounceIngestStaleMsFromIntervalSeconds(
   const seconds =
     typeof intervalSeconds === "number" && Number.isFinite(intervalSeconds) && intervalSeconds > 0
       ? Math.floor(intervalSeconds)
-      : DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS;
+      : DEFAULT_BOUNCE_INGEST_TICK_SECONDS;
   return Math.max(BOUNCE_INGEST_STALE_MS, seconds * 2 * 1000);
 }
 
-/** Parse `BOUNCE_INGEST_INTERVAL_SECONDS` for soft-health stale windows. */
-export function parseBounceIngestIntervalSeconds(
-  env: NodeJS.ProcessEnv = process.env,
-): number {
-  const raw = env["BOUNCE_INGEST_INTERVAL_SECONDS"];
-  if (raw === undefined || raw === "") return DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS;
+/** Parse deploy wake tick; prefers TICK, then legacy INTERVAL, default 60. */
+export function parseBounceIngestTickSeconds(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env["BOUNCE_INGEST_TICK_SECONDS"] ?? env["BOUNCE_INGEST_INTERVAL_SECONDS"];
+  if (raw === undefined || raw === "") return DEFAULT_BOUNCE_INGEST_TICK_SECONDS;
   const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_BOUNCE_INGEST_INTERVAL_SECONDS;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_BOUNCE_INGEST_TICK_SECONDS;
+}
+
+/** Combined soft-health stale window for one event (Check every and deploy tick). */
+export function bounceIngestStaleMsForEvent(
+  pollIntervalMinutes: number | null | undefined,
+  deployTickSeconds: number | null | undefined,
+): number {
+  return Math.max(
+    bounceIngestStaleMsForPoll(pollIntervalMinutes),
+    bounceIngestStaleMsFromIntervalSeconds(deployTickSeconds),
+  );
 }
 
 export function lastRunOkFromSummary(summary: IngestSummary): boolean {
@@ -116,6 +153,7 @@ export type BounceIngestHealthInput = {
   enabled: boolean;
   last_run_at: Date | null;
   last_run_ok: boolean | null;
+  poll_interval_minutes?: number | null;
 };
 
 export type BounceIngestHealthResult = {
@@ -128,11 +166,12 @@ export type BounceIngestHealthResult = {
 /**
  * Aggregate soft health for Settings → Health (external group).
  * Does not affect /healthz or /readyz.
+ * @param deployTickSeconds Wake interval from deploy env (TICK or legacy INTERVAL).
  */
 export function evaluateBounceIngestHealth(
   rows: BounceIngestHealthInput[],
   now: Date = new Date(),
-  staleMs: number = BOUNCE_INGEST_STALE_MS,
+  deployTickSeconds: number | null | undefined = DEFAULT_BOUNCE_INGEST_TICK_SECONDS,
 ): BounceIngestHealthResult {
   const enabled = rows.filter((r) => r.enabled);
   if (enabled.length === 0) {
@@ -150,6 +189,7 @@ export function evaluateBounceIngestHealth(
       problemCount += 1;
       continue;
     }
+    const staleMs = bounceIngestStaleMsForEvent(row.poll_interval_minutes, deployTickSeconds);
     if (now.getTime() - row.last_run_at.getTime() > staleMs) {
       problemCount += 1;
     }

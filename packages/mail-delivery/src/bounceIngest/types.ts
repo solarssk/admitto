@@ -51,7 +51,7 @@ export interface IngestSummary {
   noMatchingDelivery: number;
   errors: number;
   /** Human-readable skip/noop reason when nothing was attempted. */
-  noopReason?: "not_configured" | "disabled" | "none_enabled";
+  noopReason?: "not_configured" | "disabled" | "none_enabled" | "none_due";
   /** True when at least one IMAP connect failed for an attempted event. */
   connectFailed: boolean;
 }

@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { IngestSummary } from "../../src/bounceIngest/types.js";
 import {
   BOUNCE_INGEST_STALE_MS,
+  bounceIngestStaleMsForEvent,
+  bounceIngestStaleMsForPoll,
   bounceIngestStaleMsFromIntervalSeconds,
   evaluateBounceIngestHealth,
+  isBounceIngestDue,
   lastRunOkFromSummary,
   lastRunSummaryFromIngest,
+  parseBounceIngestTickSeconds,
   persistBounceIngestLastRun,
-  parseBounceIngestIntervalSeconds,
   serializeBounceIngestLastRun,
 } from "../../src/bounceIngest/lastRun.js";
 
@@ -126,23 +129,78 @@ describe("persistBounceIngestLastRun", () => {
   });
 });
 
-describe("bounceIngestStaleMsFromIntervalSeconds", () => {
-  it("floors short intervals at BOUNCE_INGEST_STALE_MS", () => {
-    expect(bounceIngestStaleMsFromIntervalSeconds(300)).toBe(BOUNCE_INGEST_STALE_MS);
-    expect(bounceIngestStaleMsFromIntervalSeconds(null)).toBe(BOUNCE_INGEST_STALE_MS);
+describe("isBounceIngestDue", () => {
+  const now = new Date("2026-08-06T12:00:00.000Z");
+
+  it("is due when last_run_at is null", () => {
+    expect(isBounceIngestDue({ last_run_at: null, poll_interval_minutes: 5 }, now)).toBe(true);
   });
 
-  it("uses 2× interval when longer than the floor", () => {
-    expect(bounceIngestStaleMsFromIntervalSeconds(3600)).toBe(7_200_000);
+  it("is not due before poll_interval_minutes elapses after a successful run", () => {
+    const last = new Date(now.getTime() - 4 * 60_000);
+    expect(
+      isBounceIngestDue({ last_run_at: last, last_run_ok: true, poll_interval_minutes: 5 }, now),
+    ).toBe(false);
+  });
+
+  it("is due once poll_interval_minutes has elapsed after a successful run", () => {
+    const last = new Date(now.getTime() - 5 * 60_000);
+    expect(
+      isBounceIngestDue({ last_run_at: last, last_run_ok: true, poll_interval_minutes: 5 }, now),
+    ).toBe(true);
+  });
+
+  it("is due on the next tick when the last run failed", () => {
+    const last = new Date(now.getTime() - 60_000);
+    expect(
+      isBounceIngestDue({ last_run_at: last, last_run_ok: false, poll_interval_minutes: 60 }, now),
+    ).toBe(true);
+  });
+
+  it("treats null last_run_ok like a failed run (due immediately)", () => {
+    const last = new Date(now.getTime() - 60_000);
+    expect(
+      isBounceIngestDue({ last_run_at: last, last_run_ok: null, poll_interval_minutes: 60 }, now),
+    ).toBe(true);
+  });
+
+  it("defaults missing poll_interval_minutes to 5 minutes", () => {
+    const last = new Date(now.getTime() - 4 * 60_000);
+    expect(
+      isBounceIngestDue({ last_run_at: last, last_run_ok: true, poll_interval_minutes: null }, now),
+    ).toBe(false);
+    expect(
+      isBounceIngestDue(
+        { last_run_at: new Date(now.getTime() - 5 * 60_000), last_run_ok: true, poll_interval_minutes: null },
+        now,
+      ),
+    ).toBe(true);
   });
 });
 
-describe("parseBounceIngestIntervalSeconds", () => {
-  it("defaults to 300 and rejects non-positive values", () => {
-    expect(parseBounceIngestIntervalSeconds({})).toBe(300);
-    expect(parseBounceIngestIntervalSeconds({ BOUNCE_INGEST_INTERVAL_SECONDS: "0" })).toBe(300);
-    expect(parseBounceIngestIntervalSeconds({ BOUNCE_INGEST_INTERVAL_SECONDS: "abc" })).toBe(300);
-    expect(parseBounceIngestIntervalSeconds({ BOUNCE_INGEST_INTERVAL_SECONDS: "3600" })).toBe(3600);
+describe("bounceIngestStaleMs helpers", () => {
+  it("floors short Check every and tick windows at BOUNCE_INGEST_STALE_MS", () => {
+    expect(bounceIngestStaleMsForPoll(5)).toBe(BOUNCE_INGEST_STALE_MS);
+    expect(bounceIngestStaleMsForPoll(null)).toBe(BOUNCE_INGEST_STALE_MS);
+    expect(bounceIngestStaleMsFromIntervalSeconds(60)).toBe(BOUNCE_INGEST_STALE_MS);
+  });
+
+  it("uses 2× Check every or deploy tick when longer than the floor", () => {
+    expect(bounceIngestStaleMsForPoll(60)).toBe(2 * 60 * 60_000);
+    expect(bounceIngestStaleMsFromIntervalSeconds(3600)).toBe(7_200_000);
+    expect(bounceIngestStaleMsForEvent(5, 3600)).toBe(7_200_000);
+    expect(bounceIngestStaleMsForEvent(60, 60)).toBe(2 * 60 * 60_000);
+  });
+
+  it("parses TICK over legacy INTERVAL", () => {
+    expect(parseBounceIngestTickSeconds({})).toBe(60);
+    expect(parseBounceIngestTickSeconds({ BOUNCE_INGEST_INTERVAL_SECONDS: "3600" })).toBe(3600);
+    expect(
+      parseBounceIngestTickSeconds({
+        BOUNCE_INGEST_TICK_SECONDS: "90",
+        BOUNCE_INGEST_INTERVAL_SECONDS: "3600",
+      }),
+    ).toBe(90);
   });
 });
 
@@ -162,9 +220,8 @@ describe("evaluateBounceIngestHealth", () => {
     const fresh = new Date(now.getTime() - 60_000);
     expect(
       evaluateBounceIngestHealth(
-        [{ enabled: true, last_run_at: fresh, last_run_ok: true }],
+        [{ enabled: true, last_run_at: fresh, last_run_ok: true, poll_interval_minutes: 5 }],
         now,
-        BOUNCE_INGEST_STALE_MS,
       ),
     ).toEqual({
       status: "ok",
@@ -207,39 +264,19 @@ describe("evaluateBounceIngestHealth", () => {
     });
   });
 
-  it("keeps hourly deploy intervals healthy within 2× the interval", () => {
-    const hourlyStale = bounceIngestStaleMsFromIntervalSeconds(3600);
-    expect(hourlyStale).toBe(2 * 3600 * 1000);
-    const almostStale = new Date(now.getTime() - hourlyStale + 60_000);
-    expect(
-      evaluateBounceIngestHealth(
-        [{ enabled: true, last_run_at: almostStale, last_run_ok: true }],
-        now,
-        hourlyStale,
-      ),
-    ).toMatchObject({ status: "ok" });
-    const stale = new Date(now.getTime() - hourlyStale - 1);
-    expect(
-      evaluateBounceIngestHealth(
-        [{ enabled: true, last_run_at: stale, last_run_ok: true }],
-        now,
-        hourlyStale,
-      ),
-    ).toMatchObject({ status: "degraded", problemCount: 1 });
-  });
-
-  it("returns degraded when last run failed, is missing, or is stale", () => {
-    const stale = new Date(now.getTime() - BOUNCE_INGEST_STALE_MS - 1);
+  it("returns degraded when last run failed, is missing, or is stale vs 2x Check every", () => {
+    const staleForFiveMin = new Date(now.getTime() - BOUNCE_INGEST_STALE_MS - 1);
     const fresh = new Date(now.getTime() - 60_000);
     expect(
       evaluateBounceIngestHealth(
         [
-          { enabled: true, last_run_at: null, last_run_ok: null },
-          { enabled: true, last_run_at: fresh, last_run_ok: false },
-          { enabled: true, last_run_at: stale, last_run_ok: true },
+          { enabled: true, last_run_at: null, last_run_ok: null, poll_interval_minutes: 5 },
+          { enabled: true, last_run_at: fresh, last_run_ok: false, poll_interval_minutes: 5 },
+          { enabled: true, last_run_at: staleForFiveMin, last_run_ok: true, poll_interval_minutes: 5 },
           { enabled: false, last_run_at: null, last_run_ok: null },
         ],
         now,
+        60,
       ),
     ).toEqual({
       status: "degraded",
@@ -247,5 +284,16 @@ describe("evaluateBounceIngestHealth", () => {
       enabledCount: 3,
       problemCount: 3,
     });
+  });
+
+  it("keeps a 20-minute-old run healthy when the deploy tick is hourly", () => {
+    const twentyMinAgo = new Date(now.getTime() - 20 * 60_000);
+    expect(
+      evaluateBounceIngestHealth(
+        [{ enabled: true, last_run_at: twentyMinAgo, last_run_ok: true, poll_interval_minutes: 5 }],
+        now,
+        3600,
+      ),
+    ).toMatchObject({ status: "ok", problemCount: 0 });
   });
 });
