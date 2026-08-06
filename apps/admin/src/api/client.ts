@@ -49,6 +49,7 @@ import type {
   EventBounceIngestSettingsResponse,
   SaveEventBounceIngestSettingsBody,
   BounceIngestTestResponse,
+  BounceIngestRunResponse,
   MailSmtpProbeResponse,
   SaveMailSettingsBody,
   EventDeliveriesListParams,
@@ -1593,6 +1594,16 @@ export async function testEventBounceIngestConnection(
     jsonPostInit({}),
   );
   return parseJson<BounceIngestTestResponse>(res);
+}
+
+export async function runEventBounceIngestCheck(
+  eventId: string,
+): Promise<BounceIngestRunResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/bounce-ingest-settings/run`,
+    jsonPostInit({}),
+  );
+  return parseJson<BounceIngestRunResponse>(res);
 }
 
 /** Load an event's Location tab data, or the stable empty DTO when nothing has been saved yet. */

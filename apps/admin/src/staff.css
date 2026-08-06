@@ -4931,6 +4931,17 @@ output.mail-field-hint {
   border-color: var(--status-ok);
 }
 
+.org-mail-summary--failed {
+  background: var(--status-error-tint);
+  border-color: var(--status-error);
+}
+
+.org-mail-summary--failed .org-mail-summary__icon {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg, var(--status-error));
+  border-color: var(--status-error);
+}
+
 /* Icon (36px, flex:none) + body (flex:1) + the optional "Open instance settings" button all
    share one nowrap row by default - on narrow widths the button's own natural width leaves so
    little room for the body that its title/summary text wraps awkwardly, line after cramped
@@ -4969,7 +4980,7 @@ output.mail-field-hint {
 /* Check every + Test connection share the right grid cell; select flexes, button hugs content. */
 .event-bounce-ingest__poll-and-test {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: var(--space-3);
   min-width: 0;
 }
@@ -4984,8 +4995,13 @@ output.mail-field-hint {
   max-width: none;
 }
 
+/* Pin to the select control, not the hint below Check every (same idea as mail-test-send). */
 .event-bounce-ingest__test-control {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin-top: calc(var(--fs-sm) * var(--lh-normal) + var(--space-1));
+  height: var(--control-h);
 }
 
 /* Password + Test connection share the Username|Password grid cell (same idea as
@@ -6055,6 +6071,10 @@ select.system-log-panel__field {
 .system-log-panel__footer-actions {
   display: flex;
   gap: var(--space-2);
+}
+
+.system-log-panel__retention-notice {
+  margin-top: var(--space-3);
 }
 
 /* Event archiving panel */

@@ -9,6 +9,7 @@ import { ImapInboundProvider } from "./imapProvider.js";
 import { parseBounceLines } from "./parseBounceLine.js";
 import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
 import { openBounceImapProvider } from "./openProvider.js";
+import { persistBounceIngestLastRun } from "./lastRun.js";
 import { lookbackSince, parseFolders, resolveImapConnectConfig, uidRetentionCutoff } from "./resolveAuth.js";
 import type { InboundMailProvider, InboundMessage, IngestSummary, ParsedBounceLine } from "./types.js";
 
@@ -222,32 +223,47 @@ async function ingestEvent(
   const summary = emptySummary();
   const log = options.log ?? console.error;
 
-  let provider: InboundMailProvider;
   try {
-    provider = await openProvider(db, settings, options);
-    await provider.connect();
-  } catch (err) {
-    summary.connectFailed = true;
-    summary.errors += 1;
-    log(`[bounce-ingest] event=${settings.event_id} connect failed: ${errMsg(err)}`);
-    return summary;
-  }
-
-  summary.eventsProcessed += 1;
-
-  try {
-    for (const folder of parseFolders(settings.folders)) {
-      await processFolder(db, settings, summary, provider, folder, since, log);
+    let provider: InboundMailProvider;
+    try {
+      provider = await openProvider(db, settings, options);
+      await provider.connect();
+    } catch (err) {
+      summary.connectFailed = true;
+      summary.errors += 1;
+      log(`[bounce-ingest] event=${settings.event_id} connect failed: ${errMsg(err)}`);
+      return summary;
     }
+
+    summary.eventsProcessed += 1;
+
+    try {
+      for (const folder of parseFolders(settings.folders)) {
+        await processFolder(db, settings, summary, provider, folder, since, log);
+      }
+    } catch (err) {
+      // Unexpected rejection outside per-message / per-folder handlers: count it before
+      // finally persists last_run so soft health does not treat the run as OK.
+      summary.errors += 1;
+      log(`[bounce-ingest] event=${settings.event_id} failed: ${errMsg(err)}`);
+    } finally {
+      try {
+        await provider.close();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return summary;
   } finally {
     try {
-      await provider.close();
-    } catch {
-      /* ignore */
+      await persistBounceIngestLastRun(db, settings.event_id, summary);
+    } catch (err) {
+      log(
+        `[bounce-ingest] event=${settings.event_id} persist last_run failed: ${errMsg(err)}`,
+      );
     }
   }
-
-  return summary;
 }
 
 async function resolveRowsToProcess(
@@ -387,3 +403,19 @@ export {
   DEFAULT_BOUNCE_FOLDERS,
   LOOKBACK_DAYS,
 } from "./resolveAuth.js";
+export {
+  persistBounceIngestLastRun,
+  serializeBounceIngestLastRun,
+  evaluateBounceIngestHealth,
+  bounceIngestStaleMsFromIntervalSeconds,
+  parseBounceIngestIntervalSeconds,
+  lastRunOkFromSummary,
+  lastRunSummaryFromIngest,
+  BOUNCE_INGEST_STALE_MS,
+} from "./lastRun.js";
+export type {
+  BounceIngestLastRunDto,
+  BounceIngestLastRunSummary,
+  BounceIngestHealthInput,
+  BounceIngestHealthResult,
+} from "./lastRun.js";

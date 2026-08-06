@@ -70,7 +70,8 @@ When a hard failure NDR is forwarded into the mailbox, the next ingest run updat
 - Bounce settings are **per event** so the same recipient in two events does not create an ambiguous match.
 - Soft / temporary SMTP failures (`4xx`) are logged and do not flip a successful send to Bounced.
 - Messages are not deleted from the mailbox; Admitto records processed IMAP UIDs so accidental "mark as read" in a mail client does not skip a bounce.
-- The deploy sidecar poll interval (`BOUNCE_INGEST_INTERVAL_SECONDS`) is separate from the **Check every** field in Settings (informational in this version).
+- **Last automatic check** on the bounce panel shows the latest bounce-ingest run for this event (not Test connection). Organisation Settings → Health includes a soft Bounce detection row for enabled events.
+- The deploy bounce-ingest poll interval (`BOUNCE_INGEST_INTERVAL_SECONDS`) is separate from the **Check every** field in Settings.
 
 ### Common problems
 

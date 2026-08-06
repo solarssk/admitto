@@ -32,6 +32,9 @@ function settings(partial: Partial<BounceIngestSettings> = {}): BounceIngestSett
     folders: ["INBOX"],
     poll_interval_minutes: 5,
     enabled: true,
+    last_run_at: null,
+    last_run_ok: null,
+    last_run_summary: null,
     created_at: new Date(),
     updated_at: new Date(),
     ...partial,
@@ -53,11 +56,14 @@ function eventScopedDb(
   extras: {
     bounceIngestProcessedUid?: Record<string, unknown>;
     emailDelivery?: Record<string, unknown>;
+    bounceIngestSettings?: Record<string, unknown>;
   } = {},
 ) {
   return {
     bounceIngestSettings: {
       findUnique: vi.fn().mockResolvedValue(row),
+      update: vi.fn().mockResolvedValue(row),
+      ...extras.bounceIngestSettings,
     },
     bounceIngestProcessedUid: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -158,6 +164,123 @@ describe("ingestBounces", () => {
     expect(summary.connectFailed).toBe(false);
     expect(updateMany).toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledTimes(2);
+    expect(db.bounceIngestSettings.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { event_id: "evt_1" },
+        data: expect.objectContaining({
+          last_run_ok: true,
+          last_run_summary: expect.objectContaining({
+            messagesSeen: 2,
+            bouncesApplied: 1,
+            unparsed: 1,
+            errors: 0,
+            connectFailed: false,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("persists last_run_ok false when IMAP connect fails", async () => {
+    const row = settings();
+    const update = vi.fn().mockResolvedValue(row);
+    const db = eventScopedDb(row, {
+      bounceIngestSettings: { update },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => {
+        throw new Error("auth failed");
+      },
+      log: () => undefined,
+    });
+
+    expect(summary.connectFailed).toBe(true);
+    expect(summary.errors).toBe(1);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          last_run_ok: false,
+          last_run_summary: expect.objectContaining({
+            connectFailed: true,
+            errors: 1,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("logs when persist last_run fails without failing the ingest", async () => {
+    const row = settings();
+    const logs: string[] = [];
+    const update = vi.fn().mockRejectedValue(new Error("db write failed"));
+    const db = eventScopedDb(row, {
+      bounceIngestSettings: { update },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => mockProvider([]),
+      log: (msg) => logs.push(msg),
+    });
+
+    expect(summary.connectFailed).toBe(false);
+    expect(logs.some((m) => m.includes("persist last_run failed"))).toBe(true);
+  });
+
+  it("counts unexpected folder failures before persisting last_run", async () => {
+    const row = settings();
+    const update = vi.fn().mockResolvedValue(row);
+    const db = eventScopedDb(row, {
+      bounceIngestSettings: { update },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => ({
+        connect: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        fetchCandidateMessages: vi.fn().mockResolvedValue([
+          {
+            uid: "boom",
+            receivedAt: new Date(),
+            subject: "x",
+            get bodyText(): string {
+              throw new Error("body read failed");
+            },
+          },
+        ]),
+        markSeen: vi.fn(),
+      }),
+      log: () => undefined,
+    });
+
+    expect(summary.errors).toBeGreaterThanOrEqual(1);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          last_run_ok: false,
+        }),
+      }),
+    );
+  });
+
+  it("does not persist last_run on noop disabled settings", async () => {
+    const row = settings({ enabled: false });
+    const update = vi.fn();
+    const db = {
+      bounceIngestSettings: {
+        findUnique: vi.fn().mockResolvedValue(row),
+        update,
+      },
+      bounceIngestProcessedUid: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    } as never;
+
+    await ingestBounces(db, { eventId: "evt_1" });
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("hard-bounces older in-flight delivery when a second NDR hits the same recipient", async () => {
@@ -763,6 +886,7 @@ describe("ingestBounces", () => {
     const db = {
       bounceIngestSettings: {
         findMany: vi.fn().mockResolvedValue([row1, row2]),
+        update: vi.fn().mockResolvedValue({}),
       },
       bounceIngestProcessedUid: {
         findMany: vi.fn().mockResolvedValue([]),

@@ -14,8 +14,11 @@ import { isBlockedMailHost } from "@admitto/mailer";
 import {
   DEFAULT_BOUNCE_FOLDERS,
   imapTestErrorForAdmin,
+  ingestBounces,
   parseFolders,
+  serializeBounceIngestLastRun,
   testBounceImapConnection,
+  type IngestSummary,
 } from "@admitto/mail-delivery";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { writeAdminAuditLog } from "@admitto/tickets";
@@ -123,6 +126,11 @@ function serializeSettings(
     smtp_reuse_available: smtpReuseAvailable,
     folders: row ? parseFolders(row.folders) : [...DEFAULT_BOUNCE_FOLDERS],
     poll_interval_minutes: row?.poll_interval_minutes ?? 5,
+    lastRun: serializeBounceIngestLastRun(
+      row?.last_run_at,
+      row?.last_run_ok,
+      row?.last_run_summary,
+    ),
   };
 }
 
@@ -275,6 +283,7 @@ export async function handleGetEventBounceIngestSettings(
     eventId,
     organizationId,
     ...serializeSettings(row, mailDescription),
+    recentRuns: [],
   });
 }
 
@@ -354,6 +363,7 @@ export async function handlePutEventBounceIngestSettings(
     eventId,
     organizationId,
     ...serializeSettings(row, mailDescription),
+    recentRuns: [],
   });
 }
 
@@ -412,4 +422,83 @@ export async function handlePostEventBounceIngestSettingsTest(
     ok: true,
     message: `Connected. Checked ${result.foldersChecked} folder${result.foldersChecked === 1 ? "" : "s"}.`,
   });
+}
+
+function manualRunMessage(summary: IngestSummary): string {
+  if (summary.connectFailed) {
+    return "Could not connect to the mailbox.";
+  }
+  if (summary.errors > 0) {
+    return `Check finished with errors. ${summary.messagesSeen} seen, ${summary.bouncesApplied} bounced.`;
+  }
+  return `Check finished. ${summary.messagesSeen} seen, ${summary.bouncesApplied} bounced.`;
+}
+
+/** POST /api/admin/events/:eventId/bounce-ingest-settings/run */
+export async function handlePostEventBounceIngestSettingsRun(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const gated = await gateBounceIngestSettings(c, db);
+  if (gated instanceof Response) return gated;
+  const { eventId, organizationId } = gated;
+
+  const row = await db.bounceIngestSettings.findUnique({ where: { event_id: eventId } });
+  if (!row?.imap_host) {
+    return c.json({ ok: false, error: "Save your bounce detection settings first." }, 400);
+  }
+  if (!row.enabled) {
+    return c.json({ ok: false, error: "Turn bounce detection on and save first." }, 400);
+  }
+
+  const logPrefix = "[admin] event bounce ingest run";
+  const summary = await ingestBounces(db, { eventId });
+
+  const updated = await db.bounceIngestSettings.findUnique({ where: { event_id: eventId } });
+  const lastRun = serializeBounceIngestLastRun(
+    updated?.last_run_at,
+    updated?.last_run_ok,
+    updated?.last_run_summary,
+  );
+  const ok = lastRun?.ok ?? false;
+  const message = manualRunMessage(summary);
+
+  if (ok) {
+    emitSystemLog("mail", "info", "mail_bounce_ingest_manual_ok", {
+      context: logPrefix,
+      eventId,
+      messagesSeen: summary.messagesSeen,
+      bouncesApplied: summary.bouncesApplied,
+    });
+  } else {
+    emitSystemLog("mail", "error", "mail_bounce_ingest_manual_failed", {
+      context: logPrefix,
+      eventId,
+      connectFailed: summary.connectFailed,
+      errors: summary.errors,
+    });
+  }
+
+  const audit = adminAuditFromContext(c);
+  try {
+    await writeAdminAuditLog(db, {
+      organizationId,
+      actorUserId: audit.operator!,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "bounce_ingest_manual_run",
+      metadata: {
+        eventId,
+        ok,
+        messagesSeen: summary.messagesSeen,
+        bouncesApplied: summary.bouncesApplied,
+        connectFailed: summary.connectFailed,
+      },
+    });
+  } catch (auditErr) {
+    console.error("[audit] bounce_ingest_manual_run log failed", auditErr);
+  }
+
+  return c.json({ ok, lastRun, recentRuns: [], message });
 }

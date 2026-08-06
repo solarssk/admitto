@@ -16,12 +16,14 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventBounceIngestSettings: vi.fn(),
     saveEventBounceIngestSettings: vi.fn(),
     testEventBounceIngestConnection: vi.fn(),
+    runEventBounceIngestCheck: vi.fn(),
   };
 });
 
 import {
   ApiError,
   fetchEventBounceIngestSettings,
+  runEventBounceIngestCheck,
   saveEventBounceIngestSettings,
   testEventBounceIngestConnection,
 } from "../../src/api/client.js";
@@ -29,6 +31,7 @@ import {
 const mockFetch = vi.mocked(fetchEventBounceIngestSettings);
 const mockSave = vi.mocked(saveEventBounceIngestSettings);
 const mockTest = vi.mocked(testEventBounceIngestConnection);
+const mockRun = vi.mocked(runEventBounceIngestCheck);
 
 function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLInputElement | HTMLButtonElement).disabled;
@@ -50,6 +53,7 @@ function bounceResponse(
     smtp_reuse_available: false,
     folders: ["INBOX", "Junk Email"],
     poll_interval_minutes: 5,
+    lastRun: null,
     ...overrides,
   };
 }
@@ -66,6 +70,7 @@ beforeEach(() => {
   mockFetch.mockReset();
   mockSave.mockReset();
   mockTest.mockReset();
+  mockRun.mockReset();
   mockFetch.mockResolvedValue(bounceResponse());
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -367,5 +372,185 @@ describe("EventBounceIngestPanel", () => {
       ),
     );
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows Waiting for first automatic check when enabled and lastRun is null", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    renderPanel();
+    expect(await screen.findByText("Waiting for first automatic check")).toBeTruthy();
+  });
+
+  it("shows Off when bounce detection is disabled and lastRun is null", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: false, lastRun: null }));
+    renderPanel();
+    expect(
+      await screen.findByText(
+        /Turn bounce detection on and save\. Automatic checks will appear here/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows last automatic check OK status and counts", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: {
+          at: "2026-08-06T10:00:00.000Z",
+          ok: true,
+          messagesSeen: 3,
+          bouncesApplied: 1,
+          softBouncesLogged: 0,
+          unparsed: 0,
+          noMatchingDelivery: 0,
+          errors: 0,
+          connectFailed: false,
+        },
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText(/^OK ·/)).toBeTruthy();
+    expect(screen.getByText(/3 seen/)).toBeTruthy();
+    expect(screen.getByText(/1 bounced/)).toBeTruthy();
+  });
+
+  it("shows Failed when lastRun.ok is false", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: {
+          at: "2026-08-06T10:00:00.000Z",
+          ok: false,
+          messagesSeen: 0,
+          bouncesApplied: 0,
+          softBouncesLogged: 0,
+          unparsed: 0,
+          noMatchingDelivery: 0,
+          errors: 1,
+          connectFailed: true,
+        },
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText(/^Failed ·/)).toBeTruthy();
+    expect(screen.getByText(/connect failed/)).toBeTruthy();
+  });
+
+  it("shows Run check now and updates lastRun after a manual run", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    mockRun.mockResolvedValueOnce({
+      ok: true,
+      message: "Check finished. 2 seen, 1 bounced.",
+      lastRun: {
+        at: "2026-08-06T11:00:00.000Z",
+        ok: true,
+        messagesSeen: 2,
+        bouncesApplied: 1,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+    });
+    renderPanel();
+    const runButton = await screen.findByRole("button", { name: "Run check now" });
+    expect(isDisabled(runButton)).toBe(false);
+    fireEvent.click(runButton);
+    await waitFor(() => {
+      expect(mockRun).toHaveBeenCalledWith("evt-1");
+    });
+    expect(await screen.findByText(/^OK ·/)).toBeTruthy();
+    expect(document.querySelector(".org-mail-summary")?.textContent).toMatch(/2 seen/);
+  });
+
+  it("toasts an error when Run check now fails", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    mockRun.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not run bounce check/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("disables Run check now when the event is archived", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    renderPanel(true);
+    expect(isDisabled(await screen.findByRole("button", { name: "Run check now" }))).toBe(true);
+  });
+
+  it("disables Run check now when bounce detection is off", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: false, lastRun: null }));
+    renderPanel();
+    const runButton = await screen.findByRole("button", { name: "Run check now" });
+    expect(isDisabled(runButton)).toBe(true);
+  });
+
+  it("toggles bounce detection On/Off and edits the IMAP username", async () => {
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.click(screen.getByRole("switch", { name: "On" }));
+    expect(screen.getByRole("switch", { name: "Off" })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "bounce-edited@example.com" },
+    });
+    expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe(
+      "bounce-edited@example.com",
+    );
+  });
+
+  it("cancels an in-progress password replace without saving", async () => {
+    renderPanel();
+    await screen.findByLabelText("IMAP host");
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByPlaceholderText("New value")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByPlaceholderText("New value")).toBeNull();
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("toasts an error when Run check now returns ok:false", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    mockRun.mockResolvedValueOnce({
+      ok: false,
+      message: "Could not connect to the mailbox.",
+      lastRun: {
+        at: "2026-08-06T11:00:00.000Z",
+        ok: false,
+        messagesSeen: 0,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 1,
+        connectFailed: true,
+      },
+    });
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not connect/);
+    });
+    expect(await screen.findByText(/^Failed ·/)).toBeTruthy();
+  });
+
+  it("applies null IMAP defaults from the API and falls back Check every", async () => {
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        imap_host: null,
+        imap_port: null,
+        imap_username: null,
+        folders: [],
+        poll_interval_minutes: 0,
+        configured: false,
+        enabled: false,
+      }),
+    );
+    renderPanel();
+    expect((await screen.findByLabelText("IMAP host") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("993");
+    expect((screen.getByLabelText("Check every") as HTMLSelectElement).value).toBe("5");
   });
 });

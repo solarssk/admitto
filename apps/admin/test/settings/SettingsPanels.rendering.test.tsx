@@ -689,6 +689,40 @@ describe("AuditLogPanel rendering", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getByText("some_future_action")).toBeTruthy();
   });
+
+  it("shows friendly labels for bounce detection audit actions", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "bis-tested", action_type: "bounce_ingest_settings_tested" }),
+        makeAuditEntry({ id: "bis-updated", action_type: "bounce_ingest_settings_updated" }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Bounce detection connection tested")).toBeTruthy();
+    expect(within(table).getByText("Bounce detection settings updated")).toBeTruthy();
+    expect(within(table).queryByText("bounce_ingest_settings_tested")).toBeNull();
+  });
+
+  it("shows a friendly label for support_contact_updated", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [makeAuditEntry({ action_type: "support_contact_updated" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Support contact updated")).toBeTruthy();
+    expect(within(table).queryByText("support_contact_updated")).toBeNull();
+  });
   it("falls back to the actor's email, then to a deleted-user label, when the display name is missing", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [

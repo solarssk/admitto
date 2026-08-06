@@ -368,6 +368,17 @@ describe("mapTilesServiceLabel", () => {
   });
 });
 
+
+function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
+  return {
+    $queryRaw: vi.fn().mockRejectedValue(new Error("no db")),
+    bounceIngestSettings: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    ...overrides,
+  } as unknown as PrismaClient;
+}
+
 describe("collectAdminHealth", () => {
   it("builds core and external groups including weather", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
@@ -391,7 +402,7 @@ describe("collectAdminHealth", () => {
     });
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       env: envWithUpload({ GIT_COMMIT: "deadbeef" }),
       now: () => new Date("2026-08-03T12:00:00.000Z"),
@@ -411,6 +422,11 @@ describe("collectAdminHealth", () => {
     expect(core.find((c) => c.id === "file_storage")?.summary).toBe("Connected");
 
     const external = report.groups[1]!.checks;
+    expect(external.find((c) => c.id === "bounce_ingest")).toMatchObject({
+      label: "Bounce detection",
+      status: "not_configured",
+      summary: "Not configured",
+    });
     expect(external.find((c) => c.id === "email_sending")?.label).toBe("Email sending, SMTP");
     expect(external.find((c) => c.id === "wallet_passes")?.status).toBe("planned");
     expect(external.find((c) => c.id === "wallet_passes")?.label).toBe(
@@ -435,6 +451,73 @@ describe("collectAdminHealth", () => {
     ).toBe(true);
   });
 
+  it("marks bounce_ingest degraded when an enabled event has a failed last run", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: {
+        $queryRaw: vi.fn().mockRejectedValue(new Error("no db")),
+        bounceIngestSettings: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              enabled: true,
+              last_run_at: new Date("2026-08-03T11:55:00.000Z"),
+              last_run_ok: false,
+            },
+          ]),
+        },
+      } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      env: envWithUpload({ GIT_COMMIT: "deadbeef" }),
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[1]!.checks.find((c) => c.id === "bounce_ingest")).toMatchObject({
+      status: "degraded",
+      summary: "1 event needs attention",
+    });
+  });
+
+  it("keeps bounce_ingest ok for a fresh run when deploy interval is hourly", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: {
+        $queryRaw: vi.fn().mockRejectedValue(new Error("no db")),
+        bounceIngestSettings: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              enabled: true,
+              // 20 minutes ago - stale under the 15m floor, but healthy under 2× hourly
+              last_run_at: new Date("2026-08-03T11:40:00.000Z"),
+              last_run_ok: true,
+            },
+          ]),
+        },
+      } as unknown as PrismaClient,
+      rateLimitStore: {} as never,
+      env: envWithUpload({
+        GIT_COMMIT: "deadbeef",
+        BOUNCE_INGEST_INTERVAL_SECONDS: "3600",
+      }),
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[1]!.checks.find((c) => c.id === "bounce_ingest")).toMatchObject({
+      status: "ok",
+    });
+  });
+
   it("marks passive MET Norway weather degraded without Support contact", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
@@ -445,7 +528,7 @@ describe("collectAdminHealth", () => {
     isGeocodingContactConfigured.mockResolvedValue(false);
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       env: envWithUpload({ GIT_COMMIT: "deadbeef" }),
       now: () => new Date("2026-08-03T12:00:00.000Z"),
@@ -473,7 +556,7 @@ describe("collectAdminHealth", () => {
     });
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
@@ -498,7 +581,7 @@ describe("collectAdminHealth", () => {
     });
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
@@ -523,7 +606,7 @@ describe("collectAdminHealth", () => {
     });
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     const weather = report.groups[1]!.checks.find((c) => c.id === "weather");
@@ -544,7 +627,7 @@ describe("collectAdminHealth", () => {
       probeLive: vi.fn(async () => ({ ok: true, latencyMs: 10 })),
     });
     let report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
     });
@@ -554,7 +637,7 @@ describe("collectAdminHealth", () => {
       probeLive: vi.fn(async () => ({ ok: true, latencyMs: 2_000 })),
     });
     report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
     });
@@ -568,7 +651,7 @@ describe("collectAdminHealth", () => {
       })),
     });
     report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
     });
@@ -584,7 +667,7 @@ describe("collectAdminHealth", () => {
       })),
     });
     report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
     });
@@ -638,7 +721,7 @@ describe("collectAdminHealth", () => {
     });
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
 
@@ -704,7 +787,7 @@ describe("collectAdminHealth", () => {
     stubHappyPathMailAndIdp();
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
 
@@ -722,7 +805,7 @@ describe("collectAdminHealth", () => {
     stubHappyPathMailAndIdp();
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
 
@@ -747,7 +830,7 @@ describe("collectAdminHealth", () => {
     stubHappyPathMailAndIdp();
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
 
@@ -767,7 +850,7 @@ describe("collectAdminHealth", () => {
     describeMailConfigForOrg.mockRejectedValueOnce(new Error("mail boom"));
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
 
@@ -806,7 +889,7 @@ describe("collectAdminHealth", () => {
 
     const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
@@ -829,7 +912,7 @@ describe("collectAdminHealth", () => {
 
     const search = vi.fn().mockRejectedValue(new Error("timeout"));
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
@@ -858,7 +941,7 @@ describe("collectAdminHealth", () => {
 
     const search = vi.fn().mockResolvedValue([{ label: "Warsaw" }]);
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },
@@ -880,7 +963,7 @@ describe("collectAdminHealth", () => {
     setMapsEnabled(false);
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
 
@@ -903,7 +986,7 @@ describe("collectAdminHealth", () => {
     stubHappyPathMailAndIdp();
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
 
@@ -979,7 +1062,7 @@ describe("collectAdminHealth", () => {
     });
 
     const exportReport = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     expect(exportReport.groups[1]!.checks.find((c) => c.id === "email_sending")?.label).toBe(
@@ -995,7 +1078,7 @@ describe("collectAdminHealth", () => {
     describeMailConfigForOrg.mockRejectedValueOnce(new Error("org missing"));
     checkMailer.mockReturnValue({ configured: true, provider: "smtp" });
     const envFallback = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     expect(envFallback.groups[1]!.checks.find((c) => c.id === "email_sending")?.summary).toBe(
@@ -1011,7 +1094,7 @@ describe("collectAdminHealth", () => {
     describeMailConfigForOrg.mockRejectedValueOnce(new Error("org missing"));
     checkMailer.mockReturnValue({ configured: true, provider: "smtp" });
     const liveLookupFail = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
     });
@@ -1028,7 +1111,7 @@ describe("collectAdminHealth", () => {
     resolveMailConfigForOrg.mockRejectedValueOnce(new Error("allowed_from_domain conflict"));
     const probeMail = vi.fn();
     const liveResolveFail = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       probeMail,
@@ -1042,7 +1125,7 @@ describe("collectAdminHealth", () => {
       provider: { value: "powerautomate", source: "organization", locked: false },
     });
     const pa = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     expect(pa.groups[1]!.checks.find((c) => c.id === "email_sending")?.label).toBe(
@@ -1087,7 +1170,7 @@ describe("collectAdminHealth", () => {
     testCfAccessConnection.mockResolvedValueOnce({ ok: false, error: "jwks" });
 
     const downReport = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
     });
@@ -1101,7 +1184,7 @@ describe("collectAdminHealth", () => {
     testOidcConnection.mockResolvedValueOnce({ ok: true });
     testCfAccessConnection.mockResolvedValueOnce({ ok: true });
     const okReport = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
     });
@@ -1142,7 +1225,7 @@ describe("collectAdminHealth", () => {
     const probeMail = vi.fn().mockResolvedValue({ ok: true });
 
     const reachable = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       probeMail,
@@ -1154,7 +1237,7 @@ describe("collectAdminHealth", () => {
 
     probeMail.mockResolvedValueOnce({ ok: false, error: "auth failed" });
     const down = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       probeMail,
@@ -1168,7 +1251,7 @@ describe("collectAdminHealth", () => {
       provider: { value: "powerautomate", source: "organization", locked: false },
     });
     const pa = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       probeMail,
@@ -1185,7 +1268,7 @@ describe("collectAdminHealth", () => {
     });
     probeMail.mockResolvedValueOnce({ ok: true, skipped: true });
     const skippedProbe = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: true,
       probeMail,
@@ -1250,7 +1333,7 @@ describe("collectAdminHealth", () => {
     });
 
     const report = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     const core = report.groups[0]!.checks;
@@ -1278,7 +1361,7 @@ describe("collectAdminHealth", () => {
     });
     checkDatabase.mockResolvedValue({ status: "ok", latency_ms: Number.NaN });
     const latencyFromSetup = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     expect(
@@ -1291,7 +1374,7 @@ describe("collectAdminHealth", () => {
       provider: { value: "sendgrid", source: "organization", locked: false },
     });
     const unknown = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     expect(unknown.groups[1]!.checks.find((c) => c.id === "email_sending")?.label).toBe(
@@ -1308,7 +1391,7 @@ describe("collectAdminHealth", () => {
       provider: { value: null, source: "default", locked: false },
     });
     const dbProbeFail = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     expect(dbProbeFail.groups[0]!.checks.find((c) => c.id === "database")?.status).toBe("ok");
@@ -1330,7 +1413,7 @@ describe("collectAdminHealth", () => {
     });
 
     const disabled = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
     });
     expect(disabled.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.summary).toBe(
@@ -1345,7 +1428,7 @@ describe("collectAdminHealth", () => {
       jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
     });
     const enabled = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       live: false,
     });
@@ -1364,7 +1447,7 @@ describe("collectAdminHealth", () => {
     setMapsEnabled(true);
 
     const carto = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       env: envWithUpload({
         MAP_TILE_URL: "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
@@ -1375,7 +1458,7 @@ describe("collectAdminHealth", () => {
     );
 
     const custom = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       env: envWithUpload({ MAP_TILE_URL: "https://tiles.example.com/{z}/{x}/{y}.png" }),
     });
@@ -1385,7 +1468,7 @@ describe("collectAdminHealth", () => {
 
     setMapsEnabled(false);
     const disabled = await collectAdminHealth({
-      db: { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      db: healthDb(),
       rateLimitStore: {} as never,
       // Explicit env bag so resolveMapTileConfig consults LOCATION_MAPS_* (not process defaults).
       env: envWithUpload({ LOCATION_MAPS_ENABLED: "false" }),
@@ -1502,7 +1585,7 @@ describe("handleAdminHealth", () => {
 
     const getRes = await handleAdminHealth(
       fakeHealthContext(),
-      { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      healthDb(),
       {} as never,
       { adminDistRoot: "/served-admin-dist" },
     );
@@ -1522,7 +1605,7 @@ describe("handleAdminHealth", () => {
     setMapsEnabled(true);
     const postRes = await handleAdminHealth(
       fakeHealthContext(),
-      { $queryRaw: vi.fn().mockRejectedValue(new Error("no db")) } as unknown as PrismaClient,
+      healthDb(),
       {} as never,
       {
         geocodingProvider: { name: "nominatim", search, reverse: vi.fn() },

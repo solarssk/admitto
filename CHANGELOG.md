@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Bounce detection last automatic check.** Event settings → Mailing shows the latest bounce-ingest run (time, OK/Failed, message counts). **Run check now** in the card header triggers a one-off ingest and updates the card (Test connection still does not). Settings → Health adds a soft **Bounce detection** row (`not_configured` / `ok` / `degraded`) based on enabled events' last runs. Does not affect `/healthz`.
 - **Event-day weather** on admin/operator event list cards and the public ticket page (ADR 0040). Choose **MET Norway** (default, no API key; User-Agent from Support contact) or **Open-Meteo** under **Organisation Settings → External services**. Forecast horizon is about 9 days (MET Norway) or up to 16 days (Open-Meteo); further out shows “Forecast available N days before the event”. Attribution matches the provider. Health check labels **Weather, MET Norway** or **Weather, Open-Meteo**. Free Open-Meteo host is non-commercial; commercial deploys need a customer key, self-hosted base URL, MET Norway, or weather disabled. **Maps** uses the same panel layout, with a provider select (OpenStreetMap / Nominatim today). Maps enablement, tile URL, attribution, max zoom, and geocoding base URL are controlled in that tab (not deploy env): `LOCATION_MAPS_ENABLED` and related `MAP_TILE_*` / geocoding env toggles no longer drive live behaviour; disable maps in the UI if you previously relied on `LOCATION_MAPS_ENABLED=false`. Geocoding HTTP timeout (`GEOCODING_TIMEOUT_MS`) remains an optional infra setting. **Test connection** next to each Provider probes the draft settings without saving. Save with no edits shows an info toast instead of doing nothing.
 
 ### Changed
@@ -17,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounce IMAP MIME extraction uses libmime / libqp / iconv-lite** for quoted-printable, base64, and charset decoding (including ISO-8859-1 and windows-1252 NDR parts), instead of a UTF-8-only hand-rolled decoder. RFC 2047 encoded-words in part headers are decoded before walking the MIME tree. JS string sources are encoded as UTF-8 octets before the binary walk so unescaped non-ASCII in 8bit bodies (e.g. `boîte`) is preserved.
 - **Bounce ingest looks up matching deliveries in one query per folder poll**, instead of one database round-trip per parsed NDR recipient line.
 - **Bounce free-text NDR dialects are a matcher table** in `parseBounceLine` (Postfix / mailhop / Synology / orphan `failed:`), so new MTA formats can be added without growing one inline function. Bounce probe reuses the same IMAP open helper as ingest.
+
+### Fixed
+- **Audit log shows friendly labels** for bounce detection and other previously unmapped actions (support contact, weather/maps settings, SMTP/bounce probes, location, session device label) instead of raw snake_case.
+- **System Logs retention notice** has clearer spacing below the Copy / Clear view footer.
 
 ### Security
 - **External services weather base URL and geocoding base URL reject private, loopback, link-local, and cloud-metadata hosts** (including DNS recheck) before save or Test connection, so UI-editable endpoints cannot be used to probe internal networks from the web process.
@@ -58,7 +63,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Event Mail tab Save no longer skips a pending bounce-settings save** when the mail card only opens the “Revert to organization” confirmation dialog.
 - **Bounce detection panel refreshes after you save the Mail card**, so switching to Dedicated SMTP unlocks “Use SMTP username & password” without a full page reload.
 - **Also verify bounce keeps one IMAP login for the whole wait**, instead of reconnecting every few seconds (hosted providers often throttle that rate and the probe then times out).
-- **Bounce detection “Last automatic check” no longer pretends there were zero runs.** The card says last-run status is not available in this version (sidecar history is not exposed in the UI yet).
 - **Bounce-ingest sidecar rejects a bad `BOUNCE_INGEST_INTERVAL_SECONDS`** (empty, zero, or non-integer) at startup instead of spinning or exiting from `sleep`.
 - **Send test email no longer looks identical on every click.** Each transport test gets a unique subject and body stamp, so corporate SMTP relays that suppress duplicate From/To/Subject/body (e.g. a second send to the same address) actually deliver again.
 - **Health check version/commit matches the sidebar.** Overview and Markdown export use the running staff SPA build (`__APP_VERSION__` / `__APP_COMMIT__`); the API prefers `apps/admin/dist/build-meta.json` written at Vite build time over live `git HEAD`, so a stale lab SPA no longer disagrees with Health after a git pull.

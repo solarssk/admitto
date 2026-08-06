@@ -764,6 +764,18 @@ export interface EventMailSettingsResponse {
 }
 
 /** Event-scoped IMAP bounce / NDR ingest settings (ADR 0039). */
+export interface EventBounceIngestLastRunDto {
+  at: string;
+  ok: boolean;
+  messagesSeen: number;
+  bouncesApplied: number;
+  softBouncesLogged: number;
+  unparsed: number;
+  noMatchingDelivery: number;
+  errors: number;
+  connectFailed: boolean;
+}
+
 export interface EventBounceIngestSettingsResponse {
   eventId: string;
   organizationId: string;
@@ -781,6 +793,10 @@ export interface EventBounceIngestSettingsResponse {
   smtp_reuse_available: boolean;
   folders: string[];
   poll_interval_minutes: number;
+  /** Null until bounce-ingest records a run (not updated by Test connection). */
+  lastRun: EventBounceIngestLastRunDto | null;
+  /** Empty until run-history (PR5); kept for forward-compatible admin builds. */
+  recentRuns?: EventBounceIngestLastRunDto[];
 }
 
 export interface SaveEventBounceIngestSettingsBody {
@@ -798,6 +814,14 @@ export interface SaveEventBounceIngestSettingsBody {
 export interface BounceIngestTestResponse {
   ok: boolean;
   message?: string;
+  error?: string;
+}
+
+export interface BounceIngestRunResponse {
+  ok: boolean;
+  lastRun: EventBounceIngestLastRunDto | null;
+  recentRuns?: EventBounceIngestLastRunDto[];
+  message: string;
   error?: string;
 }
 

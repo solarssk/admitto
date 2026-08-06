@@ -20,11 +20,13 @@ import {
 } from "@admitto/ui";
 import {
   fetchEventBounceIngestSettings,
+  runEventBounceIngestCheck,
   saveEventBounceIngestSettings,
   testEventBounceIngestConnection,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
+  EventBounceIngestLastRunDto,
   EventBounceIngestSettingsResponse,
   MailSecretFieldDto,
   SaveEventBounceIngestSettingsBody,
@@ -33,6 +35,7 @@ import { useConnectionTest } from "../hooks/useConnectionTest.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
+import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
 
 const POLL_OPTIONS = [
   { value: 5, label: "5 minutes" },
@@ -55,6 +58,118 @@ const BOUNCE_REUSE_HINT_AVAILABLE =
 const BOUNCE_REUSE_HINT_UNAVAILABLE =
   "Available when this event's mail transport is SMTP.";
 
+/** One-line field hint under Check every (keep short so the row stays single-line). */
+const CHECK_EVERY_HINT = "How often to plan mailbox checks for this event.";
+
+/** Longer deploy detail on the (i) next to the label. */
+const CHECK_EVERY_INFO =
+  "In this version the deploy bounce-ingest interval still controls how often automatic checks run.";
+
+const LAST_RUN_HINT =
+  "Updated by automatic bounce-ingest checks or Run check now. Test connection does not update this card.";
+
+function lastRunCountsLine(run: EventBounceIngestLastRunDto): string {
+  const parts = [
+    `${run.messagesSeen} seen`,
+    `${run.bouncesApplied} bounced`,
+    `${run.errors} errors`,
+  ];
+  if (run.connectFailed) parts.push("connect failed");
+  return parts.join(" · ");
+}
+
+function LastRunSummary({ run }: Readonly<{ run: EventBounceIngestLastRunDto }>) {
+  return (
+    <output
+      className={`org-mail-summary${
+        run.ok ? " org-mail-summary--configured" : " org-mail-summary--failed"
+      }`}
+    >
+      <span className="org-mail-summary__icon">
+        <i
+          className={`ti ${run.ok ? "ti-circle-check" : "ti-alert-circle"}`}
+          aria-hidden="true"
+        />
+      </span>
+      <div className="org-mail-summary__body">
+        <strong>
+          {run.ok ? "OK" : "Failed"}
+          {" · "}
+          {formatEventDateTime(run.at, getBrowserTimeZone())}
+        </strong>
+        <span>{lastRunCountsLine(run)}</span>
+      </div>
+    </output>
+  );
+}
+
+function LastAutomaticCheckBody({
+  lastRun,
+  enabled,
+}: Readonly<{
+  lastRun: EventBounceIngestLastRunDto | null | undefined;
+  enabled: boolean;
+}>) {
+  if (!lastRun && !enabled) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-player-pause" aria-hidden="true" />}
+        title="Off"
+        description="Turn bounce detection on and save. Automatic checks will appear here after bounce-ingest runs."
+      />
+    );
+  }
+  if (!lastRun) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-clock" aria-hidden="true" />}
+        title="Waiting for first automatic check"
+        description="Status appears after bounce-ingest runs for this event, or when you use Run check now. Test connection does not update this card."
+      />
+    );
+  }
+  return <LastRunSummary run={lastRun} />;
+}
+
+function RunCheckNowButton({
+  blockedReason,
+  running,
+  onRun,
+}: Readonly<{
+  blockedReason: string | undefined;
+  running: boolean;
+  onRun: () => void;
+}>) {
+  if (blockedReason) {
+    return (
+      <Tooltip content={blockedReason}>
+        <span>
+          <Button type="button" variant="secondary" size="sm" disabled>
+            Run check now
+          </Button>
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip content="Poll the bounce mailbox once and update this card">
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        icon={
+          <i className={`ti ti-refresh${running ? " at-spin" : ""}`} aria-hidden="true" />
+        }
+        onClick={onRun}
+        disabled={running}
+        aria-busy={running}
+      >
+        Run check now
+      </Button>
+    </Tooltip>
+  );
+}
+
 type Draft = {
   enabled: boolean;
   imapHost: string;
@@ -72,7 +187,7 @@ function draftFromApi(data: EventBounceIngestSettingsResponse): Draft {
     imapPort: String(data.imap_port ?? 993),
     imapUsername: data.imap_username ?? "",
     reuseSmtp: data.reuse_smtp_credentials,
-    folders: data.folders.join(", "),
+    folders: (data.folders ?? []).join(", "),
     pollIntervalMinutes: data.poll_interval_minutes || 5,
   };
 }
@@ -106,6 +221,18 @@ function bounceTestBlockedReason(
   if (isArchived) return "This event is archived.";
   if (dirty) return "Save your changes first.";
   if (!configured) return "Save your bounce detection settings first.";
+  return undefined;
+}
+
+function bounceRunBlockedReason(
+  isArchived: boolean,
+  dirty: boolean,
+  configured: boolean,
+  enabled: boolean,
+): string | undefined {
+  const testBlocked = bounceTestBlockedReason(isArchived, dirty, configured);
+  if (testBlocked) return testBlocked;
+  if (!enabled) return "Turn bounce detection on and save first.";
   return undefined;
 }
 
@@ -147,6 +274,7 @@ export const EventBounceIngestPanel = forwardRef<
     locked: false,
   });
   const [saving, setSaving] = useState(false);
+  const [runningCheck, setRunningCheck] = useState(false);
   const {
     testing,
     result: testResult,
@@ -286,6 +414,19 @@ export const EventBounceIngestPanel = forwardRef<
     await runConnectionTest(() => testEventBounceIngestConnection(eventId));
   };
 
+  const handleRunCheck = async () => {
+    setRunningCheck(true);
+    try {
+      const result = await runEventBounceIngestCheck(eventId);
+      setApiData((prev) => (prev ? { ...prev, lastRun: result.lastRun } : prev));
+      addToast(result.message, result.ok ? "success" : "error");
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Could not run bounce check."), "error");
+    } finally {
+      setRunningCheck(false);
+    }
+  };
+
   if (loading) {
     return whenShown(
       showLoading,
@@ -316,6 +457,12 @@ export const EventBounceIngestPanel = forwardRef<
     apiData?.configured ?? false,
   );
   const testBlocked = Boolean(testBlockedReason);
+  const runBlockedReason = bounceRunBlockedReason(
+    isArchived,
+    dirty,
+    apiData?.configured ?? false,
+    apiData?.enabled ?? false,
+  );
   const testReasonId = "event-bounce-ingest-test-reason";
 
   return (
@@ -423,7 +570,8 @@ export const EventBounceIngestPanel = forwardRef<
               />
               <div className="event-bounce-ingest__poll-and-test">
                 <Select
-                  label="Check every"
+                  label={<HintLabel hint={CHECK_EVERY_INFO}>Check every</HintLabel>}
+                  hint={CHECK_EVERY_HINT}
                   className="event-bounce-ingest__poll-select"
                   value={String(draft.pollIntervalMinutes)}
                   disabled={isArchived}
@@ -480,17 +628,16 @@ export const EventBounceIngestPanel = forwardRef<
       </Card>
 
       <Card
-        title={
-          <HintLabel hint="Updated by the bounce-ingest sidecar, not by Test connection.">
-            Last automatic check
-          </HintLabel>
+        title={<HintLabel hint={LAST_RUN_HINT}>Last automatic check</HintLabel>}
+        actions={
+          <RunCheckNowButton
+            blockedReason={runBlockedReason}
+            running={runningCheck}
+            onRun={() => void handleRunCheck()}
+          />
         }
       >
-        <EmptyState
-          icon={<i className="ti ti-clock" aria-hidden="true" />}
-          title="Not tracked yet"
-          description="Last-run status is not available in this version."
-        />
+        <LastAutomaticCheckBody lastRun={apiData?.lastRun} enabled={apiData?.enabled ?? false} />
       </Card>
     </div>
   );

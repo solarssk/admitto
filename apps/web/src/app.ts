@@ -240,6 +240,7 @@ import {
   handleGetEventBounceIngestSettings,
   handlePutEventBounceIngestSettings,
   handlePostEventBounceIngestSettingsTest,
+  handlePostEventBounceIngestSettingsRun,
 } from "./admin/event-bounce-ingest-settings-routes.js";
 import { handleGetEventLocation, handlePutEventLocation } from "./admin/event-location-routes.js";
 import {
@@ -764,6 +765,13 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminEventMailSettingsRateLimit,
     guardArchivedEvent((c) => handlePostEventBounceIngestSettingsTest(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/bounce-ingest-settings/run",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminEventMailSettingsRateLimit,
+    guardArchivedEvent((c) => handlePostEventBounceIngestSettingsRun(c, db)),
   );
   app.get("/api/admin/events/:eventId/location", staffAdminGate, (c) => handleGetEventLocation(c, db));
   app.put(

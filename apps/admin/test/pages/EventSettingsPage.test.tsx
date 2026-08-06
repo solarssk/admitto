@@ -255,6 +255,7 @@ function emptyBounceIngestSettingsResponse(): EventBounceIngestSettingsResponse 
     smtp_reuse_available: false,
     folders: ["INBOX", "Junk Email"],
     poll_interval_minutes: 5,
+    lastRun: null,
   };
 }
 
