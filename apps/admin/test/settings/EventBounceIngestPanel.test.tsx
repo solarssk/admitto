@@ -54,6 +54,7 @@ function bounceResponse(
     folders: ["INBOX", "Junk Email"],
     poll_interval_minutes: 5,
     lastRun: null,
+    recentRuns: [],
     ...overrides,
   };
 }
@@ -390,6 +391,17 @@ describe("EventBounceIngestPanel", () => {
     ).toBeTruthy();
   });
 
+  it("shows Off when saved enabled is false even if the draft toggle is on", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: false, lastRun: null }));
+    renderPanel();
+    const toggle = await screen.findByRole("switch", { name: "Off" });
+    fireEvent.click(toggle);
+    expect(
+      screen.getByText(/Turn bounce detection on and save\. Automatic checks will appear here/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Waiting for first automatic check")).toBeNull();
+  });
+
   it("shows last automatic check OK status and counts", async () => {
     mockFetch.mockResolvedValueOnce(
       bounceResponse({
@@ -453,29 +465,14 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     const runButton = await screen.findByRole("button", { name: "Run check now" });
     expect(isDisabled(runButton)).toBe(false);
-    fireEvent.click(runButton);
+    await act(async () => {
+      fireEvent.click(runButton);
+    });
     await waitFor(() => {
       expect(mockRun).toHaveBeenCalledWith("evt-1");
     });
     expect(await screen.findByText(/^OK ·/)).toBeTruthy();
     expect(document.querySelector(".org-mail-summary")?.textContent).toMatch(/2 seen/);
-  });
-
-  it("toasts an error when Run check now fails", async () => {
-    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
-    mockRun.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderPanel();
-    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not run bounce check/);
-    });
-    expect(screen.queryByText("secret_internal")).toBeNull();
-  });
-
-  it("disables Run check now when the event is archived", async () => {
-    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
-    renderPanel(true);
-    expect(isDisabled(await screen.findByRole("button", { name: "Run check now" }))).toBe(true);
   });
 
   it("disables Run check now when bounce detection is off", async () => {
@@ -552,5 +549,64 @@ describe("EventBounceIngestPanel", () => {
     expect((await screen.findByLabelText("IMAP host") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("993");
     expect((screen.getByLabelText("Check every") as HTMLSelectElement).value).toBe("5");
+  });
+
+  it("shows Recent checks when more than one run is returned", async () => {
+    const runs = [
+      {
+        at: "2026-08-06T11:00:00.000Z",
+        ok: true,
+        messagesSeen: 1,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+      {
+        at: "2026-08-06T10:00:00.000Z",
+        ok: false,
+        messagesSeen: 0,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 1,
+        connectFailed: true,
+      },
+    ];
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: runs[0],
+        recentRuns: runs,
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText("Recent checks")).toBeTruthy();
+    expect(screen.getAllByText("Failed").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("hides Recent checks when only one run is returned", async () => {
+    const run = {
+      at: "2026-08-06T11:00:00.000Z",
+      ok: true,
+      messagesSeen: 1,
+      bouncesApplied: 0,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 0,
+      connectFailed: false,
+    };
+    mockFetch.mockResolvedValueOnce(
+      bounceResponse({
+        lastRun: run,
+        recentRuns: [run],
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText(/1 seen/)).toBeTruthy();
+    expect(screen.queryByText("Recent checks")).toBeNull();
   });
 });

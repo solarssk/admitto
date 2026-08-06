@@ -437,6 +437,9 @@ export {
   bounceIngestStaleMsFromIntervalSeconds,
   bounceIngestStaleMsForEvent,
   parseBounceIngestTickSeconds,
+  listBounceIngestRecentRuns,
+  pruneBounceIngestRunHistory,
+  BOUNCE_INGEST_RUN_HISTORY_LIMIT,
   BOUNCE_INGEST_STALE_MS,
 } from "./lastRun.js";
 export {

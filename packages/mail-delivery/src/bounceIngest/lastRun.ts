@@ -102,6 +102,9 @@ export function lastRunSummaryFromIngest(summary: IngestSummary): BounceIngestLa
   };
 }
 
+/** How many BounceIngestRun rows to keep per event. */
+export const BOUNCE_INGEST_RUN_HISTORY_LIMIT = 20;
+
 export async function persistBounceIngestLastRun(
   db: PrismaClient,
   eventId: string,
@@ -110,14 +113,63 @@ export async function persistBounceIngestLastRun(
 ): Promise<void> {
   const ok = lastRunOkFromSummary(summary);
   const last_run_summary = lastRunSummaryFromIngest(summary) as Prisma.InputJsonValue;
-  await db.bounceIngestSettings.update({
+  await db.$transaction(async (tx) => {
+    await tx.bounceIngestSettings.update({
+      where: { event_id: eventId },
+      data: {
+        last_run_at: ranAt,
+        last_run_ok: ok,
+        last_run_summary,
+      },
+    });
+    await tx.bounceIngestRun.create({
+      data: {
+        event_id: eventId,
+        ran_at: ranAt,
+        ok,
+        summary: last_run_summary,
+      },
+    });
+    await pruneBounceIngestRunHistory(tx, eventId);
+  });
+}
+
+/** Keep the newest N runs; delete older rows for this event. */
+export async function pruneBounceIngestRunHistory(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+  keep: number = BOUNCE_INGEST_RUN_HISTORY_LIMIT,
+): Promise<void> {
+  const keepRows = await db.bounceIngestRun.findMany({
     where: { event_id: eventId },
-    data: {
-      last_run_at: ranAt,
-      last_run_ok: ok,
-      last_run_summary,
+    orderBy: { ran_at: "desc" },
+    take: keep,
+    select: { id: true },
+  });
+  if (keepRows.length < keep) return;
+  const keepIds = keepRows.map((r) => r.id);
+  await db.bounceIngestRun.deleteMany({
+    where: {
+      event_id: eventId,
+      id: { notIn: keepIds },
     },
   });
+}
+
+/** List recent runs newest-first for the event settings API. */
+export async function listBounceIngestRecentRuns(
+  db: PrismaClient,
+  eventId: string,
+  take: number = BOUNCE_INGEST_RUN_HISTORY_LIMIT,
+): Promise<BounceIngestLastRunDto[]> {
+  const rows = await db.bounceIngestRun.findMany({
+    where: { event_id: eventId },
+    orderBy: { ran_at: "desc" },
+    take,
+  });
+  return rows
+    .map((row) => serializeBounceIngestLastRun(row.ran_at, row.ok, row.summary))
+    .filter((dto): dto is BounceIngestLastRunDto => dto != null);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -166,7 +218,6 @@ export type BounceIngestHealthResult = {
 /**
  * Aggregate soft health for Settings → Health (external group).
  * Does not affect /healthz or /readyz.
- * @param deployTickSeconds Wake interval from deploy env (TICK or legacy INTERVAL).
  */
 export function evaluateBounceIngestHealth(
   rows: BounceIngestHealthInput[],

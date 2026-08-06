@@ -97,6 +97,9 @@ function baseDb(overrides: {
           ...(create ?? update),
         })),
     },
+    bounceIngestRun: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
 }
 
@@ -163,6 +166,7 @@ describe("event bounce ingest settings routes", () => {
     expect(JSON.stringify(json)).not.toContain("encrypted-blob");
     expect(describeMailConfig).toHaveBeenCalledTimes(1);
     expect(json.lastRun).toBeNull();
+    expect(json.recentRuns).toEqual([]);
   });
 
   it("GET serializes lastRun from stored last_run_* columns", async () => {
@@ -948,7 +952,6 @@ describe("event bounce ingest settings routes", () => {
     expect(json.ok).toBe(true);
     expect(json.lastRun?.ok).toBe(true);
   });
-
   it("PUT returns 404 when the event is missing", async () => {
     const db = baseDb({
       event: { findUnique: vi.fn().mockResolvedValue(null) },

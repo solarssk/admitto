@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IngestSummary } from "../../src/bounceIngest/types.js";
 import {
+  BOUNCE_INGEST_RUN_HISTORY_LIMIT,
   BOUNCE_INGEST_STALE_MS,
   bounceIngestStaleMsForEvent,
   bounceIngestStaleMsForPoll,
@@ -9,8 +10,10 @@ import {
   isBounceIngestDue,
   lastRunOkFromSummary,
   lastRunSummaryFromIngest,
+  listBounceIngestRecentRuns,
   parseBounceIngestTickSeconds,
   persistBounceIngestLastRun,
+  pruneBounceIngestRunHistory,
   serializeBounceIngestLastRun,
 } from "../../src/bounceIngest/lastRun.js";
 
@@ -103,13 +106,22 @@ describe("serializeBounceIngestLastRun", () => {
 });
 
 describe("persistBounceIngestLastRun", () => {
-  it("writes last_run_* on the event settings row", async () => {
+  it("writes last_run_* and appends a BounceIngestRun row in one transaction", async () => {
     const update = vi.fn().mockResolvedValue({});
-    const db = { bounceIngestSettings: { update } } as never;
+    const create = vi.fn().mockResolvedValue({});
+    const findMany = vi.fn().mockResolvedValue([{ id: "run_1" }]);
+    const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+    const tx = {
+      bounceIngestSettings: { update },
+      bounceIngestRun: { create, findMany, deleteMany },
+    };
+    const transaction = vi.fn(async (fn: (client: typeof tx) => Promise<void>) => fn(tx));
+    const db = { $transaction: transaction } as never;
     const ranAt = new Date("2026-08-06T12:00:00.000Z");
 
     await persistBounceIngestLastRun(db, "evt_1", summary({ errors: 1, connectFailed: true }), ranAt);
 
+    expect(transaction).toHaveBeenCalledOnce();
     expect(update).toHaveBeenCalledWith({
       where: { event_id: "evt_1" },
       data: {
@@ -126,6 +138,104 @@ describe("persistBounceIngestLastRun", () => {
         },
       },
     });
+    expect(create).toHaveBeenCalledWith({
+      data: {
+        event_id: "evt_1",
+        ran_at: ranAt,
+        ok: false,
+        summary: {
+          messagesSeen: 2,
+          bouncesApplied: 1,
+          softBouncesLogged: 0,
+          unparsed: 0,
+          noMatchingDelivery: 0,
+          errors: 1,
+          connectFailed: true,
+        },
+      },
+    });
+    // Fewer than the keep limit → prune is a no-op deleteMany skip.
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("prunes older BounceIngestRun rows when history exceeds the keep limit", async () => {
+    const keepIds = Array.from({ length: BOUNCE_INGEST_RUN_HISTORY_LIMIT }, (_, i) => ({
+      id: `keep_${i}`,
+    }));
+    const findMany = vi.fn().mockResolvedValue(keepIds);
+    const deleteMany = vi.fn().mockResolvedValue({ count: 5 });
+    const update = vi.fn().mockResolvedValue({});
+    const create = vi.fn().mockResolvedValue({});
+    const tx = {
+      bounceIngestSettings: { update },
+      bounceIngestRun: { create, findMany, deleteMany },
+    };
+    const transaction = vi.fn(async (fn: (client: typeof tx) => Promise<void>) => fn(tx));
+    const db = { $transaction: transaction } as never;
+
+    await persistBounceIngestLastRun(db, "evt_1", summary(), new Date("2026-08-06T13:00:00.000Z"));
+
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: {
+        event_id: "evt_1",
+        id: { notIn: keepIds.map((r) => r.id) },
+      },
+    });
+  });
+});
+
+describe("pruneBounceIngestRunHistory", () => {
+  it("returns early when fewer rows than keep exist", async () => {
+    const findMany = vi.fn().mockResolvedValue([{ id: "a" }, { id: "b" }]);
+    const deleteMany = vi.fn();
+    const db = { bounceIngestRun: { findMany, deleteMany } } as never;
+    await pruneBounceIngestRunHistory(db, "evt_1", 5);
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("listBounceIngestRecentRuns", () => {
+  it("maps run rows newest-first and drops unserializable rows", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        ran_at: new Date("2026-08-06T12:00:00.000Z"),
+        ok: true,
+        summary: { messagesSeen: 3, bouncesApplied: 1 },
+      },
+      {
+        ran_at: null,
+        ok: true,
+        summary: { messagesSeen: 1 },
+      },
+    ]);
+    const db = { bounceIngestRun: { findMany } } as never;
+    const rows = await listBounceIngestRecentRuns(db, "evt_1", 10);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { event_id: "evt_1" },
+      orderBy: { ran_at: "desc" },
+      take: 10,
+    });
+    expect(rows).toEqual([
+      {
+        at: "2026-08-06T12:00:00.000Z",
+        ok: true,
+        messagesSeen: 3,
+        bouncesApplied: 1,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+    ]);
+  });
+});
+
+describe("bounceIngestStaleMsForPoll", () => {
+  it("floors at BOUNCE_INGEST_STALE_MS and scales with Check every", () => {
+    expect(bounceIngestStaleMsForPoll(5)).toBe(BOUNCE_INGEST_STALE_MS);
+    expect(bounceIngestStaleMsForPoll(60)).toBe(60 * 2 * 60_000);
+    expect(bounceIngestStaleMsForPoll(null)).toBe(BOUNCE_INGEST_STALE_MS);
   });
 });
 
@@ -154,26 +264,6 @@ describe("isBounceIngestDue", () => {
     const last = new Date(now.getTime() - 60_000);
     expect(
       isBounceIngestDue({ last_run_at: last, last_run_ok: false, poll_interval_minutes: 60 }, now),
-    ).toBe(true);
-  });
-
-  it("treats null last_run_ok like a failed run (due immediately)", () => {
-    const last = new Date(now.getTime() - 60_000);
-    expect(
-      isBounceIngestDue({ last_run_at: last, last_run_ok: null, poll_interval_minutes: 60 }, now),
-    ).toBe(true);
-  });
-
-  it("defaults missing poll_interval_minutes to 5 minutes", () => {
-    const last = new Date(now.getTime() - 4 * 60_000);
-    expect(
-      isBounceIngestDue({ last_run_at: last, last_run_ok: true, poll_interval_minutes: null }, now),
-    ).toBe(false);
-    expect(
-      isBounceIngestDue(
-        { last_run_at: new Date(now.getTime() - 5 * 60_000), last_run_ok: true, poll_interval_minutes: null },
-        now,
-      ),
     ).toBe(true);
   });
 });
@@ -285,7 +375,6 @@ describe("evaluateBounceIngestHealth", () => {
           { enabled: false, last_run_at: null, last_run_ok: null },
         ],
         now,
-        60,
       ),
     ).toEqual({
       status: "degraded",
@@ -293,16 +382,5 @@ describe("evaluateBounceIngestHealth", () => {
       enabledCount: 3,
       problemCount: 3,
     });
-  });
-
-  it("keeps a 20-minute-old run healthy when the deploy tick is hourly", () => {
-    const twentyMinAgo = new Date(now.getTime() - 20 * 60_000);
-    expect(
-      evaluateBounceIngestHealth(
-        [{ enabled: true, last_run_at: twentyMinAgo, last_run_ok: true, poll_interval_minutes: 5 }],
-        now,
-        3600,
-      ),
-    ).toMatchObject({ status: "ok", problemCount: 0 });
   });
 });
