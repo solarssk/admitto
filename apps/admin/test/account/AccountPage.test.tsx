@@ -1493,7 +1493,7 @@ describe("AccountPage profile: phone number", () => {
 });
 
 describe("AccountPage profile: sign-in method", () => {
-  it("shows 'Local password' for accounts with only local password", async () => {
+  it("shows only a Local password chip for accounts with only local password", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
@@ -1501,9 +1501,10 @@ describe("AccountPage profile: sign-in method", () => {
     await waitFor(() => {
       expect(screen.getByText("Local password")).toBeTruthy();
     });
+    expect(screen.queryByText("Identity provider (SSO)")).toBeFalsy();
   });
 
-  it("shows 'Identity provider (SSO)' for accounts without local password", async () => {
+  it("shows only an Identity provider (SSO) chip for accounts without local password", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: false,
@@ -1515,9 +1516,10 @@ describe("AccountPage profile: sign-in method", () => {
     await waitFor(() => {
       expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
     });
+    expect(screen.queryByText("Local password")).toBeFalsy();
   });
 
-  it("shows 'Local password + Identity provider' when both are present", async () => {
+  it("shows both chips when both are present", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: true,
@@ -1527,8 +1529,9 @@ describe("AccountPage profile: sign-in method", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password + Identity provider")).toBeTruthy();
+      expect(screen.getByText("Local password")).toBeTruthy();
     });
+    expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
   });
 
   it("shows 'Regional format' label for locale select", async () => {
@@ -1554,6 +1557,74 @@ describe("AccountPage profile: email field", () => {
   });
 });
 
+describe("AccountPage profile: role display", () => {
+  it("shows the role in a disabled, read-only control (not editable)", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    const trigger = await screen.findByRole("button", { name: /Role, Administrator/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows an explanatory notice for a superadmin role instead of a scope count", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "superadmin", scope_type: "instance", scope_id: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Superadmin")).toBeTruthy();
+    });
+    expect(screen.getByText(/Superadmin has access to every event and organization/)).toBeTruthy();
+  });
+
+  it("shows a scope count hint for multiple assignments of a non-superadmin role", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [
+        { id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false },
+        { id: "r2", role: "admin", scope_type: "organization", scope_id: "org-2", is_oidc: false },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("+1 more organization")).toBeTruthy();
+    });
+  });
+
+  it("notes when a role is managed by an identity provider", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Managed by identity provider")).toBeTruthy();
+    });
+  });
+
+  it("shows a plain message when no role is assigned, with no role control", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("No role assigned.")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: /^Role,/ })).toBeFalsy();
+  });
+});
+
 describe("AccountPage: no role assigned", () => {
   it("shows a notice when the account has no role assignments", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, roles: [] });
@@ -1576,7 +1647,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });
@@ -1606,7 +1677,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });
@@ -1633,7 +1704,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });
