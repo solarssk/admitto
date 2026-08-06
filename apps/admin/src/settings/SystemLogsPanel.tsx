@@ -440,7 +440,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           only surfaces it in the empty state (easy to never see once the tail has any activity)
           would undersell how easy it is to mistake this for a durable, retention-configurable
           log store. It isn't - see DATA-PROTECTION.md's "System logs (live tail)" section. */}
-      <Notice variant="info">
+      <Notice variant="info" className="system-log-panel__retention-notice">
         Live view only. Keeps the last 1,000 entries and resets on restart. For durable history,
         use the Audit log or Security audit log instead.
       </Notice>

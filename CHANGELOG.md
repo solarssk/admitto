@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounce free-text NDR dialects are a matcher table** in `parseBounceLine` (Postfix / mailhop / Synology / orphan `failed:`), so new MTA formats can be added without growing one inline function. Bounce probe reuses the same IMAP open helper as ingest.
 
 ### Fixed
-- **Audit log shows friendly labels for bounce detection actions** (`Bounce detection settings updated` / `Bounce detection connection tested`) instead of raw `bounce_ingest_settings_*` snake_case.
+- **Audit log shows friendly labels** for bounce detection and other previously unmapped actions (support contact, weather/maps settings, SMTP/bounce probes, location, session device label) instead of raw snake_case.
+- **System Logs retention notice** has clearer spacing below the Copy / Clear view footer.
 
 ### Security
 - **External services weather base URL and geocoding base URL reject private, loopback, link-local, and cloud-metadata hosts** (including DNS recheck) before save or Test connection, so UI-editable endpoints cannot be used to probe internal networks from the web process.
