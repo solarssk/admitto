@@ -4969,7 +4969,7 @@ output.mail-field-hint {
 /* Check every + Test connection share the right grid cell; select flexes, button hugs content. */
 .event-bounce-ingest__poll-and-test {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: var(--space-3);
   min-width: 0;
 }
@@ -4984,8 +4984,13 @@ output.mail-field-hint {
   max-width: none;
 }
 
+/* Pin to the select control, not the hint below Check every (same idea as mail-test-send). */
 .event-bounce-ingest__test-control {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  margin-top: calc(var(--fs-sm) * var(--lh-normal) + var(--space-1));
+  height: var(--control-h);
 }
 
 /* Password + Test connection share the Username|Password grid cell (same idea as
