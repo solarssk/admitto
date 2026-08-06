@@ -42,8 +42,11 @@ function ticketFor(logoUrl: string | null) {
     event: {
       id: "e1",
       title: "Launch Event",
+      slug: "launch-event",
       date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
+      event_hours_start: null,
+      event_hours_end: null,
       location: null,
       logoUrl,
       ...EMPTY_EVENT_LOCATION,
@@ -173,8 +176,11 @@ describe("renderTicket", () => {
         event: {
           id: "event-1",
           title: "Launch Event",
+          slug: "launch-event",
           date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
+      event_hours_start: null,
+      event_hours_end: null,
           location: null,
           logoUrl: null,
           ...EMPTY_EVENT_LOCATION,
@@ -192,9 +198,8 @@ describe("renderTicket", () => {
     expect(html).toContain("wallet-badge-frame");
     expect(html).toContain("wallet-badge--apple");
     expect(html).toContain("How do I add this to my phone?");
-    expect(html).toContain("coming soon");
-    expect(html).toContain("not tappable yet");
-    expect(html).toContain('aria-disabled="true"');
+    expect(html).not.toContain("coming soon");
+    expect(html).not.toContain("aria-disabled");
     expect(html).not.toContain("badge-\"><style>boom</style>");
     expect(html).not.toContain("<style>boom</style>");
   });
@@ -484,8 +489,11 @@ describe("getTicketPageSecurityHeaders", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
+      event_hours_start: null,
+      event_hours_end: null,
           location: null,
           logoUrl: null,
           ...EMPTY_EVENT_LOCATION,
@@ -531,8 +539,11 @@ describe("getTicketPageSecurityHeaders", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
+      event_hours_start: null,
+      event_hours_end: null,
           location: null,
           logoUrl: null,
           ...EMPTY_EVENT_LOCATION,

@@ -30,6 +30,7 @@
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "@admitto/ui": "*",
+    "@admitto/wallet": "*",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fontsource/inter": "^5.2.5",
     "@fontsource/manrope": "^5.3.0",

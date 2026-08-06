@@ -18,7 +18,7 @@ function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-function formatDate(d: Date): string {
+export function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
@@ -64,6 +64,12 @@ export type TicketPageOptions = {
   staticMapEnabled?: boolean;
   /** Event-day weather summary; omit or null to hide the weather block. */
   weather?: WeatherSummaryDto | null;
+  /** Href for the on-demand "Add to Apple Wallet" route (this ticket's own /wallet/apple). */
+  walletAppleHref?: string | null;
+  /** Href for the on-demand "Add to Google Wallet" route (this ticket's own /wallet/google). */
+  walletGoogleHref?: string | null;
+  /** Set when a wallet pass creation attempt just failed - shows a retry notice. */
+  walletError?: boolean;
 };
 
 /** Mask an internal ticket token for display, or fall back to a Mode B public ref. */
@@ -387,14 +393,14 @@ export function renderTicket(
       ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
     </div>
     <div class="ticket__perf" role="presentation"></div>
+    ${options.walletError ? `<p class="ticket__wallet-error" role="alert">Could not add this ticket to your wallet just now. Please try again.</p>` : ""}
     <div class="ticket__wallets">
-      <span class="wallet-badge-frame"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet (coming soon)" aria-disabled="true" role="img"></span>
-      <span class="wallet-badge-frame"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet (coming soon)" aria-disabled="true" role="img"></span>
+      <span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref ?? "")}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet"></a></span>
+      <span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref ?? "")}"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet"></a></span>
     </div>
     <details class="ticket__wallet-help">
       <summary>How do I add this to my phone?</summary>
-      <p>Apple Wallet and Google Wallet are coming soon. The badges above are placeholders and are not tappable yet.</p>
-      <p>When wallet passes ship, you will add this ticket from those badges and find it later in Apple Wallet or Google Wallet.</p>
+      <p>Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.</p>
     </details>
     ${gettingThereHtml}
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>`;

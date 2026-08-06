@@ -133,7 +133,7 @@ export function toResolved(
     token_hash: string | null; qr_payload: string | null; external_uuid: string | null;
     ticket_type: string | null;
     event: {
-      id: string; title: string; date: Date; timezone: string;
+      id: string; title: string; slug: string; date: Date; timezone: string;
       event_hours_start: string | null; event_hours_end: string | null;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
@@ -159,6 +159,7 @@ export function toResolved(
     event: {
       id: row.event.id,
       title: row.event.title,
+      slug: row.event.slug,
       date: row.event.date,
       timezone: row.event.timezone || "UTC",
       eventHoursStart: row.event.event_hours_start,
