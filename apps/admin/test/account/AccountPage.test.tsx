@@ -145,6 +145,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("AccountPage delayed loading", () => {
@@ -1584,17 +1585,24 @@ const LINKED_ACCOUNT: AccountDto = {
   external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
 };
 
-describe("AccountPage profile: connect SSO", () => {
-  it("hides the connect section when no providers are available and nothing is linked", async () => {
+/** Opens the Profile card's "Identity provider actions" menu and clicks one item in it. */
+function clickIdentityMenuItem(namePattern: RegExp | string) {
+  fireEvent.click(screen.getByRole("button", { name: "Identity provider actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: namePattern }));
+}
+
+describe("AccountPage profile: identity provider actions menu", () => {
+  it("hides the menu trigger when nothing is linked and no providers are available", async () => {
     mockLoadedAccount();
     renderWithToast(<AccountPage />);
     await waitFor(() => {
       expect(screen.getByText("Local account")).toBeTruthy();
     });
-    expect(screen.queryByRole("link", { name: /^Connect/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Identity provider actions" })).toBeNull();
   });
 
-  it("shows a Connect link per available provider when nothing is linked yet", async () => {
+  it("shows a Connect item per available provider when nothing is linked yet", async () => {
+    vi.stubGlobal("location", { ...window.location, assign: vi.fn() });
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       available_identity_providers: [
@@ -1605,13 +1613,12 @@ describe("AccountPage profile: connect SSO", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     renderWithToast(<AccountPage />);
 
-    const oktaLink = (await screen.findByRole("link", { name: "Connect Okta" })) as HTMLAnchorElement;
-    expect(oktaLink.getAttribute("href")).toBe("/account/oidc/p1/link?next=/account");
-    const authentikLink = screen.getByRole("link", { name: "Connect Authentik" }) as HTMLAnchorElement;
-    expect(authentikLink.getAttribute("href")).toBe("/account/oidc/p2/link?next=/account");
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Connect Okta/);
+    expect(window.location.assign).toHaveBeenCalledWith("/account/oidc/p1/link?next=/account");
   });
 
-  it("shows Unlink SSO and a Connect link together when linked to one provider with another still available", async () => {
+  it("shows Unlink SSO and a Connect item together when linked to one provider with another still available", async () => {
     // Accounts can be linked to more than one provider at once (no uniqueness constraint on
     // ExternalIdentity.user_id), so Unlink (for what's linked) and Connect (for what isn't)
     // aren't mutually exclusive states.
@@ -1622,27 +1629,29 @@ describe("AccountPage profile: connect SSO", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     renderWithToast(<AccountPage />);
 
-    await screen.findByRole("button", { name: "Unlink SSO" });
-    expect(screen.getByRole("link", { name: "Connect Authentik" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Identity provider actions" }));
+    expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Connect Authentik/ })).toBeTruthy();
   });
 });
 
 describe("AccountPage profile: SSO unlink", () => {
-  it("hides the Unlink SSO button when no identity is linked", async () => {
+  it("hides the Unlink SSO menu item when no identity is linked", async () => {
     mockLoadedAccount();
     renderWithToast(<AccountPage />);
     await waitFor(() => {
       expect(screen.getByText("Local account")).toBeTruthy();
     });
-    expect(screen.queryByRole("button", { name: "Unlink SSO" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Identity provider actions" })).toBeNull();
   });
 
-  it("shows the Unlink SSO button when an identity is linked, opening a confirm dialog", async () => {
+  it("opens a confirm dialog from the menu", async () => {
     mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/Unlink SSO from your account/)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(true);
@@ -1653,7 +1662,8 @@ describe("AccountPage profile: SSO unlink", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "short" } });
     expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(true);
@@ -1667,7 +1677,8 @@ describe("AccountPage profile: SSO unlink", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -1677,7 +1688,7 @@ describe("AccountPage profile: SSO unlink", () => {
     });
     expect(mockUnlinkExternalIdentity).not.toHaveBeenCalled();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    clickIdentityMenuItem(/Unlink SSO/);
     const reopened = await screen.findByRole("dialog");
     expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
   });
@@ -1688,7 +1699,8 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity.mockResolvedValueOnce({ ok: true });
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
@@ -1710,7 +1722,8 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
@@ -1728,7 +1741,8 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
@@ -1749,7 +1763,8 @@ describe("AccountPage profile: SSO unlink", () => {
       .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
@@ -1776,7 +1791,8 @@ describe("AccountPage profile: SSO unlink", () => {
       .mockResolvedValueOnce({ ok: true });
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
@@ -1804,7 +1820,8 @@ describe("AccountPage profile: SSO unlink", () => {
       .mockRejectedValueOnce(new ApiError(429, "too many requests"));
     renderWithToast(<AccountPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Unlink SSO" }));
+    await screen.findByRole("button", { name: "Identity provider actions" });
+    clickIdentityMenuItem(/Unlink SSO/);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));

@@ -19,8 +19,10 @@ import type { AccountDto, AccountRoleDto, MfaEnrollResponse, SessionListDto } fr
 import { roleLabel } from "../auth/role-labels.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
+import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -106,11 +108,10 @@ function accountTypeHint(account: AccountDto, isManaged: boolean): string {
  * account" when it only has a password, or "Managed by <provider>" naming the actual linked
  * identity provider(s) (not a generic "SSO") whenever any are linked, since the IdP is the
  * source of truth for sign-in once linked even if a local fallback password also exists. Reuses
- * the same disabled SearchableSelect shape as the Role field below for one consistent look. */
-function AccountTypeField({
-  account,
-  onUnlinkClick,
-}: Readonly<{ account: AccountDto; onUnlinkClick: () => void }>) {
+ * the same disabled SearchableSelect shape as the Role field below for one consistent look.
+ * Actions (Unlink / Connect) live in the Profile card's header menu, not here - with an unknown
+ * number of identity providers a growing row of buttons under this field doesn't scale. */
+function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
   const providers = account.external_identities;
   const isManaged = providers.length > 0;
   const label = isManaged ? `Managed by ${providers.map((p) => p.provider_display_name).join(" + ")}` : "Local account";
@@ -132,21 +133,69 @@ function AccountTypeField({
         onChange={() => {}}
       />
       <p className="at-hint">{hint}</p>
-      {(isManaged || account.available_identity_providers.length > 0) && (
-        <div className="account-identity-actions">
+    </div>
+  );
+}
+
+/** Profile card header's "..." menu - Unlink SSO (when linked) and one "Connect <provider>" item
+ * per enabled, not-yet-linked provider. A menu instead of a row of buttons because the button
+ * row grows one item per identity provider and gets unwieldy fast with more than one configured;
+ * the same collapse-into-a-menu treatment as the admin Edit user modal's own kebab menu
+ * (UserMoreActionsMenu). Not rendered at all when there's nothing to show. */
+function AccountIdentityActionsMenu({
+  account,
+  moreActions,
+  onUnlinkClick,
+}: Readonly<{
+  account: AccountDto;
+  moreActions: ReturnType<typeof useDropdownMenu<HTMLButtonElement>>;
+  onUnlinkClick: () => void;
+}>) {
+  const isManaged = account.external_identities.length > 0;
+  if (!isManaged && account.available_identity_providers.length === 0) return null;
+
+  const pick = (action: () => void) => () => {
+    moreActions.setOpen(false);
+    action();
+  };
+
+  return (
+    <div className="more-actions-menu" ref={moreActions.rootRef}>
+      <Button
+        ref={moreActions.triggerRef}
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label="Identity provider actions"
+        aria-haspopup="menu"
+        aria-expanded={moreActions.open}
+        onClick={() => moreActions.setOpen((o) => !o)}
+        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
+      />
+      {moreActions.open && (
+        <div
+          className={`more-actions-menu__panel${moreActions.openUpward ? " more-actions-menu__panel--up" : ""}`}
+          role="menu"
+          ref={moreActions.panelRef}
+        >
           {isManaged && (
-            <Button type="button" variant="secondary" size="sm" onClick={onUnlinkClick}>
-              Unlink SSO
-            </Button>
+            <MoreActionsMenuItem
+              icon="unlink"
+              label="Unlink SSO"
+              hint="Require a local password to sign in"
+              onClick={pick(onUnlinkClick)}
+            />
           )}
           {account.available_identity_providers.map((p) => (
-            <a
+            <MoreActionsMenuItem
               key={p.id}
-              className="at-btn at-btn--secondary at-btn--sm"
-              href={`/account/oidc/${encodeURIComponent(p.id)}/link?next=/account`}
-            >
-              <i className="ti ti-plus" aria-hidden="true" /> Connect {p.display_name}
-            </a>
+              icon="plus"
+              label={`Connect ${p.display_name}`}
+              hint="Link this identity provider to your account"
+              onClick={pick(() => {
+                window.location.assign(`/account/oidc/${encodeURIComponent(p.id)}/link?next=/account`);
+              })}
+            />
           ))}
         </div>
       )}
@@ -288,6 +337,7 @@ export function AccountPage() {
   const [unlinkStepUpOpen, setUnlinkStepUpOpen] = useState(false);
   const [unlinkCode, setUnlinkCode] = useState("");
   const [unlinkCodeError, setUnlinkCodeError] = useState<string | null>(null);
+  const identityActions = useDropdownMenu<HTMLButtonElement>();
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -873,7 +923,16 @@ export function AccountPage() {
           Your account doesn't have any role assigned yet, so there's nothing to access yet. You can still update your password and two-factor settings below. Contact an administrator to request access.
         </Notice>
       )}
-      <Card title="Profile" footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
+      <Card
+        title="Profile"
+        actions={
+          <AccountIdentityActionsMenu
+            account={account}
+            moreActions={identityActions}
+            onUnlinkClick={() => setUnlinkSsoOpen(true)}
+          />
+        }
+        footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
         setProfileSaving(true);
         const localeChanged = preferredLocale !== account.preferred_locale;
         try {
@@ -949,7 +1008,7 @@ export function AccountPage() {
             <span className="at-hint">For internal contact only - not shown on tickets.</span>
           </div>
           <AccountRoleDisplay account={account} />
-          <AccountTypeField account={account} onUnlinkClick={() => setUnlinkSsoOpen(true)} />
+          <AccountTypeField account={account} />
         </div>
       </Card>
 

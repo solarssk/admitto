@@ -83,18 +83,9 @@
   font-size: var(--fs-sm);
 }
 
-/* Account type's action row - Unlink SSO (if anything is linked) and a "Connect <provider>" link
-   per enabled, not-yet-linked provider, side by side. Not mutually exclusive: an account can be
-   linked to one provider and still have others available to add. Extra top margin beyond
-   .account-role-display's own gap so this reads as its own row below the hint, matching the
-   role field's scope chips treatment. */
-.account-identity-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2, 0.5rem);
-  margin-top: var(--space-1, 0.25rem);
-}
+/* Unlink SSO / Connect <provider> live in the Profile card's header "..." menu now
+   (AccountIdentityActionsMenu, apps/admin/src/components/more-actions-menu.css), not as inline
+   buttons here - a growing button row doesn't scale with an unknown number of providers. */
 
 /* Compact 2FA status row: badge + action on one line */
 .account-mfa-status-row {
