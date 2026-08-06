@@ -164,14 +164,16 @@ function AccountIdentityActionsMenu({
       <Button
         ref={moreActions.triggerRef}
         type="button"
-        variant="ghost"
+        variant="secondary"
         size="sm"
-        aria-label="Identity provider actions"
+        hasMenu
         aria-haspopup="menu"
         aria-expanded={moreActions.open}
         onClick={() => moreActions.setOpen((o) => !o)}
-        icon={<i className="ti ti-dots-vertical" aria-hidden="true" />}
-      />
+        icon={<i className="ti ti-shield-lock" aria-hidden="true" />}
+      >
+        SSO
+      </Button>
       {moreActions.open && (
         <div
           className={`more-actions-menu__panel${moreActions.openUpward ? " more-actions-menu__panel--up" : ""}`}
@@ -182,7 +184,7 @@ function AccountIdentityActionsMenu({
             <MoreActionsMenuItem
               icon="unlink"
               label="Unlink SSO"
-              hint="Require a local password to sign in"
+              hint="Sign in with a password instead"
               onClick={pick(onUnlinkClick)}
             />
           )}
@@ -191,7 +193,7 @@ function AccountIdentityActionsMenu({
               key={p.id}
               icon="plus"
               label={`Connect ${p.display_name}`}
-              hint="Link this identity provider to your account"
+              hint="Add as another sign-in method"
               onClick={pick(() => {
                 window.location.assign(`/account/oidc/${encodeURIComponent(p.id)}/link?next=/account`);
               })}
