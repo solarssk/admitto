@@ -103,24 +103,49 @@ function LastRunSummary({ run }: Readonly<{ run: EventBounceIngestLastRunDto }>)
   );
 }
 
-function RecentChecksList({ runs }: Readonly<{ runs: EventBounceIngestLastRunDto[] }>) {
-  if (runs.length <= 1) return null;
+function RecentChecksList({
+  runs,
+  excludeAt,
+}: Readonly<{
+  runs: EventBounceIngestLastRunDto[];
+  /** Hide the same run already shown in the Last automatic check summary. */
+  excludeAt?: string | null;
+}>) {
+  const history = excludeAt ? runs.filter((run) => run.at !== excludeAt) : runs;
+  if (history.length === 0) return null;
   return (
     <div className="event-bounce-ingest__recent-runs">
       <h3 className="event-bounce-ingest__recent-runs-title">Recent checks</h3>
-      <ul className="event-bounce-ingest__recent-runs-list">
-        {runs.slice(0, 10).map((run) => (
-          <li key={run.at}>
-            <span className={run.ok ? "text-success" : "text-danger"}>
-              {run.ok ? "OK" : "Failed"}
-            </span>
-            <span className="text-secondary">
-              {" "}
-              · {formatEventDateTime(run.at, getBrowserTimeZone())} · {lastRunCountsLine(run)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="event-bounce-ingest__recent-runs-scroll">
+        <ul className="event-bounce-ingest__recent-runs-list">
+          {history.slice(0, 10).map((run) => (
+            <li key={run.at}>
+              <span
+                className={`event-bounce-ingest__recent-run-icon${
+                  run.ok
+                    ? " event-bounce-ingest__recent-run-icon--ok"
+                    : " event-bounce-ingest__recent-run-icon--failed"
+                }`}
+                aria-hidden="true"
+              >
+                <i className={`ti ${run.ok ? "ti-circle-check" : "ti-alert-circle"}`} />
+              </span>
+              <span
+                className={`event-bounce-ingest__recent-run-status${
+                  run.ok
+                    ? " event-bounce-ingest__recent-run-status--ok"
+                    : " event-bounce-ingest__recent-run-status--failed"
+                }`}
+              >
+                {run.ok ? "OK" : "Failed"}
+              </span>
+              <span className="event-bounce-ingest__recent-run-meta">
+                {formatEventDateTime(run.at, getBrowserTimeZone())} · {lastRunCountsLine(run)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -155,7 +180,7 @@ function LastAutomaticCheckBody({
   return (
     <>
       <LastRunSummary run={lastRun} />
-      <RecentChecksList runs={recentRuns ?? []} />
+      <RecentChecksList runs={recentRuns ?? []} excludeAt={lastRun.at} />
     </>
   );
 }

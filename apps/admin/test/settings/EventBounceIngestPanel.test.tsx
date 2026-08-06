@@ -605,6 +605,9 @@ describe("EventBounceIngestPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
     expect(await screen.findByText("Recent checks")).toBeTruthy();
     expect(document.querySelector(".event-bounce-ingest__recent-runs")?.textContent).toMatch(
+      /1 seen/,
+    );
+    expect(document.querySelector(".event-bounce-ingest__recent-runs")?.textContent).not.toMatch(
       /2 seen/,
     );
   });
@@ -661,6 +664,16 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     expect(await screen.findByText("Recent checks")).toBeTruthy();
     expect(screen.getAllByText("Failed").length).toBeGreaterThanOrEqual(1);
+    expect(document.querySelector(".event-bounce-ingest__recent-runs-scroll")).toBeTruthy();
+    expect(
+      document.querySelector(
+        ".event-bounce-ingest__recent-runs .event-bounce-ingest__recent-run-icon--failed .ti-alert-circle",
+      ),
+    ).toBeTruthy();
+    // Latest run is only in the summary card, not duplicated in the history list.
+    expect(document.querySelector(".event-bounce-ingest__recent-runs")?.textContent).not.toMatch(
+      /1 seen/,
+    );
   });
 
   it("hides Recent checks when only one run is returned", async () => {
