@@ -43,6 +43,14 @@
   gap: 2px;
 }
 
+/* Anchored above the trigger instead of below - see .searchable-select__panel--up's own
+   comment (searchable-select.css); same useDropdownMenu-driven decision, shared by every
+   consumer of this panel class (Attendees table/detail, Health check, Edit user). */
+.more-actions-menu__panel--up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
 /* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full
    width here so wrapping a menu item in <Tooltip> doesn't change its layout in this stacked,
    full-width list. */

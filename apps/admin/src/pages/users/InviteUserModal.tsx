@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop, Notice, Select, Switch } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, Switch } from "@admitto/ui";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import {
   ApiError,
@@ -10,8 +10,11 @@ import {
 } from "../../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, UserListItemDto } from "../../api/types.js";
+import { PhoneCountrySelect } from "../../components/PhoneCountrySelect.js";
+import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
 import { roleLabel } from "../../auth/role-labels.js";
+import { useOverscrollBounceGuard } from "../../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../../settings/mailTransportFormParts.js";
 import { isValidEmailFormat } from "../../utils/email.js";
 import "../../attendees/add-attendee-modal.css";
@@ -65,8 +68,12 @@ function mapCreateUserError(err: unknown): string {
 export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUserModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef, open);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [phoneCountryCode, setPhoneCountryCode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [password, setPassword] = useState("");
   const [mustChange, setMustChange] = useState(true);
   const [initialRole, setInitialRole] = useState<InitialRole>("");
@@ -102,6 +109,8 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
   const resetForm = () => {
     setEmail("");
     setDisplayName("");
+    setPhoneCountryCode("");
+    setPhoneNumber("");
     setPassword("");
     setMustChange(true);
     setInitialRole("");
@@ -144,6 +153,8 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
         email: email.trim(),
         password,
         display_name: displayName.trim() || null,
+        phone_country_code: phoneCountryCode || null,
+        phone_number: phoneNumber.trim() || null,
         must_change_password: mustChange,
       });
       if (initialRole) {
@@ -178,6 +189,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
        * than requiring Cancel/Escape, matching the Edit user modal's own backdrop. */}
       <ModalBackdrop />
       <div ref={panelRef} className="add-attendee-modal__panel">
+      <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Invite a new team member
         </h2>
@@ -190,7 +202,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
         <div className="add-attendee-modal__fields">
           <Input
             id="invite-email"
-            label="Email address"
+            label="Email address *"
             icon={<i className="ti ti-mail" aria-hidden="true" />}
             type="text"
             inputMode="email"
@@ -209,56 +221,75 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             disabled={submitting}
             onChange={(e) => setDisplayName(e.target.value)}
           />
-          <Select
+          <div className="users-modal__field">
+            <label htmlFor="invite-phone-number" className="users-modal__field-label">
+              Phone number
+            </label>
+            <div className="users-modal__phone-row">
+              <PhoneCountrySelect
+                id="invite-phone-country-code"
+                label="Phone country code"
+                value={phoneCountryCode}
+                disabled={submitting}
+                onChange={setPhoneCountryCode}
+              />
+              <Input
+                id="invite-phone-number"
+                icon={<i className="ti ti-phone" aria-hidden="true" />}
+                type="tel"
+                value={phoneNumber}
+                disabled={submitting}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                {...NO_AUTOFILL_PROPS}
+              />
+            </div>
+            <p className="at-hint">For internal contact only - not shown on tickets.</p>
+          </div>
+          <SearchableSelect
             id="invite-role"
             label="Initial role"
+            placeholder="None"
+            searchPlaceholder="Search roles…"
+            emptyLabel="No roles found"
             value={initialRole}
+            options={[
+              { id: "", label: "None" },
+              { id: "superadmin", label: roleLabel("superadmin"), icon: "crown" },
+              { id: "admin", label: roleLabel("admin"), icon: "building" },
+              { id: "operator", label: roleLabel("operator"), icon: "calendar-event" },
+            ]}
             disabled={submitting}
-            onChange={(e) => setInitialRole(e.target.value as InitialRole)}
-          >
-            <option value="">None</option>
-            <option value="superadmin">{roleLabel("superadmin")}</option>
-            <option value="admin">{roleLabel("admin")}</option>
-            <option value="operator">{roleLabel("operator")}</option>
-          </Select>
+            onChange={(id) => setInitialRole(id as InitialRole)}
+          />
           {initialRole === "admin" && (
-            <Select
+            <SearchableSelect
               id="invite-org"
               label="Organization scope"
+              placeholder={organizations.length === 0 ? "No organizations available" : "Select organization…"}
+              searchPlaceholder="Search organizations…"
+              emptyLabel="No organizations found"
               value={orgId}
+              options={organizations.map((org) => ({ id: org.id, label: org.name, icon: "building" }))}
               disabled={submitting || organizations.length === 0}
-              onChange={(e) => setOrgId(e.target.value)}
-            >
-              {organizations.length === 0 ? (
-                <option value="">No organizations available</option>
-              ) : (
-                organizations.map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.name}
-                  </option>
-                ))
-              )}
-            </Select>
+              onChange={setOrgId}
+            />
           )}
           {initialRole === "operator" && (
-            <Select
+            <SearchableSelect
               id="invite-event"
               label="Event scope"
+              placeholder="Select event…"
+              searchPlaceholder="Search events…"
+              emptyLabel="No events found"
               value={eventId}
+              options={events.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" }))}
               disabled={submitting}
-              onChange={(e) => setEventId(e.target.value)}
-            >
-              <option value="">Select event…</option>
-              {events.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.title}
-                </option>
-              ))}
-            </Select>
+              onChange={setEventId}
+            />
           )}
           <Input
             id="invite-password"
-            label="Temporary password"
+            label="Temporary password *"
             icon={<i className="ti ti-key" aria-hidden="true" />}
             type="password"
             minLength={PASSWORD_MIN_LENGTH}
@@ -295,6 +326,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             </Button>
           </div>
         </div>
+      </div>
       </div>
     </dialog>
   );

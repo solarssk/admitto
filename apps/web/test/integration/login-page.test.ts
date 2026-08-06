@@ -170,6 +170,23 @@ describe("POST /login", () => {
     expect(sessionCookie(res)).toMatch(/^admitto_session=/);
   });
 
+  it("user with no role assignments redirects to /account", async () => {
+    const email = "no-role-login@example.com";
+    const password_hash = await hashPassword("no-role-pass-123");
+    const user = await prisma.user.create({ data: { email, password_hash } });
+
+    const res = await app.request("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+      body: new URLSearchParams({ email, password: "no-role-pass-123" }).toString(),
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/account");
+    expect(sessionCookie(res)).toMatch(/^admitto_session=/);
+
+    await prisma.user.delete({ where: { id: user.id } });
+  });
+
   it("wrong password shows uniform error", async () => {
     const res = await app.request("/login", {
       method: "POST",
@@ -351,7 +368,7 @@ describe("GET /login", () => {
     expect(res.headers.get("location")).toBe("/operator");
   });
 
-  it("does not redirect to /login when session has no staff landing (avoids loop)", async () => {
+  it("redirects to /account when session has no staff landing (e.g. roles removed)", async () => {
     const password_hash = await hashPassword("orphan-pass-123");
     const orphan = await prisma.user.create({
       data: { email: "orphan-login@example.com", password_hash },
@@ -361,9 +378,8 @@ describe("GET /login", () => {
       redirect: "manual",
       headers: { Cookie: `admitto_session=${rawToken}` },
     });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toMatch(/sign in|login/i);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/account");
     await prisma.user.delete({ where: { id: orphan.id } });
   });
 

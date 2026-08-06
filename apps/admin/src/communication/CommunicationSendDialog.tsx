@@ -4,6 +4,7 @@ import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/cli
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 
 interface CommunicationSendDialogProps {
   open: boolean;
@@ -23,6 +24,8 @@ export function CommunicationSendDialog({
 }: Readonly<CommunicationSendDialogProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef, open);
   const openRef = useRef(open);
   const runIdRef = useRef(0);
   openRef.current = open;
@@ -221,6 +224,7 @@ export function CommunicationSendDialog({
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={closeIfAllowed} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
+      <div className="add-attendee-modal__scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           Send email
         </h2>
@@ -343,6 +347,7 @@ export function CommunicationSendDialog({
             </div>
           </>
         )}
+      </div>
       </div>
     </dialog>
   );

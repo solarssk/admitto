@@ -24,6 +24,7 @@ export async function handleGetRoleAssignments(c: Context, db: PrismaClient): Pr
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 50);
   const q = c.req.query("q")?.trim();
+  const eventId = c.req.query("eventId")?.trim();
 
   let where: Prisma.RoleAssignmentWhereInput = { scope_type: { not: "instance" } };
 
@@ -58,6 +59,10 @@ export async function handleGetRoleAssignments(c: Context, db: PrismaClient): Pr
         },
       ],
     };
+  }
+
+  if (eventId) {
+    where = { AND: [where, { scope_type: "event", scope_id: eventId }] };
   }
 
   const [total, rows] = await Promise.all([

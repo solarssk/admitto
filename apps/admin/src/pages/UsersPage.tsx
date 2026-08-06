@@ -6,17 +6,19 @@ import {
   EmptyState,
   PageHeader,
   Skeleton,
+  Tooltip,
   useToast,
 } from "@admitto/ui";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { roleLabel } from "../auth/role-labels.js";
-import { fetchAdminUsers, fetchUserStats, revokeUserSessions } from "../api/client.js";
+import { fetchAdminUsers, fetchUserStats } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { UserListItemDto, UserStatsDto } from "../api/types.js";
-import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { FiltersMenu } from "../components/FiltersMenu.js";
 import { paginationHandlers, PaginationFooter } from "../components/PaginationFooter.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { InviteUserModal } from "./users/InviteUserModal.js";
 import { UserEditModal } from "./users/UserEditModal.js";
@@ -26,8 +28,9 @@ import { StaffUserCard, StaffUserTableRow } from "./users/StaffUserListItem.js";
 import "./users-page.css";
 
 const SEARCH_DEBOUNCE_MS = 300;
-// GET /api/admin/users caps pageSize at 50 server-side - options here must not exceed that,
-// or a larger picked size silently returns a partial page with unreachable rows past it.
+// GET /api/admin/users caps pageSize server-side at 50 (users-routes.ts) - offering a larger
+// value here would silently request more than the server delivers, understating totalPages and
+// leaving the tail of the list unreachable.
 const PAGE_SIZE_OPTIONS = [25, 50] as const;
 const SKELETON_ROWS = 5;
 
@@ -95,14 +98,12 @@ export function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editUser, setEditUser] = useState<UserListItemDto | null>(null);
-  const [revokeTarget, setRevokeTarget] = useState<UserListItemDto | null>(null);
-  const [revoking, setRevoking] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
   const [sessionsCount, setSessionsCount] = useState<number | undefined>(undefined);
   const [rolesCount, setRolesCount] = useState<number | undefined>(undefined);
   const [stats, setStats] = useState<UserStatsDto | null>(null);
@@ -192,25 +193,6 @@ export function UsersPage() {
   // the fetch has genuinely taken a moment.
   const showLoadingSkeleton = useDelayedLoading(loading);
 
-  const handleRevokeSessions = async () => {
-    if (!revokeTarget) return;
-    setRevoking(true);
-    setRevokeError(null);
-    try {
-      await revokeUserSessions(revokeTarget.id);
-      const label = revokeTarget.display_name ?? revokeTarget.email;
-      setRevokeTarget(null);
-      addToast(`Sessions revoked for ${label}`, "success");
-      await load();
-    } catch (err) {
-      const message = operatorApiErrorMessage(err, "Failed to revoke sessions.");
-      setRevokeError(message);
-      addToast(message, "error");
-    } finally {
-      setRevoking(false);
-    }
-  };
-
   const tabs = [
     ...(superadmin ? [{ id: "staff" as const, label: "Staff users", count: total }] : []),
     { id: "roles" as const, label: "Role assignments", count: rolesCount },
@@ -222,6 +204,7 @@ export function UsersPage() {
   return (
     <div className="screen">
       <PageHeader
+        className="users-pageheader"
         title="Users & roles"
         subtitle="Manage staff accounts, roles, and access"
         actions={
@@ -305,48 +288,77 @@ export function UsersPage() {
             <label className="users-page__search">
               <i className="ti ti-search" aria-hidden="true" />
               <input
+                ref={searchInputRef}
                 id="users-search"
                 name="users-search"
-                type="search"
+                type="text"
                 aria-label="Search users by name or email"
                 placeholder="Search name or email"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
               />
+              {searchInput.length > 0 && (
+                <button
+                  type="button"
+                  className="users-page__search-clear"
+                  onClick={() => {
+                    setSearchInput("");
+                    searchInputRef.current?.focus();
+                  }}
+                  aria-label="Clear search"
+                >
+                  <i className="ti ti-x" aria-hidden="true" />
+                </button>
+              )}
             </label>
-            <div className="users-page__filters">
-              <select
-                id="users-role-filter"
-                name="users-role-filter"
-                className="at-select"
-                aria-label="Filter users by role"
-                value={roleFilter}
-                onChange={(e) => {
-                  setRoleFilter(e.target.value as RoleFilter);
-                  setPage(1);
-                }}
+            <Tooltip content="Filter by role or status">
+              <FiltersMenu
+                activeCount={(roleFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0)}
+                className="users-page-filters-menu"
               >
-                <option value="all">All roles</option>
-                <option value="superadmin">{roleLabel("superadmin")}</option>
-                <option value="admin">{roleLabel("admin")}</option>
-                <option value="operator">{roleLabel("operator")}</option>
-              </select>
-              <select
-                id="users-status-filter"
-                name="users-status-filter"
-                className="at-select"
-                aria-label="Filter users by status"
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value as StatusFilter);
-                  setPage(1);
-                }}
-              >
-                <option value="all">All statuses</option>
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </div>
+                <div className="users-page-filters-menu__field">
+                  <label htmlFor="users-role-filter">Role</label>
+                  <SearchableSelect
+                    id="users-role-filter"
+                    label="Role"
+                    placeholder="All roles"
+                    searchPlaceholder="Search roles…"
+                    emptyLabel="No roles found"
+                    value={roleFilter}
+                    options={[
+                      { id: "all", label: "All roles" },
+                      { id: "superadmin", label: roleLabel("superadmin"), icon: "crown" },
+                      { id: "admin", label: roleLabel("admin"), icon: "building" },
+                      { id: "operator", label: roleLabel("operator"), icon: "calendar-event" },
+                    ]}
+                    onChange={(id) => {
+                      setRoleFilter(id as RoleFilter);
+                      setPage(1);
+                    }}
+                  />
+                </div>
+                <div className="users-page-filters-menu__field">
+                  <label htmlFor="users-status-filter">Status</label>
+                  <SearchableSelect
+                    id="users-status-filter"
+                    label="Status"
+                    placeholder="All statuses"
+                    searchPlaceholder="Search statuses…"
+                    emptyLabel="No statuses found"
+                    value={statusFilter}
+                    options={[
+                      { id: "all", label: "All statuses" },
+                      { id: "active", label: "Active", icon: "circle-check" },
+                      { id: "disabled", label: "Disabled", icon: "ban" },
+                    ]}
+                    onChange={(id) => {
+                      setStatusFilter(id as StatusFilter);
+                      setPage(1);
+                    }}
+                  />
+                </div>
+              </FiltersMenu>
+            </Tooltip>
           </div>
 
           {loading && showLoadingSkeleton && <StaffUsersSkeleton />}
@@ -412,12 +424,7 @@ export function UsersPage() {
                   </thead>
                   <tbody>
                     {users.map((user) => (
-                      <StaffUserTableRow
-                        key={user.id}
-                        user={user}
-                        onEdit={setEditUser}
-                        onRevokeSessions={setRevokeTarget}
-                      />
+                      <StaffUserTableRow key={user.id} user={user} onEdit={setEditUser} />
                     ))}
                   </tbody>
                 </table>
@@ -425,12 +432,7 @@ export function UsersPage() {
 
               <div className="users-page__cards users-page__cards--mobile">
                 {users.map((user) => (
-                  <StaffUserCard
-                    key={user.id}
-                    user={user}
-                    onEdit={setEditUser}
-                    onRevokeSessions={setRevokeTarget}
-                  />
+                  <StaffUserCard key={user.id} user={user} onEdit={setEditUser} />
                 ))}
               </div>
 
@@ -500,27 +502,6 @@ export function UsersPage() {
           setEditUser(null);
           addToast(`${user.display_name ?? user.email} deleted`, "success");
           void load();
-        }}
-      />
-
-      <ConfirmDialog
-        open={!!revokeTarget}
-        title="Revoke all sessions"
-        message={
-          revokeTarget
-            ? `End all active sessions for ${revokeTarget.display_name ?? revokeTarget.email}?`
-            : ""
-        }
-        errorMessage={revokeError}
-        confirmLabel="Revoke"
-        confirmVariant="danger"
-        loading={revoking}
-        onConfirm={() => void handleRevokeSessions()}
-        onCancel={() => {
-          if (!revoking) {
-            setRevokeTarget(null);
-            setRevokeError(null);
-          }
         }}
       />
     </div>

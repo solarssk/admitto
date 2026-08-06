@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Button, Card, EmptyState, HintLabel, useToast } from "@admitto/ui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Card, EmptyState, HintLabel, Tooltip, useToast } from "@admitto/ui";
 import {
   fetchAdminEvents,
   fetchSessions,
@@ -9,6 +9,8 @@ import {
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
+import { FiltersMenu } from "../../components/FiltersMenu.js";
+import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../../components/Segmented.js";
 import { DeviceLabelEditModal } from "./DeviceLabelEditModal.js";
 import { LOGGED_IN_HINT, SessionCard, SessionTableRow } from "./SessionListItem.js";
@@ -17,6 +19,7 @@ import { useIsDesktop } from "../../hooks/useIsDesktop.js";
 import { formatRelativeTime } from "../../utils/event-dates.js";
 
 type FilterValue = "all" | "admin" | "operator";
+type SignInFilterValue = "all" | "local" | "oidc";
 
 const FILTER_OPTIONS: ReadonlyArray<SegmentedOption<FilterValue>> = [
   { value: "all", label: "All" },
@@ -40,7 +43,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterValue>("all");
+  const [signInFilter, setSignInFilter] = useState<SignInFilterValue>("all");
   const [searchInput, setSearchInput] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [confirmTarget, setConfirmTarget] = useState<SessionListDto | null>(null);
@@ -80,6 +85,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
   const displayed = sessions.filter((s) => {
     if (filter === "admin" && s.role !== "admin" && s.role !== "superadmin") return false;
     if (filter === "operator" && s.role !== "operator") return false;
+    if (signInFilter !== "all" && s.authMethod !== signInFilter) return false;
     if (search) {
       const haystack = `${s.userDisplayName ?? ""} ${s.userEmail}`.toLowerCase();
       if (!haystack.includes(search)) return false;
@@ -149,21 +155,6 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         title="Sessions"
         actions={
           <div className="users-page__toolbar users-page__toolbar--card-actions">
-            <label className="users-page__search">
-              <i className="ti ti-search" aria-hidden="true" />
-              <input
-                id="sessions-search"
-                name="sessions-search"
-                type="search"
-                aria-label="Search sessions by user name or email"
-                placeholder="Search name or email"
-                value={searchInput}
-                onChange={(e) => {
-                  setSearchInput(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </label>
             <Segmented
               ariaLabel="Filter sessions by role"
               value={filter}
@@ -177,6 +168,66 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           </div>
         }
       >
+        <div className="users-page__toolbar">
+          <label className="users-page__search">
+            <i className="ti ti-search" aria-hidden="true" />
+            <input
+              ref={searchInputRef}
+              id="sessions-search"
+              name="sessions-search"
+              type="text"
+              aria-label="Search sessions by user name or email"
+              placeholder="Search name or email"
+              value={searchInput}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                setPage(1);
+              }}
+            />
+            {searchInput.length > 0 && (
+              <button
+                type="button"
+                className="users-page__search-clear"
+                onClick={() => {
+                  setSearchInput("");
+                  setPage(1);
+                  searchInputRef.current?.focus();
+                }}
+                aria-label="Clear search"
+              >
+                <i className="ti ti-x" aria-hidden="true" />
+              </button>
+            )}
+          </label>
+          <Tooltip content="Filter by sign-in method">
+            <FiltersMenu
+              activeCount={signInFilter !== "all" ? 1 : 0}
+              className="users-page-filters-menu"
+            >
+              <div className="users-page-filters-menu__field">
+                <label htmlFor="sessions-signin-filter">Sign-in method</label>
+                <SearchableSelect
+                  id="sessions-signin-filter"
+                  label="Sign-in method"
+                  placeholder="All sign-in methods"
+                  searchPlaceholder="Search sign-in methods…"
+                  emptyLabel="No sign-in methods found"
+                  value={signInFilter}
+                  options={[
+                    { id: "all", label: "All sign-in methods" },
+                    { id: "local", label: "Local password", icon: "key" },
+                    { id: "oidc", label: "Identity provider (SSO)", icon: "cloud-lock" },
+                  ]}
+                  onChange={(id) => {
+                    setSignInFilter(id as SignInFilterValue);
+                    setPage(1);
+                  }}
+                />
+              </div>
+            </FiltersMenu>
+          </Tooltip>
+        </div>
+
         {loading && showLoading && <p className="sessions-status">Loading…</p>}
 
         {!loading && error && (
@@ -207,13 +258,14 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             // never actually render; kept only so this stays valid without an action at all.
             action={
               /* v8 ignore next */
-              searchInput || filter !== "all" ? (
+              searchInput || filter !== "all" || signInFilter !== "all" ? (
                 <Button
                   type="button"
                   variant="secondary"
                   onClick={() => {
                     setSearchInput("");
                     setFilter("all");
+                    setSignInFilter("all");
                     setPage(1);
                   }}
                 >
@@ -316,31 +368,31 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           Immediately end all active operator sessions for a specific event.
         </p>
         <div className="sessions-bulk-row">
-          <select
+          <SearchableSelect
             id="sessions-bulk-revoke-event"
-            name="sessions-bulk-revoke-event"
-            className="at-select"
-            aria-label="Event"
+            label="Event"
+            placeholder="Select event…"
+            searchPlaceholder="Search events…"
+            emptyLabel="No events found"
             value={selectedEventId}
-            onChange={(e) => {
-              setSelectedEventId(e.target.value);
-            }}
-          >
-            <option value="">Select event…</option>
-            {events.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.title}
-                {e.archived_at ? " (archived)" : ""}
-              </option>
-            ))}
-          </select>
+            options={[
+              { id: "", label: "Select event…" },
+              ...events.map((e) => ({
+                id: e.id,
+                label: `${e.title}${e.archived_at ? " (archived)" : ""}`,
+                icon: "calendar-event",
+              })),
+            ]}
+            onChange={setSelectedEventId}
+          />
           <Button
             type="button"
             variant="danger"
+            icon={<i className="ti ti-logout" aria-hidden="true" />}
             disabled={!selectedEventId}
             onClick={() => setBulkConfirmOpen(true)}
           >
-            Revoke all operator sessions
+            Revoke all
           </Button>
         </div>
       </Card>

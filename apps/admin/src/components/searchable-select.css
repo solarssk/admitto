@@ -1,0 +1,140 @@
+/* SearchableSelect: disclosure-button trigger (matches .at-select's own box) + floating
+   search/list panel - same shape as PhoneCountrySelect, generalized for any options list too
+   long for a plain <select> to stay usable. */
+
+.searchable-select {
+  position: relative;
+}
+
+.searchable-select__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-h, 2.25rem);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.searchable-select__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.searchable-select__trigger:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.searchable-select__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchable-select__placeholder {
+  color: var(--text-muted);
+}
+
+.searchable-select__chevron {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.searchable-select__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: var(--z-dropdown);
+  width: max(100%, 260px);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Anchored above the trigger instead of below - useDropdownMenu's own layout effect decides
+   this once per open, when there isn't enough room below (e.g. a trigger near the bottom of a
+   tall, scrolled page). Also reverses the panel's own child order (search box, then list) so
+   the search box - the control the user's attention and cursor are already at, right next to
+   the trigger they just clicked - stays anchored beside the trigger instead of jumping to the
+   far edge of the panel; the option list occupies the space that opened up above it, in its
+   own unchanged top-to-bottom order (PO review, live on the bulk-revoke Event picker). */
+.searchable-select__panel--up {
+  top: auto;
+  bottom: calc(100% + 4px);
+  flex-direction: column-reverse;
+}
+
+.searchable-select__search {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-card);
+}
+
+.searchable-select__search:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.searchable-select__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.searchable-select__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.searchable-select__option:hover,
+.searchable-select__option:focus-visible {
+  background: var(--surface-hover, var(--surface-sunken));
+}
+
+.searchable-select__name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.searchable-select__empty {
+  padding: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}

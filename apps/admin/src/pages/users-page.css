@@ -1,3 +1,28 @@
+/* Single action button ("Invite user") - fits beside the "Users & roles" title once compacted,
+ * so keep the shared PageHeader's default row layout instead of letting it stack full-width
+ * below the title (components.css's max-width:767px rule). Sizing matches .reports-pageheader's
+ * own mobile rule verbatim (same single-button case, already the reference for this pattern). */
+@media (max-width: 767px) {
+  .users-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .users-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .users-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .users-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+}
+
 /* KPI tile row — sizing copied 1:1 from EventOverviewPage's .overview-kpi / ReportsPage's
  * .reports-stat (staff.css / reports-page.css), which were themselves already tuned to match
  * each other. Reusing the exact same recipe here (76px tile height, 44px icon square, 26px
@@ -103,28 +128,69 @@
 }
 
 .users-page__search {
-  flex: 1 1 220px;
+  /* 12rem, not a wider guess - matches Audit/Security logs' own search field basis
+     (.audit-log-filter, staff.css), the reference this row's Search+Filters layout is meant to
+     follow. A wider basis left no room for Filters beside it at common phone widths, forcing it
+     onto its own line even when there was space to spare. */
+  flex: 1 1 12rem;
   min-width: 0;
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0 var(--space-3);
-  background: var(--surface-card);
 }
 
 .users-page__search i {
+  position: absolute;
+  left: var(--space-3);
   color: var(--text-muted);
+  pointer-events: none;
 }
 
+/* Border, background, and focus ring live on the input itself - not on this wrapping <label>
+   via :focus-within, which drew visibly as two concentric rings (a crisp inner one from this
+   element's own border, a softer outer one from its box-shadow) instead of the single ring
+   every other focus ring in this app renders as. Every other consumer of `--ring` applies it
+   via :focus/:focus-visible directly on the focused element (.at-input, SearchableSelect's and
+   PhoneCountrySelect's own triggers, .at-select) - matching that convention here, with the icon
+   and clear button absolutely positioned over the input, fixed it (PO review, compared pixel-
+   for-pixel against the Attendees list's own .at-inputgroup/.at-input, which never had this). */
 .users-page__search input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  padding: var(--space-2) 0;
+  width: 100%;
+  height: var(--control-h);
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 var(--space-6) 0 2.1rem;
+  background: var(--surface-card);
   font: inherit;
+  color: var(--text-primary);
+}
+
+.users-page__search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.users-page__search-clear {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.users-page__search-clear:hover {
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
@@ -133,24 +199,62 @@
   box-shadow: var(--ring);
 }
 
-.users-page__search input:focus {
-  outline: none;
+/* Search + a single "Filters" trigger button (FiltersMenu, shared with Attendees/Audit/Reports)
+ * - the actual role/status/event selects live in its floating panel, not inline in this row, so
+ * the row itself never wraps or changes height regardless of viewport. */
+.users-page-filters-menu {
+  position: relative;
+  flex: none;
 }
 
-/* nowrap: the two selects must stay side by side above the mobile breakpoint below — otherwise
- * .users-page__search's flex-grow leaves this group too little room and it wraps itself into two
- * rows well before .users-page__toolbar itself would ever need to (#398). If the toolbar as a
- * whole runs out of room, that outer flex-wrap is what should push this whole group onto its own
- * line, not this group wrapping its own two selects internally. */
-.users-page__filters {
+.users-page-filters-menu__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Anchored right, like Attendees' own filters panel - the trigger sits at the row's right edge
+ * (search fills the leftover space via flex above), so extending leftward from there stays
+ * within the card at any viewport. */
+.users-page-filters-menu__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 220px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
   display: flex;
-  flex-wrap: nowrap;
-  flex-shrink: 0;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.users-page__filters .at-select {
-  min-width: 140px;
+.users-page-filters-menu__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.users-page-filters-menu__field label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.users-page-filters-menu__field .at-select {
+  width: 100%;
 }
 
 /* Bleed the table to the card's own edges instead of sitting inset by the card's full
@@ -212,27 +316,6 @@
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--text-primary);
-}
-
-.users-page__card-revoke {
-  width: 100%;
-  min-height: 2.75rem;
-}
-
-.users-page__action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 2.75rem;
-  padding-inline: var(--space-3);
-}
-
-.users-page__action-btn i {
-  font-size: 1rem;
-}
-
-.users-page__action-btn-label {
-  white-space: nowrap;
 }
 
 .users-page__user-cell {
@@ -325,39 +408,17 @@
 }
 
 @media (max-width: 768px) {
-  .users-page__toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .users-page__search,
-  .users-page__filters {
-    width: 100%;
-  }
-
-  .users-page__filters {
-    flex-direction: column;
-  }
-
-  .users-page__filters .at-select {
-    width: 100%;
-  }
-
+  /* No flex-direction: column here (unlike an earlier version of this rule) - the base rule
+   * above already wraps (flex-wrap: wrap), so Search and Filters share one row whenever the
+   * viewport has room for both, matching Audit/Security logs' own toolbar (.audit-log-toolbar,
+   * staff.css), and only drop to separate lines once genuinely too narrow. Forcing column
+   * unconditionally made Filters drop below Search even on wider phones with room to spare. */
   .users-page__table-wrap--desktop {
     display: none;
   }
 
   .users-page__cards--mobile {
     display: flex;
-  }
-
-  .users-page__action-btn {
-    flex: 1 1 calc(50% - var(--space-1));
-    justify-content: center;
-  }
-
-  .users-page__card-meta {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -464,6 +525,10 @@
   width: var(--control-h);
   height: var(--control-h);
   padding: 0;
+  /* Match .at-iconbtn's icon size (1.1rem) - this trigger is a Button (icon-only, no text),
+     which otherwise keeps Button's smaller, text-oriented default and reads noticeably
+     smaller than the adjacent Close .at-iconbtn despite both boxes being the same 36px. */
+  font-size: 1.1rem;
 }
 
 .users-modal__head-who {
@@ -517,6 +582,20 @@
   min-width: 0;
 }
 
+@media (max-width: 640px) {
+  /* The country-code field's 10rem floor leaves too little room for the number field beside it
+     at this width - stack them full-width instead of squeezing both into one row. */
+  .users-modal__phone-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .users-modal__phone-row .at-field:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
 .users-modal__chips {
   display: flex;
   flex-wrap: wrap;
@@ -533,6 +612,16 @@
   background: var(--surface-muted);
   border: 1px solid var(--border);
   font-size: var(--fs-sm);
+}
+
+/* A staged Add not yet sent to the server (saveProfile only grants it on "Save changes") -
+   dashed instead of solid so it visibly reads as "not committed yet", the same distinction a
+   file-upload queue or draft state usually makes, rather than looking identical to an already-
+   granted scope chip right next to it. */
+.users-modal__chip--pending {
+  border-style: dashed;
+  background: var(--surface-card);
+  color: var(--text-secondary);
 }
 
 .users-modal__chip-remove {
@@ -606,26 +695,6 @@
 
 .users-modal__status-chip-body span {
   font-size: var(--fs-sm);
-}
-
-.users-modal__unlink-btn {
-  margin-left: auto;
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  color: var(--text-link, var(--primary));
-  cursor: pointer;
-  text-decoration: underline;
-  flex-shrink: 0;
-  align-self: flex-start;
-}
-
-.users-modal__unlink-btn:disabled {
-  color: var(--text-disabled);
-  cursor: not-allowed;
-  text-decoration: none;
 }
 
 .users-modal__logins {
@@ -718,8 +787,36 @@
   min-width: 0;
 }
 
+/* Role is a fixed-width first field beside the wider scope picker - except when it's the only
+   control in the row (superadmin, nothing left to add), where it should fill the row instead of
+   sitting stranded at 10rem. The extra class name repeat over-specifies on purpose so this wins
+   over the rule above regardless of declaration order. */
+.users-modal__role-assign > .at-field:first-child {
+  flex: 0 0 auto;
+  min-width: 10rem;
+}
+
+.users-modal__role-assign.users-modal__role-assign--solo > .at-field:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
 .users-modal__role-assign .at-btn {
   flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  /* Three controls (role, scope picker, action button) don't fit on one line at this width -
+     stack them and let each take the full row instead of squeezing/wrapping mid-control. */
+  .users-modal__role-assign {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .users-modal__role-assign > .at-field:first-child {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 .users-modal__actions {

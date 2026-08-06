@@ -1,7 +1,6 @@
 import {
   Avatar,
   Badge,
-  Button,
   IconButton,
   Tooltip,
 } from "@admitto/ui";
@@ -30,7 +29,6 @@ function formatRelativeTime(iso: string | null): string {
 type StaffUserListItemProps = {
   user: UserListItemDto;
   onEdit: (user: UserListItemDto) => void;
-  onRevokeSessions: (user: UserListItemDto) => void;
 };
 
 /** Roles are exclusive by type (#401) - every entry in user.roles shares the same `role`, just
@@ -105,10 +103,11 @@ function UserSessionsBadge({ count }: Readonly<{ count: number }>) {
   );
 }
 
-/** Compact icon-only actions for the desktop table row - a bare icon (especially the reset/
- * refresh glyph, easy to mistake for "revoke all sessions") doesn't self-explain, so each gets
- * the app's standard hover/focus Tooltip in addition to its aria-label. */
-function UserActionsRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
+/** Compact icon-only edit action, shared by the desktop table row and the mobile card. Revoking
+ * sessions lives one click further in, on Edit's own "More actions" menu, rather than as a
+ * second icon here - a bare reset/refresh glyph read as easy to mistake for "revoke all
+ * sessions" at a glance, and duplicated a control the edit modal already has. */
+function UserActionsRow({ user, onEdit }: Readonly<StaffUserListItemProps>) {
   const label = user.display_name?.trim() || user.email;
   return (
     <div className="users-page__actions">
@@ -120,51 +119,12 @@ function UserActionsRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserLi
           onClick={() => onEdit(user)}
         />
       </Tooltip>
-      <Tooltip content="Reset sessions">
-        <IconButton
-          icon={<i className="ti ti-refresh" aria-hidden="true" />}
-          label={`Reset sessions for ${label}`}
-          size="sm"
-          className="users-page__icon-danger"
-          onClick={() => onRevokeSessions(user)}
-        />
-      </Tooltip>
-    </div>
-  );
-}
-
-/** Full-width labeled actions for the mobile card - touch targets stay easy to hit and legible
- * without a table row's horizontal space constraints. */
-function UserActionsCard({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
-  const label = user.display_name?.trim() || user.email;
-  return (
-    <div className="users-page__actions">
-      <Button
-        type="button"
-        variant="secondary"
-        className="users-page__action-btn"
-        onClick={() => onEdit(user)}
-      >
-        <i className="ti ti-pencil" aria-hidden="true" />
-        <span>Edit</span>
-        <span className="sr-only"> profile for {label}</span>
-      </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        className="users-page__action-btn users-page__icon-danger"
-        onClick={() => onRevokeSessions(user)}
-      >
-        <i className="ti ti-refresh" aria-hidden="true" />
-        <span className="users-page__action-btn-label">Reset sessions</span>
-        <span className="sr-only"> for {label}</span>
-      </Button>
     </div>
   );
 }
 
 /** Desktop table row for a staff user. */
-export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
+export function StaffUserTableRow({ user, onEdit }: Readonly<StaffUserListItemProps>) {
   return (
     <tr>
       <td>
@@ -193,14 +153,14 @@ export function StaffUserTableRow({ user, onEdit, onRevokeSessions }: Readonly<S
         <UserStatusBadge active={user.is_active} />
       </td>
       <td>
-        <UserActionsRow user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
+        <UserActionsRow user={user} onEdit={onEdit} />
       </td>
     </tr>
   );
 }
 
 /** Mobile card for a staff user. */
-export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<StaffUserListItemProps>) {
+export function StaffUserCard({ user, onEdit }: Readonly<StaffUserListItemProps>) {
   return (
     <article className="users-page__card">
       <div className="users-page__card-head">
@@ -211,7 +171,10 @@ export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<Staff
             <div className="users-page__user-email">{user.email}</div>
           </div>
         </div>
-        <UserStatusBadge active={user.is_active} />
+        <div className="sessions-card-head-end">
+          <UserStatusBadge active={user.is_active} />
+          <UserActionsRow user={user} onEdit={onEdit} />
+        </div>
       </div>
       <dl className="users-page__card-meta">
         <div>
@@ -243,7 +206,6 @@ export function StaffUserCard({ user, onEdit, onRevokeSessions }: Readonly<Staff
           </dd>
         </div>
       </dl>
-      <UserActionsCard user={user} onEdit={onEdit} onRevokeSessions={onRevokeSessions} />
     </article>
   );
 }

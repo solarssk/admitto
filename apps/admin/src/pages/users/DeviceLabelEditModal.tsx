@@ -4,6 +4,7 @@ import { updateSessionDeviceLabel } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { SessionListDto } from "../../api/types.js";
 import { useModalFocusTrap } from "../../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../../hooks/useOverscrollBounceGuard.js";
 import "../../attendees/add-attendee-modal.css";
 
 export interface DeviceLabelEditModalProps {
@@ -22,6 +23,8 @@ export interface DeviceLabelEditModalProps {
 export function DeviceLabelEditModal({ open, session, onClose, onSaved }: Readonly<DeviceLabelEditModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef, open);
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +66,9 @@ export function DeviceLabelEditModal({ open, session, onClose, onSaved }: Readon
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 420px)" }}>
+      <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
-          Edit device label
+          <i className="ti ti-pencil" aria-hidden="true" /> Edit device label
         </h2>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
@@ -92,6 +96,7 @@ export function DeviceLabelEditModal({ open, session, onClose, onSaved }: Readon
             {submitting ? "Saving…" : "Save"}
           </Button>
         </div>
+      </div>
       </div>
     </dialog>
   );

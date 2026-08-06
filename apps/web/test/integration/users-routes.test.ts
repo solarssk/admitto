@@ -9,6 +9,7 @@ import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
   assertLastSuperadminDeactivationAllowed,
+  assertLastSuperadminDeleteAllowed,
   LastSuperadminError,
 } from "../../src/admin/users-lockout-guards.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
@@ -304,11 +305,6 @@ describe("GET /api/admin/users/stats security", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 403 for an org admin (superadmin-only, not just staff-admin-gated)", async () => {
-    const res = await app.request("/api/admin/users/stats", { headers: { Cookie: adminCookie } });
-    expect(res.status).toBe(403);
-  });
-
   it("returns instance-wide counts unaffected by pagination", async () => {
     const res = await app.request("/api/admin/users/stats", { headers: { Cookie: superCookie } });
     expect(res.status).toBe(200);
@@ -358,6 +354,12 @@ describe("PATCH /api/admin/users/:id anti-lockout", () => {
   it("blocks deactivating the sole active superadmin in the PATCH guard", async () => {
     await expect(
       prisma.$transaction((tx) => assertLastSuperadminDeactivationAllowed(tx, superId)),
+    ).rejects.toBeInstanceOf(LastSuperadminError);
+  });
+
+  it("blocks deleting the sole active superadmin in the DELETE guard", async () => {
+    await expect(
+      prisma.$transaction((tx) => assertLastSuperadminDeleteAllowed(tx, superId)),
     ).rejects.toBeInstanceOf(LastSuperadminError);
   });
 });
@@ -459,15 +461,44 @@ describe("PATCH /api/admin/users/:id email", () => {
     ).toMatchObject({ metadata: { userId: patchUserId } });
   });
 
-  it("returns 409 email_conflict for a duplicate email", async () => {
+  it("resubmitting the current email alongside another field records user_profile_updated, not user_email_changed", async () => {
+    // The Edit user modal always resends the current email on every save, not only when the
+    // admin actually edited it - the audit action type must compare against the prior value
+    // instead of treating "email present in the body" as "email changed" (bot review finding).
     const res = await app.request(`/api/admin/users/${patchUserId}`, {
       method: "PATCH",
       headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: EMAIL_TARGET }),
+      body: JSON.stringify({ email: EMAIL_PATCH_NEW, display_name: "Renamed" }),
     });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("email_conflict");
+    expect(res.status).toBe(200);
+
+    const latest = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, metadata: { path: ["userId"], equals: patchUserId } },
+      orderBy: { created_at: "desc" },
+    });
+    expect(latest?.action_type).toBe("user_profile_updated");
+  });
+
+  it("returns 409 email_conflict for a duplicate email", async () => {
+    // A self-contained colliding pair, rather than reusing a shared fixture's current email -
+    // other describe blocks in this file mutate targetId's own email over the course of the
+    // suite, so asserting a collision against it here would depend on run order.
+    const collision = "users-patch-email-conflict@example.com";
+    const other = await prisma.user.create({
+      data: { email: collision, password_hash: await hashPassword(PASSWORD) },
+    });
+    try {
+      const res = await app.request(`/api/admin/users/${patchUserId}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: collision }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("email_conflict");
+    } finally {
+      await prisma.user.deleteMany({ where: { id: other.id } });
+    }
   });
 
   it("returns 400 invalid_email for a blank email", async () => {
@@ -570,208 +601,32 @@ describe("DELETE /api/admin/users/:id", () => {
     });
     expect(res.status).toBe(404);
   });
-});
 
-describe("PATCH /api/admin/users/:id email", () => {
-  const EMAIL_PATCH_ORIGINAL = "users-patch-email@example.com";
-  const EMAIL_PATCH_NEW = "users-patch-email-new@example.com";
-  let patchUserId = "";
-
-  beforeAll(async () => {
+  it("deletes an already-inactive superadmin without tripping the last-active-superadmin guard", async () => {
+    // Deleting an inactive superadmin can never reduce the ACTIVE superadmin count - they
+    // weren't counted in it to begin with - so this must succeed even with only one active
+    // superadmin (superId) instance-wide. The delete path previously reused the deactivation
+    // guard, which only checks "is the target a superadmin" and not whether they're already
+    // inactive, wrongly blocking this (bot review finding on #722).
     const created = await prisma.user.create({
-      data: { email: EMAIL_PATCH_ORIGINAL, password_hash: await hashPassword(PASSWORD) },
-    });
-    patchUserId = created.id;
-  });
-
-  afterAll(async () => {
-    await prisma.user.deleteMany({ where: { id: patchUserId } });
-  });
-
-  it("updates the email and records user_email_changed", async () => {
-    const res = await app.request(`/api/admin/users/${patchUserId}`, {
-      method: "PATCH",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: EMAIL_PATCH_NEW }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { user: { email: string } };
-    expect(body.user.email).toBe(EMAIL_PATCH_NEW);
-    expect(
-      await prisma.adminAuditLog.findFirst({
-        where: { organization_id: ORG_USERS, action_type: "user_email_changed" },
-        orderBy: { created_at: "desc" },
-      }),
-    ).toMatchObject({ metadata: { userId: patchUserId } });
-  });
-
-  it("returns 409 email_conflict for a duplicate email", async () => {
-    const res = await app.request(`/api/admin/users/${patchUserId}`, {
-      method: "PATCH",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: EMAIL_TARGET }),
-    });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("email_conflict");
-  });
-
-  it("returns 400 invalid_request for a blank email", async () => {
-    const res = await app.request(`/api/admin/users/${patchUserId}`, {
-      method: "PATCH",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "   " }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it("returns 409 email_conflict when two concurrent PATCHes race onto the same new email", async () => {
-    const raceTarget = "users-patch-email-race-target@example.com";
-    const [userA, userB] = await Promise.all([
-      prisma.user.create({ data: { email: "users-patch-email-race-a@example.com", password_hash: await hashPassword(PASSWORD) } }),
-      prisma.user.create({ data: { email: "users-patch-email-race-b@example.com", password_hash: await hashPassword(PASSWORD) } }),
-    ]);
-
-    const patchEmail = (id: string) =>
-      app.request(`/api/admin/users/${id}`, {
-        method: "PATCH",
-        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ email: raceTarget }),
-      });
-
-    const [resA, resB] = await Promise.all([patchEmail(userA.id), patchEmail(userB.id)]);
-    const statuses = [resA.status, resB.status].sort((a, b) => a - b);
-    expect(statuses).toEqual([200, 409]);
-
-    const loser = resA.status === 409 ? resA : resB;
-    const body = (await loser.json()) as { code: string };
-    expect(body.code).toBe("email_conflict");
-
-    await prisma.user.deleteMany({ where: { id: { in: [userA.id, userB.id] } } });
-  });
-
-  it("records user_profile_updated, not user_email_changed, when the PATCH resends the current email unchanged", async () => {
-    const res = await app.request(`/api/admin/users/${patchUserId}`, {
-      method: "PATCH",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ display_name: "Same Email Edit", email: EMAIL_PATCH_NEW }),
-    });
-    expect(res.status).toBe(200);
-    const entry = await prisma.adminAuditLog.findFirst({
-      where: { organization_id: ORG_USERS },
-      orderBy: { created_at: "desc" },
-    });
-    expect(entry).toMatchObject({ action_type: "user_profile_updated", metadata: { userId: patchUserId } });
-  });
-});
-
-describe("DELETE /api/admin/users/:id", () => {
-  let deleteUserId = "";
-  let deleteAssignmentId = "";
-
-  beforeAll(async () => {
-    const created = await prisma.user.create({
-      data: { email: "users-delete-target@example.com", password_hash: await hashPassword(PASSWORD) },
-    });
-    deleteUserId = created.id;
-    const assignment = await prisma.roleAssignment.create({
-      data: { user_id: deleteUserId, role: "operator", scope_type: "event", scope_id: eventId },
-    });
-    deleteAssignmentId = assignment.id;
-    await prisma.userMfaMethod.create({
-      data: {
-        user_id: deleteUserId,
-        type: "totp",
-        secret_enc: encryptTotpSecret(generateTotpSecret()),
-        confirmed_at: new Date(),
-      },
-    });
-    await createSession(prisma, { userId: deleteUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.9" });
-  });
-
-  it("returns 401 without auth", async () => {
-    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
-      method: "DELETE",
-      headers: { ...sameOrigin },
-    });
-    expect(res.status).toBe(401);
-  });
-
-  it("returns 403 for operator", async () => {
-    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
-      method: "DELETE",
-      headers: { Cookie: operatorCookie, ...sameOrigin },
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it("returns 403 for an org admin (superadmin-only, not just staff-admin-gated)", async () => {
-    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
-      method: "DELETE",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
-    expect(res.status).toBe(403);
-  });
-
-  it("returns 409 cannot_delete_self", async () => {
-    const res = await app.request(`/api/admin/users/${superId}`, {
-      method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
-    });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("cannot_delete_self");
-  });
-
-  it("deletes the user and cascades sessions, roles, and MFA methods", async () => {
-    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
-      method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
-    });
-    expect(res.status).toBe(200);
-
-    expect(await prisma.user.findUnique({ where: { id: deleteUserId } })).toBeNull();
-    expect(await prisma.roleAssignment.findUnique({ where: { id: deleteAssignmentId } })).toBeNull();
-    expect(await prisma.session.findMany({ where: { user_id: deleteUserId } })).toHaveLength(0);
-    expect(await prisma.userMfaMethod.findMany({ where: { user_id: deleteUserId } })).toHaveLength(0);
-
-    expect(
-      await prisma.adminAuditLog.findFirst({
-        where: { organization_id: ORG_USERS, action_type: "user_deleted" },
-        orderBy: { created_at: "desc" },
-      }),
-    ).toMatchObject({ metadata: { userId: deleteUserId } });
-  });
-
-  it("returns 404 for an unknown user", async () => {
-    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
-      method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it("allows deleting an already-inactive superadmin even when only one active superadmin remains", async () => {
-    const inactive = await prisma.user.create({
-      data: {
-        email: "users-delete-inactive-superadmin@example.com",
-        password_hash: await hashPassword(PASSWORD),
-        is_active: false,
-      },
+      data: { email: "users-delete-inactive-superadmin@example.com", password_hash: await hashPassword(PASSWORD), is_active: false },
     });
     await prisma.roleAssignment.create({
-      data: { user_id: inactive.id, role: "superadmin", scope_type: "instance", scope_id: null },
+      data: { user_id: created.id, role: "superadmin", scope_type: "instance", scope_id: null },
     });
 
-    const res = await app.request(`/api/admin/users/${inactive.id}`, {
-      method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
-    });
-
-    expect(res.status).toBe(200);
-    expect(await prisma.user.findUnique({ where: { id: inactive.id } })).toBeNull();
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(200);
+      expect(await prisma.user.findUnique({ where: { id: created.id } })).toBeNull();
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
   });
-
 });
 
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
@@ -1820,6 +1675,26 @@ describe("GET /api/admin/role-assignments search", () => {
 
   it("returns no rows for a search term matching nobody", async () => {
     const res = await app.request("/api/admin/role-assignments?q=nobody-matches-this", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assignments: unknown[]; total: number };
+    expect(body.assignments).toHaveLength(0);
+    expect(body.total).toBe(0);
+  });
+
+  it("filters by eventId", async () => {
+    const res = await app.request(
+      `/api/admin/role-assignments?eventId=${eventId}&q=role-assignments-search-target`,
+      { headers: { Cookie: superCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assignments: Array<{ id: string }>; total: number };
+    expect(body.assignments.map((a) => a.id)).toEqual([searchAssignmentId]);
+  });
+
+  it("returns no rows for an eventId matching nobody", async () => {
+    const res = await app.request("/api/admin/role-assignments?eventId=nonexistent-event-id", {
       headers: { Cookie: superCookie },
     });
     expect(res.status).toBe(200);

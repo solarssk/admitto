@@ -52,6 +52,7 @@ import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
@@ -370,7 +371,9 @@ function SendTicketsDialog({
 }: Readonly<SendTicketsDialogProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, open, onClose);
+  useOverscrollBounceGuard(scrollRef, open);
 
   if (!open) return null;
 
@@ -378,6 +381,7 @@ function SendTicketsDialog({
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
+      <div className="add-attendee-modal__scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           Send tickets
         </h2>
@@ -429,6 +433,7 @@ function SendTicketsDialog({
             Cancel
           </Button>
         </div>
+      </div>
       </div>
     </dialog>
   );
@@ -491,8 +496,10 @@ function CardPickerDialog<T>({
 }: Readonly<CardPickerDialogProps<T>>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
   useModalFocusTrap(panelRef, open, onClose);
+  useOverscrollBounceGuard(scrollRef, open);
 
   // Layout effect, not a plain effect — matches ConfirmDialog's own reasoning: the dialog stays
   // mounted while closed, so `armed` could still read true from the previous open, and resetting
@@ -510,6 +517,7 @@ function CardPickerDialog<T>({
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
+      <div className="add-attendee-modal__scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           {title}
         </h2>
@@ -580,6 +588,7 @@ function CardPickerDialog<T>({
           </span>
         </div>
       </div>
+      </div>
     </dialog>
   );
 }
@@ -625,7 +634,7 @@ function HeaderMoreMenu({
   exportingFormat,
   onExport,
 }: Readonly<HeaderMoreMenuProps>) {
-  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -641,7 +650,11 @@ function HeaderMoreMenu({
         More
       </Button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef}>
+        <div
+          className={`more-actions-menu__panel${openUpward ? " more-actions-menu__panel--up" : ""}`}
+          role="menu"
+          ref={panelRef}
+        >
           <MoreActionsMenuItem
             icon="upload"
             label="Import"
@@ -703,7 +716,7 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
 function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
-  const { open, setOpen, close, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
@@ -721,7 +734,11 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
         {exportingFormat ? `Exporting ${exportingFormat.toUpperCase()}…` : "Export"}
       </Button>
       {open && (
-        <div className="attendees-export-menu__panel" role="menu" ref={panelRef}>
+        <div
+          className={`attendees-export-menu__panel${openUpward ? " attendees-export-menu__panel--up" : ""}`}
+          role="menu"
+          ref={panelRef}
+        >
           {EXPORT_FORMATS.map((format) => (
             <button
               key={format.key}

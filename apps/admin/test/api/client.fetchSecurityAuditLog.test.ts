@@ -33,6 +33,15 @@ describe("fetchSecurityAuditLog (client) — query string building", () => {
     expect(url).toBe("/api/admin/security-audit-log?event_type=auth.login.fail&page=2&pageSize=50");
   });
 
+  it("includes user_id when given", async () => {
+    const fetchMock = stubFetch();
+
+    await fetchSecurityAuditLog({ userId: "user-1" });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/admin/security-audit-log?user_id=user-1");
+  });
+
   it("includes search/start/end when given", async () => {
     const fetchMock = stubFetch();
 

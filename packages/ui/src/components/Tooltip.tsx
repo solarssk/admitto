@@ -129,6 +129,30 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     setStyle((s) => ({ ...s, visibility: "hidden" }));
   };
 
+  // A trigger that owns its own disclosure (Filters button, kebab menu, SearchableSelect) sets
+  // aria-expanded on click while the mouse may still be resting on it from the hover that
+  // revealed this tooltip - a MutationObserver, not a render-cycle effect, since flipping
+  // aria-expanded is the wrapped child's own internal state change and doesn't re-render this
+  // ancestor. Once that panel is open, a floating hint repeating what's now an open, visible
+  // control is redundant and can visually overlap it - hide immediately, same as any other
+  // dismissal.
+  useLayoutEffect(() => {
+    if (!visible) return;
+    const trigger = wrapperRef.current;
+    if (!trigger) return;
+    const isExpanded = () => !!trigger.querySelector('[aria-expanded="true"]');
+    if (isExpanded()) {
+      hide();
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (isExpanded()) hide();
+    });
+    observer.observe(trigger, { attributes: true, attributeFilter: ["aria-expanded"], subtree: true });
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hide/show are stable per render, not deps
+  }, [visible]);
+
   // Always the same wrapper element, whether or not there's content right now: some callers'
   // condition for showing a tooltip (e.g. "this control is disabled") can flip while the child
   // control stays mounted (a focused input, an open menu). Swapping between this <span> and a

@@ -145,6 +145,20 @@ describe("ActiveSessionsTab rendering", () => {
     expect(screen.queryByText("Bob Smith")).toBeNull();
   });
 
+  it("clears the search box via its own inline clear button and refocuses it", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({ sessions: [makeSession()] });
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+    const searchInput = screen.getByLabelText("Search sessions by user name or email") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "jane" } });
+    expect(searchInput.value).toBe("jane");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(searchInput.value).toBe("");
+    expect(document.activeElement).toBe(searchInput);
+  });
+
   it("matches by email when the session has no display name", async () => {
     vi.mocked(fetchSessions).mockResolvedValue({
       sessions: [makeSession({ userEmail: "noname@example.com", userDisplayName: null })],
@@ -727,11 +741,9 @@ describe("ActiveSessionsTab operator errors", () => {
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
     vi.mocked(revokeAllOperatorSessions).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<ActiveSessionsTab />);
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke sessions/);
@@ -781,11 +793,9 @@ describe("ActiveSessionsTab revoke success", () => {
 
     renderWithToast(<ActiveSessionsTab />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
@@ -809,11 +819,9 @@ describe("ActiveSessionsTab revoke success", () => {
 
     renderWithToast(<ActiveSessionsTab />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
@@ -828,11 +836,9 @@ describe("ActiveSessionsTab revoke success", () => {
 
     renderWithToast(<ActiveSessionsTab />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("combobox")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "evt-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Revoke all operator sessions" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
@@ -850,6 +856,28 @@ describe("ActiveSessionsTab revoke success", () => {
 
     renderWithToast(<ActiveSessionsTab />);
 
-    expect(await screen.findByRole("option", { name: "Old Summit (archived)" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    expect(await screen.findByRole("button", { name: "Old Summit (archived)" })).toBeTruthy();
+  });
+
+  it("filters by sign-in method via the Filters panel", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "s-local", userEmail: "local@example.com", authMethod: "local" }),
+        makeSession({ id: "s-sso", userEmail: "sso@example.com", authMethod: "oidc" }),
+      ],
+    });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByText("local@example.com");
+    expect(screen.getByText("sso@example.com")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sign-in method,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Identity provider (SSO)" }));
+
+    expect(screen.queryByText("local@example.com")).toBeNull();
+    expect(screen.getByText("sso@example.com")).toBeTruthy();
   });
 });

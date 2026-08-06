@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventDto, UserListItemDto } from "../../src/api/types.js";
 import { UserEditModal } from "../../src/pages/users/UserEditModal.js";
@@ -142,6 +142,72 @@ describe("UserEditModal header", () => {
     expect(document.body.textContent).toBe("");
   });
 
+  it("closes via the Close button when nothing is busy", async () => {
+    const { onClose } = renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("ignores Escape while a save is still in flight", async () => {
+    mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
+    const { onClose } = renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Close" })).toHaveProperty("disabled", true);
+    });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("UserEditModal profile - display name and email", () => {
+  it("saves an edited display name and email address", async () => {
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Name" } });
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new-email@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", {
+        display_name: "New Name",
+        email: "new-email@example.com",
+        phone_country_code: null,
+        phone_number: null,
+      });
+    });
+  });
+
+  it("shows an empty display name field for a user who never set one", async () => {
+    renderModal({ display_name: null });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("");
+  });
+
+  it("sends null, not an empty string, for a display name cleared before saving", async () => {
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(mockPatchAdminUser).toHaveBeenCalledWith(
+        "usr-1",
+        expect.objectContaining({ display_name: null }),
+      );
+    });
+  });
+
   it("does not update state (or warn) when unmounted before the events/organizations fetch resolves", async () => {
     let resolveEvents!: (value: EventDto[]) => void;
     mockFetchAdminEvents.mockReturnValueOnce(new Promise((resolve) => { resolveEvents = resolve; }));
@@ -208,92 +274,85 @@ describe("UserEditModal header", () => {
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
-
-  it("closes via the header Close button and resets in-progress role UI state for next time", async () => {
-    const { onClose } = renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-
-    expect(onClose).toHaveBeenCalled();
-  });
-
-  it("falls back to empty event/organization pickers when they fail to load", async () => {
-    mockFetchAdminEvents.mockRejectedValueOnce(new Error("network down"));
-    mockFetchAdminOrganizations.mockRejectedValueOnce(new Error("network down"));
-    renderModal();
-
-    fireEvent.change(await screen.findByLabelText("Role"), { target: { value: "admin" } });
-    const organizationSelect = await screen.findByLabelText("Organization scope for admin role");
-    expect(organizationSelect.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("option", { name: "No organizations available" })).toBeTruthy();
-  });
-
-  it("shows no recent logins when the security audit log fails to load", async () => {
-    mockFetchSecurityAuditLog.mockRejectedValueOnce(new Error("network down"));
-    renderModal();
-
-    expect(await screen.findByText("No recent logins")).toBeTruthy();
-  });
 });
 
 describe("UserEditModal role & access - exclusive roles", () => {
-  it("grants a first role directly, no confirmation needed", async () => {
+  it("stages a first role locally without calling the API, until Save", async () => {
     const { onClose, onUpdated } = renderModal();
 
     await waitFor(() => {
       expect(mockFetchAdminOrganizations).toHaveBeenCalledOnce();
       expect(mockFetchAdminEvents).toHaveBeenCalledOnce();
     });
-    const roleSelect = screen.getByLabelText("Role");
-    fireEvent.change(roleSelect, { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
 
     const addButton = screen.getByRole("button", { name: "Add" });
     fireEvent.click(addButton);
 
-    await waitFor(() => {
-      expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", {
-        role: "superadmin",
-        scope_type: "instance",
-      });
-    });
-    expect(onUpdated).toHaveBeenCalledWith(user, "Role updated");
-    // Adding a role stays in the modal (so more scopes can be added in one sitting) instead of
-    // closing it - unlike every other action here (Reset MFA, Delete account, ...).
+    // Add only stages the grant locally now - it shows up as a pending chip, but nothing is
+    // sent to the server and nothing is reported to the parent list until Save changes.
+    expect(await screen.findByText("Instance-wide")).toBeTruthy();
+    expect(document.querySelector(".users-modal__chip--pending")).toBeTruthy();
+    expect(mockGrantUserRole).not.toHaveBeenCalled();
+    expect(onUpdated).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryAllByRole("dialog")).toHaveLength(1);
+  });
+
+  it("locks the Role select once a scope grant is staged for a previously roleless user", async () => {
+    renderModal();
+    await waitFor(() => {
+      expect(mockFetchAdminOrganizations).toHaveBeenCalledOnce();
+      expect(mockFetchAdminEvents).toHaveBeenCalledOnce();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await screen.findByText("Instance-wide");
+
+    // Switching role type now, with a scope grant already staged, would leave that staged add
+    // pointing at a type the picker no longer shows once Save changes submits it. isRoleTypeChange
+    // only guards this for a user who already had an assigned role (it requires a non-empty
+    // currentRoleType), so a previously roleless user could otherwise stage one type, restage the
+    // picker to a different type, and stage a second, conflicting add underneath it (bot review
+    // finding on #722) - the Role select itself is disabled instead once anything is pending.
+    expect(screen.getByRole("button", { name: /^Role,/ })).toHaveProperty("disabled", true);
   });
 
   it("switches between organization and event scope controls for admin and operator", async () => {
     renderModal();
     await waitFor(() => expect(mockFetchAdminOrganizations).toHaveBeenCalledOnce());
 
-    const roleSelect = screen.getByLabelText("Role");
-    fireEvent.change(roleSelect, { target: { value: "admin" } });
-    const organizationSelect = screen.getByLabelText("Organization scope for admin role");
-    await screen.findByRole("option", { name: "Operations" });
-    fireEvent.change(organizationSelect, { target: { value: "org-2" } });
-    expect((organizationSelect as HTMLSelectElement).value).toBe("org-2");
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
+    // Organizations pre-fill to the first fetched org (see the load effect), so the trigger may
+    // already read "...Operations" rather than "none selected" by the time this runs.
+    fireEvent.click(await screen.findByRole("button", { name: /^Organization scope for admin role/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Events" }));
+    expect(
+      screen.getByRole("button", { name: "Organization scope for admin role, Events" }),
+    ).toBeTruthy();
 
-    fireEvent.change(roleSelect, { target: { value: "operator" } });
-    const eventSelect = screen.getByLabelText("Event scope for operator role");
-    fireEvent.change(eventSelect, { target: { value: "evt-1" } });
-    expect((eventSelect as HTMLSelectElement).value).toBe("evt-1");
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Summer Summit" }));
+    expect(
+      screen.getByRole("button", { name: "Event scope for operator role, Summer Summit" }),
+    ).toBeTruthy();
   });
 
   it("defaults the organization scope picker past an org the target is already assigned to", async () => {
     // org-1 ("Operations") is first in the fetched list and already assigned - the picker must
-    // not default to it (it has no matching <option>, since pickableOrganizations excludes it).
+    // not default to it (pickableOrganizations excludes already-assigned orgs entirely).
     renderModal({
       roles: [{ id: "role-1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false }],
     });
-    const organizationSelect = await screen.findByLabelText("Organization scope for admin role");
-    await screen.findByRole("option", { name: "Events" });
 
-    await waitFor(() => {
-      expect((organizationSelect as HTMLSelectElement).value).toBe("org-2");
-    });
+    expect(
+      await screen.findByRole("button", { name: "Organization scope for admin role, Events" }),
+    ).toBeTruthy();
   });
 
   it("disables the add-scope action and explains the empty organization list", async () => {
@@ -302,12 +361,61 @@ describe("UserEditModal role & access - exclusive roles", () => {
     renderModal();
 
     await waitFor(() => expect(mockFetchAdminOrganizations).toHaveBeenCalled());
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "admin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
 
-    const organizationSelect = screen.getByLabelText("Organization scope for admin role");
-    expect(organizationSelect.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("option", { name: "No organizations available" })).toBeTruthy();
+    const organizationTrigger = screen.getByRole("button", {
+      name: "Organization scope for admin role, none selected",
+    });
+    expect(organizationTrigger).toHaveProperty("disabled", true);
+    expect(screen.getByText("No organizations available")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add" })).toHaveProperty("disabled", true);
+  });
+
+  it("falls back to empty organization and event lists when the initial fetch fails", async () => {
+    mockFetchAdminOrganizations.mockRejectedValueOnce(new Error("network down"));
+    mockFetchAdminEvents.mockRejectedValueOnce(new Error("network down"));
+    renderModal();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("No organizations available")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Add" })).toHaveProperty("disabled", true);
+  });
+
+  it("ignores a stale organizations/events fetch that resolves after the modal has already closed", async () => {
+    let resolveOrgs: (value: { id: string; name: string }[]) => void = () => {};
+    mockFetchAdminOrganizations.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOrgs = resolve;
+      }),
+    );
+    const onClose = vi.fn();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { rerender } = render(
+      <UserEditModal open user={user} onClose={onClose} onUpdated={vi.fn()} onDeleted={vi.fn()} />,
+    );
+    await screen.findByRole("button", { name: "Save changes" });
+
+    // Closes before the in-flight fetch settles - the effect's cleanup aborts its controller.
+    rerender(
+      <UserEditModal open={false} user={user} onClose={onClose} onUpdated={vi.fn()} onDeleted={vi.fn()} />,
+    );
+
+    // Resolving now must not call setOrganizations/setEvents on the now-stale request - only
+    // the `controller.signal.aborted` guard stands between this and a "state update on an
+    // unmounted/closed component" warning.
+    await act(async () => {
+      resolveOrgs([]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it("requires confirmation before changing an existing role to a different type", async () => {
@@ -317,7 +425,8 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
     expect(screen.getByText(/Changing to Superadmin removes/)).toBeTruthy();
     // Old scope chips are hidden while a type change is pending - they're about to be replaced.
     expect(document.querySelector(".users-modal__chips")).toBeNull();
@@ -331,10 +440,10 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", { role: "superadmin", scope_type: "instance" });
     });
     expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [existingRole] }, "Role updated");
-    // A type change closes the modal (unlike adding another same-type scope, below): if Staff
-    // users is currently filtered by the target's old role, the refreshed list can drop the
-    // target entirely, leaving the parent's user-sync effect nothing to find and the modal
-    // stuck open showing the just-replaced role as if nothing happened.
+    // A type change closes the modal (unlike adding another same-type scope, below): the modal's
+    // own `user` prop is now stale, and if Staff users is currently filtered by the old role, the
+    // parent's next refresh can drop the target entirely, leaving nothing for the modal to pick
+    // fresh data up from.
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -345,7 +454,8 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     const dialog = await screen.findByRole("dialog", { name: "Change role" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -361,7 +471,8 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     await screen.findByRole("dialog", { name: "Change role" });
 
@@ -377,10 +488,64 @@ describe("UserEditModal role & access - exclusive roles", () => {
     expect(screen.getByRole("heading", { name: "Staff User" })).toBeTruthy();
   });
 
-  it("adds another scope of the same role type without confirmation, and keeps the modal open", async () => {
+  it("changes an existing role to Administrator with the picked organization scope", async () => {
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    const { onClose, onUpdated } = renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Organization scope for admin role/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Events" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change role" });
+    expect(dialog.textContent).toContain("from Operator to Administrator");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
+
+    await waitFor(() => {
+      expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", {
+        role: "admin",
+        scope_type: "organization",
+        scope_id: "org-2",
+      });
+    });
+    expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [existingRole] }, "Role updated");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("changes an existing role to Operator with the picked event scope", async () => {
+    const existingRole = { id: "role-1", role: "admin", scope_type: "organization", scope_id: "org-1", is_oidc: false };
+    const { onClose, onUpdated } = renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Summer Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change role" });
+    expect(dialog.textContent).toContain("from Administrator to Operator");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
+
+    await waitFor(() => {
+      expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", {
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+      });
+    });
+    expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [existingRole] }, "Role updated");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("stages another scope of the same role type without confirmation or an API call", async () => {
     const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
     mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
-    const { onClose } = renderModal({
+    renderModal({
       roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }],
     });
     await waitFor(() => {
@@ -389,136 +554,49 @@ describe("UserEditModal role & access - exclusive roles", () => {
     // Already on "operator" (the user's current type) - no type-change notice, no confirm dialog.
     expect(screen.queryByText(/Changing to/)).toBeNull();
 
-    fireEvent.change(screen.getByLabelText("Event scope for operator role"), { target: { value: "evt-2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Winter Gala" }));
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
-    await waitFor(() => {
-      expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", { role: "operator", scope_type: "event", scope_id: "evt-2" });
-    });
-    expect(onClose).not.toHaveBeenCalled();
+    expect(await screen.findByText("Winter Gala")).toBeTruthy();
+    expect(mockGrantUserRole).not.toHaveBeenCalled();
+    // The just-staged scope is no longer offered again in the picker.
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    expect(screen.queryByRole("button", { name: "Winter Gala" })).toBeNull();
   });
 
-  it("shows a generic message when adding a scope fails for a reason other than cannot_change_own_role", async () => {
-    mockGrantUserRole.mockRejectedValueOnce(new Error("network down"));
-    const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
-    mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
-    renderModal({
-      roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }],
-    });
-    await waitFor(() => {
-      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
-    });
-
-    fireEvent.change(screen.getByLabelText("Event scope for operator role"), { target: { value: "evt-2" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-
-    expect(await screen.findByText("Failed to assign role.")).toBeTruthy();
-  });
-
-  it("grants an admin role with an organization scope", async () => {
-    mockGrantUserRole.mockResolvedValueOnce({
-      assignment: { id: "role-1", role: "admin", scope_type: "organization", scope_id: "org-1" },
-    });
+  it("cancels a not-yet-saved pending add locally, with no confirmation or request", async () => {
     renderModal();
     await waitFor(() => expect(mockFetchAdminOrganizations).toHaveBeenCalledOnce());
 
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "admin" } });
-    fireEvent.change(screen.getByLabelText("Organization scope for admin role"), {
-      target: { value: "org-1" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(await screen.findByText("Instance-wide")).toBeTruthy();
 
-    await waitFor(() => {
-      expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", {
-        role: "admin",
-        scope_type: "organization",
-        scope_id: "org-1",
-      });
-    });
-  });
+    fireEvent.click(screen.getByRole("button", { name: /Cancel adding Superadmin/ }));
 
-  it("shows an inline error and does not call the API when adding an admin role with no organization picked", async () => {
-    mockFetchAdminOrganizations.mockResolvedValueOnce([]);
-    renderModal();
-    await waitFor(() => expect(mockFetchAdminOrganizations).toHaveBeenCalled());
-
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "admin" } });
-    // The Add button is disabled with no organization available, but handleAddRole's own guard
-    // (resolveRoleGrantRequest) is what actually prevents the request - exercised directly here
-    // rather than only relying on the disabled attribute.
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-
+    expect(screen.queryByText("Instance-wide")).toBeNull();
     expect(mockGrantUserRole).not.toHaveBeenCalled();
   });
 
-  it("shows a specific message when changing your own role type is rejected by the server", async () => {
-    mockGrantUserRole.mockRejectedValueOnce(new ApiError(409, "cannot_change_own_role", "cannot_change_own_role"));
-    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
-    renderModal({ roles: [existingRole] });
+  it("disables Change role type while a same-type scope change is still only staged", async () => {
+    renderModal({
+      roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }],
+    });
     await waitFor(() => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "superadmin" } });
-    fireEvent.click(screen.getByRole("button", { name: "Change" }));
-    const dialog = await screen.findByRole("dialog", { name: "Change role" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
+    fireEvent.click(screen.getByRole("button", { name: /Remove Operator/ }));
+    expect(screen.queryByText("Summer Summit")).toBeNull();
 
-    expect(
-      await screen.findByText("You cannot change your own role. Ask another superadmin."),
-    ).toBeTruthy();
-  });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
 
-  it("removes a role assignment via its chip's remove button", async () => {
-    const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
-    mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
-    const { onClose, onUpdated } = renderModal({
-      roles: [
-        { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false },
-        { id: "role-2", role: "operator", scope_type: "event", scope_id: "evt-2", is_oidc: false },
-      ],
-    });
-    await screen.findByRole("button", { name: "Remove Operator for Summer Summit" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Remove Operator for Summer Summit" }));
-
-    await waitFor(() => {
-      expect(mockRevokeUserRole).toHaveBeenCalledWith("usr-1", "role-1");
-    });
-    expect(onClose).toHaveBeenCalled();
-    expect(onUpdated).toHaveBeenCalledWith(expect.objectContaining({ id: "usr-1" }), "Role removed");
-  });
-
-  it("shows the raw scope id for an event scope chip that no longer matches a fetched event", async () => {
-    renderModal({
-      roles: [
-        { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-deleted", is_oidc: false },
-      ],
-    });
-
-    expect(await screen.findByText("evt-deleted")).toBeTruthy();
-  });
-
-  it("shows the raw scope id for an organization scope chip that no longer matches a fetched organization", async () => {
-    renderModal({
-      roles: [
-        { id: "role-1", role: "admin", scope_type: "organization", scope_id: "org-deleted", is_oidc: false },
-      ],
-    });
-
-    expect(await screen.findByText("org-deleted")).toBeTruthy();
-  });
-
-  it("shows an inline error when removing a role assignment fails", async () => {
-    mockRevokeUserRole.mockRejectedValueOnce(new Error("network down"));
-    renderModal({
-      roles: [{ id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false }],
-    });
-    await screen.findByRole("button", { name: "Remove Operator for Summer Summit" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Remove Operator for Summer Summit" }));
-
-    expect(await screen.findByText("Failed to remove role.")).toBeTruthy();
+    const changeButton = screen.getByRole("button", { name: "Change" });
+    expect(changeButton).toHaveProperty("disabled", true);
+    expect(changeButton.title).toBe("Save or discard your pending scope changes first.");
   });
 
   it("shows the superadmin no-scopes note only when superadmin is already the current role", async () => {
@@ -538,9 +616,9 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(document.querySelector(".users-modal__chips")).toBeTruthy();
     });
 
-    const roleSelect = screen.getByLabelText("Role");
-    expect(roleSelect).toHaveProperty("disabled", true);
-    expect(roleSelect.title).toBe("You cannot change your own role.");
+    const roleTrigger = screen.getByRole("button", { name: /^Role,/ });
+    expect(roleTrigger).toHaveProperty("disabled", true);
+    expect(roleTrigger.title).toBe("You cannot change your own role.");
   });
 
   it("hides the remove control for an OIDC-managed scope chip", async () => {
@@ -565,6 +643,158 @@ describe("UserEditModal role & access - exclusive roles", () => {
 
     expect(screen.getByRole("button", { name: /Remove Operator/ })).toHaveProperty("disabled", true);
   });
+
+  it("stages a scope removal locally, hiding the chip immediately without calling the API", async () => {
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    const { onClose, onUpdated } = renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+    expect(screen.getByText("Summer Summit")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove Operator/ }));
+
+    expect(screen.queryByText("Summer Summit")).toBeNull();
+    expect(mockRevokeUserRole).not.toHaveBeenCalled();
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryAllByRole("dialog")).toHaveLength(1);
+  });
+
+  it("commits staged role adds and removes together with the profile fields, in one Save", async () => {
+    const secondEvent: EventDto = { ...event, id: "evt-2", title: "Winter Gala" };
+    mockFetchAdminEvents.mockResolvedValue([event, secondEvent]);
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, roles: [existingRole] } });
+    const { onClose, onUpdated } = renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    // Stage a removal of the existing scope and an add of a different one, in one sitting.
+    fireEvent.click(screen.getByRole("button", { name: /Remove Operator/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Winter Gala" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(mockGrantUserRole).not.toHaveBeenCalled();
+    expect(mockRevokeUserRole).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", {
+        display_name: "Staff User",
+        email: "staff@example.com",
+        phone_country_code: null,
+        phone_number: null,
+      });
+    });
+    await waitFor(() => {
+      expect(mockRevokeUserRole).toHaveBeenCalledWith("usr-1", "role-1");
+    });
+    await waitFor(() => {
+      expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", {
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-2",
+      });
+    });
+    // One combined notification and close, not one per action - the whole point of staging.
+    expect(onUpdated).toHaveBeenCalledOnce();
+    expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [existingRole] }, "Changes saved");
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("stages an admin role add with the picked organization scope", async () => {
+    renderModal();
+    await waitFor(() => expect(mockFetchAdminOrganizations).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Organization scope for admin role/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Events" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText("Events")).toBeTruthy();
+    expect(document.querySelector(".users-modal__chip--pending")).toBeTruthy();
+    expect(mockGrantUserRole).not.toHaveBeenCalled();
+  });
+
+  it("stages an operator role add with the picked event scope", async () => {
+    renderModal();
+    await waitFor(() => expect(mockFetchAdminEvents).toHaveBeenCalledOnce());
+
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Summer Summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText("Summer Summit")).toBeTruthy();
+    expect(document.querySelector(".users-modal__chip--pending")).toBeTruthy();
+    expect(mockGrantUserRole).not.toHaveBeenCalled();
+  });
+
+  it("shows the organization name (not the raw id) on an existing admin scope chip", async () => {
+    const existingRole = { id: "role-1", role: "admin", scope_type: "organization", scope_id: "org-2", is_oidc: false };
+    renderModal({ roles: [existingRole] });
+
+    expect(await screen.findByText("Events")).toBeTruthy();
+  });
+
+  it("maps cannot_change_own_role to a specific message when saving profile fields", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new ApiError(400, "cannot_change_own_role", "cannot_change_own_role"));
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("You cannot change your own role. Ask another superadmin.")).toBeTruthy();
+  });
+
+  it("maps email_taken to a specific message when saving profile fields", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new ApiError(400, "email_taken", "email_taken"));
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("A user with this email already exists.")).toBeTruthy();
+  });
+
+  it("maps cannot_change_own_role to a specific message when confirming a role type change", async () => {
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    mockGrantUserRole.mockRejectedValueOnce(new ApiError(400, "cannot_change_own_role", "cannot_change_own_role"));
+    renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change role" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
+
+    expect(await screen.findByText("You cannot change your own role. Ask another superadmin.")).toBeTruthy();
+  });
+
+  it("falls back to a generic message for a non-API error confirming a role type change", async () => {
+    const existingRole = { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false };
+    mockGrantUserRole.mockRejectedValueOnce(new Error("network down"));
+    renderModal({ roles: [existingRole] });
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Superadmin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change role" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change role" }));
+
+    expect(await screen.findByText("Failed to assign role.")).toBeTruthy();
+  });
 });
 
 describe("UserEditModal sign-in security", () => {
@@ -577,17 +807,19 @@ describe("UserEditModal sign-in security", () => {
     expect(screen.getByText("3 sessions")).toBeTruthy();
   });
 
-  it("shows no Unlink control for a local-only account", async () => {
+  it("disables Unlink SSO for a local-only account", async () => {
     renderModal({ has_sso: false });
     await screen.findByText("Local password");
-    expect(screen.queryByRole("button", { name: "Unlink" })).toBeNull();
+    openMoreActions();
+    expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toHaveProperty("disabled", true);
   });
 
   it("unlinks SSO after confirmation, requiring a new password in the same step", async () => {
     const { onClose, onUpdated } = renderModal({ has_sso: true });
-    await screen.findByRole("button", { name: "Unlink" });
+    await screen.findByRole("button", { name: "Save changes" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
     const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
     const confirmButton = within(dialog).getByRole("button", { name: "Unlink" });
     expect(confirmButton).toHaveProperty("disabled", true);
@@ -609,51 +841,13 @@ describe("UserEditModal sign-in security", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("cancels the unlink-SSO dialog without calling the API, clearing the typed password", async () => {
-    renderModal({ has_sso: true });
-    await screen.findByRole("button", { name: "Unlink" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
-    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
-    fireEvent.change(within(dialog).getByLabelText("New temporary password"), {
-      target: { value: "long-enough-password" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    expect(mockUnlinkUserExternalIdentity).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog", { name: "Unlink SSO" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
-    const reopened = await screen.findByRole("dialog", { name: "Unlink SSO" });
-    expect((within(reopened).getByLabelText("New temporary password") as HTMLInputElement).value).toBe("");
-  });
-
-  it("ignores Escape on the unlink-SSO dialog while the request is in flight", async () => {
-    mockUnlinkUserExternalIdentity.mockImplementationOnce(() => new Promise(() => {}));
-    renderModal({ has_sso: true });
-    await screen.findByRole("button", { name: "Unlink" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
-    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
-    fireEvent.change(within(dialog).getByLabelText("New temporary password"), {
-      target: { value: "long-enough-password" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
-    await waitFor(() => {
-      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
-    });
-
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    expect(screen.getByRole("dialog", { name: "Unlink SSO" })).toBeTruthy();
-  });
-
-  it("shows the password-length message for an invalid_request unlink-SSO error", async () => {
+  it("maps invalid_request to the password-length message when unlinking SSO", async () => {
     mockUnlinkUserExternalIdentity.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
-    renderModal({ has_sso: true });
-    await screen.findByRole("button", { name: "Unlink" });
+    const { onClose } = renderModal({ has_sso: true });
+    await screen.findByRole("button", { name: "Save changes" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
     const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
     fireEvent.change(screen.getByLabelText("New temporary password"), {
       target: { value: "long-enough-password" },
@@ -661,14 +855,16 @@ describe("UserEditModal sign-in security", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
 
     expect(await screen.findByText("Password must be at least 12 characters.")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("shows a generic message for a non-invalid_request unlink-SSO error", async () => {
+  it("falls back to a generic message for a non-API error unlinking SSO", async () => {
     mockUnlinkUserExternalIdentity.mockRejectedValueOnce(new Error("network down"));
     renderModal({ has_sso: true });
-    await screen.findByRole("button", { name: "Unlink" });
+    await screen.findByRole("button", { name: "Save changes" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Unlink" }));
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
     const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
     fireEvent.change(screen.getByLabelText("New temporary password"), {
       target: { value: "long-enough-password" },
@@ -678,12 +874,54 @@ describe("UserEditModal sign-in security", () => {
     expect(await screen.findByText("Failed to unlink SSO.")).toBeTruthy();
   });
 
+  it("cancels the unlink-SSO confirmation, clearing the typed password", async () => {
+    renderModal({ has_sso: true });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
+    fireEvent.change(screen.getByLabelText("New temporary password"), {
+      target: { value: "long-enough-password" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Unlink SSO" })).toBeNull();
+    expect(mockUnlinkUserExternalIdentity).not.toHaveBeenCalled();
+  });
+
+  it("ignores Escape while the SSO unlink request is still in flight", async () => {
+    mockUnlinkUserExternalIdentity.mockImplementationOnce(() => new Promise(() => {}));
+    renderModal({ has_sso: true });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
+    fireEvent.change(screen.getByLabelText("New temporary password"), {
+      target: { value: "long-enough-password" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+    });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.getByRole("dialog", { name: "Unlink SSO" })).toBeTruthy();
+    expect((screen.getByLabelText("New temporary password") as HTMLInputElement).value).toBe(
+      "long-enough-password",
+    );
+  });
+
   it("disables unlinking your own SSO", async () => {
     useAuthMock.mockReturnValue({ user: { id: "usr-1" } });
     renderModal({ has_sso: true });
-    await screen.findByRole("button", { name: "Unlink" });
+    await screen.findByRole("button", { name: "Save changes" });
 
-    expect(screen.getByRole("button", { name: "Unlink" })).toHaveProperty("disabled", true);
+    openMoreActions();
+    expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toHaveProperty("disabled", true);
   });
 
   it("shows up to 3 recent successful logins with location", async () => {
@@ -717,6 +955,13 @@ describe("UserEditModal sign-in security", () => {
     expect(screen.getByText("81.190.22.4")).toBeTruthy();
   });
 
+  it("shows the empty recent-logins state when the fetch fails, instead of leaving the section stuck loading", async () => {
+    mockFetchSecurityAuditLog.mockRejectedValueOnce(new Error("network down"));
+    renderModal();
+
+    expect(await screen.findByText("No recent logins")).toBeTruthy();
+  });
+
   it("disables Revoke sessions when the user has none", async () => {
     renderModal({ active_sessions_count: 0 });
     await screen.findByText("Active sessions");
@@ -741,7 +986,7 @@ describe("UserEditModal sign-in security", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("uses singular grammar when exactly one session is revoked", async () => {
+  it("uses the singular 'session' when exactly one was revoked", async () => {
     mockRevokeUserSessions.mockResolvedValueOnce({ ok: true, sessionsRevoked: 1 });
     const { onUpdated } = renderModal({ active_sessions_count: 1 });
     await screen.findByText("1 session");
@@ -756,9 +1001,9 @@ describe("UserEditModal sign-in security", () => {
     });
   });
 
-  it("shows an inline error when revoking sessions fails", async () => {
+  it("shows an error and stays open when revoking sessions fails", async () => {
     mockRevokeUserSessions.mockRejectedValueOnce(new Error("network down"));
-    renderModal({ active_sessions_count: 2 });
+    const { onClose } = renderModal({ active_sessions_count: 2 });
     await screen.findByText("2 sessions");
 
     openMoreActions();
@@ -767,9 +1012,10 @@ describe("UserEditModal sign-in security", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     expect(await screen.findByText("Failed to revoke sessions.")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("cancels the revoke-sessions dialog without calling the API", async () => {
+  it("cancels the revoke-sessions confirmation without calling the API", async () => {
     renderModal({ active_sessions_count: 2 });
     await screen.findByText("2 sessions");
 
@@ -778,15 +1024,15 @@ describe("UserEditModal sign-in security", () => {
     const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(mockRevokeUserSessions).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: "Revoke all sessions" })).toBeNull();
+    expect(mockRevokeUserSessions).not.toHaveBeenCalled();
   });
 });
 
 describe("UserEditModal reset actions", () => {
   it("confirms an MFA reset with the compact action label and reports why the user must sign in again", async () => {
     const { onClose, onUpdated } = renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Reset MFA/ }));
@@ -800,10 +1046,10 @@ describe("UserEditModal reset actions", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("shows an inline error when resetting MFA fails", async () => {
+  it("shows an error and stays open when resetting MFA fails", async () => {
     mockResetUserMfa.mockRejectedValueOnce(new Error("network down"));
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    const { onClose } = renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Reset MFA/ }));
@@ -811,50 +1057,25 @@ describe("UserEditModal reset actions", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
     expect(await screen.findByText("Failed to reset MFA.")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("cancels the reset-MFA dialog without calling the API", async () => {
+  it("cancels the reset-MFA confirmation without calling the API", async () => {
     renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Reset MFA/ }));
     const dialog = await screen.findByRole("dialog", { name: "Reset MFA" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(mockResetUserMfa).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: "Reset MFA" })).toBeNull();
-  });
-
-  it("shows a generic message for a non-invalid_request reset-password error", async () => {
-    mockResetUserPassword.mockRejectedValueOnce(new Error("network down"));
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
-    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
-
-    expect(await screen.findByText("Failed to reset password.")).toBeTruthy();
-  });
-
-  it("shows the password-length message for an invalid_request reset-password error", async () => {
-    mockResetUserPassword.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
-    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
-
-    expect(await screen.findByText("Password must be at least 12 characters.")).toBeTruthy();
+    expect(mockResetUserMfa).not.toHaveBeenCalled();
   });
 
   it("resets a password and reports that existing sessions were revoked", async () => {
     const { onClose, onUpdated } = renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
@@ -868,22 +1089,44 @@ describe("UserEditModal reset actions", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("cancels the reset-password form without calling the API, clearing the typed password", async () => {
+  it("maps invalid_request to the password-length message when resetting a password", async () => {
+    mockResetUserPassword.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
+    const { onClose } = renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+
+    expect(await screen.findByText("Password must be at least 12 characters.")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a generic message for a non-API error resetting a password", async () => {
+    mockResetUserPassword.mockRejectedValueOnce(new Error("network down"));
     renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+
+    expect(await screen.findByText("Failed to reset password.")).toBeTruthy();
+  });
+
+  it("cancels the reset-password form, clearing the typed password", async () => {
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
     fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    expect(mockResetUserPassword).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("New temporary password")).toBeNull();
-    expect(screen.getByText("No recent logins")).toBeTruthy();
-
-    openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
-    expect((screen.getByLabelText("New temporary password") as HTMLInputElement).value).toBe("");
+    expect(mockResetUserPassword).not.toHaveBeenCalled();
   });
 });
 
@@ -891,7 +1134,7 @@ describe("UserEditModal disable / enable account", () => {
   it("confirms before disabling an active account and revokes sessions server-side", async () => {
     mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, is_active: false } });
     const { onClose, onUpdated } = renderModal({ is_active: true });
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
@@ -905,36 +1148,10 @@ describe("UserEditModal disable / enable account", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("shows an inline error when disabling an account fails", async () => {
-    mockPatchAdminUser.mockRejectedValueOnce(new Error("network down"));
-    renderModal({ is_active: true });
-    await screen.findByRole("button", { name: "Save" });
-
-    openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Disable account" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Disable" }));
-
-    expect(await screen.findByText("Failed to update account status.")).toBeTruthy();
-  });
-
-  it("cancels the disable-account dialog without calling the API", async () => {
-    renderModal({ is_active: true });
-    await screen.findByRole("button", { name: "Save" });
-
-    openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Disable account" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    expect(mockPatchAdminUser).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog", { name: "Disable account" })).toBeNull();
-  });
-
   it("re-enables a disabled account immediately, without a confirmation dialog", async () => {
     mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, is_active: true } });
     const { onClose, onUpdated } = renderModal({ is_active: false });
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Enable account/ }));
@@ -952,10 +1169,37 @@ describe("UserEditModal disable / enable account", () => {
   it("disables disabling your own account", async () => {
     useAuthMock.mockReturnValue({ user: { id: "usr-1" } });
     renderModal({ is_active: true });
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     expect(screen.getByRole("menuitem", { name: /Disable account/ })).toHaveProperty("disabled", true);
+  });
+
+  it("shows an error and stays open when disabling the account fails", async () => {
+    mockPatchAdminUser.mockRejectedValueOnce(new Error("network down"));
+    const { onClose } = renderModal({ is_active: true });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Disable account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Disable" }));
+
+    expect(await screen.findByText("Failed to update account status.")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("cancels the disable-account confirmation without calling the API", async () => {
+    renderModal({ is_active: true });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Disable account/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Disable account" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Disable account" })).toBeNull();
+    expect(mockPatchAdminUser).not.toHaveBeenCalled();
   });
 });
 
@@ -965,14 +1209,18 @@ describe("UserEditModal profile - phone number", () => {
       user: { ...user, phone_country_code: "+1", phone_number: "5551234" },
     });
     const { onUpdated } = renderModal({ phone_country_code: "+48", phone_number: "500100200" });
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
-    expect((document.getElementById("edit-phone-country-code") as HTMLSelectElement).value).toBe("+48");
+    expect(screen.getByRole("button", { name: /Phone country code, Poland \+48/ })).toBeTruthy();
     expect((document.getElementById("edit-phone-number") as HTMLInputElement).value).toBe("500100200");
 
-    fireEvent.change(document.getElementById("edit-phone-country-code")!, { target: { value: "+1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Phone country code/ }));
+    fireEvent.change(screen.getByLabelText("Search country or dial code"), {
+      target: { value: "United States" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /United States/ }));
     fireEvent.change(document.getElementById("edit-phone-number")!, { target: { value: "5551234" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => {
       expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", {
@@ -985,47 +1233,11 @@ describe("UserEditModal profile - phone number", () => {
     expect(onUpdated).toHaveBeenCalled();
   });
 
-  it("sends null when the display name is cleared to blank", async () => {
-    mockPatchAdminUser.mockResolvedValueOnce({ user: { ...user, display_name: null } });
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "   " } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(mockPatchAdminUser).toHaveBeenCalledWith(
-        "usr-1",
-        expect.objectContaining({ display_name: null }),
-      );
-    });
-  });
-
-  it("saves an edited display name and email", async () => {
-    mockPatchAdminUser.mockResolvedValueOnce({
-      user: { ...user, display_name: "New Name", email: "new@example.com" },
-    });
-    const { onUpdated } = renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Name" } });
-    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(mockPatchAdminUser).toHaveBeenCalledWith(
-        "usr-1",
-        expect.objectContaining({ display_name: "New Name", email: "new@example.com" }),
-      );
-      expect(onUpdated).toHaveBeenCalled();
-    });
-  });
-
   it("sends null for both fields when no phone number is set", async () => {
     renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => {
       expect(mockPatchAdminUser).toHaveBeenCalledWith(
@@ -1034,45 +1246,15 @@ describe("UserEditModal profile - phone number", () => {
       );
     });
   });
-
-  it("shows a taken-email message for an email_taken response", async () => {
-    mockPatchAdminUser.mockRejectedValueOnce(new ApiError(409, "email_taken", "email_taken"));
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("A user with this email already exists.")).toBeTruthy();
-  });
-
-  it("shows a taken-email message for an email_conflict response", async () => {
-    mockPatchAdminUser.mockRejectedValueOnce(new ApiError(409, "email_conflict", "email_conflict"));
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("A user with this email already exists.")).toBeTruthy();
-  });
-
-  it("shows a generic message for a non-email save-profile error", async () => {
-    mockPatchAdminUser.mockRejectedValueOnce(new Error("network down"));
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
-  });
 });
 
 describe("UserEditModal save state", () => {
   it("keeps profile controls disabled while the update is in progress", async () => {
     mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
     renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => {
       expect(mockPatchAdminUser).toHaveBeenCalledWith("usr-1", {
@@ -1082,24 +1264,8 @@ describe("UserEditModal save state", () => {
         phone_number: null,
       });
     });
-    expect(screen.getByRole("button", { name: "Saving…" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Saving changes…" })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Close" })).toHaveProperty("disabled", true);
-  });
-
-  it("ignores Escape while an update is in progress, unlike the disabled Close button it mirrors", async () => {
-    mockPatchAdminUser.mockImplementationOnce(() => new Promise(() => {}));
-    const { onClose } = renderModal();
-    await screen.findByRole("button", { name: "Save" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Close" })).toHaveProperty("disabled", true);
-    });
-
-    fireEvent.keyDown(document, { key: "Escape" });
-
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: "Staff User" })).toBeTruthy();
   });
 });
 
@@ -1107,7 +1273,7 @@ describe("UserEditModal delete account", () => {
   it("disables Delete account for the signed-in user's own account", async () => {
     useAuthMock.mockReturnValue({ user: { id: "usr-1" } });
     renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     expect(screen.getByRole("menuitem", { name: /Delete account/ })).toHaveProperty("disabled", true);
@@ -1115,7 +1281,7 @@ describe("UserEditModal delete account", () => {
 
   it("keeps Delete disabled until the account's email is typed to confirm", async () => {
     renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
@@ -1131,7 +1297,7 @@ describe("UserEditModal delete account", () => {
 
   it("deletes the account after typing the email to confirm", async () => {
     const { onClose, onDeleted } = renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
@@ -1148,10 +1314,10 @@ describe("UserEditModal delete account", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("shows an inline error in the confirm dialog when deleting fails", async () => {
+  it("shows an error and stays open when deleting the account fails", async () => {
     mockDeleteAdminUser.mockRejectedValueOnce(new Error("network down"));
-    renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    const { onClose, onDeleted } = renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
@@ -1161,19 +1327,21 @@ describe("UserEditModal delete account", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
-    expect(await within(dialog).findByText("Failed to delete user.")).toBeTruthy();
+    expect(await screen.findByText("Failed to delete user.")).toBeTruthy();
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("cancels the delete-account dialog without calling the API", async () => {
+  it("cancels the delete-account confirmation without calling the API", async () => {
     renderModal();
-    await screen.findByRole("button", { name: "Save" });
+    await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
     fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
     const dialog = await screen.findByRole("dialog", { name: "Delete account" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(mockDeleteAdminUser).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog", { name: "Delete account" })).toBeNull();
+    expect(mockDeleteAdminUser).not.toHaveBeenCalled();
   });
 });

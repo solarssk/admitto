@@ -13,7 +13,7 @@ import {
   resetMfa,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AccountDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
+import type { AccountDto, AccountRoleDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
@@ -25,6 +25,18 @@ import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 
 const PASSWORD_HINT = "Changing your password ends your other active sessions. Your current session stays signed in.";
+
+/** Whether an assignment grants a real admin/operator surface - mirrors resolvePostAuthPath's
+ * own notion of "usable" (packages/auth/src/post-auth.ts), duplicated locally rather than
+ * imported: @admitto/auth's package entrypoint pulls in @admitto/db and its Prisma engine,
+ * which has no business in this frontend bundle. An admin assignment with a missing scope_id
+ * (a corrupt/legacy row) still shows up in `roles`, but grants nothing - so a roles.length check
+ * alone would skip this notice for exactly the account that needs it. */
+function isUsableRoleAssignment(role: AccountRoleDto): boolean {
+  if (role.role === "superadmin") return role.scope_type === "instance";
+  if (role.role === "admin") return role.scope_type === "organization" && role.scope_id != null;
+  return role.role === "operator";
+}
 
 /** Discourage password managers from offering to save a "login" for a TOTP/backup-code field. */
 const stepUpCodeFieldAttrs = {
@@ -715,6 +727,11 @@ export function AccountPage() {
 
   return (
     <>
+      {!account.roles.some(isUsableRoleAssignment) && (
+        <Notice variant="warning" role="alert" className="account-warn-block">
+          Your account doesn't have any role assigned yet, so there's nothing to access yet. You can still update your password and two-factor settings below. Contact an administrator to request access.
+        </Notice>
+      )}
       <Card title="Profile" footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
         setProfileSaving(true);
         const localeChanged = preferredLocale !== account.preferred_locale;

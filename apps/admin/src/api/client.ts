@@ -1877,11 +1877,12 @@ export async function revokeUserSessions(
 }
 
 export async function fetchRoleAssignments(
-  params: { q?: string; page?: number; pageSize?: number } = {},
+  params: { q?: string; eventId?: string; page?: number; pageSize?: number } = {},
   signal?: AbortSignal,
 ): Promise<RoleAssignmentsListResponse> {
   const search = new URLSearchParams();
   if (params.q) search.set("q", params.q);
+  if (params.eventId) search.set("eventId", params.eventId);
   if (params.page != null) search.set("page", String(params.page));
   if (params.pageSize != null) search.set("pageSize", String(params.pageSize));
   const qs = search.toString();

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Tooltip } from "../src/components/Tooltip.js";
 
@@ -176,6 +176,34 @@ describe("Tooltip", () => {
     expect(bubble.style.left).toBe(`${60 + 5}px`);
     expect(bubble.style.top).toBe(`${300 + 40 / 2 - 36 / 2}px`);
     vi.unstubAllGlobals();
+  });
+
+  it("hides immediately if the trigger's own panel is already expanded by the time the tooltip would show", () => {
+    render(
+      <Tooltip content="Filter by role">
+        <button aria-expanded="true">Filters</button>
+      </Tooltip>,
+    );
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Filters" }).parentElement as HTMLElement);
+
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("hides the bubble the instant the trigger's own panel opens (aria-expanded flips to true) while hovered", async () => {
+    render(
+      <Tooltip content="Filter by role">
+        <button aria-expanded="false">Filters</button>
+      </Tooltip>,
+    );
+    const trigger = screen.getByRole("button", { name: "Filters" });
+    fireEvent.mouseEnter(trigger.parentElement as HTMLElement);
+    expect(screen.getByRole("tooltip").textContent).toBe("Filter by role");
+
+    trigger.setAttribute("aria-expanded", "true");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
   });
 
   it('axis="horizontal" falls back to vertical placement, never off-screen, when neither side has room (the mobile "More" menu case)', () => {

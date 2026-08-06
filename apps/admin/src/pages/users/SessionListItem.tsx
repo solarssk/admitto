@@ -1,38 +1,13 @@
 import { Avatar, Badge, IconButton, Tooltip } from "@admitto/ui";
 import type { SessionListDto } from "../../api/types.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
-import { formatRelativeTime, zonedTimeLabel } from "../../utils/event-dates.js";
+import { formatRelativeTime, viewerLocalTime } from "../../utils/event-dates.js";
 import { parseUserAgent } from "../../utils/parseUserAgent.js";
 import { GeoCell } from "../../components/GeoCell.js";
 
 /** "2026-01-01 12:00:00" - matches the Audit/Security log's own UTC-primary convention. */
 function formatPrimaryTime(iso: string): string {
   return iso.slice(0, 19).replace("T", " ");
-}
-
-/** Cached per locale+zone - shared shape with AuditLogPanel's own cache, but this table has no
- * live-poll ticking it every render, so a per-render `new Map()` here would be needless. */
-const hourMinuteFormatCache = new Map<string, Intl.DateTimeFormat>();
-
-function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
-  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-  const key = `${locale}\0${timeZone}`;
-  let format = hourMinuteFormatCache.get(key);
-  if (!format) {
-    format = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
-    hourMinuteFormatCache.set(key, format);
-  }
-  return format;
-}
-
-/** The instant, converted to whoever is currently viewing the table's own browser timezone -
- * sessions don't capture the device's own timezone the way audit log entries do, so (matching
- * the Audit panel's own Security view, which has the same "no known actor zone" situation) this
- * shows the viewer's zone rather than fabricating the session holder's. */
-function viewerLocalTime(iso: string): string {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
-  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
 }
 
 export const LOGGED_IN_HINT =

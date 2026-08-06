@@ -433,6 +433,14 @@
   gap: 2px;
 }
 
+/* Anchored above the trigger instead of below - see .searchable-select__panel--up's own
+   comment (searchable-select.css); same useDropdownMenu-driven decision, shared by both
+   UserMenu and SystemStatus (.user-menu__panel.sys-status__panel). */
+.user-menu__panel--up {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
 .sys-status__panel {
   min-width: 300px;
 }
@@ -5189,6 +5197,16 @@ output.mail-field-hint {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
+}
+
+/* Unlike the Filters panel's own 220px-wide field, this picker sits directly in a full-width
+   card row with room to spare - let it grow instead of shrinking to its "Select event…"
+   placeholder's own width, which left long event titles truncated far more than necessary.
+   24rem matches .at-select's own established max-width for a filter-style control. */
+.sessions-bulk-row .searchable-select {
+  flex: 1 1 auto;
+  min-width: 16rem;
+  max-width: 24rem;
 }
 
 /* Sessions pagination footer - same shape as the Logs table's own (.audit-log-footer*), kept as

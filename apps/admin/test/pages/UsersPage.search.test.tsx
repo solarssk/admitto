@@ -27,9 +27,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
     fetchAdminOrganizations: vi.fn(),
+    fetchSecurityAuditLog: vi.fn(),
     revokeUserRole: vi.fn(),
     deleteAdminUser: vi.fn(),
     grantUserRole: vi.fn(),
+    patchAdminUser: vi.fn(),
   };
 });
 
@@ -38,10 +40,12 @@ import {
   fetchAdminEvents,
   fetchAdminOrganizations,
   fetchAdminUsers,
+  fetchSecurityAuditLog,
   fetchUserStats,
   fetchRoleAssignments,
   fetchSessions,
   grantUserRole,
+  patchAdminUser,
   revokeUserRole,
 } from "../../src/api/client.js";
 
@@ -56,7 +60,6 @@ function makeUser(id: string, displayName: string): UserListItemDto {
     last_login_at: null,
     active_sessions_count: 0,
     has_mfa: false,
-    has_sso: false,
     roles: [],
   };
 }
@@ -66,6 +69,7 @@ beforeEach(() => {
   vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
   vi.mocked(fetchAdminOrganizations).mockResolvedValue([]);
+  vi.mocked(fetchSecurityAuditLog).mockResolvedValue({ entries: [], total: 0, page: 1, pageSize: 25 });
   vi.mocked(fetchUserStats).mockResolvedValue({
     total: 0,
     active: 0,
@@ -162,7 +166,7 @@ describe("UsersPage header", () => {
 });
 
 describe("UsersPage Edit modal sync", () => {
-  it("picks up the freshly-granted role for an open Edit modal from the next list refresh, without closing it", async () => {
+  it("commits a staged role grant on Save changes and refreshes the Staff users list", async () => {
     vi.mocked(fetchAdminUsers)
       .mockResolvedValueOnce({
         users: [makeUser("user-1", "Jane Doe")],
@@ -198,6 +202,7 @@ describe("UsersPage Edit modal sync", () => {
     vi.mocked(grantUserRole).mockResolvedValueOnce({
       assignment: { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1" },
     });
+    vi.mocked(patchAdminUser).mockResolvedValueOnce({ user: makeUser("user-1", "Jane Doe") });
 
     renderAt("/admin/users");
     await screen.findAllByText("user-1@example.com");
@@ -205,28 +210,35 @@ describe("UsersPage Edit modal sync", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for Jane Doe" })[0]!);
     await screen.findByRole("heading", { name: "Jane Doe" });
 
-    fireEvent.change(await screen.findByLabelText("Role"), { target: { value: "operator" } });
-    const eventSelect = await screen.findByLabelText("Event scope for operator role");
-    await screen.findByRole("option", { name: "Summer Summit" });
-    fireEvent.change(eventSelect, { target: { value: "evt-1" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Event scope for operator role, none selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Summer Summit" }));
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
+    // Add only stages the grant locally - it shows up as a pending chip, not yet sent to the
+    // server, until "Save changes" actually commits it (and, per every other immediate-commit
+    // action in this modal, closes it on success).
+    expect(document.querySelector(".users-modal__chip--pending")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(grantUserRole).toHaveBeenCalledWith("user-1", {
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+      });
+    });
     await waitFor(() => {
       expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
     });
-    // Still open (a same-type addition from "no role" doesn't close it) and now showing the
-    // freshly-granted scope chip, which only exists on the refreshed record from the 2nd fetch.
-    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeTruthy();
-    await waitFor(() => {
-      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
-    });
-    const chips = document.querySelector(".users-modal__chips")!;
-    expect(within(chips).getByText("Summer Summit")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Jane Doe" })).toBeNull();
   });
 });
 
 describe("UsersPage Role assignments tab", () => {
   it("refreshes the Staff users list after a role is revoked from the Role assignments tab", async () => {
+    useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS, user: { id: "current-admin" } });
     vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
     vi.mocked(fetchRoleAssignments).mockResolvedValue({
       assignments: [{
@@ -283,6 +295,22 @@ describe("UsersPage search debounce", () => {
     });
   });
 
+  it("clears the search box via its own inline clear button and refocuses it", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+
+    renderAt("/admin/users");
+    await screen.findByText("No users yet");
+
+    const searchInput = screen.getByLabelText("Search users by name or email") as HTMLInputElement;
+    fireEvent.change(searchInput, { target: { value: "jane" } });
+    expect(searchInput.value).toBe("jane");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(searchInput.value).toBe("");
+    expect(document.activeElement).toBe(searchInput);
+  });
+
   it("does not reset to page 1 when the debounce timer fires with an unchanged search value while paginated", async () => {
     vi.mocked(fetchAdminUsers).mockResolvedValue({
       users: [makeUser("user-1", "Jane Doe")],
@@ -335,5 +363,105 @@ describe("UsersPage search debounce", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("UsersPage Filters panel", () => {
+  it("filters by role from the Filters panel, with Role and Status stacked in the same panel", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+
+    renderAt("/admin/users");
+    await screen.findByText("No users yet");
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    const roleTrigger = screen.getByRole("button", { name: /^Role,/ });
+    const statusTrigger = screen.getByRole("button", { name: /^Status,/ });
+    const panel = roleTrigger.closest(".users-page-filters-menu__panel");
+    expect(panel).toBeTruthy();
+    expect(panel).toBe(statusTrigger.closest(".users-page-filters-menu__panel"));
+    // Stacked, not side by side - no shared row wrapper grouping the two fields.
+    expect(roleTrigger.closest(".users-page-filters-menu__row")).toBeNull();
+
+    fireEvent.click(roleTrigger);
+    fireEvent.click(screen.getByRole("button", { name: "Operator" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "operator", page: 1 }),
+        expect.anything(),
+      );
+    });
+
+    fireEvent.click(statusTrigger);
+    fireEvent.click(screen.getByRole("button", { name: "Disabled" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ role: "operator", status: "disabled", page: 1 }),
+        expect.anything(),
+      );
+    });
+    // Both filters active at once - the trigger button badge reflects the combined count.
+    expect(screen.getByRole("button", { name: /Filters/ }).textContent).toContain("2");
+  });
+});
+
+describe("UsersPage cross-tab sync", () => {
+  it("refreshes the open Edit user modal after a revoke on the Role assignments tab", async () => {
+    // Revoking on the Role assignments tab wires onAssignmentsChanged to re-run load() (#440);
+    // the open Edit user modal then has to pick up the freshly-fetched `users` array itself -
+    // both halves of this only fire when the fetched user object is a genuinely new reference
+    // with different roles, not just a rerender.
+    const original = makeUser("user-1", "Jane Doe");
+    const updated = { ...original, roles: [] };
+    vi.mocked(fetchAdminUsers)
+      .mockResolvedValueOnce({ users: [original], total: 1, page: 1, pageSize: 25 })
+      .mockResolvedValue({ users: [updated], total: 1, page: 1, pageSize: 25 });
+    vi.mocked(fetchRoleAssignments).mockResolvedValue({
+      assignments: [{
+        id: "role-1",
+        user_id: "user-1",
+        user_email: "user-1@example.com",
+        user_display_name: "Jane Doe",
+        role: "operator",
+        scope_type: "event",
+        scope_id: "evt-1",
+        is_oidc: false,
+        granted_at: "2026-01-01T00:00:00.000Z",
+        event: { id: "evt-1", title: "Summer Summit", slug: "summer-summit", organization_id: "org-1" },
+        organization: null,
+      }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    vi.mocked(revokeUserRole).mockResolvedValue();
+    useAuthMock.mockReturnValue({ assignments: SUPERADMIN_ASSIGNMENTS, user: { id: "current-admin" } });
+
+    renderAt("/admin/users");
+    await screen.findAllByText("Jane Doe");
+
+    // Desktop table row and mobile card both render (CSS-only hidden, not conditionally
+    // mounted), so this accessible name matches twice - either fires the same setEditUser.
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for Jane Doe" })[0]!);
+    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Role assignments/ }));
+    fireEvent.click((await screen.findAllByRole("button", { name: /Revoke Operator for/ }))[0]!);
+    // Both the Edit user modal and the revoke confirmation are open at once here - scope to the
+    // confirmation specifically by its own title.
+    const dialog = await screen.findByRole("dialog", { name: "Revoke role assignment" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+    });
+    // The still-open Edit modal now reflects the revoke - the Role picker resets to "No role
+    // assigned" (it was seeded from the just-revoked Operator role) without the operator having
+    // to close and reopen the modal for it to notice.
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Jane Doe" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Role, none selected" })).toBeTruthy();
+    });
   });
 });

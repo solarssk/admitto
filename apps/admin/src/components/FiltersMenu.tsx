@@ -20,7 +20,7 @@ interface FiltersMenuProps {
  * filter fields are passed as `children` rather than owned by this component, since each
  * caller's filters (and how many of them are "active") differ. */
 export function FiltersMenu({ activeCount, children, className, size }: Readonly<FiltersMenuProps>) {
-  const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<
+  const { open, setOpen, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<
     HTMLButtonElement,
     HTMLFieldSetElement
   >();
@@ -48,7 +48,14 @@ export function FiltersMenu({ activeCount, children, className, size }: Readonly
         // The trigger itself carries no aria-haspopup at all (not even "true", which the ARIA
         // spec treats as equivalent to "menu") - this is a disclosure button revealing a form,
         // not a menu, and aria-expanded alone is the correct pattern for that (CodeRabbit review).
-        <fieldset className={`${className}__panel`} ref={panelRef}>
+        <fieldset
+          className={`${className}__panel`}
+          // Inline, not a CSS class: every page defining its own ${className}__panel means
+          // there's no single stylesheet to add a shared modifier rule to. Flips the panel
+          // above the trigger when it doesn't fit below - see useDropdownMenu's own comment.
+          style={openUpward ? { top: "auto", bottom: "calc(100% + 4px)" } : undefined}
+          ref={panelRef}
+        >
           <legend className="sr-only">Filters</legend>
           {children}
         </fieldset>

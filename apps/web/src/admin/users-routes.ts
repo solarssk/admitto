@@ -33,6 +33,7 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { runSerializableTransaction } from "./event-items-api-routes.js";
 import {
   assertLastSuperadminDeactivationAllowed,
+  assertLastSuperadminDeleteAllowed,
   assertLastSuperadminRemovalAllowed,
   LastSuperadminError,
 } from "./users-lockout-guards.js";
@@ -432,6 +433,9 @@ function patchUserActionType(
   if (typeof data.is_active === "boolean" && data.is_active !== before.is_active) {
     return data.is_active ? "user_reactivated" : "user_deactivated";
   }
+  // The Edit user modal always resubmits the current email alongside unrelated field changes,
+  // so a plain `typeof data.email === "string"` check logged every profile save as an email
+  // change - comparing against the prior value keeps the audit trail accurate.
   if (typeof data.email === "string" && data.email !== before.email) return "user_email_changed";
   return "user_profile_updated";
 }
@@ -468,41 +472,67 @@ async function applyUserPatch(
   return current.is_active;
 }
 
-/** Maps a PATCH transaction failure to its response body, or null when `err` isn't one of
- * the two conflict types this route recognizes (the caller rethrows anything else). */
-function patchUserConflictResponse(err: unknown): { code: string; error?: string } | null {
+/** Maps handlePatchUser's transaction errors to their HTTP response; rethrows anything else. */
+function mapPatchUserTransactionError(c: Context, err: unknown): Response {
+  // Not independently reachable via this route today: requireSuperadmin already requires the
+  // actor to be an active superadmin, and the self-deactivate guard above rejects id === actorId
+  // before the transaction starts - so a non-self target only ever reaches this transaction while
+  // at least one OTHER active superadmin (the actor) still exists, meaning the target can never
+  // be the last one. Same reasoning already documented on the DELETE .../roles/:assignmentId
+  // anti-lockout test below; kept as defense-in-depth in case that invariant ever changes.
+  /* v8 ignore if */
   if (err instanceof LastSuperadminError) {
-    return { code: "last_superadmin" };
+    return c.json({ code: "last_superadmin" }, 409);
   }
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-    return { code: "email_conflict", error: "email_taken" };
+    return c.json({ code: "email_conflict", error: "email_taken" }, 409);
   }
-  return null;
+  throw err;
 }
 
-/** Logs an activate/deactivate transition (deactivate/reactivate only - a plain profile or
- * email edit isn't a security-relevant status change) and loads the fresh row for the response. */
-async function finalizePatchUserResponse(
+type PatchUserTransactionParams = {
+  id: string;
+  data: Prisma.UserUpdateInput;
+  actionType: string;
+  orgId: string;
+  audit: OpsAuditContext;
+  actorId: string;
+};
+
+/** Runs handlePatchUser's update transaction and, on success, the post-commit session revoke.
+ * Returns the response to send immediately (not-found, or a mapped transaction error), or null
+ * to continue with the caller's own success response. */
+async function runPatchUserTransaction(
   c: Context,
   db: PrismaClient,
-  id: string,
-  actionType: string,
-  beforeEmail: string,
-  actorId: string,
-): Promise<Response> {
-  const isStatusChange = actionType === "user_deactivated" || actionType === "user_reactivated";
-  if (isStatusChange) {
-    emitSystemLog("security", "info", actionType, {
-      targetUserId: id,
-      targetEmail: beforeEmail,
-      actorUserId: actorId,
-      actorEmail: await resolveActorEmailForLog(db, actorId),
-    });
-  }
+  params: PatchUserTransactionParams,
+): Promise<Response | null> {
+  const { id, data, actionType, orgId, audit, actorId } = params;
+  try {
+    const outcome = await db.$transaction(
+      (tx) => applyUserPatch(tx, id, data, actionType, orgId, audit, actorId),
+      data.is_active === false
+        ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        : undefined,
+    );
 
-  const user = await loadUser(db, id);
-  if (!user) return c.json({ error: "not_found" }, 404);
-  return c.json({ user: await serializeUser(db, user) });
+    // Race guard: the target existed at handlePatchUser's own `before` fetch, but this
+    // transaction's own tx.user.findUnique (inside applyUserPatch) found nothing - only reachable
+    // if a concurrent request deletes the same user in the narrow window between those two reads.
+    // Not deterministically triggerable from an integration test without controlling transaction
+    // timing; kept for real-world safety.
+    /* v8 ignore if */
+    if (outcome === null) return c.json({ error: "not_found" }, 404);
+
+    // Revoke after commit: session last_seen_at updates during a Serializable tx
+    // can cause serialization failures if sessions are updated in the same tx.
+    if (data.is_active === false && outcome) {
+      await revokeUserAuthState(db, id);
+    }
+    return null;
+  } catch (err) {
+    return mapPatchUserTransactionError(c, err);
+  }
 }
 
 /** PATCH /api/admin/users/:id — update profile / active flag (superadmin only). */
@@ -532,28 +562,22 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
   const audit = adminAuditFromContext(c);
   const actionType = patchUserActionType(data, before);
 
-  try {
-    const outcome = await db.$transaction(
-      (tx) => applyUserPatch(tx, id, data, actionType, orgId, audit, actorId),
-      data.is_active === false
-        ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
-        : undefined,
-    );
+  const early = await runPatchUserTransaction(c, db, { id, data, actionType, orgId, audit, actorId });
+  if (early) return early;
 
-    if (outcome === null) return c.json({ error: "not_found" }, 404);
-
-    // Revoke after commit: session last_seen_at updates during a Serializable tx
-    // can cause serialization failures if sessions are updated in the same tx.
-    if (data.is_active === false && outcome) {
-      await revokeUserAuthState(db, id);
-    }
-  } catch (err) {
-    const conflict = patchUserConflictResponse(err);
-    if (conflict) return c.json(conflict, 409);
-    throw err;
+  if (actionType === "user_deactivated" || actionType === "user_reactivated") {
+    emitSystemLog("security", "info", actionType, {
+      targetUserId: id,
+      targetEmail: before.email,
+      actorUserId: actorId,
+      actorEmail: await resolveActorEmailForLog(db, actorId),
+    });
   }
 
-  return finalizePatchUserResponse(c, db, id, actionType, before.email, actorId);
+  const user = await loadUser(db, id);
+  if (!user) return c.json({ error: "not_found" }, 404);
+
+  return c.json({ user: await serializeUser(db, user) });
 }
 
 /** DELETE /api/admin/users/:id — hard delete (superadmin only). Sessions, role assignments,
@@ -579,7 +603,7 @@ export async function handleDeleteUser(c: Context, db: PrismaClient): Promise<Re
   try {
     await db.$transaction(
       async (tx) => {
-        await assertLastSuperadminDeactivationAllowed(tx, id);
+        await assertLastSuperadminDeleteAllowed(tx, id);
         await tx.user.delete({ where: { id } });
         await writeAdminAuditLog(tx, {
           organizationId: orgId,

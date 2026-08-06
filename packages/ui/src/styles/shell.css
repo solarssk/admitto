@@ -293,6 +293,11 @@ html:has(.shell), body:has(.shell) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Reserve the scrollbar's width whether or not this particular page is tall enough to need
+   * one - without this, page content is a few pixels wider on a short page (no scrollbar) than
+   * on a tall one (scrollbar present), most visible switching between tabs on the same view
+   * (e.g. Users & roles) where a toolbar row would otherwise shift width on every tab switch. */
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
 }

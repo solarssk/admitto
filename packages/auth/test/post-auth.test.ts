@@ -49,19 +49,19 @@ describe("resolvePostAuthPath", () => {
     ).toBe("/admin");
   });
 
-  it("sends users without roles to login", () => {
-    expect(resolvePostAuthPath([])).toBe("/login");
+  it("sends users without roles to account", () => {
+    expect(resolvePostAuthPath([])).toBe("/account");
   });
 
   it("ignores org admin without scope_id", () => {
     expect(
       resolvePostAuthPath([{ role: "admin", scope_type: "organization", scope_id: null }]),
-    ).toBe("/login");
+    ).toBe("/account");
   });
 
   it("ignores mis-scoped superadmin without instance scope", () => {
     expect(
       resolvePostAuthPath([{ role: "superadmin", scope_type: "event", scope_id: "ev-1" }]),
-    ).toBe("/login");
+    ).toBe("/account");
   });
 });
