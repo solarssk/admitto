@@ -145,16 +145,37 @@ function adminFontPicker(): HTMLElement {
   return document.querySelector('[aria-labelledby="branding-font-label"]') as HTMLElement;
 }
 
-/** The "Font by surface" row selects are plain <select>s, not tile-grids. Admin panel's select is
- * a second control over the same font_family_name field the tile-grid above already drives (so
- * the two always agree); Ticket page's current value is unset ("", "Same as Admin panel") whenever
+/** The "Font by surface" row controls are SearchableSelects, not tile-grids. Admin panel's is a
+ * second control over the same font_family_name field the tile-grid above already drives (so the
+ * two always agree); Ticket page's current value is unset ("Same as Admin panel") whenever
  * ticket_font_family_name hasn't been explicitly overridden, even while the resolved font it falls
  * back to changes live with the Admin panel's own pick. */
-function adminFontSelect(): HTMLSelectElement {
-  return screen.getByLabelText("Admin panel font") as HTMLSelectElement;
+function adminFontTrigger(): HTMLElement {
+  return screen.getByRole("button", { name: /^Admin panel font,/ });
 }
-function ticketFontSelect(): HTMLSelectElement {
-  return screen.getByLabelText("Ticket page font") as HTMLSelectElement;
+function ticketFontTrigger(): HTMLElement {
+  return screen.getByRole("button", { name: /^Ticket page font,/ });
+}
+
+/** Reads the current pick off the trigger's own accessible name ("<label>, <value>") - the same
+ * thing a screen reader (and these tests) actually observe. Both selects resolve their unset/
+ * default state to a real, reserved option id (DEFAULT_BRANDING_FONT_FAMILY_NAME for Admin panel,
+ * "same-as-admin" for Ticket page) rather than a falsy value, so the accessible name always shows
+ * the matching label instead of falling back to "none selected". */
+function adminFontValue(): string {
+  return adminFontTrigger().getAttribute("aria-label")!.replace(/^Admin panel font, /, "");
+}
+function ticketFontValue(): string {
+  return ticketFontTrigger().getAttribute("aria-label")!.replace(/^Ticket page font, /, "");
+}
+
+function pickAdminFont(label: string): void {
+  fireEvent.click(adminFontTrigger());
+  fireEvent.click(screen.getByRole("button", { name: label }));
+}
+function pickTicketFont(label: string): void {
+  fireEvent.click(ticketFontTrigger());
+  fireEvent.click(screen.getByRole("button", { name: label }));
 }
 
 const defaultOrg = {
@@ -451,8 +472,8 @@ describe("BrandingSettingsPanel - colour palette", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
 
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
-    expect(adminFontSelect().value).toBe("");
-    expect(ticketFontSelect().value).toBe("");
+    expect(adminFontValue()).toBe("Admitto Sans");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
     expect(document.querySelector("code")).toBeNull();
     expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
     expect(screen.getByAltText(/organisation logo preview/i)).toBeTruthy();
@@ -466,8 +487,8 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
     expect(within(adminFontPicker()).getByText("Admitto Sans")).toBeTruthy();
-    expect(adminFontSelect().value).toBe("");
-    expect(ticketFontSelect().value).toBe("");
+    expect(adminFontValue()).toBe("Admitto Sans");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
   });
 
   it("clicking a built-in tile in the library does nothing - it's a preview, not a picker", async () => {
@@ -489,8 +510,8 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(ibmPlexTile);
 
     expect(screen.queryByText(/Unsaved changes/)).toBeNull();
-    expect(adminFontSelect().value).toBe("Old Font");
-    expect(ticketFontSelect().value).toBe("");
+    expect(adminFontValue()).toBe("Old Font");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
   });
 
   it("picking a font from the Admin panel's own Font-by-surface select is the only way to change it", async () => {
@@ -499,9 +520,9 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.change(adminFontSelect(), { target: { value: "Manrope" } });
+    pickAdminFont("Manrope");
 
-    expect(adminFontSelect().value).toBe("Manrope");
+    expect(adminFontValue()).toBe("Manrope");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
   });
 
@@ -608,8 +629,8 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(adminFontSelect().value).toBe("Acme Sans");
-    expect(ticketFontSelect().value).toBe("Manrope");
+    expect(adminFontValue()).toBe("Acme Sans");
+    expect(ticketFontValue()).toBe("Manrope");
   });
 
   it("assumes a real bold/italic file when the active pick matches neither a built-in nor a saved custom family", async () => {
@@ -673,12 +694,14 @@ describe("BrandingSettingsPanel - font picker", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Saved.*Acme Sans/);
     });
-    expect(adminFontSelect().value).toBe("Acme Sans");
+    expect(adminFontValue()).toBe("Acme Sans");
     // A brand-new family only ever activates for Admin panel (the sole upload entry point) -
     // Ticket page's own field stays unset, still following whatever Admin panel is.
-    expect(ticketFontSelect().value).toBe("");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
     // But it's now available to explicitly pick for Ticket page too, from the shared library.
-    expect(within(ticketFontSelect()).getByRole("option", { name: "Acme Sans" })).toBeTruthy();
+    fireEvent.click(ticketFontTrigger());
+    expect(screen.getByRole("button", { name: "Acme Sans" })).toBeTruthy();
+    fireEvent.click(ticketFontTrigger());
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -706,11 +729,11 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.change(ticketFontSelect(), { target: { value: "Acme Sans" } });
+    pickTicketFont("Acme Sans");
 
-    expect(ticketFontSelect().value).toBe("Acme Sans");
+    expect(ticketFontValue()).toBe("Acme Sans");
     // Admin panel's own pick is untouched - still the default.
-    expect(adminFontSelect().value).toBe("");
+    expect(adminFontValue()).toBe("Admitto Sans");
   });
 
   it("picking the reserved \"Admitto Sans\" option for Ticket page pins it to the default, decoupled from whatever Admin panel later becomes", async () => {
@@ -719,14 +742,14 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.change(ticketFontSelect(), { target: { value: "Admitto Sans" } });
-    expect(ticketFontSelect().value).toBe("Admitto Sans");
+    pickTicketFont("Admitto Sans");
+    expect(ticketFontValue()).toBe("Admitto Sans");
 
-    // Unlike "Same as Admin panel" (the "" fallback), this is a real, persisted value - changing
+    // Unlike "Same as Admin panel" (the fallback), this is a real, persisted value - changing
     // Admin panel afterwards does not drag Ticket page's own pick along with it.
-    fireEvent.change(adminFontSelect(), { target: { value: "Space Grotesk" } });
-    expect(adminFontSelect().value).toBe("Space Grotesk");
-    expect(ticketFontSelect().value).toBe("Admitto Sans");
+    pickAdminFont("Space Grotesk");
+    expect(adminFontValue()).toBe("Space Grotesk");
+    expect(ticketFontValue()).toBe("Admitto Sans");
   });
 
   it("resetting Admin panel's select back to Admitto Sans clears font_family_name", async () => {
@@ -735,9 +758,9 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(adminFontSelect().value).toBe("Manrope");
-    fireEvent.change(adminFontSelect(), { target: { value: "" } });
-    expect(adminFontSelect().value).toBe("");
+    expect(adminFontValue()).toBe("Manrope");
+    pickAdminFont("Admitto Sans");
+    expect(adminFontValue()).toBe("Admitto Sans");
   });
 
   it("resetting Ticket page's select back to \"Same as Admin panel\" clears its override", async () => {
@@ -748,9 +771,9 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(ticketFontSelect().value).toBe("Space Grotesk");
-    fireEvent.change(ticketFontSelect(), { target: { value: "" } });
-    expect(ticketFontSelect().value).toBe("");
+    expect(ticketFontValue()).toBe("Space Grotesk");
+    pickTicketFont("Same as Admin panel");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
   });
 
   it("clicking a saved custom family's preview tile does nothing - switching between two saved families only happens via the Font-by-surface select, without losing either", async () => {
@@ -767,15 +790,15 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(adminFontSelect().value).toBe("First Family");
+    expect(adminFontValue()).toBe("First Family");
     const secondTile = within(adminFontPicker()).getByText("Second Family").closest(".font-option-card__select")!;
 
     fireEvent.click(secondTile);
-    expect(adminFontSelect().value).toBe("First Family");
+    expect(adminFontValue()).toBe("First Family");
 
-    fireEvent.change(adminFontSelect(), { target: { value: "Second Family" } });
+    pickAdminFont("Second Family");
 
-    expect(adminFontSelect().value).toBe("Second Family");
+    expect(adminFontValue()).toBe("Second Family");
     // Neither saved family was deleted by switching between them.
     expect(within(adminFontPicker()).getByText("First Family")).toBeTruthy();
     expect(within(adminFontPicker()).getByText("Second Family")).toBeTruthy();
@@ -818,9 +841,9 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(screen.getByText("mock-save-family"));
 
     expect(within(adminFontPicker()).getAllByText("Acme Sans")).toHaveLength(1);
-    expect(adminFontSelect().value).toBe("Acme Sans");
+    expect(adminFontValue()).toBe("Acme Sans");
     // Ticket page's field was never set - stays unset (still following Admin panel).
-    expect(ticketFontSelect().value).toBe("");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
   });
 
@@ -842,8 +865,8 @@ describe("BrandingSettingsPanel - font picker", () => {
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
     expect(within(adminFontPicker()).getByText("Acme Sans Renamed")).toBeTruthy();
-    expect(adminFontSelect().value).toBe("Acme Sans Renamed");
-    expect(ticketFontSelect().value).toBe("");
+    expect(adminFontValue()).toBe("Acme Sans Renamed");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
   });
 
   it("renaming a family that was active only for Ticket page updates its override, keeping Admin panel's own pick untouched", async () => {
@@ -865,9 +888,9 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family-renamed"));
 
-    expect(ticketFontSelect().value).toBe("Acme Sans Renamed");
+    expect(ticketFontValue()).toBe("Acme Sans Renamed");
     // Admin panel was never active for this family - a rename must not touch it.
-    expect(adminFontSelect().value).toBe("Manrope");
+    expect(adminFontValue()).toBe("Manrope");
   });
 
   it("editing a saved-but-inactive family does not make it active after saving", async () => {
@@ -886,7 +909,7 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
 
-    expect(adminFontSelect().value).toBe("Manrope");
+    expect(adminFontValue()).toBe("Manrope");
   });
 
   it("deleting the active custom family falls back to the default built-in font", async () => {
@@ -906,8 +929,8 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
-    expect(adminFontSelect().value).toBe("");
-    expect(ticketFontSelect().value).toBe("");
+    expect(adminFontValue()).toBe("Admitto Sans");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
   });
 
@@ -932,8 +955,8 @@ describe("BrandingSettingsPanel - font picker", () => {
 
     // ticket_font_family_name clears back to undefined ("Same as Admin panel"), not some
     // hardcoded default.
-    expect(ticketFontSelect().value).toBe("");
-    expect(adminFontSelect().value).toBe("Manrope");
+    expect(ticketFontValue()).toBe("Same as Admin panel");
+    expect(adminFontValue()).toBe("Manrope");
   });
 
   it("removing a saved-but-inactive family leaves the active pick untouched", async () => {
@@ -954,7 +977,7 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Other Family")).toBeNull();
-    expect(adminFontSelect().value).toBe("Active Family");
+    expect(adminFontValue()).toBe("Active Family");
   });
 
   it("saves the plural 'variants' toast wording for a family with more than one variant", async () => {
@@ -1022,7 +1045,7 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
-    expect(adminFontSelect().value).toBe("Manrope");
+    expect(adminFontValue()).toBe("Manrope");
   });
 
   it("saving a family under a name that already exists in the library updates that entry in place", async () => {
@@ -1046,7 +1069,7 @@ describe("BrandingSettingsPanel - font picker", () => {
     await waitFor(() => {
       expect(within(adminFontPicker()).getAllByText("Acme Sans")).toHaveLength(1);
     });
-    expect(adminFontSelect().value).toBe("Acme Sans");
+    expect(adminFontValue()).toBe("Acme Sans");
   });
 
   it("shows a faked-style hint in the live preview when the active custom family has no bold/italic variant", async () => {

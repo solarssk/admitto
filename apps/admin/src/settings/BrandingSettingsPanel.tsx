@@ -16,6 +16,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BrandingCustomFontFamilyDto, BrandingThemeDto, SetupOrgBrandingDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { safeBrandingLogoHref } from "../utils/safeBrandingLogoHref.js";
 import {
@@ -691,6 +692,28 @@ export function BrandingSettingsPanel() {
   const activeHex = colorMode === "custom" ? customHexOrFallback : paletteHex;
   const customFamilies = themeDraft.custom_font_families ?? [];
   const adminFont = resolveFontInfo(themeDraft.font_family_name, customFamilies);
+  // The built-in default (name: undefined) needs a real, non-empty option id - SearchableSelect
+  // treats a falsy `value` as "nothing selected" rather than resolving it to a matching option,
+  // so "" (the native <option>'s own value for this entry) can't stand in for it here.
+  // DEFAULT_BRANDING_FONT_FAMILY_NAME is already the reserved sentinel this codebase uses for
+  // "explicitly Admitto Sans" (see Ticket page's own reserved entry below), so it's reused rather
+  // than inventing a second one.
+  const adminFontOptions = [
+    ...FONT_OPTIONS.map((f) => ({ id: f.name ?? DEFAULT_BRANDING_FONT_FAMILY_NAME, label: f.label })),
+    ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
+  ];
+  // "" would collide with SearchableSelect's own falsy-value-means-unselected check (the same
+  // reason the admin-panel default above needed a real sentinel id instead of "") - "same-as-admin"
+  // is a value no real font name can ever equal, so it round-trips through onChange below cleanly.
+  const ticketFontOptions = [
+    { id: "same-as-admin", label: "Same as Admin panel" },
+    // A distinct, reserved value from the fallback above - lets Ticket page be pinned to the
+    // default explicitly (e.g. Admin panel = Manrope, Ticket page = Admitto Sans) instead of only
+    // ever following whatever Admin panel currently is.
+    { id: DEFAULT_BRANDING_FONT_FAMILY_NAME, label: DEFAULT_BRANDING_FONT_FAMILY_NAME },
+    ...FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => ({ id: f.name!, label: f.label })),
+    ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
+  ];
 
   if (loading) {
     return showLoading ? (
@@ -833,26 +856,19 @@ export function BrandingSettingsPanel() {
               <strong>Admin panel</strong>
               <p>Staff dashboard, tables, and settings, applied live to this app.</p>
             </div>
-            <Select
+            <SearchableSelect
               id="branding-font-admin-select"
-              name="branding-font-admin"
-              aria-label="Admin panel font"
-              value={themeDraft.font_family_name ?? ""}
+              label="Admin panel font"
+              placeholder="Select font…"
+              searchPlaceholder="Search fonts…"
+              emptyLabel="No fonts found"
+              value={themeDraft.font_family_name ?? DEFAULT_BRANDING_FONT_FAMILY_NAME}
+              options={adminFontOptions}
               disabled={formDisabled}
-              style={FONT_SURFACE_SELECT_STYLE}
-              onChange={(e) => handleSetSurfaceFont("admin", e.target.value || undefined)}
-            >
-              {FONT_OPTIONS.map((f) => (
-                <option key={f.key} value={f.name ?? ""}>
-                  {f.label}
-                </option>
-              ))}
-              {customFamilies.map((f) => (
-                <option key={f.name} value={f.name}>
-                  {f.name}
-                </option>
-              ))}
-            </Select>
+              onChange={(id) =>
+                handleSetSurfaceFont("admin", id === DEFAULT_BRANDING_FONT_FAMILY_NAME ? undefined : id)
+              }
+            />
           </div>
 
           <div className="settings-row">
@@ -877,31 +893,19 @@ export function BrandingSettingsPanel() {
               <strong>Ticket page</strong>
               <p>The public ticket page attendees open after check-in.</p>
             </div>
-            <Select
+            <SearchableSelect
               id="branding-font-ticket-select"
-              name="branding-font-ticket"
-              aria-label="Ticket page font"
-              value={themeDraft.ticket_font_family_name ?? ""}
+              label="Ticket page font"
+              placeholder="Same as Admin panel"
+              searchPlaceholder="Search fonts…"
+              emptyLabel="No fonts found"
+              value={themeDraft.ticket_font_family_name ?? "same-as-admin"}
+              options={ticketFontOptions}
               disabled={formDisabled}
-              style={FONT_SURFACE_SELECT_STYLE}
-              onChange={(e) => handleSetSurfaceFont("ticket", e.target.value || undefined)}
-            >
-              <option value="">Same as Admin panel</option>
-              {/* A distinct, reserved value from the fallback above - lets Ticket page be pinned
-                  to the default explicitly (e.g. Admin panel = Manrope, Ticket page = Admitto
-                  Sans) instead of only ever following whatever Admin panel currently is. */}
-              <option value={DEFAULT_BRANDING_FONT_FAMILY_NAME}>{DEFAULT_BRANDING_FONT_FAMILY_NAME}</option>
-              {FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => (
-                <option key={f.key} value={f.name}>
-                  {f.label}
-                </option>
-              ))}
-              {customFamilies.map((f) => (
-                <option key={f.name} value={f.name}>
-                  {f.name}
-                </option>
-              ))}
-            </Select>
+              onChange={(id) =>
+                handleSetSurfaceFont("ticket", id === "same-as-admin" ? undefined : id)
+              }
+            />
           </div>
             </div>
             {themeFieldErrors.ticket_font_family_name && (
