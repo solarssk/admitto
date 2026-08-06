@@ -134,6 +134,7 @@ export function toResolved(
     ticket_type: string | null;
     event: {
       id: string; title: string; date: Date; timezone: string;
+      event_hours_start: string | null; event_hours_end: string | null;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
       organization: { logo_url: string | null; header_image_url: string | null };
@@ -160,6 +161,8 @@ export function toResolved(
       title: row.event.title,
       date: row.event.date,
       timezone: row.event.timezone || "UTC",
+      eventHoursStart: row.event.event_hours_start,
+      eventHoursEnd: row.event.event_hours_end,
       location: loc?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
       formattedAddress: loc?.formatted_address ?? null,

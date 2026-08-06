@@ -3,7 +3,7 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto Unreleased
 
 ## What this page helps you do
 
@@ -18,7 +18,7 @@ Open the correct organisation and event. If another manager may be editing the s
 1. Open **Overview** and review attendee, delivery, check-in, and recent activity information.
 2. Follow a readiness prompt when it points to unfinished setup.
 3. Open **Event settings**, then **General**.
-4. Review the title, event date, time zone, and capacity.
+4. Review the title, event date, time zone, and capacity. Optionally set **Event hours — start/end** (24-hour time) between the date and time zone fields — a time-of-day range shown on tickets, separate from the calendar date. Leave both blank to omit it.
 5. Leave capacity empty for an unlimited event, or enter the maximum number of attendees that may be added.
 6. Save the General card.
 7. Open **Location** to set the venue's name and address. Start typing a venue name or an address into the single search field — matching places appear as you type; pick one to also set the map pin, or keep typing free text if nothing matches. Drag the pin or double-click the map to adjust it by hand. Add directions or accessibility notes if attendees need them. If Copy Google/Apple Maps opens the wrong place while the pin looks correct, use **Pin wrong? Fix link** to paste the correct Maps URLs (the pin and static map stay as they are).
@@ -42,7 +42,7 @@ The overview reflects the current event lifecycle, and saved settings are used b
 
 ## What changes after this action
 
-Changes to the event title, date, time zone, capacity, or images become the current event configuration. A capacity change can affect future attendee additions and imports; it does not remove existing attendees. The **Location** tab's venue name and formatted address are attendee-facing on browser tickets. When the event has a map pin, the ticket also shows a map and links to Google Maps and Apple Maps (or any corrected links you pasted under **Pin wrong? Fix link**); directions and accessibility notes appear there when provided.
+Changes to the event title, date, event hours, time zone, capacity, or images become the current event configuration. A capacity change can affect future attendee additions and imports; it does not remove existing attendees. When set, event hours appear as a time range on browser tickets, next to the date. The **Location** tab's venue name and formatted address are attendee-facing on browser tickets. When the event has a map pin, the ticket also shows a map and links to Google Maps and Apple Maps (or any corrected links you pasted under **Pin wrong? Fix link**); directions and accessibility notes appear there when provided.
 
 ## Common problems
 

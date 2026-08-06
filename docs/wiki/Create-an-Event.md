@@ -3,7 +3,7 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto Unreleased
 
 ## What this page helps you do
 
@@ -22,9 +22,11 @@ Prepare the event title, calendar date, timezone, and optional location. Choose 
 2. Select **New event**. On an empty list, the button can read **Create event**.
 3. Enter the **Event title**.
 4. Review the auto-filled **Link name**. Use only lowercase letters, numbers, `_`, or `-`. This ID is for agency ticket URLs and internal uniqueness; most attendees never see it in their ticket link.
-5. Select the **Event date** and **Event timezone** (shown with a **UTC±N** offset). You can search by city; Admitto stores a standard timezone ID such as `Europe/Warsaw` or `Asia/Kolkata`.
-6. Optionally add **Location**. Start typing a venue name or address and pick a match, or type free text. If search finds nothing useful, you can still create the event and set the map pin and coordinates later under **Event settings**, **Location** tab.
-7. Select **Create event**.
+5. Select the **Event date**.
+6. Optionally set **Event hours — start** and **Event hours — end** (24-hour time, e.g. `18:00`–`22:00`). Leave both blank to omit a time-of-day range. This is shown on tickets and, when configured, wallet passes — it does not change the calendar date itself.
+7. Select the **Event timezone** (shown with a **UTC±N** offset). You can search by city; Admitto stores a standard timezone ID such as `Europe/Warsaw` or `Asia/Kolkata`.
+8. Optionally add **Location**. Start typing a venue name or address and pick a match, or type free text. If search finds nothing useful, you can still create the event and set the map pin and coordinates later under **Event settings**, **Location** tab.
+9. Select **Create event**.
 
 ## Expected result
 
@@ -32,7 +34,7 @@ Admitto creates an active event and opens its **Attendees** page directly.
 
 ## Important decisions
 
-- The creation form has a calendar date, not an event start time.
+- The **Event date** is a calendar date. **Event hours — start/end** is a separate, optional time-of-day range shown on tickets (and later wallet passes) — set it if attendees need a specific start/end time, not just the day.
 - Capacity is not part of this modal. New events remain unlimited until capacity is set in **Event settings**.
 - The timezone controls event-day timestamps and reports; do not use the browser default without checking it.
 - Location is optional at create time. Agency ticket links use the link name; ordinary `/t/{token}` tickets do not.

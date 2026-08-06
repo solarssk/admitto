@@ -22,7 +22,16 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
+/** "18:00–22:00" range, or an open-ended "from"/"until" when only one side is set. */
+function formatEventHoursRange(start: string | null, end: string | null): string | null {
+  if (start && end) return `${start}–${end}`;
+  if (start) return `from ${start}`;
+  if (end) return `until ${end}`;
+  return null;
+}
+
 const CALENDAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>`;
+const CLOCK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`;
 const PIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
 /** Signpost: clearer than a house glyph for "Directions". */
 const DIRECTIONS_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v18"/><path d="M10 6h7l2 2-2 2h-7"/><path d="M10 14H5l-2 2 2 2h5"/></svg>`;
@@ -276,6 +285,7 @@ export function renderTicket(
   const styles = buildTicketPageStyles(theme);
   const mapReady = isMapReady(event);
   const showStaticMap = mapReady && options.staticMapEnabled !== false;
+  const eventHoursText = formatEventHoursRange(event.eventHoursStart, event.eventHoursEnd);
   const venueLabel = plainStaffText(event.location || event.formattedAddress || "") || null;
   const directionsText = event.directionsText?.trim();
   const accessibilityText = event.accessibilityText?.trim();
@@ -348,6 +358,7 @@ export function renderTicket(
       <h1 class="ticket__event-name">${esc(event.title)}</h1>
       <div class="ticket__meta">
         <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
+        ${eventHoursText ? `<span>${CLOCK_ICON}<span class="ticket__meta-text">${esc(eventHoursText)}</span></span>` : ""}
         ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
       </div>
       <div class="ticket__attendee">

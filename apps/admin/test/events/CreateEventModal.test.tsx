@@ -104,6 +104,26 @@ describe("CreateEventModal", () => {
     expect((screen.getByLabelText(/Link name/) as HTMLInputElement).value).toBe("custom-event");
   });
 
+  it("submits the event hours range when both fields are set", async () => {
+    mockCreateEvent.mockResolvedValueOnce({ id: "evt-1" } as never);
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    fireEvent.change(screen.getByLabelText("Event hours — start"), {
+      target: { value: "18:00" },
+    });
+    fireEvent.change(screen.getByLabelText("Event hours — end"), {
+      target: { value: "22:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+      );
+    });
+  });
+
   it("ignores close while submission is pending", async () => {
     let resolveCreate!: () => void;
     mockCreateEvent.mockReturnValueOnce(

@@ -178,6 +178,9 @@ export type ResolvedTicket = {
     date: Date;
     /** IANA timezone for the event calendar day (weather / display). */
     timezone: string;
+    /** Optional 24h "HH:MM" event start/end time, shown as a range on the ticket. */
+    eventHoursStart: string | null;
+    eventHoursEnd: string | null;
     /** Short venue display name (`EventLocation.venue_name`). */
     location: string | null;
     logoUrl: string | null;
