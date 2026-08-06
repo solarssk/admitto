@@ -63,11 +63,13 @@
 
 /* Scope chips under the Role field (event titles for operator, organization names for admin) -
    same shape as the admin Edit user modal's own .users-modal__chip, minus the remove button
-   (read-only here). */
+   (read-only here). Extra top margin beyond .account-role-display's own gap so the chips read
+   as a distinct group below the hint, not squeezed right against it. */
 .account-scope-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1, 0.25rem);
+  margin-top: var(--space-1, 0.25rem);
 }
 
 .account-scope-chip {

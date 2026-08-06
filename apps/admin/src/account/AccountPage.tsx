@@ -162,6 +162,7 @@ function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
         title="Roles are read-only. Contact an administrator to change access."
         onChange={() => {}}
       />
+      <p className="at-hint">Only an administrator can change this. {ROLE_ACCESS_DESCRIPTION[primary.role]}</p>
       {primary.role !== "superadmin" && account.roles.length > 0 && (
         <div className="account-scope-chips">
           {account.roles.map((r) => (
@@ -173,7 +174,6 @@ function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
           ))}
         </div>
       )}
-      <p className="at-hint">Only an administrator can change this. {ROLE_ACCESS_DESCRIPTION[primary.role]}</p>
     </div>
   );
 }
