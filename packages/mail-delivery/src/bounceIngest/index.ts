@@ -10,6 +10,10 @@ import { parseBounceLines } from "./parseBounceLine.js";
 import { listProcessedUids, markUidProcessed, pruneProcessedUidsOlderThan } from "./processedUid.js";
 import { openBounceImapProvider } from "./openProvider.js";
 import { persistBounceIngestLastRun, isBounceIngestDue } from "./lastRun.js";
+import {
+  bounceIngestSystemLogEnv,
+  reportBounceIngestSystemLog,
+} from "./reportSystemLog.js";
 import { lookbackSince, parseFolders, resolveImapConnectConfig, uidRetentionCutoff } from "./resolveAuth.js";
 import type { InboundMailProvider, InboundMessage, IngestSummary, ParsedBounceLine } from "./types.js";
 
@@ -22,6 +26,8 @@ export interface IngestBouncesOptions {
   env?: NodeJS.ProcessEnv;
   /** Clock for due-time checks (tests). */
   now?: () => Date;
+  /** Override System Logs POST (tests). */
+  reportSystemLog?: typeof reportBounceIngestSystemLog;
 }
 
 /** Cap concurrent event IMAP sessions so one slow host does not serialize the whole run. */
@@ -260,6 +266,14 @@ async function ingestEvent(
         `[bounce-ingest] event=${settings.event_id} persist last_run failed: ${errMsg(err)}`,
       );
     }
+    const report = options.reportSystemLog ?? reportBounceIngestSystemLog;
+    const targets = bounceIngestSystemLogEnv(options.env ?? process.env);
+    await report({
+      eventId: settings.event_id,
+      summary,
+      ...targets,
+      log,
+    });
   }
 }
 
@@ -425,9 +439,14 @@ export {
   parseBounceIngestTickSeconds,
   BOUNCE_INGEST_STALE_MS,
 } from "./lastRun.js";
+export {
+  reportBounceIngestSystemLog,
+  bounceIngestSystemLogEnv,
+} from "./reportSystemLog.js";
 export type {
   BounceIngestLastRunDto,
   BounceIngestLastRunSummary,
   BounceIngestHealthInput,
   BounceIngestHealthResult,
 } from "./lastRun.js";
+export type { ReportBounceIngestSystemLogOptions } from "./reportSystemLog.js";

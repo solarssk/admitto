@@ -123,6 +123,7 @@ export type RateLimitScope =
   | "public"
   | "readyz"
   | "healthz"
+  | "ops-system-logs"
   | "admin_import_preview"
   | "admin_import_commit"
   | "admin_template_preview"

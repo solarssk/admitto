@@ -38,6 +38,7 @@ function createRateLimitedApp(store: RateLimitStore, checkinAuth: "bearer" | "se
   app.post("/checkin/:eventId/scan", rateLimit(store, "checkin:scan"), (c) => c.text("ok"));
   app.get("/checkin/:eventId/history", rateLimit(store, "checkin:history"), (c) => c.text("ok"));
   app.get("/checkin/:eventId/stream", rateLimit(store, "checkin:stream"), (c) => c.text("ok"));
+  app.post("/ops/system-logs", rateLimit(store, "ops:system-logs"), (c) => c.text("ok"));
 
   return app;
 }
@@ -55,13 +56,16 @@ describe("System logs rate-limit coverage", () => {
       app.request("/checkin/event-1/scan", { method: "POST" }),
       app.request("/checkin/event-1/history"),
       app.request("/checkin/event-1/stream"),
+      app.request("/ops/system-logs", { method: "POST" }),
     ]);
-    expect(responses.map((response) => response.status)).toEqual([429, 429, 429, 429, 429, 429, 429]);
+    expect(responses.map((response) => response.status)).toEqual([
+      429, 429, 429, 429, 429, 429, 429, 429,
+    ]);
 
     const entries = querySystemLogs({ source: "security" }).filter(
       (entry) => entry.message === "auth.rate_limit.exceeded",
     );
-    expect(entries).toHaveLength(7);
+    expect(entries).toHaveLength(8);
     expect(entries.every((entry) => entry.level === "warn")).toBe(true);
     expect(entries.map((entry) => entry.fields?.scope).sort()).toEqual([
       "admin_export",
@@ -71,6 +75,7 @@ describe("System logs rate-limit coverage", () => {
       "checkin_history",
       "checkin_scan",
       "checkin_stream",
+      "ops-system-logs",
     ]);
     expect(Object.fromEntries(entries.map((entry) => [entry.fields?.scope, entry.fields?.key_hint]))).toMatchObject({
       admin_export: "user_route",
@@ -80,6 +85,7 @@ describe("System logs rate-limit coverage", () => {
       checkin_history: "user",
       checkin_scan: "user",
       checkin_stream: "user",
+      "ops-system-logs": null,
     });
     expect(JSON.stringify(entries)).not.toContain("verified-staff-user");
     expect(JSON.stringify(entries)).not.toContain("verified-staff-operator");

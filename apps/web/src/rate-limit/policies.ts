@@ -148,6 +148,17 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  "ops:system-logs": {
+    checks: [
+      {
+        keyOf: (c) => `ops:system-logs:ip:${resolveClientIp(c)}`,
+        windowMs: 60_000,
+        max: 120,
+        onExceeded: (c) => c.body(null, 429),
+        logOnExceeded: { scope: "ops-system-logs" },
+      },
+    ],
+  },
   "auth:oidc": {
     checks: [
       {

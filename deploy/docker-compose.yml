@@ -163,8 +163,8 @@ services:
       - internal
 
   # IMAP bounce / NDR ingest - same Admitto image as app; entrypoint overridden (do not
-  # add a third branch to docker-entrypoint.sh). Interval via BOUNCE_INGEST_INTERVAL_SECONDS
-  # (DB poll_interval_minutes is informational only in v1).
+  # add a third branch to docker-entrypoint.sh). Wake tick via BOUNCE_INGEST_TICK_SECONDS;
+  # per-event Check every gates due work. Optional System Logs bridge uses OPS_HEALTH_TOKEN.
   bounce-ingest:
     image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
     build:
@@ -175,11 +175,14 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      BOUNCE_INGEST_APP_URL: http://app:3000
     volumes:
       - ./scripts/bounce-ingest-loop.sh:/scripts/bounce-ingest-loop.sh:ro
     depends_on:
       db:
         condition: service_healthy
+      app:
+        condition: service_started
     networks:
       - internal
 
