@@ -385,6 +385,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     checkMailer.mockReturnValue({ configured: true, provider: "smtp" });
     resolveInstanceOrganizationId.mockResolvedValue("org-1");
@@ -456,6 +458,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
 
@@ -488,6 +492,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
 
@@ -523,6 +529,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     isGeocodingContactConfigured.mockResolvedValue(false);
@@ -544,6 +552,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     resolveEffectiveWeatherConfig.mockResolvedValue({
@@ -569,6 +579,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     resolveEffectiveWeatherConfig.mockResolvedValue({
@@ -594,6 +606,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     resolveEffectiveWeatherConfig.mockResolvedValue({
@@ -620,6 +634,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
 
@@ -681,6 +697,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     checkMailer.mockReturnValue({ configured: false, provider: null });
     resolveInstanceOrganizationId.mockResolvedValue("org-1");
@@ -750,6 +768,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     checkDatabase.mockResolvedValue({ status: "ok", latency_ms: 5 });
     checkMailer.mockReturnValue({ configured: false, provider: null });
@@ -826,6 +846,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
 
@@ -870,6 +892,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     checkMailer.mockReturnValue({ configured: false, provider: null });
     resolveInstanceOrganizationId.mockResolvedValue("org-1");
@@ -906,6 +930,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     setMapsEnabled(true);
@@ -928,6 +954,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     setMapsEnabled(true);
@@ -958,6 +986,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     setMapsEnabled(false);
@@ -1138,6 +1168,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     checkMailer.mockReturnValue({ configured: false, provider: null });
     resolveInstanceOrganizationId.mockResolvedValue("org-1");
@@ -1201,6 +1233,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     listOidcProviders.mockResolvedValue([]);
     findEnabledOidcProviders.mockResolvedValue([]);
@@ -1293,6 +1327,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     // NaN is not finite → resolveDatabaseLatencyMs ignores probe latency.
     checkDatabase.mockResolvedValue({ status: "ok", latency_ms: Number.NaN });
@@ -1402,6 +1438,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     getCfAccessConfig.mockResolvedValue({
@@ -1442,6 +1480,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     setMapsEnabled(true);
@@ -1487,6 +1527,8 @@ describe("collectAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     listOidcProviders.mockResolvedValue([
@@ -1576,6 +1618,8 @@ describe("handleAdminHealth", () => {
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
       email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
     });
     stubHappyPathMailAndIdp();
     vi.mocked(canManageInstance).mockResolvedValue(true);

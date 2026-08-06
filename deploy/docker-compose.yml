@@ -178,11 +178,19 @@ services:
       BOUNCE_INGEST_APP_URL: http://app:3000
     volumes:
       - ./scripts/bounce-ingest-loop.sh:/scripts/bounce-ingest-loop.sh:ro
+      - ./scripts/bounce-ingest-healthcheck.sh:/scripts/bounce-ingest-healthcheck.sh:ro
     depends_on:
       db:
         condition: service_healthy
       app:
         condition: service_started
+    # Heartbeat is refreshed each loop tick; max age follows 2× tick + slack (see script).
+    healthcheck:
+      test: ["CMD-SHELL", "/bin/sh /scripts/bounce-ingest-healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
     networks:
       - internal
 

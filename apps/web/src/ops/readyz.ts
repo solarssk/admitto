@@ -4,6 +4,10 @@ import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { configFromEnv } from "@admitto/mailer";
 import type { MailerProvider } from "@admitto/mailer";
+import {
+  evaluateBounceIngestHealth,
+  parseBounceIngestTickSeconds,
+} from "@admitto/mail-delivery";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { applyBaselineSecurityHeaders } from "../security-headers.js";
 import { InMemoryRateLimitStore } from "../rate-limit/in-memory.js";
@@ -39,6 +43,10 @@ export type ReadyzChecks = {
 export type ReadyzGauges = {
   email_deliveries_queued: number;
   email_deliveries_failed_retryable: number;
+  /** Enabled bounce-ingest event configs. */
+  bounce_ingest_enabled: number;
+  /** Enabled configs with missing/failed/stale last run (soft; never alone causes 503). */
+  bounce_ingest_problem: number;
 };
 
 /** Full `/readyz` response body (ADR 0026). */
@@ -130,16 +138,40 @@ export function checkMailer(env: EnvLike = process.env): ReadyzMailerCheck {
   }
 }
 
-/** Aggregate email delivery queue depth; `-1` gauges when DB count fails. */
+/** Aggregate email delivery queue depth + soft bounce-ingest problem count; `-1` when DB fails. */
 export async function collectGauges(db: PrismaClient): Promise<ReadyzGauges> {
   try {
-    const [email_deliveries_queued, email_deliveries_failed_retryable] = await Promise.all([
-      db.emailDelivery.count({ where: { status: "queued" } }),
-      db.emailDelivery.count({ where: { status: "failed", retryable: true } }),
-    ]);
-    return { email_deliveries_queued, email_deliveries_failed_retryable };
+    const [email_deliveries_queued, email_deliveries_failed_retryable, bounceRows] =
+      await Promise.all([
+        db.emailDelivery.count({ where: { status: "queued" } }),
+        db.emailDelivery.count({ where: { status: "failed", retryable: true } }),
+        db.bounceIngestSettings.findMany({
+          select: {
+            enabled: true,
+            last_run_at: true,
+            last_run_ok: true,
+            poll_interval_minutes: true,
+          },
+        }),
+      ]);
+    const bounce = evaluateBounceIngestHealth(
+      bounceRows,
+      new Date(),
+      parseBounceIngestTickSeconds(),
+    );
+    return {
+      email_deliveries_queued,
+      email_deliveries_failed_retryable,
+      bounce_ingest_enabled: bounce.enabledCount,
+      bounce_ingest_problem: bounce.problemCount,
+    };
   } catch {
-    return { email_deliveries_queued: -1, email_deliveries_failed_retryable: -1 };
+    return {
+      email_deliveries_queued: -1,
+      email_deliveries_failed_retryable: -1,
+      bounce_ingest_enabled: -1,
+      bounce_ingest_problem: -1,
+    };
   }
 }
 

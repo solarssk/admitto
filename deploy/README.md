@@ -322,7 +322,8 @@ enabled event is due. Soft Settings → Health treats a successful run as stale 
 2× Check every and 2× the deploy tick (floored at 15 minutes). Each run writes `last_run_*` for
 the Event settings card and that Health row. When `OPS_HEALTH_TOKEN` is set, compose also points
 `BOUNCE_INGEST_APP_URL=http://app:3000` so each run can append `mail_bounce_ingest_*` lines to
-Settings → Logs (mail).
+Settings → Logs (mail). The bounce-ingest container has a Docker HEALTHCHECK on heartbeat file
+freshness; `/readyz` exposes soft `bounce_ingest_*` gauges (never alone a 503).
 
 Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
 ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.
