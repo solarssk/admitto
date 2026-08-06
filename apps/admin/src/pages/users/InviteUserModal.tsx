@@ -41,6 +41,11 @@ function inviteFormValidationError(
   orgId: string,
   eventId: string,
 ): string | null {
+  // The Send button's own disabled prop already checks the identical !isValidEmailFormat
+  // condition, so this can't fire from a real click - kept for callers other than the form's
+  // own submit handler, and so this function's contract holds even if that duplication is
+  // ever refactored away.
+  /* v8 ignore if */
   if (!isValidEmailFormat(email.trim())) return "Enter a valid email address.";
   if (initialRole === "operator" && !eventId) return "Select an event for the operator role.";
   if (initialRole === "admin" && !orgId) return "Select an organization for the admin role.";

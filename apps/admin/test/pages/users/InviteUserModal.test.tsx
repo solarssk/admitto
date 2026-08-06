@@ -168,6 +168,34 @@ describe("InviteUserModal", () => {
     });
   });
 
+  it("shows an inline error and does not create the account when Operator is picked with no event selected", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([{ id: "evt-1", title: "Summer Summit" } as never]);
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.change(screen.getByLabelText("Initial role"), { target: { value: "operator" } });
+    await screen.findByLabelText("Event scope");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Select an event for the operator role.")).toBeTruthy();
+    expect(createAdminUser).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline error and does not create the account when Administrator is picked with no organization available to default to", async () => {
+    vi.mocked(fetchAdminOrganizations).mockResolvedValueOnce([]);
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.change(screen.getByLabelText("Initial role"), { target: { value: "admin" } });
+    await screen.findByLabelText("Organization scope");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Select an organization for the admin role.")).toBeTruthy();
+    expect(createAdminUser).not.toHaveBeenCalled();
+  });
+
   it("shows an inline warning when the account is created but the initial role grant fails", async () => {
     vi.mocked(createAdminUser).mockResolvedValueOnce({
       user: { id: "user-4" } as never,

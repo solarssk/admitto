@@ -1705,6 +1705,17 @@ describe("v0.4.10: unlimited instance superadmins", () => {
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("invalid_request");
   });
+
+  it("returns 404 for a user id that doesn't exist", async () => {
+    const res = await app.request("/api/admin/users/nonexistent-user-id/roles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+      body: JSON.stringify({ role: "operator", scope_type: "event", scope_id: eventId }),
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("not_found");
+  });
 });
 
 describe("admin audit atomicity (BE-002)", () => {

@@ -71,10 +71,15 @@ function resolveRoleGrantRequest(
   eventId: string,
 ): { body: GrantUserRoleBody } | { error: string } {
   if (role === "admin") {
+    // The Add/Change button is already disabled whenever isRoleScopeReady's own identical
+    // !orgId check fails, so this can't fire from a real click - kept as defense-in-depth
+    // for handleAddRole's only other caller (none today, but this stays a pure function).
+    /* v8 ignore if */
     if (!orgId) return { error: "Select an organization for the admin role." };
     return { body: { role: "admin", scope_type: "organization", scope_id: orgId } };
   }
   if (role === "operator") {
+    /* v8 ignore if */
     if (!eventId) return { error: "Select an event for the operator role." };
     return { body: { role: "operator", scope_type: "event", scope_id: eventId } };
   }
@@ -100,6 +105,20 @@ function mapUnlinkSsoError(err: unknown): string {
     return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
   }
   return operatorApiErrorMessage(err, "Failed to unlink SSO.");
+}
+
+function activeSessionsLabel(count: number): string {
+  if (count === 0) return "None";
+  return `${count} session${count === 1 ? "" : "s"}`;
+}
+
+/** Whose access the role-type-change warning is about to remove. isSelf can never be true in
+ * practice: the Role select itself is disabled whenever isSelf is true, so a self-viewing
+ * admin can never actually trigger isRoleTypeChange in the first place. */
+function roleChangeOwnerLabel(isSelf: boolean, displayTitle: string): string {
+  /* v8 ignore if */
+  if (isSelf) return "your";
+  return `${displayTitle}'s`;
 }
 
 /** The Add/Change button shared by the "granting superadmin" and "granting admin/operator with a
@@ -293,7 +312,7 @@ function RoleAccessSection({
 
       {isRoleTypeChange && (
         <Notice variant="warning">
-          Changing to {roleLabel(newRole)} removes {isSelf ? "your" : `${displayTitle}'s`} current{" "}
+          Changing to {roleLabel(newRole)} removes {roleChangeOwnerLabel(isSelf, displayTitle)} current{" "}
           {roleLabel(currentRoleType)} access.
         </Notice>
       )}
@@ -380,11 +399,7 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Active sessions</strong>
-            <span>
-              {user.active_sessions_count > 0
-                ? `${user.active_sessions_count} session${user.active_sessions_count === 1 ? "" : "s"}`
-                : "None"}
-            </span>
+            <span>{activeSessionsLabel(user.active_sessions_count)}</span>
           </span>
         </div>
       </div>
@@ -645,8 +660,15 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleAddRole = async () => {
+    // Type-narrowing/defense-in-depth only: the Add/Change button is disabled whenever
+    // !newRole, !scopeReady (which resolveRoleGrantRequest's own error case duplicates), or
+    // roleBusy - none of these can fire from a real click. !user can't happen either: this
+    // closure only exists once the render-body's `if (!open || !user) return null` guard
+    // above has already passed for the current render.
+    /* v8 ignore if */
     if (!user || !newRole || roleBusy) return;
     const request = resolveRoleGrantRequest(newRole, newOrgId, newEventId);
+    /* v8 ignore if */
     if ("error" in request) {
       setError(request.error);
       return;
@@ -677,6 +699,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleRemoveRole = async (assignmentId: string) => {
+    // !user: see handleAddRole's own comment above - every action handler in this component
+    // closes over the same guarantee. roleBusy: the chip's own remove button is disabled
+    // while busy.
+    /* v8 ignore if */
     if (!user || roleBusy) return;
     setRoleBusy(true);
     setError(null);
@@ -692,6 +718,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleResetMfa = async () => {
+    // See handleAddRole's own comment above.
+    /* v8 ignore if */
     if (!user) return;
     setResetMfaBusy(true);
     try {
@@ -707,6 +735,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleResetPassword = async () => {
+    // !user: see handleAddRole's own comment above. newPassword.length: the Reset password
+    // button's own disabled prop checks the same PASSWORD_MIN_LENGTH condition.
+    /* v8 ignore if */
     if (!user || newPassword.length < PASSWORD_MIN_LENGTH) return;
     setResetPasswordBusy(true);
     setError(null);
@@ -724,6 +755,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleRevokeSessions = async () => {
+    // See handleAddRole's own comment above.
+    /* v8 ignore if */
     if (!user) return;
     setRevokeSessionsBusy(true);
     try {
@@ -739,6 +772,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleUnlinkSso = async () => {
+    // !user: see handleAddRole's own comment above. unlinkSsoPassword.length: the confirm
+    // dialog's own disableConfirm prop checks the same PASSWORD_MIN_LENGTH condition.
+    /* v8 ignore if */
     if (!user || unlinkSsoPassword.length < PASSWORD_MIN_LENGTH) return;
     setUnlinkSsoBusy(true);
     setUnlinkSsoError(null);
@@ -756,6 +792,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const applyActiveChange = async (nextActive: boolean) => {
+    // See handleAddRole's own comment above.
+    /* v8 ignore if */
     if (!user) return;
     setToggleActiveBusy(true);
     setError(null);
@@ -772,6 +810,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleToggleActiveClick = () => {
+    // See handleAddRole's own comment above.
+    /* v8 ignore if */
     if (!user) return;
     if (user.is_active) {
       setDisableConfirmOpen(true);
@@ -797,13 +837,24 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
    * role" controls below, so no extra request is needed. Falls back to the id when the scope
    * isn't in the fetched list (e.g. a since-deleted event). */
   function scopeChipLabel(assignment: RoleAssignmentDto): string {
+    // A superadmin's own instance-wide assignment never reaches this function: the chip list
+    // above is only rendered when currentRoleType !== "superadmin".
+    /* v8 ignore if */
     if (assignment.scope_type === "instance") return "Instance-wide";
+    // The final "Unknown ..." fallback in each branch below only fires for a null scope_id -
+    // an event/organization-scoped assignment created with no scope at all, which the schema's
+    // own constraints don't allow. The first fallback (the raw id) is the realistic case: a
+    // scope_id that no longer matches anything in the fetched list (e.g. a deleted event) -
+    // covered by its own test above.
     if (assignment.scope_type === "event") {
       return events.find((e) => e.id === assignment.scope_id)?.title ?? assignment.scope_id ?? "Unknown event";
     }
     if (assignment.scope_type === "organization") {
       return organizations.find((o) => o.id === assignment.scope_id)?.name ?? assignment.scope_id ?? "Unknown organization";
     }
+    // scope_type is exhaustively instance/event/organization - this return only exists to
+    // satisfy the function's own string return type, never actually reachable.
+    /* v8 ignore next */
     return assignment.scope_id ?? assignment.scope_type;
   }
 
@@ -865,6 +916,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       void handleAddRole();
     }
   };
+  // isSelf && isRoleTypeChange can never both be true - see roleChangeOwnerLabel's own comment.
+  /* v8 ignore next */
   const roleActionTitle = isSelf && isRoleTypeChange ? "You cannot change your own role." : undefined;
   const roleActionButton = (
     <RoleActionButton

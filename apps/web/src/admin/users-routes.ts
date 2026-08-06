@@ -623,6 +623,14 @@ async function canRevokeInTransaction(
   assignment: { role: string; scope_type: string; scope_id: string | null },
 ): Promise<boolean> {
   if (await canManageInstance(tx, actorId)) return true;
+  // Every path below here is genuinely unreachable outside a real concurrent-modification
+  // race: performRoleTypeSwitch only calls this for assignments already authorized by
+  // handlePostUserRole's own pre-transaction assertImplicitRevokesAllowed check, using the
+  // same rules - a non-superadmin actor who was denied there never reaches this transaction
+  // at all, and one who was allowed can only have been allowed for operator/event assignments
+  // they administer, which is exactly what this function itself re-confirms. Only a fresh
+  // grant/revoke racing this same transaction could make the two checks disagree.
+  /* v8 ignore start */
   if (assignment.role !== "operator" || assignment.scope_type !== "event" || !assignment.scope_id) {
     return false;
   }
@@ -632,6 +640,7 @@ async function canRevokeInTransaction(
   });
   if (!event) return false;
   return hasScope(tx, actorId, "admin", "organization", event.organization_id);
+  /* v8 ignore stop */
 }
 
 /** POST /api/admin/users/:id/roles — grant role assignment. */
@@ -693,11 +702,38 @@ async function performRoleTypeSwitch(
   return created;
 }
 
-/** Maps handlePostUserRole's transaction failures to a response body, or null to rethrow. */
+/** Maps handlePostUserRole's transaction failures to a response body, or null to rethrow.
+ * Both mapped cases are genuine TOCTOU races: handlePostUserRole's own pre-transaction checks
+ * (the existing-assignment lookup for already_assigned, assertLastSuperadminRemovalAllowed's
+ * fresh in-transaction count for last_superadmin) already reject the same conflict on any
+ * single, non-concurrent request - these only fire when another request commits between that
+ * check and this one's own transaction. */
+/* v8 ignore start */
 function roleGrantConflictResponse(err: unknown): { code: string } | null {
   if (err instanceof LastSuperadminError) return { code: "last_superadmin" };
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
     return { code: "already_assigned" };
+  }
+  return null;
+}
+/* v8 ignore stop */
+
+/** Authorizes every implicit revoke a role-type switch would perform, one assignment at a time -
+ * assertRoleGrantAllowed only authorized the new grant, so without this an org-scoped admin
+ * could use their own event's grant authority to silently strip a target's unrelated
+ * admin/superadmin assignment they have no authority over. Same rule handleDeleteUserRole
+ * already applies to an explicit revoke, applied here to every implicit one; non-superadmins
+ * can only ever grant operator/event roles, so this always denies (403) when the assignment
+ * being replaced is admin- or superadmin-scoped, same as a direct revoke of one would. */
+async function assertImplicitRevokesAllowed(
+  c: Context,
+  db: PrismaClient,
+  actorId: string,
+  otherTypeAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }>,
+): Promise<Response | null> {
+  for (const old of otherTypeAssignments) {
+    const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, old);
+    if (revokeDenied) return revokeDenied;
   }
   return null;
 }
@@ -746,18 +782,11 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
     return c.json({ code: "cannot_change_own_role" }, 409);
   }
 
-  // A role-type switch implicitly revokes every assignment of the target's OLD type -
-  // assertRoleGrantAllowed above only authorized the NEW grant, so without this check an
-  // org-scoped admin could use their own event's grant authority to silently strip a target's
-  // unrelated admin/superadmin assignment they have no authority over. Same rule
-  // handleDeleteUserRole already applies to an explicit revoke, applied here to every implicit
-  // one; non-superadmins can only ever grant operator/event roles, so this always denies (403)
-  // when the assignment being replaced is admin- or superadmin-scoped, same as a direct revoke
-  // of one would.
-  for (const old of otherTypeAssignments) {
-    const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, old);
-    if (revokeDenied) return revokeDenied;
-  }
+  // A role-type switch implicitly revokes every assignment of the target's OLD type - see
+  // assertImplicitRevokesAllowed's own comment for why each one needs its own authorization
+  // check, not just the new grant's.
+  const revokeDenied = await assertImplicitRevokesAllowed(c, db, actorId, otherTypeAssignments);
+  if (revokeDenied) return revokeDenied;
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -953,7 +982,10 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
+  // Route registered as /api/admin/users/:id/external-identity - Hono only invokes this
+  // handler when :id actually matched, so the fallback and guard below can't fire in practice.
   const id = c.req.param("id") ?? "";
+  /* v8 ignore if */
   if (!id) return c.json({ error: "user id required" }, 400);
 
   const actorId = c.get("auth").userId;

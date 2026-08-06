@@ -32,6 +32,21 @@ async function resolveSecuritySearchMatch(
   return { user_id: { in: users.map((u) => u.id) } };
 }
 
+/** Resolves the `user_id`/`search` query params to a where-clause fragment. Exact `user_id`
+ * (e.g. the Edit user modal's own Recent logins list) takes priority over the fuzzy
+ * email/display_name `search` below - contains-matching on free text can otherwise cross-match
+ * a second account whose email or name happens to contain this one's, showing one user's
+ * sign-in history to whoever's editing a completely different account. */
+async function resolveSecurityIdentityMatch(
+  db: PrismaClient,
+  userId: string | undefined,
+  search: string | undefined,
+): Promise<Prisma.SecurityAuditLogWhereInput> {
+  if (userId) return { user_id: userId };
+  if (search) return resolveSecuritySearchMatch(db, search);
+  return {};
+}
+
 /** Shared by the count and list queries below. */
 async function buildSecurityAuditLogWhere(c: Context, db: PrismaClient): Promise<Prisma.SecurityAuditLogWhereInput> {
   const eventType = c.req.query("event_type")?.trim() || undefined;
@@ -42,11 +57,7 @@ async function buildSecurityAuditLogWhere(c: Context, db: PrismaClient): Promise
 
   return {
     ...(eventType ? { event_type: eventType } : {}),
-    // Exact user_id (e.g. the Edit user modal's own Recent logins list) takes priority over the
-    // fuzzy email/display_name `search` below - contains-matching on free text can otherwise
-    // cross-match a second account whose email or name happens to contain this one's, showing
-    // one user's sign-in history to whoever's editing a completely different account.
-    ...(userId ? { user_id: userId } : search ? await resolveSecuritySearchMatch(db, search) : {}),
+    ...(await resolveSecurityIdentityMatch(db, userId, search)),
     ...(start || end
       ? {
           created_at: {
