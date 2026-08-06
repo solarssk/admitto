@@ -453,14 +453,29 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     const runButton = await screen.findByRole("button", { name: "Run check now" });
     expect(isDisabled(runButton)).toBe(false);
-    await act(async () => {
-      fireEvent.click(runButton);
-    });
+    fireEvent.click(runButton);
     await waitFor(() => {
       expect(mockRun).toHaveBeenCalledWith("evt-1");
     });
     expect(await screen.findByText(/^OK ·/)).toBeTruthy();
     expect(document.querySelector(".org-mail-summary")?.textContent).toMatch(/2 seen/);
+  });
+
+  it("toasts an error when Run check now fails", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    mockRun.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Run check now" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not run bounce check/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("disables Run check now when the event is archived", async () => {
+    mockFetch.mockResolvedValueOnce(bounceResponse({ enabled: true, lastRun: null }));
+    renderPanel(true);
+    expect(isDisabled(await screen.findByRole("button", { name: "Run check now" }))).toBe(true);
   });
 
   it("disables Run check now when bounce detection is off", async () => {

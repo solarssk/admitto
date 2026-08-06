@@ -211,6 +211,24 @@ describe("ingestBounces", () => {
     );
   });
 
+  it("logs when persist last_run fails without failing the ingest", async () => {
+    const row = settings();
+    const logs: string[] = [];
+    const update = vi.fn().mockRejectedValue(new Error("db write failed"));
+    const db = eventScopedDb(row, {
+      bounceIngestSettings: { update },
+    }) as never;
+
+    const summary = await ingestBounces(db, {
+      eventId: "evt_1",
+      createProvider: async () => mockProvider([]),
+      log: (msg) => logs.push(msg),
+    });
+
+    expect(summary.connectFailed).toBe(false);
+    expect(logs.some((m) => m.includes("persist last_run failed"))).toBe(true);
+  });
+
   it("does not persist last_run on noop disabled settings", async () => {
     const row = settings({ enabled: false });
     const update = vi.fn();

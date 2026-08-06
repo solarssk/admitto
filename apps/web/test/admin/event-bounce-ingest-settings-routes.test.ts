@@ -769,6 +769,147 @@ describe("event bounce ingest settings routes", () => {
     );
   });
 
+  it("POST run returns ok:false when connect fails", async () => {
+    const row = {
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: true,
+      last_run_at: new Date("2026-08-06T10:00:00.000Z"),
+      last_run_ok: false,
+      last_run_summary: {
+        messagesSeen: 0,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 1,
+        connectFailed: true,
+      },
+    };
+    const findUnique = vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(row);
+    const db = baseDb({ bounceIngestSettings: { findUnique } });
+    vi.mocked(ingestBounces).mockResolvedValueOnce({
+      eventsProcessed: 1,
+      messagesSeen: 0,
+      bouncesApplied: 0,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 1,
+      connectFailed: true,
+    });
+
+    const res = await handlePostEventBounceIngestSettingsRun(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; message: string };
+    expect(json.ok).toBe(false);
+    expect(json.message).toMatch(/could not connect/i);
+  });
+
+  it("POST run message mentions errors when connect works but ingest errors", async () => {
+    const row = {
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: true,
+      last_run_at: new Date("2026-08-06T10:00:00.000Z"),
+      last_run_ok: false,
+      last_run_summary: {
+        messagesSeen: 3,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 2,
+        connectFailed: false,
+      },
+    };
+    const findUnique = vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(row);
+    const db = baseDb({ bounceIngestSettings: { findUnique } });
+    vi.mocked(ingestBounces).mockResolvedValueOnce({
+      eventsProcessed: 1,
+      messagesSeen: 3,
+      bouncesApplied: 0,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 2,
+      connectFailed: false,
+    });
+
+    const res = await handlePostEventBounceIngestSettingsRun(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    const json = (await res.json()) as { ok: boolean; message: string };
+    expect(json.ok).toBe(false);
+    expect(json.message).toMatch(/finished with errors/i);
+  });
+
+  it("POST run still returns lastRun when audit logging fails", async () => {
+    const row = {
+      id: "bis_1",
+      event_id: "evt_1",
+      imap_host: "imap.example.com",
+      imap_port: 993,
+      imap_username: "bounce@example.com",
+      imap_password_enc: "enc:pw",
+      reuse_smtp_credentials: false,
+      folders: ["INBOX"],
+      poll_interval_minutes: 5,
+      enabled: true,
+      last_run_at: new Date("2026-08-06T10:00:00.000Z"),
+      last_run_ok: true,
+      last_run_summary: {
+        messagesSeen: 1,
+        bouncesApplied: 0,
+        softBouncesLogged: 0,
+        unparsed: 0,
+        noMatchingDelivery: 0,
+        errors: 0,
+        connectFailed: false,
+      },
+    };
+    const findUnique = vi.fn().mockResolvedValueOnce(row).mockResolvedValueOnce(row);
+    const db = baseDb({ bounceIngestSettings: { findUnique } });
+    vi.mocked(ingestBounces).mockResolvedValueOnce({
+      eventsProcessed: 1,
+      messagesSeen: 1,
+      bouncesApplied: 0,
+      softBouncesLogged: 0,
+      unparsed: 0,
+      noMatchingDelivery: 0,
+      errors: 0,
+      connectFailed: false,
+    });
+    vi.mocked(writeAdminAuditLog).mockRejectedValueOnce(new Error("audit down"));
+
+    const res = await handlePostEventBounceIngestSettingsRun(
+      mockContext({ eventId: "evt_1" }),
+      db as never,
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { ok: boolean; lastRun: { ok: boolean } | null };
+    expect(json.ok).toBe(true);
+    expect(json.lastRun?.ok).toBe(true);
+  });
+
   it("PUT returns 404 when the event is missing", async () => {
     const db = baseDb({
       event: { findUnique: vi.fn().mockResolvedValue(null) },

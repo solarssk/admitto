@@ -26,6 +26,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
+  EventBounceIngestLastRunDto,
   EventBounceIngestSettingsResponse,
   MailSecretFieldDto,
   SaveEventBounceIngestSettingsBody,
@@ -35,7 +36,6 @@ import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow } from "./mailTransportFormParts.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
-import type { EventBounceIngestLastRunDto } from "../api/types.js";
 
 const POLL_OPTIONS = [
   { value: 5, label: "5 minutes" },
@@ -77,6 +77,99 @@ function lastRunCountsLine(run: EventBounceIngestLastRunDto): string {
   if (run.connectFailed) parts.push("connect failed");
   return parts.join(" · ");
 }
+
+function LastRunSummary({ run }: Readonly<{ run: EventBounceIngestLastRunDto }>) {
+  return (
+    <output
+      className={`org-mail-summary${
+        run.ok ? " org-mail-summary--configured" : " org-mail-summary--failed"
+      }`}
+    >
+      <span className="org-mail-summary__icon">
+        <i
+          className={`ti ${run.ok ? "ti-circle-check" : "ti-alert-circle"}`}
+          aria-hidden="true"
+        />
+      </span>
+      <div className="org-mail-summary__body">
+        <strong>
+          {run.ok ? "OK" : "Failed"}
+          {" · "}
+          {formatEventDateTime(run.at, getBrowserTimeZone())}
+        </strong>
+        <span>{lastRunCountsLine(run)}</span>
+      </div>
+    </output>
+  );
+}
+
+function LastAutomaticCheckBody({
+  lastRun,
+  enabled,
+}: Readonly<{
+  lastRun: EventBounceIngestLastRunDto | null | undefined;
+  enabled: boolean;
+}>) {
+  if (!lastRun && !enabled) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-player-pause" aria-hidden="true" />}
+        title="Off"
+        description="Turn bounce detection on and save. Automatic checks will appear here after bounce-ingest runs."
+      />
+    );
+  }
+  if (!lastRun) {
+    return (
+      <EmptyState
+        icon={<i className="ti ti-clock" aria-hidden="true" />}
+        title="Waiting for first automatic check"
+        description="Status appears after bounce-ingest runs for this event, or when you use Run check now. Test connection does not update this card."
+      />
+    );
+  }
+  return <LastRunSummary run={lastRun} />;
+}
+
+function RunCheckNowButton({
+  blockedReason,
+  running,
+  onRun,
+}: Readonly<{
+  blockedReason: string | undefined;
+  running: boolean;
+  onRun: () => void;
+}>) {
+  if (blockedReason) {
+    return (
+      <Tooltip content={blockedReason}>
+        <span>
+          <Button type="button" variant="secondary" size="sm" disabled>
+            Run check now
+          </Button>
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip content="Poll the bounce mailbox once and update this card">
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        icon={
+          <i className={`ti ti-refresh${running ? " at-spin" : ""}`} aria-hidden="true" />
+        }
+        onClick={onRun}
+        disabled={running}
+        aria-busy={running}
+      >
+        Run check now
+      </Button>
+    </Tooltip>
+  );
+}
+
 type Draft = {
   enabled: boolean;
   imapHost: string;
@@ -370,7 +463,6 @@ export const EventBounceIngestPanel = forwardRef<
     apiData?.configured ?? false,
     apiData?.enabled ?? false,
   );
-  const runBlocked = Boolean(runBlockedReason);
   const testReasonId = "event-bounce-ingest-test-reason";
 
   return (
@@ -538,71 +630,14 @@ export const EventBounceIngestPanel = forwardRef<
       <Card
         title={<HintLabel hint={LAST_RUN_HINT}>Last automatic check</HintLabel>}
         actions={
-          runBlocked ? (
-            <Tooltip content={runBlockedReason}>
-              <span>
-                <Button type="button" variant="secondary" size="sm" disabled>
-                  Run check now
-                </Button>
-              </span>
-            </Tooltip>
-          ) : (
-            <Tooltip content="Poll the bounce mailbox once and update this card">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                icon={
-                  <i
-                    className={`ti ti-refresh${runningCheck ? " at-spin" : ""}`}
-                    aria-hidden="true"
-                  />
-                }
-                onClick={() => void handleRunCheck()}
-                disabled={runningCheck}
-                aria-busy={runningCheck}
-              >
-                Run check now
-              </Button>
-            </Tooltip>
-          )
+          <RunCheckNowButton
+            blockedReason={runBlockedReason}
+            running={runningCheck}
+            onRun={() => void handleRunCheck()}
+          />
         }
       >
-        {!apiData?.lastRun && !apiData?.enabled ? (
-          <EmptyState
-            icon={<i className="ti ti-player-pause" aria-hidden="true" />}
-            title="Off"
-            description="Turn bounce detection on and save. Automatic checks will appear here after bounce-ingest runs."
-          />
-        ) : !apiData?.lastRun ? (
-          <EmptyState
-            icon={<i className="ti ti-clock" aria-hidden="true" />}
-            title="Waiting for first automatic check"
-            description="Status appears after bounce-ingest runs for this event, or when you use Run check now. Test connection does not update this card."
-          />
-        ) : (
-          <div
-            className={`org-mail-summary${
-              apiData.lastRun.ok ? " org-mail-summary--configured" : " org-mail-summary--failed"
-            }`}
-            role="status"
-          >
-            <span className="org-mail-summary__icon">
-              <i
-                className={`ti ${apiData.lastRun.ok ? "ti-circle-check" : "ti-alert-circle"}`}
-                aria-hidden="true"
-              />
-            </span>
-            <div className="org-mail-summary__body">
-              <strong>
-                {apiData.lastRun.ok ? "OK" : "Failed"}
-                {" · "}
-                {formatEventDateTime(apiData.lastRun.at, getBrowserTimeZone())}
-              </strong>
-              <span>{lastRunCountsLine(apiData.lastRun)}</span>
-            </div>
-          </div>
-        )}
+        <LastAutomaticCheckBody lastRun={apiData?.lastRun} enabled={apiData?.enabled ?? false} />
       </Card>
     </div>
   );
