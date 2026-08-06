@@ -59,6 +59,8 @@ function formatActorStamp(iso: string, timezone: string | null | undefined): str
 type SettingsForm = {
   title: string;
   date: string;
+  eventHoursStart: string;
+  eventHoursEnd: string;
   timezone: string;
   capacity: string;
   logoUrl: string;
@@ -69,6 +71,8 @@ type SettingsForm = {
 type SettingsPatch = Partial<{
   title: string;
   date: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   timezone: string;
   capacity: number | null;
   logo_url: string | null;
@@ -109,6 +113,8 @@ function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
     date: data.date.split("T")[0] ?? "",
+    eventHoursStart: data.event_hours_start ?? "",
+    eventHoursEnd: data.event_hours_end ?? "",
     timezone: data.timezone,
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
@@ -133,6 +139,12 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   const title = form.title.trim();
   if (title !== original.title.trim()) patch.title = title;
   if (form.date !== original.date) patch.date = form.date;
+  if (form.eventHoursStart !== original.eventHoursStart) {
+    patch.event_hours_start = form.eventHoursStart.trim() || null;
+  }
+  if (form.eventHoursEnd !== original.eventHoursEnd) {
+    patch.event_hours_end = form.eventHoursEnd.trim() || null;
+  }
   if (form.timezone !== original.timezone) patch.timezone = form.timezone;
   if (form.capacity.trim() !== original.capacity.trim()) {
     patch.capacity = parseCapacityInput(form.capacity);
@@ -949,6 +961,28 @@ export function EventSettingsPage() {
                   placeholder="500"
                   hint="Leave blank for unlimited."
                   onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="settings-field-row">
+              <div className="settings-field-group">
+                <Input
+                  type="time"
+                  label="Event hours — start"
+                  hint="Optional. Shown on tickets and wallet passes as a time range."
+                  value={form.eventHoursStart}
+                  disabled={isArchived || saving}
+                  onChange={(e) => setForm({ ...form, eventHoursStart: e.target.value })}
+                />
+              </div>
+              <div className="settings-field-group">
+                <Input
+                  type="time"
+                  label="Event hours — end"
+                  value={form.eventHoursEnd}
+                  disabled={isArchived || saving}
+                  onChange={(e) => setForm({ ...form, eventHoursEnd: e.target.value })}
                 />
               </div>
             </div>

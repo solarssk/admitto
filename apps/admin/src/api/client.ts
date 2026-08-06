@@ -455,6 +455,8 @@ export async function patchEvent(
     title: string;
     date: string;
     timezone: string;
+    event_hours_start: string | null;
+    event_hours_end: string | null;
     location: string | null;
     capacity: number | null;
     logo_url: string | null;

@@ -12,6 +12,8 @@ const baseRow = {
   slug: "demo",
   date: new Date("2026-09-01T12:00:00.000Z"),
   timezone: "Europe/Warsaw",
+  event_hours_start: null,
+  event_hours_end: null,
   location: "Hall A",
   organization_id: "org-1",
   archived_at: null,

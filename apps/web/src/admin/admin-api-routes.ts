@@ -15,6 +15,7 @@ import { resolveMapTileConfig } from "../maps/config.js";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
+  eventHoursField,
   isValidCalendarDate,
   parseEventDateInput,
   resolveActorEmailForLog,
@@ -47,6 +48,8 @@ const createEventSchema = z.object({
   slug: slugField,
   date: z.union([z.string().datetime({ offset: true }), dateOnlyField]),
   timezone: timezoneField,
+  event_hours_start: eventHoursField,
+  event_hours_end: eventHoursField,
   venue_name: z.string().trim().max(LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH).optional(),
   formatted_address: z.string().trim().max(LOCATION_LIMITS.ADDRESS_MAX_LENGTH).optional(),
   latitude: z.number().min(LOCATION_LIMITS.LATITUDE_MIN).max(LOCATION_LIMITS.LATITUDE_MAX).optional(),
@@ -60,6 +63,8 @@ type EventJsonRow = {
   slug: string;
   date: Date;
   timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   location: string | null;
   has_coordinates?: boolean;
   map_latitude?: number | null;
@@ -112,6 +117,8 @@ export function serializeEventDto(
     slug: event.slug,
     date: event.date.toISOString(),
     timezone: event.timezone,
+    event_hours_start: event.event_hours_start,
+    event_hours_end: event.event_hours_end,
     location: event.location,
     has_coordinates: event.has_coordinates === true,
     map_preview_path: mapPreviewPath,
@@ -223,8 +230,19 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
     return c.json({ error: message }, 400);
   }
 
-  const { title, slug, date, timezone, venue_name, formatted_address, latitude, longitude, geocoding_provider } =
-    parsed.data;
+  const {
+    title,
+    slug,
+    date,
+    timezone,
+    event_hours_start,
+    event_hours_end,
+    venue_name,
+    formatted_address,
+    latitude,
+    longitude,
+    geocoding_provider,
+  } = parsed.data;
   const dateValue = parseEventDateInput(date);
 
   try {
@@ -258,6 +276,8 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
           slug,
           date: dateValue,
           timezone,
+          event_hours_start: event_hours_start ?? null,
+          event_hours_end: event_hours_end ?? null,
           organization_id: orgId,
           created_by_user_id: actorUserId,
           created_by_timezone: audit.timezone,

@@ -33,6 +33,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [date, setDate] = useState("");
+  const [eventHoursStart, setEventHoursStart] = useState("");
+  const [eventHoursEnd, setEventHoursEnd] = useState("");
   const [timezone, setTimezone] = useState(defaultBrowserTimezone);
   const [venueName, setVenueName] = useState("");
   // Only set right after picking a geocoding suggestion; free-typed text carries just
@@ -52,6 +54,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
     setSlug("");
     setSlugTouched(false);
     setDate("");
+    setEventHoursStart("");
+    setEventHoursEnd("");
     setTimezone(defaultBrowserTimezone());
     setVenueName("");
     setVenueGeocode(null);
@@ -78,6 +82,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
         slug: slug.trim(),
         date,
         timezone,
+        event_hours_start: eventHoursStart || undefined,
+        event_hours_end: eventHoursEnd || undefined,
         venue_name: venueName.trim() || undefined,
         formatted_address: venueGeocode?.formatted_address,
         latitude: venueGeocode?.latitude,
@@ -152,6 +158,23 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             required
             disabled={submitting}
             onChange={setDate}
+          />
+          <Input
+            id="ce-hours-start"
+            type="time"
+            label="Event hours — start"
+            hint="Optional. Shown on tickets and wallet passes as a time range."
+            value={eventHoursStart}
+            disabled={submitting}
+            onChange={(e) => setEventHoursStart(e.target.value)}
+          />
+          <Input
+            id="ce-hours-end"
+            type="time"
+            label="Event hours — end"
+            value={eventHoursEnd}
+            disabled={submitting}
+            onChange={(e) => setEventHoursEnd(e.target.value)}
           />
           <div className="at-field">
             <label className="at-label" htmlFor={timezoneId}>

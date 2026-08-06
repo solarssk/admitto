@@ -10,6 +10,9 @@ export type EventSettingsDto = {
   slug: string;
   date: string;
   timezone: string;
+  /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   capacity: number | null;
   status: "active" | "archived";
   /** Null unless status is "archived". */

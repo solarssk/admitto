@@ -45,6 +45,9 @@ export interface EventDto {
   slug: string;
   date: string;
   timezone: string;
+  /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   location: string | null;
   /** True when EventLocation has both latitude and longitude. */
   has_coordinates?: boolean;
@@ -90,6 +93,9 @@ export interface CreateEventBody {
   slug: string;
   date: string;
   timezone: string;
+  /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
+  event_hours_start?: string;
+  event_hours_end?: string;
   /** Short display name, e.g. "National Stadium" - free text, or picked from a geocoding
    * suggestion alongside the fields below. */
   venue_name?: string;

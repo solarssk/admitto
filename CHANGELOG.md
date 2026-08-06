@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Event hours (start/end).** New Event and Event settings → Basic information now have an optional "Event hours" start/end time field, shown as a range on tickets and (later) wallet passes. Leave blank to omit.
 - **Bounce detection last automatic check.** Event settings → Mailing shows the latest bounce-ingest run (time, OK/Failed, message counts). **Run check now** in the card header triggers a one-off ingest and updates the card (Test connection still does not). Settings → Health adds a soft **Bounce detection** row (`not_configured` / `ok` / `degraded`) based on enabled events' last runs. Does not affect `/healthz`.
 - **Bounce detection Check every** now controls when each event is due for bounce-ingest. The deploy loop wakes on `BOUNCE_INGEST_TICK_SECONDS` (default 60; legacy `BOUNCE_INGEST_INTERVAL_SECONDS` still accepted as the tick) and skips events whose poll interval has not elapsed.
 - **Bounce-ingest System Logs bridge.** When `OPS_HEALTH_TOKEN` and `BOUNCE_INGEST_APP_URL` are set, each event run POSTs `mail_bounce_ingest_ok` / `mail_bounce_ingest_failed` into Settings → Logs (mail). Missing config is a quiet no-op (stdout only).

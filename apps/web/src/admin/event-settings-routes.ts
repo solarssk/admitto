@@ -21,6 +21,7 @@ import { z } from "zod";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
+  eventHoursField,
   isValidCalendarDate,
   parseEventDateInput,
   requireEventId,
@@ -62,6 +63,8 @@ const patchEventSchema = z
     date: z.union([z.string().datetime(), dateOnlyField]).optional(),
     capacity: z.number().int().positive().max(PG_INT_MAX).nullish(),
     timezone: timezoneField.optional(),
+    event_hours_start: eventHoursField,
+    event_hours_end: eventHoursField,
     logo_url: z.string().trim().max(2000).nullish(),
     logo_original_url: z.string().trim().max(2000).nullish(),
     logo_crop: logoCropSchema,
@@ -77,6 +80,8 @@ type EventSettingsRow = {
   slug: string;
   date: Date;
   timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   capacity: number | null;
   archived_at: Date | null;
   archived_by_timezone: string | null;
@@ -103,6 +108,8 @@ function serializeEventSettings(
     slug: event.slug,
     date: event.date.toISOString(),
     timezone: event.timezone,
+    event_hours_start: event.event_hours_start,
+    event_hours_end: event.event_hours_end,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
@@ -133,6 +140,8 @@ const EVENT_SETTINGS_SELECT = {
   slug: true,
   date: true,
   timezone: true,
+  event_hours_start: true,
+  event_hours_end: true,
   capacity: true,
   archived_at: true,
   archived_by_timezone: true,
@@ -227,12 +236,16 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   title?: string;
   date?: Date;
   timezone?: string;
+  event_hours_start?: string | null;
+  event_hours_end?: string | null;
   capacity?: number | null;
 } {
   const data: ReturnType<typeof buildBasicFieldsPatch> = {};
   if (patch.title !== undefined) data.title = patch.title.trim();
   if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
   if (patch.timezone !== undefined) data.timezone = patch.timezone;
+  if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
+  if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
 }
@@ -336,6 +349,8 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     title?: string;
     date?: Date;
     timezone?: string;
+    event_hours_start?: string | null;
+    event_hours_end?: string | null;
     capacity?: number | null;
     logo_url?: string | null;
     logo_original_url?: string | null;
