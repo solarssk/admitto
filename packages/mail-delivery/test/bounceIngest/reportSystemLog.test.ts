@@ -57,6 +57,17 @@ describe("bounceIngestSystemLogEnv", () => {
       opsHealthToken: "ops",
     });
   });
+
+  it("returns undefined URL and token when env is empty", () => {
+    expect(bounceIngestSystemLogEnv({})).toEqual({
+      appBaseUrl: undefined,
+      opsHealthToken: undefined,
+    });
+    expect(bounceIngestSystemLogEnv({ OPS_HEALTH_TOKEN: "   " })).toEqual({
+      appBaseUrl: undefined,
+      opsHealthToken: undefined,
+    });
+  });
 });
 
 describe("reportBounceIngestSystemLog", () => {
