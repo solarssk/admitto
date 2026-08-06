@@ -57,8 +57,12 @@ const BOUNCE_REUSE_HINT_AVAILABLE =
 const BOUNCE_REUSE_HINT_UNAVAILABLE =
   "Available when this event's mail transport is SMTP.";
 
-const CHECK_EVERY_HINT =
-  "Shown for planning. The deploy bounce-ingest interval still controls how often automatic checks run in this version.";
+/** One-line field hint under Check every (keep short so the row stays single-line). */
+const CHECK_EVERY_HINT = "How often to plan mailbox checks for this event.";
+
+/** Longer deploy detail on the (i) next to the label. */
+const CHECK_EVERY_INFO =
+  "In this version the deploy bounce-ingest interval still controls how often automatic checks run.";
 
 const LAST_RUN_HINT =
   "Updated by the bounce-ingest automatic check, not by Test connection.";
@@ -440,7 +444,7 @@ export const EventBounceIngestPanel = forwardRef<
               />
               <div className="event-bounce-ingest__poll-and-test">
                 <Select
-                  label="Check every"
+                  label={<HintLabel hint={CHECK_EVERY_INFO}>Check every</HintLabel>}
                   hint={CHECK_EVERY_HINT}
                   className="event-bounce-ingest__poll-select"
                   value={String(draft.pollIntervalMinutes)}

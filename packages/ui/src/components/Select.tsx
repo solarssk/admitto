@@ -1,7 +1,8 @@
 import { useId, type ReactNode, type SelectHTMLAttributes } from "react";
 
 export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
-  label?: string;
+  /** Plain text, or a node such as HintLabel for an (i) on the field name. */
+  label?: ReactNode;
   hint?: string;
   children?: ReactNode;
 }
