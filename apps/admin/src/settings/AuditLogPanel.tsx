@@ -69,6 +69,8 @@ const ACTION_LABELS: Record<string, string> = {
   operator_sessions_bulk_revoked: "Operator sessions revoked",
   org_branding_logo_uploaded: "Organization branding logo uploaded",
   branding_font_uploaded: "Branding font uploaded",
+  bounce_ingest_settings_tested: "Bounce detection connection tested",
+  bounce_ingest_settings_updated: "Bounce detection settings updated",
   retention_run: "Retention job run",
   role_granted: "Role granted",
   role_revoked: "Role revoked",

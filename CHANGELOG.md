@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bounce ingest looks up matching deliveries in one query per folder poll**, instead of one database round-trip per parsed NDR recipient line.
 - **Bounce free-text NDR dialects are a matcher table** in `parseBounceLine` (Postfix / mailhop / Synology / orphan `failed:`), so new MTA formats can be added without growing one inline function. Bounce probe reuses the same IMAP open helper as ingest.
 
+### Fixed
+- **Audit log shows friendly labels for bounce detection actions** (`Bounce detection settings updated` / `Bounce detection connection tested`) instead of raw `bounce_ingest_settings_*` snake_case.
+
 ### Security
 - **External services weather base URL and geocoding base URL reject private, loopback, link-local, and cloud-metadata hosts** (including DNS recheck) before save or Test connection, so UI-editable endpoints cannot be used to probe internal networks from the web process.
 - **Users & roles: two review-flagged authorization gaps closed.** An implicit role-type switch (granting a different role type replaces the old one) now re-checks revoke authorization against the freshly-refetched assignments inside the same transaction, not just once beforehand, closing a narrow window where a concurrent grant could let the switch remove access the actor was never authorized to revoke on its own. OIDC group-role sync no longer creates a second, conflicting role type on top of an assignment (manual or from another OIDC rule) a user already holds at login time; it defers to whichever type they already have instead, the same "never delete a pre-existing assignment" rule the sync already applied to deletions.
