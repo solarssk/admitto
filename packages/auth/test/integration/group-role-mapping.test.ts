@@ -157,6 +157,106 @@ describe("applyOidcGroupRoleMappings", () => {
     expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(0);
   });
 
+  it("does not create a second role type on top of an existing manual assignment", async () => {
+    // Roles are exclusive by type (handlePostUserRole enforces this for the admin UI's explicit
+    // switch); OIDC sync must never silently violate that by adding a conflicting type underneath.
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+
+    await prisma.roleAssignment.create({
+      data: { user_id: USER_ID, role: "admin", scope_type: "organization", scope_id: EVENT_ID },
+    });
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "operators",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+
+    const changed = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["operators"]);
+    expect(changed).toBe(0);
+    const roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
+    expect(roles).toHaveLength(1);
+    expect(roles[0]?.role).toBe("admin");
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(0);
+  });
+
+  it("does not create a second role type on top of an existing OIDC-owned assignment", async () => {
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "admins",
+        role: "admin",
+        scope_type: "organization",
+        scope_id: EVENT_ID,
+      },
+    });
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "operators",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+
+    // Both rules match on this login - the higher-precedence role type wins, never both, and
+    // the winner is deterministic (admin over operator) regardless of DB row order.
+    const changed = await applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admins", "operators"]);
+    expect(changed).toBe(1);
+    const roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
+    expect(roles).toHaveLength(1);
+    expect(roles[0]?.role).toBe("admin");
+  });
+
+  it("serializes cross-type grant creation instead of racing two conflicting types", async () => {
+    // Two login-time syncs racing for the same user - e.g. two linked providers, or two logins
+    // in quick succession - each processing a rule of a different role type. Without a
+    // Serializable transaction around the exclusivity check, each per-rule transaction could
+    // pass "no other role type yet" under plain read-committed before either commits, leaving
+    // the user with two conflicting role types (bot review finding on #722).
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "admins",
+        role: "admin",
+        scope_type: "organization",
+        scope_id: EVENT_ID,
+      },
+    });
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "operators",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+
+    await Promise.all([
+      applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["admins"]),
+      applyOidcGroupRoleMappings(prisma, PROVIDER_ID, USER_ID, ["operators"]),
+    ]);
+
+    const roles = await prisma.roleAssignment.findMany({ where: { user_id: USER_ID } });
+    expect(roles).toHaveLength(1);
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: USER_ID } })).toBe(1);
+  });
+
   it("revokes grant when mapping rule is removed", async () => {
     await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
     await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });

@@ -102,6 +102,11 @@ describe("ActiveSessionsTab rendering", () => {
 
     expect(await screen.findByText("No sessions match this filter")).toBeTruthy();
     expect(screen.queryByText("No active sessions")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    expect(await screen.findByRole("radio", { name: "All", checked: true })).toBeTruthy();
+    expect((screen.getByLabelText("Search sessions by user name or email") as HTMLInputElement).value).toBe("");
   });
 
   it("the Operators filter shows only operator-role sessions", async () => {
@@ -119,6 +124,40 @@ describe("ActiveSessionsTab rendering", () => {
 
     expect(screen.getByText("operator@example.com")).toBeTruthy();
     expect(screen.queryByText("admin@example.com")).toBeNull();
+  });
+
+  it("filters sessions by user name or email as you type, no debounce needed (client-side)", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "s-jane", userEmail: "jane@example.com", userDisplayName: "Jane Doe" }),
+        makeSession({ id: "s-bob", userEmail: "bob@example.com", userDisplayName: "Bob Smith" }),
+      ],
+    });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.change(screen.getByLabelText("Search sessions by user name or email"), {
+      target: { value: "jane" },
+    });
+
+    expect(screen.getByText("Jane Doe")).toBeTruthy();
+    expect(screen.queryByText("Bob Smith")).toBeNull();
+  });
+
+  it("matches by email when the session has no display name", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [makeSession({ userEmail: "noname@example.com", userDisplayName: null })],
+    });
+
+    renderWithToast(<ActiveSessionsTab />);
+
+    await screen.findByRole("table");
+    fireEvent.change(screen.getByLabelText("Search sessions by user name or email"), {
+      target: { value: "noname" },
+    });
+
+    expect(screen.getByText("noname@example.com")).toBeTruthy();
   });
 
   it("changing rows-per-page resets to page 1 and updates the page slice", async () => {

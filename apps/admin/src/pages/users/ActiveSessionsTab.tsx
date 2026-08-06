@@ -40,6 +40,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterValue>("all");
+  const [searchInput, setSearchInput] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [confirmTarget, setConfirmTarget] = useState<SessionListDto | null>(null);
@@ -75,9 +76,14 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
       .catch(() => {});
   }, [load]);
 
+  const search = searchInput.trim().toLowerCase();
   const displayed = sessions.filter((s) => {
-    if (filter === "admin") return s.role === "admin" || s.role === "superadmin";
-    if (filter === "operator") return s.role === "operator";
+    if (filter === "admin" && s.role !== "admin" && s.role !== "superadmin") return false;
+    if (filter === "operator" && s.role !== "operator") return false;
+    if (search) {
+      const haystack = `${s.userDisplayName ?? ""} ${s.userEmail}`.toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
     return true;
   });
   const total = displayed.length;
@@ -142,16 +148,33 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
       <Card
         title="Sessions"
         actions={
-          <Segmented
-            ariaLabel="Filter sessions by role"
-            value={filter}
-            onChange={(f) => {
-              setFilter(f);
-              setPage(1);
-            }}
-            options={FILTER_OPTIONS}
-            className="sessions-filter-toggle"
-          />
+          <div className="users-page__toolbar users-page__toolbar--card-actions">
+            <label className="users-page__search">
+              <i className="ti ti-search" aria-hidden="true" />
+              <input
+                id="sessions-search"
+                name="sessions-search"
+                type="search"
+                aria-label="Search sessions by user name or email"
+                placeholder="Search name or email"
+                value={searchInput}
+                onChange={(e) => {
+                  setSearchInput(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </label>
+            <Segmented
+              ariaLabel="Filter sessions by role"
+              value={filter}
+              onChange={(f) => {
+                setFilter(f);
+                setPage(1);
+              }}
+              options={FILTER_OPTIONS}
+              className="sessions-filter-toggle"
+            />
+          </div>
         }
       >
         {loading && showLoading && <p className="sessions-status">Loading…</p>}
@@ -177,14 +200,34 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
           <EmptyState
             icon={<i className="ti ti-filter-off" aria-hidden="true" />}
             title="No sessions match this filter"
-            description="Select All to see every active staff session."
+            description="Try a different name or email, or select All to see every active staff session."
+            // total === 0 && sessions.length > 0 (the guard on this whole EmptyState above) can
+            // only happen when the client-side filter excluded something - i.e. searchInput or
+            // filter !== "all" is already true here, so the bare EmptyState fallback below can
+            // never actually render; kept only so this stays valid without an action at all.
+            action={
+              /* v8 ignore next */
+              searchInput || filter !== "all" ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setSearchInput("");
+                    setFilter("all");
+                    setPage(1);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
           />
         )}
 
         {!loading && !error && total > 0 && (
           <>
             {isDesktop ? (
-              <div className="sessions-table-wrap">
+              <div className="users-page__table-wrap">
                 <table className="table">
                   <thead>
                     <tr>

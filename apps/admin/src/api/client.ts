@@ -217,14 +217,16 @@ function jsonPostInit(body: unknown): RequestInit {
   };
 }
 
-function jsonDeleteInit(): RequestInit {
+function jsonDeleteInit(body?: unknown): RequestInit {
   return {
     method: "DELETE",
     credentials: "same-origin",
     headers: {
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       Origin: window.location.origin,
       "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   };
 }
 
@@ -1842,6 +1844,17 @@ export async function resetUserMfa(id: string): Promise<{ ok: boolean }> {
   return parseJson<{ ok: boolean }>(res);
 }
 
+export async function unlinkUserExternalIdentity(
+  id: string,
+  body: ResetUserPasswordBody,
+): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/external-identity`,
+    jsonDeleteInit(body),
+  );
+  return parseJson<{ ok: boolean }>(res);
+}
+
 export async function resetUserPassword(
   id: string,
   body: ResetUserPasswordBody,
@@ -1864,13 +1877,14 @@ export async function revokeUserSessions(
 }
 
 export async function fetchRoleAssignments(
-  params: { page?: number; pageSize?: number } = {},
+  params: { q?: string; page?: number; pageSize?: number } = {},
   signal?: AbortSignal,
 ): Promise<RoleAssignmentsListResponse> {
-  const q = new URLSearchParams();
-  if (params.page != null) q.set("page", String(params.page));
-  if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
-  const qs = q.toString();
+  const search = new URLSearchParams();
+  if (params.q) search.set("q", params.q);
+  if (params.page != null) search.set("page", String(params.page));
+  if (params.pageSize != null) search.set("pageSize", String(params.pageSize));
+  const qs = search.toString();
   const queryPart = qs ? `?${qs}` : "";
   const res = await fetch(`/api/admin/role-assignments${queryPart}`, {
     credentials: "same-origin",
@@ -1983,6 +1997,10 @@ export async function exportAuditLog(params: AuditLogFilterParams, signal?: Abor
 
 export type SecurityAuditLogFilterParams = {
   eventType?: string;
+  /** Exact user id - preferred over `search` whenever the caller already knows it (e.g. the Edit
+   * user modal's Recent logins), since `search` matches email/display name by substring and can
+   * cross-match a second account. */
+  userId?: string;
   search?: string;
   start?: string;
   end?: string;
@@ -1991,6 +2009,7 @@ export type SecurityAuditLogFilterParams = {
 function securityAuditLogQuery(params: SecurityAuditLogFilterParams): URLSearchParams {
   const q = new URLSearchParams();
   if (params.eventType) q.set("event_type", params.eventType);
+  if (params.userId) q.set("user_id", params.userId);
   if (params.search) q.set("search", params.search);
   if (params.start) q.set("start", params.start);
   if (params.end) q.set("end", params.end);

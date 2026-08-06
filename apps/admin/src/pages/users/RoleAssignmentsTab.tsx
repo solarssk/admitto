@@ -15,6 +15,7 @@ const SKELETON_ROWS = 4;
 // GET /api/admin/role-assignments caps pageSize at 50 server-side - options here must not
 // exceed that, or a larger picked size silently returns a partial page with unreachable rows.
 const PAGE_SIZE_OPTIONS = [25, 50] as const;
+const SEARCH_DEBOUNCE_MS = 300;
 
 function scopeLabel(row: RoleAssignmentListItemDto): string {
   if (row.scope_type === "event" && row.event) return row.event.title;
@@ -107,11 +108,14 @@ type RoleAssignmentsTabProps = {
   /** Called after a successful revoke so the parent's Staff users list (and any open Edit
    * modal, which renders from that same list) picks up the change without a full page reload. */
   onAssignmentsChanged?: () => void;
+  /** Reports the total row count so the parent can show it on the tab label, matching Staff
+   * users and Active sessions. */
+  onCountChange?: (count: number) => void;
 };
 
 /** Role assignments tab — per-event/org grants with revoke action. */
-export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssignmentsTabProps>) {
-  const { assignments } = useAuth();
+export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Readonly<RoleAssignmentsTabProps>) {
+  const { assignments, user: currentUser } = useAuth();
   const { addToast } = useToast();
   const canRevokeAll = isSuperadmin(assignments);
   const [rows, setRows] = useState<RoleAssignmentListItemDto[]>([]);
@@ -120,25 +124,38 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [confirmTarget, setConfirmTarget] = useState<RoleAssignmentListItemDto | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const trimmed = searchInput.trim();
+      if (trimmed === searchQuery) return;
+      setSearchQuery(trimmed);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, searchQuery]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchRoleAssignments({ page, pageSize }, signal);
+      const data = await fetchRoleAssignments({ q: searchQuery || undefined, page, pageSize }, signal);
       if (signal?.aborted) return;
       setRows(data.assignments);
       setTotal(data.total);
+      onCountChange?.(data.total);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
       setError(operatorApiErrorMessage(err, "Failed to load role assignments."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [page, pageSize]);
+  }, [searchQuery, page, pageSize, onCountChange]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -174,13 +191,28 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
   };
 
   const canRevokeRow = (row: RoleAssignmentListItemDto) => {
-    if (row.is_oidc) return false;
+    if (row.is_oidc || row.user_id === currentUser.id) return false;
     if (canRevokeAll) return true;
     return row.role === "operator" && row.scope_type === "event";
   };
 
   return (
     <>
+      <div className="users-page__toolbar">
+        <label className="users-page__search">
+          <i className="ti ti-search" aria-hidden="true" />
+          <input
+            id="role-assignments-search"
+            name="role-assignments-search"
+            type="search"
+            aria-label="Search role assignments by user name or email"
+            placeholder="Search name or email"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </label>
+      </div>
+
       {loading && showLoadingSkeleton && (
         <>
           <div className="users-page__table-wrap users-page__table-wrap--desktop" aria-hidden="true">
@@ -222,7 +254,20 @@ export function RoleAssignmentsTab({ onAssignmentsChanged }: Readonly<RoleAssign
         </div>
       )}
 
-      {!loading && !error && rows.length === 0 && (
+      {!loading && !error && rows.length === 0 && searchQuery && (
+        <EmptyState
+          icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+          title="No role assignments match your search"
+          description="Try a different name or email."
+          action={
+            <Button type="button" variant="secondary" onClick={() => setSearchInput("")}>
+              Clear search
+            </Button>
+          }
+        />
+      )}
+
+      {!loading && !error && rows.length === 0 && !searchQuery && (
         <EmptyState
           icon={<i className="ti ti-shield" aria-hidden="true" />}
           title="No role assignments yet"

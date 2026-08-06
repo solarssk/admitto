@@ -35,4 +35,13 @@ describe("fetchRoleAssignments (client) — query string building", () => {
     const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/admin/role-assignments?page=3&pageSize=50");
   });
+
+  it("includes q when given", async () => {
+    const fetchMock = stubFetch();
+
+    await fetchRoleAssignments({ q: "staff@example.com" });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/admin/role-assignments?q=staff%40example.com");
+  });
 });

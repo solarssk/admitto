@@ -380,6 +380,196 @@ describe("PATCH /api/admin/users/:id profile", () => {
       }),
     ).toMatchObject({ metadata: { userId: targetId } });
   });
+
+  it("saves and clears the phone country code and number", async () => {
+    const setRes = await app.request(`/api/admin/users/${targetId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: "+48", phone_number: "500100200" }),
+    });
+    expect(setRes.status).toBe(200);
+    let user = await prisma.user.findUniqueOrThrow({ where: { id: targetId } });
+    expect(user.phone_country_code).toBe("+48");
+    expect(user.phone_number).toBe("500100200");
+
+    const clearRes = await app.request(`/api/admin/users/${targetId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: "", phone_number: "" }),
+    });
+    expect(clearRes.status).toBe(200);
+    user = await prisma.user.findUniqueOrThrow({ where: { id: targetId } });
+    expect(user.phone_country_code).toBeNull();
+    expect(user.phone_number).toBeNull();
+  });
+
+  it("also clears the phone fields when the edit modal sends null instead of an empty string", async () => {
+    // The Edit user modal always sends both phone fields, using null (not "") to mean "cleared" -
+    // typeof body.phone_country_code === "string" alone silently dropped a null, so a previously
+    // saved number could never actually be removed.
+    const setRes = await app.request(`/api/admin/users/${targetId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: "+48", phone_number: "500100200" }),
+    });
+    expect(setRes.status).toBe(200);
+
+    const clearRes = await app.request(`/api/admin/users/${targetId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ phone_country_code: null, phone_number: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: targetId } });
+    expect(user.phone_country_code).toBeNull();
+    expect(user.phone_number).toBeNull();
+  });
+});
+
+describe("PATCH /api/admin/users/:id email", () => {
+  const EMAIL_PATCH_ORIGINAL = "users-patch-email@example.com";
+  const EMAIL_PATCH_NEW = "users-patch-email-new@example.com";
+  let patchUserId = "";
+
+  beforeAll(async () => {
+    const created = await prisma.user.create({
+      data: { email: EMAIL_PATCH_ORIGINAL, password_hash: await hashPassword(PASSWORD) },
+    });
+    patchUserId = created.id;
+  });
+
+  afterAll(async () => {
+    await prisma.user.deleteMany({ where: { id: patchUserId } });
+  });
+
+  it("updates the email and records user_email_changed", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: EMAIL_PATCH_NEW }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user: { email: string } };
+    expect(body.user.email).toBe(EMAIL_PATCH_NEW);
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { organization_id: ORG_USERS, action_type: "user_email_changed" },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { userId: patchUserId } });
+  });
+
+  it("returns 409 email_conflict for a duplicate email", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: EMAIL_TARGET }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("email_conflict");
+  });
+
+  it("returns 400 invalid_email for a blank email", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "   " }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("invalid_email");
+  });
+
+  it("returns 400 invalid_email for a malformed email", async () => {
+    const res = await app.request(`/api/admin/users/${patchUserId}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "not-an-email" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("invalid_email");
+  });
+});
+
+describe("DELETE /api/admin/users/:id", () => {
+  let deleteUserId = "";
+  let deleteAssignmentId = "";
+
+  beforeAll(async () => {
+    const created = await prisma.user.create({
+      data: { email: "users-delete-target@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    deleteUserId = created.id;
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: deleteUserId, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    deleteAssignmentId = assignment.id;
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: deleteUserId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+    await createSession(prisma, { userId: deleteUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.9" });
+  });
+
+  it("returns 401 without auth", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { ...sameOrigin },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for operator", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { Cookie: operatorCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 409 cannot_delete_self", async () => {
+    const res = await app.request(`/api/admin/users/${superId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("cannot_delete_self");
+  });
+
+  it("deletes the user and cascades sessions, roles, and MFA methods", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+
+    expect(await prisma.user.findUnique({ where: { id: deleteUserId } })).toBeNull();
+    expect(await prisma.roleAssignment.findUnique({ where: { id: deleteAssignmentId } })).toBeNull();
+    expect(await prisma.session.findMany({ where: { user_id: deleteUserId } })).toHaveLength(0);
+    expect(await prisma.userMfaMethod.findMany({ where: { user_id: deleteUserId } })).toHaveLength(0);
+
+    expect(
+      await prisma.adminAuditLog.findFirst({
+        where: { organization_id: ORG_USERS, action_type: "user_deleted" },
+        orderBy: { created_at: "desc" },
+      }),
+    ).toMatchObject({ metadata: { userId: deleteUserId } });
+  });
+
+  it("returns 404 for an unknown user", async () => {
+    const res = await app.request(`/api/admin/users/${deleteUserId}`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("PATCH /api/admin/users/:id email", () => {
@@ -585,7 +775,13 @@ describe("DELETE /api/admin/users/:id", () => {
 });
 
 describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
-  it("returns 409 last_superadmin for final superadmin assignment", async () => {
+  // Revoking a superadmin-role assignment is only ever permitted when the actor is themselves
+  // a superadmin (assertRoleGrantAllowed forbids everyone else outright) - so with only one
+  // global superadmin in the fixtures, the *only* reachable actor for this call is that same
+  // superadmin, making self-revoke and "last superadmin" the same scenario. The self-check below
+  // now catches it first (a more specific, correct reason); last_superadmin stays in place as
+  // defense-in-depth for this path but isn't independently reachable via this route today.
+  it("returns 409 cannot_remove_own_role when a superadmin revokes their own assignment", async () => {
     const globalSuperadmins = await prisma.roleAssignment.count({
       where: { role: "superadmin", scope_type: "instance", scope_id: null },
     });
@@ -597,7 +793,7 @@ describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("last_superadmin");
+    expect(body.code).toBe("cannot_remove_own_role");
   });
 
   it("returns 409 managed_by_idp for OIDC-managed assignment", async () => {
@@ -675,6 +871,322 @@ describe("DELETE /api/admin/users/:id/roles/:assignmentId anti-lockout", () => {
   });
 });
 
+describe("POST /api/admin/users/:id/roles - exclusive role types", () => {
+  it("replaces an existing role type when granting a different one", async () => {
+    const created = await prisma.user.create({
+      data: { email: "role-switch@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const oldAssignment = await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "admin", scope_type: "organization", scope_id: ORG_USERS }),
+      });
+      expect(res.status).toBe(201);
+
+      const remaining = await prisma.roleAssignment.findMany({ where: { user_id: created.id } });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]?.role).toBe("admin");
+      expect(remaining[0]?.id).not.toBe(oldAssignment.id);
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("returns 409 managed_by_idp instead of silently deleting an OIDC-managed assignment on an implicit switch", async () => {
+    // Same guard the explicit DELETE .../roles/:assignmentId revoke already enforces
+    // (managed_by_idp), applied to the implicit revoke a role-type switch performs - otherwise
+    // granting an unrelated new role type is a back door around that guard.
+    const created = await prisma.user.create({
+      data: { email: "oidc-role-switch@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const oldAssignment = await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        user_id: created.id,
+        provider_id: PROVIDER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: eventId,
+        role_assignment_id: oldAssignment.id,
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "admin", scope_type: "organization", scope_id: ORG_USERS }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("managed_by_idp");
+
+      const stillThere = await prisma.roleAssignment.findUnique({ where: { id: oldAssignment.id } });
+      expect(stillThere).toBeTruthy();
+    } finally {
+      await prisma.oidcRoleGrant.deleteMany({ where: { user_id: created.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("adds another scope without removing existing ones when the role type is unchanged", async () => {
+    const created = await prisma.user.create({
+      data: { email: "role-add-scope@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "admin", scope_type: "organization", scope_id: ORG_USERS },
+    });
+
+    const secondOrg = await prisma.organization.create({
+      data: { name: "Second Org", slug: "second-org-role-test" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "admin", scope_type: "organization", scope_id: secondOrg.id }),
+      });
+      expect(res.status).toBe(201);
+
+      const remaining = await prisma.roleAssignment.findMany({ where: { user_id: created.id } });
+      expect(remaining).toHaveLength(2);
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+      await prisma.organization.deleteMany({ where: { id: secondOrg.id } });
+    }
+  });
+
+  it("returns 409 cannot_change_own_role when a superadmin tries to change their own role type", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "admin", scope_type: "organization", scope_id: ORG_USERS }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("cannot_change_own_role");
+
+    const stillSuperadmin = await prisma.roleAssignment.findFirst({
+      where: { user_id: superId, role: "superadmin", scope_type: "instance" },
+    });
+    expect(stillSuperadmin).toBeTruthy();
+  });
+
+  // No "last_superadmin via role switch" test here, deliberately: only a superadmin can grant or
+  // revoke a superadmin-scoped assignment (assertRoleGrantAllowed, and now assertRoleRevokeAllowed
+  // below), so reaching that guard with exactly one global superadmin means the acting superadmin
+  // *is* the target - the same structural argument as the DELETE .../roles/:assignmentId
+  // anti-lockout suite above. That case is caught earlier, by cannot_change_own_role.
+
+  it("returns 403 instead of silently replacing a target's unrelated admin/superadmin assignment", async () => {
+    // A role-type switch implicitly revokes the target's OLD-type assignment(s) -
+    // assertRoleGrantAllowed only authorizes the NEW grant, so this must independently confirm
+    // the actor is also allowed to revoke whatever it's about to replace. Without that check, an
+    // org-scoped admin's own event-grant authority (legitimate on its own) could silently strip
+    // a target's admin role over a completely different, unrelated organization.
+    const otherOrg = await prisma.organization.create({
+      data: { name: "Unrelated Org", slug: "unrelated-org-role-test" },
+    });
+    const created = await prisma.user.create({
+      data: { email: "cross-org-role-switch@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const otherOrgAssignment = await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "admin", scope_type: "organization", scope_id: otherOrg.id },
+    });
+
+    try {
+      // adminCookie is only ever authorized over ORG_USERS/eventId - it has no relationship to
+      // otherOrg or the target's admin assignment there.
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "operator", scope_type: "event", scope_id: eventId }),
+      });
+      expect(res.status).toBe(403);
+
+      const remaining = await prisma.roleAssignment.findMany({ where: { user_id: created.id } });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]?.id).toBe(otherOrgAssignment.id);
+      expect(remaining[0]?.role).toBe("admin");
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+      await prisma.organization.deleteMany({ where: { id: otherOrg.id } });
+    }
+  });
+});
+
+describe("DELETE /api/admin/users/:id/external-identity", () => {
+  it("unlinks SSO for another user and sets the new password in the same request", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-subject", user_id: created.id },
+    });
+    const session = await createSession(prisma, { userId: created.id, stage: SESSION_STAGE.FULL });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+
+      const linked = await prisma.externalIdentity.findMany({ where: { user_id: created.id } });
+      expect(linked).toHaveLength(0);
+
+      const user = await prisma.user.findUnique({ where: { id: created.id } });
+      expect(user?.must_change_password).toBe(true);
+      expect(await verifyPassword(NEW_PASSWORD, user!.password_hash!)).toBe(true);
+
+      const revoked = await prisma.session.findUnique({ where: { id: session.session.id } });
+      expect(revoked?.revoked_at).not.toBeNull();
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.session.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("clears OIDC-owned role grants (converting retained roles to manual ownership) when unlinking SSO", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-oidc-role@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-oidc-role-subject", user_id: created.id },
+    });
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        user_id: created.id,
+        provider_id: PROVIDER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: eventId,
+        role_assignment_id: assignment.id,
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+
+      expect(await prisma.oidcRoleGrant.count({ where: { user_id: created.id } })).toBe(0);
+      const remaining = await prisma.roleAssignment.findUnique({ where: { id: assignment.id } });
+      expect(remaining).not.toBeNull();
+      expect(remaining?.role).toBe("operator");
+    } finally {
+      await prisma.oidcRoleGrant.deleteMany({ where: { user_id: created.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.session.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("returns 400 invalid_request when unlinking without a new password", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-no-pass@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-no-pass-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(400);
+
+      const linked = await prisma.externalIdentity.findMany({ where: { user_id: created.id } });
+      expect(linked).toHaveLength(1);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("returns 409 cannot_unlink_own_sso for your own account", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/external-identity`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("cannot_unlink_own_sso");
+  });
+
+  it("returns 404 for a user with no linked SSO identity", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/external-identity`, {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for a user id that doesn't exist at all", async () => {
+    const res = await app.request("/api/admin/users/nonexistent-user-id/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 password_too_common for a blocklisted new password", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-common-pass@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-common-pass-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: "aaaaaaaaaaaa" }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("password_too_common");
+
+      const linked = await prisma.externalIdentity.findMany({ where: { user_id: created.id } });
+      expect(linked).toHaveLength(1);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("returns 403 for a non-superadmin", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/external-identity`, {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /api/admin/users functional", () => {
   it("creates user without auto role assignment", async () => {
     const email = "created-user@example.com";
@@ -698,6 +1210,66 @@ describe("POST /api/admin/users functional", () => {
     expect(audit?.metadata).toMatchObject({ userId: row!.id, email });
 
     await prisma.user.delete({ where: { email } });
+  });
+
+  it("saves an optional phone number given at creation", async () => {
+    const email = "created-user-phone@example.com";
+    try {
+      const res = await app.request("/api/admin/users", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: "created-pass-1",
+          phone_country_code: "+48",
+          phone_number: "500100200",
+        }),
+      });
+      expect(res.status).toBe(201);
+
+      const row = await prisma.user.findUnique({ where: { email } });
+      expect(row?.phone_country_code).toBe("+48");
+      expect(row?.phone_number).toBe("500100200");
+    } finally {
+      await prisma.user.deleteMany({ where: { email } });
+    }
+  });
+
+  it("leaves phone fields unset when given as blank strings at creation", async () => {
+    const email = "created-user-blank-phone@example.com";
+    try {
+      const res = await app.request("/api/admin/users", {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          password: "created-pass-1",
+          phone_country_code: "",
+          phone_number: "",
+        }),
+      });
+      expect(res.status).toBe(201);
+
+      const row = await prisma.user.findUnique({ where: { email } });
+      expect(row?.phone_country_code).toBeNull();
+      expect(row?.phone_number).toBeNull();
+    } finally {
+      await prisma.user.deleteMany({ where: { email } });
+    }
+  });
+
+  it("returns 400 invalid_email for a malformed email", async () => {
+    const res = await app.request("/api/admin/users", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "not-an-email", password: "created-pass-1" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("invalid_email");
+
+    const row = await prisma.user.findUnique({ where: { email: "not-an-email" } });
+    expect(row).toBeNull();
   });
 
   it("returns 409 email_conflict for duplicate email", async () => {
@@ -770,6 +1342,22 @@ describe("POST /api/admin/users/:id/reset-2fa", () => {
     });
     expect(res.status).toBe(200);
     expect(await prisma.userMfaMethod.count({ where: { user_id: targetId } })).toBe(0);
+  });
+
+  it("returns 403 for a non-superadmin", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 404 for a user id that doesn't exist", async () => {
+    const res = await app.request("/api/admin/users/nonexistent-user-id/reset-2fa", {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(404);
   });
 });
 
@@ -1141,6 +1729,39 @@ describe("v0.4.10: unlimited instance superadmins", () => {
     const body = (await res.json()) as { code?: string };
     expect(body.code).toBe("already_assigned");
   });
+
+  it("returns 400 invalid_request for a malformed JSON body", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("invalid_request");
+  });
+
+  it("returns 400 invalid_request for an unrecognized role value", async () => {
+    const res = await app.request(`/api/admin/users/${superId}/roles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+      body: JSON.stringify({ role: "bogus", scope_type: "instance" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("invalid_request");
+  });
+
+  it("returns 404 for a user id that doesn't exist", async () => {
+    const res = await app.request("/api/admin/users/nonexistent-user-id/roles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, Cookie: superCookie },
+      body: JSON.stringify({ role: "operator", scope_type: "event", scope_id: eventId }),
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("not_found");
+  });
 });
 
 describe("admin audit atomicity (BE-002)", () => {
@@ -1161,5 +1782,49 @@ describe("admin audit atomicity (BE-002)", () => {
     expect(row).toBeNull();
 
     spy.mockRestore();
+  });
+});
+
+describe("GET /api/admin/role-assignments search", () => {
+  // Own user/assignment (not the shared targetId/targetAssignmentId fixtures, which other
+  // describe blocks earlier in this file mutate/delete over the course of the suite) so this
+  // search assertion doesn't depend on what's left of them by the time it runs.
+  const searchEmail = "role-assignments-search-target@example.com";
+  let searchUserId = "";
+  let searchAssignmentId = "";
+
+  beforeAll(async () => {
+    const password_hash = await hashPassword(PASSWORD);
+    const user = await prisma.user.create({ data: { email: searchEmail, password_hash } });
+    searchUserId = user.id;
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: searchUserId, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    searchAssignmentId = assignment.id;
+  });
+
+  afterAll(async () => {
+    await prisma.roleAssignment.deleteMany({ where: { user_id: searchUserId } });
+    await prisma.user.delete({ where: { id: searchUserId } });
+  });
+
+  it("filters by the assigned user's email substring", async () => {
+    const res = await app.request("/api/admin/role-assignments?q=role-assignments-search-target", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assignments: Array<{ id: string; user_email: string }>; total: number };
+    expect(body.assignments.map((a) => a.id)).toEqual([searchAssignmentId]);
+    expect(body.assignments[0]?.user_email).toBe(searchEmail);
+  });
+
+  it("returns no rows for a search term matching nobody", async () => {
+    const res = await app.request("/api/admin/role-assignments?q=nobody-matches-this", {
+      headers: { Cookie: superCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assignments: unknown[]; total: number };
+    expect(body.assignments).toHaveLength(0);
+    expect(body.total).toBe(0);
   });
 });

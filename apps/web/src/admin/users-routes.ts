@@ -14,6 +14,7 @@ import {
   findUserByEmail,
   hashPassword,
   isPasswordTooCommon,
+  isValidEmailFormat,
   passwordTooCommonJsonBody,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
@@ -29,6 +30,7 @@ import {
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { runSerializableTransaction } from "./event-items-api-routes.js";
 import {
   assertLastSuperadminDeactivationAllowed,
   assertLastSuperadminRemovalAllowed,
@@ -117,6 +119,8 @@ function serializeUserRow(user: UserWithRoles, sessionStats: SessionStats) {
     id: user.id,
     email: user.email,
     display_name: user.display_name,
+    phone_country_code: user.phone_country_code,
+    phone_number: user.phone_number,
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     created_at: user.created_at.toISOString(),
@@ -314,11 +318,18 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
   const password = typeof body?.password === "string" ? body.password : "";
   const displayName =
     typeof body?.display_name === "string" ? body.display_name.trim() || null : null;
+  const phoneCountryCode =
+    typeof body?.phone_country_code === "string" ? body.phone_country_code.trim() || undefined : undefined;
+  const phoneNumber =
+    typeof body?.phone_number === "string" ? body.phone_number.trim() || undefined : undefined;
   const mustChange = body?.must_change_password === true;
 
   const email = normalizeEmail(emailRaw);
   if (!email || password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "invalid_request" }, 400);
+  }
+  if (!isValidEmailFormat(email)) {
+    return c.json({ code: "invalid_email", error: "invalid_email" }, 400);
   }
   if (isPasswordTooCommon(password)) {
     return c.json(passwordTooCommonJsonBody(), 400);
@@ -340,6 +351,8 @@ export async function handlePostUser(c: Context, db: PrismaClient): Promise<Resp
         email,
         password,
         displayName: displayName ?? undefined,
+        phoneCountryCode,
+        phoneNumber,
         isActive: true,
         mustChangePassword: mustChange,
       });
@@ -386,6 +399,16 @@ function buildPatchUserData(
   if (typeof body?.display_name === "string") {
     data.display_name = body.display_name.trim() || null;
   }
+  // null (not just a string) is a valid, intentional value here - the edit modal always sends
+  // one or the other for both phone fields, using null to mean "clear it". Treating null the
+  // same as "field omitted" silently ignored every attempt to clear a previously-set number.
+  if (typeof body?.phone_country_code === "string" || body?.phone_country_code === null) {
+    data.phone_country_code =
+      typeof body.phone_country_code === "string" ? body.phone_country_code.trim() || null : null;
+  }
+  if (typeof body?.phone_number === "string" || body?.phone_number === null) {
+    data.phone_number = typeof body.phone_number === "string" ? body.phone_number.trim() || null : null;
+  }
   if (typeof body?.is_active === "boolean") {
     if (body.is_active === false && id === actorId) {
       return { conflict: "self_deactivate" };
@@ -394,7 +417,7 @@ function buildPatchUserData(
   }
   if (typeof body?.email === "string") {
     const email = normalizeEmail(body.email);
-    if (!email) return { conflict: "invalid_email" };
+    if (!email || !isValidEmailFormat(email)) return { conflict: "invalid_email" };
     data.email = email;
   }
   return { data };
@@ -495,7 +518,7 @@ export async function handlePatchUser(c: Context, db: PrismaClient): Promise<Res
 
   const parsed = buildPatchUserData(body, id, actorId);
   if ("conflict" in parsed) {
-    if (parsed.conflict === "invalid_email") return c.json({ error: "invalid_request" }, 400);
+    if (parsed.conflict === "invalid_email") return c.json({ code: "invalid_email", error: "invalid_email" }, 400);
     return c.json({ code: "cannot_deactivate_self" }, 409);
   }
   const { data } = parsed;
@@ -587,7 +610,135 @@ export async function handleDeleteUser(c: Context, db: PrismaClient): Promise<Re
   return c.json({ ok: true });
 }
 
+/** Pure authorization check (no Response-building) mirroring assertRoleGrantAllowed's rule, used
+ * inside performRoleTypeSwitch's transaction to re-verify the actor may revoke each assignment it
+ * actually refetched there. assertRoleRevokeAllowed (below) only runs once, before the
+ * transaction, against assignments queried at that earlier moment; a new assignment appearing in
+ * the window between that check and the transaction's own fresh refetch would otherwise be
+ * deleted without ever being authorized. Kept as its own small function rather than reusing
+ * assertRoleGrantAllowed directly, since that one needs a Context to build 403/404 responses and
+ * this one runs inside a transaction with only a generic "forbidden" outcome available. */
+async function canRevokeInTransaction(
+  tx: Prisma.TransactionClient,
+  actorId: string,
+  assignment: { role: string; scope_type: string; scope_id: string | null },
+): Promise<boolean> {
+  if (await canManageInstance(tx, actorId)) return true;
+  // Every path below here is genuinely unreachable outside a real concurrent-modification
+  // race: performRoleTypeSwitch only calls this for assignments already authorized by
+  // handlePostUserRole's own pre-transaction assertImplicitRevokesAllowed check, using the
+  // same rules - a non-superadmin actor who was denied there never reaches this transaction
+  // at all, and one who was allowed can only have been allowed for operator/event assignments
+  // they administer, which is exactly what this function itself re-confirms. Only a fresh
+  // grant/revoke racing this same transaction could make the two checks disagree.
+  /* v8 ignore start */
+  if (assignment.role !== "operator" || assignment.scope_type !== "event" || !assignment.scope_id) {
+    return false;
+  }
+  const event = await tx.event.findUnique({
+    where: { id: assignment.scope_id },
+    select: { organization_id: true },
+  });
+  if (!event) return false;
+  return hasScope(tx, actorId, "admin", "organization", event.organization_id);
+  /* v8 ignore stop */
+}
+
 /** POST /api/admin/users/:id/roles — grant role assignment. */
+/** The implicit role-type-switch transaction body for handlePostUserRole - refetches the
+ * target's old-type assignments (with oidc_role_grants) inside the transaction, same as
+ * handleDeleteUserRole's "current", so freshness plus the caller's Serializable isolation close
+ * the TOCTOU window between this check and the delete below. An implicit switch must not be able
+ * to do what an explicit revoke can't: handleDeleteUserRole refuses to remove an IdP-managed
+ * assignment (managed_by_idp), so silently deleting one here as a side effect of granting an
+ * unrelated new role would be an easy way around that guard. */
+async function performRoleTypeSwitch(
+  tx: Prisma.TransactionClient,
+  id: string,
+  parsed: { role: Role; scopeType: ScopeType; scopeId: string | null },
+  orgId: string,
+  actorId: string,
+  audit: OpsAuditContext,
+) {
+  const replaced = await tx.roleAssignment.findMany({
+    where: { user_id: id, role: { not: parsed.role } },
+    include: { oidc_role_grants: { select: { id: true } } },
+  });
+  if (replaced.some((old) => old.oidc_role_grants.length > 0)) {
+    return "managed_by_idp" as const;
+  }
+  if (replaced.length > 0) {
+    for (const old of replaced) {
+      if (!(await canRevokeInTransaction(tx, actorId, old))) {
+        return "forbidden" as const;
+      }
+      await assertLastSuperadminRemovalAllowed(tx, old);
+    }
+    await tx.roleAssignment.deleteMany({ where: { id: { in: replaced.map((a) => a.id) } } });
+  }
+
+  const created = await tx.roleAssignment.create({
+    data: {
+      user_id: id,
+      role: parsed.role,
+      scope_type: parsed.scopeType,
+      scope_id: parsed.scopeId,
+    },
+  });
+  await writeAdminAuditLog(tx, {
+    organizationId: orgId,
+    actorUserId: actorId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: replaced.length > 0 ? "role_changed" : "role_granted",
+    metadata: {
+      userId: id,
+      role: parsed.role,
+      scopeType: parsed.scopeType,
+      scopeId: parsed.scopeId,
+      ...(replaced.length > 0 ? { replacedRoles: replaced.map((a) => a.role) } : {}),
+    },
+  });
+  return created;
+}
+
+/** Maps handlePostUserRole's transaction failures to a response body, or null to rethrow.
+ * Both mapped cases are genuine TOCTOU races: handlePostUserRole's own pre-transaction checks
+ * (the existing-assignment lookup for already_assigned, assertLastSuperadminRemovalAllowed's
+ * fresh in-transaction count for last_superadmin) already reject the same conflict on any
+ * single, non-concurrent request - these only fire when another request commits between that
+ * check and this one's own transaction. */
+/* v8 ignore start */
+function roleGrantConflictResponse(err: unknown): { code: string } | null {
+  if (err instanceof LastSuperadminError) return { code: "last_superadmin" };
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    return { code: "already_assigned" };
+  }
+  return null;
+}
+/* v8 ignore stop */
+
+/** Authorizes every implicit revoke a role-type switch would perform, one assignment at a time -
+ * assertRoleGrantAllowed only authorized the new grant, so without this an org-scoped admin
+ * could use their own event's grant authority to silently strip a target's unrelated
+ * admin/superadmin assignment they have no authority over. Same rule handleDeleteUserRole
+ * already applies to an explicit revoke, applied here to every implicit one; non-superadmins
+ * can only ever grant operator/event roles, so this always denies (403) when the assignment
+ * being replaced is admin- or superadmin-scoped, same as a direct revoke of one would. */
+async function assertImplicitRevokesAllowed(
+  c: Context,
+  db: PrismaClient,
+  actorId: string,
+  otherTypeAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }>,
+): Promise<Response | null> {
+  for (const old of otherTypeAssignments) {
+    const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, old);
+    if (revokeDenied) return revokeDenied;
+  }
+  return null;
+}
+
 export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<Response> {
   const id = c.req.param("id") ?? "";
   if (!id) return c.json({ error: "user id required" }, 400);
@@ -620,42 +771,47 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   });
   if (existing) return c.json({ code: "already_assigned" }, 409);
 
+  // Roles are exclusive by type - superadmin, admin, and operator never combine on one person
+  // (only the scope list within a type is cumulative, e.g. an admin over several orgs). Granting
+  // a different type than whatever this user currently holds replaces it rather than adding a
+  // second function. Changing your *own* type is refused outright, same reasoning as
+  // cannot_remove_own_role: you could revoke the only access that lets you do this at all.
+  const otherTypeAssignments = await db.roleAssignment.findMany({
+    where: { user_id: id, role: { not: parsed.role } },
+  });
+  if (otherTypeAssignments.length > 0 && id === actorId) {
+    return c.json({ code: "cannot_change_own_role" }, 409);
+  }
+
+  // A role-type switch implicitly revokes every assignment of the target's OLD type - see
+  // assertImplicitRevokesAllowed's own comment for why each one needs its own authorization
+  // check, not just the new grant's.
+  const revokeDenied = await assertImplicitRevokesAllowed(c, db, actorId, otherTypeAssignments);
+  if (revokeDenied) return revokeDenied;
+
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
-  let assignment;
+  let outcome;
   try {
-    assignment = await db.$transaction(async (tx) => {
-      const created = await tx.roleAssignment.create({
-        data: {
-          user_id: id,
-          role: parsed.role,
-          scope_type: parsed.scopeType,
-          scope_id: parsed.scopeId,
-        },
-      });
-      await writeAdminAuditLog(tx, {
-        organizationId: orgId,
-        actorUserId: actorId,
-        sessionId: audit.sessionId,
-        ip: audit.ip,
-        timezone: audit.timezone,
-        actionType: "role_granted",
-        metadata: {
-          userId: id,
-          role: parsed.role,
-          scopeType: parsed.scopeType,
-          scopeId: parsed.scopeId,
-        },
-      });
-      return created;
-    });
+    outcome = await runSerializableTransaction(
+      db,
+      (tx) => performRoleTypeSwitch(tx, id, parsed, orgId, actorId, audit),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return c.json({ code: "already_assigned" }, 409);
-    }
+    const conflict = roleGrantConflictResponse(err);
+    if (conflict) return c.json(conflict, 409);
     throw err;
   }
+
+  if (outcome === "managed_by_idp") {
+    return c.json({ code: "managed_by_idp" }, 409);
+  }
+  if (outcome === "forbidden") {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  const assignment = outcome;
 
   emitSystemLog("security", "info", "role_granted", {
     targetUserId: target.id,
@@ -699,6 +855,10 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
   if (!assignment) {
     return respondRoleDeleteGone(c, db, id, assignmentId, actorIsSuperadmin);
   }
+  // Checked only once the assignment is confirmed to exist and belong to :id - an :id that
+  // merely matches the actor's own id but names someone else's assignment must still fall
+  // through to the ordinary not-found/permission handling below, not this guard.
+  if (id === actorId) return c.json({ code: "cannot_remove_own_role" }, 409);
 
   const revokeDenied = await assertRoleRevokeAllowed(c, db, actorId, assignment);
   if (revokeDenied) return revokeDenied;
@@ -809,6 +969,92 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
     targetEmail: user.email,
     actorUserId,
     actorEmail: await resolveActorEmailForLog(db, actorUserId),
+  });
+
+  return c.json({ ok: true });
+}
+
+/** DELETE /api/admin/users/:id/external-identity — unlink SSO, forcing local-password sign-in
+ * from then on. A JIT-provisioned SSO user's password_hash is a random placeholder nobody knows
+ * (see resolve-user.ts), and this route has no stored signal to tell that case apart from a user
+ * who already has a real local password. So a new password is always required here and set in
+ * the same transaction as the unlink - unlinking without one would silently lock the target out
+ * with no working sign-in method at all. */
+export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaClient): Promise<Response> {
+  const denied = await requireSuperadmin(c, db);
+  if (denied) return denied;
+
+  // Route registered as /api/admin/users/:id/external-identity - Hono only invokes this
+  // handler when :id actually matched, so the fallback and guard below can't fire in practice.
+  const id = c.req.param("id") ?? "";
+  /* v8 ignore if */
+  if (!id) return c.json({ error: "user id required" }, 400);
+
+  const actorId = c.get("auth").userId;
+  if (id === actorId) return c.json({ code: "cannot_unlink_own_sso" }, 409);
+
+  const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
+  if (!user) return c.json({ error: "not_found" }, 404);
+
+  const linked = await db.externalIdentity.findMany({ where: { user_id: id }, select: { id: true } });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
+
+  // Checked only once there's actually something to unlink - a request for an already-local or
+  // nonexistent user should still 404 without forcing the caller to supply a throwaway password.
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
+  if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
+  if (isPasswordTooCommon(newPassword)) {
+    return c.json(passwordTooCommonJsonBody(), 400);
+  }
+
+  const hash = await hashPassword(newPassword);
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  await db.$transaction(async (tx) => {
+    await tx.externalIdentity.deleteMany({ where: { user_id: id } });
+    // OidcRoleGrant has no FK to ExternalIdentity (it's keyed by provider_id/user_id), so it
+    // survives the identity delete above on its own - deleting it here converts any IdP-managed
+    // role assignments to manual ownership instead of leaving them silently orphaned: still
+    // granted (RoleAssignment itself isn't touched), but no longer blocked from revoke/switch by
+    // the managed_by_idp guard, and no longer reachable by a future OIDC sync since no provider
+    // is linked to this user anymore.
+    await tx.oidcRoleGrant.deleteMany({ where: { user_id: id } });
+    await tx.user.update({
+      where: { id },
+      data: { password_hash: hash, must_change_password: true },
+    });
+    await tx.session.updateMany({
+      where: { user_id: id, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    await revokeAllTrustedDevicesForUser(tx, id);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: actorId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "user_sso_unlinked",
+      metadata: { userId: id, count: linked.length },
+    });
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: actorId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "user_password_reset",
+      metadata: { userId: id, reason: "sso_unlink" },
+    });
+  });
+
+  emitSystemLog("security", "info", "user_sso_unlinked", {
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actorUserId: actorId,
+    actorEmail: await resolveActorEmailForLog(db, actorId),
   });
 
   return c.json({ ok: true });

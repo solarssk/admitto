@@ -47,6 +47,24 @@ describe("InviteUserModal", () => {
     expect(screen.getByLabelText("Email address")).toHaveProperty("disabled", true);
   });
 
+  it("sends must_change_password: false when the switch is turned off", async () => {
+    vi.mocked(createAdminUser).mockResolvedValueOnce({
+      user: { id: "usr-1" } as never,
+    });
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByLabelText("Require password change on first login"));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(createAdminUser).toHaveBeenCalledWith(
+        expect.objectContaining({ must_change_password: false }),
+      );
+    });
+  });
+
   it("shows a taken-email message for an email_taken response", async () => {
     const { ApiError } = await import("../../../src/api/client.js");
     vi.mocked(createAdminUser).mockRejectedValueOnce(new ApiError("email_taken"));
@@ -148,6 +166,34 @@ describe("InviteUserModal", () => {
     await waitFor(() => {
       expect(grantUserRole).toHaveBeenCalledWith("user-3", { role: "operator", scope_type: "event", scope_id: "evt-1" });
     });
+  });
+
+  it("shows an inline error and does not create the account when Operator is picked with no event selected", async () => {
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([{ id: "evt-1", title: "Summer Summit" } as never]);
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.change(screen.getByLabelText("Initial role"), { target: { value: "operator" } });
+    await screen.findByLabelText("Event scope");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Select an event for the operator role.")).toBeTruthy();
+    expect(createAdminUser).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline error and does not create the account when Administrator is picked with no organization available to default to", async () => {
+    vi.mocked(fetchAdminOrganizations).mockResolvedValueOnce([]);
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.change(screen.getByLabelText("Initial role"), { target: { value: "admin" } });
+    await screen.findByLabelText("Organization scope");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Select an organization for the admin role.")).toBeTruthy();
+    expect(createAdminUser).not.toHaveBeenCalled();
   });
 
   it("shows an inline warning when the account is created but the initial role grant fails", async () => {

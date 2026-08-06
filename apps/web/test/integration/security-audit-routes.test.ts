@@ -264,6 +264,47 @@ describe("GET /api/admin/security-audit-log", () => {
     expect(body.entries[0]?.event_type).toBe("auth.mfa.fail");
   });
 
+  it("filters by exact user_id, unlike search's fuzzy email match which can cross-match a second account", async () => {
+    // A second account whose email contains the target's email as a literal substring - exactly
+    // the shape of address a real attacker (or an innocent typo/subdomain trick) could register.
+    const decoyEmail = `decoy+${EMAIL_TARGET}`;
+    const decoy = await prisma.user.create({
+      data: { email: decoyEmail, password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.login.success",
+        user_id: decoy.id,
+        ip: "9.9.9.9",
+        metadata: { email: decoyEmail, userAgent: "curl/8.0" },
+        created_at: new Date("2026-06-20T12:00:00.000Z"),
+      },
+    });
+
+    try {
+      const bySearch = await app.request(
+        `/api/admin/security-audit-log?event_type=auth.login.success&search=${encodeURIComponent(EMAIL_TARGET)}`,
+        { headers: { Cookie: superCookie } },
+      );
+      const searchBody = (await bySearch.json()) as { entries: { user_id: string | null }[]; total: number };
+      // Demonstrates why the Edit user modal's Recent logins must not use `search`: the fuzzy
+      // match also returns the decoy account's own login, not just the target's.
+      expect(searchBody.total).toBe(2);
+      expect(new Set(searchBody.entries.map((e) => e.user_id))).toEqual(new Set([targetId, decoy.id]));
+
+      const byUserId = await app.request(
+        `/api/admin/security-audit-log?event_type=auth.login.success&user_id=${targetId}`,
+        { headers: { Cookie: superCookie } },
+      );
+      const userIdBody = (await byUserId.json()) as { entries: { user_id: string | null }[]; total: number };
+      expect(userIdBody.total).toBe(1);
+      expect(userIdBody.entries[0]?.user_id).toBe(targetId);
+    } finally {
+      await prisma.securityAuditLog.deleteMany({ where: { user_id: decoy.id } });
+      await prisma.user.deleteMany({ where: { id: decoy.id } });
+    }
+  });
+
   it("filters by start/end date bounds (inclusive UTC day range)", async () => {
     const res = await app.request(
       "/api/admin/security-audit-log?start=2026-06-16&end=2026-06-17",

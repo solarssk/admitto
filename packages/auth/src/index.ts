@@ -38,7 +38,7 @@ export {
   AUTH_PASSWORD_STRENGTH_CSS,
   passwordStrengthAuthScript,
 } from "./password-strength-script.js";
-export { normalizeEmail, createUser, findUserByEmail, findUserById } from "./user.js";
+export { normalizeEmail, isValidEmailFormat, createUser, findUserByEmail, findUserById } from "./user.js";
 export {
   createSession,
   validateSession,

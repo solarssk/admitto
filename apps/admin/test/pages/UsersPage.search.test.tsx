@@ -26,18 +26,22 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchRoleAssignments: vi.fn(),
     fetchSessions: vi.fn(),
     fetchAdminEvents: vi.fn(),
+    fetchAdminOrganizations: vi.fn(),
     revokeUserRole: vi.fn(),
     deleteAdminUser: vi.fn(),
+    grantUserRole: vi.fn(),
   };
 });
 
 import {
   deleteAdminUser,
   fetchAdminEvents,
+  fetchAdminOrganizations,
   fetchAdminUsers,
   fetchUserStats,
   fetchRoleAssignments,
   fetchSessions,
+  grantUserRole,
   revokeUserRole,
 } from "../../src/api/client.js";
 
@@ -61,6 +65,7 @@ beforeEach(() => {
   vi.mocked(fetchRoleAssignments).mockResolvedValue({ assignments: [], total: 0, page: 1, pageSize: 25 });
   vi.mocked(fetchSessions).mockResolvedValue({ sessions: [] });
   vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+  vi.mocked(fetchAdminOrganizations).mockResolvedValue([]);
   vi.mocked(fetchUserStats).mockResolvedValue({
     total: 0,
     active: 0,
@@ -138,8 +143,12 @@ describe("UsersPage header", () => {
     expect(fetchAdminUsers).toHaveBeenCalledOnce();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for user-1@example.com" })[0]!);
-    fireEvent.click(await screen.findByRole("button", { name: "Delete account" }));
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Delete account/ }));
     const dialog = await screen.findByRole("dialog", { name: "Delete account" });
+    fireEvent.change(within(dialog).getByLabelText('Type the email address to confirm: "user-1@example.com"'), {
+      target: { value: "user-1@example.com" },
+    });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
@@ -149,6 +158,70 @@ describe("UsersPage header", () => {
     await waitFor(() => {
       expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe("UsersPage Edit modal sync", () => {
+  it("picks up the freshly-granted role for an open Edit modal from the next list refresh, without closing it", async () => {
+    vi.mocked(fetchAdminUsers)
+      .mockResolvedValueOnce({
+        users: [makeUser("user-1", "Jane Doe")],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+      })
+      .mockResolvedValueOnce({
+        users: [
+          {
+            ...makeUser("user-1", "Jane Doe"),
+            roles: [
+              { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false },
+            ],
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+      });
+    vi.mocked(fetchAdminEvents).mockResolvedValue([
+      {
+        id: "evt-1",
+        title: "Summer Summit",
+        slug: "summer-summit",
+        date: "2026-07-01",
+        timezone: "Europe/Warsaw",
+        location: null,
+        organization_id: "org-1",
+        archived_at: null,
+      },
+    ]);
+    vi.mocked(grantUserRole).mockResolvedValueOnce({
+      assignment: { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1" },
+    });
+
+    renderAt("/admin/users");
+    await screen.findAllByText("user-1@example.com");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit profile for Jane Doe" })[0]!);
+    await screen.findByRole("heading", { name: "Jane Doe" });
+
+    fireEvent.change(await screen.findByLabelText("Role"), { target: { value: "operator" } });
+    const eventSelect = await screen.findByLabelText("Event scope for operator role");
+    await screen.findByRole("option", { name: "Summer Summit" });
+    fireEvent.change(eventSelect, { target: { value: "evt-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(fetchAdminUsers).toHaveBeenCalledTimes(2);
+    });
+    // Still open (a same-type addition from "no role" doesn't close it) and now showing the
+    // freshly-granted scope chip, which only exists on the refreshed record from the 2nd fetch.
+    expect(await screen.findByRole("heading", { name: "Jane Doe" })).toBeTruthy();
+    await waitFor(() => {
+      expect(document.querySelector(".users-modal__chips")).toBeTruthy();
+    });
+    const chips = document.querySelector(".users-modal__chips")!;
+    expect(within(chips).getByText("Summer Summit")).toBeTruthy();
   });
 });
 

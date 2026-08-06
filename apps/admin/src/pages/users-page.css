@@ -95,6 +95,13 @@
   margin-bottom: var(--space-4);
 }
 
+/* Active sessions' search+filter row lives in the Card header's actions slot (next to the
+ * title), not stacked above the table like Staff users/Role assignments - no bottom margin
+ * needed there, the card header already spaces itself from the body. */
+.users-page__toolbar--card-actions {
+  margin-bottom: 0;
+}
+
 .users-page__search {
   flex: 1 1 220px;
   min-width: 0;
@@ -146,8 +153,12 @@
   min-width: 140px;
 }
 
+/* Bleed the table to the card's own edges instead of sitting inset by the card's full
+ * --pad-card padding on both sides - matches the Attendees table (which isn't nested in a
+ * padded .at-card__body at all). The toolbar/footer above and below stay normally padded. */
 .users-page__table-wrap {
   overflow-x: auto;
+  margin: 0 calc(-1 * var(--pad-card));
 }
 
 .users-page__cards {
@@ -265,7 +276,8 @@
   gap: 0.25rem;
 }
 
-.users-page__mfa {
+.users-page__mfa,
+.users-page__auth {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -431,26 +443,283 @@
   gap: var(--space-3);
 }
 
-.users-modal__roles {
+.users-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.users-modal__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.users-modal__more-btn {
+  width: var(--control-h);
+  height: var(--control-h);
+  padding: 0;
+}
+
+.users-modal__head-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.users-modal__head-text {
   display: flex;
   flex-direction: column;
+  gap: var(--space-1);
+}
+
+.users-modal__head-text h2 {
+  margin: 0;
+  font-size: var(--fs-h3);
+  font-weight: 600;
+}
+
+.users-modal__head-email {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.users-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.users-modal__field-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.users-modal__phone-row {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
 }
 
-.users-modal__role-row {
+.users-modal__phone-row .at-field:first-child {
+  flex: 0 0 auto;
+  min-width: 10rem;
+}
+
+.users-modal__phone-row .at-field:last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.users-modal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+}
+
+.users-modal__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+
+.users-modal__chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: var(--at-gray-200);
+  color: var(--text-secondary);
+  padding: 0;
+  cursor: pointer;
+}
+
+.users-modal__chip-remove:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
+.users-modal__status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .users-modal__status-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.users-modal__status-chip {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  padding: var(--space-2);
+}
+
+.users-modal__status-chip-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.users-modal__status-chip-icon--neutral { background: var(--at-gray-100); color: var(--text-secondary); }
+.users-modal__status-chip-icon--ok      { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+.users-modal__status-chip-icon--warn    { background: var(--status-warn-tint); color: var(--status-warn-fg); }
+
+.users-modal__status-chip-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.users-modal__status-chip-body strong {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.users-modal__status-chip-body span {
+  font-size: var(--fs-sm);
+}
+
+.users-modal__unlink-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-link, var(--primary));
+  cursor: pointer;
+  text-decoration: underline;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.users-modal__unlink-btn:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.users-modal__logins {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.users-modal__empty-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.users-modal__empty-line i {
+  font-size: var(--fs-body);
+}
+
+.users-modal__login-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.users-modal__login-row:last-child {
+  border-bottom: 0;
+}
+
+.users-modal__login-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.users-modal__login-icon--ok { background: var(--status-ok-tint); color: var(--status-ok-fg); }
+
+.users-modal__login-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.users-modal__login-status {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.users-modal__login-geo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.users-modal__login-ip {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.users-modal__login-time {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .users-modal__role-assign {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+}
+
+.users-modal__role-assign .at-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.users-modal__role-assign .at-btn {
+  flex-shrink: 0;
 }
 
 .users-modal__actions {
@@ -469,12 +738,27 @@
   background: var(--surface-muted);
 }
 
-.users-modal__section-title {
+.users-modal__subsection-title {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
 }
 
+/* Flat, unboxed section - the Edit user modal doesn't card-box its sections (unlike Overview's
+ * KPI tiles or Reports), matching the same plain-fields convention as Invite user and the app's
+ * other add-attendee-modal-family popups. A bold label is enough grouping without a border. */
+.users-modal__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.users-modal__section-title {
+  margin: 0;
+  font-size: var(--text-card-title-size);
+  font-weight: var(--text-card-title-weight);
+  color: var(--text-primary);
+}

@@ -3,7 +3,6 @@ import {
   Badge,
   Button,
   IconButton,
-  StatusBadge,
   Tooltip,
 } from "@admitto/ui";
 import type { UserListItemDto } from "../../api/types.js";
@@ -34,20 +33,23 @@ type StaffUserListItemProps = {
   onRevokeSessions: (user: UserListItemDto) => void;
 };
 
+/** Roles are exclusive by type (#401) - every entry in user.roles shares the same `role`, just
+ * with different scopes, so one badge for the type is enough here. Per-scope detail (which
+ * events/orgs, OIDC-managed or not) lives on the Role assignments tab, not this summary table. */
 function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
-  if (user.roles.length === 0) return <>-</>;
+  const [primary] = user.roles;
+  if (!primary) return <>-</>;
   return (
     <div className="users-page__roles">
-      {user.roles.map((role) => (
-        <Badge
-          key={role.id}
-          variant={roleBadgeVariant(role.role)}
-          title={roleScopeTitle(role)}
-        >
-          {role.is_oidc && <i className="ti ti-cloud" aria-hidden="true" />}{" "}
-          {roleLabel(role.role)}
-        </Badge>
-      ))}
+      <Badge variant={roleBadgeVariant(primary.role)} title={roleScopeTitle(primary)}>
+        {user.roles.some((role) => role.is_oidc) && (
+          <>
+            <i className="ti ti-cloud" aria-hidden="true" />
+            <span className="sr-only">Managed by identity provider</span>
+          </>
+        )}{" "}
+        {roleLabel(primary.role)}
+      </Badge>
     </div>
   );
 }
@@ -82,11 +84,16 @@ function UserMfa({ hasMfa }: Readonly<{ hasMfa: boolean }>) {
   );
 }
 
+// Badge (not StatusBadge): "ok"/"neutral" here are literal BadgeVariant names, not domain
+// status keys - resolveStatusMeta only knows entries like "sent"/"admitted", so status="ok"
+// missed the lookup and silently fell back to the neutral variant, rendering Active gray.
 function UserStatusBadge({ active }: Readonly<{ active: boolean }>) {
   return active ? (
-    <StatusBadge status="ok" label="Active" />
+    <Badge variant="ok">Active</Badge>
   ) : (
-    <StatusBadge status="neutral" label="Disabled" className="users-page__status-disabled" />
+    <Badge variant="neutral" className="users-page__status-disabled">
+      Disabled
+    </Badge>
   );
 }
 
@@ -118,6 +125,7 @@ function UserActionsRow({ user, onEdit, onRevokeSessions }: Readonly<StaffUserLi
           icon={<i className="ti ti-refresh" aria-hidden="true" />}
           label={`Reset sessions for ${label}`}
           size="sm"
+          className="users-page__icon-danger"
           onClick={() => onRevokeSessions(user)}
         />
       </Tooltip>
@@ -144,7 +152,7 @@ function UserActionsCard({ user, onEdit, onRevokeSessions }: Readonly<StaffUserL
       <Button
         type="button"
         variant="secondary"
-        className="users-page__action-btn"
+        className="users-page__action-btn users-page__icon-danger"
         onClick={() => onRevokeSessions(user)}
       >
         <i className="ti ti-refresh" aria-hidden="true" />

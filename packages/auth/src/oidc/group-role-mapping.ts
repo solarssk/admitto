@@ -93,6 +93,12 @@ function assignmentWhere(
   };
 }
 
+/** Winning role type when a user's groups match rules of more than one type in the same sync -
+ * higher access wins, matching the admin UI's own role hierarchy (see USER_LIST_ROLES in
+ * apps/web/src/admin/users-routes.ts). Without this, which type "wins" would depend on
+ * Postgres's unspecified row order for oidcGroupRoleMapping.findMany. */
+const ROLE_PRECEDENCE: Record<string, number> = { superadmin: 0, admin: 1, operator: 2 };
+
 /** True when a current mapping rule + group membership still authorizes an existing grant. */
 function ruleStillAuthorizesGrant(
   grant: { role: string; scope_type: string; scope_id: string | null },
@@ -217,47 +223,79 @@ async function ensureOidcGrantForRule(
   scopeId: string | null,
   grantKey: ReturnType<typeof grantWhere>,
 ): Promise<boolean> {
-  return runInOwnTransaction(prisma, async (tx) => {
-    if (await tx.oidcRoleGrant.findFirst({ where: grantKey })) {
-      return false;
-    }
-
-    if (await tx.roleAssignment.findFirst({ where: assignmentWhere(userId, rule, scopeId) })) {
-      // Manual assignment or concurrent winner — never attach an OIDC grant here.
-      return false;
-    }
-
-    let assignment;
+  // Serializable: the cross-type exclusivity check below is a read against rows this same
+  // transaction is about to insert alongside, so two concurrent login-time syncs for the same
+  // user (e.g. two linked providers racing each other) each running under plain read-committed
+  // could both pass the check before either commits, granting two conflicting role types. A
+  // Serializable transaction makes Postgres detect that write skew and abort the loser, which
+  // the retry loop below then reruns against the winner's now-committed row.
+  for (let attempt = 0; attempt < SERIALIZATION_RETRY_ATTEMPTS; attempt++) {
     try {
-      assignment = await tx.roleAssignment.create({
-        data: {
-          user_id: userId,
-          role: rule.role,
-          scope_type: rule.scope_type,
-          scope_id: scopeId,
-        },
-      });
-    } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
-      // Concurrent winner committed the assignment first; it will also create the grant.
-      return false;
-    }
+      return await runInOwnTransaction(
+        prisma,
+        async (tx) => {
+          if (await tx.oidcRoleGrant.findFirst({ where: grantKey })) {
+            return false;
+          }
 
-    try {
-      await tx.oidcRoleGrant.create({
-        data: {
-          ...grantKey,
-          role_assignment_id: assignment.id,
+          if (await tx.roleAssignment.findFirst({ where: assignmentWhere(userId, rule, scopeId) })) {
+            // Manual assignment or concurrent winner — never attach an OIDC grant here.
+            return false;
+          }
+
+          // Roles are exclusive by type (superadmin/admin/operator never combine on one person -
+          // see handlePostUserRole in apps/web/src/admin/users-routes.ts). An unattended
+          // login-time sync has no way to warn an admin before replacing their existing access
+          // the way the admin UI's explicit role-switch confirmation does, so it defers to
+          // whatever type the user already holds (manual or OIDC-owned) instead of creating a
+          // second, conflicting type.
+          if (await tx.roleAssignment.findFirst({ where: { user_id: userId, role: { not: rule.role } } })) {
+            return false;
+          }
+
+          let assignment;
+          try {
+            assignment = await tx.roleAssignment.create({
+              data: {
+                user_id: userId,
+                role: rule.role,
+                scope_type: rule.scope_type,
+                scope_id: scopeId,
+              },
+            });
+          } catch (err) {
+            if (!isUniqueViolation(err)) throw err;
+            // Concurrent winner committed the assignment first; it will also create the grant.
+            return false;
+          }
+
+          try {
+            await tx.oidcRoleGrant.create({
+              data: {
+                ...grantKey,
+                role_assignment_id: assignment.id,
+              },
+            });
+            return true;
+          } catch (err) {
+            if (isUniqueViolation(err)) {
+              return false;
+            }
+            throw err;
+          }
         },
-      });
-      return true;
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
     } catch (err) {
-      if (isUniqueViolation(err)) {
-        return false;
+      if (isSerializationFailure(err) && attempt < SERIALIZATION_RETRY_ATTEMPTS - 1) {
+        await sleep(serializationRetryDelayMs(attempt));
+        continue;
       }
       throw err;
     }
-  });
+  }
+
+  throw new Error("unreachable: ensureOidcGrantForRule serialization retries exhausted");
 }
 
 /**
@@ -288,7 +326,11 @@ export async function applyOidcGroupRoleMappings(
     }
   }
 
-  for (const rule of rules) {
+  const rulesByPrecedence = [...rules].sort(
+    (a, b) => (ROLE_PRECEDENCE[a.role] ?? Number.MAX_SAFE_INTEGER) - (ROLE_PRECEDENCE[b.role] ?? Number.MAX_SAFE_INTEGER),
+  );
+
+  for (const rule of rulesByPrecedence) {
     if (!groupSet.has(rule.group)) continue;
 
     const scopeId = roleAssignmentScopeId(rule.scope_type, rule.scope_id);

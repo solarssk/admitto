@@ -34,6 +34,44 @@ describe("StaffUserTableRow", () => {
     expect(screen.getAllByText("-")).toHaveLength(1);
   });
 
+  it("renders the Active status badge with the ok (green) variant, not a neutral fallback", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow user={{ ...user, is_active: true }} onEdit={vi.fn()} onRevokeSessions={vi.fn()} />
+        </tbody>
+      </table>,
+    );
+
+    const badges = screen.getAllByText("Active");
+    expect(badges.length).toBeGreaterThan(0);
+    for (const badge of badges) {
+      expect(badge.className).toContain("at-badge--ok");
+    }
+  });
+
+  it("shows one role badge even when a person holds several scopes of that type", () => {
+    render(
+      <table>
+        <tbody>
+          <StaffUserTableRow
+            user={{
+              ...user,
+              roles: [
+                { id: "role-1", role: "operator", scope_type: "event", scope_id: "evt-1", is_oidc: false },
+                { id: "role-2", role: "operator", scope_type: "event", scope_id: "evt-2", is_oidc: false },
+              ],
+            }}
+            onEdit={vi.fn()}
+            onRevokeSessions={vi.fn()}
+          />
+        </tbody>
+      </table>,
+    );
+
+    expect(screen.getAllByText("Operator")).toHaveLength(1);
+  });
+
   it("uses the shared relative-time format for staff who have signed in", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
     try {
