@@ -8,9 +8,17 @@ import { useEffect, type RefObject } from "react";
  * can still overscroll past the edge before springing back (visible as a gap
  * with a hard edge mid-gesture). Blocking the wheel event right at the
  * boundary prevents that bounce from engaging at all.
- */
-export function useOverscrollBounceGuard(ref: RefObject<HTMLElement | null>): void {
+ *
+ * `open` re-runs the effect once the caller's dialog actually mounts its scroll element -
+ * a stable `useRef` object never changes identity, so a dialog that renders `null` while
+ * closed (the scroll element doesn't exist yet) would otherwise see `ref.current` as `null`
+ * on this hook's first run and never register the listener at all once it later opens.
+ * Defaults to `true` for callers that always render their scroll element (a routed page or
+ * embedded panel, not a conditionally-mounted dialog), where the element already exists by
+ * the time this hook's own effect first runs and there's no re-mount to wait for. */
+export function useOverscrollBounceGuard(ref: RefObject<HTMLElement | null>, open: boolean = true): void {
   useEffect(() => {
+    if (!open) return;
     const el = ref.current;
     if (!el) return;
 
@@ -28,5 +36,5 @@ export function useOverscrollBounceGuard(ref: RefObject<HTMLElement | null>): vo
     // silently ignore preventDefault() here.
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [ref]);
+  }, [ref, open]);
 }

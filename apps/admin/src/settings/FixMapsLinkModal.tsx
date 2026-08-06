@@ -50,7 +50,7 @@ export function FixMapsLinkModal({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
   const [googleUrl, setGoogleUrl] = useState(initial.google_maps_url_override);
   const [appleUrl, setAppleUrl] = useState(initial.apple_maps_url_override);
   const [googleError, setGoogleError] = useState<string | null>(null);

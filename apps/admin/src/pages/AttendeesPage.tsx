@@ -373,7 +373,7 @@ function SendTicketsDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, open, onClose);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
 
   if (!open) return null;
 
@@ -499,7 +499,7 @@ function CardPickerDialog<T>({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [armed, setArmed] = useState(confirmDelaySeconds === undefined);
   useModalFocusTrap(panelRef, open, onClose);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
 
   // Layout effect, not a plain effect — matches ConfirmDialog's own reasoning: the dialog stays
   // mounted while closed, so `armed` could still read true from the previous open, and resetting

@@ -64,7 +64,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [phoneCountryCode, setPhoneCountryCode] = useState("");

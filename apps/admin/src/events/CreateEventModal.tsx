@@ -28,7 +28,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const timezoneId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);

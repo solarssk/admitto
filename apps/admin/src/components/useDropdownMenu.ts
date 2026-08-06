@@ -2,6 +2,22 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 
+/** Walks up from `el` to the nearest ancestor that actually clips overflow (`overflow-y` /
+ * `overflow` computed as `auto`, `scroll`, or `hidden`) - e.g. a modal's own `overflow: auto`
+ * scrollport. Falls back to `document.documentElement` (the viewport) when none is found, so
+ * ordinary page triggers keep behaving exactly as before this existed. */
+function nearestClippingAncestor(el: HTMLElement): HTMLElement {
+  let node = el.parentElement;
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node);
+    if (style.overflowY === "auto" || style.overflowY === "scroll" || style.overflowY === "hidden") {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return document.documentElement;
+}
+
 /** Open/close state, click-outside, Escape-to-close, and first-`menuitem` focus for a small
  * trigger-button + `role="menu"` popover — was duplicated between the Attendee Detail page's
  * Revoke menu and the Attendees list's Export menu before being extracted here. */
@@ -49,7 +65,12 @@ export function useDropdownMenu<
     const panel = panelRef.current;
     if (!trigger || !panel) return;
     const triggerRect = trigger.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - triggerRect.bottom;
+    // Clamped to whichever is smaller: the viewport, or the nearest ancestor that actually
+    // clips overflow (e.g. a modal's own `overflow: auto` scrollport). Comparing against the
+    // viewport alone let a trigger near the bottom of a tall, scrolled modal open "downward"
+    // because the viewport had room, even though the modal's own edge clipped the panel first.
+    const clipBottom = Math.min(window.innerHeight, nearestClippingAncestor(trigger).getBoundingClientRect().bottom);
+    const spaceBelow = clipBottom - triggerRect.bottom;
     const spaceAbove = triggerRect.top;
     const panelHeight = panel.getBoundingClientRect().height;
     // Only flip when upward genuinely has more room - never flip into an even tighter fit.

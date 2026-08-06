@@ -59,7 +59,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const resetPasswordTitleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [phoneCountryCode, setPhoneCountryCode] = useState("");
@@ -165,17 +165,17 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     return () => controller.abort();
   }, [open, user]);
 
-  const userEmail = user?.email;
+  const userId = user?.id;
   useEffect(() => {
-    // Keyed on email, not the whole user object: a role/scope add refreshes user with a new
+    // Keyed on id, not the whole user object: a role/scope add refreshes user with a new
     // object reference (so the chip list re-syncs, see the effect above), which doesn't change
     // who we're querying logins for - re-running this fetch anyway made the section
     // unmount/remount (a visible flash) on every single role change for no reason.
-    if (!open || !userEmail) return;
+    if (!open || !userId) return;
     setRecentLoginsLoaded(false);
     const controller = new AbortController();
     fetchSecurityAuditLog(
-      { eventType: "auth.login.success", search: userEmail, pageSize: 3 },
+      { eventType: "auth.login.success", userId, pageSize: 3 },
       controller.signal,
     )
       .then((res) => {
@@ -189,7 +189,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         setRecentLoginsLoaded(true);
       });
     return () => controller.abort();
-  }, [open, userEmail]);
+  }, [open, userId]);
 
   const headActionsDisabled =
     submitting ||
@@ -321,6 +321,13 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       setRoleChangeConfirmOpen(false);
       setNewEventId("");
       setNewOrgId("");
+      // A type change replaces the whole role identity - unlike a same-type scope add/remove
+      // (staged, doesn't close), the modal's own `user` prop is now stale (still showing the
+      // old role/chips) until the parent's next list refresh finds this user again. If Staff
+      // users is currently filtered by the old role, that refresh can drop the target entirely,
+      // leaving nothing for the modal to pick fresh data up from - so it closes here instead of
+      // risking sitting open indefinitely showing the just-replaced role as if nothing happened.
+      onClose();
     } catch (err) {
       if (err instanceof ApiError && hasApiErrorCode(err, "cannot_change_own_role")) {
         setError("You cannot change your own role. Ask another superadmin.");
@@ -562,7 +569,11 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // role type that no longer applies.
   const hasPendingRoleChanges = pendingAdds.length > 0 || pendingRemoveIds.size > 0;
   const roleActionDisabled =
-    roleBusy || !scopeReady || (isSelf && isRoleTypeChange) || (isRoleTypeChange && hasPendingRoleChanges);
+    roleBusy ||
+    submitting ||
+    !scopeReady ||
+    (isSelf && isRoleTypeChange) ||
+    (isRoleTypeChange && hasPendingRoleChanges);
   const roleActionLabel = isRoleTypeChange ? "Change" : "Add";
   const roleActionIcon = isRoleTypeChange ? "refresh" : "plus";
   const roleActionTitle =
@@ -814,7 +825,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
                             <button
                               type="button"
                               className="users-modal__chip-remove"
-                              disabled={isSelf}
+                              disabled={isSelf || submitting}
                               title={isSelf ? "You cannot remove your own role assignment." : undefined}
                               onClick={() => handleMarkForRemoval(assignment.id)}
                               aria-label={`Remove ${roleLabel(currentRoleType)} for ${scopeChipLabel(assignment)}`}
@@ -835,6 +846,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
                         <button
                           type="button"
                           className="users-modal__chip-remove"
+                          disabled={submitting}
                           onClick={() => handleCancelPendingAdd(add.key)}
                           aria-label={`Cancel adding ${roleLabel(add.role)} for ${add.label}`}
                         >

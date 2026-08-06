@@ -219,7 +219,11 @@ describe("UserEditModal role & access - exclusive roles", () => {
       expect(mockGrantUserRole).toHaveBeenCalledWith("usr-1", { role: "superadmin", scope_type: "instance" });
     });
     expect(onUpdated).toHaveBeenCalledWith({ ...user, roles: [existingRole] }, "Role updated");
-    expect(onClose).not.toHaveBeenCalled();
+    // A type change closes the modal (unlike adding another same-type scope, below): the modal's
+    // own `user` prop is now stale, and if Staff users is currently filtered by the old role, the
+    // parent's next refresh can drop the target entirely, leaving nothing for the modal to pick
+    // fresh data up from.
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("stages another scope of the same role type without confirmation or an API call", async () => {
@@ -462,7 +466,7 @@ describe("UserEditModal sign-in security", () => {
 
     await waitFor(() => {
       expect(mockFetchSecurityAuditLog).toHaveBeenCalledWith(
-        { eventType: "auth.login.success", search: "staff@example.com", pageSize: 3 },
+        { eventType: "auth.login.success", userId: "usr-1", pageSize: 3 },
         expect.anything(),
       );
     });

@@ -179,7 +179,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
   const rowSeqRef = useRef(0);
   // Bumped whenever a new load starts for a given row id - an in-flight load whose generation has
   // since moved on (the user picked another file for that row before the first one finished) just

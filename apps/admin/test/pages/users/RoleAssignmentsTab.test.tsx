@@ -93,9 +93,9 @@ describe("RoleAssignmentsTab", () => {
         expect.anything(),
       );
     });
-    expect(await screen.findByText("No role assignments match your search")).toBeTruthy();
+    expect(await screen.findByText("No role assignments match your filters")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
 
     expect(
       (screen.getByLabelText("Search role assignments by user name or email") as HTMLInputElement).value,

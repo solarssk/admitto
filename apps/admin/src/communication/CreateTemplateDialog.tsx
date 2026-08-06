@@ -21,7 +21,7 @@ export function CreateTemplateDialog({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
   const submittingRef = useRef(false);
   const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);

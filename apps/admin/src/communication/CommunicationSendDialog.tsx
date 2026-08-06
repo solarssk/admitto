@@ -25,7 +25,7 @@ export function CommunicationSendDialog({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useOverscrollBounceGuard(scrollRef);
+  useOverscrollBounceGuard(scrollRef, open);
   const openRef = useRef(open);
   const runIdRef = useRef(0);
   openRef.current = open;
