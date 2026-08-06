@@ -1542,6 +1542,18 @@ describe("AccountPage profile: sign-in method", () => {
   });
 });
 
+describe("AccountPage profile: email field", () => {
+  it("shows the account email in a disabled field, not a plain read-only row", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    const emailField = (await screen.findByLabelText("Email")) as HTMLInputElement;
+    expect(emailField.value).toBe("admin@example.com");
+    expect(emailField.disabled).toBe(true);
+    expect(screen.getByText("Email cannot be changed here.")).toBeTruthy();
+  });
+});
+
 describe("AccountPage: no role assigned", () => {
   it("shows a notice when the account has no role assignments", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, roles: [] });

@@ -790,6 +790,13 @@ export function AccountPage() {
                 </option>
               ))}
             </Select>
+            <Input
+              id="account-email"
+              label="Email"
+              value={account.email}
+              disabled
+              hint="Email cannot be changed here."
+            />
             <div className="mail-field-row">
               <label className="mail-field-label" htmlFor="account-phone-number">Phone number</label>
               <div className="account-phone-row">
@@ -814,13 +821,6 @@ export function AccountPage() {
             </div>
           </div>
           <dl className="account-info-rows">
-            <div className="account-info-row">
-              <dt>Email</dt>
-              <dd>
-                <span>{account.email}</span>
-                <span className="account-info-hint">Email cannot be changed here.</span>
-              </dd>
-            </div>
             <div className="account-info-row">
               <dt>Sign-in</dt>
               <dd><span>{signInMethod(account)}</span></dd>

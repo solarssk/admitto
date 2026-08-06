@@ -27,11 +27,36 @@
 }
 
 /* Phone country code + number, side by side - same layout as the admin Edit user modal's
-   .users-modal__phone-row. */
+   .users-modal__phone-row, including its flex-basis split (country code stays compact, number
+   fills the rest) and its stack-on-narrow breakpoint. Without an explicit flex-basis here both
+   children default to their own content width, which shrinks the country picker down to just
+   its "No code" placeholder instead of a comfortable, consistent control size. */
 .account-phone-row {
   display: flex;
   align-items: center;
   gap: var(--space-2, 0.5rem);
+}
+
+.account-phone-row .at-field:first-child {
+  flex: 0 0 auto;
+  min-width: 10rem;
+}
+
+.account-phone-row .at-field:last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .account-phone-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .account-phone-row .at-field:first-child {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 /* Read-only profile info rows (dl/dt/dd) */
