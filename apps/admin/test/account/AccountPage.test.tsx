@@ -1611,7 +1611,10 @@ describe("AccountPage profile: connect SSO", () => {
     expect(authentikLink.getAttribute("href")).toBe("/account/oidc/p2/link?next=/account");
   });
 
-  it("does not show connect links once an identity is linked, even if other providers are available", async () => {
+  it("shows Unlink SSO and a Connect link together when linked to one provider with another still available", async () => {
+    // Accounts can be linked to more than one provider at once (no uniqueness constraint on
+    // ExternalIdentity.user_id), so Unlink (for what's linked) and Connect (for what isn't)
+    // aren't mutually exclusive states.
     mockFetchAccount.mockResolvedValue({
       ...LINKED_ACCOUNT,
       available_identity_providers: [{ id: "p2", display_name: "Authentik" }],
@@ -1620,7 +1623,7 @@ describe("AccountPage profile: connect SSO", () => {
     renderWithToast(<AccountPage />);
 
     await screen.findByRole("button", { name: "Unlink SSO" });
-    expect(screen.queryByRole("link", { name: /^Connect/ })).toBeNull();
+    expect(screen.getByRole("link", { name: "Connect Authentik" })).toBeTruthy();
   });
 });
 
