@@ -533,17 +533,17 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} onToggleRow={vi.fn()} />,
     );
 
-    expect(screen.queryByLabelText("Filter by ticket type")).toBeNull();
-    expect(screen.queryByLabelText("Filter by attendance")).toBeNull();
-    expect(screen.queryByLabelText("Filter by check-in status")).toBeNull();
-    expect(screen.queryByLabelText("Filter by mail delivery status")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Filter by ticket type,/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Filter by attendance,/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Filter by check-in status,/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Filter by mail delivery status,/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
 
-    expect(screen.getByLabelText("Filter by ticket type")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by attendance")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by check-in status")).toBeTruthy();
-    expect(screen.getByLabelText("Filter by mail delivery status")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Filter by ticket type,/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Filter by attendance,/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Filter by check-in status,/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Filter by mail delivery status,/ })).toBeTruthy();
   });
 
   it("floats as an absolutely-positioned overlay, not inline content pushing the row's own height", () => {
@@ -601,7 +601,7 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     const panel = document.querySelector(".attendees-filters-menu__panel");
     expect(panel?.tagName).toBe("FIELDSET");
     expect(screen.getByText("Filters", { selector: "legend" })).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByLabelText("Filter by ticket type"));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
   });
 
   it("stays reachable and functional on a phone too — same trigger button, same floating panel", () => {
@@ -617,8 +617,8 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "failed" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
     expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
   });
 
@@ -640,13 +640,16 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
 
-    fireEvent.change(screen.getByLabelText("Filter by ticket type"), { target: { value: "vip" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
     expect(onTicketTypeFilterChange).toHaveBeenCalledWith("vip");
 
-    fireEvent.change(screen.getByLabelText("Filter by attendance"), { target: { value: "confirmed" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by attendance,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmed" }));
     expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("confirmed");
 
-    fireEvent.change(screen.getByLabelText("Filter by check-in status"), { target: { value: "admitted" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by check-in status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Checked in" }));
     expect(onStatusFilterChange).toHaveBeenCalledWith("admitted");
   });
 });
@@ -735,10 +738,10 @@ describe("AttendeesTable mobile card view (<768px)", () => {
 
     // The sort control sits at the top of the same Filters dropdown panel.
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const sortSelect = screen.getByLabelText("Sort by") as HTMLSelectElement;
-    expect(sortSelect.value).toBe("name");
+    expect(screen.getByRole("button", { name: "Sort by, Attendee" })).toBeTruthy();
 
-    fireEvent.change(sortSelect, { target: { value: "ticket_type" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sort by, Attendee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ticket" }));
     expect(onSortChange).toHaveBeenLastCalledWith("ticket_type");
 
     // Direction toggle passes the *current* column, matching AttendeesPage's onSortChange
@@ -790,11 +793,12 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
-    const values = Array.from(select.options).map((o) => o.value);
-    expect(values).toEqual(["", "not_sent", "sent", "pending", "failed"]);
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
+    for (const label of ["All mail statuses", "Not sent", "Sent", "Pending", "Failed"]) {
+      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    }
 
-    fireEvent.change(select, { target: { value: "failed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
     expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
   });
 
@@ -803,8 +807,7 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
       <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} mailStatusFilter="" />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    let select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
-    expect(select.value).toBe("");
+    expect(screen.getByRole("button", { name: "Filter by mail delivery status, All mail statuses" })).toBeTruthy();
 
     rerender(
       <AttendeesTable
@@ -814,7 +817,6 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
         mailStatusFilter="not_sent"
       />,
     );
-    select = screen.getByLabelText("Filter by mail delivery status") as HTMLSelectElement;
-    expect(select.value).toBe("not_sent");
+    expect(screen.getByRole("button", { name: "Filter by mail delivery status, Not sent" })).toBeTruthy();
   });
 });

@@ -120,7 +120,8 @@ describe("AttendeesPage page size (#353)", () => {
       );
     });
 
-    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "50" }));
 
     await waitFor(() => {
       expect(fetchEventAttendees).toHaveBeenLastCalledWith(
