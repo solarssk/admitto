@@ -242,6 +242,27 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
       stub.restore();
     }
   });
+
+  it("downloads with a format fallback filename when job status omits filename", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk())
+      .mockResolvedValueOnce(jobStatus("succeeded", { filename: null }))
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers(),
+        blob: async () => new Blob(["pk"], { type: "application/octet-stream" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      await exportAttendees("evt-1", {}, "xlsx");
+      expect(stub.anchorClicks).toEqual(["attendees.xlsx"]);
+    } finally {
+      stub.restore();
+    }
+  });
 });
 
 describe("exportSelectedAttendees (client) — thin wrapper coverage", () => {
