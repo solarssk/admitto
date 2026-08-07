@@ -28,7 +28,7 @@ Validate and import many attendees from CSV or XLSX while controlling duplicates
 6. If needed, change **Overwrite existing attendees**, then select **Re-validate**.
 7. Correct the source file and validate again until the summary is understood.
 8. Turn off **Dry run** only when you intend to write the displayed changes.
-9. Select **Commit import** and review the final result and import history.
+9. Select **Commit**. Admitto queues the import for the background worker and shows progress until it finishes. Keep the worker running (`npm run worker` locally, or compose `worker` in deploy). When it finishes, review the final result and import history.
 
 ## Expected result
 

@@ -70,15 +70,16 @@ When a hard failure NDR is forwarded into the mailbox, the next ingest run updat
 - Bounce settings are **per event** so the same recipient in two events does not create an ambiguous match.
 - Soft / temporary SMTP failures (`4xx`) are logged and do not flip a successful send to Bounced.
 - Messages are not deleted from the mailbox; Admitto records processed IMAP UIDs so accidental "mark as read" in a mail client does not skip a bounce.
-- **Last automatic check** on the bounce panel shows the latest bounce-ingest run for this event (not Test connection). When more than one run exists, **Recent checks** lists the latest history. Organisation Settings → Health includes a soft Bounce detection row for enabled events.
-- **Check every** sets how often bounce-ingest should poll this event's mailbox. The deploy process wakes on a short tick and skips events that are not yet due. Soft Health uses both Check every and the deploy tick when deciding whether a successful run looks stale.
-- Bounce-ingest can append run outcomes to **Organisation Settings → Logs** (System Logs, mail source) when the sidecar has `BOUNCE_INGEST_APP_URL` (or `ADMITTO_INTERNAL_URL`) and the same `OPS_HEALTH_TOKEN` as the app. Missing URL/token skips the bridge; it does not block mailbox polling.
+- **Last automatic check** on the bounce panel shows the latest bounce-ingest run for this event (not Test connection). When more than one run exists, **Recent checks** lists the latest history. Organisation Settings → Health includes soft Bounce detection and Background worker rows for enabled automation.
+- **Check every** sets how often bounce detection should poll this event's mailbox. The Admitto **worker** process wakes on a short tick and skips events that are not yet due. Soft Health uses both Check every and the worker tick when deciding whether a successful run looks stale.
+- Bounce detection can append run outcomes to **Organisation Settings → Logs** (System Logs, mail source) when the worker has `BOUNCE_INGEST_APP_URL` (or `ADMITTO_INTERNAL_URL`) and the same `OPS_HEALTH_TOKEN` as the app. Missing URL/token skips the bridge; it does not block mailbox polling.
 
 ### Common problems
 
 - **Test connection failed:** check host/port/credentials and that the first configured folder exists on the server.
 - **Status never becomes Bounced:** confirm the forward rule, that ingest is On, and that the NDR contains a supported diagnostic format (RFC 3464 delivery-status fields, or a recognized provider diagnostic line such as Postfix / mailhop / Synology).
-- **No bounce lines in System Logs:** confirm the sidecar env has the app base URL and `OPS_HEALTH_TOKEN`, and that Settings → Logs is filtered to source **mail**.
+- **No bounce lines in System Logs:** confirm the worker env has the app base URL and `OPS_HEALTH_TOKEN`, and that Settings → Logs is filtered to source **mail**.
+- **Health shows Background worker degraded:** start the Admitto worker (`npm run worker` locally, or the compose `worker` service in deploy). Without it, bulk send stays queued and bounce/retention do not run automatically.
 
 ## Steps
 

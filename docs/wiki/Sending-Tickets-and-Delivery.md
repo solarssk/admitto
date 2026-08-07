@@ -11,7 +11,7 @@ Choose the intended recipients for a ticket or named template, count them before
 
 ## Before you start
 
-Save and test the selected template. Review attendee pass status, email addresses, ticket types, and attendance values used by the recipient filter.
+Save and test the selected template. Review attendee pass status, email addresses, ticket types, and attendance values used by the recipient filter. Keep the Admitto **worker** running (`npm run worker` in development, or the compose `worker` service in deploy) so queued sends leave the queue.
 
 ## Steps
 

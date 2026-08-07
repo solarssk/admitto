@@ -2,9 +2,7 @@ services:
   # One-shot: migration status check, pre-migration backup, `migrate deploy`, and backfills -
   # steps that need root (to write into the root-only migration_backups volume) or must complete
   # before the web server accepts traffic. The `app` service below only starts once this exits 0
-  # (docker:S6471 - app itself never runs as root). Retention cleanup is NOT here - it runs inside
-  # `app` on every start instead, since this service's completion is only checked by compose on
-  # `docker compose up`, not on a bare `app` restart; see docker-entrypoint.sh's `serve` branch.
+  # (docker:S6471 - app itself never runs as root). Retention runs on the Admitto worker (ADR 0042).
   migrate:
     image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
     build:
@@ -121,28 +119,31 @@ services:
     networks:
       - internal
 
-  retention:
+  # Admitto worker: mail drain, import/export jobs, bounce ingest, retention (ADR 0042).
+  # replicas: 1 + session advisory locks in the worker process.
+  worker:
     image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ["worker"]
     restart: unless-stopped
     env_file: .env
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
+      BOUNCE_INGEST_APP_URL: http://app:3000
+      ADMITTO_INTERNAL_URL: http://app:3000
     depends_on:
-      app:
+      db:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        while true; do
-          echo "[retention] $$(date -u +%FT%TZ) running auth + mail + security audit log retention"
-          node packages/auth/dist/cli.js purge-auth-retention \
-            || echo "[retention] auth purge FAILED"
-          node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots \
-            || echo "[retention] mail nullify FAILED"
-          node packages/auth/dist/cli.js purge-security-audit-log \
-            || echo "[retention] security audit log purge FAILED"
-          sleep 86400
-        done
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_started
+    deploy:
+      replicas: 1
     networks:
       - internal
 
@@ -162,37 +163,7 @@ services:
     networks:
       - internal
 
-  # IMAP bounce / NDR ingest - same Admitto image as app; entrypoint overridden (do not
-  # add a third branch to docker-entrypoint.sh). Wake tick via BOUNCE_INGEST_TICK_SECONDS;
-  # per-event Check every gates due work. Optional System Logs bridge uses OPS_HEALTH_TOKEN.
-  bounce-ingest:
-    image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "/scripts/bounce-ingest-loop.sh"]
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      BOUNCE_INGEST_APP_URL: http://app:3000
-    volumes:
-      - ./scripts/bounce-ingest-loop.sh:/scripts/bounce-ingest-loop.sh:ro
-      - ./scripts/bounce-ingest-healthcheck.sh:/scripts/bounce-ingest-healthcheck.sh:ro
-    depends_on:
-      db:
-        condition: service_healthy
-      app:
-        condition: service_started
-    # Heartbeat is refreshed each loop tick; max age follows 2× tick + slack (see script).
-    healthcheck:
-      test: ["CMD-SHELL", "/bin/sh /scripts/bounce-ingest-healthcheck.sh"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 90s
-    networks:
-      - internal
+  # IMAP bounce / NDR ingest and scheduled retention now run inside the `worker` service (ADR 0042).
 
 networks:
   # Fixed subnet (Compose otherwise auto-assigns one) so TRUSTED_PROXY_CIDRS in .env can name it -
