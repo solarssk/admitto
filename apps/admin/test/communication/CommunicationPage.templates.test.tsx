@@ -228,7 +228,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
   });
@@ -377,7 +377,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
 
     await selectTemplate("Reminder");
@@ -392,7 +392,7 @@ describe("CommunicationPage templates", () => {
       subject_template: "Updated inherited subject",
     });
 
-    await selectTemplate("Ticket email (default)");
+    await selectTemplate("Ticket email");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Updated inherited subject")).toBeTruthy();
@@ -825,7 +825,7 @@ describe("CommunicationPage templates", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Ticket email (default)")).toBeTruthy();
+    expect(await screen.findByText("Ticket email")).toBeTruthy();
     await selectTemplate("Reminder");
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
@@ -833,7 +833,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(fetchEventTemplate).toHaveBeenCalledTimes(2);
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
     });
   });
@@ -997,7 +997,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
 
     await selectTemplate("Reminder");
@@ -1013,7 +1013,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
       expect(
         screen.getByText(

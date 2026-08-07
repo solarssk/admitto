@@ -28,6 +28,8 @@ export {
   UnquotedAttributePlaceholderError,
   MjmlCompileError,
 } from "./errors.js";
+export type { MjmlRawError } from "./errors.js";
+export { friendlyMjmlErrorMessage } from "./mjmlErrorMessages.js";
 export { compileTemplate } from "./compile.js";
 export {
   renderTemplate,
