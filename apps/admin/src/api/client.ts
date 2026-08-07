@@ -124,6 +124,7 @@ import type {
   CreateTicketTypeBody,
   UpdateTicketTypePatch,
 } from "./types.js";
+import { sleepWithAbort } from "../lib/sleep-with-abort.js";
 
 export type EventFullMeta = {
   /** Event capacity limit when a 409 `event_full` response includes structured metadata. */
@@ -1503,7 +1504,10 @@ export async function exportAttendees(
     if (status.status === "failed") {
       throw new ApiError(500, status.error || "Export failed.");
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    if (attempt < 89) {
+      if (signal) await sleepWithAbort(2000, signal);
+      else await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    }
   }
   throw new ApiError(504, "Export is still running. Keep the worker running and try again.");
 }

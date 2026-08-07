@@ -55,7 +55,11 @@ describe("drainExportJobs", () => {
   };
 
   let db: {
-    adminJob: { update: ReturnType<typeof vi.fn> };
+    adminJob: {
+      update: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
+    };
     event: { findUniqueOrThrow: ReturnType<typeof vi.fn> };
   };
 
@@ -70,6 +74,8 @@ describe("drainExportJobs", () => {
     db = {
       adminJob: {
         update: vi.fn().mockResolvedValue({}),
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       event: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
@@ -106,6 +112,7 @@ describe("drainExportJobs", () => {
       claimed: 0,
       succeeded: 0,
       failed: 0,
+      reclaimed: 0,
     });
   });
 
@@ -116,6 +123,7 @@ describe("drainExportJobs", () => {
       claimed: 1,
       succeeded: 1,
       failed: 0,
+      reclaimed: 0,
     });
 
     expect(storage.put).toHaveBeenCalledWith(Buffer.from("csv"), {
@@ -167,6 +175,7 @@ describe("drainExportJobs", () => {
       claimed: 1,
       succeeded: 1,
       failed: 0,
+      reclaimed: 0,
     });
     expect(writeBulkActionLog).toHaveBeenCalledWith(
       db,
@@ -211,6 +220,7 @@ describe("drainExportJobs", () => {
       claimed: 2,
       succeeded: 2,
       failed: 0,
+      reclaimed: 0,
     });
 
     expect(storage.put.mock.calls[0]![1].ext).toBe(".pdf");
@@ -255,6 +265,7 @@ describe("drainExportJobs", () => {
       claimed: 6,
       succeeded: 0,
       failed: 6,
+      reclaimed: 0,
     });
 
     expect(db.adminJob.update).toHaveBeenCalledWith(
@@ -282,6 +293,7 @@ describe("drainExportJobs", () => {
       claimed: 1,
       succeeded: 0,
       failed: 1,
+      reclaimed: 0,
     });
     expect(db.adminJob.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -299,10 +311,33 @@ describe("drainExportJobs", () => {
       claimed: 1,
       succeeded: 0,
       failed: 1,
+      reclaimed: 0,
     });
     expect(db.adminJob.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ error: "boom-string" }),
+      }),
+    );
+  });
+
+  it("keeps succeeded when audit logging fails after the file is stored", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+    vi.mocked(writeBulkActionLog).mockRejectedValue(new Error("audit down"));
+
+    await expect(drainExportJobs(db as never, storage)).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+      reclaimed: 0,
+    });
+    expect(db.adminJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "succeeded" }),
+      }),
+    );
+    expect(db.adminJob.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "failed" }),
       }),
     );
   });
@@ -316,6 +351,7 @@ describe("drainExportJobs", () => {
       claimed: 2,
       succeeded: 2,
       failed: 0,
+      reclaimed: 0,
     });
     expect(claimNextAdminJob).toHaveBeenCalledTimes(2);
 

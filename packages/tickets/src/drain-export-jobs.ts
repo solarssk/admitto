@@ -14,11 +14,16 @@ import {
 } from "./attendees-list-filters.js";
 import { claimNextAdminJob } from "./claim-admin-job.js";
 import { writeBulkActionLog } from "./ops-audit.js";
+import {
+  parseExportJobStaleRunningMs,
+  reclaimStaleExportJobs,
+} from "./reclaim-stale-export-jobs.js";
 
 export type DrainExportJobsResult = {
   claimed: number;
   succeeded: number;
   failed: number;
+  reclaimed: number;
 };
 
 /** Subset of StorageAdapter.put used by export drain. */
@@ -126,25 +131,30 @@ async function runOneExportJob(
       },
     });
 
-    await writeBulkActionLog(db, {
-      event_id: job.event_id,
-      action_type: "attendees_exported",
-      audit: {
-        operator: job.actor_user_id ?? undefined,
-        sessionId: job.session_id ?? undefined,
-        timezone: job.client_timezone ?? undefined,
-      },
-      metadata: {
-        format: request.format,
-        count: file.rowCount,
-        filters: {
-          status: request.filters.status ?? "all",
-          ticket_type: request.filters.ticket_type ?? null,
-          mail_status: request.filters.mail_status ?? null,
-          has_query: Boolean(request.filters.q),
+    // Audit must not flip a completed export back to failed (file already in storage).
+    try {
+      await writeBulkActionLog(db, {
+        event_id: job.event_id,
+        action_type: "attendees_exported",
+        audit: {
+          operator: job.actor_user_id ?? undefined,
+          sessionId: job.session_id ?? undefined,
+          timezone: job.client_timezone ?? undefined,
         },
-      },
-    });
+        metadata: {
+          format: request.format,
+          count: file.rowCount,
+          filters: {
+            status: request.filters.status ?? "all",
+            ticket_type: request.filters.ticket_type ?? null,
+            mail_status: request.filters.mail_status ?? null,
+            has_query: Boolean(request.filters.q),
+          },
+        },
+      });
+    } catch {
+      /* best-effort */
+    }
     return "succeeded";
   } catch (err) {
     await markExportFailed(db, job.id, err);
@@ -155,9 +165,12 @@ async function runOneExportJob(
 export async function drainExportJobs(
   db: PrismaClient,
   storage: ExportJobStorage,
-  options: { limit?: number } = {},
+  options: { limit?: number; staleRunningMs?: number } = {},
 ): Promise<DrainExportJobsResult> {
   const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
+  const staleRunningMs = options.staleRunningMs ?? parseExportJobStaleRunningMs();
+  const { reclaimed } = await reclaimStaleExportJobs(db, { olderThanMs: staleRunningMs });
+
   let claimed = 0;
   let succeeded = 0;
   let failed = 0;
@@ -171,5 +184,5 @@ export async function drainExportJobs(
     else failed += 1;
   }
 
-  return { claimed, succeeded, failed };
+  return { claimed, succeeded, failed, reclaimed };
 }

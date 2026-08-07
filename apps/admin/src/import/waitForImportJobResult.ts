@@ -1,5 +1,8 @@
 import { ApiError, fetchImportJobStatus } from "../api/client.js";
 import type { ImportCommitResponse } from "../api/types.js";
+import { sleepWithAbort } from "../lib/sleep-with-abort.js";
+
+export { sleepWithAbort } from "../lib/sleep-with-abort.js";
 
 /** Keep aligned with `DEFAULT_IMPORT_JOB_STALE_RUNNING_MS` / reclaim. */
 export const IMPORT_JOB_CLIENT_STALE_MS = 15 * 60 * 1000;
@@ -10,24 +13,6 @@ const DEFAULT_MAX_ATTEMPTS = 3600;
 
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
-}
-
-/** Abortable delay used between import job status polls. */
-export function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("Aborted", "AbortError"));
-  }
-  return new Promise((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 export type WaitForImportJobResultOptions = {

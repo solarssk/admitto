@@ -126,13 +126,13 @@ async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
   try {
     const result = await drainExportJobs(db, getDefaultStorage(), { limit: 1 });
-    if (result.claimed === 0) {
+    if (result.claimed === 0 && result.reclaimed === 0) {
       log("export", "idle");
       return;
     }
     log(
       "export",
-      `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed}`,
+      `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed} reclaimed=${result.reclaimed}`,
     );
   } finally {
     await locks.release("export");

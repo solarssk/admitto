@@ -112,6 +112,13 @@ export type {
 export { claimNextAdminJob } from "./claim-admin-job.js";
 export { drainExportJobs } from "./drain-export-jobs.js";
 export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
+export {
+  reclaimStaleExportJobs,
+  parseExportJobStaleRunningMs,
+  DEFAULT_EXPORT_JOB_STALE_RUNNING_MS,
+  STALE_EXPORT_JOB_ERROR,
+} from "./reclaim-stale-export-jobs.js";
+export type { ReclaimStaleExportJobsResult } from "./reclaim-stale-export-jobs.js";
 export type {
   AttendeeExportRsvpStatus,
   AttendeeListFilterParams,
