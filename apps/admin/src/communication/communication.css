@@ -46,8 +46,8 @@
 
 .communication-recipient-card {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
+  gap: var(--space-3);
   width: 100%;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
@@ -70,21 +70,37 @@
 }
 
 .communication-recipient-card i {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.communication-recipient-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.communication-recipient-card__label {
+  font-weight: 500;
+}
+
+.communication-recipient-card__description {
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
 .communication-send-panel__actions {
   display: flex;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-2);
 }
 
 /* .mail-field-hint's shared negative top margin (staff.css) is tuned for hugging the field it
- * describes elsewhere in the app; here it instead sits right above the Count recipients/Send
- * row, so give it its own breathing room without touching the shared rule other pages rely on. */
-.communication-send-panel__recipient-count {
-  margin-top: 0;
-  margin-bottom: var(--space-4);
+ * describes elsewhere in the app; here it instead follows a SearchableSelect trigger, which
+ * needs its own breathing room instead of hugging up against it. */
+.communication-send-panel__ticket-hint {
+  margin-top: var(--space-2);
 }
 
 .communication-templates {
@@ -258,19 +274,6 @@
   margin-top: var(--space-4);
 }
 
-.communication-status {
-  margin-top: var(--space-2);
-  font-size: var(--fs-sm);
-}
-
-.communication-status--ok {
-  color: var(--status-ok, #2fb344);
-}
-
-.communication-status--error {
-  color: var(--status-error, #d63939);
-}
-
 .communication-preview-subject {
   margin-bottom: var(--space-3);
   font-size: var(--fs-sm);
@@ -305,6 +308,7 @@
   flex-wrap: wrap;
   gap: var(--space-3);
   align-items: flex-end;
+  max-width: min(420px, 50%);
 }
 
 .communication-test-row .at-field {

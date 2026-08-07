@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   Card,
+  HintLabel,
   Input,
   Notice,
   PageHeader,
@@ -53,6 +54,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
@@ -516,6 +518,7 @@ function SendTab({
   event,
   templates,
   activeKey,
+  source,
   requestDirtyProtectedAction,
   eventId,
   sendTemplateId,
@@ -533,6 +536,7 @@ function SendTab({
   event: EventDto;
   templates: MailTemplateListItem[];
   activeKey: string;
+  source: EventTemplateDto["source"];
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
   eventId: string;
   sendTemplateId: string | undefined;
@@ -560,21 +564,29 @@ function SendTab({
 
   return (
     <div className="communication-send-tab">
-      <Card title="Message">
-        <Select
+      <Card
+        title={
+          <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
+            Message
+          </HintLabel>
+        }
+      >
+        <SearchableSelect
+          id="communication-send-template"
           label="Template"
+          placeholder="Choose a template…"
+          searchPlaceholder="Search templates…"
+          emptyLabel="No templates found"
           value={activeKey}
-          onChange={(e) => requestDirtyProtectedAction({ kind: "select", key: e.target.value })}
-        >
-          {!templates.some((t) => t.name === "ticket") && (
-            <option value="virtual-ticket">Ticket email (inherited)</option>
-          )}
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </Select>
+          options={[
+            ...(!templates.some((t) => t.name === "ticket")
+              ? [{ id: "virtual-ticket", label: "Ticket email (inherited)" }]
+              : []),
+            ...templates.map((t) => ({ id: t.id, label: t.label })),
+          ]}
+          onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+        />
+        <DefaultTemplateBanner activeKey={activeKey} source={source} />
         {previewLoading ? (
           <div className="communication-preview-empty">Loading preview…</div>
         ) : (
@@ -883,6 +895,30 @@ function TemplateEditorCard({
 /** Rendered email preview: the compiled HTML in a sandboxed iframe, or a prompt to run Preview. */
 /** Rendered subject + sandboxed iframe body, or the empty-state prompt - no Card wrapper, so it
  * can sit inside either its own "Preview" card (Templates tab) or the Send tab's "Message" card. */
+/** The preview endpoint fills {{ticket_url}}/{{qr_image_url}} with fixed sample values
+ * (packages/mail-templates/src/preview.ts `DEFAULT_SAMPLE_VARS`) so a template can be validated
+ * and rendered without a real attendee - but a live https:// URL to a domain nothing actually
+ * hosts renders as a broken image and a dead-end link, reading as broken rather than deliberate.
+ * Swapped here for a same-origin-safe, always-rendering placeholder before the admin ever sees
+ * it; the sandboxed iframe already blocks navigation on the link either way, so this is purely
+ * cosmetic, not a security boundary. */
+const SAMPLE_TICKET_URL = "https://tickets.example.com/t/sample-token";
+const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
+const SAMPLE_QR_PLACEHOLDER_DATA_URI =
+  "data:image/svg+xml;charset=UTF-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
+      '<rect width="200" height="200" fill="#f1f3f5"/>' +
+      '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
+      '<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">Sample QR</text>' +
+      '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>' +
+      "</svg>",
+  );
+
+function sanitizeSamplePreviewHtml(html: string): string {
+  return html.split(SAMPLE_QR_IMAGE_URL).join(SAMPLE_QR_PLACEHOLDER_DATA_URI).split(SAMPLE_TICKET_URL).join("#");
+}
+
 function PreviewBody({
   previewHtml,
   previewSubject,
@@ -900,7 +936,7 @@ function PreviewBody({
         className="communication-preview-frame"
         title="Email preview"
         sandbox=""
-        srcDoc={previewHtml}
+        srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
       />
     </>
   ) : (
@@ -941,7 +977,14 @@ function SendTestCard({
   testStatus: { kind: "ok" | "error"; message: string } | null;
 }>) {
   return (
-    <Card title="Send test" className="communication-test-send">
+    <Card
+      title={
+        <HintLabel hint="Sends this exact template to one address you type, so you can check it before a real send. Doesn't count as a delivery to any attendee.">
+          Send test
+        </HintLabel>
+      }
+      className="communication-test-send"
+    >
       <div className="communication-test-row">
         <Input
           label="Recipient email"
@@ -956,23 +999,21 @@ function SendTestCard({
           disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
         >
           {(guard) => (
-            <Button variant="secondary" onClick={() => void onTestSend()} {...guard}>
+            <Button
+              variant="secondary"
+              icon={<i className="ti ti-send" aria-hidden="true" />}
+              onClick={() => void onTestSend()}
+              {...guard}
+            >
               {testSending ? "Sending…" : "Send test"}
             </Button>
           )}
         </ArchivedGuard>
       </div>
       {testStatus && (
-        <p
-          role="status"
-          aria-live="polite"
-          className={[
-            "communication-status",
-            testStatus.kind === "ok" ? "communication-status--ok" : "communication-status--error",
-          ].join(" ")}
-        >
+        <Notice variant={testStatus.kind === "ok" ? "success" : "error"} as="output">
           {testStatus.message}
-        </p>
+        </Notice>
       )}
     </Card>
   );
@@ -1710,6 +1751,7 @@ export function CommunicationPage() {
           event={event}
           templates={templates}
           activeKey={activeKey}
+          source={source}
           requestDirtyProtectedAction={requestDirtyProtectedAction}
           eventId={eventId}
           sendTemplateId={sendTemplateId}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, Notice } from "@admitto/ui";
+import { Button, Card, HintLabel, Notice } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
@@ -33,13 +33,45 @@ type SendPhase = "form" | "polling" | "done";
 const RECIPIENT_OPTIONS: ReadonlyArray<{
   value: BulkSendFilter["type"];
   label: string;
+  description: string;
   icon: string;
 }> = [
-  { value: "all", label: "All attendees", icon: "ti-users" },
-  { value: "rsvp_status", label: "By RSVP status", icon: "ti-calendar-event" },
-  { value: "ticket_type", label: "By ticket type", icon: "ti-ticket" },
-  { value: "no_delivery", label: "No delivery for this template", icon: "ti-mail-off" },
+  {
+    value: "all",
+    label: "All attendees",
+    description: "Every attendee on this event, regardless of status.",
+    icon: "ti-users",
+  },
+  {
+    value: "rsvp_status",
+    label: "By RSVP status",
+    description: "Only attendees with the attendance status you pick below.",
+    icon: "ti-calendar-event",
+  },
+  {
+    value: "ticket_type",
+    label: "By ticket type",
+    description: "Only attendees holding the ticket type you pick below.",
+    icon: "ti-ticket",
+  },
+  {
+    value: "no_delivery",
+    label: "No delivery for this template",
+    description: "Only attendees who've never received this template - catch up latecomers without re-emailing everyone.",
+    icon: "ti-mail-off",
+  },
 ];
+
+/** Notice tone for the send/queue result: "info" while still in flight, "warning" when nothing
+ * useful happened (no match, nothing queued) or some messages failed, "success" otherwise. */
+function resultVariant(
+  phase: SendPhase,
+  batchStatus: { queued: number; sent: number; failed: number } | null,
+): "info" | "success" | "warning" {
+  if (phase === "polling") return "info";
+  if (!batchStatus) return "warning";
+  return batchStatus.failed > 0 ? "warning" : "success";
+}
 
 /** Recipients filter, dry-run count, and batch send/status for the currently selected template.
  * Inline panel for the Send tab - carries the same form/count/send/poll logic that used to live
@@ -169,7 +201,9 @@ export function CommunicationSendPanel({
   };
 
   const filterReady = filterType !== "ticket_type" || ticketType.trim().length > 0;
-  const pickerLocked = busy || phase !== "form";
+  // Only lock the picker once a real send is in flight/done - a quick dry-run count is
+  // non-destructive and re-enabling the cards a beat later just for that read as flicker.
+  const pickerLocked = phase !== "form";
 
   const runDryRun = async () => {
     if (!filterReady) {
@@ -246,8 +280,7 @@ export function CommunicationSendPanel({
 
   return (
     <>
-      <Card title="Recipients">
-        <p className="mail-field-hint">Choose who should get this email.</p>
+      <Card title={<HintLabel hint="Who gets this email once you hit Send below.">Recipients</HintLabel>}>
         <div className="communication-recipient-cards" role="radiogroup" aria-label="Recipients">
           {RECIPIENT_OPTIONS.map((opt) => (
             <button
@@ -255,6 +288,8 @@ export function CommunicationSendPanel({
               type="button"
               role="radio"
               aria-checked={filterType === opt.value}
+              aria-label={opt.label}
+              aria-describedby={`communication-recipient-${opt.value}-desc`}
               disabled={pickerLocked}
               className={[
                 "communication-recipient-card",
@@ -269,7 +304,17 @@ export function CommunicationSendPanel({
               }}
             >
               <i className={`ti ${opt.icon}`} aria-hidden="true" />
-              <span>{opt.label}</span>
+              <span className="communication-recipient-card__text">
+                <span className="communication-recipient-card__label" aria-hidden="true">
+                  {opt.label}
+                </span>
+                <span
+                  id={`communication-recipient-${opt.value}-desc`}
+                  className="communication-recipient-card__description"
+                >
+                  {opt.description}
+                </span>
+              </span>
             </button>
           ))}
         </div>
@@ -319,11 +364,19 @@ export function CommunicationSendPanel({
           </p>
         )}
         {filterType === "ticket_type" && !filterReady && (
-          <p className="mail-field-hint">Choose a ticket type to count or send.</p>
+          <p className="mail-field-hint communication-send-panel__ticket-hint">
+            Choose a ticket type to count or send.
+          </p>
         )}
       </Card>
 
-      <Card title="Review & send">
+      <Card
+        title={
+          <HintLabel hint="Count first to check the filter matches who you expect, then send.">
+            Review &amp; send
+          </HintLabel>
+        }
+      >
         {error && (
           <Notice variant="error" role="alert">
             {error}
@@ -331,15 +384,21 @@ export function CommunicationSendPanel({
         )}
         {phase === "form" && (
           <>
-            {recipientCount != null && (
-              <output className="mail-field-hint communication-send-panel__recipient-count">
-                <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
-              </output>
-            )}
+            {recipientCount != null &&
+              (recipientCount === 0 ? (
+                <Notice variant="warning" as="output">
+                  No recipients match this filter.
+                </Notice>
+              ) : (
+                <Notice variant="success" as="output">
+                  <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
+                </Notice>
+              ))}
             <div className="communication-send-panel__actions">
               <Button
                 type="button"
                 variant="secondary"
+                icon={<i className="ti ti-calculator" aria-hidden="true" />}
                 disabled={busy || !filterReady}
                 onClick={() => void runDryRun()}
               >
@@ -347,7 +406,13 @@ export function CommunicationSendPanel({
               </Button>
               <ArchivedGuard event={event} reasonId="send-email-reason" disabled={busy || !filterReady}>
                 {(guard) => (
-                  <Button type="button" variant="primary" onClick={() => void runSend()} {...guard}>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    icon={<i className="ti ti-send" aria-hidden="true" />}
+                    onClick={() => void runSend()}
+                    {...guard}
+                  >
                     {busy ? "Sending…" : "Send"}
                   </Button>
                 )}
@@ -357,7 +422,11 @@ export function CommunicationSendPanel({
         )}
         {(phase === "polling" || phase === "done") && (
           <>
-            {resultMessage && <output className="mail-field-hint">{resultMessage}</output>}
+            {resultMessage && (
+              <Notice variant={resultVariant(phase, batchStatus)} as="output">
+                {resultMessage}
+              </Notice>
+            )}
             {batchStatus && phase === "polling" && (
               <p className="mail-field-hint">
                 Queued: {batchStatus.queued} · Sent: {batchStatus.sent} · Failed:{" "}
@@ -365,7 +434,13 @@ export function CommunicationSendPanel({
               </p>
             )}
             <div className="communication-send-panel__actions">
-              <Button type="button" variant="secondary" disabled={busy} onClick={resetForm}>
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                disabled={busy}
+                onClick={resetForm}
+              >
                 Send another
               </Button>
             </div>

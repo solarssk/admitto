@@ -734,11 +734,11 @@ describe("CommunicationPage templates", () => {
     fireEvent.change(email, { target: { value: "ops@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     expect(await screen.findByText("Test email sent.")).toBeTruthy();
-    expect(screen.getByRole("status").className).toContain("communication-status--ok");
+    expect(screen.getByRole("status").className).toContain("at-notice--success");
 
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     expect(await screen.findByText("Mailbox unavailable")).toBeTruthy();
-    expect(screen.getByRole("status").className).toContain("communication-status--error");
+    expect(screen.getByRole("status").className).toContain("at-notice--error");
   });
 
   it("does not switch editor when deleting a non-active template", async () => {
