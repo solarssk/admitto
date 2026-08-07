@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
+import { isAnyDropdownMenuOpen } from "./useDropdownMenu.js";
 
 /** Trap focus inside a modal panel, close on Escape, lock body scroll while open.
  *
@@ -37,6 +38,12 @@ export function useModalFocusTrap(
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // A nested SearchableSelect/PhoneCountrySelect panel handles its own Escape on the
+        // bubble phase, but this listener runs on the capture phase and would otherwise always
+        // win the race, closing the whole modal (or opening its discard-confirmation) instead of
+        // just the picker sitting open on top of it (bot review finding, #755). Step aside and
+        // let the event continue to that bubble-phase handler when one is open.
+        if (isAnyDropdownMenuOpen()) return;
         event.preventDefault();
         event.stopPropagation();
         onCancelRef.current();

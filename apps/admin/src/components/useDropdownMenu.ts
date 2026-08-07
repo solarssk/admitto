@@ -7,6 +7,19 @@ const VIEWPORT_PAD_PX = 8;
 
 const HIDDEN_FIXED_PANEL: CSSProperties = { position: "fixed", visibility: "hidden" };
 
+// Module-level, not React state: read synchronously from useModalFocusTrap's native capture-
+// phase keydown listener, which runs before any state update from this hook's own render cycle
+// could reach it. Tracks how many dropdown menus are open anywhere in the app (not just inside
+// one modal instance) so a modal's Escape handler can defer to a nested picker's own Escape
+// handler instead of closing the whole modal (or opening its discard-confirmation) out from
+// under an open SearchableSelect/PhoneCountrySelect panel (bot review finding, #755).
+let openDropdownCount = 0;
+
+/** Whether any `useDropdownMenu`-based popover is currently open. */
+export function isAnyDropdownMenuOpen(): boolean {
+  return openDropdownCount > 0;
+}
+
 export interface UseDropdownMenuOptions {
   /** Gap between trigger and panel, in px. Default 4. */
   gap?: number;
@@ -53,6 +66,14 @@ export function useDropdownMenu<
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<TTrigger>(null);
   const panelRef = useRef<TPanel>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    openDropdownCount += 1;
+    return () => {
+      openDropdownCount -= 1;
+    };
+  }, [open]);
 
   // `reason === "focus"`/`"scroll"` mean, respectively, that the user already moved focus
   // elsewhere on purpose (e.g. Tab to the next control) or that an ancestor scroll closed this

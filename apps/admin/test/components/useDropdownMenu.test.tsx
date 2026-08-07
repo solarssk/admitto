@@ -66,6 +66,25 @@ function MatchWidthMenu() {
   );
 }
 
+/** Same options SearchableSelect/PhoneCountrySelect always pass - `align: "start"`,
+ * `matchTriggerWidth: true`, a 260px `minWidth` floor - to test the shared horizontal
+ * viewport clamp with the exact configuration those consumers use. */
+function MinWidthFloorMenu() {
+  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "start",
+    matchTriggerWidth: true,
+    minWidth: 260,
+  });
+  return (
+    <div ref={rootRef}>
+      <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+        Trigger
+      </button>
+      {open && <div ref={panelRef} role="menu" style={panelStyle} />}
+    </div>
+  );
+}
+
 /** A popover of plain form controls, not `role="menuitem"` items - the Attendees list's own
  * Filters panel is shaped this way (see useDropdownMenu's own roving-focus comment). */
 function TestMenuWithoutMenuItems() {
@@ -167,6 +186,36 @@ describe("useDropdownMenu", () => {
     expect(screen.getByRole("menu").style.width).toBe("300px");
 
     vi.restoreAllMocks();
+  });
+
+  it("keeps a 260px-floor panel inside a narrow viewport when its trigger sits flush against the right edge", () => {
+    // Regression coverage for a bot review finding on the Reports pagination footer (#753): with
+    // no pager visible (total rows <= page size), the "Rows per page" SearchableSelect is the
+    // only control left in that row, flush against the container's right edge. The concern was
+    // that its 260px minWidth floor would push the panel past the viewport's right edge - this
+    // proves the horizontal clamp below already accounts for that, for any `align: "start"`
+    // consumer, regardless of why the trigger ended up near the edge.
+    vi.stubGlobal("innerWidth", 375);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { top: 100, bottom: 130, height: 30, x: 0, y: 0, toJSON() {} };
+      // A ~67px-wide trigger ("Rows per page: 25 ▾") flush against a 375px viewport's right edge.
+      if (this.tagName === "BUTTON") return { ...base, left: 300, right: 367, width: 67 };
+      return { ...base, left: 0, right: 0, width: 0 }; // panel, natural width irrelevant here
+    });
+
+    render(<MinWidthFloorMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    const menu = screen.getByRole("menu");
+    expect(menu.style.width).toBe("260px");
+    const left = Number.parseFloat(menu.style.left);
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left + 260).toBeLessThanOrEqual(375);
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
