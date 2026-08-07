@@ -5,7 +5,7 @@ import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
 import type { WalletPassProvider } from "@admitto/wallet";
 import { WalletProviderError } from "@admitto/wallet";
-import { resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -201,6 +201,85 @@ describe("On-demand wallet routes", () => {
     expect(saved?.status).toBe("failed");
     expect(saved?.last_error_code).toBe("wallet_provider_rejected");
     errSpy.mockRestore();
+  });
+
+  it("recovers a pass a concurrent request already created instead of marking it failed", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(
+      new WalletProviderError("wallet_provider_duplicate", "userProvidedId already exists"),
+    );
+    provider.findByUserProvidedId.mockResolvedValueOnce({
+      providerPassId: "pc-winner",
+      downloadUrl: "https://pc.test/p/winner",
+      appleUrl: "https://pc.test/apple/winner",
+      androidUrl: "https://pc.test/android/winner",
+    });
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/winner");
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("active");
+    expect(saved?.provider_pass_id).toBe("pc-winner");
+    expect(saved?.last_error_code).toBeNull();
+  });
+
+  it("marks failed when a duplicate error can't be recovered (findByUserProvidedId finds nothing)", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(
+      new WalletProviderError("wallet_provider_duplicate", "userProvidedId already exists"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("failed");
+    expect(saved?.last_error_code).toBe("wallet_provider_duplicate");
+    errSpy.mockRestore();
+  });
+
+  it("returns 500 (not the not-found page) when the Mode A ticket lookup fails", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    vi.spyOn(prisma.attendee, "findUnique").mockRejectedValueOnce(new Error("db down"));
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "ticket_resolution_failed",
+        fields: { route: "/t/:token/wallet/:platform", errorKind: "unexpected" },
+      }),
+    );
+    expect(provider.createPass).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 (not the not-found page) when the Mode B ticket lookup fails", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    vi.spyOn(prisma.event, "findUnique").mockRejectedValueOnce(new Error("db down"));
+
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}/wallet/apple`, {
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(500);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "ticket_agency_lookup_failed",
+        fields: { route: "/t/:eventSlug/a/:ref/wallet/:platform" },
+      }),
+    );
+    expect(provider.createPass).not.toHaveBeenCalled();
   });
 
   it("shows the retry notice on the ticket page after walletError=1", async () => {
