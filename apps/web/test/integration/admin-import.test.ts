@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@admitto/db";
+import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -1327,7 +1327,12 @@ describe("GET /api/admin/events/:eventId/import/jobs/:jobId", () => {
 
     await prisma.adminJob.update({
       where: { id: jobId },
-      data: { status: "failed", error: "boom", result_json: null, finished_at: new Date() },
+      data: {
+        status: "failed",
+        error: "boom",
+        result_json: Prisma.DbNull,
+        finished_at: new Date(),
+      },
     });
     const failed = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
       headers: { Cookie: adminCookie },
@@ -1345,7 +1350,7 @@ describe("GET /api/admin/events/:eventId/import/jobs/:jobId", () => {
     const badJson = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
       headers: { Cookie: adminCookie },
     });
-    expect((await badJson.json()).result).toBeNull();
+    expect(((await badJson.json()) as { result: unknown }).result).toBeNull();
 
     await prisma.adminJob.update({
       where: { id: jobId },
@@ -1354,7 +1359,7 @@ describe("GET /api/admin/events/:eventId/import/jobs/:jobId", () => {
     const arrayJson = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
       headers: { Cookie: adminCookie },
     });
-    expect((await arrayJson.json()).result).toBeNull();
+    expect(((await arrayJson.json()) as { result: unknown }).result).toBeNull();
   });
 });
 
