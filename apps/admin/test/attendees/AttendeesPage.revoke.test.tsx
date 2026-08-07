@@ -563,7 +563,7 @@ describe("AttendeesPage revoke/restore", () => {
     const dialog = screen.getByRole("dialog", { name: "Send tickets" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));
     await waitFor(() => {
-      expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-hdr");
+      expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-hdr", expect.any(AbortSignal));
       expect(addToast).toHaveBeenCalledWith("Send complete: 2 tickets sent.", "success");
     });
   });

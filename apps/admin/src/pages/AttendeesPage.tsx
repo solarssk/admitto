@@ -862,6 +862,18 @@ export function AttendeesPage() {
   const eventIdRef = useRef(eventId);
   eventIdRef.current = eventId;
 
+  /** Detached bulk-send status polls; abort on event change / unmount so toasts stay on-context. */
+  const headerSendPollRef = useRef<AbortController | null>(null);
+  const selectedSendPollRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => {
+      headerSendPollRef.current?.abort();
+      headerSendPollRef.current = null;
+      selectedSendPollRef.current?.abort();
+      selectedSendPollRef.current = null;
+    };
+  }, [eventId]);
+
   const [items, setItems] = useState<AttendeeRowDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -1150,9 +1162,15 @@ export function AttendeesPage() {
       notifyBulkSendResult(result, addToast);
       setReloadToken((n) => n + 1);
       if (result.batchId && result.queued > 0) {
-        void pollBulkSendCompletion(eventId, result.batchId, addToast).catch(() => {
-          addToast("Could not refresh send status. Check Communication.", "info");
-        });
+        headerSendPollRef.current?.abort();
+        const ac = new AbortController();
+        headerSendPollRef.current = ac;
+        void pollBulkSendCompletion(eventId, result.batchId, addToast, { signal: ac.signal }).catch(
+          () => {
+            if (ac.signal.aborted) return;
+            addToast("Could not refresh send status. Check Communication.", "info");
+          },
+        );
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -1214,9 +1232,15 @@ export function AttendeesPage() {
         notifyBulkSendResult(result, addToast);
         setReloadToken((n) => n + 1);
         if (eventId && result.batchId && result.queued > 0) {
-          void pollBulkSendCompletion(eventId, result.batchId, addToast).catch(() => {
-            addToast("Could not refresh send status. Check Communication.", "info");
-          });
+          selectedSendPollRef.current?.abort();
+          const ac = new AbortController();
+          selectedSendPollRef.current = ac;
+          void pollBulkSendCompletion(eventId, result.batchId, addToast, { signal: ac.signal }).catch(
+            () => {
+              if (ac.signal.aborted) return;
+              addToast("Could not refresh send status. Check Communication.", "info");
+            },
+          );
         }
       },
     });
