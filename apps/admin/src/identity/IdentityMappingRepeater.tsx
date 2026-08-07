@@ -66,6 +66,7 @@ export function IdentityMappingRepeater({
                   placeholder="Select role…"
                   searchPlaceholder="Search roles…"
                   emptyLabel="No roles found"
+                  showLabel={false}
                   value={row.role}
                   options={[
                     ...(roleInvalid ? [{ id: row.role, label: `${row.role} (invalid, pick a role)` }] : []),
@@ -89,6 +90,7 @@ export function IdentityMappingRepeater({
                   placeholder="Select scope…"
                   searchPlaceholder="Search scopes…"
                   emptyLabel="No scopes found"
+                  showLabel={false}
                   value={row.scope_type}
                   options={[
                     ...(scopeInvalid ? [{ id: row.scope_type, label: `${row.scope_type} (invalid, pick a scope)` }] : []),

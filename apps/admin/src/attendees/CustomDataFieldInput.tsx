@@ -33,6 +33,7 @@ export function CustomDataFieldInput({
           placeholder={placeholder}
           searchPlaceholder="Search options…"
           emptyLabel="No options found"
+          showLabel={false}
           value={value}
           disabled={disabled}
           options={[
@@ -58,6 +59,7 @@ export function CustomDataFieldInput({
           placeholder={placeholder}
           searchPlaceholder="Search options…"
           emptyLabel="No options found"
+          showLabel={false}
           value={value}
           disabled={disabled}
           options={[

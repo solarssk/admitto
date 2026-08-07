@@ -505,6 +505,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
                       placeholder="Select weight…"
                       searchPlaceholder="Search weights…"
                       emptyLabel="No weights found"
+                      showLabel={false}
                       value={String(row.weight)}
                       options={WEIGHT_OPTIONS.map((w) => ({ id: String(w.value), label: w.label }))}
                       onChange={(id) => changeRowCombo(row.id, { weight: Number(id) })}
