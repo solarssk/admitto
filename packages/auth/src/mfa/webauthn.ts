@@ -14,6 +14,7 @@ import {
 import { findUserById } from "../user.js";
 import { ensureFreshEnrollmentBackupCodes } from "./backup-recovery.js";
 import { userHasAnyConfirmedMfaMethod } from "./policy.js";
+import { runInTransaction } from "../prisma-tx.js";
 
 /** "platform" = passkey (Touch ID/Windows Hello/password manager); "cross-platform" = security
  * key (USB/NFC/BLE FIDO2 device). Same ceremony either way — only this hint and the My Account
@@ -94,7 +95,7 @@ export interface FinishWebauthnRegistrationResult {
 /** Verify a registration response and store the new credential. Returns null on any verification
  * failure or if this credential ID is already registered (to this user or another). */
 export async function finishWebauthnRegistration(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
   response: RegistrationResponseJSON,
   expectedChallenge: string,
@@ -118,7 +119,7 @@ export async function finishWebauthnRegistration(
 
   const { credential, aaguid } = verification.registrationInfo;
 
-  return prisma.$transaction(async (tx) => {
+  return runInTransaction(prisma, async (tx) => {
     const dup = await tx.userMfaMethod.findFirst({
       where: { webauthn_credential_id: credential.id },
       select: { id: true },
