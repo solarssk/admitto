@@ -2,7 +2,11 @@
 import { useRef } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useClickOutside, type OutsideInteraction } from "../../src/components/useClickOutside.js";
+import {
+  resolvesInsideContainer,
+  useClickOutside,
+  type OutsideInteraction,
+} from "../../src/components/useClickOutside.js";
 
 function Harness({ open, onOutside }: { open: boolean; onOutside: (reason: OutsideInteraction) => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -97,5 +101,58 @@ describe("useClickOutside", () => {
     fireEvent.pointerDown(screen.getByTestId("label-for-nothing"));
     expect(onOutside).toHaveBeenCalledTimes(1);
     expect(onOutside).toHaveBeenCalledWith("pointer");
+  });
+});
+
+describe("resolvesInsideContainer", () => {
+  it("is false when there is no container", () => {
+    expect(resolvesInsideContainer(document.createElement("button"), null)).toBe(false);
+  });
+
+  it("is false when the target is not a DOM node (e.g. window)", () => {
+    expect(resolvesInsideContainer(window, document.createElement("div"))).toBe(false);
+  });
+
+  it("is true when the target is inside the container", () => {
+    const container = document.createElement("div");
+    const child = document.createElement("button");
+    container.appendChild(child);
+    expect(resolvesInsideContainer(child, container)).toBe(true);
+  });
+
+  it("is false for a target that's a Node but not an Element (e.g. a text node), and not inside the container", () => {
+    const container = document.createElement("div");
+    const text = document.createTextNode("hello");
+    expect(resolvesInsideContainer(text, container)).toBe(false);
+  });
+
+  it("is true for a <label for> whose labelled control lives inside the container", () => {
+    const container = document.createElement("div");
+    const button = document.createElement("button");
+    button.id = "labelled-button";
+    container.appendChild(button);
+    document.body.appendChild(container);
+
+    const label = document.createElement("label");
+    label.htmlFor = "labelled-button";
+    document.body.appendChild(label);
+
+    expect(resolvesInsideContainer(label, container)).toBe(true);
+
+    container.remove();
+    label.remove();
+  });
+
+  it("is false for a <label for> whose labelled control doesn't exist", () => {
+    const container = document.createElement("div");
+    const label = document.createElement("label");
+    label.htmlFor = "no-such-id";
+    expect(resolvesInsideContainer(label, container)).toBe(false);
+  });
+
+  it("is false for a plain <label> with no for attribute", () => {
+    const container = document.createElement("div");
+    const label = document.createElement("label");
+    expect(resolvesInsideContainer(label, container)).toBe(false);
   });
 });

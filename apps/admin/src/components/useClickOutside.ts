@@ -18,7 +18,7 @@ export type OutsideInteraction = "pointer" | "focus" | "scroll";
  * (PO report). Recognizing the label's target as "inside" skips that close, leaving the single
  * native forwarded click as the only thing toggling the trigger - the same clean open/close a
  * direct click on the trigger itself already gets. */
-function resolvesInsideContainer(target: EventTarget | null, container: HTMLElement | null): boolean {
+export function resolvesInsideContainer(target: EventTarget | null, container: HTMLElement | null): boolean {
   if (!container || !(target instanceof Node)) return false;
   if (container.contains(target)) return true;
   const forId = target instanceof Element ? target.closest("label")?.htmlFor : undefined;
