@@ -82,7 +82,7 @@ TypeScript unions in `src/status.ts` are the single source of truth for all stat
 | `AttendeeStatus` | `registered \| confirmed \| cancelled` |
 | `EmailDeliveryPurpose` | `initial \| resend` |
 | `EmailDeliveryStatus` | `queued \| accepted \| sent \| delivered \| failed \| bounced \| rejected` |
-| `WalletPassStatus` | `active \| voided \| expired` |
+| `WalletPassStatus` | `pending \| active \| voided \| failed \| expired` |
 | `CheckInStatus` | `VALID \| ALREADY_CHECKED_IN \| INVALID \| REVOKED \| UNKNOWN_EVENT \| NETWORK_ERROR` |
 
 `CheckInStatus` captures scanner validation outcomes (including scanner-side results like
