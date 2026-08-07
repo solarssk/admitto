@@ -1,6 +1,5 @@
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
-import { workerHeartbeatStaleMs as sharedWorkerHeartbeatStaleMs } from "@admitto/mail-delivery";
 
 export const WORKER_HEARTBEAT_ID = "default";
 
@@ -25,4 +24,4 @@ export async function touchWorkerHeartbeat(
 }
 
 /** Re-export shared Health stale window (same formula as Settings → Health). */
-export const workerHeartbeatStaleMs = sharedWorkerHeartbeatStaleMs;
+export { workerHeartbeatStaleMs } from "@admitto/mail-delivery";
