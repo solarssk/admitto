@@ -10,7 +10,7 @@
 }
 
 .bounce-banner__link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -51,6 +51,16 @@
   white-space: nowrap;
 }
 
+/* Pushed to the row's trailing edge regardless of how wide the select/badge/meta before it are -
+   Delete always sits right next to New template, not drifting with the select's own width. */
+.communication-template-picker__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  margin-left: auto;
+}
+
 /* No align-items: start here on purpose - the row sizes to the editor Card's own natural
    height (it's always the taller side), and default stretch then pulls the shorter preview
    column up to match it instead of leaving empty space under a short mail-client box. */
@@ -66,31 +76,25 @@
   }
 }
 
-.communication-editor-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.communication-editor-delete {
+.communication-template-picker__delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: var(--control-h);
   height: var(--control-h);
-  border: none;
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   cursor: pointer;
 }
 
-.communication-editor-delete:hover {
+.communication-template-picker__delete:hover:not(:disabled) {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.communication-editor-delete:disabled {
+.communication-template-picker__delete:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -168,7 +172,7 @@
 }
 
 .communication-recipient-card--active {
-  border-color: var(--accent);
+  border-color: var(--primary);
   background: var(--surface-hover);
 }
 
@@ -254,16 +258,29 @@
   background: var(--surface-hover);
 }
 
-/* Small image preview shown above the chip on hover/focus - CSS-only reveal (no JS state), only
-   ever populated for the one placeholder this editor already has a same-origin sample image
-   for (qr_image_url's SAMPLE_QR_PLACEHOLDER_DATA_URI). */
+/* Always-visible small thumbnail for qr_image_url - a hover-only preview is too easy to never
+   discover at all (PO report: "I don't see anything"), so this is the guaranteed baseline; the
+   larger .communication-chip-preview below is a bonus for a closer look, not the only way to
+   see it. */
+.communication-chip-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+}
+
+/* Larger image preview shown below the chip on hover/focus - CSS-only reveal (no JS state), only
+   ever populated for the one placeholder this editor already has a same-origin sample image for
+   (qr_image_url's SAMPLE_QR_PLACEHOLDER_DATA_URI). Opens downward, not upward: these chips sit
+   near the top of the card, right under the header, so popping upward left it with nowhere to
+   render and no reliable way to notice it (PO report, repeated). */
 .communication-chip-preview {
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   z-index: var(--z-dropdown);
-  padding: 4px;
+  padding: 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-card);
@@ -276,8 +293,8 @@
 
 .communication-chip-preview img {
   display: block;
-  width: 72px;
-  height: 72px;
+  width: 100px;
+  height: 100px;
 }
 
 .communication-chip:hover .communication-chip-preview,
@@ -358,14 +375,14 @@
   border: none;
   background: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--primary);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 
 .communication-preview-toolbar__open:hover {
-  color: var(--accent-hover, var(--accent));
+  color: var(--primary-hover);
 }
 
 /* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
@@ -452,8 +469,8 @@
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
+  background: var(--primary);
+  color: var(--text-on-primary);
   font-size: 1.1rem;
 }
 

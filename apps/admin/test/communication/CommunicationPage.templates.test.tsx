@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const fetchEventTemplates = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -228,7 +228,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
   });
@@ -302,8 +302,8 @@ describe("CommunicationPage templates", () => {
 
     const optionalChip = screen.getByRole("button", { name: "{{first_name}}" });
     const requiredChip = screen.getByRole("button", { name: "{{ticket_url}}" });
-    expect(optionalChip.getAttribute("title")).toBe("Attendee's first name.");
-    expect(requiredChip.getAttribute("title")).toBe(
+    expect(getTooltipText(optionalChip)).toBe("Attendee's first name.");
+    expect(getTooltipText(requiredChip)).toBe(
       "Required placeholder · Link to the attendee's own ticket page.",
     );
 
@@ -330,7 +330,7 @@ describe("CommunicationPage templates", () => {
     expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-ticket");
   });
 
-  it("shows no delete button for the ticket template, but shows one once a different template is active", async () => {
+  it("disables delete with an explanatory tooltip for the ticket template, enables it once a different template is active", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
     renderPage();
@@ -338,14 +338,18 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
-    expect(screen.queryByRole("button", { name: "Delete template" })).toBeNull();
+    const deleteBtn = screen.getByRole("button", { name: "Delete template" }) as HTMLButtonElement;
+    expect(deleteBtn.disabled).toBe(true);
+    expect(getTooltipText(deleteBtn)).toBe("The default ticket template can't be deleted.");
 
     await selectTemplate("Reminder");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
-    expect(screen.getByRole("button", { name: "Delete template" })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Delete template" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 
   it("does not refetch legacy template when switching between persisted templates", async () => {
@@ -373,7 +377,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
 
     await selectTemplate("Reminder");
@@ -388,7 +392,7 @@ describe("CommunicationPage templates", () => {
       subject_template: "Updated inherited subject",
     });
 
-    await selectTemplate("Ticket email (default)");
+    await selectTemplate("Ticket email");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Updated inherited subject")).toBeTruthy();
@@ -821,7 +825,7 @@ describe("CommunicationPage templates", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Ticket email (default)")).toBeTruthy();
+    expect(await screen.findByText("Ticket email")).toBeTruthy();
     await selectTemplate("Reminder");
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
@@ -829,7 +833,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(fetchEventTemplate).toHaveBeenCalledTimes(2);
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
     });
   });
@@ -993,7 +997,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
 
     await selectTemplate("Reminder");
@@ -1009,7 +1013,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
-      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
       expect(
         screen.getByText(

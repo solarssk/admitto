@@ -543,14 +543,16 @@ function resolveSendTemplateId(
 
 /** Options for the template picker `SearchableSelect` — shared by the Send tab's Message card
  * and the Templates tab's picker bar so both always list the exact same templates the exact
- * same way. The virtual "Ticket email (default)" entry only appears when there's no explicit
- * "ticket" override yet (same condition TemplatePickerBar's own count/badge logic uses). */
+ * same way. The virtual "Ticket email" entry only appears when there's no explicit "ticket"
+ * override yet (same condition TemplatePickerBar's own count/badge logic uses). */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
 ): Array<{ id: string; label: string }> {
   return [
+    // No "(default)" suffix here - TemplatePickerBar's own "Default template" badge already
+    // says that, right next to the picker, without repeating it inside the option text too.
     ...(!templates.some((t) => t.name === "ticket")
-      ? [{ id: "virtual-ticket", label: "Ticket email (default)" }]
+      ? [{ id: "virtual-ticket", label: "Ticket email" }]
       : []),
     ...templates.map((t) => ({ id: t.id, label: t.label })),
   ];
@@ -739,6 +741,8 @@ function TemplatePickerBar({
   templates,
   activeKey,
   source,
+  canDelete,
+  onDelete,
   requestDirtyProtectedAction,
 }: Readonly<{
   event: EventDto;
@@ -746,6 +750,8 @@ function TemplatePickerBar({
   templates: MailTemplateListItem[];
   activeKey: string;
   source: EventTemplateDto["source"];
+  canDelete: boolean;
+  onDelete: () => void;
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
 }>) {
   const activeMeta = templates.find((t) => t.id === activeKey);
@@ -769,26 +775,48 @@ function TemplatePickerBar({
             onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
           />
         </div>
-        <span className="communication-template-picker__meta">
-          {isDefault ? (
-            <Badge variant="neutral">Default template</Badge>
-          ) : (
-            activeMeta && `Last edited ${formatEventDate(activeMeta.updated_at, "UTC")}`
-          )}
+        {isDefault ? (
+          <Badge variant="neutral">Default template</Badge>
+        ) : (
+          activeMeta && (
+            <span className="communication-template-picker__meta">
+              Last edited {formatEventDate(activeMeta.updated_at, "UTC")}
+            </span>
+          )
+        )}
+        <span className="communication-template-picker__actions">
+          <ArchivedGuard
+            event={event}
+            reasonId="delete-template-reason"
+            disabled={!canDelete || templateActionBusy}
+            tooltip={!canDelete ? "The default ticket template can't be deleted." : undefined}
+          >
+            {(guard) => (
+              <button
+                type="button"
+                className="communication-template-picker__delete"
+                aria-label="Delete template"
+                onClick={onDelete}
+                {...guard}
+              >
+                <i className="ti ti-trash" aria-hidden="true" />
+              </button>
+            )}
+          </ArchivedGuard>
+          <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
+            {(guard) => (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<i className="ti ti-plus" aria-hidden="true" />}
+                onClick={() => requestDirtyProtectedAction({ kind: "create" })}
+                {...guard}
+              >
+                New template
+              </Button>
+            )}
+          </ArchivedGuard>
         </span>
-        <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
-          {(guard) => (
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={<i className="ti ti-plus" aria-hidden="true" />}
-              onClick={() => requestDirtyProtectedAction({ kind: "create" })}
-              {...guard}
-            >
-              New template
-            </Button>
-          )}
-        </ArchivedGuard>
       </div>
     </Card>
   );
@@ -842,10 +870,12 @@ function PlaceholderChips({
   );
 }
 
-/** One placeholder chip - required ones are outlined, image ones get a photo icon (plus a
- * hover thumbnail for `qr_image_url`, the one image type this editor already has a same-origin
- * sample source for), wallet-add links get a ticket icon so they read as "important" the same
- * way an image chip does instead of blending into a bare-token wall of text. */
+/** One placeholder chip - required ones are outlined, wallet-add links get a ticket icon so
+ * they read as "important" the same way an image chip does instead of blending into a bare-
+ * token wall of text. Description shows in the app's own Tooltip (@admitto/ui), not a native
+ * browser title tooltip. `qr_image_url` gets its actual sample image always visible as a small
+ * thumbnail (not hover-only - a hidden-until-hover preview is easy to miss entirely), plus a
+ * larger version on hover/focus for anyone who wants a closer look. */
 function PlaceholderChip({
   name,
   isImage,
@@ -857,37 +887,46 @@ function PlaceholderChip({
   isRequired: boolean;
   onInsert: (name: string) => void;
 }>) {
+  const isQr = name === "qr_image_url";
   const titleParts = [
     isRequired && "Required placeholder",
     placeholderDescription(name, isImage),
   ].filter((part): part is string => Boolean(part));
   return (
-    <button
-      type="button"
-      className={["communication-chip", isRequired && "communication-chip--required"]
-        .filter(Boolean)
-        .join(" ")}
-      onClick={() => onInsert(name)}
-      title={titleParts.join(" · ")}
-    >
-      {isImage && <i className="ti ti-photo" aria-hidden="true" />}
-      {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
-      {`{{${name}}}`}
-      {name === "qr_image_url" && (
-        <span className="communication-chip-preview" role="presentation">
-          <img src={SAMPLE_QR_PLACEHOLDER_DATA_URI} alt="" width={72} height={72} />
-        </span>
-      )}
-    </button>
+    <Tooltip content={titleParts.join(" · ")}>
+      <button
+        type="button"
+        className={["communication-chip", isRequired && "communication-chip--required"]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => onInsert(name)}
+      >
+        {isQr ? (
+          <img
+            className="communication-chip-thumb"
+            src={SAMPLE_QR_PLACEHOLDER_DATA_URI}
+            alt=""
+            width={16}
+            height={16}
+          />
+        ) : (
+          isImage && <i className="ti ti-photo" aria-hidden="true" />
+        )}
+        {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
+        {`{{${name}}}`}
+        {isQr && (
+          <span className="communication-chip-preview" role="presentation">
+            <img src={SAMPLE_QR_PLACEHOLDER_DATA_URI} alt="" width={100} height={100} />
+          </span>
+        )}
+      </button>
+    </Tooltip>
   );
 }
 
 function TemplateEditorCard({
   event,
   activeTemplateName,
-  canDelete,
-  templateActionBusy,
-  onDelete,
   allowedPlaceholders,
   imagePlaceholders,
   requiredPlaceholders,
@@ -910,9 +949,6 @@ function TemplateEditorCard({
 }: Readonly<{
   event: EventDto;
   activeTemplateName: string;
-  canDelete: boolean;
-  templateActionBusy: boolean;
-  onDelete: () => void;
   allowedPlaceholders: string[];
   imagePlaceholders: string[];
   requiredPlaceholders: string[];
@@ -937,29 +973,13 @@ function TemplateEditorCard({
     <Card
       title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
       actions={
-        <div className="communication-editor-actions">
-          <Segmented
-            ariaLabel="Template format"
-            value={format}
-            onChange={onRequestFormat}
-            options={TEMPLATE_FORMAT_OPTIONS}
-          />
-          {canDelete && (
-            <ArchivedGuard event={event} reasonId="delete-template-reason" disabled={templateActionBusy}>
-              {(guard) => (
-                <button
-                  type="button"
-                  className="communication-editor-delete"
-                  aria-label="Delete template"
-                  onClick={onDelete}
-                  {...guard}
-                >
-                  <i className="ti ti-trash" aria-hidden="true" />
-                </button>
-              )}
-            </ArchivedGuard>
-          )}
-        </div>
+        <Segmented
+          ariaLabel="Template format"
+          className="communication-format-toggle"
+          value={format}
+          onChange={onRequestFormat}
+          options={TEMPLATE_FORMAT_OPTIONS}
+        />
       }
     >
       <p className="communication-format-hint muted">
@@ -2005,7 +2025,7 @@ export function CommunicationPage() {
       if (result.status === "sent") {
         const templateLabel =
           activeKey === "virtual-ticket"
-            ? "Ticket email (default)"
+            ? "Ticket email"
             : (templates.find((t) => t.id === activeKey)?.label ?? "Template");
         setTestStatus({
           kind: "ok",
@@ -2060,9 +2080,9 @@ export function CommunicationPage() {
   }
 
   // Matches templatePickerOptions' own list exactly: every saved template, plus the virtual
-  // "Ticket email (default)" entry when there's no explicit "ticket" override yet - that virtual
-  // entry is a real, selectable, sendable template from the operator's point of view even though
-  // it has no MailTemplateListItem row of its own.
+  // "Ticket email" entry when there's no explicit "ticket" override yet - that virtual entry is
+  // a real, selectable, sendable template from the operator's point of view even though it has
+  // no MailTemplateListItem row of its own.
   const templateTabCount = templates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
 
   return (
@@ -2125,6 +2145,14 @@ export function CommunicationPage() {
             templates={templates}
             activeKey={activeKey}
             source={source}
+            canDelete={activeTemplateName !== "ticket"}
+            onDelete={() =>
+              requestDirtyProtectedAction({
+                kind: "delete",
+                templateId: activeKey,
+                name: activeTemplateName,
+              })
+            }
             requestDirtyProtectedAction={requestDirtyProtectedAction}
           />
 
@@ -2132,15 +2160,6 @@ export function CommunicationPage() {
             <TemplateEditorCard
               event={event}
               activeTemplateName={activeTemplateName}
-              canDelete={activeTemplateName !== "ticket"}
-              templateActionBusy={templateActionBusy}
-              onDelete={() =>
-                requestDirtyProtectedAction({
-                  kind: "delete",
-                  templateId: activeKey,
-                  name: activeTemplateName,
-                })
-              }
               allowedPlaceholders={allowedPlaceholders}
               imagePlaceholders={imagePlaceholders}
               requiredPlaceholders={requiredPlaceholders}
