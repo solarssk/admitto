@@ -92,6 +92,14 @@ function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
 }
 
+function accountTypeHint(account: AccountDto, isManaged: boolean): string {
+  if (!isManaged) return "Signed in with a password you set. Manage it in the Password section below.";
+  if (account.has_local_password) {
+    return "Signed in through your organization's identity provider, with a local password available as a fallback. Manage it in the Password section below.";
+  }
+  return "Signed in through your organization's identity provider — password and two-factor authentication are managed there.";
+}
+
 /** How this account exists, not how the current browser session happens to be signed in - "Local
  * account" when it only has a password, or "Managed by <provider>" naming the actual linked
  * identity provider(s) (not a generic "SSO") whenever any are linked, since the IdP is the
@@ -101,11 +109,7 @@ function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
   const providers = account.external_identities;
   const isManaged = providers.length > 0;
   const label = isManaged ? `Managed by ${providers.map((p) => p.provider_display_name).join(" + ")}` : "Local account";
-  const hint = !isManaged
-    ? "Signed in with a password you set. Manage it in the Password section below."
-    : account.has_local_password
-      ? "Signed in through your organization's identity provider, with a local password available as a fallback. Manage it in the Password section below."
-      : "Signed in through your organization's identity provider — password and two-factor authentication are managed there.";
+  const hint = accountTypeHint(account, isManaged);
 
   return (
     <div className="account-role-display">
