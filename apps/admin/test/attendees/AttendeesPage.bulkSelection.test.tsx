@@ -256,6 +256,29 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
       expect(addToast).toHaveBeenCalledWith("Queued tickets for 2 attendees.", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+    await waitFor(() => {
+      expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1");
+      expect(addToast).toHaveBeenCalledWith("Send complete: 1 ticket sent.", "success");
+    });
+  });
+
+  it("toasts info when bulk-send status polling throws", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA], total: 1, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: "batch-err", queued: 1, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "Could not refresh send status. Check Communication.",
+        "info",
+      );
+    });
   });
 
   it("toasts an operator-safe error when sendEventBulk fails", async () => {
