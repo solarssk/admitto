@@ -484,6 +484,20 @@ describe("GET /api/admin/events/:eventId/export/jobs/:jobId", () => {
     });
     expect(blank.status).toBe(400);
     expect(await blank.json()).toEqual({ error: "jobId required" });
+
+    const missingDownload = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/does-not-exist/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(missingDownload.status).toBe(404);
+    expect(await missingDownload.json()).toEqual({ error: "not_found" });
+
+    const blankDownload = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/%20/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(blankDownload.status).toBe(400);
+    expect(await blankDownload.json()).toEqual({ error: "jobId required" });
   });
 
   it("download falls back to octet-stream and export.bin when job meta is sparse", async () => {
