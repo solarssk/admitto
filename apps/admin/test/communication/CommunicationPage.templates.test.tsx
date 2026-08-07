@@ -116,7 +116,7 @@ const announcementRow = {
 
 function renderPage() {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
+    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=templates"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
       </Routes>
@@ -126,13 +126,13 @@ function renderPage() {
 
 function renderPageWithEventSwitch() {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-a/communication"]}>
+    <MemoryRouter initialEntries={["/admin/events/evt-a/communication?tab=templates"]}>
       <Routes>
         <Route
           path="/admin/events/:eventId/communication"
           element={
             <>
-              <Link to="/admin/events/evt-b/communication">Switch event</Link>
+              <Link to="/admin/events/evt-b/communication?tab=templates">Switch event</Link>
               <CommunicationPage />
             </>
           }
@@ -741,92 +741,6 @@ describe("CommunicationPage templates", () => {
     expect(screen.getByRole("status").className).toContain("communication-status--error");
   });
 
-  it("reports no recipients when batchId is null", async () => {
-    fetchEventTemplates.mockResolvedValue([ticketRow]);
-    sendEventBulk.mockResolvedValue({ batchId: null, queued: 0, skipped: 0, failed: 0 });
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
-    await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Send email" })).toBeTruthy();
-    });
-    const dialog = screen.getByRole("dialog", { name: "Send email" });
-    fireEvent.click(
-      Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Send")!,
-    );
-
-    await waitFor(() => {
-      expect(sendEventBulk).toHaveBeenCalledWith(
-        "evt-comm",
-        expect.objectContaining({ templateId: "tpl-ticket" }),
-      );
-      expect(screen.getByText(/No recipients matched/i)).toBeTruthy();
-    });
-  });
-
-  it("shows an inline retryable error under the ticket-type filter when the catalog fails to load (CodeRabbit review)", async () => {
-    fetchEventTemplates.mockResolvedValue([ticketRow]);
-    fetchTicketTypes.mockRejectedValueOnce(new Error("network down"));
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
-    const dialog = await screen.findByRole("dialog", { name: "Send email" });
-
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "By ticket type" }));
-
-    expect(await within(dialog).findByText("Failed to load ticket types.")).toBeTruthy();
-
-    fetchTicketTypes.mockResolvedValueOnce([{ key: "vip", label: "VIP", color: "purple" }]);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
-
-    await waitFor(() => expect(within(dialog).queryByText("Failed to load ticket types.")).toBeNull());
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Ticket type,/ }));
-    expect(within(dialog).getByRole("button", { name: "VIP" })).toBeTruthy();
-  });
-
-  it("sends by ticket type, populating the Select from the catalog and using the picked key as the filter value (batch 04 / #351)", async () => {
-    fetchEventTemplates.mockResolvedValue([ticketRow]);
-    fetchTicketTypes.mockResolvedValue([{ key: "vip", label: "VIP", color: "purple" }]);
-    sendEventBulk.mockResolvedValue({ batchId: "batch-vip", queued: 1, skipped: 0, failed: 0 });
-
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
-    const dialog = await screen.findByRole("dialog", { name: "Send email" });
-
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "By ticket type" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Ticket type,/ }));
-    expect(await within(dialog).findByRole("button", { name: "VIP" })).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "VIP" }));
-
-    fireEvent.click(
-      Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Send")!,
-    );
-
-    await waitFor(() => {
-      expect(sendEventBulk).toHaveBeenCalledWith(
-        "evt-comm",
-        expect.objectContaining({
-          templateId: "tpl-ticket",
-          filter: { type: "ticket_type", value: "vip" },
-        }),
-      );
-    });
-  });
-
   it("does not switch editor when deleting a non-active template", async () => {
     deleteEventTemplate.mockResolvedValue(undefined);
     fetchEventTemplates
@@ -966,7 +880,6 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
       expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
     });
   });
 
@@ -1045,7 +958,6 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Announcement")).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
       expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
     });
   });
 

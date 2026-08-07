@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CommunicationSendDialog } from "../../src/communication/CommunicationSendDialog.js";
+import { CommunicationSendPanel } from "../../src/communication/CommunicationSendPanel.js";
 
 const sendEventBulk = vi.fn();
 const fetchBulkSendStatus = vi.fn();
@@ -19,22 +19,24 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 
 fetchTicketTypes.mockResolvedValue([]);
 
+const activeEvent = { archived_at: null };
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
 });
 
-describe("CommunicationSendDialog", () => {
+describe("CommunicationSendPanel", () => {
+  it("shows a placeholder instead of the form when no template has been saved yet", () => {
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" />);
+
+    expect(screen.getByText("Save a template before sending.")).toBeTruthy();
+    expect(screen.queryByLabelText("Recipients")).toBeNull();
+  });
+
   it("uses attendance labels for the attendance recipient filter", () => {
-    render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
     fireEvent.click(screen.getByRole("button", { name: "By attendance status" }));
@@ -49,14 +51,7 @@ describe("CommunicationSendDialog", () => {
   });
 
   it("disables send until ticket type is non-empty", async () => {
-    render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
     fireEvent.click(screen.getByRole("button", { name: "By ticket type" }));
@@ -68,7 +63,7 @@ describe("CommunicationSendDialog", () => {
     expect(screen.getByText(/Choose a ticket type/i)).toBeTruthy();
   });
 
-  it("ignores late runSend results after close", async () => {
+  it("ignores late runSend results after the selected template changes", async () => {
     let resolveSend: ((value: unknown) => void) | undefined;
     sendEventBulk.mockImplementation(
       () =>
@@ -77,14 +72,8 @@ describe("CommunicationSendDialog", () => {
         }),
     );
 
-    const onClose = vi.fn();
     const { rerender } = render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
+      <CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -93,78 +82,24 @@ describe("CommunicationSendDialog", () => {
       expect(screen.getByRole("button", { name: "Sending…" })).toBeTruthy();
     });
 
-    rerender(
-      <CommunicationSendDialog
-        open={false}
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
-    );
+    // Switching to a different template mid-send is the inline-panel equivalent of closing
+    // the old modal - it must reset the form and ignore whatever the stale request resolves to.
+    rerender(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-2" />);
 
     await act(async () => {
       resolveSend?.({ batchId: "batch-1", queued: 3, skipped: 0, failed: 0 });
       await Promise.resolve();
     });
 
-    rerender(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
-    );
-
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
     expect(screen.queryByText(/sending in progress/i)).toBeNull();
     expect(fetchBulkSendStatus).not.toHaveBeenCalled();
   });
 
-  it("blocks backdrop close while send is in flight", async () => {
-    let resolveSend: ((value: unknown) => void) | undefined;
-    sendEventBulk.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveSend = resolve;
-        }),
-    );
-
-    const onClose = vi.fn();
-    render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
-
-    expect(onClose).not.toHaveBeenCalled();
-
-    await act(async () => {
-      resolveSend?.({ batchId: null, queued: 0, skipped: 0, failed: 0 });
-      await Promise.resolve();
-    });
-
-    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
-    expect(onClose).toHaveBeenCalled();
-  });
-
   it("shows detail when send returns queued zero with skipped/failed counts", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 0, skipped: 2, failed: 1 });
 
-    render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -177,9 +112,7 @@ describe("CommunicationSendDialog", () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 1 });
 
-    render(
-      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByText("Send complete: 1 sent, 1 failed.")).toBeTruthy();
@@ -190,14 +123,7 @@ describe("CommunicationSendDialog", () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
 
-    render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -206,7 +132,7 @@ describe("CommunicationSendDialog", () => {
     });
   });
 
-  it("aborts polling when the dialog closes", async () => {
+  it("aborts polling when the selected template changes", async () => {
     let pollSignal: AbortSignal | undefined;
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockImplementation(
@@ -216,14 +142,8 @@ describe("CommunicationSendDialog", () => {
       },
     );
 
-    const onClose = vi.fn();
     const { rerender } = render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
+      <CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -232,29 +152,16 @@ describe("CommunicationSendDialog", () => {
       expect(fetchBulkSendStatus).toHaveBeenCalled();
     });
 
-    rerender(
-      <CommunicationSendDialog
-        open={false}
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
-    );
+    rerender(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-2" />);
 
     expect(pollSignal?.aborted).toBe(true);
   });
 
-  it("resets to the form when reopened after closing mid-send", async () => {
+  it("resets to the form after switching templates and back mid-send", async () => {
     sendEventBulk.mockResolvedValue({ batchId: null, queued: 0, skipped: 0, failed: 0 });
 
-    const onClose = vi.fn();
     const { rerender } = render(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
+      <CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -263,23 +170,8 @@ describe("CommunicationSendDialog", () => {
       expect(screen.getByText(/No recipients matched/i)).toBeTruthy();
     });
 
-    rerender(
-      <CommunicationSendDialog
-        open={false}
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
-    );
-
-    rerender(
-      <CommunicationSendDialog
-        open
-        eventId="evt-1"
-        templateId="tpl-1"
-        onClose={onClose}
-      />,
-    );
+    rerender(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-2" />);
+    rerender(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
 
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
     expect(screen.queryByText(/No recipients matched/i)).toBeNull();
@@ -288,9 +180,7 @@ describe("CommunicationSendDialog", () => {
   it("shows operator-safe dry run failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     sendEventBulk.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    render(
-      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
     await waitFor(() => {
       expect(screen.getByText(/Dry run failed/)).toBeTruthy();
@@ -301,9 +191,7 @@ describe("CommunicationSendDialog", () => {
   it("shows operator-safe send failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     sendEventBulk.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    render(
-      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
       expect(screen.getByText(/Send failed/)).toBeTruthy();
@@ -315,9 +203,7 @@ describe("CommunicationSendDialog", () => {
     sendEventBulk.mockRejectedValueOnce(
       new ApiError(422, "instance_url_required", "instance_url_required"),
     );
-    render(
-      <CommunicationSendDialog open eventId="evt-1" templateId="tpl-1" onClose={vi.fn()} />,
-    );
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
       expect(screen.getByText(/Instance URL/)).toBeTruthy();
@@ -325,7 +211,7 @@ describe("CommunicationSendDialog", () => {
     expect(screen.queryByText(/Send failed/)).toBeNull();
   });
 
-  it("clears stale ticket types when eventId changes while the dialog stays open", async () => {
+  it("clears stale ticket types when eventId changes while the panel stays mounted", async () => {
     let resolveEventB: ((value: unknown) => void) | undefined;
     fetchTicketTypes.mockImplementationOnce(async () => [
       {
@@ -346,7 +232,7 @@ describe("CommunicationSendDialog", () => {
     );
 
     const { rerender } = render(
-      <CommunicationSendDialog open eventId="evt-a" templateId="tpl-1" onClose={vi.fn()} />,
+      <CommunicationSendPanel event={activeEvent} eventId="evt-a" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
@@ -357,9 +243,7 @@ describe("CommunicationSendDialog", () => {
       expect(screen.getByRole("button", { name: "VIP (Event A)" })).toBeTruthy();
     });
 
-    rerender(
-      <CommunicationSendDialog open eventId="evt-b" templateId="tpl-1" onClose={vi.fn()} />,
-    );
+    rerender(<CommunicationSendPanel event={activeEvent} eventId="evt-b" templateId="tpl-1" />);
 
     await waitFor(() => {
       expect(fetchTicketTypes).toHaveBeenCalledWith("evt-b");
@@ -386,7 +270,7 @@ describe("CommunicationSendDialog", () => {
     expect(screen.getByRole("button", { name: "General (Event B)" })).toBeTruthy();
   });
 
-  it("clears the selected ticket type (not just the options list) when eventId changes while open", async () => {
+  it("clears the selected ticket type (not just the options list) when eventId changes", async () => {
     fetchTicketTypes.mockImplementationOnce(async () => [
       {
         id: "tt-a",
@@ -411,7 +295,7 @@ describe("CommunicationSendDialog", () => {
     ]);
 
     const { rerender } = render(
-      <CommunicationSendDialog open eventId="evt-a" templateId="tpl-1" onClose={vi.fn()} />,
+      <CommunicationSendPanel event={activeEvent} eventId="evt-a" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
@@ -425,12 +309,12 @@ describe("CommunicationSendDialog", () => {
 
     // Selecting a value makes Count/Send actionable.
     await waitFor(() => {
-      expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
-        false,
-      );
+      expect(
+        (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
     });
 
-    rerender(<CommunicationSendDialog open eventId="evt-b" templateId="tpl-1" onClose={vi.fn()} />);
+    rerender(<CommunicationSendPanel event={activeEvent} eventId="evt-b" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
@@ -441,8 +325,8 @@ describe("CommunicationSendDialog", () => {
     // the select reverts to its placeholder and Count/Send disable again until re-chosen.
     expect(screen.getByRole("button", { name: "Ticket type, none selected" })).toBeTruthy();
     expect(screen.getByText("Choose a ticket type to count or send.")).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(
+      (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

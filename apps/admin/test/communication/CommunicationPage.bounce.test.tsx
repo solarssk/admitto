@@ -48,6 +48,7 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -146,7 +147,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
     });
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -185,7 +186,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
     });
     expect(screen.queryByText(/emails bounced/i)).toBeNull();
   });

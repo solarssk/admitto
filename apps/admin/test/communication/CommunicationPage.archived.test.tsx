@@ -44,6 +44,7 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
 }));
 
 const blockerState = {
@@ -93,7 +94,7 @@ const reminderRow = {
 
 function renderPage() {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/communication"]}>
+    <MemoryRouter initialEntries={["/admin/events/evt-1/communication?tab=templates"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
       </Routes>
@@ -149,10 +150,9 @@ describe("CommunicationPage archived lockdown", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
     });
 
-    expectArchivedLock(screen.getByRole("button", { name: "Send email" }));
     expectArchivedLock(screen.getByRole("button", { name: "New" }));
     expectArchivedLock(screen.getByRole("button", { name: "Delete Reminder" }));
     expectArchivedLock(screen.getByRole("button", { name: "Preview" }));
@@ -184,5 +184,18 @@ describe("CommunicationPage archived lockdown", () => {
     expect((screen.getByRole("button", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
+  });
+
+  it("disables the Send button on the Send tab, but not Count recipients", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    });
+    expectArchivedLock(screen.getByRole("button", { name: "Send" }));
+    expect(
+      (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 });

@@ -17,6 +17,7 @@ import {
   Input,
   Notice,
   PageHeader,
+  Select,
   Tabs,
   Tooltip,
   useToast,
@@ -52,7 +53,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
+import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
@@ -450,9 +451,9 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
 }
 
-/** The template id to send from the "Send email" header action and `CommunicationSendDialog` —
- * `undefined` while the editor snapshot couldn't be loaded, the current explicit template's id,
- * or (for the virtual/inherited ticket) whichever real "ticket" template exists, if any. */
+/** The template id to send from the Send tab (`CommunicationSendPanel`) — `undefined` while the
+ * editor snapshot couldn't be loaded, the current explicit template's id, or (for the
+ * virtual/inherited ticket) whichever real "ticket" template exists, if any. */
 function resolveSendTemplateId(
   editorSnapshotMissing: boolean,
   activeKey: string,
@@ -502,6 +503,66 @@ function DefaultTemplateBanner({
   return (
     <div className="communication-default-banner">
       Using default template. Save to customize for this event.
+    </div>
+  );
+}
+
+/** Send tab: template picker (shares the same selection/preview state as the Templates tab, so
+ * either tab reflects what the other last picked/rendered) plus the recipients/send panel. */
+function SendTab({
+  event,
+  templates,
+  activeKey,
+  requestDirtyProtectedAction,
+  eventId,
+  sendTemplateId,
+  previewHtml,
+  previewSubject,
+  previewLoading,
+  onPreview,
+}: Readonly<{
+  event: EventDto;
+  templates: MailTemplateListItem[];
+  activeKey: string;
+  requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
+  eventId: string;
+  sendTemplateId: string | undefined;
+  previewHtml: string | null;
+  previewSubject: string | null;
+  previewLoading: boolean;
+  onPreview: () => Promise<void>;
+}>) {
+  return (
+    <div className="communication-send-tab">
+      <Card title="Message">
+        <Select
+          label="Template"
+          value={activeKey}
+          onChange={(e) => requestDirtyProtectedAction({ kind: "select", key: e.target.value })}
+        >
+          {!templates.some((t) => t.name === "ticket") && (
+            <option value="virtual-ticket">Ticket email (inherited)</option>
+          )}
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </Select>
+        <div className="communication-actions">
+          <ArchivedGuard event={event} reasonId="preview-template-reason" disabled={previewLoading}>
+            {(guard) => (
+              <Button variant="secondary" onClick={() => void onPreview()} {...guard}>
+                {previewLoading ? "Previewing…" : "Preview"}
+              </Button>
+            )}
+          </ArchivedGuard>
+        </div>
+      </Card>
+
+      <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} />
+
+      <CommunicationSendPanel event={event} eventId={eventId} templateId={sendTemplateId} />
     </div>
   );
 }
@@ -879,16 +940,17 @@ export function CommunicationPage() {
 
   // URL is the source of truth for the active tab (matches Organisation settings' own
   // General/Mail/.../Logs tabs) - a refresh or shared link lands back on the same tab instead
-  // of always resetting to Compose.
+  // of always resetting to Send.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "log" ? "log" : "compose";
+  const tabParam = searchParams.get("tab");
+  const tab = tabParam === "log" ? "log" : tabParam === "templates" ? "templates" : "send";
   const setTab = useCallback(
     (next: string) => {
       setSearchParams(
         (prev) => {
           const params = new URLSearchParams(prev);
-          if (next === "log") params.set("tab", "log");
-          else params.delete("tab");
+          if (next === "send") params.delete("tab");
+          else params.set("tab", next);
           return params;
         },
         { replace: true },
@@ -902,7 +964,6 @@ export function CommunicationPage() {
   const [templates, setTemplates] = useState<MailTemplateListItem[]>([]);
   const [activeKey, setActiveKey] = useState<string>("virtual-ticket");
   const [activeTemplateName, setActiveTemplateName] = useState("ticket");
-  const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [templateActionBusy, setTemplateActionBusy] = useState(false);
   const [editorSnapshotMissing, setEditorSnapshotMissing] = useState(false);
 
@@ -1585,32 +1646,34 @@ export function CommunicationPage() {
 
   return (
     <div className="screen">
-      <PageHeader
-        title="Communication"
-        subtitle="Ticket email templates and delivery log"
-        actions={
-          sendTemplateId ? (
-            <ArchivedGuard event={event} reasonId="send-email-reason">
-              {(guard) => (
-                <Button variant="secondary" onClick={() => setSendDialogOpen(true)} {...guard}>
-                  Send email
-                </Button>
-              )}
-            </ArchivedGuard>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Communication" subtitle="Ticket email templates and delivery log" />
 
       <Tabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "compose", label: isDirty ? "Compose *" : "Compose" },
+          { id: "send", label: "Send" },
+          { id: "templates", label: isDirty ? "Templates *" : "Templates" },
           { id: "log", label: "Delivery log", count: deliveryTotal || undefined },
         ]}
       />
 
-      {tab === "compose" ? (
+      {tab === "send" && (
+        <SendTab
+          event={event}
+          templates={templates}
+          activeKey={activeKey}
+          requestDirtyProtectedAction={requestDirtyProtectedAction}
+          eventId={eventId}
+          sendTemplateId={sendTemplateId}
+          previewHtml={previewHtml}
+          previewSubject={previewSubject}
+          previewLoading={previewLoading}
+          onPreview={handlePreview}
+        />
+      )}
+
+      {tab === "templates" && (
         <>
           <DefaultTemplateBanner activeKey={activeKey} source={source} />
 
@@ -1662,7 +1725,9 @@ export function CommunicationPage() {
             testStatus={testStatus}
           />
         </>
-      ) : (
+      )}
+
+      {tab === "log" && (
         <DeliveryLogTab
           eventId={eventId}
           eventTimezone={event.timezone}
@@ -1779,14 +1844,6 @@ export function CommunicationPage() {
         onConfirm={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}
       />
-      {eventId && sendTemplateId && (
-        <CommunicationSendDialog
-          open={sendDialogOpen}
-          eventId={eventId}
-          templateId={sendTemplateId}
-          onClose={() => setSendDialogOpen(false)}
-        />
-      )}
     </div>
   );
 }

@@ -52,6 +52,7 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -1183,15 +1184,15 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     expect(screen.getByText(/Showing 1.*1 of 1/)).toBeTruthy();
   });
 
-  it("clears ?tab=log from the URL when switching back to Compose", async () => {
+  it("clears ?tab=log from the URL when switching back to Send", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
 
     renderPage();
     await goToDeliveryLogTab();
     await screen.findByText("Guest One");
 
-    fireEvent.click(screen.getByRole("tab", { name: /Compose/i }));
-    await screen.findByRole("tab", { name: /Compose/i, selected: true });
+    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
+    await screen.findByRole("tab", { name: /Send/i, selected: true });
 
     fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
     const tab = await screen.findByRole("tab", { name: /Delivery log/i, selected: true });

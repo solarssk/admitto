@@ -31,10 +31,22 @@
   margin-bottom: var(--space-4);
 }
 
+.communication-send-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.communication-send-panel__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
 /* .mail-field-hint's shared negative top margin (staff.css) is tuned for hugging the field it
  * describes elsewhere in the app; here it instead sits right above the Count recipients/Send
  * row, so give it its own breathing room without touching the shared rule other pages rely on. */
-.communication-send-dialog__recipient-count {
+.communication-send-panel__recipient-count {
   margin-top: 0;
   margin-bottom: var(--space-4);
 }

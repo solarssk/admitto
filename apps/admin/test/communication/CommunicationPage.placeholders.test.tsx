@@ -68,7 +68,7 @@ const legacyTemplate = {
 
 function renderPage() {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
+    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=templates"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
       </Routes>
