@@ -13,7 +13,6 @@ import {
   ApiError,
   commitImport,
   fetchImportHistory,
-  fetchImportJobStatus,
   previewImport,
   type EventFullMeta,
   type ImportHistoryEntry,
@@ -29,6 +28,7 @@ import type {
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { isAbortError, waitForImportJobResult } from "../import/waitForImportJobResult.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -635,49 +635,6 @@ function ValidationSummaryCard({
   );
 }
 
-const IMPORT_POLL_ATTEMPTS = 90;
-const IMPORT_POLL_INTERVAL_MS = 2000;
-
-function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onAbort = () => {
-      window.clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    const timer = window.setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-/** Poll worker job until succeeded result, failed, or poll budget exhausted. */
-async function waitForImportJobResult(
-  eventId: string,
-  jobId: string,
-  signal: AbortSignal,
-): Promise<ImportCommitResponse> {
-  for (let attempt = 0; attempt < IMPORT_POLL_ATTEMPTS; attempt += 1) {
-    const status = await fetchImportJobStatus(eventId, jobId, signal);
-    if (status.status === "succeeded" && status.result) {
-      return status.result;
-    }
-    if (status.status === "failed") {
-      throw new ApiError(500, status.error || "Import failed.");
-    }
-    await sleepWithAbort(IMPORT_POLL_INTERVAL_MS, signal);
-  }
-  throw new ApiError(
-    504,
-    "Import is still running. Check history later or keep the worker running.",
-  );
-}
-
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
@@ -834,7 +791,7 @@ export function ImportPage() {
         "success",
       );
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (isAbortError(err)) return;
       const capacityMeta = extractCapacityBlockedMeta(err);
       if (capacityMeta) {
         setCapacityBlocked(capacityMeta);
