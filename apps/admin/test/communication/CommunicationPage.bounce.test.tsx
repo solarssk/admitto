@@ -52,6 +52,9 @@ vi.mock("../../src/api/client.js", () => ({
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventMailSettings: vi.fn().mockResolvedValue({
+    fields: { fromName: { value: null }, fromAddress: { value: null } },
+  }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {

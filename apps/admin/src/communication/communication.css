@@ -328,7 +328,7 @@
 
 .communication-mail-client__from {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4) var(--space-4);
   border-bottom: 1px solid #e8eaed;
@@ -344,9 +344,19 @@
   flex-direction: column;
   align-items: flex-end;
   flex: none;
-  gap: 2px;
+  gap: 4px;
+  /* Top-aligned with .from-name's own line (the row's align-items: flex-start), not centered
+   * across the whole two-line sender block - matches where a real inbox puts the timestamp. */
+  padding-top: 2px;
   font-size: var(--fs-xs);
   color: #5f6368;
+}
+
+.communication-mail-client__folder,
+.communication-mail-client__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .communication-mail-client__avatar {
@@ -365,6 +375,11 @@
 .communication-mail-client__from-name {
   font-weight: 600;
   color: #202124;
+}
+
+.communication-mail-client__from-address {
+  font-weight: 400;
+  color: #5f6368;
 }
 
 .communication-mail-client__to {

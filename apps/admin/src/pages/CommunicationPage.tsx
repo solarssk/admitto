@@ -29,6 +29,7 @@ import {
   createEventTemplate,
   deleteEventTemplate,
   fetchEventDeliveries,
+  fetchEventMailSettings,
   fetchEventOverview,
   fetchEventTemplate,
   fetchEventTemplateById,
@@ -524,6 +525,8 @@ function SendTab({
   previewHtml,
   previewSubject,
   previewLoading,
+  senderName,
+  senderAddress,
   onPreview,
   onOpenTemplate,
   testEmail,
@@ -543,6 +546,8 @@ function SendTab({
   previewHtml: string | null;
   previewSubject: string | null;
   previewLoading: boolean;
+  senderName: string | null;
+  senderAddress: string | null;
   onPreview: () => Promise<void>;
   onOpenTemplate: () => void;
   testEmail: string;
@@ -603,7 +608,13 @@ function SendTab({
           {previewLoading ? (
             <div className="communication-preview-empty">Loading preview…</div>
           ) : (
-            <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} eventTitle={event.title} />
+            <PreviewBody
+              previewHtml={previewHtml}
+              previewSubject={previewSubject}
+              eventTitle={event.title}
+              senderName={senderName}
+              senderAddress={senderAddress}
+            />
           )}
         </div>
       </Card>
@@ -944,15 +955,22 @@ function PreviewBody({
   previewHtml,
   previewSubject,
   eventTitle,
+  senderName,
+  senderAddress,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
   eventTitle: string;
+  /** Real configured "From" display name (Settings → Mail transport → Sender), when readable -
+   * falls back to the event title so the preview never shows a blank sender. */
+  senderName: string | null;
+  senderAddress: string | null;
 }>) {
   if (!previewHtml) {
     return <div className="communication-preview-empty">Click Preview to render the draft.</div>;
   }
-  const senderInitial = eventTitle.trim().charAt(0).toUpperCase() || "?";
+  const displayName = senderName || eventTitle;
+  const senderInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const sampleTime = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return (
     <div className="communication-mail-client">
@@ -971,12 +989,19 @@ function PreviewBody({
           {senderInitial}
         </span>
         <div className="communication-mail-client__from-text">
-          <div className="communication-mail-client__from-name">{eventTitle}</div>
+          <div className="communication-mail-client__from-name">
+            {displayName}
+            {senderAddress && <span className="communication-mail-client__from-address"> &lt;{senderAddress}&gt;</span>}
+          </div>
           <div className="communication-mail-client__to">to {SAMPLE_RECIPIENT_EMAIL}</div>
         </div>
         <div className="communication-mail-client__meta" aria-hidden="true">
-          <span className="communication-mail-client__folder">Inbox</span>
-          <span className="communication-mail-client__time">{sampleTime}</span>
+          <span className="communication-mail-client__folder">
+            <i className="ti ti-inbox" aria-hidden="true" /> Inbox
+          </span>
+          <span className="communication-mail-client__time">
+            <i className="ti ti-clock" aria-hidden="true" /> {sampleTime}
+          </span>
         </div>
       </div>
       <iframe
@@ -993,14 +1018,24 @@ function PreviewCard({
   previewHtml,
   previewSubject,
   eventTitle,
+  senderName,
+  senderAddress,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
   eventTitle: string;
+  senderName: string | null;
+  senderAddress: string | null;
 }>) {
   return (
     <Card title="Preview">
-      <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} eventTitle={eventTitle} />
+      <PreviewBody
+        previewHtml={previewHtml}
+        previewSubject={previewSubject}
+        eventTitle={eventTitle}
+        senderName={senderName}
+        senderAddress={senderAddress}
+      />
     </Card>
   );
 }
@@ -1176,6 +1211,8 @@ export function CommunicationPage() {
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
   const [deliveriesLive, setDeliveriesLive] = useState(true);
   const [emailBounced, setEmailBounced] = useState(0);
+  const [senderName, setSenderName] = useState<string | null>(null);
+  const [senderAddress, setSenderAddress] = useState<string | null>(null);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -1569,6 +1606,26 @@ export function CommunicationPage() {
     return () => ac.abort();
   }, [eventId, reportApiError]);
 
+  // Preview's sender row shows the real configured "From" - falls back to the event title
+  // (previous behavior) if mail settings can't be read, e.g. an operator role without access
+  // to Settings - this is decorative, not worth surfacing as an error.
+  useEffect(() => {
+    if (!eventId) return;
+    const ac = new AbortController();
+    void fetchEventMailSettings(eventId, ac.signal)
+      .then((data) => {
+        if (ac.signal.aborted) return;
+        setSenderName(data.fields.fromName.value?.trim() || null);
+        setSenderAddress(data.fields.fromAddress.value?.trim() || null);
+      })
+      .catch(() => {
+        if (ac.signal.aborted) return;
+        setSenderName(null);
+        setSenderAddress(null);
+      });
+    return () => ac.abort();
+  }, [eventId]);
+
   // Loads regardless of which tab is active (not gated on tab === "log") so the "Delivery log"
   // tab's own count badge is correct as soon as the page mounts, instead of staying blank until
   // the operator actually clicks into that tab - same fix already applied to Active sessions'
@@ -1827,6 +1884,15 @@ export function CommunicationPage() {
         ]}
       />
 
+      <EmailBounceBanner
+        count={emailBounced}
+        onViewLog={() => {
+          setTab("log");
+          setDeliveryStatus("bounced");
+          setDeliveryPage(1);
+        }}
+      />
+
       {tab === "send" && (
         <SendTab
           event={event}
@@ -1840,6 +1906,8 @@ export function CommunicationPage() {
           previewHtml={previewHtml}
           previewSubject={previewSubject}
           previewLoading={previewLoading}
+          senderName={senderName}
+          senderAddress={senderAddress}
           onPreview={handlePreview}
           onOpenTemplate={() => setTab("templates")}
           testEmail={testEmail}
@@ -1889,7 +1957,13 @@ export function CommunicationPage() {
               onSave={handleSave}
             />
 
-            <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} eventTitle={event.title} />
+            <PreviewCard
+              previewHtml={previewHtml}
+              previewSubject={previewSubject}
+              eventTitle={event.title}
+              senderName={senderName}
+              senderAddress={senderAddress}
+            />
           </div>
 
           <SendTestCard
@@ -1933,18 +2007,6 @@ export function CommunicationPage() {
           onRetry={() => void loadDeliveries()}
         />
       )}
-
-      {/* Below the tab content (not above the tabs) so the tab bar sits at the same height as
-          every other page's, whether or not there's a bounce to report - parked here for now,
-          exact placement/treatment still under discussion. */}
-      <EmailBounceBanner
-        count={emailBounced}
-        onViewLog={() => {
-          setTab("log");
-          setDeliveryStatus("bounced");
-          setDeliveryPage(1);
-        }}
-      />
 
       <ConfirmDialog
         open={dirtyConfirmOpen}
