@@ -72,6 +72,7 @@ export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,
   buildBaseTemplateVars,
+  sanitizeSampleLinksForTestSend,
 } from "./preview.js";
 export type { PreviewTemplateOptions } from "./preview.js";
 export { buildEventLocationTemplateVars } from "./locationVars.js";
