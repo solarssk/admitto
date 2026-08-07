@@ -973,6 +973,7 @@ function AuditFilterFields({ filters, setFilters, setPage, events }: Readonly<Au
           searchPlaceholder="Search actions…"
           emptyLabel="No actions found"
           showLabel={false}
+          minWidth={340}
           value={filters.actionType || "all"}
           options={[
             { id: "all", label: "All actions" },
