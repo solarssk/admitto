@@ -255,12 +255,13 @@ describe("AccountPage toasts", () => {
   it("selecting System default clears the locale to null and updates the example date", async () => {
     mockLoadedAccount();
     renderWithToast(<AccountPage />);
-    const select = (await screen.findByLabelText("Regional format")) as HTMLSelectElement;
-    expect(select.value).toBe("en-GB");
+    await screen.findByRole("button", { name: /^Regional format,/ });
+    expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
 
-    fireEvent.change(select, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Regional format,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^System default \(browser\):/ }));
 
-    expect(select.value).toBe("");
+    expect(screen.getByRole("button", { name: /^Regional format, System default \(browser\)/ })).toBeTruthy();
   });
 
   it("toasts profile save errors", async () => {
