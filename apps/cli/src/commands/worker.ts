@@ -15,13 +15,13 @@ import {
 import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "@admitto/auth";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
-
-const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
-type RetentionSchedule = {
-  lastRetentionAt: number | null;
-  bootDone: boolean;
-};
+import {
+  createRetentionSchedule,
+  markRetentionFailure,
+  markRetentionSuccess,
+  retentionIsDue,
+  type RetentionSchedule,
+} from "./worker-retention-schedule.js";
 
 function log(job: string, message: string): void {
   const ts = new Date().toISOString();
@@ -94,14 +94,6 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
   }
 }
 
-function retentionIsDue(schedule: RetentionSchedule, now: number): boolean {
-  return (
-    !schedule.bootDone ||
-    schedule.lastRetentionAt == null ||
-    now - schedule.lastRetentionAt >= RETENTION_INTERVAL_MS
-  );
-}
-
 async function runWorkerTick(
   db: PrismaClient,
   locks: WorkerLockClient,
@@ -115,12 +107,16 @@ async function runWorkerTick(
 
   if (!retentionIsDue(schedule, Date.now())) return;
 
-  await runJobSafely("retention", async () => {
+  try {
     const completed = await runRetentionJob(db, locks);
+    // Lock held elsewhere: try again on the next tick (cheap skip).
     if (!completed) return;
-    schedule.lastRetentionAt = Date.now();
-    schedule.bootDone = true;
-  });
+    markRetentionSuccess(schedule, Date.now());
+  } catch (err) {
+    log("retention", `FAILED ${errMessage(err)}`);
+    markRetentionFailure(schedule, Date.now());
+    log("retention", "retry after failure backoff (15m)");
+  }
 }
 
 /**
@@ -137,7 +133,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   const tickMs = tickSeconds * 1000;
   const locks = await openWorkerLockClient(databaseUrl);
   const signal = { stopped: false };
-  const retention: RetentionSchedule = { lastRetentionAt: null, bootDone: false };
+  const retention: RetentionSchedule = createRetentionSchedule();
 
   const onStop = () => {
     if (signal.stopped) return;
