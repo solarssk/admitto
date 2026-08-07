@@ -4,6 +4,7 @@ import { fetchSystemLogs } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemLogEntryDto } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 
 type LevelFilter = "" | SystemLogEntryDto["level"];
@@ -314,38 +315,42 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   const activeFilterCount = (source ? 1 : 0) + (level ? 1 : 0);
 
   const sourceSelect = (
-    <select
+    <SearchableSelect
       id="system-log-filter-source"
-      name="system-log-filter-source"
-      className="at-select system-log-panel__field"
-      aria-label={isDesktop ? "Source" : undefined}
-      value={source}
-      onChange={(e) => setSource(e.target.value as SourceFilter)}
-    >
-      <option value="">All sources</option>
-      {(Object.keys(SOURCE_LABELS) as SystemLogEntryDto["source"][]).map((key) => (
-        <option key={key} value={key}>
-          {SOURCE_LABELS[key]}
-        </option>
-      ))}
-    </select>
+      label="Source"
+      placeholder="All sources"
+      searchPlaceholder="Search sources…"
+      emptyLabel="No sources found"
+      showLabel={false}
+      value={source || "all"}
+      options={[
+        { id: "all", label: "All sources" },
+        ...(Object.keys(SOURCE_LABELS) as SystemLogEntryDto["source"][]).map((key) => ({
+          id: key,
+          label: SOURCE_LABELS[key],
+        })),
+      ]}
+      onChange={(value) => setSource(value === "all" ? "" : (value as SourceFilter))}
+    />
   );
   const levelSelect = (
-    <select
+    <SearchableSelect
       id="system-log-filter-level"
-      name="system-log-filter-level"
-      className="at-select system-log-panel__field"
-      aria-label={isDesktop ? "Level" : undefined}
-      value={level}
-      onChange={(e) => setLevel(e.target.value as LevelFilter)}
-    >
-      <option value="">All levels</option>
-      {(Object.keys(LEVEL_LABELS) as SystemLogEntryDto["level"][]).map((key) => (
-        <option key={key} value={key}>
-          {LEVEL_LABELS[key]}
-        </option>
-      ))}
-    </select>
+      label="Level"
+      placeholder="All levels"
+      searchPlaceholder="Search levels…"
+      emptyLabel="No levels found"
+      showLabel={false}
+      value={level || "all"}
+      options={[
+        { id: "all", label: "All levels" },
+        ...(Object.keys(LEVEL_LABELS) as SystemLogEntryDto["level"][]).map((key) => ({
+          id: key,
+          label: LEVEL_LABELS[key],
+        })),
+      ]}
+      onChange={(value) => setLevel(value === "all" ? "" : (value as LevelFilter))}
+    />
   );
 
   return (
@@ -379,8 +384,8 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
         </div>
         {isDesktop ? (
           <>
-            {sourceSelect}
-            {levelSelect}
+            <div className="system-log-panel__field">{sourceSelect}</div>
+            <div className="system-log-panel__field">{levelSelect}</div>
           </>
         ) : (
           <FiltersMenu activeCount={activeFilterCount} className="system-log-filters-menu">
