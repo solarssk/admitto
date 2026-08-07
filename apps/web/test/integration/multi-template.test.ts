@@ -564,7 +564,8 @@ describe("multi-template API", () => {
       await drainPendingDeliveries(
         prisma,
         process.env,
-        { exportSink: (payload) => exported.push(payload) },
+        { exportSink: (payload) => { exported.push(payload); } },
+
         { eventId: EVENT_A, baseUrl: "https://tickets.example.com" },
       );
 

@@ -53,6 +53,25 @@ type SnapshotRow = {
   rendered_html: string | null;
 };
 
+const SNAPSHOT_SELECT = {
+  id: true,
+  event_id: true,
+  attendee_id: true,
+  purpose: true,
+  status: true,
+  attempts: true,
+  attempted_at: true,
+  recipient_email: true,
+  rendered_subject: true,
+  rendered_html: true,
+} as const;
+
+const SNAPSHOT_READY = {
+  recipient_email: { not: null },
+  rendered_subject: { not: null },
+  rendered_html: { not: null },
+} as const;
+
 function deliveryUpdateFromBatchError(err: unknown, exhausted: boolean) {
   const now = new Date();
   const message = err instanceof Error ? err.message : String(err);
@@ -65,6 +84,22 @@ function deliveryUpdateFromBatchError(err: unknown, exhausted: boolean) {
   };
 }
 
+async function markClaimedRowFailed(
+  prisma: PrismaClient,
+  row: SnapshotRow,
+  err: unknown,
+): Promise<void> {
+  const nextAttempts = nextMailDrainAttempts(row.attempts);
+  const exhausted = isMailDrainAttemptsExhausted(nextAttempts);
+  await prisma.emailDelivery.update({
+    where: { id: row.id },
+    data: {
+      ...deliveryUpdateFromBatchError(err, exhausted),
+      attempts: nextAttempts,
+    },
+  });
+}
+
 async function claimDrainCandidates(
   prisma: PrismaClient,
   options: DrainPendingDeliveriesOptions,
@@ -75,50 +110,46 @@ async function claimDrainCandidates(
       : DEFAULT_MAIL_DRAIN_LIMIT;
   const includeFailed = options.includeRetryableFailed !== false;
   const nowMs = options.nowMs ?? Date.now();
+  const eventFilter = options.eventId ? { event_id: options.eventId } : {};
+  const attemptFilter = { attempts: { lt: MAX_MAIL_DRAIN_ATTEMPTS } };
 
-  const statusClause = includeFailed
-    ? {
-        OR: [
-          { status: "queued" },
-          { AND: [{ status: "failed" }, { retryable: true }] },
-        ],
-      }
-    : { status: "queued" };
-
-  // Over-fetch so per-row exponential backoff can filter without raw SQL.
-  const take = includeFailed ? Math.min(limit * 4, Math.max(limit, 200)) : limit;
-
-  const rows = await prisma.emailDelivery.findMany({
+  // Queued first so retryable-failed cannot starve fresh work under a shared take+filter.
+  const queued = await prisma.emailDelivery.findMany({
     where: {
-      ...(options.eventId ? { event_id: options.eventId } : {}),
-      AND: [
-        statusClause,
-        { attempts: { lt: MAX_MAIL_DRAIN_ATTEMPTS } },
-        {
-          recipient_email: { not: null },
-          rendered_subject: { not: null },
-          rendered_html: { not: null },
-        },
-      ],
+      ...eventFilter,
+      status: "queued",
+      ...attemptFilter,
+      ...SNAPSHOT_READY,
+    },
+    orderBy: { queued_at: "asc" },
+    take: limit,
+    select: SNAPSHOT_SELECT,
+  });
+
+  if (!includeFailed || queued.length >= limit) {
+    return queued;
+  }
+
+  const remaining = limit - queued.length;
+  // Over-fetch so per-row exponential backoff can filter without raw SQL.
+  const take = Math.min(remaining * 4, Math.max(remaining, 200));
+  const failedCandidates = await prisma.emailDelivery.findMany({
+    where: {
+      ...eventFilter,
+      status: "failed",
+      retryable: true,
+      ...attemptFilter,
+      ...SNAPSHOT_READY,
     },
     orderBy: { queued_at: "asc" },
     take,
-    select: {
-      id: true,
-      event_id: true,
-      attendee_id: true,
-      purpose: true,
-      status: true,
-      attempts: true,
-      attempted_at: true,
-      recipient_email: true,
-      rendered_subject: true,
-      rendered_html: true,
-    },
+    select: SNAPSHOT_SELECT,
   });
 
-  const due = rows.filter((row) => isMailDrainRetryDue(row, nowMs));
-  return due.slice(0, limit);
+  const dueFailed = failedCandidates
+    .filter((row) => isMailDrainRetryDue(row, nowMs))
+    .slice(0, remaining);
+  return [...queued, ...dueFailed];
 }
 
 async function sendOneFromSnapshot(
@@ -134,8 +165,9 @@ async function sendOneFromSnapshot(
   let links;
   try {
     links = await resolveAttendeeMailLinks(delivery.attendee_id, prisma, baseUrl);
-  } catch {
-    return "skipped";
+  } catch (err) {
+    await markClaimedRowFailed(prisma, delivery, err);
+    return "failed";
   }
 
   const materialized = materializeStoredDeliveryMessage(
@@ -224,8 +256,18 @@ export async function drainPendingDeliveries(
   let skipped = 0;
 
   for (const [eventId, rows] of byEvent) {
-    const mailConfig = await resolveMailConfig(eventId, prisma, env);
-    const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
+    let mailer: MailerAdapter | undefined;
+    try {
+      const mailConfig = await resolveMailConfig(eventId, prisma, env);
+      mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
+    } catch (err) {
+      for (const row of rows) {
+        await markClaimedRowFailed(prisma, row, err);
+        failed += 1;
+      }
+      continue;
+    }
+
     try {
       for (const row of rows) {
         const outcome = await sendOneFromSnapshot(row, prisma, mailer, baseUrl);
