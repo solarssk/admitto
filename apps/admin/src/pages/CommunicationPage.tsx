@@ -525,6 +525,7 @@ function SendTab({
   previewSubject,
   previewLoading,
   onPreview,
+  onOpenTemplate,
   testEmail,
   setTestEmail,
   testSending,
@@ -543,6 +544,7 @@ function SendTab({
   previewSubject: string | null;
   previewLoading: boolean;
   onPreview: () => Promise<void>;
+  onOpenTemplate: () => void;
   testEmail: string;
   setTestEmail: Dispatch<SetStateAction<string>>;
   testSending: boolean;
@@ -586,6 +588,18 @@ function SendTab({
             onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
           />
           <DefaultTemplateBanner activeKey={activeKey} source={source} />
+          <div className="communication-preview-toolbar">
+            <span className="communication-preview-toolbar__label">
+              <i className="ti ti-eye" aria-hidden="true" /> Preview
+            </span>
+            <button
+              type="button"
+              className="communication-preview-toolbar__open"
+              onClick={onOpenTemplate}
+            >
+              <i className="ti ti-external-link" aria-hidden="true" /> Open template
+            </button>
+          </div>
           {previewLoading ? (
             <div className="communication-preview-empty">Loading preview…</div>
           ) : (
@@ -939,6 +953,7 @@ function PreviewBody({
     return <div className="communication-preview-empty">Click Preview to render the draft.</div>;
   }
   const senderInitial = eventTitle.trim().charAt(0).toUpperCase() || "?";
+  const sampleTime = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return (
     <div className="communication-mail-client">
       <div className="communication-mail-client__toolbar" aria-hidden="true">
@@ -958,6 +973,10 @@ function PreviewBody({
         <div className="communication-mail-client__from-text">
           <div className="communication-mail-client__from-name">{eventTitle}</div>
           <div className="communication-mail-client__to">to {SAMPLE_RECIPIENT_EMAIL}</div>
+        </div>
+        <div className="communication-mail-client__meta" aria-hidden="true">
+          <span className="communication-mail-client__folder">Inbox</span>
+          <span className="communication-mail-client__time">{sampleTime}</span>
         </div>
       </div>
       <iframe
@@ -1822,6 +1841,7 @@ export function CommunicationPage() {
           previewSubject={previewSubject}
           previewLoading={previewLoading}
           onPreview={handlePreview}
+          onOpenTemplate={() => setTab("templates")}
           testEmail={testEmail}
           setTestEmail={setTestEmail}
           testSending={testSending}

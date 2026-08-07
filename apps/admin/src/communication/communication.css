@@ -31,7 +31,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  margin: var(--space-2) 0 var(--space-4);
 }
 
 .communication-recipient-card {
@@ -263,6 +262,38 @@
   font-size: var(--fs-sm);
 }
 
+.communication-preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+}
+
+.communication-preview-toolbar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.communication-preview-toolbar__open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.communication-preview-toolbar__open:hover {
+  text-decoration: underline;
+}
+
 /* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
  * as a light surface, dark mode here would look like a broken/unstyled email, not a themed one. */
 .communication-mail-client {
@@ -301,6 +332,21 @@
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4) var(--space-4);
   border-bottom: 1px solid #e8eaed;
+}
+
+.communication-mail-client__from-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.communication-mail-client__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+  gap: 2px;
+  font-size: var(--fs-xs);
+  color: #5f6368;
 }
 
 .communication-mail-client__avatar {

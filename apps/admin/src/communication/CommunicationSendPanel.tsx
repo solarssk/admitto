@@ -281,7 +281,7 @@ export function CommunicationSendPanel({
   return (
     <Card
       title={
-        <HintLabel hint="Pick who gets this email, check the count, then send.">Recipients</HintLabel>
+        <HintLabel hint="Pick who gets this email, check the count, then send.">Send to</HintLabel>
       }
     >
       <div className="settings-card-stack">
