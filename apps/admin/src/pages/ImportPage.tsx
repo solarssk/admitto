@@ -780,21 +780,25 @@ export function ImportPage() {
     setLoading(true);
     setCapacityBlocked(null);
     try {
-      const queued = await commitImport(eventId, file, overwrite, { force: opts?.force });
+      const queued = await commitImport(eventId, file, overwrite, {
+        force: opts?.force,
+        signal: ac.signal,
+      });
       const data = await waitForImportJobResult(eventId, queued.jobId, ac.signal);
       setResult(data);
       setStep("done");
       setForceCapacity(false);
       setHistoryToken((n) => n + 1);
+      const skippedTotal = data.skippedCount ?? data.skipped.length;
       addToast(
-        `Attendees imported: ${data.created} created, ${data.updated} updated, ${data.skipped.length} skipped`,
+        `Attendees imported: ${data.created} created, ${data.updated} updated, ${skippedTotal} skipped`,
         "success",
       );
     } catch (err) {
       if (isAbortError(err)) return;
       const capacityMeta = extractCapacityBlockedMeta(err);
       if (capacityMeta) {
-        setCapacityBlocked(capacityMeta);
+        if (!ac.signal.aborted) setCapacityBlocked(capacityMeta);
       } else {
         handleApiError(err);
       }
