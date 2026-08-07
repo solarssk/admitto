@@ -88,6 +88,47 @@ function shouldResyncField(
   return nextValue !== lastSyncedValue && currentValue === lastSyncedValue;
 }
 
+/** Re-syncs an already-linked identity's ExternalIdentity/User rows from fresh IdP claims. */
+async function resyncExistingIdentity(
+  tx: Prisma.TransactionClient,
+  existing: Prisma.ExternalIdentityGetPayload<{ include: { user: true } }>,
+  claims: ExternalIdentityClaims,
+  context: ResolveExternalIdentityContext | undefined,
+): Promise<ResolveExternalIdentityResult> {
+  if (context?.currentUserId && existing.user_id !== context.currentUserId) {
+    throw new ExternalIdentityLinkError("subject_already_linked");
+  }
+  if (!existing.user.is_active) {
+    throw new ExternalIdentityLinkError("user_inactive");
+  }
+  const nextGroups = claims.groups ?? [];
+  const groupsChanged = !groupsEqual(existing.groups ?? [], nextGroups);
+  const nextName = claims.name ?? existing.name;
+  const nextPhone = claims.phone ?? existing.phone;
+  const userUpdate: Prisma.UserUpdateInput = {};
+  if (shouldResyncField(nextName, existing.name, existing.user.display_name)) {
+    userUpdate.display_name = nextName;
+  }
+  if (shouldResyncField(nextPhone, existing.phone, existing.user.phone_number)) {
+    userUpdate.phone_number = nextPhone;
+  }
+  await tx.externalIdentity.update({
+    where: { id: existing.id },
+    data: {
+      email: claims.email ?? existing.email,
+      name: nextName,
+      phone: nextPhone,
+      groups: nextGroups,
+      last_login_at: new Date(),
+    },
+  });
+  const user =
+    Object.keys(userUpdate).length > 0
+      ? await tx.user.update({ where: { id: existing.user_id }, data: userUpdate })
+      : existing.user;
+  return { user, isNew: false, linked: false, groupsChanged };
+}
+
 /**
  * Resolve or create a local User from an external OIDC subject (shared seam for 16b/16c).
  */
@@ -105,38 +146,7 @@ export async function resolveOrCreateUserFromExternalIdentity(
     });
 
     if (existing) {
-      if (context?.currentUserId && existing.user_id !== context.currentUserId) {
-        throw new ExternalIdentityLinkError("subject_already_linked");
-      }
-      if (!existing.user.is_active) {
-        throw new ExternalIdentityLinkError("user_inactive");
-      }
-      const nextGroups = claims.groups ?? [];
-      const groupsChanged = !groupsEqual(existing.groups ?? [], nextGroups);
-      const nextName = claims.name ?? existing.name;
-      const nextPhone = claims.phone ?? existing.phone;
-      const userUpdate: Prisma.UserUpdateInput = {};
-      if (shouldResyncField(nextName, existing.name, existing.user.display_name)) {
-        userUpdate.display_name = nextName;
-      }
-      if (shouldResyncField(nextPhone, existing.phone, existing.user.phone_number)) {
-        userUpdate.phone_number = nextPhone;
-      }
-      await tx.externalIdentity.update({
-        where: { id: existing.id },
-        data: {
-          email: claims.email ?? existing.email,
-          name: nextName,
-          phone: nextPhone,
-          groups: nextGroups,
-          last_login_at: new Date(),
-        },
-      });
-      const user =
-        Object.keys(userUpdate).length > 0
-          ? await tx.user.update({ where: { id: existing.user_id }, data: userUpdate })
-          : existing.user;
-      return { user, isNew: false, linked: false, groupsChanged };
+      return resyncExistingIdentity(tx, existing, claims, context);
     }
 
     if (context?.currentUserId) {

@@ -22,6 +22,9 @@
 -- once the account's own future login next changes at the IdP), but no genuine manual edit is
 -- ever at risk of being silently overwritten.
 --
+-- Both fields are backfilled in a single UPDATE (rather than one per field) to avoid duplicating
+-- the manually-touched-users exclusion and its literals.
+--
 -- Picks, per user, the most recently active linked identity (highest last_login_at) as the
 -- backfill source - a user can have more than one ExternalIdentity row (multiple linked
 -- providers).
@@ -37,28 +40,21 @@ manually_touched_users AS (
     AND metadata ->> 'userId' IS NOT NULL
 )
 UPDATE "User" u
-SET display_name = latest_identity.name
+SET
+  display_name = CASE
+    WHEN latest_identity.name IS NOT NULL AND u.display_name IS DISTINCT FROM latest_identity.name
+    THEN latest_identity.name
+    ELSE u.display_name
+  END,
+  phone_number = CASE
+    WHEN latest_identity.phone IS NOT NULL AND u.phone_number IS DISTINCT FROM latest_identity.phone
+    THEN latest_identity.phone
+    ELSE u.phone_number
+  END
 FROM latest_identity
 WHERE latest_identity.user_id = u.id
-  AND latest_identity.name IS NOT NULL
-  AND u.display_name IS DISTINCT FROM latest_identity.name
-  AND NOT EXISTS (SELECT 1 FROM manually_touched_users m WHERE m.user_id = u.id);
-
-WITH latest_identity AS (
-  SELECT DISTINCT ON (user_id) user_id, name, phone
-  FROM "ExternalIdentity"
-  ORDER BY user_id, last_login_at DESC NULLS LAST, linked_at DESC
-),
-manually_touched_users AS (
-  SELECT DISTINCT (metadata ->> 'userId') AS user_id
-  FROM "AdminAuditLog"
-  WHERE action_type IN ('user_profile_updated', 'user_email_changed')
-    AND metadata ->> 'userId' IS NOT NULL
-)
-UPDATE "User" u
-SET phone_number = latest_identity.phone
-FROM latest_identity
-WHERE latest_identity.user_id = u.id
-  AND latest_identity.phone IS NOT NULL
-  AND u.phone_number IS DISTINCT FROM latest_identity.phone
-  AND NOT EXISTS (SELECT 1 FROM manually_touched_users m WHERE m.user_id = u.id);
+  AND NOT EXISTS (SELECT 1 FROM manually_touched_users m WHERE m.user_id = u.id)
+  AND (
+    (latest_identity.name IS NOT NULL AND u.display_name IS DISTINCT FROM latest_identity.name)
+    OR (latest_identity.phone IS NOT NULL AND u.phone_number IS DISTINCT FROM latest_identity.phone)
+  );
