@@ -13,7 +13,7 @@ The delivery log records the latest known state reported by Admitto and the conf
 | Accepted | The mail provider accepted the message. This is not proof that the recipient opened or received it. | Usually no action. |
 | Sent | The transport reported that the message was sent. | Usually no action. |
 | Delivered | A later provider update confirmed delivery. | No action. |
-| Failed | Sending failed. The record may indicate whether retry is possible. | Check the address, template, and mail configuration before retrying. |
+| Failed | Sending failed. The record may indicate whether retry is possible. The background worker retries transient failures with backoff up to 8 attempts, then marks the row non-retryable. | Check the address, template, and mail configuration before retrying or using Resend. |
 | Bounced | The receiving system returned the message (for example via bounce detection from a forwarded NDR for this event). | Confirm or correct the attendee address before resending. Open delivery details for the SMTP code and reason when available. |
 | Rejected | The transport refused the message and it is not treated as retryable. | Correct the cause before attempting another send. |
 

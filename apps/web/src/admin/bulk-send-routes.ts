@@ -418,8 +418,8 @@ export async function handleBulkSend(
   const sendResult = sendResultOrRes;
 
   const skipped = sendResult.skipped.length;
-  const queued = sendResult.sent;
-  const failed = sendResult.deliveries.length - sendResult.sent;
+  const queued = sendResult.queued;
+  const failed = 0;
 
   await auditBulkSend(db, c, eventId, {
     // The actually-resolved template (event override -> org override -> builtin default), not

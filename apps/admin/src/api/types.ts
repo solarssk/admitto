@@ -397,10 +397,12 @@ export interface ImportCommitResponse {
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
 export interface BulkResendResponse {
-  /** Deliveries accepted by the mail provider. */
+  /** Batch id for status polling when rows were queued. */
+  batchId: string | null;
+  /** Delivery rows left in `queued` for the worker to drain. */
   queued: number;
   skipped: number;
-  /** Delivery rows created but not accepted by the provider. */
+  /** Always 0 at enqueue time; terminal failures appear on status poll. */
   failed: number;
 }
 
