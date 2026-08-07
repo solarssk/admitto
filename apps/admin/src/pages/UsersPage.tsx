@@ -321,6 +321,7 @@ export function UsersPage() {
                   <SearchableSelect
                     id="users-role-filter"
                     label="Role"
+                    showLabel={false}
                     placeholder="All roles"
                     searchPlaceholder="Search roles…"
                     emptyLabel="No roles found"
@@ -342,6 +343,7 @@ export function UsersPage() {
                   <SearchableSelect
                     id="users-status-filter"
                     label="Status"
+                    showLabel={false}
                     placeholder="All statuses"
                     searchPlaceholder="Search statuses…"
                     emptyLabel="No statuses found"

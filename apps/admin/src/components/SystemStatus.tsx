@@ -205,7 +205,10 @@ export function SystemStatus({
   eventId?: string;
 }>) {
   const navigate = useNavigate();
-  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+    gap: 8,
+  });
   const superadmin = isSuperadmin(assignments);
   const [checks, setChecks] = useState<SetupChecksResponse["checks"] | null>(
     checksCache && checksCache.expiresAt > Date.now() ? checksCache.data : null,
@@ -335,10 +338,11 @@ export function SystemStatus({
       </button>
       {open && (
         <div
-          className={`user-menu__panel sys-status__panel${openUpward ? " user-menu__panel--up" : ""}`}
+          className="user-menu__panel sys-status__panel"
           role={hasMenuItem ? "menu" : "group"}
           aria-label={hasMenuItem ? undefined : "System status"}
           ref={panelRef}
+          style={panelStyle}
         >
           {rows.map((row) => (
             <div key={row.key} className={rowClassName(row.state)}>

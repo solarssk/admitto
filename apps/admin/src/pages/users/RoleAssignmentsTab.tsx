@@ -282,6 +282,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
               <SearchableSelect
                 id="role-assignments-event-filter"
                 label="Event"
+                showLabel={false}
                 placeholder="All events"
                 searchPlaceholder="Search events…"
                 emptyLabel="No events found"

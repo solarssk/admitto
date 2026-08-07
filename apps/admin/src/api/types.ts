@@ -1317,6 +1317,7 @@ export interface AccountRoleDto {
   role: string;
   scope_type: string;
   scope_id: string | null;
+  scope_label: string | null;
   is_oidc: boolean;
 }
 
@@ -1324,6 +1325,18 @@ export interface AccountMfaMethodDto {
   type: string;
   confirmed: boolean;
   last_used_at: string | null;
+}
+
+export interface AccountExternalIdentityDto {
+  id: string;
+  provider_id: string;
+  provider_display_name: string;
+  linked_at: string;
+}
+
+export interface AccountAvailableIdentityProviderDto {
+  id: string;
+  display_name: string;
 }
 
 export interface AccountDto {
@@ -1334,19 +1347,31 @@ export interface AccountDto {
   is_active: boolean;
   must_change_password: boolean;
   has_local_password: boolean;
+  phone_country_code: string | null;
+  phone_number: string | null;
   roles: AccountRoleDto[];
   mfa_methods: AccountMfaMethodDto[];
+  external_identities: AccountExternalIdentityDto[];
+  available_identity_providers: AccountAvailableIdentityProviderDto[];
 }
 
 export interface PatchAccountProfileBody {
   display_name?: string;
   preferred_locale?: string | null;
+  phone_country_code?: string | null;
+  phone_number?: string | null;
 }
 
 export interface PatchAccountPasswordBody {
   current_password: string;
   new_password: string;
   new_password_confirm: string;
+  code?: string;
+}
+
+export interface DeleteAccountExternalIdentityBody {
+  new_password: string;
+  current_password?: string;
   code?: string;
 }
 

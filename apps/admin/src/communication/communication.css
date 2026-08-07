@@ -323,9 +323,9 @@
 }
 
 .communication-filters-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end") - not CSS. See
+     searchable-select.css's own panel rule for the full story. */
   z-index: var(--z-dropdown);
   width: 240px;
   background: var(--surface-card);
