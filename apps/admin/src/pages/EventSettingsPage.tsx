@@ -1220,8 +1220,7 @@ export function EventSettingsPage() {
                   onClick={() => navigate("/admin/settings?tab=external")}
                 >
                   set it in Organisation Settings → External services
-                </button>
-                .
+                </button>.
               </p>
               <div className="settings-field-group">
                 <Input

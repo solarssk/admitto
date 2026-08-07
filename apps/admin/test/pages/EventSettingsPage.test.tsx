@@ -788,6 +788,25 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("clears the wallet Template ID through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-existing",
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_template_id: null },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByLabelText("Template ID");
+
+    fireEvent.change(screen.getByLabelText("Template ID"), { target: { value: "" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_template_id: null });
+    });
+  });
+
   it("navigates to Organisation settings External services from the Wallet tab link", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     const router = createMemoryRouter(

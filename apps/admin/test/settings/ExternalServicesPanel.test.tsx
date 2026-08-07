@@ -842,12 +842,36 @@ describe("ExternalServicesPanel", () => {
       sampleResponse({ wallet: { api_key: { configured: true, source: "organization" } } }),
     );
     await renderLoaded();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Clear organisation API key" }));
+    const checkbox = screen.getByRole("checkbox", { name: "Clear organisation API key" });
+    fireEvent.click(checkbox);
     fireEvent.click(screen.getByRole("button", { name: "Save wallet settings" }));
 
     await waitFor(() => {
       expect(mockSaveWallet).toHaveBeenCalledWith({ apiKey: null });
     });
+  });
+
+  it("re-enables the API key field when the clear checkbox is unchecked", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ wallet: { api_key: { configured: true, source: "organization" } } }),
+    );
+    await renderLoaded();
+    const checkbox = screen.getByRole("checkbox", { name: "Clear organisation API key" });
+    fireEvent.click(checkbox);
+    expect(el<HTMLInputElement>("external-wallet-api-key").disabled).toBe(true);
+
+    fireEvent.click(checkbox);
+    expect(el<HTMLInputElement>("external-wallet-api-key").disabled).toBe(false);
+  });
+
+  it("shows the env-var notice when the wallet key is sourced from PASSCREATOR_API_KEY", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ wallet: { api_key: { configured: true, source: "env" } } }),
+    );
+    await renderLoaded();
+    expect(
+      screen.getByText(/Currently using PASSCREATOR_API_KEY from the server environment/),
+    ).toBeTruthy();
   });
 
   it("toasts operator-safe error when wallet save fails", async () => {

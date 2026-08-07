@@ -305,8 +305,10 @@ export function ExternalServicesPanel() {
   async function handleSaveWallet() {
     setWalletSaving(true);
     try {
+      // Save is disabled unless walletClearApiKey is set or the draft has content, so the
+      // trimmed draft is never empty here - no `|| undefined` fallback needed.
       const wallet = await saveWalletSettings({
-        apiKey: walletClearApiKey ? null : walletApiKeyDraft.trim() || undefined,
+        apiKey: walletClearApiKey ? null : walletApiKeyDraft.trim(),
       });
       setData((prev) => prev && { ...prev, wallet });
       setWalletApiKeyDraft("");
