@@ -451,9 +451,12 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
 }
 
-/** The template id to send from the Send tab (`CommunicationSendPanel`) — `undefined` while the
- * editor snapshot couldn't be loaded, the current explicit template's id, or (for the
- * virtual/inherited ticket) whichever real "ticket" template exists, if any. */
+/** The template id to send from the Send tab (`CommunicationSendPanel`) — the current explicit
+ * template's id, or (for the virtual/inherited ticket) whichever real "ticket" template exists.
+ * `undefined` covers two different cases the caller must not conflate: the editor snapshot
+ * couldn't be loaded (sending is unavailable — see `editorSnapshotMissing`), or the event never
+ * saved an explicit "ticket" override (sending is fine — the backend's `sendEventBulk` already
+ * falls back to the built-in default template when `templateId` is omitted). */
 function resolveSendTemplateId(
   editorSnapshotMissing: boolean,
   activeKey: string,
@@ -516,6 +519,7 @@ function SendTab({
   requestDirtyProtectedAction,
   eventId,
   sendTemplateId,
+  editorSnapshotMissing,
   previewHtml,
   previewSubject,
   previewLoading,
@@ -527,6 +531,7 @@ function SendTab({
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
   eventId: string;
   sendTemplateId: string | undefined;
+  editorSnapshotMissing: boolean;
   previewHtml: string | null;
   previewSubject: string | null;
   previewLoading: boolean;
@@ -562,7 +567,12 @@ function SendTab({
 
       <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} />
 
-      <CommunicationSendPanel event={event} eventId={eventId} templateId={sendTemplateId} />
+      <CommunicationSendPanel
+        event={event}
+        eventId={eventId}
+        templateId={sendTemplateId}
+        snapshotMissing={editorSnapshotMissing}
+      />
     </div>
   );
 }
@@ -1666,6 +1676,7 @@ export function CommunicationPage() {
           requestDirtyProtectedAction={requestDirtyProtectedAction}
           eventId={eventId}
           sendTemplateId={sendTemplateId}
+          editorSnapshotMissing={editorSnapshotMissing}
           previewHtml={previewHtml}
           previewSubject={previewSubject}
           previewLoading={previewLoading}

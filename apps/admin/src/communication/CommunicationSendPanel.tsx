@@ -9,8 +9,14 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 interface CommunicationSendPanelProps {
   event: ArchivedGuardEvent;
   eventId: string;
-  /** The template to send. Undefined while no template has been saved for this event yet. */
+  /** The template to send. Undefined means "use the built-in default ticket template" (the
+   * backend's `sendEventBulk` already falls back to it when `templateId` is omitted) - that's
+   * the normal case for an event that never saved an explicit override. Only `snapshotMissing`
+   * below means sending is actually unavailable. */
   templateId?: string;
+  /** True only when the editor's template snapshot failed to load - the one case where there is
+   * truly nothing to send, as opposed to "no explicit override" (which still sends the default). */
+  snapshotMissing: boolean;
 }
 
 type SendPhase = "form" | "polling" | "done";
@@ -23,6 +29,7 @@ export function CommunicationSendPanel({
   event,
   eventId,
   templateId,
+  snapshotMissing,
 }: Readonly<CommunicationSendPanelProps>) {
   const runIdRef = useRef(0);
 
@@ -65,7 +72,7 @@ export function CommunicationSendPanel({
   }, [templateId, resetForm]);
 
   useEffect(() => {
-    if (!templateId) return;
+    if (snapshotMissing) return;
     // Clears the selected value along with the stale options list below - not just cosmetic:
     // leaving a previous event's ticket_type key selected would keep filterReady true (it only
     // checks the string is non-empty) and could send/count against a key that means nothing, or
@@ -88,7 +95,7 @@ export function CommunicationSendPanel({
     return () => {
       cancelled = true;
     };
-  }, [eventId, templateId, ticketTypesRetryToken]);
+  }, [eventId, templateId, snapshotMissing, ticketTypesRetryToken]);
 
   useEffect(() => {
     if (phase !== "polling" || !batchId) return;
@@ -126,10 +133,10 @@ export function CommunicationSendPanel({
     };
   }, [batchId, eventId, phase]);
 
-  if (!templateId) {
+  if (snapshotMissing) {
     return (
       <Card title="Send">
-        <p className="muted">Save a template before sending.</p>
+        <p className="muted">Could not load the ticket template. Reload the page.</p>
       </Card>
     );
   }
