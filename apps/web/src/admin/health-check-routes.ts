@@ -23,6 +23,7 @@ import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
 import {
   evaluateBounceIngestHealth,
   parseBounceIngestTickSeconds,
+  workerHeartbeatStaleMs,
 } from "@admitto/mail-delivery";
 import type { GeocodingProvider } from "@admitto/location";
 import { resolveUploadDir } from "@admitto/storage";
@@ -1296,8 +1297,7 @@ async function backgroundWorkerRow(
   env: NodeJS.ProcessEnv,
 ): Promise<HealthCheckRow> {
   const tickSeconds = parseBounceIngestTickSeconds(env);
-  // Keep in sync with apps/cli workerHeartbeatStaleMs (5m floor; else 3× tick + 60s).
-  const staleMs = Math.max(300_000, tickSeconds * 3 * 1000 + 60_000);
+  const staleMs = workerHeartbeatStaleMs(tickSeconds);
   const beat = await db.backgroundWorkerHeartbeat.findUnique({
     where: { id: "default" },
     select: { last_beat_at: true, hostname: true },

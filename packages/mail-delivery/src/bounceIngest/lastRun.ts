@@ -75,6 +75,16 @@ export function parseBounceIngestTickSeconds(env: NodeJS.ProcessEnv = process.en
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_BOUNCE_INGEST_TICK_SECONDS;
 }
 
+/**
+ * Settings → Health stale window for the Admitto worker heartbeat.
+ * Floor 5 minutes so a long import/export drain inside one tick does not false-alarm;
+ * otherwise 3× tick + 60s slack (default tick 60s → 5m floor).
+ */
+export function workerHeartbeatStaleMs(tickSeconds: number): number {
+  const tick = Number.isFinite(tickSeconds) && tickSeconds > 0 ? tickSeconds : 60;
+  return Math.max(300_000, tick * 3 * 1000 + 60_000);
+}
+
 /** Combined soft-health stale window for one event (Check every and deploy tick). */
 export function bounceIngestStaleMsForEvent(
   pollIntervalMinutes: number | null | undefined,
