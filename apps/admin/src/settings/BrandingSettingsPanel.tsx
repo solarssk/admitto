@@ -703,10 +703,15 @@ export function BrandingSettingsPanel() {
     ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
   ];
   // "" would collide with SearchableSelect's own falsy-value-means-unselected check (the same
-  // reason the admin-panel default above needed a real sentinel id instead of "") - "same-as-admin"
-  // is a value no real font name can ever equal, so it round-trips through onChange below cleanly.
+  // reason the admin-panel default above needed a real sentinel id instead of ""). The leading
+  // ":" keeps this outside custom_font_families' own namespace - isValidBrandingFontFamilyName
+  // only allows [A-Za-z0-9 \-_.], so no real font name (custom names are validated against that
+  // same charset both client- and server-side) can ever equal this id, unlike a plain word such
+  // as "same-as-admin" itself, which was a legal custom font name and could collide (bot review
+  // finding, #761).
+  const SAME_AS_ADMIN_FONT_ID = ":same-as-admin";
   const ticketFontOptions = [
-    { id: "same-as-admin", label: "Same as Admin panel" },
+    { id: SAME_AS_ADMIN_FONT_ID, label: "Same as Admin panel" },
     // A distinct, reserved value from the fallback above - lets Ticket page be pinned to the
     // default explicitly (e.g. Admin panel = Manrope, Ticket page = Admitto Sans) instead of only
     // ever following whatever Admin panel currently is.
@@ -901,11 +906,11 @@ export function BrandingSettingsPanel() {
               searchPlaceholder="Search fonts…"
               emptyLabel="No fonts found"
               showLabel={false}
-              value={themeDraft.ticket_font_family_name ?? "same-as-admin"}
+              value={themeDraft.ticket_font_family_name ?? SAME_AS_ADMIN_FONT_ID}
               options={ticketFontOptions}
               disabled={formDisabled}
               onChange={(id) =>
-                handleSetSurfaceFont("ticket", id === "same-as-admin" ? undefined : id)
+                handleSetSurfaceFont("ticket", id === SAME_AS_ADMIN_FONT_ID ? undefined : id)
               }
             />
           </div>

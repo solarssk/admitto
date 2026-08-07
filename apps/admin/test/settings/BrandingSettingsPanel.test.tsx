@@ -160,7 +160,7 @@ function ticketFontTrigger(): HTMLElement {
 /** Reads the current pick off the trigger's own accessible name ("<label>, <value>") - the same
  * thing a screen reader (and these tests) actually observe. Both selects resolve their unset/
  * default state to a real, reserved option id (DEFAULT_BRANDING_FONT_FAMILY_NAME for Admin panel,
- * "same-as-admin" for Ticket page) rather than a falsy value, so the accessible name always shows
+ * ":same-as-admin" for Ticket page) rather than a falsy value, so the accessible name always shows
  * the matching label instead of falling back to "none selected". */
 function adminFontValue(): string {
   return adminFontTrigger().getAttribute("aria-label")!.replace(/^Admin panel font, /, "");
@@ -910,6 +910,28 @@ describe("BrandingSettingsPanel - font picker", () => {
     fireEvent.click(screen.getByText("mock-save-family"));
 
     expect(adminFontValue()).toBe("Manrope");
+  });
+
+  it("a custom family literally named 'same-as-admin' is selectable and never collapses into the sentinel (bot review finding, #761)", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({
+      theme: {
+        font_family_name: "Manrope",
+        custom_font_families: [
+          { name: "same-as-admin", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        ],
+      },
+    });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    expect(ticketFontValue()).toBe("Same as Admin panel");
+
+    pickTicketFont("same-as-admin");
+
+    // Selecting the real family, not the sentinel option that happens to share its old id.
+    expect(ticketFontValue()).toBe("same-as-admin");
+    expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
   });
 
   it("deleting the active custom family falls back to the default built-in font", async () => {
