@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  # No `branches:` filter here on purpose: stacked PRs (native GitHub stacks) have a base ref
+  # that is another feature branch, not main, once the bottom-most PR in the stack has merged
+  # and closed - GitHub's "evaluate as if targeting main" virtualization needs an unbroken chain
+  # of open PRs down to main, and a merged/closed PR severs that chain. Restricting to
+  # `branches: [main]` silently skipped required-status-check jobs (build-test, secret-scan,
+  # pii-guard, analyze, migration-safety) for every PR in a stack after its first link merged.
+  pull_request: {}
 
 env:
   # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
