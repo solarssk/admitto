@@ -821,6 +821,49 @@ describe("ExternalServicesPanel", () => {
     await expectLatestToast("Nominatim timed out.");
   });
 
+  it("saves a new wallet API key and toasts success", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-wallet-api-key"), {
+      target: { value: "pc-new-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save wallet settings" }));
+
+    await waitFor(() => {
+      expect(mockSaveWallet).toHaveBeenCalledWith({ apiKey: "pc-new-key" });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toContain("Wallet settings saved.");
+    });
+    expect(el<HTMLInputElement>("external-wallet-api-key").value).toBe("");
+  });
+
+  it("clears the organisation wallet API key via the checkbox", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ wallet: { api_key: { configured: true, source: "organization" } } }),
+    );
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Clear organisation API key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save wallet settings" }));
+
+    await waitFor(() => {
+      expect(mockSaveWallet).toHaveBeenCalledWith({ apiKey: null });
+    });
+  });
+
+  it("toasts operator-safe error when wallet save fails", async () => {
+    mockSaveWallet.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-wallet-api-key"), {
+      target: { value: "pc-new-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save wallet settings" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not save wallet settings/);
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
   it("ignores a late successful load after abort", async () => {
     let resolveFetch!: (value: ExternalServicesResponse) => void;
     mockFetch.mockImplementationOnce(

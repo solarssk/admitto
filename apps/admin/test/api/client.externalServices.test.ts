@@ -4,6 +4,7 @@ import {
   ApiError,
   fetchExternalServices,
   saveMapsSettings,
+  saveWalletSettings,
   saveWeatherSettings,
   testMapsConnection,
   testWeatherConnection,
@@ -56,6 +57,23 @@ describe("external-services client helpers", () => {
 
     await expect(saveMapsSettings({ maxZoom: 12 })).resolves.toEqual(maps);
     expect(fetchMock.mock.calls[0]![0]).toBe("/api/admin/external-services/maps");
+  });
+
+  it("saveWalletSettings PUTs and returns the wallet slice", async () => {
+    const wallet = { api_key: { configured: true, source: "organization" as const } };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ wallet }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(saveWalletSettings({ apiKey: "pc-new-key" })).resolves.toEqual(wallet);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/admin/external-services/wallet");
+    expect(init).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ apiKey: "pc-new-key" }),
+    });
   });
 
   it("testWeatherConnection POSTs the draft probe body", async () => {

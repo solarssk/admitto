@@ -772,6 +772,43 @@ describe("EventSettingsPage tabs", () => {
     expect(await screen.findByLabelText("Template ID")).toBeTruthy();
   });
 
+  it("saves the wallet Template ID through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_template_id: "tmpl-1" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByLabelText("Template ID");
+
+    fireEvent.change(screen.getByLabelText("Template ID"), { target: { value: "tmpl-1" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_template_id: "tmpl-1" });
+    });
+  });
+
+  it("navigates to Organisation settings External services from the Wallet tab link", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    const router = createMemoryRouter(
+      [
+        { path: "/admin/settings", element: <div>organisation settings</div> },
+        { path: "/admin/events/:eventId/settings", element: <EventSettingsPage /> },
+      ],
+      { initialEntries: ["/admin/events/evt-1/settings?tab=wallet"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    await screen.findByLabelText("Template ID");
+
+    fireEvent.click(screen.getByRole("button", { name: /set it in Organisation Settings/ }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname + router.state.location.search).toBe(
+        "/admin/settings?tab=external",
+      );
+    });
+  });
+
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();

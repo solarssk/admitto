@@ -51,6 +51,27 @@ describe("resolveWalletApiKey", () => {
     );
     expect(key).toBeNull();
   });
+
+  it("returns null for corrupt stored JSON without throwing", async () => {
+    const key = await resolveWalletApiKey(fakeWalletDb("{not-json"), {});
+    expect(key).toBeNull();
+  });
+
+  it("ignores non-object stored JSON shapes (array)", async () => {
+    const key = await resolveWalletApiKey(
+      fakeWalletDb(JSON.stringify([1, 2, 3])),
+      { PASSCREATOR_API_KEY: "env-key" },
+    );
+    expect(key).toBe("env-key");
+  });
+
+  it("ignores a stored apiKeyEnc that isn't a string", async () => {
+    const key = await resolveWalletApiKey(
+      fakeWalletDb(JSON.stringify({ apiKeyEnc: 12345 })),
+      { PASSCREATOR_API_KEY: "env-key" },
+    );
+    expect(key).toBe("env-key");
+  });
 });
 
 describe("describeWalletSettings", () => {
@@ -93,5 +114,18 @@ describe("patchWalletSettings", () => {
       }).update.value_json,
     ) as { apiKeyEnc: string | null };
     expect(stored.apiKeyEnc).toBeNull();
+  });
+
+  it("keeps the existing key when apiKey is omitted from the patch", async () => {
+    const enc = encryptToString("still-here");
+    const db = fakeWalletDb(JSON.stringify({ apiKeyEnc: enc }));
+    const described = await patchWalletSettings(db, {});
+    expect(described.apiKey).toEqual({ configured: true, source: "organization" });
+    const stored = JSON.parse(
+      (vi.mocked(db.systemSettings.upsert).mock.calls.at(-1)![0] as {
+        update: { value_json: string };
+      }).update.value_json,
+    ) as { apiKeyEnc: string | null };
+    expect(stored.apiKeyEnc).toBe(enc);
   });
 });
