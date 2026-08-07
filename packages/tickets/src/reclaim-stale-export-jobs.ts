@@ -13,7 +13,6 @@ import {
   isWorkerHeartbeatStale,
   positiveMsOr,
   staleAdminJobOrClauses,
-  WORKER_HEARTBEAT_ID,
 } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { scrubExportJobResultJson } from "./export-job-privacy.js";
@@ -21,10 +20,11 @@ import { scrubExportJobResultJson } from "./export-job-privacy.js";
 /** Default: 15 minutes. Align with admin export poll stale window. */
 export const DEFAULT_EXPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
 
-/** @deprecated Prefer `DEFAULT_WORKER_HEARTBEAT_STALE_MS` from `@admitto/db`. */
-export const DEFAULT_EXPORT_PENDING_HEARTBEAT_STALE_MS = DEFAULT_WORKER_HEARTBEAT_STALE_MS;
-
-export { WORKER_HEARTBEAT_ID, isWorkerHeartbeatStale as isWorkerHeartbeatStaleForPendingReclaim };
+export {
+  DEFAULT_WORKER_HEARTBEAT_STALE_MS as DEFAULT_EXPORT_PENDING_HEARTBEAT_STALE_MS,
+  WORKER_HEARTBEAT_ID,
+  isWorkerHeartbeatStale as isWorkerHeartbeatStaleForPendingReclaim,
+} from "@admitto/db";
 
 export const STALE_EXPORT_JOB_ERROR =
   "Export job abandoned (worker stopped while running). Start the export again.";
