@@ -94,3 +94,10 @@ export {
 export {
   isSerializationFailure,
 } from './errors.js';
+
+export {
+  WORKER_HEARTBEAT_ID,
+  DEFAULT_WORKER_HEARTBEAT_STALE_MS,
+  positiveMsOr,
+  isWorkerHeartbeatStale,
+} from './worker-heartbeat.js';
