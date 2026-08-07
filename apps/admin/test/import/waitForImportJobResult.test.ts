@@ -174,8 +174,47 @@ describe("waitForImportJobResult", () => {
     ).rejects.toMatchObject({ status: 422, message: "Import failed." });
   });
 
-  it("throws 408 when created_at is past the stale window while still pending", async () => {
-    fetchImportJobStatus.mockResolvedValue(pendingStatus());
+  it("keeps polling aged pending jobs (stale window applies only after claim)", async () => {
+    fetchImportJobStatus
+      .mockResolvedValueOnce(pendingStatus())
+      .mockResolvedValueOnce({
+        jobId: "job-1",
+        status: "succeeded",
+        importId: "imp-1",
+        error: null,
+        result: {
+          importId: "imp-1",
+          toCreate: 1,
+          toUpdate: 0,
+          toSkip: 0,
+          created: 1,
+          updated: 0,
+          skipped: [],
+          invalidRows: [],
+          invalidCount: 0,
+        },
+        created_at: "2026-08-07T12:00:00.000Z",
+        started_at: "2026-08-07T12:20:00.000Z",
+      });
+    const ac = new AbortController();
+    // Far past created_at; without started_at the client must not 408 on pending alone.
+    await expect(
+      waitForImportJobResult("evt-1", "job-1", ac.signal, {
+        maxAttempts: 5,
+        sleep: async () => {},
+        now: () => Date.parse("2026-08-07T12:30:00.000Z"),
+      }),
+    ).resolves.toMatchObject({ created: 1 });
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws 408 when started_at is past the stale window while still running", async () => {
+    fetchImportJobStatus.mockResolvedValue(
+      pendingStatus({
+        status: "running",
+        started_at: "2026-08-07T12:00:00.000Z",
+      }),
+    );
     const ac = new AbortController();
     await expect(
       waitForImportJobResult("evt-1", "job-1", ac.signal, {

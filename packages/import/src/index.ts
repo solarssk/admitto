@@ -16,7 +16,10 @@ export {
   reclaimStaleImportJobs,
   parseImportJobStaleRunningMs,
   importResultJsonFromAuditMetadata,
+  isWorkerHeartbeatStaleForPendingReclaim,
   DEFAULT_IMPORT_JOB_STALE_RUNNING_MS,
+  DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS,
+  WORKER_HEARTBEAT_ID,
   STALE_IMPORT_JOB_ERROR,
   STALE_IMPORT_PENDING_ERROR,
 } from "./reclaimStaleImportJobs.js";

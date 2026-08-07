@@ -1,6 +1,9 @@
 /**
- * Fail import_commit AdminJobs left in `running` (or never claimed `pending`) after a
- * worker crash/kill/outage.
+ * Fail import_commit AdminJobs left in `running` after a worker crash/kill/outage,
+ * and never-claimed `pending` jobs only when the worker heartbeat is already stale
+ * (dead/outage). A live worker with a backlog must not fail aged `pending` rows:
+ * drain only claims one job per tick, so a burst can legitimately wait longer than
+ * the running stale window without meaning the worker is gone.
  *
  * Claim has no lease: if the process dies after `pending` → `running`, the row
  * stays running forever and the UI polls until timeout. Prefer fail (not
@@ -11,15 +14,21 @@
  * matching importId) but the worker died before clearing `running`, mark the job
  * succeeded and rebuild `result_json` from the audit row so a still-polling client
  * gets a real result instead of "Import finished without a result."
- *
- * Stale `pending` rows (never claimed) are failed on `created_at` so the client
- * poll clock (anchored on created_at until claim) and server reclaim stay aligned.
  */
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
 
-/** Default: 15 minutes. Keep in sync with admin import poll stale window. */
+/** Default: 15 minutes. Keep in sync with admin import poll stale window (running). */
 export const DEFAULT_IMPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
+
+/**
+ * Default heartbeat stale window for pending reclaim (matches CLI
+ * `workerHeartbeatStaleMs(60)` → 150s). Kept in this package to avoid a cli dependency.
+ */
+export const DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS = 150_000;
+
+/** Singleton heartbeat row id (ADR 0042 / `BackgroundWorkerHeartbeat`). */
+export const WORKER_HEARTBEAT_ID = "default";
 
 export const STALE_IMPORT_JOB_ERROR =
   "Import job abandoned (worker stopped while running). Upload the file again.";
@@ -36,6 +45,11 @@ export type ReclaimStaleImportJobsResult = {
 export type ReclaimStaleImportJobsOptions = {
   /** Jobs older than this (started_at when running, created_at when pending) are reclaimed. */
   olderThanMs?: number;
+  /**
+   * Pending reclaim only when the worker heartbeat is missing or older than this
+   * (live backlog must not be failed).
+   */
+  heartbeatStaleMs?: number;
   /** Clock injection for tests. */
   now?: Date;
 };
@@ -51,6 +65,20 @@ export function parseImportJobStaleRunningMs(
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_IMPORT_JOB_STALE_RUNNING_MS;
   return n;
+}
+
+/** True when there is no heartbeat row or last_beat_at is older than `staleMs`. */
+export async function isWorkerHeartbeatStaleForPendingReclaim(
+  db: PrismaClient,
+  now: Date,
+  staleMs: number,
+): Promise<boolean> {
+  const row = await db.backgroundWorkerHeartbeat.findUnique({
+    where: { id: WORKER_HEARTBEAT_ID },
+    select: { last_beat_at: true },
+  });
+  if (!row) return true;
+  return now.getTime() - row.last_beat_at.getTime() >= staleMs;
 }
 
 async function deleteStagedKey(storage: StorageAdapter, storageKey: string | null): Promise<void> {
@@ -108,8 +136,9 @@ async function loadImportAuditForHeal(
 }
 
 /**
- * Mark stale pending/running import_commit jobs failed (or heal to succeeded when import
- * landed) and delete staged CSV (best-effort). Caller should hold the worker `import` lock.
+ * Mark stale running import_commit jobs failed (or heal to succeeded when import
+ * landed). Fail aged pending only when the worker heartbeat is stale/missing.
+ * Delete staged CSV (best-effort). Caller should hold the worker `import` lock.
  */
 export async function reclaimStaleImportJobs(
   db: PrismaClient,
@@ -120,15 +149,24 @@ export async function reclaimStaleImportJobs(
     options.olderThanMs && options.olderThanMs > 0
       ? Math.floor(options.olderThanMs)
       : DEFAULT_IMPORT_JOB_STALE_RUNNING_MS;
+  const heartbeatStaleMs =
+    options.heartbeatStaleMs && options.heartbeatStaleMs > 0
+      ? Math.floor(options.heartbeatStaleMs)
+      : DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS;
   const now = options.now ?? new Date();
   const cutoff = new Date(now.getTime() - olderThanMs);
+  const reclaimPending = await isWorkerHeartbeatStaleForPendingReclaim(
+    db,
+    now,
+    heartbeatStaleMs,
+  );
 
   const stale = await db.adminJob.findMany({
     where: {
       type: "import_commit",
       OR: [
         { status: "running", started_at: { lt: cutoff } },
-        { status: "pending", created_at: { lt: cutoff } },
+        ...(reclaimPending ? [{ status: "pending" as const, created_at: { lt: cutoff } }] : []),
       ],
     },
     select: {

@@ -3,11 +3,13 @@ import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
 import {
   DEFAULT_IMPORT_JOB_STALE_RUNNING_MS,
+  DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS,
   importResultJsonFromAuditMetadata,
   parseImportJobStaleRunningMs,
   reclaimStaleImportJobs,
   STALE_IMPORT_JOB_ERROR,
   STALE_IMPORT_PENDING_ERROR,
+  WORKER_HEARTBEAT_ID,
 } from "../src/reclaimStaleImportJobs.js";
 
 function mockStorage(deleted: string[] = []): StorageAdapter {
@@ -34,6 +36,8 @@ function dbWithJobs(
     updateCounts?: number[];
     importLanded?: boolean;
     auditMetadata?: Record<string, unknown>;
+    /** null/undefined = missing heartbeat (treat as stale worker). */
+    heartbeat?: { last_beat_at: Date } | null;
   } = {},
 ): PrismaClient {
   const updateMany = vi.fn();
@@ -66,6 +70,11 @@ function dbWithJobs(
               },
             }
           : null,
+      ),
+    },
+    backgroundWorkerHeartbeat: {
+      findUnique: vi.fn().mockResolvedValue(
+        opts.heartbeat === undefined ? null : opts.heartbeat,
       ),
     },
   } as unknown as PrismaClient;
@@ -136,6 +145,10 @@ describe("reclaimStaleImportJobs", () => {
     });
 
     expect(result).toEqual({ reclaimed: 1, healed: 0 });
+    expect(db.backgroundWorkerHeartbeat.findUnique).toHaveBeenCalledWith({
+      where: { id: WORKER_HEARTBEAT_ID },
+      select: { last_beat_at: true },
+    });
     expect(db.adminJob.findMany).toHaveBeenCalledWith({
       where: {
         type: "import_commit",
@@ -165,7 +178,7 @@ describe("reclaimStaleImportJobs", () => {
     expect(deleted).toEqual(["imports/evt/a.csv"]);
   });
 
-  it("fails stale pending jobs that were never claimed", async () => {
+  it("fails stale pending jobs when the worker heartbeat is missing", async () => {
     const deleted: string[] = [];
     const storage = mockStorage(deleted);
     const now = new Date("2026-08-07T12:00:00.000Z");
@@ -184,6 +197,84 @@ describe("reclaimStaleImportJobs", () => {
       },
     });
     expect(deleted).toEqual(["imports/evt/p.csv"]);
+  });
+
+  it("fails stale pending jobs when the worker heartbeat is stale", async () => {
+    const deleted: string[] = [];
+    const storage = mockStorage(deleted);
+    const now = new Date("2026-08-07T12:00:00.000Z");
+    const db = dbWithJobs(
+      [{ id: "job-pending", storage_key: "imports/evt/p.csv", status: "pending" }],
+      {
+        heartbeat: {
+          last_beat_at: new Date(now.getTime() - DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS - 1),
+        },
+      },
+    );
+
+    await expect(
+      reclaimStaleImportJobs(db, storage, { olderThanMs: 60_000, now }),
+    ).resolves.toEqual({ reclaimed: 1, healed: 0 });
+    expect(deleted).toEqual(["imports/evt/p.csv"]);
+  });
+
+  it("does not reclaim aged pending jobs while the worker heartbeat is fresh", async () => {
+    const deleted: string[] = [];
+    const storage = mockStorage(deleted);
+    const now = new Date("2026-08-07T12:00:00.000Z");
+    const db = dbWithJobs(
+      [
+        { id: "job-pending", storage_key: "imports/evt/p.csv", status: "pending" },
+        { id: "job-running", storage_key: "imports/evt/r.csv", status: "running" },
+      ],
+      {
+        // findMany returns whatever we seed; assert the query omits pending.
+        updateCounts: [1],
+        heartbeat: { last_beat_at: new Date(now.getTime() - 10_000) },
+      },
+    );
+    // Only the running job should be in the query result path; seed findMany with running only
+    // after the call would use OR without pending — simulate by resolving to running job.
+    (db.adminJob.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "job-running",
+        storage_key: "imports/evt/r.csv",
+        status: "running",
+        event_id: "evt-1",
+        import_id: "imp-1",
+        filename: "a.csv",
+      },
+    ]);
+
+    await expect(
+      reclaimStaleImportJobs(db, storage, { olderThanMs: 60_000, now }),
+    ).resolves.toEqual({ reclaimed: 1, healed: 0 });
+
+    expect(db.adminJob.findMany).toHaveBeenCalledWith({
+      where: {
+        type: "import_commit",
+        OR: [{ status: "running", started_at: { lt: new Date(now.getTime() - 60_000) } }],
+      },
+      select: {
+        id: true,
+        status: true,
+        storage_key: true,
+        event_id: true,
+        import_id: true,
+        filename: true,
+      },
+      orderBy: { created_at: "asc" },
+    });
+    expect(db.adminJob.updateMany).toHaveBeenCalledTimes(1);
+    expect(db.adminJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job-running", status: "running" },
+      data: {
+        status: "failed",
+        error: STALE_IMPORT_JOB_ERROR,
+        finished_at: now,
+      },
+    });
+    expect(deleted).toEqual(["imports/evt/r.csv"]);
   });
 
   it("heals to succeeded with result_json when attendees_imported already landed", async () => {
