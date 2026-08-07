@@ -759,9 +759,6 @@ function TemplatePickerBar({
   return (
     <Card>
       <div className="communication-template-picker">
-        <span className="communication-template-picker__icon" aria-hidden="true">
-          <i className="ti ti-ticket" />
-        </span>
         <div className="communication-half-field communication-template-picker__select">
           <SearchableSelect
             id="communication-templates-picker"
@@ -779,9 +776,10 @@ function TemplatePickerBar({
           <Badge variant="neutral">Default template</Badge>
         ) : (
           activeMeta && (
-            <span className="communication-template-picker__meta">
-              Last edited {formatEventDate(activeMeta.updated_at, "UTC")}
-            </span>
+            <Badge variant="neutral">
+              <i className="ti ti-clock" aria-hidden="true" /> Last edited{" "}
+              {formatEventDate(activeMeta.updated_at, "UTC")}
+            </Badge>
           )
         )}
         <span className="communication-template-picker__actions">

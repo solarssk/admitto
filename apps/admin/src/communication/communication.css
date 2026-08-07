@@ -26,29 +26,9 @@
   gap: var(--space-3);
 }
 
-.communication-template-picker__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: var(--control-h);
-  height: var(--control-h);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-}
-
 .communication-template-picker__select {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.communication-template-picker__meta {
-  flex: none;
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 
 /* Pushed to the row's trailing edge regardless of how wide the select/badge/meta before it are -
@@ -76,12 +56,14 @@
   }
 }
 
+/* Matches .at-btn--sm's own height exactly (var(--control-h-sm)) - it sits right next to a
+   size="sm" New template Button and was visibly taller than it at the default --control-h. */
 .communication-template-picker__delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--control-h);
-  height: var(--control-h);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: none;
