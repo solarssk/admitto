@@ -90,12 +90,13 @@ async function processImportJob(
 export async function drainImportJobs(
   db: PrismaClient,
   storage: StorageAdapter,
-  options: { limit?: number; staleRunningMs?: number } = {},
+  options: { limit?: number; staleRunningMs?: number; heartbeatStaleMs?: number } = {},
 ): Promise<DrainImportJobsResult> {
   const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
   const staleRunningMs = options.staleRunningMs ?? parseImportJobStaleRunningMs();
   const { reclaimed, healed } = await reclaimStaleImportJobs(db, storage, {
     olderThanMs: staleRunningMs,
+    heartbeatStaleMs: options.heartbeatStaleMs,
   });
 
   let claimed = 0;

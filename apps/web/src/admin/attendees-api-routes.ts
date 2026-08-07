@@ -877,6 +877,8 @@ export async function handleGetExportJob(c: Context, db: PrismaClient): Promise<
     error: job.error,
     filename: job.filename,
     rowCount: job.created_count,
+    created_at: job.created_at.toISOString(),
+    started_at: job.started_at ? job.started_at.toISOString() : null,
   });
 }
 

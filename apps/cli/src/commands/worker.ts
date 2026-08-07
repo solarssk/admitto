@@ -19,6 +19,7 @@ import {
   ingestBounces,
   nullifyDeliverySnapshots,
   parseBounceIngestTickSeconds,
+  workerHeartbeatStaleMs,
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
@@ -104,7 +105,11 @@ async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
     return;
   }
   try {
-    const result = await drainImportJobs(db, getDefaultStorage(), { limit: 1 });
+    const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
+    const result = await drainImportJobs(db, getDefaultStorage(), {
+      limit: 1,
+      heartbeatStaleMs,
+    });
     if (result.claimed === 0 && result.reclaimed === 0 && result.healed === 0) {
       log("import", "idle");
       return;
@@ -125,7 +130,11 @@ async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
     return;
   }
   try {
-    const result = await drainExportJobs(db, getDefaultStorage(), { limit: 1 });
+    const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
+    const result = await drainExportJobs(db, getDefaultStorage(), {
+      limit: 1,
+      heartbeatStaleMs,
+    });
     if (result.claimed === 0 && result.reclaimed === 0) {
       log("export", "idle");
       return;

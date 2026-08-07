@@ -182,11 +182,14 @@ async function runOneExportJob(
 export async function drainExportJobs(
   db: PrismaClient,
   storage: ExportJobStorage,
-  options: { limit?: number; staleRunningMs?: number } = {},
+  options: { limit?: number; staleRunningMs?: number; heartbeatStaleMs?: number } = {},
 ): Promise<DrainExportJobsResult> {
   const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
   const staleRunningMs = options.staleRunningMs ?? parseExportJobStaleRunningMs();
-  const { reclaimed } = await reclaimStaleExportJobs(db, { olderThanMs: staleRunningMs });
+  const { reclaimed } = await reclaimStaleExportJobs(db, {
+    olderThanMs: staleRunningMs,
+    heartbeatStaleMs: options.heartbeatStaleMs,
+  });
 
   let claimed = 0;
   let succeeded = 0;
