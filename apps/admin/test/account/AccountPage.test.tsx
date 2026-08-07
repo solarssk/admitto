@@ -19,6 +19,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     confirmMfaTotp: vi.fn(),
     resetMfa: vi.fn(),
     deleteAccountSession: vi.fn(),
+    unlinkAccountExternalIdentity: vi.fn(),
   };
 });
 
@@ -51,6 +52,7 @@ import {
   confirmMfaTotp,
   resetMfa,
   deleteAccountSession,
+  unlinkAccountExternalIdentity,
 } from "../../src/api/client.js";
 
 const mockDeleteSession = vi.mocked(deleteAccountSession);
@@ -63,6 +65,7 @@ const mockEnrollMfaTotp = vi.mocked(enrollMfaTotp);
 const mockCancelMfaEnroll = vi.mocked(cancelMfaEnroll);
 const mockConfirmMfaTotp = vi.mocked(confirmMfaTotp);
 const mockResetMfa = vi.mocked(resetMfa);
+const mockUnlinkExternalIdentity = vi.mocked(unlinkAccountExternalIdentity);
 
 const REVOKE_SESSION_BUTTON = /Revoke session for admin@example.com/;
 
@@ -74,8 +77,12 @@ const baseAccount: AccountDto = {
   is_active: true,
   must_change_password: false,
   has_local_password: true,
+  phone_country_code: null,
+  phone_number: null,
   roles: [],
   mfa_methods: [],
+  external_identities: [],
+  available_identity_providers: [],
 };
 
 const totpEnrolledAccount: AccountDto = {
@@ -138,6 +145,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("AccountPage delayed loading", () => {
@@ -241,6 +249,17 @@ describe("AccountPage toasts", () => {
     vi.advanceTimersByTime(10_000);
     expect(screen.getByTestId("at-toast").textContent).toMatch(/Reload this page/);
     vi.useRealTimers();
+  });
+
+  it("selecting System default clears the locale to null and updates the example date", async () => {
+    mockLoadedAccount();
+    renderWithToast(<AccountPage />);
+    const select = (await screen.findByLabelText("Regional format")) as HTMLSelectElement;
+    expect(select.value).toBe("en-GB");
+
+    fireEvent.change(select, { target: { value: "" } });
+
+    expect(select.value).toBe("");
   });
 
   it("toasts profile save errors", async () => {
@@ -1418,42 +1437,134 @@ describe("AccountPage toasts", () => {
   });
 });
 
-describe("AccountPage profile: sign-in method", () => {
-  it("shows 'Local password' for accounts with only local password", async () => {
-    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, roles: [] });
+describe("AccountPage profile: phone number", () => {
+  it("pre-fills the country code and number from the account, and saves changes to both", async () => {
+    mockLoadedAccount({ ...baseAccount, phone_country_code: "+48", phone_number: "500100200" });
+    mockPatchProfile.mockResolvedValueOnce({
+      display_name: baseAccount.display_name,
+      preferred_locale: baseAccount.preferred_locale,
+      phone_country_code: "+1",
+      phone_number: "5551234",
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Phone country code, Poland \+48/ })).toBeTruthy();
+    });
+    expect((document.getElementById("account-phone-number") as HTMLInputElement).value).toBe("500100200");
+
+    fireEvent.click(screen.getByRole("button", { name: /Phone country code/ }));
+    fireEvent.change(screen.getByLabelText("Search country or dial code"), {
+      target: { value: "United States" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /United States/ }));
+    fireEvent.change(document.getElementById("account-phone-number")!, { target: { value: "5551234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({
+        phone_country_code: "+1",
+        phone_number: "5551234",
+      });
+    });
+  });
+
+  it("sends null for only the field that was cleared (phone fields are diffed independently)", async () => {
+    mockLoadedAccount({ ...baseAccount, phone_country_code: "+48", phone_number: "500100200" });
+    mockPatchProfile.mockResolvedValueOnce({
+      display_name: baseAccount.display_name,
+      preferred_locale: baseAccount.preferred_locale,
+      phone_country_code: "+48",
+      phone_number: null,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect((document.getElementById("account-phone-number") as HTMLInputElement).value).toBe("500100200");
+    });
+
+    fireEvent.change(document.getElementById("account-phone-number")!, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ phone_number: null });
+    });
+  });
+
+  it("does not send phone fields when they are unchanged", async () => {
+    mockLoadedAccount();
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, display_name: "New Name" });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ display_name: "New Name" });
+    });
+  });
+});
+
+describe("AccountPage profile: account type", () => {
+  it("shows 'Local account' and the password hint for accounts with only a local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, external_identities: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password")).toBeTruthy();
+      expect(screen.getByText("Local account")).toBeTruthy();
     });
+    expect(screen.getByText(/Signed in with a password you set/)).toBeTruthy();
   });
 
-  it("shows 'Identity provider (SSO)' for accounts without local password", async () => {
+  it("shows 'Managed by <provider>' and the IdP hint for accounts without a local password", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: false,
-      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+      external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
+      expect(screen.getByText("Managed by Okta")).toBeTruthy();
     });
+    expect(screen.getByText(/password and two-factor authentication are managed there/)).toBeTruthy();
   });
 
-  it("shows 'Local password + Identity provider' when both are present", async () => {
+  it("prioritizes the linked provider and mentions the fallback password when the account has both", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: true,
-      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+      external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password + Identity provider")).toBeTruthy();
+      expect(screen.getByText("Managed by Okta")).toBeTruthy();
+    });
+    expect(screen.getByText(/local password available as a fallback/)).toBeTruthy();
+  });
+
+  it("joins multiple linked providers by name", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      has_local_password: false,
+      external_identities: [
+        { id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" },
+        { id: "ei2", provider_id: "p2", provider_display_name: "Authentik", linked_at: "2026-01-02T00:00:00.000Z" },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Managed by Okta + Authentik")).toBeTruthy();
     });
   });
 
@@ -1465,6 +1576,494 @@ describe("AccountPage profile: sign-in method", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
+  });
+});
+
+const LINKED_ACCOUNT: AccountDto = {
+  ...baseAccount,
+  has_local_password: false,
+  external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
+};
+
+/** Opens the Profile card's "SSO" menu and clicks one item in it. */
+function clickIdentityMenuItem(namePattern: RegExp | string) {
+  fireEvent.click(screen.getByRole("button", { name: "SSO" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: namePattern }));
+}
+
+describe("AccountPage profile: identity provider actions menu", () => {
+  it("hides the menu trigger when nothing is linked and no providers are available", async () => {
+    mockLoadedAccount();
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local account")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "SSO" })).toBeNull();
+  });
+
+  it("shows a Connect item per available provider when nothing is linked yet", async () => {
+    vi.stubGlobal("location", { ...window.location, assign: vi.fn() });
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      available_identity_providers: [
+        { id: "p1", display_name: "Okta" },
+        { id: "p2", display_name: "Authentik" },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Connect Okta/);
+    expect(window.location.assign).toHaveBeenCalledWith("/account/oidc/p1/link?next=/account");
+  });
+
+  it("shows Unlink SSO and a Connect item together when linked to one provider with another still available", async () => {
+    // Accounts can be linked to more than one provider at once (no uniqueness constraint on
+    // ExternalIdentity.user_id), so Unlink (for what's linked) and Connect (for what isn't)
+    // aren't mutually exclusive states - as long as the account also has a local password, since
+    // Connect's re-auth step requires one (see the JIT test right below).
+    mockFetchAccount.mockResolvedValue({
+      ...LINKED_ACCOUNT,
+      has_local_password: true,
+      available_identity_providers: [{ id: "p2", display_name: "Authentik" }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "SSO" }));
+    expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Connect Authentik/ })).toBeTruthy();
+  });
+
+  it("hides Connect items for a JIT SSO-only account with no local password, even when providers are available", async () => {
+    // /account/oidc/:id/link hard-requires a real local password to re-authenticate, so a JIT
+    // account (has_local_password: false) can never finish that flow - only Unlink SSO shows.
+    mockFetchAccount.mockResolvedValue({
+      ...LINKED_ACCOUNT,
+      available_identity_providers: [{ id: "p2", display_name: "Authentik" }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "SSO" }));
+    expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Connect Authentik/ })).toBeNull();
+  });
+});
+
+describe("AccountPage profile: SSO unlink", () => {
+  it("hides the Unlink SSO menu item when no identity is linked", async () => {
+    mockLoadedAccount();
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Local account")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: "SSO" })).toBeNull();
+  });
+
+  it("opens a confirm dialog from the menu", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Unlink SSO from your account/)).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("enables the confirm button once the password reaches the minimum length", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "short" } });
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("cancel clears the password and closes the dialog without calling the API", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockUnlinkExternalIdentity).not.toHaveBeenCalled();
+
+    clickIdentityMenuItem(/Unlink SSO/);
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
+  });
+
+  it("unlinks successfully, toasts, closes the dialog, and reloads the account", async () => {
+    mockFetchAccount.mockResolvedValueOnce(LINKED_ACCOUNT).mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockUnlinkExternalIdentity.mockResolvedValueOnce({ ok: true });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
+    });
+    expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({ new_password: "long-enough-password", code: undefined });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText("Local account")).toBeTruthy();
+    });
+  });
+
+  it("maps invalid_request to a specific password-length error and keeps the dialog open", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Password must be at least 12 characters.")).toBeTruthy();
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("opens a step-up dialog on totp_required", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+    expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+  });
+
+  it("shows an inline error in the step-up dialog for a wrong code and keeps it open", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "000000" } });
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(within(stepUpDialog).getByText("Invalid authenticator or backup code.")).toBeTruthy();
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("submits the step-up code and completes the unlink", async () => {
+    mockFetchAccount.mockResolvedValueOnce(LINKED_ACCOUNT).mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "123456" } });
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
+    });
+    expect(mockUnlinkExternalIdentity).toHaveBeenLastCalledWith({ new_password: "long-enough-password", code: "123456" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes the step-up dialog and toasts on a non-invalid_totp failure", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockRejectedValueOnce(new ApiError(429, "too many requests"));
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "123456" } });
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(screen.getByTestId("at-toast")).toBeTruthy();
+  });
+
+  it("requires a current password field when the account has a local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...LINKED_ACCOUNT, has_local_password: true });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Current password")).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Current password"), { target: { value: "old-password" } });
+    expect(within(dialog).getByRole("button", { name: "Unlink" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("sends current_password when the account has a local password", async () => {
+    mockFetchAccount.mockResolvedValueOnce({ ...LINKED_ACCOUNT, has_local_password: true }).mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockUnlinkExternalIdentity.mockResolvedValueOnce({ ok: true });
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Current password"), { target: { value: "old-password" } });
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({
+        new_password: "long-enough-password",
+        current_password: "old-password",
+        code: undefined,
+      });
+    });
+  });
+
+  it("maps wrong_password to an inline error and keeps the dialog open", async () => {
+    mockFetchAccount.mockResolvedValue({ ...LINKED_ACCOUNT, has_local_password: true });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(401, "wrong_password", "wrong_password"));
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Current password"), { target: { value: "wrong" } });
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Current password is incorrect.")).toBeTruthy();
+    });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("closes the dialog and toasts when roles are still managed by the identity provider", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(
+      new ApiError(409, "provider_managed_roles_exist", "provider_managed_roles_exist"),
+    );
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(
+      screen.getByText(
+        "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("closes the dialog and toasts when the account has no available proof of identity", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(
+      new ApiError(400, "insufficient_verification", "insufficient_verification"),
+    );
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(
+      screen.getByText(
+        "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe("AccountPage profile: email field", () => {
+  it("shows the account email in a disabled field, not a plain read-only row", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    const emailField = (await screen.findByLabelText("Email")) as HTMLInputElement;
+    expect(emailField.value).toBe("admin@example.com");
+    expect(emailField.disabled).toBe(true);
+    expect(screen.getByText("Email cannot be changed here.")).toBeTruthy();
+  });
+});
+
+describe("AccountPage profile: role display", () => {
+  it("shows the role in a disabled, read-only control (not editable)", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", scope_label: "Acme Events", is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    const trigger = await screen.findByRole("button", { name: /Role, Administrator/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows an explanatory hint for a superadmin role, with no scope chips", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "superadmin", scope_type: "instance", scope_id: null, scope_label: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Superadmin")).toBeTruthy();
+    });
+    expect(screen.getByText(/Superadmin has access to every event and organization/)).toBeTruthy();
+    expect(document.querySelector(".account-scope-chip")).toBeNull();
+  });
+
+  it("shows one named chip per scope for a non-superadmin role", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [
+        { id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", scope_label: "Acme Events", is_oidc: false },
+        { id: "r2", role: "admin", scope_type: "organization", scope_id: "org-2", scope_label: "Beta Org", is_oidc: false },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Acme Events")).toBeTruthy();
+    });
+    expect(screen.getByText("Beta Org")).toBeTruthy();
+    expect(screen.getByText(/Admin has management access within the organizations/)).toBeTruthy();
+  });
+
+  it("marks a chip as identity-provider-managed when that assignment is IdP-sourced", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-1", scope_label: "Autumn Summit", is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Autumn Summit")).toBeTruthy();
+    });
+    const chip = screen.getByText("Autumn Summit").closest(".account-scope-chip");
+    expect(chip?.querySelector(".ti-cloud-lock")).toBeTruthy();
+    // The icon is aria-hidden and its title isn't reliably exposed to screen readers or touch/
+    // keyboard users, so this distinction also needs real text in the accessibility tree -
+    // same sr-only pattern StaffUserListItem already uses for the same "(IdP)" signal.
+    expect(chip?.querySelector(".sr-only")?.textContent).toBe("Managed by identity provider");
+  });
+
+  it("falls back to the raw scope id when a scope name isn't resolvable", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-deleted", scope_label: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("evt-deleted")).toBeTruthy();
+    });
+  });
+
+  it("shows a plain message when no role is assigned, with no role control", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("No role assigned.")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: /^Role,/ })).toBeFalsy();
   });
 });
 
@@ -1490,7 +2089,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });
@@ -1520,7 +2119,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });
@@ -1547,7 +2146,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });

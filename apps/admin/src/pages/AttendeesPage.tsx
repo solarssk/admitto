@@ -634,7 +634,9 @@ function HeaderMoreMenu({
   exportingFormat,
   onExport,
 }: Readonly<HeaderMoreMenuProps>) {
-  const { open, setOpen, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+  });
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -650,11 +652,7 @@ function HeaderMoreMenu({
         More
       </Button>
       {open && (
-        <div
-          className={`more-actions-menu__panel${openUpward ? " more-actions-menu__panel--up" : ""}`}
-          role="menu"
-          ref={panelRef}
-        >
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           <MoreActionsMenuItem
             icon="upload"
             label="Import"
@@ -716,7 +714,9 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
 function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
-  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+  });
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
@@ -734,11 +734,7 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
         {exportingFormat ? `Exporting ${exportingFormat.toUpperCase()}…` : "Export"}
       </Button>
       {open && (
-        <div
-          className={`attendees-export-menu__panel${openUpward ? " attendees-export-menu__panel--up" : ""}`}
-          role="menu"
-          ref={panelRef}
-        >
+        <div className="attendees-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           {EXPORT_FORMATS.map((format) => (
             <button
               key={format.key}

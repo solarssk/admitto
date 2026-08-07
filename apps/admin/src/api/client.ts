@@ -96,6 +96,7 @@ import type {
   PatchAccountProfileBody,
   PatchAccountPasswordBody,
   PatchAccountPasswordResponse,
+  DeleteAccountExternalIdentityBody,
   MfaEnrollResponse,
   ConfirmMfaTotpBody,
   ResetMfaBody,
@@ -2100,16 +2101,31 @@ export async function fetchAccount(signal?: AbortSignal): Promise<AccountDto> {
   return parseJson<AccountDto>(res);
 }
 
-export async function patchAccountProfile(
-  body: PatchAccountProfileBody,
-): Promise<{ display_name: string | null; preferred_locale: string | null }> {
+export async function patchAccountProfile(body: PatchAccountProfileBody): Promise<{
+  display_name: string | null;
+  preferred_locale: string | null;
+  phone_country_code: string | null;
+  phone_number: string | null;
+}> {
   const res = await fetch("/api/account/profile", jsonPatchInit(body));
-  return parseJson<{ display_name: string | null; preferred_locale: string | null }>(res);
+  return parseJson<{
+    display_name: string | null;
+    preferred_locale: string | null;
+    phone_country_code: string | null;
+    phone_number: string | null;
+  }>(res);
 }
 
 export async function patchAccountPassword(body: PatchAccountPasswordBody): Promise<PatchAccountPasswordResponse> {
   const res = await fetch("/api/account/password", jsonPatchInit(body));
   return parseJson<PatchAccountPasswordResponse>(res);
+}
+
+export async function unlinkAccountExternalIdentity(
+  body: DeleteAccountExternalIdentityBody,
+): Promise<{ ok: boolean }> {
+  const res = await fetch("/api/account/external-identity", jsonDeleteInit(body));
+  return parseJson<{ ok: boolean }>(res);
 }
 
 export async function fetchAccountSessions(signal?: AbortSignal): Promise<SessionsResponse> {
