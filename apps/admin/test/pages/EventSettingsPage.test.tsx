@@ -465,6 +465,30 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("clears a previously-set event hours range to null", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      event_hours_start: "18:00",
+      event_hours_end: "22:00",
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_hours_start: null, event_hours_end: null },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event hours — start"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Event hours — end"), { target: { value: "" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        event_hours_start: null,
+        event_hours_end: null,
+      });
+    });
+  });
+
   it("deep links to Location and keeps venue guidance out of Basic information", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=location");
