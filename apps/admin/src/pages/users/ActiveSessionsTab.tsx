@@ -209,6 +209,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                 <SearchableSelect
                   id="sessions-signin-filter"
                   label="Sign-in method"
+                  showLabel={false}
                   placeholder="All sign-in methods"
                   searchPlaceholder="Search sign-in methods…"
                   emptyLabel="No sign-in methods found"

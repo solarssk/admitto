@@ -21,10 +21,10 @@ function matchesQuery(country: PhoneCountry, query: string): boolean {
  * mechanism as FiltersMenu) whose panel holds a search box and a flag+name+code list, styled
  * after the Venue address search's own suggestion list. */
 export function PhoneCountrySelect({ id, label, value, disabled, onChange }: Readonly<PhoneCountrySelectProps>) {
-  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<
+  const { open, setOpen, close, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
     HTMLButtonElement,
     HTMLDivElement
-  >();
+  >({ align: "start", matchTriggerWidth: true, minWidth: 260 });
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -76,6 +76,7 @@ export function PhoneCountrySelect({ id, label, value, disabled, onChange }: Rea
         <div
           className={`phone-country-select__panel${openUpward ? " phone-country-select__panel--up" : ""}`}
           ref={panelRef}
+          style={panelStyle}
         >
           <input
             type="text"

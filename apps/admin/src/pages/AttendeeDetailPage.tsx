@@ -137,7 +137,9 @@ function MoreActionsMenu({
   onRestorePass: () => void;
   onRevokePass: () => void;
 }>) {
-  const { open, setOpen, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+  });
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -154,11 +156,7 @@ function MoreActionsMenu({
         More actions
       </Button>
       {open && (
-        <div
-          className={`more-actions-menu__panel${openUpward ? " more-actions-menu__panel--up" : ""}`}
-          role="menu"
-          ref={panelRef}
-        >
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           {showEdit && (
             <>
               <ArchivedGuard event={event} reasonId="edit-profile-reason-menu">

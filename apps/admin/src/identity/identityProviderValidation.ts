@@ -21,6 +21,9 @@ export interface ProviderDraft {
   claim_email: string;
   claim_name: string;
   claim_groups: string;
+  claim_given_name: string;
+  claim_family_name: string;
+  claim_phone: string;
   enabled: boolean;
   login_button_label: string;
 }
@@ -109,6 +112,9 @@ function applyClaimFieldErrors(draft: ProviderDraft, errors: FieldErrors): void 
     ["claim_email", MAX_CLAIM],
     ["claim_name", MAX_CLAIM],
     ["claim_groups", MAX_CLAIM],
+    ["claim_given_name", MAX_CLAIM],
+    ["claim_family_name", MAX_CLAIM],
+    ["claim_phone", MAX_CLAIM],
   ] as const) {
     const value = draft[field];
     if (value && value.trim().length > max) {
@@ -181,6 +187,9 @@ export function emptyProviderDraft(): ProviderDraft {
     claim_email: "",
     claim_name: "",
     claim_groups: "",
+    claim_given_name: "",
+    claim_family_name: "",
+    claim_phone: "",
     enabled: false,
     login_button_label: "",
   };

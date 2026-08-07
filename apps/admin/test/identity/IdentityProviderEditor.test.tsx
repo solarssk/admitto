@@ -77,6 +77,9 @@ const validDetail = {
   claim_email: "email",
   claim_name: "name",
   claim_groups: "groups",
+  claim_given_name: "given_name",
+  claim_family_name: "family_name",
+  claim_phone: "phone_number",
   enabled: true,
   login_button_label: "Continue with Google",
   mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
@@ -454,6 +457,9 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.change(screen.getByLabelText("UserInfo endpoint"), { target: { value: "https://userinfo.example.com" } });
     fireEvent.change(screen.getByLabelText("Email claim"), { target: { value: "upn" } });
     fireEvent.change(screen.getByLabelText("Name claim"), { target: { value: "displayName" } });
+    fireEvent.change(screen.getByLabelText("Given name claim"), { target: { value: "givenName" } });
+    fireEvent.change(screen.getByLabelText("Family name claim"), { target: { value: "surname" } });
+    fireEvent.change(screen.getByLabelText("Phone claim"), { target: { value: "telephoneNumber" } });
     fireEvent.change(screen.getByLabelText("Groups claim"), { target: { value: "memberOf" } });
     fireEvent.change(screen.getByLabelText("SSO login button label"), { target: { value: "Sign in with Google" } });
     // Toggle Enabled off (loaded as true).
@@ -468,6 +474,9 @@ describe("IdentityProviderEditor — coverage", () => {
     expect(body.userinfo_endpoint).toBe("https://userinfo.example.com");
     expect(body.claim_email).toBe("upn");
     expect(body.claim_name).toBe("displayName");
+    expect(body.claim_given_name).toBe("givenName");
+    expect(body.claim_family_name).toBe("surname");
+    expect(body.claim_phone).toBe("telephoneNumber");
     expect(body.claim_groups).toBe("memberOf");
     expect(body.login_button_label).toBe("Sign in with Google");
     expect(body.enabled).toBe(false);

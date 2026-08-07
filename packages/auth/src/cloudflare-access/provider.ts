@@ -22,6 +22,9 @@ function providerDataFromConfig(
     claim_email: "email",
     claim_name: "name",
     claim_groups: "groups",
+    claim_given_name: "given_name",
+    claim_family_name: "family_name",
+    claim_phone: "phone_number",
   };
 }
 

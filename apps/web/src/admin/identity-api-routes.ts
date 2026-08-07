@@ -64,6 +64,9 @@ const providerBodySchema = z.strictObject({
   claim_email: z.string().trim().max(200).optional(),
   claim_name: z.string().trim().max(200).optional(),
   claim_groups: z.string().trim().max(200).optional(),
+  claim_given_name: z.string().trim().max(200).optional(),
+  claim_family_name: z.string().trim().max(200).optional(),
+  claim_phone: z.string().trim().max(200).optional(),
   enabled: z.boolean().optional(),
   /**
    * SSO login button copy. Omit to preserve the stored value; send `null` or `""`
@@ -188,6 +191,9 @@ function toProviderInput(body: z.infer<typeof providerBodySchema>): IdentityProv
     claim_email: body.claim_email?.trim() || undefined,
     claim_name: body.claim_name?.trim() || undefined,
     claim_groups: body.claim_groups?.trim() || undefined,
+    claim_given_name: body.claim_given_name?.trim() || undefined,
+    claim_family_name: body.claim_family_name?.trim() || undefined,
+    claim_phone: body.claim_phone?.trim() || undefined,
     enabled: body.enabled,
     // undefined preserves the stored label (auth layer); null/"" clears to default.
     login_button_label:
