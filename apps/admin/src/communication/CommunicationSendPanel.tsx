@@ -44,7 +44,7 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
   },
   {
     value: "rsvp_status",
-    label: "By RSVP status",
+    label: "By attendance status",
     description: "Only attendees with the attendance status you pick below.",
     icon: "ti-calendar-event",
   },
@@ -279,8 +279,12 @@ export function CommunicationSendPanel({
   };
 
   return (
-    <>
-      <Card title={<HintLabel hint="Who gets this email once you hit Send below.">Recipients</HintLabel>}>
+    <Card
+      title={
+        <HintLabel hint="Pick who gets this email, check the count, then send.">Recipients</HintLabel>
+      }
+    >
+      <div className="settings-card-stack">
         <div className="communication-recipient-cards" role="radiogroup" aria-label="Recipients">
           {RECIPIENT_OPTIONS.map((opt) => (
             <button
@@ -364,19 +368,8 @@ export function CommunicationSendPanel({
           </p>
         )}
         {filterType === "ticket_type" && !filterReady && (
-          <p className="mail-field-hint communication-send-panel__ticket-hint">
-            Choose a ticket type to count or send.
-          </p>
+          <p className="mail-field-hint">Choose a ticket type to count or send.</p>
         )}
-      </Card>
-
-      <Card
-        title={
-          <HintLabel hint="Count first to check the filter matches who you expect, then send.">
-            Review &amp; send
-          </HintLabel>
-        }
-      >
         {error && (
           <Notice variant="error" role="alert">
             {error}
@@ -446,7 +439,7 @@ export function CommunicationSendPanel({
             </div>
           </>
         )}
-      </Card>
-    </>
+      </div>
+    </Card>
   );
 }

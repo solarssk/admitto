@@ -431,7 +431,7 @@ async function recoverLegacyAfterDelete({
       );
     } else {
       setActiveKey("virtual-ticket");
-      addToast("Template deleted. Could not load inherited ticket. Reload the page.", "warning");
+      addToast("Template deleted. Could not load default ticket. Reload the page.", "warning");
     }
   }
 }
@@ -506,9 +506,7 @@ function DefaultTemplateBanner({
 }>) {
   if (activeKey !== "virtual-ticket" || source === "event") return null;
   return (
-    <div className="communication-default-banner">
-      Using default template. Save to customize for this event.
-    </div>
+    <Notice variant="info">Using the default template. Save to customize it for this event.</Notice>
   );
 }
 
@@ -571,27 +569,29 @@ function SendTab({
           </HintLabel>
         }
       >
-        <SearchableSelect
-          id="communication-send-template"
-          label="Template"
-          placeholder="Choose a template…"
-          searchPlaceholder="Search templates…"
-          emptyLabel="No templates found"
-          value={activeKey}
-          options={[
-            ...(!templates.some((t) => t.name === "ticket")
-              ? [{ id: "virtual-ticket", label: "Ticket email (inherited)" }]
-              : []),
-            ...templates.map((t) => ({ id: t.id, label: t.label })),
-          ]}
-          onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
-        />
-        <DefaultTemplateBanner activeKey={activeKey} source={source} />
-        {previewLoading ? (
-          <div className="communication-preview-empty">Loading preview…</div>
-        ) : (
-          <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} />
-        )}
+        <div className="settings-card-stack">
+          <SearchableSelect
+            id="communication-send-template"
+            label="Template"
+            placeholder="Choose a template…"
+            searchPlaceholder="Search templates…"
+            emptyLabel="No templates found"
+            value={activeKey}
+            options={[
+              ...(!templates.some((t) => t.name === "ticket")
+                ? [{ id: "virtual-ticket", label: "Ticket email (default)" }]
+                : []),
+              ...templates.map((t) => ({ id: t.id, label: t.label })),
+            ]}
+            onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+          />
+          <DefaultTemplateBanner activeKey={activeKey} source={source} />
+          {previewLoading ? (
+            <div className="communication-preview-empty">Loading preview…</div>
+          ) : (
+            <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} eventTitle={event.title} />
+          )}
+        </div>
       </Card>
 
       <CommunicationSendPanel
@@ -661,7 +661,7 @@ function TemplateSidebar({
               disabled={templateActionBusy}
               onClick={() => requestDirtyProtectedAction({ kind: "select", key: "virtual-ticket" })}
             >
-              Ticket email (inherited)
+              Ticket email (default)
             </button>
           </li>
         )}
@@ -904,6 +904,9 @@ function TemplateEditorCard({
  * cosmetic, not a security boundary. */
 const SAMPLE_TICKET_URL = "https://tickets.example.com/t/sample-token";
 const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
+/** Matches `DEFAULT_SAMPLE_VARS.email` (packages/mail-templates/src/preview.ts) - the "to"
+ * address every preview is rendered for, shown in the mail-client chrome below. */
+const SAMPLE_RECIPIENT_EMAIL = "alex@example.com";
 const SAMPLE_QR_PLACEHOLDER_DATA_URI =
   "data:image/svg+xml;charset=UTF-8," +
   encodeURIComponent(
@@ -919,18 +922,43 @@ function sanitizeSamplePreviewHtml(html: string): string {
   return html.split(SAMPLE_QR_IMAGE_URL).join(SAMPLE_QR_PLACEHOLDER_DATA_URI).split(SAMPLE_TICKET_URL).join("#");
 }
 
+/** Reads like a real inbox (Gmail-style toolbar + sender row) instead of a bare subject line
+ * over an iframe, so a template preview looks like an email instead of pasted markup. The
+ * toolbar icons are inert chrome (no back/archive/reply destination exists here) - hidden from
+ * assistive tech rather than announced as buttons that do nothing. */
 function PreviewBody({
   previewHtml,
   previewSubject,
+  eventTitle,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
+  eventTitle: string;
 }>) {
-  return previewHtml ? (
-    <>
-      <div className="communication-preview-subject">
-        <strong>Subject</strong>
-        <span>{previewSubject}</span>
+  if (!previewHtml) {
+    return <div className="communication-preview-empty">Click Preview to render the draft.</div>;
+  }
+  const senderInitial = eventTitle.trim().charAt(0).toUpperCase() || "?";
+  return (
+    <div className="communication-mail-client">
+      <div className="communication-mail-client__toolbar" aria-hidden="true">
+        <i className="ti ti-arrow-left" aria-hidden="true" />
+        <span className="communication-mail-client__toolbar-actions">
+          <i className="ti ti-archive" aria-hidden="true" />
+          <i className="ti ti-trash" aria-hidden="true" />
+          <i className="ti ti-corner-up-left" aria-hidden="true" />
+          <i className="ti ti-dots" aria-hidden="true" />
+        </span>
+      </div>
+      <div className="communication-mail-client__subject">{previewSubject}</div>
+      <div className="communication-mail-client__from">
+        <span className="communication-mail-client__avatar" aria-hidden="true">
+          {senderInitial}
+        </span>
+        <div className="communication-mail-client__from-text">
+          <div className="communication-mail-client__from-name">{eventTitle}</div>
+          <div className="communication-mail-client__to">to {SAMPLE_RECIPIENT_EMAIL}</div>
+        </div>
       </div>
       <iframe
         className="communication-preview-frame"
@@ -938,22 +966,22 @@ function PreviewBody({
         sandbox=""
         srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
       />
-    </>
-  ) : (
-    <div className="communication-preview-empty">Click Preview to render the draft.</div>
+    </div>
   );
 }
 
 function PreviewCard({
   previewHtml,
   previewSubject,
+  eventTitle,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
+  eventTitle: string;
 }>) {
   return (
     <Card title="Preview">
-      <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} />
+      <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} eventTitle={eventTitle} />
     </Card>
   );
 }
@@ -979,43 +1007,77 @@ function SendTestCard({
   return (
     <Card
       title={
-        <HintLabel hint="Sends this exact template to one address you type, so you can check it before a real send. Doesn't count as a delivery to any attendee.">
+        <HintLabel hint="Doesn't count as a delivery to any attendee, and isn't recorded in the delivery log.">
           Send test
         </HintLabel>
       }
-      className="communication-test-send"
     >
-      <div className="communication-test-row">
-        <Input
-          label="Recipient email"
-          type="email"
-          value={testEmail}
-          onChange={(e) => setTestEmail(e.target.value)}
-          placeholder="you@example.com"
-        />
-        <ArchivedGuard
-          event={event}
-          reasonId="send-test-reason"
-          disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
-        >
-          {(guard) => (
-            <Button
-              variant="secondary"
-              icon={<i className="ti ti-send" aria-hidden="true" />}
-              onClick={() => void onTestSend()}
-              {...guard}
-            >
-              {testSending ? "Sending…" : "Send test"}
-            </Button>
-          )}
-        </ArchivedGuard>
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">
+          Sends this exact template to one address, so you can check formatting and placeholders
+          before sending it to attendees.
+        </p>
+        <div className="mail-test-send__row">
+          <div className="mail-test-send__controls">
+            <Input
+              label="Recipient"
+              type="email"
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+            <div className="mail-test-send__send-control">
+              <ArchivedGuard
+                event={event}
+                reasonId="send-test-reason"
+                disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
+              >
+                {(guard) => (
+                  <Button
+                    variant="secondary"
+                    icon={<i className="ti ti-send" aria-hidden="true" />}
+                    onClick={() => void onTestSend()}
+                    {...guard}
+                  >
+                    {testSending ? "Sending…" : "Send test"}
+                  </Button>
+                )}
+              </ArchivedGuard>
+            </div>
+          </div>
+        </div>
+        {testStatus && <TestSendResultPreview status={testStatus} email={testEmail} />}
       </div>
-      {testStatus && (
-        <Notice variant={testStatus.kind === "ok" ? "success" : "error"} as="output">
-          {testStatus.message}
-        </Notice>
-      )}
     </Card>
+  );
+}
+
+/** Same "nice report" pattern as the mail transport Send test email card (Event/Organisation
+ * settings) - reuses its global .mail-preview* classes so a test-send result always looks the
+ * same everywhere in the app, just without that card's transport/bounce-specific fields. */
+function TestSendResultPreview({
+  status,
+  email,
+}: Readonly<{
+  status: { kind: "ok" | "error"; message: string };
+  email: string;
+}>) {
+  const isOk = status.kind === "ok";
+  return (
+    <output className={`mail-preview ${isOk ? "mail-preview--ok" : "mail-preview--error"}`}>
+      <div className="mail-preview__head">
+        <div className="mail-preview__head-main">
+          <i
+            className={`ti ${isOk ? "ti-circle-check" : "ti-circle-x"} mail-preview__head-icon${isOk ? "" : " mail-preview__head-icon--error"}`}
+            aria-hidden="true"
+          />
+          <div className="mail-preview__head-text">
+            <b>{status.message}</b>
+            <span>to {email}</span>
+          </div>
+        </div>
+      </div>
+    </output>
   );
 }
 
@@ -1807,7 +1869,7 @@ export function CommunicationPage() {
               onSave={handleSave}
             />
 
-            <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} />
+            <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} eventTitle={event.title} />
           </div>
 
           <SendTestCard

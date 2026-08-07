@@ -211,7 +211,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
   });
@@ -348,7 +348,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
@@ -363,7 +363,7 @@ describe("CommunicationPage templates", () => {
       subject_template: "Updated inherited subject",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Ticket email (inherited)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ticket email (default)" }));
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Updated inherited subject")).toBeTruthy();
@@ -709,9 +709,9 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     renderPage();
     await waitFor(() => {
-      expect(screen.getByLabelText("Recipient email")).toBeTruthy();
+      expect(screen.getByLabelText("Recipient")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Recipient email"), {
+    fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "ops@example.com" },
     });
     testSendEventTemplateById.mockRejectedValueOnce(
@@ -730,15 +730,15 @@ describe("CommunicationPage templates", () => {
       .mockResolvedValueOnce({ status: "failed", error: "Mailbox unavailable" });
 
     renderPage();
-    const email = await screen.findByLabelText("Recipient email");
+    const email = await screen.findByLabelText("Recipient");
     fireEvent.change(email, { target: { value: "ops@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     expect(await screen.findByText("Test email sent.")).toBeTruthy();
-    expect(screen.getByRole("status").className).toContain("at-notice--success");
+    expect(screen.getByRole("status").className).toContain("mail-preview--ok");
 
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     expect(await screen.findByText("Mailbox unavailable")).toBeTruthy();
-    expect(screen.getByRole("status").className).toContain("at-notice--error");
+    expect(screen.getByRole("status").className).toContain("mail-preview--error");
   });
 
   it("does not switch editor when deleting a non-active template", async () => {
@@ -800,7 +800,7 @@ describe("CommunicationPage templates", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: "Ticket email (inherited)" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Ticket email (default)" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
@@ -808,7 +808,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(fetchEventTemplate).toHaveBeenCalledTimes(2);
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
     });
   });
@@ -974,7 +974,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
@@ -990,7 +990,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email (default)")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
       expect(
         screen.getByText(

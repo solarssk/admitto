@@ -163,7 +163,7 @@ describe("CommunicationPage archived lockdown", () => {
 
     // Give "Send test" a valid recipient (that field isn't part of the disabled
     // fieldset) to isolate the archived lock from the unrelated "invalid email" disable.
-    fireEvent.change(screen.getByLabelText("Recipient email"), {
+    fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "test@example.com" },
     });
     expectArchivedLock(screen.getByRole("button", { name: "Send test" }));

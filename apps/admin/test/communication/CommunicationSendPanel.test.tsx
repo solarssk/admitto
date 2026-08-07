@@ -45,7 +45,7 @@ describe("CommunicationSendPanel", () => {
   it("uses attendance labels for the attendance recipient filter", () => {
     render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "By RSVP status" }));
+    fireEvent.click(screen.getByRole("radio", { name: "By attendance status" }));
 
     expect(screen.getByRole("button", { name: /^Attendance status,/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^Attendance status,/ }));

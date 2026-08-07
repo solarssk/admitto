@@ -1,13 +1,3 @@
-.communication-default-banner {
-  margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--surface-hover);
-  border: 1px solid var(--border);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
 .bounce-banner__link {
   padding: 0;
   border: none;
@@ -93,14 +83,6 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-/* .mail-field-hint's shared negative top margin (staff.css) is tuned for hugging the field it
- * describes elsewhere in the app; here it instead follows a SearchableSelect trigger, which
- * needs its own breathing room instead of hugging up against it. */
-.communication-send-panel__ticket-hint {
-  margin-top: var(--space-2);
 }
 
 .communication-templates {
@@ -274,16 +256,6 @@
   margin-top: var(--space-4);
 }
 
-.communication-preview-subject {
-  margin-bottom: var(--space-3);
-  font-size: var(--fs-sm);
-}
-
-.communication-preview-subject strong {
-  display: block;
-  margin-bottom: var(--space-1);
-}
-
 .communication-preview-empty {
   padding: var(--space-5);
   text-align: center;
@@ -291,29 +263,75 @@
   font-size: var(--fs-sm);
 }
 
-.communication-preview-frame {
-  width: 100%;
-  min-height: 320px;
+/* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
+ * as a light surface, dark mode here would look like a broken/unstyled email, not a themed one. */
+.communication-mail-client {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fff;
+  overflow: hidden;
 }
 
-.communication-test-send {
-  margin-bottom: var(--space-4);
-}
-
-.communication-test-row {
+.communication-mail-client__toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: flex-end;
-  max-width: min(420px, 50%);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid #e8eaed;
+  background: #f6f8fc;
+  color: #5f6368;
+  font-size: 1.1rem;
 }
 
-.communication-test-row .at-field {
-  flex: 1;
-  min-width: 220px;
+.communication-mail-client__toolbar-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.communication-mail-client__subject {
+  padding: var(--space-4) var(--space-4) 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #202124;
+}
+
+.communication-mail-client__from {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-bottom: 1px solid #e8eaed;
+}
+
+.communication-mail-client__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.communication-mail-client__from-name {
+  font-weight: 600;
+  color: #202124;
+}
+
+.communication-mail-client__to {
+  font-size: var(--fs-xs);
+  color: #5f6368;
+}
+
+.communication-preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  border: none;
+  background: #fff;
 }
 
 /* Toolbar lives inside the log Card (like attendees-toolbar), not above it - search fills
