@@ -27,6 +27,19 @@
   gap: var(--space-4);
 }
 
+/* Matches .mail-test-send__controls (Event/Organisation Mail transport's own Send test email
+   card) - a single dropdown reads as a form field, not a full-bleed block, at half the card's
+   width. */
+.communication-half-field {
+  max-width: calc((100% - var(--space-4)) / 2);
+}
+
+@media (max-width: 720px) {
+  .communication-half-field {
+    max-width: none;
+  }
+}
+
 .communication-recipient-cards {
   display: flex;
   flex-direction: column;
@@ -291,7 +304,7 @@
 }
 
 .communication-preview-toolbar__open:hover {
-  text-decoration: underline;
+  color: var(--accent-hover, var(--accent));
 }
 
 /* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
@@ -369,7 +382,7 @@
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  font-weight: 600;
+  font-size: 1.1rem;
 }
 
 .communication-mail-client__from-name {

@@ -65,6 +65,13 @@ import { isTemplateDirty } from "../communication/templateDirty.js";
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
 
+/** Result of the last "Send test" attempt. `template`/`subject` are only meaningful on success -
+ * they name exactly what got sent, since "Test email sent." alone doesn't say which template or
+ * confirm the subject line actually used. */
+type TestSendStatus =
+  | { kind: "ok"; message: string; template: string; subject: string | null }
+  | { kind: "error"; message: string };
+
 /** Placeholders that stay valid (already-saved templates using them keep rendering) but are no
  * longer offered as an insertable chip: `header_image_url` has no organisation-level branding
  * field to fall back to (org branding only manages a logo, see BrandingSettingsPanel) and
@@ -507,7 +514,10 @@ function DefaultTemplateBanner({
 }>) {
   if (activeKey !== "virtual-ticket" || source === "event") return null;
   return (
-    <Notice variant="info">Using the default template. Save to customize it for this event.</Notice>
+    <Notice variant="info">
+      This event has no template of its own yet, so it's sending the shared default shown below.
+      Edit and save it to create a copy that only affects this event.
+    </Notice>
   );
 }
 
@@ -554,7 +564,7 @@ function SendTab({
   setTestEmail: Dispatch<SetStateAction<string>>;
   testSending: boolean;
   onTestSend: () => Promise<void>;
-  testStatus: { kind: "ok" | "error"; message: string } | null;
+  testStatus: TestSendStatus | null;
 }>) {
   // Keeps the preview in sync with whichever template is picked, matching the mockup's
   // always-rendered preview - unlike the Templates tab, there's no draft being actively typed
@@ -577,21 +587,27 @@ function SendTab({
         }
       >
         <div className="settings-card-stack">
-          <SearchableSelect
-            id="communication-send-template"
-            label="Template"
-            placeholder="Choose a template…"
-            searchPlaceholder="Search templates…"
-            emptyLabel="No templates found"
-            value={activeKey}
-            options={[
-              ...(!templates.some((t) => t.name === "ticket")
-                ? [{ id: "virtual-ticket", label: "Ticket email (default)" }]
-                : []),
-              ...templates.map((t) => ({ id: t.id, label: t.label })),
-            ]}
-            onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
-          />
+          <p className="settings-card-intro">
+            Pick which saved template this event's ticket emails use, and preview exactly what
+            recipients will see before you send.
+          </p>
+          <div className="communication-half-field">
+            <SearchableSelect
+              id="communication-send-template"
+              label="Template"
+              placeholder="Choose a template…"
+              searchPlaceholder="Search templates…"
+              emptyLabel="No templates found"
+              value={activeKey}
+              options={[
+                ...(!templates.some((t) => t.name === "ticket")
+                  ? [{ id: "virtual-ticket", label: "Ticket email (default)" }]
+                  : []),
+                ...templates.map((t) => ({ id: t.id, label: t.label })),
+              ]}
+              onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+            />
+          </div>
           <DefaultTemplateBanner activeKey={activeKey} source={source} />
           <div className="communication-preview-toolbar">
             <span className="communication-preview-toolbar__label">
@@ -970,7 +986,6 @@ function PreviewBody({
     return <div className="communication-preview-empty">Click Preview to render the draft.</div>;
   }
   const displayName = senderName || eventTitle;
-  const senderInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const sampleTime = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return (
     <div className="communication-mail-client">
@@ -986,7 +1001,7 @@ function PreviewBody({
       <div className="communication-mail-client__subject">{previewSubject}</div>
       <div className="communication-mail-client__from">
         <span className="communication-mail-client__avatar" aria-hidden="true">
-          {senderInitial}
+          <i className="ti ti-mail" aria-hidden="true" />
         </span>
         <div className="communication-mail-client__from-text">
           <div className="communication-mail-client__from-name">
@@ -1056,7 +1071,7 @@ function SendTestCard({
   testSending: boolean;
   editorSnapshotMissing: boolean;
   onTestSend: () => Promise<void>;
-  testStatus: { kind: "ok" | "error"; message: string } | null;
+  testStatus: TestSendStatus | null;
 }>) {
   return (
     <Card
@@ -1113,7 +1128,7 @@ function TestSendResultPreview({
   status,
   email,
 }: Readonly<{
-  status: { kind: "ok" | "error"; message: string };
+  status: TestSendStatus;
   email: string;
 }>) {
   const isOk = status.kind === "ok";
@@ -1131,6 +1146,20 @@ function TestSendResultPreview({
           </div>
         </div>
       </div>
+      {isOk && (
+        <div className="test-mail-summary">
+          <div>
+            <span>Template</span>
+            <b>{status.template}</b>
+          </div>
+          {status.subject && (
+            <div>
+              <span>Subject</span>
+              <b>{status.subject}</b>
+            </div>
+          )}
+        </div>
+      )}
     </output>
   );
 }
@@ -1191,9 +1220,7 @@ export function CommunicationPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const [testEmail, setTestEmail] = useState("");
-  const [testStatus, setTestStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(
-    null,
-  );
+  const [testStatus, setTestStatus] = useState<TestSendStatus | null>(null);
   const [testSending, setTestSending] = useState(false);
 
   const [deliveries, setDeliveries] = useState<DeliveryDto[]>([]);
@@ -1823,7 +1850,16 @@ export function CommunicationPage() {
           ? await testSendEventTemplate(eventId, { to: testEmail.trim() })
           : await testSendEventTemplateById(eventId, activeKey, { to: testEmail.trim() });
       if (result.status === "sent") {
-        setTestStatus({ kind: "ok", message: "Test email sent." });
+        const templateLabel =
+          activeKey === "virtual-ticket"
+            ? "Ticket email (default)"
+            : (templates.find((t) => t.id === activeKey)?.label ?? "Template");
+        setTestStatus({
+          kind: "ok",
+          message: "Test email sent.",
+          template: templateLabel,
+          subject: previewSubject,
+        });
       } else {
         setTestStatus({ kind: "error", message: result.error ?? "Send failed." });
       }

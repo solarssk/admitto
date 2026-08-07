@@ -327,6 +327,9 @@
   .at-password-strength {
     animation: none;
   }
+  .at-notice {
+    animation: none;
+  }
 }
 
 /* ---------------- Notice ---------------- */
@@ -346,6 +349,15 @@
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
+  animation: at-notice-enter var(--dur-slow) var(--ease-out);
+}
+@keyframes at-notice-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .at-notice__icon {
   /* Optically centers the icon against the first line of text (--fs-sm/Tabler webfont's own

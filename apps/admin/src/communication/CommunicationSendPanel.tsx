@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, HintLabel, Notice } from "@admitto/ui";
+import { Button, Card, Notice } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
@@ -56,7 +56,7 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
   },
   {
     value: "no_delivery",
-    label: "No delivery for this template",
+    label: "Not yet emailed",
     description: "Only attendees who've never received this template - catch up latecomers without re-emailing everyone.",
     icon: "ti-mail-off",
   },
@@ -279,12 +279,11 @@ export function CommunicationSendPanel({
   };
 
   return (
-    <Card
-      title={
-        <HintLabel hint="Pick who gets this email, check the count, then send.">Send to</HintLabel>
-      }
-    >
+    <Card title="Send to">
       <div className="settings-card-stack">
+        <p className="settings-card-intro">
+          Choose which attendees get this template, check how many that is, then send.
+        </p>
         <div className="communication-recipient-cards" role="radiogroup" aria-label="Recipients">
           {RECIPIENT_OPTIONS.map((opt) => (
             <button
@@ -323,37 +322,51 @@ export function CommunicationSendPanel({
           ))}
         </div>
         {filterType === "rsvp_status" && (
-          <SearchableSelect
-            id="communication-send-rsvp-status"
-            label="Attendance status"
-            placeholder="Select status…"
-            searchPlaceholder="Search statuses…"
-            emptyLabel="No statuses found"
-            value={rsvpStatus}
-            disabled={pickerLocked}
-            options={RSVP_STATUS_OPTIONS}
-            onChange={(id) => {
-              setRsvpStatus(id as RsvpStatus);
-              setRecipientCount(null);
-            }}
-          />
+          <>
+            <div className="communication-half-field">
+              <SearchableSelect
+                id="communication-send-rsvp-status"
+                label="Attendance status"
+                placeholder="Select status…"
+                searchPlaceholder="Search statuses…"
+                emptyLabel="No statuses found"
+                value={rsvpStatus}
+                disabled={pickerLocked}
+                options={RSVP_STATUS_OPTIONS}
+                onChange={(id) => {
+                  setRsvpStatus(id as RsvpStatus);
+                  setRecipientCount(null);
+                }}
+              />
+            </div>
+            <p className="mail-field-hint">
+              Attendees currently marked with this status will receive the email.
+            </p>
+          </>
         )}
         {filterType === "ticket_type" && (
-          <SearchableSelect
-            id="communication-send-ticket-type"
-            label="Ticket type"
-            placeholder="Choose…"
-            searchPlaceholder="Search ticket types…"
-            emptyLabel="No ticket types found"
-            value={ticketType}
-            disabled={pickerLocked}
-            options={ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
-            onChange={(id) => {
-              setTicketType(id);
-              setRecipientCount(null);
-              setError(null);
-            }}
-          />
+          <>
+            <div className="communication-half-field">
+              <SearchableSelect
+                id="communication-send-ticket-type"
+                label="Ticket type"
+                placeholder="Choose…"
+                searchPlaceholder="Search ticket types…"
+                emptyLabel="No ticket types found"
+                value={ticketType}
+                disabled={pickerLocked}
+                options={ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
+                onChange={(id) => {
+                  setTicketType(id);
+                  setRecipientCount(null);
+                  setError(null);
+                }}
+              />
+            </div>
+            <p className="mail-field-hint">
+              Attendees holding this ticket type will receive the email.
+            </p>
+          </>
         )}
         {filterType === "ticket_type" && ticketTypesError && (
           <p className="mail-field-hint" role="alert">
