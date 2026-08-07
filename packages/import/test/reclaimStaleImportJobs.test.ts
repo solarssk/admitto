@@ -102,4 +102,27 @@ describe("reclaimStaleImportJobs", () => {
       reclaimStaleImportJobs(db, storage, { olderThanMs: 1, now: new Date() }),
     ).resolves.toEqual({ reclaimed: 1 });
   });
+
+  it("uses default stale window and clock when options omit them", async () => {
+    const deleteFn = vi.fn(async () => {});
+    const storage = { delete: deleteFn } as unknown as StorageAdapter;
+    const findMany = vi.fn().mockResolvedValue([{ id: "job-null-key", storage_key: null }]);
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const db = {
+      adminJob: { findMany, updateMany },
+    } as unknown as PrismaClient;
+
+    const before = Date.now();
+    const result = await reclaimStaleImportJobs(db, storage, { olderThanMs: 0 });
+    const after = Date.now();
+
+    expect(result).toEqual({ reclaimed: 1 });
+    expect(deleteFn).not.toHaveBeenCalled();
+    const cutoff = findMany.mock.calls[0]![0].where.started_at.lt as Date;
+    expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+    expect(cutoff.getTime()).toBeLessThanOrEqual(after - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+    const finishedAt = updateMany.mock.calls[0]![0].data.finished_at as Date;
+    expect(finishedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(finishedAt.getTime()).toBeLessThanOrEqual(after);
+  });
 });
