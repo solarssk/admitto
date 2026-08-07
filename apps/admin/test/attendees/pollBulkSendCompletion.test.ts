@@ -72,4 +72,37 @@ describe("pollBulkSendCompletion", () => {
       "info",
     );
   });
+
+  it("passes AbortSignal to fetch and skips toasts after abort", async () => {
+    const addToast = vi.fn();
+    const ac = new AbortController();
+    fetchBulkSendStatus.mockImplementation(async (_eventId, _batchId, signal?: AbortSignal) => {
+      expect(signal).toBe(ac.signal);
+      ac.abort();
+      throw new DOMException("Aborted", "AbortError");
+    });
+
+    await pollBulkSendCompletion("evt-1", "batch-1", addToast, {
+      maxAttempts: 3,
+      sleep: async () => {},
+      signal: ac.signal,
+    });
+
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("exits quietly when already aborted before the first poll", async () => {
+    const addToast = vi.fn();
+    const ac = new AbortController();
+    ac.abort();
+
+    await pollBulkSendCompletion("evt-1", "batch-1", addToast, {
+      maxAttempts: 3,
+      sleep: async () => {},
+      signal: ac.signal,
+    });
+
+    expect(fetchBulkSendStatus).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalled();
+  });
 });

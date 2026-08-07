@@ -257,7 +257,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
     await waitFor(() => {
-      expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1");
+      expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1", expect.any(AbortSignal));
       expect(addToast).toHaveBeenCalledWith("Send complete: 1 ticket sent.", "success");
     });
   });
