@@ -61,6 +61,7 @@ describe("drainExportJobs", () => {
       updateMany: ReturnType<typeof vi.fn>;
       findUnique: ReturnType<typeof vi.fn>;
     };
+    backgroundWorkerHeartbeat: { findUnique: ReturnType<typeof vi.fn> };
     event: { findUniqueOrThrow: ReturnType<typeof vi.fn> };
   };
 
@@ -78,6 +79,9 @@ describe("drainExportJobs", () => {
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         findUnique: vi.fn().mockResolvedValue({ result_json: null }),
+      },
+      backgroundWorkerHeartbeat: {
+        findUnique: vi.fn().mockResolvedValue({ last_beat_at: new Date() }),
       },
       event: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({

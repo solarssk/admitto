@@ -115,11 +115,17 @@ export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-job
 export {
   reclaimStaleExportJobs,
   parseExportJobStaleRunningMs,
+  isWorkerHeartbeatStaleForPendingReclaim,
   DEFAULT_EXPORT_JOB_STALE_RUNNING_MS,
+  DEFAULT_EXPORT_PENDING_HEARTBEAT_STALE_MS,
+  WORKER_HEARTBEAT_ID,
   STALE_EXPORT_JOB_ERROR,
   STALE_EXPORT_PENDING_ERROR,
 } from "./reclaim-stale-export-jobs.js";
-export type { ReclaimStaleExportJobsResult } from "./reclaim-stale-export-jobs.js";
+export type {
+  ReclaimStaleExportJobsResult,
+  ReclaimStaleExportJobsOptions,
+} from "./reclaim-stale-export-jobs.js";
 export {
   redactAttendeeListFiltersForStorage,
   scrubExportJobResultJson,

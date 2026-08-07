@@ -1,16 +1,27 @@
 /**
- * Fail export AdminJobs left in `running` (or never claimed `pending`) after a
- * worker crash/kill/outage. Mirrors import reclaim (no auto re-queue).
+ * Fail export AdminJobs left in `running` after a worker crash/kill/outage, and
+ * never-claimed `pending` jobs only when the worker heartbeat is already stale
+ * (dead/outage). A live worker with a backlog must not fail aged `pending` rows.
+ * Mirrors import reclaim (no auto re-queue).
  *
  * Terminal updates scrub raw search text (`q`) from result_json. Stale pending
- * reclaim closes the gap where a never-claimed job would otherwise keep `q`
- * forever.
+ * reclaim (heartbeat-gated) still closes the gap where a never-claimed job
+ * would otherwise keep `q` forever after a real outage.
  */
 import type { PrismaClient } from "@admitto/db";
 import { scrubExportJobResultJson } from "./export-job-privacy.js";
 
 /** Default: 15 minutes. Align with admin export poll stale window. */
 export const DEFAULT_EXPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
+
+/**
+ * Default heartbeat stale window for pending reclaim (matches CLI
+ * `workerHeartbeatStaleMs(60)` → 150s). Kept here to avoid a cli dependency.
+ */
+export const DEFAULT_EXPORT_PENDING_HEARTBEAT_STALE_MS = 150_000;
+
+/** Singleton heartbeat row id (ADR 0042 / `BackgroundWorkerHeartbeat`). */
+export const WORKER_HEARTBEAT_ID = "default";
 
 export const STALE_EXPORT_JOB_ERROR =
   "Export job abandoned (worker stopped while running). Start the export again.";
@@ -22,6 +33,12 @@ export type ReclaimStaleExportJobsResult = {
   reclaimed: number;
 };
 
+export type ReclaimStaleExportJobsOptions = {
+  olderThanMs?: number;
+  heartbeatStaleMs?: number;
+  now?: Date;
+};
+
 export function parseExportJobStaleRunningMs(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
@@ -30,6 +47,20 @@ export function parseExportJobStaleRunningMs(
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_EXPORT_JOB_STALE_RUNNING_MS;
   return n;
+}
+
+/** True when there is no heartbeat row or last_beat_at is older than `staleMs`. */
+export async function isWorkerHeartbeatStaleForPendingReclaim(
+  db: PrismaClient,
+  now: Date,
+  staleMs: number,
+): Promise<boolean> {
+  const row = await db.backgroundWorkerHeartbeat.findUnique({
+    where: { id: WORKER_HEARTBEAT_ID },
+    select: { last_beat_at: true },
+  });
+  if (!row) return true;
+  return now.getTime() - row.last_beat_at.getTime() >= staleMs;
 }
 
 async function failExportJob(
@@ -53,21 +84,30 @@ async function failExportJob(
 
 export async function reclaimStaleExportJobs(
   db: PrismaClient,
-  options: { olderThanMs?: number; now?: Date } = {},
+  options: ReclaimStaleExportJobsOptions = {},
 ): Promise<ReclaimStaleExportJobsResult> {
   const olderThanMs =
     options.olderThanMs && options.olderThanMs > 0
       ? Math.floor(options.olderThanMs)
       : DEFAULT_EXPORT_JOB_STALE_RUNNING_MS;
+  const heartbeatStaleMs =
+    options.heartbeatStaleMs && options.heartbeatStaleMs > 0
+      ? Math.floor(options.heartbeatStaleMs)
+      : DEFAULT_EXPORT_PENDING_HEARTBEAT_STALE_MS;
   const now = options.now ?? new Date();
   const cutoff = new Date(now.getTime() - olderThanMs);
+  const reclaimPending = await isWorkerHeartbeatStaleForPendingReclaim(
+    db,
+    now,
+    heartbeatStaleMs,
+  );
 
   const stale = await db.adminJob.findMany({
     where: {
       type: "export",
       OR: [
         { status: "running", started_at: { lt: cutoff } },
-        { status: "pending", created_at: { lt: cutoff } },
+        ...(reclaimPending ? [{ status: "pending" as const, created_at: { lt: cutoff } }] : []),
       ],
     },
     select: { id: true, status: true, result_json: true },
