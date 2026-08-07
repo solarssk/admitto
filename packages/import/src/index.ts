@@ -12,6 +12,16 @@ export type {
 } from "./executeImportCommit.js";
 export { drainImportJobs } from "./drainImportJobs.js";
 export type { DrainImportJobsResult } from "./drainImportJobs.js";
+export {
+  reclaimStaleImportJobs,
+  parseImportJobStaleRunningMs,
+  DEFAULT_IMPORT_JOB_STALE_RUNNING_MS,
+  STALE_IMPORT_JOB_ERROR,
+} from "./reclaimStaleImportJobs.js";
+export type {
+  ReclaimStaleImportJobsResult,
+  ReclaimStaleImportJobsOptions,
+} from "./reclaimStaleImportJobs.js";
 export type {
   AttendeeRow,
   ImportAttributeField,
