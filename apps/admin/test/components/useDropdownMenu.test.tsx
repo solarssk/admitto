@@ -89,7 +89,7 @@ describe("useDropdownMenu", () => {
     const innerScroll = new Event("scroll", { bubbles: true });
     Object.defineProperty(innerScroll, "target", { value: menu });
     fireEvent(window, innerScroll);
-    expect(screen.queryByRole("menu")).toBeTruthy();
+    expect(screen.getByRole("menu")).toBeTruthy();
 
     const outsideScroll = new Event("scroll", { bubbles: true });
     Object.defineProperty(outsideScroll, "target", { value: document.body });
