@@ -565,7 +565,6 @@ describe("multi-template API", () => {
         prisma,
         process.env,
         { exportSink: (payload) => { exported.push(payload); } },
-
         { eventId: EVENT_A, baseUrl: "https://tickets.example.com" },
       );
 

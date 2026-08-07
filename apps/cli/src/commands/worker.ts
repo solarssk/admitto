@@ -3,7 +3,8 @@
  *
  *   admitto worker
  *
- * Jobs: mail_delivery drain, bounce ingest, retention. Import/export land in stacked PRs.
+ * Jobs: mail_delivery drain, import AdminJobs, bounce ingest, retention.
+ * Export lands in a stacked PR.
  */
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
@@ -20,6 +21,8 @@ import {
   nullifyDeliverySnapshots,
   parseBounceIngestTickSeconds,
 } from "@admitto/mail-delivery";
+import { drainImportJobs } from "@admitto/import";
+import { getDefaultStorage } from "@admitto/storage";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
 import {
@@ -94,6 +97,27 @@ async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Pr
   }
 }
 
+async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+  const acquired = await locks.tryAcquire("import");
+  if (!acquired) {
+    log("import", "skipped (lock held)");
+    return;
+  }
+  try {
+    const result = await drainImportJobs(db, getDefaultStorage(), { limit: 1 });
+    if (result.claimed === 0) {
+      log("import", "idle");
+      return;
+    }
+    log(
+      "import",
+      `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed}`,
+    );
+  } finally {
+    await locks.release("import");
+  }
+}
+
 async function runBounceJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
   const acquired = await locks.tryAcquire("bounce");
   if (!acquired) {
@@ -146,6 +170,7 @@ async function runWorkerTick(
     log("heartbeat", "ok");
   });
   await runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks));
+  await runJobSafely("import", () => runImportJob(db, locks));
   await runJobSafely("bounce", () => runBounceJob(db, locks));
 
   if (!retentionIsDue(schedule, Date.now())) return;
@@ -188,7 +213,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
 
   log(
     "heartbeat",
-    `starting tick=${tickSeconds}s host=${osHostname()} (mail_delivery + bounce + retention)`,
+    `starting tick=${tickSeconds}s host=${osHostname()} (mail_delivery + import + bounce + retention)`,
   );
 
   try {

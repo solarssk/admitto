@@ -26,6 +26,7 @@
     "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/shared": "*",
+    "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "zod": "^4.4.3"
   },
