@@ -43,6 +43,8 @@ export function IdentityMappingRepeater({
         const needsScopeId = row.scope_type !== "instance";
         const roleInvalid = !MAPPING_ROLES.includes(row.role);
         const scopeInvalid = !MAPPING_SCOPES.includes(row.scope_type);
+        const roleErrorId = rowError.role ? `identity-mapping-role-${row.id}-error` : undefined;
+        const scopeErrorId = rowError.scope_type ? `identity-mapping-scope-${row.id}-error` : undefined;
         return (
           <div className="identity-mappings__row" key={row.id}>
             <div className="identity-mappings__cell identity-mappings__cell--group">
@@ -69,6 +71,7 @@ export function IdentityMappingRepeater({
                   showLabel={false}
                   value={row.role}
                   invalid={Boolean(rowError.role)}
+                  describedBy={roleErrorId}
                   options={[
                     ...(roleInvalid ? [{ id: row.role, label: `${row.role} (invalid, pick a role)` }] : []),
                     ...MAPPING_ROLES.map((role) => ({ id: role, label: role })),
@@ -77,7 +80,7 @@ export function IdentityMappingRepeater({
                 />
               </div>
               {rowError.role && (
-                <span className="at-hint at-hint--error">{rowError.role}</span>
+                <span id={roleErrorId} className="at-hint at-hint--error">{rowError.role}</span>
               )}
             </div>
             <div className="identity-mappings__cell">
@@ -94,6 +97,7 @@ export function IdentityMappingRepeater({
                   showLabel={false}
                   value={row.scope_type}
                   invalid={Boolean(rowError.scope_type)}
+                  describedBy={scopeErrorId}
                   options={[
                     ...(scopeInvalid ? [{ id: row.scope_type, label: `${row.scope_type} (invalid, pick a scope)` }] : []),
                     ...MAPPING_SCOPES.map((scope) => ({ id: scope, label: scope })),
@@ -107,7 +111,7 @@ export function IdentityMappingRepeater({
                 />
               </div>
               {rowError.scope_type && (
-                <span className="at-hint at-hint--error">{rowError.scope_type}</span>
+                <span id={scopeErrorId} className="at-hint at-hint--error">{rowError.scope_type}</span>
               )}
             </div>
             {needsScopeId && (
