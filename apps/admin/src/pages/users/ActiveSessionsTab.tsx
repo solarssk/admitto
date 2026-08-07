@@ -209,6 +209,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                 <SearchableSelect
                   id="sessions-signin-filter"
                   label="Sign-in method"
+                  showLabel={false}
                   placeholder="All sign-in methods"
                   searchPlaceholder="Search sign-in methods…"
                   emptyLabel="No sign-in methods found"
@@ -317,22 +318,23 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                 </span>
                 <div className="sessions-pagesize">
                   <label htmlFor="sessions-pagesize-select">Rows per page</label>
-                  <select
+                  <SearchableSelect
                     id="sessions-pagesize-select"
-                    name="sessions-pagesize-select"
-                    className="at-select sessions-pagesize-select"
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
+                    label="Rows per page"
+                    placeholder="Rows per page"
+                    searchPlaceholder="Search…"
+                    emptyLabel="No options found"
+                    showLabel={false}
+                    value={String(pageSize)}
+                    options={PAGE_SIZE_OPTIONS.map((size) => ({
+                      id: String(size),
+                      label: String(size),
+                    }))}
+                    onChange={(id) => {
+                      setPageSize(Number(id));
                       setPage(1);
                     }}
-                  >
-                    {PAGE_SIZE_OPTIONS.map((size) => (
-                      <option key={size} value={size}>
-                        {size}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
               <div className="sessions-footer__pager">
@@ -374,6 +376,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             placeholder="Select event…"
             searchPlaceholder="Search events…"
             emptyLabel="No events found"
+            showLabel={false}
             value={selectedEventId}
             options={[
               { id: "", label: "Select event…" },

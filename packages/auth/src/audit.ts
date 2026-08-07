@@ -126,6 +126,7 @@ export type RateLimitScope =
   | "ops-system-logs"
   | "admin_import_preview"
   | "admin_import_commit"
+  | "admin_import_job_status"
   | "admin_template_preview"
   | "admin_oidc_provider_ops"
   | "admin_attendees_search"

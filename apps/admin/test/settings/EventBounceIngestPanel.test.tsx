@@ -268,7 +268,8 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     await screen.findByLabelText("IMAP host");
 
-    fireEvent.change(screen.getByLabelText("Check every"), { target: { value: "15" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Check every,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "15 minutes" }));
 
     await waitFor(() => {
       expect(isDisabled(screen.getByRole("button", { name: "Test connection" }))).toBe(true);
@@ -627,7 +628,7 @@ describe("EventBounceIngestPanel", () => {
     renderPanel();
     expect((await screen.findByLabelText("IMAP host") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("993");
-    expect((screen.getByLabelText("Check every") as HTMLSelectElement).value).toBe("5");
+    expect(screen.getByRole("button", { name: "Check every, 5 minutes" })).toBeTruthy();
   });
 
   it("shows Recent checks when more than one run is returned", async () => {

@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router";
-import { Button, Card, EmptyState, HintLabel, Input, Select, StatusBadge, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Input, StatusBadge, useToast } from "@admitto/ui";
 import { exportDeliveryLog } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, EventDeliveriesListParams, MailTemplateListItem } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { deliveryLocalTime, formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
@@ -26,10 +27,10 @@ const SENT_QUEUED_TIME_HINT =
 interface DeliveryToolbarProps {
   searchInput: string;
   onSearchChange: (value: string) => void;
-  status: EventDeliveriesListParams["status"];
-  onStatusChange: (value: EventDeliveriesListParams["status"]) => void;
-  purpose: EventDeliveriesListParams["purpose"];
-  onPurposeChange: (value: EventDeliveriesListParams["purpose"]) => void;
+  status: NonNullable<EventDeliveriesListParams["status"]>;
+  onStatusChange: (value: NonNullable<EventDeliveriesListParams["status"]>) => void;
+  purpose: NonNullable<EventDeliveriesListParams["purpose"]>;
+  onPurposeChange: (value: NonNullable<EventDeliveriesListParams["purpose"]>) => void;
   templateId: string;
   onTemplateIdChange: (value: string) => void;
   templates: MailTemplateListItem[];
@@ -82,49 +83,57 @@ function DeliveryToolbar({
       </div>
       <FiltersMenu activeCount={activeFilterCount} className="communication-filters-menu">
         <div className="communication-toolbar__filter">
-          <Select
+          <SearchableSelect
             id="communication-log-status-filter"
-            aria-label="Status"
+            label="Status"
+            placeholder="All statuses"
+            searchPlaceholder="Search statuses…"
+            emptyLabel="No statuses found"
             value={status}
-            onChange={(e) => onStatusChange(e.target.value as EventDeliveriesListParams["status"])}
-          >
-            <option value="all">All statuses</option>
-            <option value="queued">Queued</option>
-            <option value="accepted">Accepted</option>
-            <option value="sent">Sent</option>
-            <option value="delivered">Delivered</option>
-            <option value="failed">Failed</option>
-            <option value="bounced">Bounced</option>
-            <option value="rejected">Rejected</option>
-          </Select>
+            options={[
+              { id: "all", label: "All statuses" },
+              { id: "queued", label: "Queued" },
+              { id: "accepted", label: "Accepted" },
+              { id: "sent", label: "Sent" },
+              { id: "delivered", label: "Delivered" },
+              { id: "failed", label: "Failed" },
+              { id: "bounced", label: "Bounced" },
+              { id: "rejected", label: "Rejected" },
+            ]}
+            onChange={(id) => onStatusChange(id as NonNullable<EventDeliveriesListParams["status"]>)}
+          />
         </div>
         <div className="communication-toolbar__filter">
-          <Select
+          <SearchableSelect
             id="communication-log-purpose-filter"
-            aria-label="Purpose"
+            label="Purpose"
+            placeholder="All purposes"
+            searchPlaceholder="Search purposes…"
+            emptyLabel="No purposes found"
             value={purpose}
-            onChange={(e) => onPurposeChange(e.target.value as EventDeliveriesListParams["purpose"])}
-          >
-            <option value="all">All purposes</option>
-            <option value="initial">Initial send</option>
-            <option value="resend">Resend</option>
-          </Select>
+            options={[
+              { id: "all", label: "All purposes" },
+              { id: "initial", label: "Initial send" },
+              { id: "resend", label: "Resend" },
+            ]}
+            onChange={(id) => onPurposeChange(id as NonNullable<EventDeliveriesListParams["purpose"]>)}
+          />
         </div>
         <div className="communication-toolbar__filter">
-          <Select
+          <SearchableSelect
             id="communication-log-template-filter"
-            aria-label="Template"
+            label="Template"
+            placeholder="All templates"
+            searchPlaceholder="Search templates…"
+            emptyLabel="No templates found"
             value={templateId}
-            onChange={(e) => onTemplateIdChange(e.target.value)}
-          >
-            <option value="all">All templates</option>
-            <option value="default">Default ticket template</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </Select>
+            options={[
+              { id: "all", label: "All templates" },
+              { id: "default", label: "Default ticket template" },
+              ...templates.map((t) => ({ id: t.id, label: t.label })),
+            ]}
+            onChange={onTemplateIdChange}
+          />
         </div>
       </FiltersMenu>
     </div>
@@ -294,10 +303,10 @@ export interface DeliveryLogTabProps {
   onPageChange: (page: number) => void;
   pageSize: number;
   onPageSizeChange: (size: number) => void;
-  status: EventDeliveriesListParams["status"];
-  onStatusChange: (value: EventDeliveriesListParams["status"]) => void;
-  purpose: EventDeliveriesListParams["purpose"];
-  onPurposeChange: (value: EventDeliveriesListParams["purpose"]) => void;
+  status: NonNullable<EventDeliveriesListParams["status"]>;
+  onStatusChange: (value: NonNullable<EventDeliveriesListParams["status"]>) => void;
+  purpose: NonNullable<EventDeliveriesListParams["purpose"]>;
+  onPurposeChange: (value: NonNullable<EventDeliveriesListParams["purpose"]>) => void;
   templateId: string;
   onTemplateIdChange: (value: string) => void;
   searchInput: string;

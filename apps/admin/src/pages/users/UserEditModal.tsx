@@ -151,9 +151,10 @@ function UserMoreActionsMenu({
       />
       {moreActions.open && (
         <div
-          className={`more-actions-menu__panel${moreActions.openUpward ? " more-actions-menu__panel--up" : ""}`}
+          className="more-actions-menu__panel"
           role="menu"
           ref={moreActions.panelRef}
+          style={moreActions.panelStyle}
         >
           <MoreActionsMenuItem
             icon="refresh"
@@ -647,7 +648,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const anyConfirmDialogOpen =
     deleteConfirm || disableConfirmOpen || resetMfaOpen || revokeSessionsOpen || unlinkSsoOpen || roleChangeConfirmOpen;
   useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose);
-  const moreActions = useDropdownMenu<HTMLButtonElement>();
+  const moreActions = useDropdownMenu<HTMLButtonElement>({ align: "end" });
 
   // Profile fields and staged Role & access edits (pendingAdds/pendingRemoveIds) all commit
   // together here, in one click - previously, Add/Remove each called the API immediately, which

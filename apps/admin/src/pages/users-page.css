@@ -226,9 +226,9 @@
  * (search fills the leftover space via flex above), so extending leftward from there stays
  * within the card at any viewport. */
 .users-page-filters-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end") - not CSS. See
+     searchable-select.css's own panel rule for the full story. */
   z-index: var(--z-dropdown);
   width: 220px;
   background: var(--surface-card);
@@ -778,7 +778,11 @@
 
 .users-modal__role-assign {
   display: flex;
-  align-items: center;
+  /* flex-end, not center: Role/scope are labeled .at-fields (label above the trigger) while
+     the Add/Change button beside them carries no label of its own - centering would align the
+     button against the *whole* taller field (label + trigger) instead of against the trigger
+     row itself, visibly dropping the button below the dropdowns it sits beside (PO report). */
+  align-items: flex-end;
   gap: var(--space-2);
 }
 

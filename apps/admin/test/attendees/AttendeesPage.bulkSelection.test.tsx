@@ -10,6 +10,7 @@ import type { AttendeeRowDto } from "../../src/api/types.js";
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
+const fetchBulkSendStatus = vi.fn();
 const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
 const bulkRevokeCheckIn = vi.fn();
@@ -67,6 +68,29 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   };
 });
 
+const { pollBulkSendCompletion, setPollBulkSendCompletionActual, getPollBulkSendCompletionActual } =
+  vi.hoisted(() => {
+    let actual: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion;
+    const pollBulkSendCompletion = vi.fn();
+    return {
+      pollBulkSendCompletion,
+      setPollBulkSendCompletionActual: (
+        fn: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion,
+      ) => {
+        actual = fn;
+      },
+      getPollBulkSendCompletionActual: () => actual,
+    };
+  });
+
+vi.mock("../../src/attendees/pollBulkSendCompletion.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/attendees/pollBulkSendCompletion.js")>();
+  setPollBulkSendCompletionActual(mod.pollBulkSendCompletion);
+  return {
+    pollBulkSendCompletion: (...args: unknown[]) => pollBulkSendCompletion(...args),
+  };
+});
+
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
     status: number;
@@ -88,6 +112,7 @@ vi.mock("../../src/api/client.js", () => ({
   exportSelectedAttendees: (...args: unknown[]) => exportSelectedAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
+  fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
   bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
   bulkCheckInAttendees: (...args: unknown[]) => bulkCheckInAttendees(...args),
   bulkRevokeCheckIn: (...args: unknown[]) => bulkRevokeCheckIn(...args),
@@ -164,6 +189,16 @@ beforeEach(() => {
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
   fetchTicketTypes.mockResolvedValue([]);
   fetchEventItems.mockResolvedValue([]);
+  fetchBulkSendStatus.mockResolvedValue({
+    batchId: "batch-1",
+    total: 1,
+    queued: 0,
+    sent: 1,
+    failed: 0,
+  });
+  pollBulkSendCompletion.mockImplementation((...args: Parameters<ReturnType<typeof getPollBulkSendCompletionActual>>) =>
+    getPollBulkSendCompletionActual()(...args),
+  );
 });
 
 afterEach(() => {
@@ -244,9 +279,133 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
       });
     });
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Sending tickets to 2 attendees.", "success");
+      expect(addToast).toHaveBeenCalledWith("Queued tickets for 2 attendees.", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+    await waitFor(() => {
+      expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1", expect.any(AbortSignal));
+      expect(addToast).toHaveBeenCalledWith("Send complete: 1 ticket sent.", "success");
+    });
+  });
+
+  it("toasts info when bulk-send status polling throws", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA], total: 1, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: "batch-err", queued: 1, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "Could not refresh send status. Check Communication.",
+        "info",
+      );
+    });
+  });
+
+  it("does not toast poll errors after selected-send polling was aborted on unmount", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA], total: 1, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: "batch-abort", queued: 1, skipped: 0, failed: 0 });
+    pollBulkSendCompletion.mockImplementationOnce(async (_eventId, _batchId, _addToast, options) => {
+      const signal = options?.signal;
+      await new Promise<void>((_resolve, reject) => {
+        const fail = () => reject(new Error("stale poll"));
+        if (signal?.aborted) {
+          fail();
+          return;
+        }
+        signal?.addEventListener("abort", fail, { once: true });
+      });
+    });
+
+    const { unmount } = renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(pollBulkSendCompletion).toHaveBeenCalled();
+    });
+    unmount();
+
+    await waitFor(() => {
+      expect(addToast).not.toHaveBeenCalledWith(
+        "Could not refresh send status. Check Communication.",
+        "info",
+      );
+    });
+  });
+
+  it("aborts an in-flight selected-send poll when another selected send starts", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB], total: 2, page: 1, pageSize: 25 });
+    sendEventBulk
+      .mockResolvedValueOnce({ batchId: "batch-a", queued: 1, skipped: 0, failed: 0 })
+      .mockResolvedValueOnce({ batchId: "batch-b", queued: 1, skipped: 0, failed: 0 });
+
+    const firstSignalRef: { current?: AbortSignal } = {};
+    pollBulkSendCompletion.mockImplementation(async (_eventId, batchId, _addToast, options) => {
+      if (batchId === "batch-a") {
+        firstSignalRef.current = options?.signal;
+        await new Promise<void>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+        return;
+      }
+      return getPollBulkSendCompletionActual()(
+        _eventId,
+        batchId,
+        _addToast,
+        options,
+      );
+    });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(firstSignalRef.current).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(firstSignalRef.current?.aborted).toBe(true);
+      expect(pollBulkSendCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "batch-b",
+        addToast,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("does not poll bulk-send status when enqueue queues nothing", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA], total: 1, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: null, queued: 0, skipped: 1, failed: 0 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("No tickets were queued (1 skipped).", "info");
+    });
+    expect(fetchBulkSendStatus).not.toHaveBeenCalled();
   });
 
   it("toasts an operator-safe error when sendEventBulk fails", async () => {

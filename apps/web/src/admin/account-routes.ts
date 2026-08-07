@@ -5,6 +5,7 @@ import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
+  findEnabledOidcProviders,
   getOrStartTotpEnrollment,
   getWebauthnEnabled,
   hashPassword,
@@ -33,6 +34,7 @@ import {
   sanitizePreferredLocale,
 } from "@admitto/shared";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
+import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
 import { adminAuditFromContext, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
@@ -228,11 +230,13 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       is_active: true,
       must_change_password: true,
       password_hash: true,
+      phone_country_code: true,
+      phone_number: true,
     },
   });
   if (!user) return c.json({ error: "unauthorized" }, 401);
 
-  const [assignments, oidcGrants, mfaMethods] = await Promise.all([
+  const [assignments, oidcGrants, mfaMethods, externalIdentities] = await Promise.all([
     db.roleAssignment.findMany({
       where: { user_id: userId },
       select: { id: true, role: true, scope_type: true, scope_id: true },
@@ -252,9 +256,39 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
         webauthn_attachment: true,
       },
     }),
+    db.externalIdentity.findMany({
+      where: { user_id: userId },
+      select: { id: true, provider_id: true, linked_at: true, provider: { select: { display_name: true } } },
+    }),
   ]);
 
   const oidcAssignmentIds = new Set(oidcGrants.map((g) => g.role_assignment_id));
+
+  // Resolve each assignment's scope_id to the human label shown on the account page (event
+  // title / organization name) - only the specific events/organizations this account is already
+  // assigned to, never a full list, so this needs no extra permission beyond viewing your own
+  // account.
+  const eventScopeIds = assignments.filter((a) => a.scope_type === "event" && a.scope_id).map((a) => a.scope_id!);
+  const orgScopeIds = assignments.filter((a) => a.scope_type === "organization" && a.scope_id).map((a) => a.scope_id!);
+  const [scopedEvents, scopedOrgs] = await Promise.all([
+    eventScopeIds.length ? db.event.findMany({ where: { id: { in: eventScopeIds } }, select: { id: true, title: true } }) : [],
+    orgScopeIds.length ? db.organization.findMany({ where: { id: { in: orgScopeIds } }, select: { id: true, name: true } }) : [],
+  ]);
+  const eventTitleById = new Map(scopedEvents.map((e) => [e.id, e.title]));
+  const orgNameById = new Map(scopedOrgs.map((o) => [o.id, o.name]));
+
+  function scopeLabel(a: (typeof assignments)[number]): string | null {
+    if (a.scope_type === "event") return (a.scope_id && eventTitleById.get(a.scope_id)) ?? null;
+    if (a.scope_type === "organization") return (a.scope_id && orgNameById.get(a.scope_id)) ?? null;
+    return null;
+  }
+
+  // Enabled providers not already linked to this account - the "Connect SSO" list. Same source
+  // the public login page's own SSO buttons use (loadLoginSsoProviders), just filtered against
+  // this account's existing external_identities instead of shown unconditionally.
+  const linkedProviderIds = new Set(externalIdentities.map((ei) => ei.provider_id));
+  const enabledProviders = await findEnabledOidcProviders(db);
+  const availableProviders = enabledProviders.filter((p) => !linkedProviderIds.has(p.id));
 
   return c.json({
     id: user.id,
@@ -264,11 +298,14 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     has_local_password: hasLocalPassword(user.password_hash),
+    phone_country_code: user.phone_country_code,
+    phone_number: user.phone_number,
     roles: assignments.map((a) => ({
       id: a.id,
       role: a.role,
       scope_type: a.scope_type,
       scope_id: a.scope_id,
+      scope_label: scopeLabel(a),
       is_oidc: oidcAssignmentIds.has(a.id),
     })),
     mfa_methods: mfaMethods.map((m) => ({
@@ -284,6 +321,13 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
         : {}),
     })),
     webauthn_enabled: await getWebauthnEnabled(db),
+    external_identities: externalIdentities.map((ei) => ({
+      id: ei.id,
+      provider_id: ei.provider_id,
+      provider_display_name: ei.provider.display_name,
+      linked_at: ei.linked_at.toISOString(),
+    })),
+    available_identity_providers: availableProviders.map((p) => ({ id: p.id, display_name: p.display_name })),
   });
 }
 
@@ -296,13 +340,23 @@ const profileSchema = z
       .refine((v) => isSupportedLocale(v), { message: "Unsupported locale" })
       .nullable()
       .optional(),
+    // Both nullable (not just optional) - the account page always sends one or the other for
+    // both phone fields, using null to mean "clear it", same convention as the admin-side
+    // PATCH /api/admin/users/:id (buildPatchUserData in users-routes.ts).
+    phone_country_code: z.string().max(8).nullable().optional(),
+    phone_number: z.string().max(40).nullable().optional(),
   })
   .strict()
-  .refine((d) => d.display_name !== undefined || d.preferred_locale !== undefined, {
-    message: "Nothing to update",
-  });
+  .refine(
+    (d) =>
+      d.display_name !== undefined ||
+      d.preferred_locale !== undefined ||
+      d.phone_country_code !== undefined ||
+      d.phone_number !== undefined,
+    { message: "Nothing to update" },
+  );
 
-/** PATCH /api/account/profile — update display name and/or preferred locale (no re-auth). */
+/** PATCH /api/account/profile — update display name, preferred locale, and/or phone (no re-auth). */
 export async function handlePatchAccountProfile(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -316,24 +370,213 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   const parsed = profileSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const data: { display_name?: string | null; preferred_locale?: string | null } = {};
+  const data: {
+    display_name?: string | null;
+    preferred_locale?: string | null;
+    phone_country_code?: string | null;
+    phone_number?: string | null;
+  } = {};
   if (parsed.data.display_name !== undefined) {
     data.display_name = parsed.data.display_name.trim() || null;
   }
   if (parsed.data.preferred_locale !== undefined) {
     data.preferred_locale = parsed.data.preferred_locale;
   }
+  if (parsed.data.phone_country_code !== undefined) {
+    data.phone_country_code = parsed.data.phone_country_code?.trim() || null;
+  }
+  if (parsed.data.phone_number !== undefined) {
+    data.phone_number = parsed.data.phone_number?.trim() || null;
+  }
 
   const updated = await db.user.update({
     where: { id: userId },
     data,
-    select: { display_name: true, preferred_locale: true },
+    select: { display_name: true, preferred_locale: true, phone_country_code: true, phone_number: true },
   });
 
   return c.json({
     display_name: updated.display_name,
     preferred_locale: sanitizePreferredLocale(updated.preferred_locale),
+    phone_country_code: updated.phone_country_code,
+    phone_number: updated.phone_number,
   });
+}
+
+const unlinkExternalIdentitySchema = z
+  .object({
+    new_password: z.string(),
+    current_password: z.string().optional(),
+    code: z.string().optional(),
+  })
+  .strict();
+
+type UnlinkDenialCode =
+  | "unauthorized"
+  | "provider_managed_roles_exist"
+  | "current_password_required"
+  | "wrong_password"
+  | "totp_required"
+  | "invalid_totp"
+  | "insufficient_verification";
+
+const UNLINK_DENIAL_STATUS: Record<UnlinkDenialCode, 401 | 409 | 400> = {
+  unauthorized: 401,
+  provider_managed_roles_exist: 409,
+  current_password_required: 400,
+  wrong_password: 401,
+  totp_required: 400,
+  invalid_totp: 401,
+  insufficient_verification: 400,
+};
+
+/**
+ * A stolen session alone must never be enough to replace an account's only credential - unlike
+ * `withStepUpGate`'s role-gated check (a no-op for roles that don't require MFA), self-unlink
+ * always demands one proof: the TOTP/recovery code if the account has it confirmed (a strictly
+ * stronger check than the role-gated one, since it fires regardless of role), otherwise the
+ * current local password. An account with neither - a JIT-provisioned SSO user who never set a
+ * password or enrolled MFA - has no universally available proof to offer, so the action is
+ * blocked rather than silently allowed through session validity alone.
+ */
+async function verifySelfUnlinkProof(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  passwordHash: string | null,
+  proof: { current_password: string | undefined; code: string | undefined },
+): Promise<{ ok: true } | { ok: false; code: UnlinkDenialCode }> {
+  if (await userHasConfirmedTotp(tx, userId)) {
+    if (!proof.code) return { ok: false, code: "totp_required" };
+    if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.code))) {
+      return { ok: false, code: "invalid_totp" };
+    }
+    return { ok: true };
+  }
+  if (hasLocalPassword(passwordHash)) {
+    if (!proof.current_password) return { ok: false, code: "current_password_required" };
+    if (!(await verifyPasswordOrDummy(proof.current_password, passwordHash))) {
+      return { ok: false, code: "wrong_password" };
+    }
+    return { ok: true };
+  }
+  return { ok: false, code: "insufficient_verification" };
+}
+
+/**
+ * DELETE /api/account/external-identity — self-service SSO unlink.
+ *
+ * Adapted from the admin-only `handleDeleteUserExternalIdentity` (users-routes.ts), not by
+ * dropping its actorId guard - that guard exists to stop an admin unlinking *their own* SSO
+ * through the admin route; here the caller unlinking their own identity is the entire point, so
+ * there's no equivalent guard to drop, and the admin route's other invariants don't carry over
+ * cleanly either:
+ * - Session revocation excludes the caller's own current session (`revokeSessionsExcludingCurrent`,
+ *   same helper `handlePatchAccountPassword` uses) instead of revoking every session - the admin
+ *   route revokes all of them because the admin isn't the one using the target's session.
+ * - `must_change_password` is cleared, same as `handlePatchAccountPassword` - the caller just
+ *   chose their own password deliberately, unlike the admin flow where an admin sets a temporary
+ *   password for someone else.
+ * - Gated by `verifySelfUnlinkProof` rather than `withStepUpGate` - self-unlink must demand proof
+ *   unconditionally (see that function's own comment), not only for roles that require MFA.
+ * - Refuses to run at all while any role assignment is still owned by an OIDC group sync
+ *   (`OidcRoleGrant`): converting it to a manually-owned role would let the caller unilaterally
+ *   keep IdP-managed access that a future group sync would otherwise revoke. An admin has to
+ *   remove the grant (or the group membership) first.
+ *
+ * `new_password` is still always required, for the same reason the admin route requires it: a
+ * JIT-provisioned SSO user's `password_hash` is an unknown placeholder, so there's no reliable
+ * way to tell "already has a real local password" from "SSO-only" - always setting a new one in
+ * the same transaction is the only safe option.
+ */
+export async function handleDeleteAccountExternalIdentity(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
+
+  const linked = await db.externalIdentity.findMany({ where: { user_id: userId }, select: { id: true } });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = unlinkExternalIdentitySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const newPassword = parsed.data.new_password;
+  if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
+  if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
+
+  const code = parsed.data.code?.trim();
+  if (code) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  const result = await runInTransaction(db, async (tx) => {
+    // Re-checked fresh inside the transaction (not from the read above) so a grant added by a
+    // concurrent group sync between the two can't race past this guard.
+    const managedGrants = await tx.oidcRoleGrant.count({ where: { user_id: userId } });
+    if (managedGrants > 0) {
+      return { ok: false as const, code: "provider_managed_roles_exist" as UnlinkDenialCode };
+    }
+
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
+    if (!user) return { ok: false as const, code: "unauthorized" as UnlinkDenialCode };
+
+    const proof = await verifySelfUnlinkProof(tx, userId, user.password_hash, {
+      current_password: parsed.data.current_password,
+      code,
+    });
+    if (!proof.ok) return proof;
+
+    const password_hash = await hashPassword(newPassword);
+    await tx.externalIdentity.deleteMany({ where: { user_id: userId } });
+    await tx.user.update({
+      where: { id: userId },
+      data: { password_hash, must_change_password: false },
+    });
+    const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+    await revokeAllTrustedDevicesForUser(tx, userId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "account_sso_unlinked",
+      metadata: { count: linked.length, sessionsRevoked: revokedCount },
+    });
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "account_password_changed",
+      metadata: { sessionsRevoked: revokedCount, reason: "sso_unlink" },
+    });
+    return { ok: true as const, value: revokedCount };
+  });
+
+  if (!result.ok) {
+    const status = UNLINK_DENIAL_STATUS[result.code];
+    if (result.code === "unauthorized") return c.json({ error: "unauthorized" }, status);
+    return c.json({ code: result.code }, status);
+  }
+  return c.json({ ok: true });
 }
 
 const passwordSchema = z

@@ -42,6 +42,7 @@ import type {
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -99,7 +100,7 @@ function notifyBulkSendResult(
 
   if (failed === 0) {
     const skippedNote = skipped > 0 ? ` (${skipped} skipped)` : "";
-    addToast(`Sending tickets to ${queued} ${pluralize(queued, "attendee")}${skippedNote}.`, "success");
+    addToast(`Queued tickets for ${queued} ${pluralize(queued, "attendee")}${skippedNote}.`, "success");
     return;
   }
 
@@ -113,7 +114,7 @@ function notifyBulkSendResult(
   }
 
   const skippedNote = skipped > 0 ? `; ${skipped} skipped` : "";
-  addToast(`Sent ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
+  addToast(`Queued ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
 }
 
 /** Standard "N checked in (M already admitted)" toast for a bulk manual check-in result —
@@ -634,7 +635,9 @@ function HeaderMoreMenu({
   exportingFormat,
   onExport,
 }: Readonly<HeaderMoreMenuProps>) {
-  const { open, setOpen, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+  });
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -650,11 +653,7 @@ function HeaderMoreMenu({
         More
       </Button>
       {open && (
-        <div
-          className={`more-actions-menu__panel${openUpward ? " more-actions-menu__panel--up" : ""}`}
-          role="menu"
-          ref={panelRef}
-        >
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           <MoreActionsMenuItem
             icon="upload"
             label="Import"
@@ -716,7 +715,9 @@ const EXPORT_FORMATS: { key: ExportFormat; label: string; icon: string; hint: st
 
 /** Single "Export" entry point — opens a small menu for XLSX/CSV/PDF, replacing three separate buttons. */
 function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
-  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+  });
 
   return (
     <div className="attendees-export-menu" ref={rootRef}>
@@ -734,11 +735,7 @@ function ExportMenu({ exportingFormat, onExport }: Readonly<ExportMenuProps>) {
         {exportingFormat ? `Exporting ${exportingFormat.toUpperCase()}…` : "Export"}
       </Button>
       {open && (
-        <div
-          className={`attendees-export-menu__panel${openUpward ? " attendees-export-menu__panel--up" : ""}`}
-          role="menu"
-          ref={panelRef}
-        >
+        <div className="attendees-export-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           {EXPORT_FORMATS.map((format) => (
             <button
               key={format.key}
@@ -864,6 +861,18 @@ export function AttendeesPage() {
    * different event's Attendees list while the request was still in flight (CodeRabbit review). */
   const eventIdRef = useRef(eventId);
   eventIdRef.current = eventId;
+
+  /** Detached bulk-send status polls; abort on event change / unmount so toasts stay on-context. */
+  const headerSendPollRef = useRef<AbortController | null>(null);
+  const selectedSendPollRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => {
+      headerSendPollRef.current?.abort();
+      headerSendPollRef.current = null;
+      selectedSendPollRef.current?.abort();
+      selectedSendPollRef.current = null;
+    };
+  }, [eventId]);
 
   const [items, setItems] = useState<AttendeeRowDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -1152,6 +1161,17 @@ export function AttendeesPage() {
       setSendTicketsOpen(false);
       notifyBulkSendResult(result, addToast);
       setReloadToken((n) => n + 1);
+      if (result.batchId && result.queued > 0) {
+        headerSendPollRef.current?.abort();
+        const ac = new AbortController();
+        headerSendPollRef.current = ac;
+        void pollBulkSendCompletion(eventId, result.batchId, addToast, { signal: ac.signal }).catch(
+          () => {
+            if (ac.signal.aborted) return;
+            addToast("Could not refresh send status. Check Communication.", "info");
+          },
+        );
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         reportApiError(err.status);
@@ -1211,6 +1231,17 @@ export function AttendeesPage() {
       onSuccess: (result) => {
         notifyBulkSendResult(result, addToast);
         setReloadToken((n) => n + 1);
+        if (eventId && result.batchId && result.queued > 0) {
+          selectedSendPollRef.current?.abort();
+          const ac = new AbortController();
+          selectedSendPollRef.current = ac;
+          void pollBulkSendCompletion(eventId, result.batchId, addToast, { signal: ac.signal }).catch(
+            () => {
+              if (ac.signal.aborted) return;
+              addToast("Could not refresh send status. Check Communication.", "info");
+            },
+          );
+        }
       },
     });
 

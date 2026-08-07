@@ -81,7 +81,7 @@ describe("sendTicketEmails", () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
-      {},
+      { deliverImmediately: true },
       prisma,
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
@@ -143,7 +143,7 @@ describe("sendTicketEmails", () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
-      { attendeeIds: ["att-location"], templateId: template.id },
+      { deliverImmediately: true, attendeeIds: ["att-location"], templateId: template.id },
       prisma,
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
@@ -201,7 +201,7 @@ describe("sendTicketEmails", () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
-      { attendeeIds: ["att-maps-off"], templateId: template.id },
+      { deliverImmediately: true, attendeeIds: ["att-maps-off"], templateId: template.id },
       prisma,
       {
         NODE_ENV: "test",
@@ -221,7 +221,7 @@ describe("sendTicketEmails", () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
-      { attendeeIds: ["att-mode-a"] },
+      { deliverImmediately: true, attendeeIds: ["att-mode-a"] },
       prisma,
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
@@ -247,8 +247,8 @@ describe("sendTicketEmails", () => {
     const sink = { exportSink: (p: ExportPayload) => exported.push(p) };
 
     await Promise.all([
-      sendTicketEmails(EVENT_ID, { attendeeIds: ["att-race"] }, prisma, env, sink),
-      sendTicketEmails(EVENT_ID, { attendeeIds: ["att-race"] }, prisma, env, sink),
+      sendTicketEmails(EVENT_ID, { deliverImmediately: true, attendeeIds: ["att-race"] }, prisma, env, sink),
+      sendTicketEmails(EVENT_ID, { deliverImmediately: true, attendeeIds: ["att-race"] }, prisma, env, sink),
     ]);
 
     const rows = await prisma.emailDelivery.findMany({
@@ -284,7 +284,7 @@ describe("sendTicketEmails", () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
-      { attendeeIds: ["att-no-ref", "att-batch-ok"] },
+      { deliverImmediately: true, attendeeIds: ["att-no-ref", "att-batch-ok"] },
       prisma,
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
@@ -319,7 +319,7 @@ describe("sendTicketEmails", () => {
 
     const result = await sendTicketEmails(
       EVENT_ID,
-      { attendeeIds: ["att-batch-fail"] },
+      { deliverImmediately: true, attendeeIds: ["att-batch-fail"] },
       prisma,
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
@@ -342,7 +342,7 @@ describe("sendTicketEmails", () => {
     await expect(
       sendTicketEmails(
         EVENT_ID,
-        { purpose: "resend", attendeeIds: ["att-mode-a", "att-mode-b"], recipientEmail: "x@example.com" },
+        { deliverImmediately: true, purpose: "resend", attendeeIds: ["att-mode-a", "att-mode-b"], recipientEmail: "x@example.com" },
         prisma,
         { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       ),
@@ -362,6 +362,7 @@ describe("resendTicketEmail", () => {
       prisma,
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
+      { deliverImmediately: true },
     );
 
     const after = await prisma.emailDelivery.count({
@@ -387,7 +388,7 @@ describe("resendTicketEmail", () => {
       prisma,
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
-      { to: "alt@example.com" },
+      { to: "alt@example.com", deliverImmediately: true },
     );
 
     const after = await prisma.attendee.findUniqueOrThrow({ where: { id: "att-mode-a" } });

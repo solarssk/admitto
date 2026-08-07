@@ -1,22 +1,16 @@
-/* Profile 2-column grid */
-.account-profile-grid {
+/* Editable profile fields - 2 columns (Display name/Email, Regional format/Phone number) rather
+   than stacking all four in one narrow column. */
+.account-profile-editable {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-5, 1.5rem);
-  align-items: start;
+  gap: var(--space-3, 0.75rem) var(--space-5, 1.5rem);
+  margin-bottom: var(--space-4, 1rem);
 }
 
 @media (max-width: 768px) {
-  .account-profile-grid {
+  .account-profile-editable {
     grid-template-columns: 1fr;
   }
-}
-
-/* Editable profile fields */
-.account-profile-editable {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3, 0.75rem);
 }
 
 /* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
@@ -26,47 +20,72 @@
   max-width: none;
 }
 
-/* Read-only profile info rows (dl/dt/dd) */
-.account-info-rows {
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+/* Phone country code + number, side by side - same layout as the admin Edit user modal's
+   .users-modal__phone-row, including its flex-basis split (country code stays compact, number
+   fills the rest) and its stack-on-narrow breakpoint. Without an explicit flex-basis here both
+   children default to their own content width, which shrinks the country picker down to just
+   its "No code" placeholder instead of a comfortable, consistent control size. */
+.account-phone-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
 }
 
-.account-info-row {
-  display: grid;
-  grid-template-columns: 7rem 1fr;
-  align-items: start;
-  gap: var(--space-3, 0.75rem);
-  padding: var(--space-3, 0.75rem) var(--space-3, 0.75rem);
-  border-bottom: 1px solid var(--border);
+.account-phone-row .at-field:first-child {
+  flex: 0 0 auto;
+  min-width: 10rem;
 }
 
-.account-info-row:last-child {
-  border-bottom: 0;
+.account-phone-row .at-field:last-child {
+  flex: 1;
+  min-width: 0;
 }
 
-.account-info-row dt {
-  font-size: var(--fs-sm, 0.875rem);
-  color: var(--text-muted);
-  font-weight: 500;
-  padding-top: 2px;
+@media (max-width: 640px) {
+  .account-phone-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .account-phone-row .at-field:first-child {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
-.account-info-row dd {
-  margin: 0;
+/* Role and Account type sit in the same 2-column field grid as Display name/Email/Regional
+   format/Phone number, not a separate panel - Role directly under Regional format. */
+.account-role-display {
   display: flex;
   flex-direction: column;
   gap: var(--space-1, 0.25rem);
-  font-size: var(--fs-sm, 0.875rem);
-  color: var(--text-primary);
 }
 
-.account-info-hint {
-  font-size: var(--fs-xs, 0.75rem);
-  color: var(--text-muted);
+/* Scope chips under the Role field (event titles for operator, organization names for admin) -
+   same shape as the admin Edit user modal's own .users-modal__chip, minus the remove button
+   (read-only here). Extra top margin beyond .account-role-display's own gap so the chips read
+   as a distinct group below the hint, not squeezed right against it. */
+.account-scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1, 0.25rem);
+  margin-top: var(--space-1, 0.25rem);
 }
+
+.account-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+
+/* Unlink SSO / Connect <provider> live in the Profile card's header "..." menu now
+   (AccountIdentityActionsMenu, apps/admin/src/components/more-actions-menu.css), not as inline
+   buttons here - a growing button row doesn't scale with an unknown number of providers. */
 
 /* Compact 2FA status row: badge + action on one line */
 .account-mfa-status-row {
@@ -200,12 +219,6 @@
   flex-direction: column;
   gap: 4px;
   margin-top: var(--space-3, 0.75rem);
-}
-
-.account-role-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem);
 }
 
 .account-info-block {
