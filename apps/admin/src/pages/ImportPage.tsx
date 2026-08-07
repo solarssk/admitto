@@ -643,6 +643,7 @@ export function ImportPage() {
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const commitPollAbortRef = useRef<AbortController | null>(null);
   const superadmin = isSuperadmin(assignments);
 
   const [step, setStep] = useState<Step>("upload");
@@ -679,6 +680,8 @@ export function ImportPage() {
       cancelled = true;
     };
   }, [eventId]);
+
+  useEffect(() => () => commitPollAbortRef.current?.abort(), []);
 
   const handleApiError = (err: unknown) => handleImportApiError(err, reportApiError, addToast);
 
@@ -771,13 +774,16 @@ export function ImportPage() {
 
   const onCommit = async (opts?: { force?: boolean }) => {
     if (!eventId || !file || !preview) return;
+    commitPollAbortRef.current?.abort();
+    const ac = new AbortController();
+    commitPollAbortRef.current = ac;
     setLoading(true);
     setCapacityBlocked(null);
     try {
       const queued = await commitImport(eventId, file, overwrite, { force: opts?.force });
       let data: ImportCommitResponse | null = null;
       for (let attempt = 0; attempt < 90; attempt += 1) {
-        const status = await fetchImportJobStatus(eventId, queued.jobId);
+        const status = await fetchImportJobStatus(eventId, queued.jobId, ac.signal);
         if (status.status === "succeeded" && status.result) {
           data = status.result;
           break;
@@ -785,7 +791,21 @@ export function ImportPage() {
         if (status.status === "failed") {
           throw new ApiError(500, status.error || "Import failed.");
         }
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => {
+            window.clearTimeout(timer);
+            reject(new DOMException("Aborted", "AbortError"));
+          };
+          const timer = window.setTimeout(() => {
+            ac.signal.removeEventListener("abort", onAbort);
+            resolve();
+          }, 2000);
+          if (ac.signal.aborted) {
+            onAbort();
+            return;
+          }
+          ac.signal.addEventListener("abort", onAbort, { once: true });
+        });
       }
       if (!data) {
         throw new ApiError(504, "Import is still running. Check history later or keep the worker running.");
@@ -799,6 +819,7 @@ export function ImportPage() {
         "success",
       );
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       const capacityMeta = extractCapacityBlockedMeta(err);
       if (capacityMeta) {
         setCapacityBlocked(capacityMeta);
@@ -806,7 +827,7 @@ export function ImportPage() {
         handleApiError(err);
       }
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   };
 

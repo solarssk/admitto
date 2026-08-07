@@ -153,6 +153,36 @@ describe("LocalStorageAdapter", () => {
     expect(await storage.exists(key)).toBe(false);
   });
 
+  it("get returns file bytes for an existing key", async () => {
+    const bytes = Buffer.from("payload-bytes");
+    const { key } = await storage.put(bytes, {
+      orgId: "default",
+      scope: "org",
+      ext: ".csv",
+    });
+    expect(await storage.get(key)).toEqual(bytes);
+  });
+
+  it("get throws StoragePathError not_found on ENOENT", async () => {
+    const key = "default/00000000-0000-0000-0000-0000000000aa.csv";
+    await expect(storage.get(key)).rejects.toMatchObject({
+      name: "StoragePathError",
+      message: expect.stringMatching(/not_found/),
+    });
+  });
+
+  it("get rethrows non-ENOENT read failures", async () => {
+    const key = "default/00000000-0000-0000-0000-0000000000bb.csv";
+    const abs = join(uploadDir, key);
+    mkdirSync(join(uploadDir, "default"), { recursive: true });
+    // Directory at the file path makes readFile fail with EISDIR (not ENOENT).
+    mkdirSync(abs);
+    await expect(storage.get(key)).rejects.toMatchObject({
+      code: expect.not.stringMatching(/^ENOENT$/),
+    });
+    rmSync(abs, { recursive: true, force: true });
+  });
+
   it("list yields managed files with mtime and size, skipping junk", async () => {
     const org = await storage.put(Buffer.from("logo"), {
       orgId: "default",

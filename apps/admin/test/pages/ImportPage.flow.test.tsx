@@ -525,6 +525,125 @@ describe("ImportPage upload → preview → commit flow", () => {
     });
   });
 
+  it("polls pending then succeeded with the abort signal", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-poll",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus
+      .mockResolvedValueOnce({
+        jobId: "job-poll",
+        status: "pending",
+        importId: "imp-1",
+        error: null,
+        result: null,
+      })
+      .mockResolvedValueOnce({
+        jobId: "job-poll",
+        status: "succeeded",
+        importId: "imp-1",
+        error: null,
+        result: {
+          importId: "imp-1",
+          toCreate: 1,
+          toUpdate: 0,
+          toSkip: 0,
+          created: 1,
+          updated: 0,
+          skipped: [],
+          invalidRows: [],
+          invalidCount: 0,
+        },
+      });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(await screen.findByText("Import complete")).toBeTruthy();
+    expect(fetchImportJobStatus).toHaveBeenCalledWith("evt-1", "job-poll", expect.any(AbortSignal));
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("toasts when the import job fails while polling", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-fail",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus.mockResolvedValueOnce({
+      jobId: "job-fail",
+      status: "failed",
+      importId: "imp-1",
+      error: "Import failed.",
+      result: null,
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Import failed/);
+    });
+    expect(screen.queryByText("Import complete")).toBeNull();
+  });
+
+  it("toasts a 504 timeout when the job stays pending across the poll budget", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-stuck",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus.mockResolvedValue({
+      jobId: "job-stuck",
+      status: "pending",
+      importId: "imp-1",
+      error: null,
+      result: null,
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(90 * 2000);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/still running/i);
+    });
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(90);
+  });
+
   it("ignores a cancelled file picker and resets to the upload step when a new file is chosen after preview", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
