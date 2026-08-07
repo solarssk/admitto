@@ -1,4 +1,5 @@
-import { ApiError, fetchImportJobStatus, type ImportCommitResponse } from "../api/client.js";
+import { ApiError, fetchImportJobStatus } from "../api/client.js";
+import type { ImportCommitResponse } from "../api/types.js";
 
 const DEFAULT_POLL_ATTEMPTS = 90;
 const DEFAULT_POLL_INTERVAL_MS = 2000;
