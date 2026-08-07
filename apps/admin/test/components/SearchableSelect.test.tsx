@@ -148,4 +148,38 @@ describe("SearchableSelect", () => {
     // The button's own accessible name still carries the field's purpose either way.
     expect(screen.getByRole("button", { name: "Fruit, none selected" })).toBeTruthy();
   });
+
+  it("closes and stays closed when clicking a caller's own external <label for> while open (showLabel=false)", () => {
+    // Regression coverage: AuditLogPanel's own "Action" filter renders exactly this shape - an
+    // external <label htmlFor> sibling, not a descendant of the field's own root, since
+    // showLabel={false} suppresses SearchableSelect's internal one. A pointerdown on that label
+    // is "outside" the field's own root by DOM structure, so useClickOutside used to close it -
+    // but a <label for> click also natively re-dispatches a click at its labelled control (the
+    // trigger button) a moment later, which reopened the very thing this pointerdown just
+    // closed (PO report: the panel visibly flickered closed-then-open on every click near it).
+    render(
+      <div>
+        <label htmlFor="fruit">Fruit</label>
+        <SearchableSelect
+          id="fruit"
+          label="Fruit"
+          showLabel={false}
+          placeholder="Pick a fruit…"
+          searchPlaceholder="Search fruit…"
+          emptyLabel="No fruit found"
+          value=""
+          options={OPTIONS}
+          onChange={vi.fn()}
+        />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Fruit, none selected" }));
+    expect(screen.getByLabelText("Search fruit…")).toBeTruthy();
+
+    const externalLabel = screen.getByText("Fruit");
+    fireEvent.pointerDown(externalLabel);
+    fireEvent.click(externalLabel);
+
+    expect(screen.queryByLabelText("Search fruit…")).toBeNull();
+  });
 });
