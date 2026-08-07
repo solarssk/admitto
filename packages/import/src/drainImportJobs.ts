@@ -30,6 +30,75 @@ async function claimNextImportJob(db: PrismaClient) {
   return db.adminJob.findUniqueOrThrow({ where: { id: pending.id } });
 }
 
+function failureMessage(err: unknown): string {
+  if (err instanceof ImportCapacityExceededError) return err.message;
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+async function markFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
+  await db.adminJob.update({
+    where: { id: jobId },
+    data: {
+      status: "failed",
+      error: failureMessage(err).slice(0, 2000),
+      finished_at: new Date(),
+    },
+  });
+}
+
+async function deleteStagedKey(storage: StorageAdapter, storageKey: string | null): Promise<void> {
+  if (!storageKey) return;
+  try {
+    await storage.delete(storageKey);
+  } catch {
+    /* best-effort */
+  }
+}
+
+async function runClaimedImportJob(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  job: {
+    id: string;
+    event_id: string | null;
+    storage_key: string | null;
+    import_id: string | null;
+    overwrite: boolean;
+    force_capacity: boolean;
+    actor_user_id: string | null;
+    session_id: string | null;
+    client_timezone: string | null;
+    filename: string | null;
+  },
+): Promise<"succeeded" | "failed"> {
+  try {
+    if (!job.event_id || !job.storage_key || !job.import_id) {
+      throw new Error("import_job_incomplete");
+    }
+    const bytes = await storage.get(job.storage_key);
+    const csv = bytes.toString("utf8");
+    const result = await executeImportCommit(db, {
+      eventId: job.event_id,
+      csv,
+      overwrite: job.overwrite,
+      forceCapacity: job.force_capacity,
+      actorUserId: job.actor_user_id,
+      sessionId: job.session_id,
+      timezone: job.client_timezone,
+      filename: job.filename,
+      importId: job.import_id,
+    });
+    await markSucceeded(db, job.id, result);
+    return "succeeded";
+  } catch (err) {
+    await markFailed(db, job.id, err);
+    return "failed";
+  } finally {
+    await deleteStagedKey(storage, job.storage_key);
+  }
+}
+
 /**
  * Process up to `limit` pending import_commit jobs. Caller holds worker `import` lock.
  */
@@ -48,50 +117,9 @@ export async function drainImportJobs(
     if (!job) break;
     claimed += 1;
 
-    try {
-      if (!job.event_id || !job.storage_key || !job.import_id) {
-        throw new Error("import_job_incomplete");
-      }
-      const bytes = await storage.get(job.storage_key);
-      const csv = bytes.toString("utf8");
-      const result = await executeImportCommit(db, {
-        eventId: job.event_id,
-        csv,
-        overwrite: job.overwrite,
-        forceCapacity: job.force_capacity,
-        actorUserId: job.actor_user_id,
-        sessionId: job.session_id,
-        timezone: job.client_timezone,
-        filename: job.filename,
-        importId: job.import_id,
-      });
-      await markSucceeded(db, job.id, result);
-      succeeded += 1;
-    } catch (err) {
-      const message =
-        err instanceof ImportCapacityExceededError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : String(err);
-      await db.adminJob.update({
-        where: { id: job.id },
-        data: {
-          status: "failed",
-          error: message.slice(0, 2000),
-          finished_at: new Date(),
-        },
-      });
-      failed += 1;
-    } finally {
-      if (job.storage_key) {
-        try {
-          await storage.delete(job.storage_key);
-        } catch {
-          /* best-effort */
-        }
-      }
-    }
+    const outcome = await runClaimedImportJob(db, storage, job);
+    if (outcome === "succeeded") succeeded += 1;
+    else failed += 1;
   }
 
   return { claimed, succeeded, failed };
