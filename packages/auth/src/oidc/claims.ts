@@ -5,6 +5,7 @@ export interface ExternalIdentityClaims {
   email?: string;
   name?: string;
   groups?: string[];
+  phone?: string;
 }
 
 function claimValue(payload: JWTPayload, claimName: string): unknown {
@@ -30,14 +31,36 @@ function asStringArray(value: unknown): string[] {
   return [];
 }
 
-/** Extract mapped claims from a validated ID token payload. */
+/** Composes "given family" from separate claims, for IdPs that omit a combined name claim. */
+function fallbackName(
+  payload: JWTPayload,
+  provider: Pick<IdentityProvider, "claim_given_name" | "claim_family_name">,
+): string | undefined {
+  const givenName = asString(claimValue(payload, provider.claim_given_name));
+  const familyName = asString(claimValue(payload, provider.claim_family_name));
+  return asString([givenName, familyName].filter(Boolean).join(" "));
+}
+
+/**
+ * Extract mapped claims from a validated ID token payload.
+ *
+ * Reads only the ID token - never calls the provider's `userinfo_endpoint`. This was already
+ * true for claim_email/claim_name/claim_groups; claim_phone/claim_given_name/claim_family_name
+ * inherit the same limitation. Some IdPs only return `phone_number`/`address`-scope claims from
+ * UserInfo, not embedded in the ID token (OIDC Core 5.4), so phone sync stays inactive for those
+ * providers until UserInfo fetching (with its own `sub` verification) is added.
+ */
 export function extractClaims(
   payload: JWTPayload,
-  provider: Pick<IdentityProvider, "claim_email" | "claim_name" | "claim_groups">,
+  provider: Pick<
+    IdentityProvider,
+    "claim_email" | "claim_name" | "claim_groups" | "claim_given_name" | "claim_family_name" | "claim_phone"
+  >,
 ): ExternalIdentityClaims {
   return {
     email: asString(claimValue(payload, provider.claim_email)),
-    name: asString(claimValue(payload, provider.claim_name)),
+    name: asString(claimValue(payload, provider.claim_name)) ?? fallbackName(payload, provider),
     groups: asStringArray(claimValue(payload, provider.claim_groups)),
+    phone: asString(claimValue(payload, provider.claim_phone)),
   };
 }
