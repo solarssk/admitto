@@ -663,6 +663,7 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!passCreatorClient) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
+    const client = passCreatorClient;
 
     const existing = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
     let providerUrls: { apple_url: string | null; android_url: string | null };
@@ -699,42 +700,50 @@ export function createApp(options: CreateAppOptions = {}) {
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
     }
 
-    if (existing && existing.status === "active") {
+    /**
+     * A concurrent request for the same attendee can win the race and create the pass first -
+     * PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recovers the
+     * winner's pass instead of overwriting its "active" row with "failed" (which would otherwise
+     * make every later click retry forever against an already-existing pass). Returns null (after
+     * marking the pass failed and logging) when creation could not be recovered.
+     */
+    async function createOrRecoverPass(
+      input: WalletPassInput,
+    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      try {
+        const result = await client.createPass(input);
+        return await markActive(input.userProvidedId, result);
+      } catch (err) {
+        const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
+        const recovered =
+          code === "wallet_provider_duplicate"
+            ? await client.findByUserProvidedId(input.userProvidedId).catch(() => null)
+            : null;
+        if (recovered) return markActive(input.userProvidedId, recovered);
+
+        console.error("PassCreator createPass failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_create_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
+        });
+        await db.walletPass.upsert({
+          where: { attendee_id: attendee.id },
+          create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
+          update: { status: "failed", last_error_code: code },
+        });
+        return null;
+      }
+    }
+
+    if (existing?.status === "active") {
       providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
     } else {
       const input = await buildWalletPassInput(resolved);
-      try {
-        const result = await passCreatorClient.createPass(input);
-        providerUrls = await markActive(input.userProvidedId, result);
-      } catch (err) {
-        const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
-
-        // A concurrent request for the same attendee can win the race and create the pass first -
-        // PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recover
-        // the winner's pass instead of overwriting its "active" row with "failed" (which would
-        // otherwise make every later click retry forever against an already-existing pass).
-        const recovered =
-          code === "wallet_provider_duplicate"
-            ? await passCreatorClient.findByUserProvidedId(input.userProvidedId).catch(() => null)
-            : null;
-        if (recovered) {
-          providerUrls = await markActive(input.userProvidedId, recovered);
-        } else {
-          console.error("PassCreator createPass failed:", err);
-          recordSystemLog({
-            level: "error",
-            source: "api",
-            message: "wallet_pass_create_failed",
-            fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
-          });
-          await db.walletPass.upsert({
-            where: { attendee_id: attendee.id },
-            create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
-            update: { status: "failed", last_error_code: code },
-          });
-          return c.redirect(`${backHref}?walletError=1`, 302);
-        }
-      }
+      const created = await createOrRecoverPass(input);
+      if (!created) return c.redirect(`${backHref}?walletError=1`, 302);
+      providerUrls = created;
     }
 
     const url = platform === "apple" ? providerUrls.apple_url : providerUrls.android_url;
@@ -1730,6 +1739,45 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.body(new Uint8Array(result.png), 200);
   });
 
+  /**
+   * Mode A ticket lookup shared by the ticket page and the on-demand wallet routes below - a
+   * genuine database error becomes a logged 500 (Response), matching the Mode B agency route's
+   * own error handling; an unresolved token still becomes plain `null` for the caller to turn
+   * into a 404.
+   */
+  async function resolveTicketOrError(
+    c: Context,
+    token: string,
+    route: string,
+  ): Promise<Awaited<ReturnType<typeof resolveTicket>> | Response> {
+    try {
+      return await resolveTicket(token, db);
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientInitializationError ||
+        err instanceof Prisma.PrismaClientKnownRequestError ||
+        err instanceof Prisma.PrismaClientUnknownRequestError
+      ) {
+        console.error("resolveTicket database error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_resolution_failed",
+          fields: { route, errorKind: "database" },
+        });
+      } else {
+        console.error("resolveTicket unexpected error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_resolution_failed",
+          fields: { route, errorKind: "unexpected" },
+        });
+      }
+      return renderPublicHtmlError(c, 500);
+    }
+  }
+
   // Mode B ticket page — must be registered before /t/:token
   app.get("/t/:eventSlug/a/:ref", async (c) => {
     const { eventSlug, ref } = c.req.param();
@@ -1755,39 +1803,11 @@ export function createApp(options: CreateAppOptions = {}) {
   // Mode A ticket page
   app.get("/t/:token", async (c) => {
     const token = c.req.param("token");
-
-    let resolved;
-    try {
-      resolved = await resolveTicket(token, db);
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientInitializationError ||
-        err instanceof Prisma.PrismaClientKnownRequestError ||
-        err instanceof Prisma.PrismaClientUnknownRequestError
-      ) {
-        console.error("resolveTicket database error:", err);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "ticket_resolution_failed",
-          fields: { route: "/t/:token", errorKind: "database" },
-        });
-      } else {
-        console.error("resolveTicket unexpected error:", err);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "ticket_resolution_failed",
-          fields: { route: "/t/:token", errorKind: "unexpected" },
-        });
-      }
-      return renderPublicHtmlError(c, 500);
-    }
-
+    const resolved = await resolveTicketOrError(c, token, "/t/:token");
+    if (resolved instanceof Response) return resolved;
     if (!resolved) {
       return renderPublicHtmlError(c, 404);
     }
-
     return renderTicketPage(c, resolved, token);
   });
 
@@ -1795,33 +1815,8 @@ export function createApp(options: CreateAppOptions = {}) {
   for (const platform of ["apple", "google"] as const) {
     app.get(`/t/:token/wallet/${platform}`, async (c) => {
       const token = c.req.param("token");
-      let resolved;
-      try {
-        resolved = await resolveTicket(token, db);
-      } catch (err) {
-        if (
-          err instanceof Prisma.PrismaClientInitializationError ||
-          err instanceof Prisma.PrismaClientKnownRequestError ||
-          err instanceof Prisma.PrismaClientUnknownRequestError
-        ) {
-          console.error("resolveTicket database error:", err);
-          recordSystemLog({
-            level: "error",
-            source: "api",
-            message: "ticket_resolution_failed",
-            fields: { route: "/t/:token/wallet/:platform", errorKind: "database" },
-          });
-        } else {
-          console.error("resolveTicket unexpected error:", err);
-          recordSystemLog({
-            level: "error",
-            source: "api",
-            message: "ticket_resolution_failed",
-            fields: { route: "/t/:token/wallet/:platform", errorKind: "unexpected" },
-          });
-        }
-        return htmlWithSecurityHeaders(c, renderServerError(), 500);
-      }
+      const resolved = await resolveTicketOrError(c, token, "/t/:token/wallet/:platform");
+      if (resolved instanceof Response) return resolved;
       if (!resolved) return htmlWithSecurityHeaders(c, renderNotFound(), 404);
       return handleWalletRedirect(c, resolved, platform, `/t/${token}`);
     });
