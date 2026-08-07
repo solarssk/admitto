@@ -729,7 +729,7 @@ export async function loadRecentImportJobs(
       type: "import_commit",
       status: { in: ["succeeded", "failed"] },
     },
-    orderBy: { created_at: "desc" },
+    orderBy: { finished_at: "desc" },
     take: limit,
     select: {
       id: true,

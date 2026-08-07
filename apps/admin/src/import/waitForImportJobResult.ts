@@ -38,14 +38,14 @@ export type WaitForImportJobResultOptions = {
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 };
 
-function jobAnchorMs(status: { created_at?: string; started_at?: string | null }): number | null {
-  const raw = status.started_at ?? status.created_at;
+function jobStartedMs(status: { started_at?: string | null }): number | null {
+  const raw = status.started_at;
   if (!raw) return null;
   const ms = Date.parse(raw);
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** Poll worker job until succeeded result, failed, or stale window from claim/create exhausted. */
+/** Poll worker job until succeeded result, failed, or running stale window exhausted. */
 export async function waitForImportJobResult(
   eventId: string,
   jobId: string,
@@ -71,8 +71,11 @@ export async function waitForImportJobResult(
       // 422: application failure (not transport). Avoids the global "server unavailable" banner.
       throw new ApiError(422, status.error || "Import failed.");
     }
-    const anchor = jobAnchorMs(status);
-    if (anchor != null && now() - anchor >= staleMs) {
+    // Only apply the stale window once the worker has claimed the job. Pure `pending`
+    // can wait in a live backlog longer than the running threshold without meaning the
+    // worker is gone (matches server reclaim: pending fail only when heartbeat is stale).
+    const started = jobStartedMs(status);
+    if (started != null && now() - started >= staleMs) {
       throw new ApiError(
         408,
         "Import is still running. Check history later or keep the worker running.",

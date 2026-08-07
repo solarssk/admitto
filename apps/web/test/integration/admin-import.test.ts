@@ -1440,8 +1440,9 @@ describe("GET /api/admin/events/:eventId/import/history", () => {
           event_id: EVENT_A,
           filename: "broken.csv",
           error: "Import job abandoned (worker stopped while running). Upload the file again.",
-          created_at: new Date("2026-06-02T10:00:00Z"),
-          finished_at: new Date("2026-06-02T10:20:00Z"),
+          // Older created_at than second.xlsx, but later finished_at (reclaim) → first in list.
+          created_at: new Date("2026-06-02T09:00:00Z"),
+          finished_at: new Date("2026-06-03T12:00:00Z"),
         },
         {
           type: "import_commit",
@@ -1482,17 +1483,17 @@ describe("GET /api/admin/events/:eventId/import/history", () => {
     const body = (await res.json()) as { items: Array<Record<string, unknown>> };
     expect(body.items).toHaveLength(3);
     expect(body.items[0]).toMatchObject({
+      filename: "broken.csv",
+      status: "failed",
+      error: expect.stringMatching(/abandoned/i),
+    });
+    expect(body.items[1]).toMatchObject({
       filename: "second.xlsx",
       created: 5,
       updated: 0,
       skipped: 0,
       status: "succeeded",
       error: null,
-    });
-    expect(body.items[1]).toMatchObject({
-      filename: "broken.csv",
-      status: "failed",
-      error: expect.stringMatching(/abandoned/i),
     });
     expect(body.items[2]).toMatchObject({ filename: "first.csv", created: 10, updated: 2, skipped: 1 });
     expect(typeof body.items[0]!.created_at).toBe("string");
