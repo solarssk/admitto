@@ -169,24 +169,30 @@ export async function reclaimStaleImportJobs(
       landed && job.import_id
         ? importResultJsonFromAuditMetadata(job.import_id, audit.metadata)
         : null;
-    const updated = await db.adminJob.updateMany({
-      where: { id: job.id, status: "running" },
-      data: landed
-        ? {
-            status: "succeeded",
-            error: null,
-            finished_at: now,
-            created_count: historyNumber(resultJson?.created),
-            updated_count: historyNumber(resultJson?.updated),
-            skipped_count: historyNumber(resultJson?.skippedCount),
-            ...(resultJson ? { result_json: resultJson } : {}),
-          }
-        : {
-            status: "failed",
-            error: STALE_IMPORT_JOB_ERROR.slice(0, 2000),
-            finished_at: now,
-          },
-    });
+    let updated: { count: number };
+    if (landed) {
+      updated = await db.adminJob.updateMany({
+        where: { id: job.id, status: "running" },
+        data: {
+          status: "succeeded",
+          error: null,
+          finished_at: now,
+          created_count: historyNumber(resultJson?.created),
+          updated_count: historyNumber(resultJson?.updated),
+          skipped_count: historyNumber(resultJson?.skippedCount),
+          ...(resultJson ? { result_json: resultJson as object } : {}),
+        },
+      });
+    } else {
+      updated = await db.adminJob.updateMany({
+        where: { id: job.id, status: "running" },
+        data: {
+          status: "failed",
+          error: STALE_IMPORT_JOB_ERROR.slice(0, 2000),
+          finished_at: now,
+        },
+      });
+    }
     if (updated.count === 0) continue;
     await deleteStagedKey(storage, job.storage_key);
     if (landed) healed += 1;
