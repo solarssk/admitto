@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { pollBulkSendCompletion } from "../../src/attendees/pollBulkSendCompletion.js";
 
 const fetchBulkSendStatus = vi.fn();
@@ -8,6 +8,10 @@ vi.mock("../../src/api/client.js", () => ({
 }));
 
 describe("pollBulkSendCompletion", () => {
+  beforeEach(() => {
+    fetchBulkSendStatus.mockReset();
+  });
+
   it("toasts success when the queue drains with no failures", async () => {
     const addToast = vi.fn();
     fetchBulkSendStatus.mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0 });
