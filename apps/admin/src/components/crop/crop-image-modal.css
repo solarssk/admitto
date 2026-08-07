@@ -137,7 +137,7 @@
 
 .crop-image-modal__zoom-input {
   width: 100%;
-  accent-color: var(--accent);
+  accent-color: var(--primary);
 }
 
 .crop-image-modal__zoom-input:disabled {
@@ -149,13 +149,13 @@
   width: 10px;
   height: 10px;
   background: #fff;
-  border: 2px solid var(--accent, #206bc4);
+  border: 2px solid var(--primary);
   box-shadow: 0 0 0 1px rgb(15 23 42 / 20%);
   cursor: pointer;
 }
 
 .crop-image-modal__stage .ReactCrop__crop-selection {
-  border: 2px solid var(--accent, #206bc4);
+  border: 2px solid var(--primary);
 }
 
 .crop-image-modal__error {

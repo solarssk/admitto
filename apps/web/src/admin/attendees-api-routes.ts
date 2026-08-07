@@ -162,10 +162,12 @@ const bulkResendBodySchema = z
   .strict();
 
 export type BulkResendDto = {
-  /** Deliveries accepted by the mail provider (see `sendTicketEmails` `sent`). */
+  /** Batch id for GET .../send/status/:batchId polling (null when nothing queued). */
+  batchId: string | null;
+  /** Delivery rows left in `queued` for the worker to drain. */
   queued: number;
   skipped: number;
-  /** Delivery rows created but not accepted by the provider (failed/rejected batch). */
+  /** Always 0 at enqueue time; terminal failures appear on status poll. */
   failed: number;
 };
 
@@ -2874,7 +2876,7 @@ export async function handleBulkResendTickets(
 
   if (ids.length === 0) {
     await auditBulkTicketSend(db, c, eventId, { target, queued: 0, skipped: 0, failed: 0 });
-    return c.json({ queued: 0, skipped: 0, failed: 0 } satisfies BulkResendDto);
+    return c.json({ batchId: null, queued: 0, skipped: 0, failed: 0 } satisfies BulkResendDto);
   }
 
   const attendeeIds = ids;
@@ -2905,10 +2907,15 @@ export async function handleBulkResendTickets(
   }
 
   const skipped = sendResult.skipped.length;
-  const queued = sendResult.sent;
-  const failed = sendResult.deliveries.length - sendResult.sent;
+  const queued = sendResult.queued;
+  const failed = 0;
 
   await auditBulkTicketSend(db, c, eventId, { target, queued, skipped, failed });
 
-  return c.json({ queued, skipped, failed } satisfies BulkResendDto);
+  return c.json({
+    batchId: queued > 0 ? sendResult.batchId : null,
+    queued,
+    skipped,
+    failed,
+  } satisfies BulkResendDto);
 }

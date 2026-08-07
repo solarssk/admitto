@@ -144,7 +144,8 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
 
     await screen.findByDisplayValue("admins");
     // Switch the row's Scope select to "organization".
-    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "organization" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "organization" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Scope ID is required for this scope.");
@@ -569,7 +570,8 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
-    fireEvent.change(screen.getByLabelText("Role"), { target: { value: "operator" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "operator" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][1].mappings[0].role).toBe("operator");
@@ -580,7 +582,8 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
-    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "organization" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "organization" }));
     fireEvent.change(screen.getByLabelText("Organization ID"), { target: { value: "org-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
@@ -596,14 +599,16 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
 
-    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "event" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "event" }));
     expect(screen.getByLabelText("Event ID")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Event ID"), { target: { value: "evt-1" } });
 
     // Switching back to instance drops the scope_id field entirely, and clears
     // the value it held — a stale org/event id must not silently survive under
     // the "instance" scope it no longer applies to.
-    fireEvent.change(screen.getByLabelText("Scope"), { target: { value: "instance" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "instance" }));
     expect(screen.queryByLabelText("Event ID")).toBeNull();
     expect(screen.queryByLabelText("Organization ID")).toBeNull();
 
@@ -627,10 +632,10 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
 
     await screen.findByDisplayValue("admins");
     // The legacy scope is outside MAPPING_SCOPES → an "(invalid — pick a scope)"
-    // option is rendered, same treatment as an out-of-range role.
-    expect(screen.getByText(/legacy_scope \(invalid/)).toBeTruthy();
-    const scopeSelect = screen.getByLabelText("Scope") as HTMLSelectElement;
-    expect(scopeSelect.className).toContain("at-select--invalid");
+    // option is rendered, same treatment as an out-of-range role. The trigger's own
+    // accessible name carries the bad value plus the "(invalid" marker, since the
+    // SearchableSelect trigger (a button, not a native select) has no CSS invalid state.
+    expect(screen.getByRole("button", { name: /^Scope, legacy_scope \(invalid/ })).toBeTruthy();
     // Any non-"instance" scope_type (valid or not) still requires a scope_id.
     expect(screen.getByLabelText("Event ID")).toBeTruthy();
 
@@ -765,11 +770,9 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
 
     await screen.findByDisplayValue("admins");
     // The legacy role is outside MAPPING_ROLES → an "(invalid — pick a role)"
-    // option is rendered so the operator sees the bad value.
-    expect(screen.getByText(/owner \(invalid/)).toBeTruthy();
-    // The Role Select shows a visible invalid state (CodeRabbit).
-    const roleSelect = screen.getByLabelText("Role") as HTMLSelectElement;
-    expect(roleSelect.className).toContain("at-select--invalid");
+    // option is rendered so the operator sees the bad value, carried in the
+    // trigger's own accessible name (CodeRabbit).
+    expect(screen.getByRole("button", { name: /^Role, owner \(invalid/ })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

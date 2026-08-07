@@ -386,8 +386,10 @@ export interface ImportCommitResponse {
   toSkip: number;
   created: number;
   updated: number;
-  /** Capped server-side; toSkip above is the true total. */
+  /** Capped server-side; skippedCount is the true committed total when present. */
   skipped: ImportSkippedRow[];
+  /** Uncapped committed skip total (preferred over skipped.length). */
+  skippedCount?: number;
   /** Rows dropped by the commit-time re-parse before ever reaching the write step (e.g. a ticket
    * type deleted from the catalog between preview and commit) - absent from created/updated/skipped.
    * Capped server-side; invalidCount is the true total. */
@@ -395,12 +397,30 @@ export interface ImportCommitResponse {
   invalidCount: number;
 }
 
+/** 202 enqueue response from POST …/import/commit. */
+export interface ImportCommitQueuedResponse {
+  jobId: string;
+  status: "pending";
+  importId: string;
+}
+
+/** Poll payload from GET …/import/jobs/:jobId. */
+export interface ImportJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  importId: string | null;
+  error: string | null;
+  result: ImportCommitResponse | null;
+}
+
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
 export interface BulkResendResponse {
-  /** Deliveries accepted by the mail provider. */
+  /** Batch id for status polling when rows were queued. */
+  batchId: string | null;
+  /** Delivery rows left in `queued` for the worker to drain. */
   queued: number;
   skipped: number;
-  /** Delivery rows created but not accepted by the provider. */
+  /** Always 0 at enqueue time; terminal failures appear on status poll. */
   failed: number;
 }
 

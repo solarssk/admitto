@@ -186,7 +186,8 @@ describe("ActiveSessionsTab rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText("Page 2 of 2")).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "50" }));
 
     expect(screen.getByText("Showing 1–30 of 30")).toBeTruthy();
     expect(screen.getByText("Page 1 of 1")).toBeTruthy();

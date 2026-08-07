@@ -3618,7 +3618,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     const res = await postBulkResend("unsent");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { queued: number; skipped: number; failed: number };
-    expect(body).toEqual({ queued: 0, skipped: 0, failed: 0 });
+    expect(body).toEqual({ batchId: null, queued: 0, skipped: 0, failed: 0 });
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
@@ -3691,28 +3691,58 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     expect(body.failed).toBe(0);
   });
 
-  it("reports failed when deliveries exist but provider accepted none", async () => {
+  it("returns queued count from enqueue without waiting for the provider", async () => {
     const spy = vi.spyOn(mailDelivery, "sendTicketEmails").mockResolvedValueOnce({
-      batchId: "bulk-fail-batch",
+      batchId: "bulk-queue-batch",
+      queued: 2,
       sent: 0,
       skipped: [],
       deliveries: [
-        { attendeeId: ATT_A1, deliveryId: "del-fail-1" },
-        { attendeeId: ATT_A2, deliveryId: "del-fail-2" },
+        { attendeeId: ATT_A1, deliveryId: "del-q-1" },
+        { attendeeId: ATT_A2, deliveryId: "del-q-2" },
       ],
       resolvedTemplateId: undefined,
     });
     try {
       const res = await postBulkResend("all");
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { queued: number; skipped: number; failed: number };
-      expect(body).toEqual({ queued: 0, skipped: 0, failed: 2 });
+      const body = (await res.json()) as {
+        batchId: string | null;
+        queued: number;
+        skipped: number;
+        failed: number;
+      };
+      expect(body).toEqual({ batchId: "bulk-queue-batch", queued: 2, skipped: 0, failed: 0 });
 
       const log = await prisma.attendeeActionLog.findFirst({
         where: { event_id: EVENT_A, action_type: "mail_bulk_resend" },
         orderBy: { created_at: "desc" },
       });
-      expect(log!.metadata).toEqual({ target: "all", queued: 0, skipped: 0, failed: 2 });
+      expect(log!.metadata).toEqual({ target: "all", queued: 2, skipped: 0, failed: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("returns batchId null when enqueue queues nothing", async () => {
+    const spy = vi.spyOn(mailDelivery, "sendTicketEmails").mockResolvedValueOnce({
+      batchId: "ignored-batch",
+      queued: 0,
+      sent: 0,
+      skipped: [{ attendeeId: ATT_A1, reason: "already_sent" }],
+      deliveries: [],
+      resolvedTemplateId: undefined,
+    });
+    try {
+      const res = await postBulkResend("all");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        batchId: string | null;
+        queued: number;
+        skipped: number;
+        failed: number;
+      };
+      expect(body).toEqual({ batchId: null, queued: 0, skipped: 1, failed: 0 });
     } finally {
       spy.mockRestore();
     }

@@ -11,7 +11,6 @@ import {
   Notice,
   PageHeader,
   resolveStatusMeta,
-  Select,
   Skeleton,
   Tabs,
   Tooltip,
@@ -55,7 +54,7 @@ import {
 } from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
-import { RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
+import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
@@ -74,6 +73,7 @@ import {
 } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { formatDeliveryHistoryTime, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
@@ -466,6 +466,21 @@ function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeF
 function resolveOrphanedTicketType(ticketType: string, ticketTypes: TicketTypeDto[]): string | null {
   if (!ticketType) return null;
   return ticketTypes.some((type) => type.key === ticketType) ? null : ticketType;
+}
+
+/** Ticket type picker options: the "-" (none) sentinel, the orphaned type surfaced by
+ * `resolveOrphanedTicketType` if there is one, then the event's own catalog. Extracted out of
+ * the component (SonarCloud S3776). */
+function buildTicketTypeOptions(
+  orphanedTicketType: string | null,
+  ticketTypes: TicketTypeDto[],
+): { id: string; label: string }[] {
+  const options = [{ id: "", label: "-" }];
+  if (orphanedTicketType) {
+    options.push({ id: orphanedTicketType, label: `${orphanedTicketType} (not in catalog)` });
+  }
+  options.push(...ticketTypes.map((type) => ({ id: type.key, label: type.label })));
+  return options;
 }
 
 /** Overview tab: read-only profile, additional info, wallet placeholder, event items, and
@@ -1585,10 +1600,10 @@ export function AttendeeDetailPage() {
   const emailChanged = form.email !== initialEmail;
   const isRevoked = detail.status === "revoked";
   // A stored ticket_type with no matching catalog entry (type deleted after assignment, or
-  // legacy pre-catalog data) has no <option> to bind to — the native <select> would otherwise
-  // silently fall back to the blank "—" option while form.ticket_type still holds the orphaned
-  // value, hiding it from the admin. Surface it as its own option instead (fail-open, same
-  // philosophy as ticketTypeBadge.tsx's catalog resolver).
+  // legacy pre-catalog data) has no option to bind to — the picker would otherwise silently
+  // fall back to the blank "—" option while form.ticket_type still holds the orphaned value,
+  // hiding it from the admin. Surface it as its own option instead (fail-open, same philosophy
+  // as ticketTypeBadge.tsx's catalog resolver).
   const orphanedTicketType = resolveOrphanedTicketType(form.ticket_type, ticketTypes);
   const attendeeSource = deriveAttendeeSource(detail.action_log);
   const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
@@ -1847,17 +1862,22 @@ export function AttendeeDetailPage() {
               className="attendee-form__fieldset-wrapper"
             >
               <fieldset className="attendee-form__fieldset" disabled={isEventArchived(event)}>
-                <Select
-                  label="Attendance"
-                  value={form.rsvp_status}
-                  onChange={(e) => setForm({ ...form, rsvp_status: e.target.value as RsvpStatus })}
-                >
-                  <option value="none">Registered</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="declined">Declined</option>
-                  <option value="tentative">Tentative</option>
-                  <option value="cancelled">Cancelled</option>
-                </Select>
+                <div className="at-field">
+                  <label className="at-label" htmlFor="attendee-edit-rsvp-status">
+                    Attendance
+                  </label>
+                  <SearchableSelect
+                    id="attendee-edit-rsvp-status"
+                    label="Attendance"
+                    placeholder="Select attendance…"
+                    searchPlaceholder="Search attendance…"
+                    emptyLabel="No attendance options found"
+                    showLabel={false}
+                    value={form.rsvp_status}
+                    options={RSVP_STATUS_OPTIONS}
+                    onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
+                  />
+                </div>
                 <Input
                   label="Email"
                   type="text"
@@ -1896,26 +1916,22 @@ export function AttendeeDetailPage() {
                   value={form.department}
                   onChange={(e) => setForm({ ...form, department: e.target.value })}
                 />
-                <Select
-                  label="Ticket type"
-                  value={form.ticket_type}
-                  onChange={(e) => setForm({ ...form, ticket_type: e.target.value })}
-                >
-                  <option value="">-</option>
-                  {orphanedTicketType && (
-                    <option
-                      value={orphanedTicketType}
-                      title="Not in this event's ticket-type catalog. It may have been deleted after being assigned, and picking another option here replaces it."
-                    >
-                      {orphanedTicketType} (not in catalog)
-                    </option>
-                  )}
-                  {ticketTypes.map((type) => (
-                    <option key={type.key} value={type.key}>
-                      {type.label}
-                    </option>
-                  ))}
-                </Select>
+                <div className="at-field">
+                  <label className="at-label" htmlFor="attendee-edit-ticket-type">
+                    Ticket type
+                  </label>
+                  <SearchableSelect
+                    id="attendee-edit-ticket-type"
+                    label="Ticket type"
+                    placeholder="Select ticket type…"
+                    searchPlaceholder="Search ticket types…"
+                    emptyLabel="No ticket types found"
+                    showLabel={false}
+                    value={form.ticket_type}
+                    options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
+                    onChange={(id) => setForm({ ...form, ticket_type: id })}
+                  />
+                </div>
                 {ticketTypesError && (
                   <p className="attendee-form__error">
                     {ticketTypesError}{" "}

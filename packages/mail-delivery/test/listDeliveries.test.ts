@@ -60,14 +60,14 @@ beforeAll(async () => {
   exported.length = 0;
   await sendTicketEmails(
     EVENT_A,
-    { attendeeIds: ["att-list-a"] },
+    { deliverImmediately: true, attendeeIds: ["att-list-a"] },
     prisma,
     { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
     { exportSink: (p) => exported.push(p) },
   );
   await sendTicketEmails(
     EVENT_B,
-    { attendeeIds: ["att-list-b"] },
+    { deliverImmediately: true, attendeeIds: ["att-list-b"] },
     prisma,
     { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
     { exportSink: (p) => exported.push(p) },

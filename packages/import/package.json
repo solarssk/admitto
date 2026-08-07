@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets",
+    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth -w @admitto/storage",
     "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
@@ -26,6 +26,7 @@
     "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/shared": "*",
+    "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "zod": "^4.4.3"
   },
