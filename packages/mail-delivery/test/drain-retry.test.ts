@@ -45,6 +45,15 @@ describe("mail drain retry policy", () => {
     ).toBe(true);
   });
 
+  it("treats failed rows with null attempted_at as due", () => {
+    expect(
+      isMailDrainRetryDue(
+        { status: "failed", attempts: 2, attempted_at: null },
+        1_000_000,
+      ),
+    ).toBe(true);
+  });
+
   it("exhausts at MAX_MAIL_DRAIN_ATTEMPTS", () => {
     expect(MAX_MAIL_DRAIN_ATTEMPTS).toBe(8);
     expect(nextMailDrainAttempts(7)).toBe(8);

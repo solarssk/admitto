@@ -93,7 +93,7 @@ async function enqueueOne() {
 }
 
 describe("drainPendingDeliveries branch coverage", () => {
-  it("skips when resolveAttendeeMailLinks throws", async () => {
+  it("marks failed when resolveAttendeeMailLinks throws", async () => {
     await enqueueOne();
     vi.mocked(resolveAttendeeMailLinks).mockRejectedValueOnce(new Error("gone"));
 
@@ -103,7 +103,9 @@ describe("drainPendingDeliveries branch coverage", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1 });
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    expect(row.status).toBe("failed");
   });
 
   it("marks failed when sendBatch throws an Error", async () => {
