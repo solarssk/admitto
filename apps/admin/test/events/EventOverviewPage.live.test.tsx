@@ -1115,6 +1115,44 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(within(linksSection).getByText("Venue floor plan")).toBeTruthy();
   });
 
+  it("switches the resource Type picker from Link to File before saving", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockCreateEventResource.mockResolvedValueOnce({
+      id: "r2",
+      title: "Vendor contract",
+      type: "file",
+      url: "https://example.com/contract.pdf",
+      description: null,
+      sort_order: 0,
+    } satisfies EventResourceDto);
+
+    renderPage();
+
+    const linksSection = await screen.findByText("Links & files").then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    act(() => {
+      within(linksSection).getByRole("button", { name: "Add a link or file" }).click();
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
+    // Defaults to Link - switching it is the part under test.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Type, Link" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "File" }));
+    fireEvent.change(within(dialog).getByLabelText("Title *"), { target: { value: "Vendor contract" } });
+    fireEvent.change(within(dialog).getByLabelText("URL *"), {
+      target: { value: "https://example.com/contract.pdf" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockCreateEventResource).toHaveBeenCalledWith("evt-1", {
+        title: "Vendor contract",
+        type: "file",
+        url: "https://example.com/contract.pdf",
+        description: null,
+      });
+    });
+  });
+
   it("shows a specific inline validation message for an invalid URL instead of a vague save failure, and never calls the API (#D3)", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
