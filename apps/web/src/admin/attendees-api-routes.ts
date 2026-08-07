@@ -851,7 +851,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
       event_id: eventId,
       actor_user_id: audit.operator ?? null,
       session_id: audit.sessionId ?? null,
-      client_timezone: resolveClientTimezone(c) ?? null,
+      client_timezone: resolveClientTimezone(c),
       result_json: {
         request: {
           kind: "attendees_filtered",
