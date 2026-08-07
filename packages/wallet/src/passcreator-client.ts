@@ -114,7 +114,14 @@ export class PassCreatorClient implements WalletPassProvider {
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await this.requestRaw(method, path, body);
-    const envelope = (await res.json()) as PassCreatorEnvelope<T>;
+    let envelope: PassCreatorEnvelope<T>;
+    try {
+      envelope = (await res.json()) as PassCreatorEnvelope<T>;
+    } catch {
+      // Non-JSON body (e.g. an upstream proxy's HTML 502 page) - map by HTTP status instead of
+      // letting the raw SyntaxError escape and break the documented WalletProviderError contract.
+      throw this.toProviderError(res.status);
+    }
     if (!envelope.success || envelope.data === undefined) {
       throw this.toProviderError(res.status, envelope.errors);
     }
