@@ -23,6 +23,10 @@
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     },
+    "./webauthn-testing": {
+      "types": "./dist/webauthn-testing.d.ts",
+      "default": "./dist/webauthn-testing.js"
+    },
     "./cli-helpers": {
       "types": "./dist/cli-helpers.d.ts",
       "default": "./dist/cli-helpers.js"

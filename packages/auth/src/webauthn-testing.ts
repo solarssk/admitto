@@ -1,3 +1,7 @@
+/**
+ * @admitto/auth/webauthn-testing — WebAuthn virtual-authenticator helper for unit/integration
+ * tests only. Do not import from application code.
+ */
 import { createHash, createSign, generateKeyPairSync, randomBytes } from "node:crypto";
 import { isoBase64URL, isoCBOR, cose } from "@simplewebauthn/server/helpers";
 import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simplewebauthn/server";
@@ -13,7 +17,14 @@ export interface VirtualAuthenticator {
   authenticate(params: { challenge: string; rpID: string; origin: string }): AuthenticationResponseJSON;
 }
 
-function concatBytes(arrays: Uint8Array[]): Uint8Array {
+/** Derived from the encoder's own signature rather than importing tiny-cbor's `CBORType`
+ * directly — that package is only ever a transitive dependency of `@simplewebauthn/server`. */
+type CBORValue = Parameters<typeof isoCBOR.encode>[0];
+
+// `Uint8Array<ArrayBuffer>`, not the bare `Uint8Array` (= `Uint8Array<ArrayBufferLike>`) alias -
+// @simplewebauthn/server's helpers require the narrower type, which only a fresh `new
+// Uint8Array(n)`-backed buffer satisfies (a bare annotation here would widen it right back).
+function concatBytes(arrays: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const total = arrays.reduce((n, a) => n + a.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;
@@ -24,13 +35,13 @@ function concatBytes(arrays: Uint8Array[]): Uint8Array {
   return out;
 }
 
-function uint16BE(value: number): Uint8Array {
+function uint16BE(value: number): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(2);
   new DataView(out.buffer).setUint16(0, value, false);
   return out;
 }
 
-function uint32BE(value: number): Uint8Array {
+function uint32BE(value: number): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(4);
   new DataView(out.buffer).setUint32(0, value, false);
   return out;
@@ -44,7 +55,7 @@ export function createVirtualAuthenticator(): VirtualAuthenticator {
   const credentialId = new Uint8Array(randomBytes(32));
   let counter = 0;
 
-  const cosePublicKey = new Map<number, unknown>([
+  const cosePublicKey = new Map<number, CBORValue>([
     [cose.COSEKEYS.kty, cose.COSEKTY.EC2],
     [cose.COSEKEYS.alg, cose.COSEALG.ES256],
     [cose.COSEKEYS.crv, cose.COSECRV.P256],
@@ -52,13 +63,20 @@ export function createVirtualAuthenticator(): VirtualAuthenticator {
     [cose.COSEKEYS.y, y],
   ]);
 
-  function clientDataJSON(type: "webauthn.create" | "webauthn.get", challenge: string, origin: string): Uint8Array {
+  function clientDataJSON(
+    type: "webauthn.create" | "webauthn.get",
+    challenge: string,
+    origin: string,
+  ): Uint8Array<ArrayBuffer> {
     const json = JSON.stringify({ type, challenge, origin, crossOrigin: false });
-    return new TextEncoder().encode(json);
+    return new Uint8Array(new TextEncoder().encode(json));
   }
 
   /** rpIdHash(32) + flags(1) + signCount(4) [+ attestedCredentialData for registration]. */
-  function authenticatorData(rpID: string, attestedCredentialData?: Uint8Array): Uint8Array {
+  function authenticatorData(
+    rpID: string,
+    attestedCredentialData?: Uint8Array<ArrayBuffer>,
+  ): Uint8Array<ArrayBuffer> {
     const rpIdHash = new Uint8Array(createHash("sha256").update(rpID).digest());
     const flags = attestedCredentialData ? 0x45 : 0x05; // UP(0x01) + UV(0x04) [+ AT(0x40)]
     counter += 1;
@@ -78,7 +96,7 @@ export function createVirtualAuthenticator(): VirtualAuthenticator {
       ]);
       const authData = authenticatorData(rpID, attestedCredentialData);
       const attestationObject = isoCBOR.encode(
-        new Map<string, unknown>([
+        new Map<string, CBORValue>([
           ["fmt", "none"],
           ["attStmt", new Map()],
           ["authData", authData],

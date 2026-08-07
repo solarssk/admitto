@@ -25,7 +25,7 @@ import {
 } from "../src/mfa/policy.js";
 import { validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
-import { createVirtualAuthenticator } from "./helpers/virtual-authenticator.js";
+import { createVirtualAuthenticator } from "../src/webauthn-testing.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
