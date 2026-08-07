@@ -23,7 +23,6 @@ import {
   finishWebauthnRegistration,
   listWebauthnCredentials,
   removeWebauthnCredential,
-  type WebauthnAttachment,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import { stashWebauthnChallenge, consumeWebauthnChallenge } from "../auth/webauthn-challenge-cache.js";
