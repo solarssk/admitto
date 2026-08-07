@@ -862,6 +862,7 @@ export function BrandingSettingsPanel() {
               placeholder="Select font…"
               searchPlaceholder="Search fonts…"
               emptyLabel="No fonts found"
+              showLabel={false}
               value={themeDraft.font_family_name ?? DEFAULT_BRANDING_FONT_FAMILY_NAME}
               options={adminFontOptions}
               disabled={formDisabled}
@@ -899,6 +900,7 @@ export function BrandingSettingsPanel() {
               placeholder="Same as Admin panel"
               searchPlaceholder="Search fonts…"
               emptyLabel="No fonts found"
+              showLabel={false}
               value={themeDraft.ticket_font_family_name ?? "same-as-admin"}
               options={ticketFontOptions}
               disabled={formDisabled}
