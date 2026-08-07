@@ -26,6 +26,12 @@ interface SearchableSelectProps {
   disabled?: boolean;
   /** Native tooltip on the trigger, e.g. explaining why the field is disabled. */
   title?: string;
+  /** False for callers that already render their own visible `<label htmlFor>` around this
+   * field (e.g. a FiltersMenu panel's own field wrapper) - default true renders one here, since
+   * most callers don't have one of their own (PO report: the Invite/Edit user role picker had
+   * no visible caption at all). Either way the button's own aria-label (below) carries the
+   * accessible name. */
+  showLabel?: boolean;
   onChange: (id: string) => void;
 }
 
@@ -43,6 +49,7 @@ export function SearchableSelect({
   options,
   disabled,
   title,
+  showLabel = true,
   onChange,
 }: Readonly<SearchableSelectProps>) {
   const { open, setOpen, close, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
@@ -77,10 +84,13 @@ export function SearchableSelect({
       {/* Visible caption - the button's own aria-label above carries the accessible name (a
        * <label for> a button would lose to the button's own subtree content per the accname
        * spec), but sighted users still need to see what this field picks (PO report: "None"
-       * with no caption gave no clue this was the role picker). */}
-      <label className="at-label" htmlFor={id}>
-        {label}
-      </label>
+       * with no caption gave no clue this was the role picker). Skipped when the caller already
+       * renders its own (showLabel: false) - see that prop's own comment. */}
+      {showLabel && (
+        <label className="at-label" htmlFor={id}>
+          {label}
+        </label>
+      )}
       <button
         type="button"
         id={id}

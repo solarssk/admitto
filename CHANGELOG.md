@@ -11,9 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dropdown/combobox popovers inside modals** (Invite user, Edit user role picker, and every other `useDropdownMenu`-based menu) no longer get clipped by the modal's own scrolling body. The panel used to render as part of the scrollable content, growing a scrollbar while open and visibly jumping the scroll position when it closed; it now floats above the modal like a normal popover and closes automatically if the modal scrolls under it.
 - **Edit user "Role & access" row** - the Add/Change button next to the Role and scope dropdowns no longer sits visibly lower than them.
 - **Bounce detection Recent checks** no longer renders as a raw browser bullet list under Last automatic check. The history is a compact styled list with status icons, scrolls inside a capped height when there are many runs (slim on-theme scrollbar only when needed), and the latest run is not duplicated below the summary card.
+- **Role/status/sign-in-method/event filters** (Users & roles, Active sessions, Role assignments) no longer show a duplicated caption - these already had their own label around the field, which the new caption below would have doubled up.
+- **SearchableSelect/PhoneCountrySelect panels flipped above their trigger** now stay anchored to it as their content resizes (e.g. typing into the search box narrows the list), instead of leaving a growing gap between the panel and the trigger.
 
 ### Changed
-- **Role/scope pickers** (Invite user, Edit user) show a visible "Initial role" / "Role" caption above the dropdown instead of no caption at all, and skip the search box entirely for short option lists (4 or fewer roles) - only longer lists (organizations, events) still show one.
+- **Role/scope pickers** (Invite user, Edit user, Active sessions bulk revoke) show a visible "Initial role" / "Role" / "Event" caption above the dropdown instead of no caption at all, and skip the search box entirely for short option lists (4 or fewer roles) - only longer lists (organizations, events) still show one.
 
 ### Added
 - **OIDC identity providers gain configurable given name, family name, and phone claims**, alongside the existing email/name/groups claims in Identity provider settings. When the combined name claim is absent from the token, the display name falls back to the given + family name claims instead of being left blank.

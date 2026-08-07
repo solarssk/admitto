@@ -128,4 +128,24 @@ describe("SearchableSelect", () => {
     expect(screen.getByRole("button", { name: "Banana" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cherry" })).toBeTruthy();
   });
+
+  it("omits its own caption when the caller already renders one (showLabel=false)", () => {
+    render(
+      <SearchableSelect
+        id="fruit"
+        label="Fruit"
+        showLabel={false}
+        placeholder="Pick a fruit…"
+        searchPlaceholder="Search fruit…"
+        emptyLabel="No fruit found"
+        value=""
+        options={OPTIONS}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(document.querySelector('label[for="fruit"]')).toBeNull();
+    // The button's own accessible name still carries the field's purpose either way.
+    expect(screen.getByRole("button", { name: "Fruit, none selected" })).toBeTruthy();
+  });
 });

@@ -119,7 +119,23 @@ export function useDropdownMenu<
     };
 
     updatePlacement();
-    return attachFixedOverlayLifecycle(panel, updatePlacement, () => close("scroll"));
+    const detachOverlayLifecycle = attachFixedOverlayLifecycle(panel, updatePlacement, () => close("scroll"));
+
+    // Re-run placement when the panel's own rendered size changes, not just on window resize -
+    // SearchableSelect/PhoneCountrySelect's list shrinks by hundreds of pixels as the user types
+    // into the search box, and a panel flipped above the trigger anchors its `top` from that
+    // height (`top = triggerRect.top - panelHeight - gap`); without this, the stale `top` stays
+    // put while the shorter content renders under it, opening a growing gap between the panel's
+    // own bottom edge and the trigger it's meant to hug (bot review finding). Guarded, not
+    // assumed present - real browsers all support it, but jsdom (this hook's ~200 other tests)
+    // does not and has no reason to.
+    if (typeof ResizeObserver === "undefined") return detachOverlayLifecycle;
+    const resizeObserver = new ResizeObserver(updatePlacement);
+    resizeObserver.observe(panel);
+    return () => {
+      detachOverlayLifecycle();
+      resizeObserver.disconnect();
+    };
   }, [open, align, gap, matchTriggerWidth, minWidth]);
 
   useEffect(() => {
