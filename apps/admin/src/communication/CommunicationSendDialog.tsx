@@ -247,6 +247,7 @@ export function CommunicationSendDialog({
                 placeholder="Select recipients…"
                 searchPlaceholder="Search recipients…"
                 emptyLabel="No recipients found"
+                showLabel={false}
                 value={filterType}
                 options={[
                   { id: "all", label: "All attendees" },
@@ -272,6 +273,7 @@ export function CommunicationSendDialog({
                   placeholder="Select status…"
                   searchPlaceholder="Search statuses…"
                   emptyLabel="No statuses found"
+                  showLabel={false}
                   value={rsvpStatus}
                   options={[
                     { id: "none", label: "Registered" },
@@ -298,6 +300,7 @@ export function CommunicationSendDialog({
                   placeholder="Choose…"
                   searchPlaceholder="Search ticket types…"
                   emptyLabel="No ticket types found"
+                  showLabel={false}
                   value={ticketType}
                   options={[
                     { id: "", label: "Choose…" },

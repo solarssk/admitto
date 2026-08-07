@@ -277,6 +277,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               placeholder="-"
               searchPlaceholder="Search ticket types…"
               emptyLabel="No ticket types found"
+              showLabel={false}
               value={ticketType}
               options={[
                 { id: "", label: "-" },
