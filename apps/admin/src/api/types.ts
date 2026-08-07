@@ -1371,6 +1371,7 @@ export interface PatchAccountPasswordBody {
 
 export interface DeleteAccountExternalIdentityBody {
   new_password: string;
+  current_password?: string;
   code?: string;
 }
 

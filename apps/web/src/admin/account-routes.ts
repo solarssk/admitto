@@ -381,7 +381,64 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   });
 }
 
-const unlinkExternalIdentitySchema = z.object({ new_password: z.string(), code: z.string().optional() }).strict();
+const unlinkExternalIdentitySchema = z
+  .object({
+    new_password: z.string(),
+    current_password: z.string().optional(),
+    code: z.string().optional(),
+  })
+  .strict();
+
+type UnlinkDenialCode =
+  | "unauthorized"
+  | "provider_managed_roles_exist"
+  | "current_password_required"
+  | "wrong_password"
+  | "totp_required"
+  | "invalid_totp"
+  | "insufficient_verification";
+
+const UNLINK_DENIAL_STATUS: Record<UnlinkDenialCode, 401 | 409 | 400> = {
+  unauthorized: 401,
+  provider_managed_roles_exist: 409,
+  current_password_required: 400,
+  wrong_password: 401,
+  totp_required: 400,
+  invalid_totp: 401,
+  insufficient_verification: 400,
+};
+
+/**
+ * A stolen session alone must never be enough to replace an account's only credential - unlike
+ * `withStepUpGate`'s role-gated check (a no-op for roles that don't require MFA), self-unlink
+ * always demands one proof: the TOTP/recovery code if the account has it confirmed (a strictly
+ * stronger check than the role-gated one, since it fires regardless of role), otherwise the
+ * current local password. An account with neither - a JIT-provisioned SSO user who never set a
+ * password or enrolled MFA - has no universally available proof to offer, so the action is
+ * blocked rather than silently allowed through session validity alone.
+ */
+async function verifySelfUnlinkProof(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  passwordHash: string | null,
+  proof: { current_password: string | undefined; code: string | undefined },
+): Promise<{ ok: true } | { ok: false; code: UnlinkDenialCode }> {
+  if (await userHasConfirmedTotp(tx, userId)) {
+    if (!proof.code) return { ok: false, code: "totp_required" };
+    if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.code))) {
+      return { ok: false, code: "invalid_totp" };
+    }
+    return { ok: true };
+  }
+  if (hasLocalPassword(passwordHash)) {
+    if (!proof.current_password) return { ok: false, code: "current_password_required" };
+    if (!(await verifyPasswordOrDummy(proof.current_password, passwordHash))) {
+      return { ok: false, code: "wrong_password" };
+    }
+    return { ok: true };
+  }
+  return { ok: false, code: "insufficient_verification" };
+}
 
 /**
  * DELETE /api/account/external-identity — self-service SSO unlink.
@@ -394,12 +451,15 @@ const unlinkExternalIdentitySchema = z.object({ new_password: z.string(), code: 
  * - Session revocation excludes the caller's own current session (`revokeSessionsExcludingCurrent`,
  *   same helper `handlePatchAccountPassword` uses) instead of revoking every session - the admin
  *   route revokes all of them because the admin isn't the one using the target's session.
- * - `must_change_password` is NOT set - the caller just chose their own password deliberately,
- *   unlike the admin flow where an admin sets a temporary password for someone else.
- * - Gated by the same TOTP/recovery-code step-up as password change and MFA reset
- *   (`withStepUpGate`) - self-service SSO unlink is at least as security-sensitive as those, and
- *   the admin route has no equivalent because superadmin-only access is already a strong barrier
- *   there.
+ * - `must_change_password` is cleared, same as `handlePatchAccountPassword` - the caller just
+ *   chose their own password deliberately, unlike the admin flow where an admin sets a temporary
+ *   password for someone else.
+ * - Gated by `verifySelfUnlinkProof` rather than `withStepUpGate` - self-unlink must demand proof
+ *   unconditionally (see that function's own comment), not only for roles that require MFA.
+ * - Refuses to run at all while any role assignment is still owned by an OIDC group sync
+ *   (`OidcRoleGrant`): converting it to a manually-owned role would let the caller unilaterally
+ *   keep IdP-managed access that a future group sync would otherwise revoke. An admin has to
+ *   remove the grant (or the group membership) first.
  *
  * `new_password` is still always required, for the same reason the admin route requires it: a
  * JIT-provisioned SSO user's `password_hash` is an unknown placeholder, so there's no reliable
@@ -431,43 +491,69 @@ export async function handleDeleteAccountExternalIdentity(
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
   if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
 
-  const gated = await withStepUpGate(
-    c,
-    db,
-    rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-external-identity" },
-    async (tx, orgId, audit) => {
-      const password_hash = await hashPassword(newPassword);
-      await tx.externalIdentity.deleteMany({ where: { user_id: userId } });
-      // No FK to ExternalIdentity (keyed by provider_id/user_id) - deleting it converts any
-      // IdP-managed role assignments to manual ownership instead of leaving them orphaned.
-      await tx.oidcRoleGrant.deleteMany({ where: { user_id: userId } });
-      await tx.user.update({ where: { id: userId }, data: { password_hash } });
-      const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
-      await revokeAllTrustedDevicesForUser(tx, userId);
-      await writeAdminAuditLog(tx, {
-        organizationId: orgId,
-        actorUserId: audit.operator ?? userId,
-        sessionId: audit.sessionId,
-        ip: audit.ip,
-        timezone: audit.timezone,
-        actionType: "account_sso_unlinked",
-        metadata: { count: linked.length, sessionsRevoked: revokedCount },
-      });
-      await writeAdminAuditLog(tx, {
-        organizationId: orgId,
-        actorUserId: audit.operator ?? userId,
-        sessionId: audit.sessionId,
-        ip: audit.ip,
-        timezone: audit.timezone,
-        actionType: "account_password_changed",
-        metadata: { sessionsRevoked: revokedCount, reason: "sso_unlink" },
-      });
-      return revokedCount;
-    },
-  );
+  const code = parsed.data.code?.trim();
+  if (code) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
 
-  if (!gated.ok) return gated.response;
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  const result = await runInTransaction(db, async (tx) => {
+    // Re-checked fresh inside the transaction (not from the read above) so a grant added by a
+    // concurrent group sync between the two can't race past this guard.
+    const managedGrants = await tx.oidcRoleGrant.count({ where: { user_id: userId } });
+    if (managedGrants > 0) {
+      return { ok: false as const, code: "provider_managed_roles_exist" as UnlinkDenialCode };
+    }
+
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
+    if (!user) return { ok: false as const, code: "unauthorized" as UnlinkDenialCode };
+
+    const proof = await verifySelfUnlinkProof(tx, userId, user.password_hash, {
+      current_password: parsed.data.current_password,
+      code,
+    });
+    if (!proof.ok) return proof;
+
+    const password_hash = await hashPassword(newPassword);
+    await tx.externalIdentity.deleteMany({ where: { user_id: userId } });
+    await tx.user.update({
+      where: { id: userId },
+      data: { password_hash, must_change_password: false },
+    });
+    const revokedCount = await revokeSessionsExcludingCurrent(tx, userId, currentSessionId);
+    await revokeAllTrustedDevicesForUser(tx, userId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "account_sso_unlinked",
+      metadata: { count: linked.length, sessionsRevoked: revokedCount },
+    });
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "account_password_changed",
+      metadata: { sessionsRevoked: revokedCount, reason: "sso_unlink" },
+    });
+    return { ok: true as const, value: revokedCount };
+  });
+
+  if (!result.ok) {
+    const status = UNLINK_DENIAL_STATUS[result.code];
+    if (result.code === "unauthorized") return c.json({ error: "unauthorized" }, status);
+    return c.json({ code: result.code }, status);
+  }
   return c.json({ ok: true });
 }
 

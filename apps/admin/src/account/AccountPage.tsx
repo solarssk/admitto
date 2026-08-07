@@ -152,7 +152,11 @@ function AccountIdentityActionsMenu({
   onUnlinkClick: () => void;
 }>) {
   const isManaged = account.external_identities.length > 0;
-  if (!isManaged && account.available_identity_providers.length === 0) return null;
+  // Connect re-authenticates through /account/oidc/:id/link, which hard-requires a real local
+  // password to prove who's asking - an account with none (a JIT-provisioned SSO user who never
+  // set one) can never finish that flow, so don't offer an action guaranteed to dead-end.
+  const canConnect = account.has_local_password && account.available_identity_providers.length > 0;
+  if (!isManaged && !canConnect) return null;
 
   const pick = (action: () => void) => () => {
     moreActions.setOpen(false);
@@ -188,17 +192,18 @@ function AccountIdentityActionsMenu({
               onClick={pick(onUnlinkClick)}
             />
           )}
-          {account.available_identity_providers.map((p) => (
-            <MoreActionsMenuItem
-              key={p.id}
-              icon="plus"
-              label={`Connect ${p.display_name}`}
-              hint="Add as another sign-in method"
-              onClick={pick(() => {
-                window.location.assign(`/account/oidc/${encodeURIComponent(p.id)}/link?next=/account`);
-              })}
-            />
-          ))}
+          {canConnect &&
+            account.available_identity_providers.map((p) => (
+              <MoreActionsMenuItem
+                key={p.id}
+                icon="plus"
+                label={`Connect ${p.display_name}`}
+                hint="Add as another sign-in method"
+                onClick={pick(() => {
+                  window.location.assign(`/account/oidc/${encodeURIComponent(p.id)}/link?next=/account`);
+                })}
+              />
+            ))}
         </div>
       )}
     </div>
@@ -335,6 +340,7 @@ export function AccountPage() {
   const [unlinkSsoOpen, setUnlinkSsoOpen] = useState(false);
   const [unlinkSsoBusy, setUnlinkSsoBusy] = useState(false);
   const [unlinkSsoPassword, setUnlinkSsoPassword] = useState("");
+  const [unlinkSsoCurrentPassword, setUnlinkSsoCurrentPassword] = useState("");
   const [unlinkSsoError, setUnlinkSsoError] = useState<string | null>(null);
   const [unlinkStepUpOpen, setUnlinkStepUpOpen] = useState(false);
   const [unlinkCode, setUnlinkCode] = useState("");
@@ -478,8 +484,13 @@ export function AccountPage() {
   /** Shared by the confirm dialog's own submit and the step-up dialog's confirm — `code` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
   async function submitUnlinkSso(code?: string): Promise<void> {
-    await unlinkAccountExternalIdentity({ new_password: unlinkSsoPassword, code });
+    await unlinkAccountExternalIdentity({
+      new_password: unlinkSsoPassword,
+      current_password: account?.has_local_password ? unlinkSsoCurrentPassword : undefined,
+      code,
+    });
     setUnlinkSsoPassword("");
+    setUnlinkSsoCurrentPassword("");
     setUnlinkCode("");
     setUnlinkSsoOpen(false);
     setUnlinkStepUpOpen(false);
@@ -1125,7 +1136,10 @@ export function AccountPage() {
         confirmLabel="Unlink"
         confirmVariant="danger"
         loading={unlinkSsoBusy}
-        disableConfirm={unlinkSsoPassword.length < PASSWORD_MIN_LENGTH}
+        disableConfirm={
+          unlinkSsoPassword.length < PASSWORD_MIN_LENGTH ||
+          (!!account?.has_local_password && unlinkSsoCurrentPassword.length === 0)
+        }
         onConfirm={async () => {
           setUnlinkSsoBusy(true);
           setUnlinkSsoError(null);
@@ -1138,6 +1152,20 @@ export function AccountPage() {
               setUnlinkStepUpOpen(true);
             } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
               setUnlinkSsoError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+            } else if (hasApiErrorCode(err, "wrong_password") || hasApiErrorCode(err, "current_password_required")) {
+              setUnlinkSsoError("Current password is incorrect.");
+            } else if (hasApiErrorCode(err, "provider_managed_roles_exist")) {
+              setUnlinkSsoOpen(false);
+              addToast(
+                "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
+                "error",
+              );
+            } else if (hasApiErrorCode(err, "insufficient_verification")) {
+              setUnlinkSsoOpen(false);
+              addToast(
+                "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
+                "error",
+              );
             } else {
               setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
             }
@@ -1149,9 +1177,22 @@ export function AccountPage() {
           if (unlinkSsoBusy) return;
           setUnlinkSsoOpen(false);
           setUnlinkSsoPassword("");
+          setUnlinkSsoCurrentPassword("");
           setUnlinkSsoError(null);
         }}
       >
+        {account?.has_local_password && (
+          <Input
+            id="unlink-sso-current-password"
+            label="Current password"
+            icon={<i className="ti ti-lock" aria-hidden="true" />}
+            type="password"
+            value={unlinkSsoCurrentPassword}
+            disabled={unlinkSsoBusy}
+            onChange={(e) => setUnlinkSsoCurrentPassword(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
+          />
+        )}
         <Input
           id="unlink-sso-password"
           label="New local password"

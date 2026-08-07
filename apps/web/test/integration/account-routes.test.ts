@@ -1099,7 +1099,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
     });
     expect(res.status).toBe(200);
 
@@ -1116,7 +1116,37 @@ describe("DELETE /api/account/external-identity", () => {
     expect(otherSession.revoked_at).not.toBeNull();
   });
 
-  it("clears OIDC-owned role grants (converting retained roles to manual ownership)", async () => {
+  it("returns 400 current_password_required when the account has a local password and none is given", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-no-current-pass-subject", user_id: userId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("current_password_required");
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(1);
+  });
+
+  it("returns 401 wrong_password for an incorrect current password, and the identity survives", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-wrong-current-pass-subject", user_id: userId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: "definitely-wrong" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(1);
+  });
+
+  it("blocks unlink with 409 while an OIDC-owned role grant exists, leaving identity and grant untouched", async () => {
     await prisma.externalIdentity.create({
       data: { provider_id: PROVIDER_ID, subject: "self-unlink-oidc-role-subject", user_id: userId },
     });
@@ -1140,11 +1170,14 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("provider_managed_roles_exist");
 
-    expect(await prisma.oidcRoleGrant.count({ where: { user_id: userId } })).toBe(0);
+    // Blocked before any write: identity, grant, and assignment all survive untouched.
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(1);
+    expect(await prisma.oidcRoleGrant.count({ where: { user_id: userId } })).toBe(1);
     const remaining = await prisma.roleAssignment.findUnique({ where: { id: assignment.id } });
     expect(remaining).not.toBeNull();
   });
