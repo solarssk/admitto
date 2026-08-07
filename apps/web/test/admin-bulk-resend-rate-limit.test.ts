@@ -17,7 +17,7 @@ function makeBulkApp(store: InMemoryRateLimitStore, userId: string) {
     "/api/admin/events/:eventId/attendees/bulk-resend",
     adminContext(userId),
     rateLimit(store, "admin:resend-bulk"),
-    (c) => c.json({ queued: 0, skipped: 0, failed: 0 }, 200),
+    (c) => c.json({ batchId: null, queued: 0, skipped: 0, failed: 0 }, 200),
   );
   return app;
 }

@@ -27,6 +27,7 @@ import {
 } from "../api/client.js";
 import type { ExternalServicesResponse, WeatherProviderId } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { NO_AUTOFILL_PROPS, SettingsFooter } from "./mailTransportFormParts.js";
 
@@ -520,22 +521,26 @@ export function ExternalServicesPanel() {
                   <HintLabel hint={WEATHER_PROVIDER_HINT}>Provider</HintLabel>
                 </span>
                 <div className="external-provider-and-test">
-                  <select
+                  <SearchableSelect
                     id="external-weather-provider"
-                    name="weather-provider"
-                    className="at-select"
+                    label="Provider"
+                    placeholder="Select provider…"
+                    searchPlaceholder="Search providers…"
+                    emptyLabel="No providers found"
+                    showLabel={false}
                     value={weatherDraft.provider}
+                    options={[
+                      { id: "metno", label: "MET Norway" },
+                      { id: "openmeteo", label: "Open-Meteo" },
+                    ]}
                     disabled={saving || weatherTesting}
-                    onChange={(e) =>
+                    onChange={(id) =>
                       patchDraft(setWeatherDraft, (d) => ({
                         ...d,
-                        provider: normalizeWeatherProvider(e.target.value),
+                        provider: normalizeWeatherProvider(id),
                       }))
                     }
-                  >
-                    <option value="metno">MET Norway</option>
-                    <option value="openmeteo">Open-Meteo</option>
-                  </select>
+                  />
                   <Button
                     type="button"
                     variant="secondary"
@@ -668,21 +673,23 @@ export function ExternalServicesPanel() {
               <div className="at-field">
                 <span className="at-label">Provider</span>
                 <div className="external-provider-and-test">
-                  <select
+                  <SearchableSelect
                     id="external-maps-provider"
-                    name="maps-geocoding-provider"
-                    className="at-select"
+                    label="Provider"
+                    placeholder="Select provider…"
+                    searchPlaceholder="Search providers…"
+                    emptyLabel="No providers found"
+                    showLabel={false}
                     value={normalizeMapsProvider(mapsDraft.geocodingProvider)}
+                    options={[{ id: "nominatim", label: "OpenStreetMap (Nominatim)" }]}
                     disabled={saving || mapsTesting}
-                    onChange={(e) =>
+                    onChange={(id) =>
                       patchDraft(setMapsDraft, (d) => ({
                         ...d,
-                        geocodingProvider: normalizeMapsProvider(e.target.value),
+                        geocodingProvider: normalizeMapsProvider(id),
                       }))
                     }
-                  >
-                    <option value="nominatim">OpenStreetMap (Nominatim)</option>
-                  </select>
+                  />
                   <Button
                     type="button"
                     variant="secondary"

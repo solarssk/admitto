@@ -13,7 +13,6 @@ import {
   HintLabel,
   Input,
   Notice,
-  Select,
   Switch,
   Tooltip,
   useToast,
@@ -31,6 +30,7 @@ import type {
   MailSecretFieldDto,
   SaveEventBounceIngestSettingsBody,
 } from "../api/types.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useConnectionTest } from "../hooks/useConnectionTest.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { emptySecretEdits, type SecretEdits } from "./mailSettingsValidation.js";
@@ -593,25 +593,29 @@ export const EventBounceIngestPanel = forwardRef<
                 onChange={(e) => setDraft((d) => ({ ...d, folders: e.target.value }))}
               />
               <div className="event-bounce-ingest__poll-and-test">
-                <Select
-                  label={<HintLabel hint={CHECK_EVERY_INFO}>Check every</HintLabel>}
-                  hint={CHECK_EVERY_HINT}
-                  className="event-bounce-ingest__poll-select"
-                  value={String(draft.pollIntervalMinutes)}
-                  disabled={isArchived}
-                  onChange={(e) =>
-                    setDraft((d) => ({
-                      ...d,
-                      pollIntervalMinutes: Number.parseInt(e.target.value, 10) || 5,
-                    }))
-                  }
-                >
-                  {POLL_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </Select>
+                <div className="at-field">
+                  <label className="at-label" htmlFor="event-bounce-ingest-poll-interval">
+                    <HintLabel hint={CHECK_EVERY_INFO}>Check every</HintLabel>
+                  </label>
+                  <SearchableSelect
+                    id="event-bounce-ingest-poll-interval"
+                    label="Check every"
+                    placeholder="Select interval…"
+                    searchPlaceholder="Search intervals…"
+                    emptyLabel="No intervals found"
+                    showLabel={false}
+                    value={String(draft.pollIntervalMinutes)}
+                    disabled={isArchived}
+                    options={POLL_OPTIONS.map((opt) => ({ id: String(opt.value), label: opt.label }))}
+                    onChange={(id) =>
+                      setDraft((d) => ({
+                        ...d,
+                        pollIntervalMinutes: Number.parseInt(id, 10) || 5,
+                      }))
+                    }
+                  />
+                  <span className="at-hint">{CHECK_EVERY_HINT}</span>
+                </div>
                 <div className="event-bounce-ingest__test-control">
                   <Tooltip content={testBlockedReason}>
                     <Button

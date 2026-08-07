@@ -285,6 +285,17 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Polling GET …/import/jobs/:jobId (~2s interval); same budget class as attendees search. */
+  "admin:import-job-status": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "import-job-status"),
+        windowMs: 60_000,
+        max: 120,
+        logOnExceeded: { scope: "admin_import_job_status", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:template-preview": {
     checks: [
       {

@@ -11,6 +11,11 @@ export interface ResendTicketEmailOptions {
   /** Triggering admin's user id and session id at send time, when known. */
   actorUserId?: string;
   sessionId?: string;
+  /**
+   * When true, deliver via the provider in-process (tests / rare sync callers).
+   * Default false: enqueue only; Admitto worker drains.
+   */
+  deliverImmediately?: boolean;
 }
 
 /** Explicit resend — new EmailDelivery row with purpose=resend and fresh render. */
@@ -32,6 +37,7 @@ export async function resendTicketEmail(
       ...(options.timezone ? { timezone: options.timezone } : {}),
       ...(options.actorUserId ? { actorUserId: options.actorUserId } : {}),
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      ...(options.deliverImmediately ? { deliverImmediately: true } : {}),
     },
     prisma,
     env,

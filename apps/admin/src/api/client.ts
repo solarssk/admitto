@@ -19,7 +19,8 @@ import type {
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
-  ImportCommitResponse,
+  ImportCommitQueuedResponse,
+  ImportJobStatusResponse,
   BulkResendResponse,
   BulkCheckInResponse,
   BulkRevokeItemsResponse,
@@ -264,7 +265,7 @@ function isAdminAppPath(): boolean {
 }
 
 /** Build a same-origin multipart POST request (browser sets Content-Type boundary). */
-function multipartPostInit(formData: FormData): RequestInit {
+function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestInit {
   return {
     method: "POST",
     credentials: "same-origin",
@@ -273,6 +274,7 @@ function multipartPostInit(formData: FormData): RequestInit {
       "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     body: formData,
+    signal,
   };
 }
 
@@ -319,20 +321,33 @@ export async function fetchImportHistory(
   return body.items;
 }
 
-/** Commit an attendee file import after preview (creates/updates rows in the event). */
+/** Queue an attendee file import for the Admitto worker (202). Poll with fetchImportJobStatus. */
 export async function commitImport(
   eventId: string,
   file: File,
   overwrite: boolean,
   /** When true, appends `?force=1` for superadmin capacity override (audited server-side). */
-  options?: { force?: boolean },
-): Promise<ImportCommitResponse> {
+  options?: { force?: boolean; signal?: AbortSignal },
+): Promise<ImportCommitQueuedResponse> {
   const forceQuery = options?.force ? "?force=1" : "";
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/import/commit${forceQuery}`,
-    multipartPostInit(importFormData(file, overwrite)),
+    multipartPostInit(importFormData(file, overwrite), options?.signal),
   );
-  return parseJson<ImportCommitResponse>(res);
+  return parseJson<ImportCommitQueuedResponse>(res);
+}
+
+/** Poll async import job status. */
+export async function fetchImportJobStatus(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<ImportJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/import/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<ImportJobStatusResponse>(res);
 }
 
 /** Upload a branding image (superadmin); returns public `/uploads/...` URL. */

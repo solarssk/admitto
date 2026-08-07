@@ -148,9 +148,8 @@ describe("ExternalServicesPanel", () => {
 
   it("shows Open-Meteo fields after switching provider", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     expect(document.getElementById("external-weather-base-url")).toBeTruthy();
     expect(document.getElementById("external-weather-api-key")).toBeTruthy();
     expect(screen.getByText(/non-commercial/i)).toBeTruthy();
@@ -158,9 +157,8 @@ describe("ExternalServicesPanel", () => {
 
   it("blocks save when commercial Open-Meteo host has no API key", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
       target: { value: "https://customer-api.open-meteo.com" },
     });
@@ -264,9 +262,8 @@ describe("ExternalServicesPanel", () => {
 
   it("saves Open-Meteo draft with baseUrl and typed API key", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
       target: { value: "https://api.open-meteo.com" },
     });
@@ -296,9 +293,8 @@ describe("ExternalServicesPanel", () => {
       }),
     );
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     fireEvent.click(el<HTMLInputElement>("external-weather-clear-api-key"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -390,9 +386,8 @@ describe("ExternalServicesPanel", () => {
 
   it("tests Open-Meteo connection with draft base URL and key", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
       target: { value: "https://api.open-meteo.com" },
     });
@@ -470,9 +465,8 @@ describe("ExternalServicesPanel", () => {
 
   it("blocks commercial Open-Meteo subhosts without an API key", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
       target: { value: "https://foo.customer-api.open-meteo.com" },
     });
@@ -625,8 +619,10 @@ describe("ExternalServicesPanel", () => {
       }),
     );
     await renderLoaded();
-    expect(el<HTMLSelectElement>("external-weather-provider").value).toBe("metno");
-    expect(el<HTMLSelectElement>("external-maps-provider").value).toBe("nominatim");
+    expect(el<HTMLButtonElement>("external-weather-provider").textContent).toContain("MET Norway");
+    expect(el<HTMLButtonElement>("external-maps-provider").textContent).toContain(
+      "OpenStreetMap (Nominatim)",
+    );
   });
 
   it("tests Open-Meteo with clearApiKey and no typed key", async () => {
@@ -639,9 +635,8 @@ describe("ExternalServicesPanel", () => {
       }),
     );
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     const clear = el<HTMLInputElement>("external-weather-clear-api-key");
     fireEvent.click(clear);
     fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
@@ -698,17 +693,17 @@ describe("ExternalServicesPanel", () => {
 
   it("keeps Nominatim when the maps provider select is changed", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-maps-provider"), {
-      target: { value: "nominatim" },
-    });
-    expect(el<HTMLSelectElement>("external-maps-provider").value).toBe("nominatim");
+    fireEvent.click(el<HTMLButtonElement>("external-maps-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "OpenStreetMap (Nominatim)" }));
+    expect(el<HTMLButtonElement>("external-maps-provider").textContent).toContain(
+      "OpenStreetMap (Nominatim)",
+    );
   });
 
   it("allows Open-Meteo save with an invalid base URL (commercial host gate stays off)", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     fireEvent.change(el<HTMLInputElement>("external-weather-base-url"), {
       target: { value: "not-a-url" },
     });
@@ -749,9 +744,8 @@ describe("ExternalServicesPanel", () => {
 
   it("tests Open-Meteo without apiKey or clearApiKey when none is typed", async () => {
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Test connection" })[0]!);
     await waitFor(() => {
       expect(mockTestWeather).toHaveBeenCalledWith({
@@ -771,9 +765,8 @@ describe("ExternalServicesPanel", () => {
       }),
     );
     await renderLoaded();
-    fireEvent.change(el<HTMLSelectElement>("external-weather-provider"), {
-      target: { value: "openmeteo" },
-    });
+    fireEvent.click(el<HTMLButtonElement>("external-weather-provider"));
+    fireEvent.click(screen.getByRole("button", { name: "Open-Meteo" }));
     const clear = el<HTMLInputElement>("external-weather-clear-api-key");
     fireEvent.click(clear);
     expect(clear.checked).toBe(true);
