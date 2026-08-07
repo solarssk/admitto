@@ -4998,6 +4998,108 @@ output.mail-field-hint {
   height: var(--control-h);
 }
 
+/* Compact history under Last automatic check - not a raw browser <ul>. */
+.event-bounce-ingest__recent-runs {
+  margin-top: var(--space-3);
+}
+
+.event-bounce-ingest__recent-runs-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
+}
+
+/* ~4 rows before scrolling so a long BounceIngestRun history does not stretch the card.
+   overflow-y:auto (no scrollbar-gutter) keeps the slim scrollbar hidden until content overflows. */
+.event-bounce-ingest__recent-runs-scroll {
+  max-height: 9.5rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.event-bounce-ingest__recent-runs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-bounce-ingest__recent-runs-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border, var(--tblr-border-color));
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.event-bounce-ingest__recent-runs-list > li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.event-bounce-ingest__recent-run-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.event-bounce-ingest__recent-run-icon--ok {
+  color: var(--status-ok-fg, var(--status-ok));
+}
+
+.event-bounce-ingest__recent-run-icon--failed {
+  color: var(--status-error-fg, var(--status-error));
+}
+
+.event-bounce-ingest__recent-run-status {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.event-bounce-ingest__recent-run-status--ok {
+  color: var(--status-ok-fg, var(--status-ok));
+}
+
+.event-bounce-ingest__recent-run-status--failed {
+  color: var(--status-error-fg, var(--status-error));
+}
+
+.event-bounce-ingest__recent-run-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
 /* Password + Test connection share the Username|Password grid cell (same idea as
    bounce Check every + Test connection). */
 .smtp-connection-password-and-test {
