@@ -168,7 +168,12 @@ function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
           {account.roles.map((r) => (
             <span key={r.id} className="account-scope-chip">
               <i className={`ti ti-${r.scope_type === "event" ? "calendar-event" : "building"}`} aria-hidden="true" />
-              {r.is_oidc && <i className="ti ti-cloud-lock" aria-hidden="true" title="Managed by identity provider" />}
+              {r.is_oidc && (
+                <>
+                  <i className="ti ti-cloud-lock" aria-hidden="true" title="Managed by identity provider" />
+                  <span className="sr-only">Managed by identity provider</span>
+                </>
+              )}
               {r.scope_label ?? r.scope_id ?? "Unknown"}
             </span>
           ))}

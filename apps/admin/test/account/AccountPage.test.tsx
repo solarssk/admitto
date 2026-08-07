@@ -1634,6 +1634,10 @@ describe("AccountPage profile: role display", () => {
     });
     const chip = screen.getByText("Autumn Summit").closest(".account-scope-chip");
     expect(chip?.querySelector(".ti-cloud-lock")).toBeTruthy();
+    // The icon is aria-hidden and its title isn't reliably exposed to screen readers or touch/
+    // keyboard users, so this distinction also needs real text in the accessibility tree -
+    // same sr-only pattern StaffUserListItem already uses for the same "(IdP)" signal.
+    expect(chip?.querySelector(".sr-only")?.textContent).toBe("Managed by identity provider");
   });
 
   it("falls back to the raw scope id when a scope name isn't resolvable", async () => {
