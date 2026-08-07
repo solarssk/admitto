@@ -33,6 +33,20 @@ describe("CustomDataFieldInput", () => {
     expect(onChange).toHaveBeenCalledWith(type === "select" ? "Vegan" : "true");
   });
 
+  it("shows just the placeholder for a select field with no options catalog", () => {
+    render(
+      <CustomDataFieldInput
+        field={{ ...baseField, type: "select", options: null }}
+        value=""
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Diet,/ }));
+    expect(screen.getByRole("button", { name: "-" })).toBeTruthy();
+    expect(screen.getAllByRole("button").filter((b) => b.closest(".searchable-select__list"))).toHaveLength(1);
+  });
+
   it.each(["select", "boolean"] as const)("prompts before selecting a required %s field", (type) => {
     render(
       <CustomDataFieldInput
