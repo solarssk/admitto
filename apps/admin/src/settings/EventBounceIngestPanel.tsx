@@ -603,6 +603,7 @@ export const EventBounceIngestPanel = forwardRef<
                     placeholder="Select interval…"
                     searchPlaceholder="Search intervals…"
                     emptyLabel="No intervals found"
+                    showLabel={false}
                     value={String(draft.pollIntervalMinutes)}
                     disabled={isArchived}
                     options={POLL_OPTIONS.map((opt) => ({ id: String(opt.value), label: opt.label }))}

@@ -1001,6 +1001,7 @@ function ResourceModal({
           placeholder="Select type…"
           searchPlaceholder="Search types…"
           emptyLabel="No types found"
+          showLabel={false}
           value={form.type}
           options={[
             { id: "link", label: "Link" },
