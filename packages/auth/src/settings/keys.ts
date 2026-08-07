@@ -23,6 +23,9 @@ export const SETTING_SETUP_COMPLETE = "setup_complete";
 /** Public instance URL for ticket links and mail asset absolutization (v0.4.9). */
 export const SETTING_INSTANCE_URL = "instance_url";
 
+/** Passkey / security-key (WebAuthn) MFA method availability (#341/#342). */
+export const SETTING_WEBAUTHN_ENABLED = "webauthn_enabled";
+
 export const SYSTEM_SETTING_KEYS = [
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
@@ -37,4 +40,5 @@ export const SYSTEM_SETTING_KEYS = [
   SETTING_BRANDING_THEME,
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
+  SETTING_WEBAUTHN_ENABLED,
 ] as const;

@@ -26,6 +26,10 @@ export const MFA_PENDING_SESSION_TTL_MS = 15 * 60 * 1000;
 /** Fresh TTL granted when advancing to the backup-codes acknowledgment step. */
 export const BACKUP_CODES_STEP_TTL_MS = 10 * 60 * 1000;
 
+/** How long a WebAuthn registration/authentication challenge stays valid server-side, waiting
+ * for the browser ceremony to complete (register a passkey/security key, or assert one). */
+export const WEBAUTHN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
 /** Default trusted-device validity (days). */
 export const DEFAULT_TRUSTED_DEVICE_DAYS = 30;
 

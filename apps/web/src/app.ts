@@ -312,6 +312,10 @@ import {
   handleDeleteMfaEnroll as handleDeleteAccountMfaEnroll,
   handlePostMfaConfirm as handlePostAccountMfaConfirm,
   handlePostMfaReset as handlePostAccountMfaReset,
+  handlePostAccountWebauthnRegisterBegin,
+  handlePostAccountWebauthnRegisterFinish,
+  handleGetAccountWebauthnCredentials,
+  handleDeleteAccountWebauthnCredential,
 } from "./admin/account-routes.js";
 import {
   handleGetSystemSettings,
@@ -1313,6 +1317,28 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/account/mfa/reset", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
     handlePostAccountMfaReset(c, db, rateLimitStore),
+  );
+  app.get("/api/account/mfa/webauthn", requireSession, (c) =>
+    handleGetAccountWebauthnCredentials(c, db),
+  );
+  app.post(
+    "/api/account/mfa/webauthn/register/begin",
+    jsonPostCsrf,
+    loginRateLimitJson,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountWebauthnRegisterBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/account/mfa/webauthn/register/finish",
+    jsonPostCsrf,
+    loginRateLimitJson,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountWebauthnRegisterFinish(c, db, mailInjectedBaseUrl),
+  );
+  app.delete("/api/account/mfa/webauthn/:credentialId", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handleDeleteAccountWebauthnCredential(c, db, rateLimitStore),
   );
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));

@@ -19,6 +19,7 @@ import {
   SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
   SETTING_INSTANCE_URL,
+  SETTING_WEBAUTHN_ENABLED,
 } from "./keys.js";
 
 /** Built-in defaults when DB and env are unset. */
@@ -35,6 +36,7 @@ export const SETTING_DEFAULTS = new Map<string, unknown>([
   [SETTING_CF_ACCESS_PROTECTED_PREFIXES, ["/admin", "/api/admin"]],
   [SETTING_BRANDING_THEME, {}],
   [SETTING_INSTANCE_URL, null],
+  [SETTING_WEBAUTHN_ENABLED, true],
 ]);
 
 /** Env var locks — when set, override DB value. */
@@ -50,4 +52,5 @@ export const SETTING_ENV_LOCKS = new Map<string, string>([
   [SETTING_CF_ACCESS_AUD, "CF_ACCESS_AUD"],
   [SETTING_CF_ACCESS_PROTECTED_PREFIXES, "CF_ACCESS_PROTECTED_PREFIXES"],
   [SETTING_INSTANCE_URL, "BASE_URL"],
+  [SETTING_WEBAUTHN_ENABLED, "WEBAUTHN_ENABLED"],
 ]);

@@ -1,10 +1,12 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { z } from "zod";
+import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   getOrStartTotpEnrollment,
+  getWebauthnEnabled,
   hashPassword,
   isPasswordTooCommon,
   passwordTooCommonJsonBody,
@@ -17,8 +19,14 @@ import {
   userRequiresMfaStepUp,
   verifyPasswordOrDummy,
   verifyTotpOrRecoveryCode,
+  beginWebauthnRegistration,
+  finishWebauthnRegistration,
+  listWebauthnCredentials,
+  removeWebauthnCredential,
+  type WebauthnAttachment,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import { stashWebauthnChallenge, consumeWebauthnChallenge } from "../auth/webauthn-challenge-cache.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -26,7 +34,7 @@ import {
   sanitizePreferredLocale,
 } from "@admitto/shared";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
-import { adminAuditFromContext } from "./admin-helpers.js";
+import { adminAuditFromContext, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
@@ -236,7 +244,14 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     }),
     db.userMfaMethod.findMany({
       where: { user_id: userId },
-      select: { type: true, confirmed_at: true, last_used_at: true },
+      select: {
+        id: true,
+        type: true,
+        confirmed_at: true,
+        last_used_at: true,
+        label: true,
+        webauthn_attachment: true,
+      },
     }),
   ]);
 
@@ -261,7 +276,15 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       type: m.type,
       confirmed: m.confirmed_at !== null,
       last_used_at: m.last_used_at?.toISOString() ?? null,
+      // A user can register several passkeys/security keys, so only webauthn rows carry an id
+      // (to target one for removal) and a nickname/attachment for the My Account list; TOTP and
+      // recovery rows stay the existing shape (unchanged) since neither has more than one "row"
+      // that matters to the client.
+      ...(m.type === "webauthn"
+        ? { id: m.id, label: m.label, attachment: m.webauthn_attachment }
+        : {}),
     })),
+    webauthn_enabled: await getWebauthnEnabled(db),
   });
 }
 
@@ -627,4 +650,239 @@ export async function handlePostMfaReset(
 
   if (!gated.ok) return gated.response;
   return c.json({ ok: true, sessions_revoked: gated.value });
+}
+
+/** Resolve {rpName, rpID, origin} for WebAuthn ceremonies from the instance's own effective base
+ * URL (env `BASE_URL` → DB `instance_url` → dev localhost) — single-instance app, no per-tenant
+ * RP ID. Returns a 422 Response the same way `resolveMailInstanceBaseUrl`'s other callers do when
+ * no instance URL is configured yet in production. */
+async function resolveWebauthnRp(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<{ rpName: string; rpID: string; origin: string } | Response> {
+  const baseUrl = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrl instanceof Response) return baseUrl;
+  return { rpName: "Admitto", rpID: new URL(baseUrl).hostname, origin: baseUrl };
+}
+
+const webauthnAttachmentSchema = z.enum(["platform", "cross-platform"]);
+
+const webauthnRegisterBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();
+
+/**
+ * POST /api/account/mfa/webauthn/register/begin — start a passkey/security-key registration
+ * ceremony (local-password accounts only, same gate as TOTP — this app never treats WebAuthn as
+ * a passwordless primary login method, only a second factor alongside a local password).
+ */
+export async function handlePostAccountWebauthnRegisterBegin(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const sessionId = auth.sessionId;
+  if (!sessionId) return c.json({ error: "unauthorized" }, 401);
+
+  if (!(await getWebauthnEnabled(db))) {
+    return c.json({ code: "webauthn_disabled" }, 403);
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { password_hash: true },
+  });
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  if (!hasLocalPassword(user.password_hash)) {
+    return c.json({ code: "no_local_password" }, 400);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = webauthnRegisterBeginSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const begin = await beginWebauthnRegistration(db, userId, parsed.data.attachment, rp);
+  if (!begin) return c.json({ error: "unauthorized" }, 401);
+
+  stashWebauthnChallenge("register", sessionId, begin.challenge);
+  return c.json({ options: begin.options });
+}
+
+/** Lenient on purpose: this is the browser's own `PublicKeyCredential` response passed straight
+ * through to `@simplewebauthn/server`'s verifier, which is the actual security boundary here
+ * (rejects any malformed/tampered payload on its own) — this schema only guards against a
+ * grossly malformed request reaching that far. */
+const webauthnRegistrationResponseSchema = z.object({
+  id: z.string().min(1),
+  rawId: z.string().min(1),
+  response: z.object({
+    clientDataJSON: z.string().min(1),
+    attestationObject: z.string().min(1),
+    authenticatorData: z.string().optional(),
+    transports: z.array(z.string()).optional(),
+    publicKeyAlgorithm: z.number().optional(),
+    publicKey: z.string().optional(),
+  }),
+  authenticatorAttachment: z.string().optional(),
+  clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
+  type: z.literal("public-key"),
+});
+
+const webauthnRegisterFinishSchema = z
+  .object({
+    attachment: webauthnAttachmentSchema,
+    label: z.string().trim().max(120).optional(),
+    response: webauthnRegistrationResponseSchema,
+  })
+  .strict();
+
+/**
+ * POST /api/account/mfa/webauthn/register/finish — verify the browser ceremony and store the new
+ * credential. No step-up code required, unlike password change/MFA reset: the ceremony itself
+ * already proves possession of a real, previously-unregistered authenticator, which is a
+ * stronger proof than a 6-digit code (mirrors TOTP confirm, which is also step-up-free).
+ */
+export async function handlePostAccountWebauthnRegisterFinish(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const sessionId = auth.sessionId;
+  if (!sessionId) return c.json({ error: "unauthorized" }, 401);
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = webauthnRegisterFinishSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const challenge = consumeWebauthnChallenge("register", sessionId);
+  if (!challenge) return c.json({ code: "challenge_expired" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+
+  const result = await runInTransaction(db, async (tx) => {
+    const created = await finishWebauthnRegistration(
+      tx,
+      userId,
+      parsed.data.response as RegistrationResponseJSON,
+      challenge,
+      parsed.data.attachment,
+      parsed.data.label?.trim() || null,
+      rp,
+    );
+    if (!created) return null;
+
+    // Self-service registration returns backup codes to the client directly (unlike the
+    // login-time flow's separate acknowledgment step) — mark them acknowledged now so this
+    // already-`full` session isn't rejected by the backup-codes gate (IAM-002) on its very next
+    // request. A no-op when this wasn't the user's first MFA method (no fresh codes to ack).
+    await markBackupCodesAcknowledged(tx, userId);
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator ?? userId,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "account_mfa_enrolled",
+      metadata: { method: "webauthn", attachment: parsed.data.attachment },
+    });
+    return created;
+  });
+
+  if (!result) return c.json({ code: "verification_failed" }, 400);
+  return c.json({ ok: true, id: result.credentialRowId, backupCodes: result.backupCodes });
+}
+
+/** GET /api/account/mfa/webauthn — list the user's registered passkeys/security keys. */
+export async function handleGetAccountWebauthnCredentials(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const userId = c.get("auth").userId;
+  const credentials = await listWebauthnCredentials(db, userId);
+  return c.json({
+    credentials: credentials.map((cred) => ({
+      id: cred.id,
+      label: cred.label,
+      attachment: cred.attachment,
+      confirmedAt: cred.confirmedAt?.toISOString() ?? null,
+      lastUsedAt: cred.lastUsedAt?.toISOString() ?? null,
+    })),
+  });
+}
+
+/**
+ * DELETE /api/account/mfa/webauthn/:credentialId — remove one passkey/security key.
+ * Requires a TOTP/recovery-code step-up (mirroring `handlePostMfaReset`) whenever the user's
+ * role requires MFA and they have a confirmed method — password alone must not be able to strip
+ * a registered credential from an MFA-required account.
+ */
+export async function handleDeleteAccountWebauthnCredential(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
+  const credentialId = c.req.param("credentialId") ?? "";
+  if (!credentialId) return c.json({ error: "credential id required" }, 400);
+
+  // A step-up code, unlike `handleDeleteAccountSession`'s always-bodiless DELETE, so a JSON body
+  // is optional here (most calls won't need step-up at all) rather than required — an empty body
+  // parses to `{}`, never a 400, and a code is never accepted via query string (would leak into
+  // access/proxy logs and browser history).
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-webauthn-remove" },
+    async (tx, orgId, audit) => {
+      const removed = await removeWebauthnCredential(tx, userId, credentialId);
+      if (removed) {
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: audit.operator ?? userId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          timezone: audit.timezone,
+          actionType: "account_mfa_webauthn_removed",
+          metadata: { credentialId },
+        });
+      }
+      return removed;
+    },
+  );
+
+  if (!gated.ok) return gated.response;
+  if (!gated.value) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
 }

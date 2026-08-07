@@ -130,6 +130,15 @@ export async function getTrustedDeviceDays(
     : (SETTING_DEFAULTS.get("trusted_device_days") as number);
 }
 
+/** Whether passkey / security-key (WebAuthn) MFA is offered, from SystemSettings
+ * (`webauthn_enabled`, default enabled). */
+export async function getWebauthnEnabled(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<boolean> {
+  const v = await getSetting<boolean>(prisma, "webauthn_enabled");
+  return typeof v === "boolean" ? v : (SETTING_DEFAULTS.get("webauthn_enabled") as boolean);
+}
+
 /** Role names that require MFA (from SystemSettings `mfa_required_roles`, JSON array or CSV). */
 export async function getMfaRequiredRoles(
   prisma: PrismaClient | Prisma.TransactionClient,
