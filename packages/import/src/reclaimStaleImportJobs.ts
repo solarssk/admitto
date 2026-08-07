@@ -15,20 +15,22 @@
  * succeeded and rebuild `result_json` from the audit row so a still-polling client
  * gets a real result instead of "Import finished without a result."
  */
+import {
+  DEFAULT_WORKER_HEARTBEAT_STALE_MS,
+  isWorkerHeartbeatStale,
+  positiveMsOr,
+  WORKER_HEARTBEAT_ID,
+} from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
 
 /** Default: 15 minutes. Keep in sync with admin import poll stale window (running). */
 export const DEFAULT_IMPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
 
-/**
- * Default heartbeat stale window for pending reclaim (matches CLI
- * `workerHeartbeatStaleMs(60)` → 150s). Kept in this package to avoid a cli dependency.
- */
-export const DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS = 150_000;
+/** @deprecated Prefer `DEFAULT_WORKER_HEARTBEAT_STALE_MS` from `@admitto/db`. */
+export const DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS = DEFAULT_WORKER_HEARTBEAT_STALE_MS;
 
-/** Singleton heartbeat row id (ADR 0042 / `BackgroundWorkerHeartbeat`). */
-export const WORKER_HEARTBEAT_ID = "default";
+export { WORKER_HEARTBEAT_ID, isWorkerHeartbeatStale as isWorkerHeartbeatStaleForPendingReclaim };
 
 export const STALE_IMPORT_JOB_ERROR =
   "Import job abandoned (worker stopped while running). Upload the file again.";
@@ -54,6 +56,15 @@ export type ReclaimStaleImportJobsOptions = {
   now?: Date;
 };
 
+type StaleImportJobRow = {
+  id: string;
+  status: string;
+  storage_key: string | null;
+  event_id: string | null;
+  import_id: string | null;
+  filename: string | null;
+};
+
 /**
  * Parse `IMPORT_JOB_STALE_RUNNING_MS` (positive integer ms). Invalid/missing → default.
  */
@@ -65,20 +76,6 @@ export function parseImportJobStaleRunningMs(
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_IMPORT_JOB_STALE_RUNNING_MS;
   return n;
-}
-
-/** True when there is no heartbeat row or last_beat_at is older than `staleMs`. */
-export async function isWorkerHeartbeatStaleForPendingReclaim(
-  db: PrismaClient,
-  now: Date,
-  staleMs: number,
-): Promise<boolean> {
-  const row = await db.backgroundWorkerHeartbeat.findUnique({
-    where: { id: WORKER_HEARTBEAT_ID },
-    select: { last_beat_at: true },
-  });
-  if (!row) return true;
-  return now.getTime() - row.last_beat_at.getTime() >= staleMs;
 }
 
 async function deleteStagedKey(storage: StorageAdapter, storageKey: string | null): Promise<void> {
@@ -135,6 +132,68 @@ async function loadImportAuditForHeal(
   });
 }
 
+async function failStalePendingImportJob(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  job: StaleImportJobRow,
+  now: Date,
+): Promise<boolean> {
+  const updated = await db.adminJob.updateMany({
+    where: { id: job.id, status: "pending" },
+    data: {
+      status: "failed",
+      error: STALE_IMPORT_PENDING_ERROR.slice(0, 2000),
+      finished_at: now,
+    },
+  });
+  if (updated.count === 0) return false;
+  await deleteStagedKey(storage, job.storage_key);
+  return true;
+}
+
+async function reclaimStaleRunningImportJob(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  job: StaleImportJobRow,
+  now: Date,
+): Promise<"healed" | "reclaimed" | "skipped"> {
+  const audit =
+    job.event_id && job.import_id
+      ? await loadImportAuditForHeal(db, job.event_id, job.import_id)
+      : null;
+  const landed = audit != null;
+  const resultJson =
+    landed && job.import_id
+      ? importResultJsonFromAuditMetadata(job.import_id, audit.metadata)
+      : null;
+
+  const updated = landed
+    ? await db.adminJob.updateMany({
+        where: { id: job.id, status: "running" },
+        data: {
+          status: "succeeded",
+          error: null,
+          finished_at: now,
+          created_count: historyNumber(resultJson?.created),
+          updated_count: historyNumber(resultJson?.updated),
+          skipped_count: historyNumber(resultJson?.skippedCount),
+          ...(resultJson ? { result_json: resultJson as object } : {}),
+        },
+      })
+    : await db.adminJob.updateMany({
+        where: { id: job.id, status: "running" },
+        data: {
+          status: "failed",
+          error: STALE_IMPORT_JOB_ERROR.slice(0, 2000),
+          finished_at: now,
+        },
+      });
+
+  if (updated.count === 0) return "skipped";
+  await deleteStagedKey(storage, job.storage_key);
+  return landed ? "healed" : "reclaimed";
+}
+
 /**
  * Mark stale running import_commit jobs failed (or heal to succeeded when import
  * landed). Fail aged pending only when the worker heartbeat is stale/missing.
@@ -145,21 +204,14 @@ export async function reclaimStaleImportJobs(
   storage: StorageAdapter,
   options: ReclaimStaleImportJobsOptions = {},
 ): Promise<ReclaimStaleImportJobsResult> {
-  const olderThanMs =
-    options.olderThanMs && options.olderThanMs > 0
-      ? Math.floor(options.olderThanMs)
-      : DEFAULT_IMPORT_JOB_STALE_RUNNING_MS;
-  const heartbeatStaleMs =
-    options.heartbeatStaleMs && options.heartbeatStaleMs > 0
-      ? Math.floor(options.heartbeatStaleMs)
-      : DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS;
+  const olderThanMs = positiveMsOr(options.olderThanMs, DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+  const heartbeatStaleMs = positiveMsOr(
+    options.heartbeatStaleMs,
+    DEFAULT_WORKER_HEARTBEAT_STALE_MS,
+  );
   const now = options.now ?? new Date();
   const cutoff = new Date(now.getTime() - olderThanMs);
-  const reclaimPending = await isWorkerHeartbeatStaleForPendingReclaim(
-    db,
-    now,
-    heartbeatStaleMs,
-  );
+  const reclaimPending = await isWorkerHeartbeatStale(db, now, heartbeatStaleMs);
 
   const stale = await db.adminJob.findMany({
     where: {
@@ -184,57 +236,12 @@ export async function reclaimStaleImportJobs(
   let healed = 0;
   for (const job of stale) {
     if (job.status === "pending") {
-      const updated = await db.adminJob.updateMany({
-        where: { id: job.id, status: "pending" },
-        data: {
-          status: "failed",
-          error: STALE_IMPORT_PENDING_ERROR.slice(0, 2000),
-          finished_at: now,
-        },
-      });
-      if (updated.count === 0) continue;
-      await deleteStagedKey(storage, job.storage_key);
-      reclaimed += 1;
+      if (await failStalePendingImportJob(db, storage, job, now)) reclaimed += 1;
       continue;
     }
-
-    const audit =
-      job.event_id && job.import_id
-        ? await loadImportAuditForHeal(db, job.event_id, job.import_id)
-        : null;
-    const landed = audit != null;
-    const resultJson =
-      landed && job.import_id
-        ? importResultJsonFromAuditMetadata(job.import_id, audit.metadata)
-        : null;
-    let updated: { count: number };
-    if (landed) {
-      updated = await db.adminJob.updateMany({
-        where: { id: job.id, status: "running" },
-        data: {
-          status: "succeeded",
-          error: null,
-          finished_at: now,
-          created_count: historyNumber(resultJson?.created),
-          updated_count: historyNumber(resultJson?.updated),
-          skipped_count: historyNumber(resultJson?.skippedCount),
-          ...(resultJson ? { result_json: resultJson as object } : {}),
-        },
-      });
-    } else {
-      updated = await db.adminJob.updateMany({
-        where: { id: job.id, status: "running" },
-        data: {
-          status: "failed",
-          error: STALE_IMPORT_JOB_ERROR.slice(0, 2000),
-          finished_at: now,
-        },
-      });
-    }
-    if (updated.count === 0) continue;
-    await deleteStagedKey(storage, job.storage_key);
-    if (landed) healed += 1;
-    else reclaimed += 1;
+    const outcome = await reclaimStaleRunningImportJob(db, storage, job, now);
+    if (outcome === "healed") healed += 1;
+    else if (outcome === "reclaimed") reclaimed += 1;
   }
 
   return { reclaimed, healed };
