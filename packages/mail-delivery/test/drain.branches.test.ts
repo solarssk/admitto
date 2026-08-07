@@ -169,4 +169,32 @@ describe("drainPendingDeliveries branch coverage", () => {
     );
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
   });
+
+  it("skips when claim returns a row with a null snapshot field", async () => {
+    await enqueueOne();
+    const findMany = vi.spyOn(prisma.emailDelivery, "findMany").mockResolvedValueOnce([
+      {
+        id: "del-null-snap",
+        event_id: EVENT_ID,
+        attendee_id: "att-drain-branch",
+        purpose: "ticket",
+        status: "queued",
+        recipient_email: null,
+        rendered_subject: "Hello",
+        rendered_html: "<p>Hi</p>",
+      },
+    ] as never);
+
+    try {
+      const drain = await drainPendingDeliveries(
+        prisma,
+        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+        { exportSink: () => undefined },
+        { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+      );
+      expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1 });
+    } finally {
+      findMany.mockRestore();
+    }
+  });
 });

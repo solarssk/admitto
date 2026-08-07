@@ -281,6 +281,22 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
     });
   });
 
+  it("does not poll bulk-send status when enqueue queues nothing", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA], total: 1, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: null, queued: 0, skipped: 1, failed: 0 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("No tickets were queued (1 skipped).", "info");
+    });
+    expect(fetchBulkSendStatus).not.toHaveBeenCalled();
+  });
+
   it("toasts an operator-safe error when sendEventBulk fails", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
