@@ -3,17 +3,10 @@ import { Button, Card, Notice } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-
-const RSVP_STATUS_OPTIONS: ReadonlyArray<{ id: RsvpStatus; label: string }> = [
-  { id: "none", label: "Registered" },
-  { id: "confirmed", label: "Confirmed" },
-  { id: "declined", label: "Declined" },
-  { id: "tentative", label: "Tentative" },
-  { id: "cancelled", label: "Cancelled" },
-];
 
 interface CommunicationSendPanelProps {
   event: ArchivedGuardEvent;
