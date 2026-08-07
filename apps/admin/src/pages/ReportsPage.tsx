@@ -657,6 +657,7 @@ function AdmissionLog({
               placeholder="Rows per page"
               searchPlaceholder="Search…"
               emptyLabel="No options found"
+              showLabel={false}
               value={String(pageSize)}
               options={LOG_PAGE_SIZE_OPTIONS.map((size) => ({ id: String(size), label: String(size) }))}
               onChange={(id) => {
