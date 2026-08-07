@@ -195,18 +195,22 @@ async function runWorkerTick(
   await runJobSafely("export", () => runExportJob(db, locks));
   await runJobSafely("bounce", () => runBounceJob(db, locks));
 
-  if (!retentionIsDue(schedule, Date.now())) return;
-
-  try {
-    const completed = await runRetentionJob(db, locks);
-    // Lock held elsewhere: try again on the next tick (cheap skip).
-    if (!completed) return;
-    markRetentionSuccess(schedule, Date.now());
-  } catch (err) {
-    log("retention", `FAILED ${errMessage(err)}`);
-    markRetentionFailure(schedule, Date.now());
-    log("retention", "retry after failure backoff (15m)");
+  if (retentionIsDue(schedule, Date.now())) {
+    try {
+      const completed = await runRetentionJob(db, locks);
+      // Lock held elsewhere: try again on the next tick (cheap skip).
+      if (completed) markRetentionSuccess(schedule, Date.now());
+    } catch (err) {
+      log("retention", `FAILED ${errMessage(err)}`);
+      markRetentionFailure(schedule, Date.now());
+      log("retention", "retry after failure backoff (15m)");
+    }
   }
+
+  // Refresh after long drains so Health does not mark the worker stale mid-tick.
+  await runJobSafely("heartbeat", async () => {
+    await touchWorkerHeartbeat(db);
+  });
 }
 
 /**

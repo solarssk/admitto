@@ -1296,7 +1296,8 @@ async function backgroundWorkerRow(
   env: NodeJS.ProcessEnv,
 ): Promise<HealthCheckRow> {
   const tickSeconds = parseBounceIngestTickSeconds(env);
-  const staleMs = Math.max(90_000, tickSeconds * 2 * 1000 + 30_000);
+  // Keep in sync with apps/cli workerHeartbeatStaleMs (5m floor; else 3× tick + 60s).
+  const staleMs = Math.max(300_000, tickSeconds * 3 * 1000 + 60_000);
   const beat = await db.backgroundWorkerHeartbeat.findUnique({
     where: { id: "default" },
     select: { last_beat_at: true, hostname: true },

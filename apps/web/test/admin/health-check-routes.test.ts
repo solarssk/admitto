@@ -520,7 +520,7 @@ describe("collectAdminHealth", () => {
     expect(report.overall).toBe("degraded");
   });
 
-  it("uses the 90s floor when the tick-derived stale window is smaller", async () => {
+  it("uses the 5m floor when the tick-derived stale window is smaller", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
@@ -535,8 +535,8 @@ describe("collectAdminHealth", () => {
       db: healthDb({
         backgroundWorkerHeartbeat: {
           findUnique: vi.fn().mockResolvedValue({
-            // 100s old: stale under the 90s floor, would be fresh if we only used tick=15 (60s).
-            last_beat_at: new Date("2026-08-03T11:58:20.000Z"),
+            // 6 minutes old: stale under the 5m floor; tick=15 alone would only be ~105s.
+            last_beat_at: new Date("2026-08-03T11:54:00.000Z"),
             hostname: "floor-worker",
           }),
         },
@@ -548,10 +548,10 @@ describe("collectAdminHealth", () => {
 
     const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
     expect(row).toMatchObject({ status: "degraded" });
-    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "90000")).toBe(true);
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "300000")).toBe(true);
   });
 
-  it("uses the tick-derived stale window when it exceeds the 90s floor", async () => {
+  it("uses the tick-derived stale window when it exceeds the 5m floor", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
@@ -566,20 +566,20 @@ describe("collectAdminHealth", () => {
       db: healthDb({
         backgroundWorkerHeartbeat: {
           findUnique: vi.fn().mockResolvedValue({
-            // 3.5 minutes old: stale when tick=60 → staleMs=150s
-            last_beat_at: new Date("2026-08-03T11:56:30.000Z"),
+            // 8 minutes old: stale when tick=120 → staleMs=420s
+            last_beat_at: new Date("2026-08-03T11:52:00.000Z"),
             hostname: "tick-worker",
           }),
         },
       }),
       rateLimitStore: {} as never,
-      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "60" }),
+      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "120" }),
       now: () => now,
     });
 
     const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
     expect(row).toMatchObject({ status: "degraded" });
-    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "150000")).toBe(true);
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "420000")).toBe(true);
   });
 
   it("includes an empty hostname coalesce path on a fresh beat with null hostname", async () => {

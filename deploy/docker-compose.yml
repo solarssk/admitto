@@ -128,6 +128,9 @@ services:
       dockerfile: Dockerfile
     command: ["worker"]
     restart: unless-stopped
+    # Long-running tick jobs; Health uses DB heartbeat instead of a Docker probe.
+    healthcheck:
+      disable: true
     env_file: .env
     environment:
       NODE_ENV: production
@@ -135,6 +138,10 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       BOUNCE_INGEST_APP_URL: http://app:3000
       ADMITTO_INTERNAL_URL: http://app:3000
+      # Same bind as `app` so import/export AdminJobs see staged files and write downloads.
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - ./uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy

@@ -23,8 +23,12 @@ export async function touchWorkerHeartbeat(
   });
 }
 
-/** Stale window for Health / HEALTHCHECK: 2× tick + slack (default tick 60s → 150s). */
+/**
+ * Stale window for Settings → Health.
+ * Floor 5 minutes so a long import/export drain inside one tick does not false-alarm;
+ * otherwise 3× tick + 60s slack (default tick 60s → 5m floor).
+ */
 export function workerHeartbeatStaleMs(tickSeconds: number): number {
   const tick = Number.isFinite(tickSeconds) && tickSeconds > 0 ? tickSeconds : 60;
-  return Math.max(90_000, tick * 2 * 1000 + 30_000);
+  return Math.max(300_000, tick * 3 * 1000 + 60_000);
 }
