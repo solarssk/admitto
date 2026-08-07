@@ -43,6 +43,9 @@ describe("CommunicationSendDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Attendance status,/ }));
     expect(screen.getByRole("button", { name: "Registered" })).toBeTruthy();
     expect(screen.queryByText("RSVP status")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirmed" }));
+    expect(screen.getByRole("button", { name: "Attendance status, Confirmed" })).toBeTruthy();
   });
 
   it("disables send until ticket type is non-empty", async () => {

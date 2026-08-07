@@ -68,6 +68,7 @@ export function IdentityMappingRepeater({
                   emptyLabel="No roles found"
                   showLabel={false}
                   value={row.role}
+                  invalid={Boolean(rowError.role)}
                   options={[
                     ...(roleInvalid ? [{ id: row.role, label: `${row.role} (invalid, pick a role)` }] : []),
                     ...MAPPING_ROLES.map((role) => ({ id: role, label: role })),
@@ -92,6 +93,7 @@ export function IdentityMappingRepeater({
                   emptyLabel="No scopes found"
                   showLabel={false}
                   value={row.scope_type}
+                  invalid={Boolean(rowError.scope_type)}
                   options={[
                     ...(scopeInvalid ? [{ id: row.scope_type, label: `${row.scope_type} (invalid, pick a scope)` }] : []),
                     ...MAPPING_SCOPES.map((scope) => ({ id: scope, label: scope })),

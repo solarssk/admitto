@@ -24,6 +24,10 @@ interface SearchableSelectProps {
   value: string;
   options: readonly SearchableSelectOption[];
   disabled?: boolean;
+  /** Marks the trigger `aria-invalid` and gives it the same error styling as `Input`'s own
+   * `invalid` prop (`@admitto/ui`), so a field error set on this picker is as perceivable to
+   * assistive tech and sighted users as it already is on every other form control. */
+  invalid?: boolean;
   /** Native tooltip on the trigger, e.g. explaining why the field is disabled. */
   title?: string;
   /** False for callers that already render their own visible `<label htmlFor>` around this
@@ -48,6 +52,7 @@ export function SearchableSelect({
   value,
   options,
   disabled,
+  invalid,
   title,
   showLabel = true,
   onChange,
@@ -95,10 +100,11 @@ export function SearchableSelect({
         type="button"
         id={id}
         ref={triggerRef}
-        className="searchable-select__trigger"
+        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}`}
         disabled={disabled}
         title={title}
         aria-expanded={open}
+        aria-invalid={invalid || undefined}
         aria-label={triggerLabel}
         onClick={() => setOpen((current) => !current)}
       >
