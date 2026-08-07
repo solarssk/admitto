@@ -411,6 +411,10 @@ export interface ImportJobStatusResponse {
   importId: string | null;
   error: string | null;
   result: ImportCommitResponse | null;
+  /** ISO time the job row was created (client poll deadline while pending). */
+  created_at: string;
+  /** ISO time the worker claimed the job, if any (poll deadline while running). */
+  started_at: string | null;
 }
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */

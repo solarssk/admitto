@@ -12,6 +12,22 @@ const commitImport = vi.fn();
 const fetchImportJobStatus = vi.fn();
 const fetchImportHistory = vi.fn();
 
+const waitForImportJobResultHarness = vi.hoisted(() => {
+  type WaitFn = (
+    eventId: string,
+    jobId: string,
+    signal: AbortSignal,
+    options?: {
+      maxAttempts?: number;
+      intervalMs?: number;
+      sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+    },
+  ) => Promise<unknown>;
+  return {
+    actual: null as WaitFn | null,
+  };
+});
+
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
   { role: "admin", scope_type: "organization", scope_id: "org-1" },
 ];
@@ -42,6 +58,18 @@ vi.mock("../../src/api/client.js", () => ({
   commitImport: (...args: unknown[]) => commitImport(...args),
   fetchImportJobStatus: (...args: unknown[]) => fetchImportJobStatus(...args),
 }));
+
+vi.mock("../../src/import/waitForImportJobResult.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/import/waitForImportJobResult.js")>();
+  waitForImportJobResultHarness.actual = actual.waitForImportJobResult;
+  return {
+    ...actual,
+    waitForImportJobResult: vi.fn(actual.waitForImportJobResult),
+  };
+});
+
+import { ApiError } from "../../src/api/client.js";
+import { waitForImportJobResult } from "../../src/import/waitForImportJobResult.js";
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -80,6 +108,8 @@ function mockQueuedCommitSuccess(
     importId,
     error: null,
     result,
+    created_at: "2026-08-07T12:00:00.000Z",
+    started_at: "2026-08-07T12:00:01.000Z",
   });
 }
 
@@ -112,7 +142,17 @@ function selectFile() {
 }
 
 beforeEach(() => {
-  fetchImportHistory.mockResolvedValue([]);
+  fetchImportHistory.mockReset().mockResolvedValue([]);
+  fetchImportJobStatus.mockReset();
+  commitImport.mockReset();
+  previewImport.mockReset();
+  fetchEventCustomFields.mockReset();
+  vi.mocked(waitForImportJobResult).mockReset();
+  vi.mocked(waitForImportJobResult).mockImplementation((eventId, jobId, signal, options) => {
+    const impl = waitForImportJobResultHarness.actual;
+    if (!impl) throw new Error("waitForImportJobResult actual not captured");
+    return impl(eventId, jobId, signal, options) as ReturnType<typeof waitForImportJobResult>;
+  });
 });
 
 afterEach(() => {
@@ -572,6 +612,10 @@ describe("ImportPage upload → preview → commit flow", () => {
       status: "pending",
       importId: "imp-1",
     });
+    // Job timestamps must be within IMPORT_JOB_CLIENT_STALE_MS of Date.now(); fixed Aug 7
+    // noon UTC goes stale against CI wall clock later the same day.
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const startedAt = new Date(Date.now() - 55_000).toISOString();
     fetchImportJobStatus
       .mockResolvedValueOnce({
         jobId: "job-poll",
@@ -579,6 +623,8 @@ describe("ImportPage upload → preview → commit flow", () => {
         importId: "imp-1",
         error: null,
         result: null,
+        created_at: createdAt,
+        started_at: null,
       })
       .mockResolvedValueOnce({
         jobId: "job-poll",
@@ -596,6 +642,8 @@ describe("ImportPage upload → preview → commit flow", () => {
           invalidRows: [],
           invalidCount: 0,
         },
+        created_at: createdAt,
+        started_at: startedAt,
       });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -609,7 +657,9 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5000);
+      await Promise.resolve();
     });
 
     expect(await screen.findByText("Import complete")).toBeTruthy();
@@ -647,7 +697,7 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(screen.queryByText("Import complete")).toBeNull();
   });
 
-  it("toasts a 504 timeout when the job stays pending across the poll budget", async () => {
+  it("toasts a 408 timeout when the job stays pending across the poll budget", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
     commitImport.mockResolvedValueOnce({
@@ -655,13 +705,14 @@ describe("ImportPage upload → preview → commit flow", () => {
       status: "pending",
       importId: "imp-1",
     });
-    fetchImportJobStatus.mockResolvedValue({
-      jobId: "job-stuck",
-      status: "pending",
-      importId: "imp-1",
-      error: null,
-      result: null,
-    });
+    // Budget exhaustion is covered in waitForImportJobResult unit tests; here we only
+    // assert ImportPage surfaces the soft 408 as a toast (not a connection banner).
+    vi.mocked(waitForImportJobResult).mockRejectedValueOnce(
+      new ApiError(
+        408,
+        "Import is still running. Check history later or keep the worker running.",
+      ),
+    );
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
@@ -669,18 +720,12 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
     expect(await screen.findByText("To create")).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/Dry run/));
-
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(90 * 2000);
-    });
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/still running/i);
     });
-    expect(fetchImportJobStatus).toHaveBeenCalledTimes(90);
+    expect(screen.queryByText("Import complete")).toBeNull();
   });
 
   it("swallows AbortError when the page unmounts mid-poll without toasting", async () => {
@@ -870,6 +915,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
         created: 312,
         updated: 171,
         skipped: 4,
+        status: "succeeded",
+        error: null,
       },
     ]);
     renderPage();
@@ -1013,6 +1060,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
         created: 5,
         updated: 1,
         skipped: 0,
+        status: "succeeded",
+        error: null,
       },
     ]);
     let resolveSecond!: (items: unknown) => void;

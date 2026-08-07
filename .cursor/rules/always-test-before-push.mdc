@@ -7,11 +7,20 @@ alwaysApply: true
 
 Before `git push`, opening a PR, or telling Filip that CI should be green:
 
-1. **Run the tests that cover what you changed** (package-scoped is fine; full `npm test` when the blast radius is unclear).
+1. **Hard stop: no subset-as-gate.** A single-file or `--run path/to/one.test.ts` run is
+   debugging only. It does **not** authorize push. If you touched `@admitto/admin`, run the full
+   package suite CI uses (`npm test -w @admitto/admin` or the coverage command that job runs).
+   Same for `@admitto/web`, `@admitto/tickets`, `@admitto/import`, etc. when those packages
+   changed. When blast radius is unclear: `npm test` (or the CI jobs that cover the change).
 2. **Run the same build/typecheck CI runs** for touched packages. For `@admitto/web`, that means
    `npm run build -w @admitto/web` (or equivalent `tsc`) because test files are included in the
-   web `tsconfig` and Vitest can pass while `tsc` fails.
+   web `tsconfig` and Vitest can pass while `tsc` fails. Touching admin UI means
+   `npm run build -w @admitto/admin` before push.
 3. **Do not push on red.** Fix first, then push.
 4. Coverage-only commits still need the suites that generate that coverage (admin + web as applicable).
+5. **After the final diff in a session:** re-run the full package gate(s). Passing a subset earlier
+   in the chat does not count.
+6. **In the handoff to Filip before/with push:** cite the exact commands run and that they passed.
+   No "should be green" without that.
 
-Passing a subset from earlier in the chat is not enough after further edits: re-run after the final diff.
+Violating this (push after subset-only) is a process failure, not a judgment call.
