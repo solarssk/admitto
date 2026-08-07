@@ -217,6 +217,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
                   placeholder="Not configured"
                   searchPlaceholder="Search transports…"
                   emptyLabel="No transports found"
+                  showLabel={false}
                   value={provider}
                   disabled={fieldLocked("provider")}
                   options={[
