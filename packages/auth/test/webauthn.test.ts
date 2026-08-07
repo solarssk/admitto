@@ -314,6 +314,33 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
     const response = impostor.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
     expect(await finishWebauthnAssertion(prisma, userId, response, begin!.challenge, RP)).toBeNull();
   });
+
+  it("rejects a forged response that claims the real credential ID but is signed by a different key", async () => {
+    const userId = "user-wa-forged-id";
+    await createAdmin(userId, "wa-forged-id@example.com");
+    const { response: registration, result } = await registerCredential(userId, "platform", "Real key");
+    const impostor = createVirtualAuthenticator();
+    // Warm up the impostor's own sign counter past the real (stored) credential's counter (1)
+    // first — otherwise @simplewebauthn/server's counter-regression guard throws before it ever
+    // reaches signature verification, which would only prove the counter check works, not that a
+    // bad signature against the real public key is independently rejected.
+    impostor.authenticate({ challenge: "warm-up", rpID: RP.rpID, origin: RP.origin });
+
+    const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
+    // Unlike the "wrong key" case above (a stranger's own, unregistered credential ID — rejected
+    // by the row lookup before any crypto happens), this forges the *real* credential's id/rawId
+    // (captured at registration) onto a response actually signed by the impostor's key: the row
+    // lookup succeeds and the stored (real) public key is used to verify a signature that was
+    // never made with it, so rejection has to come from the signature check itself, not the
+    // lookup or the counter guard.
+    const forged = impostor.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
+    forged.id = registration.id;
+    forged.rawId = registration.rawId;
+
+    expect(await finishWebauthnAssertion(prisma, userId, forged, begin!.challenge, RP)).toBeNull();
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
+    expect(row?.webauthn_sign_count).toBe(1); // unchanged — a rejected assertion never advances it
+  });
 });
 
 describe("WebAuthn-only user — login and session policy", () => {
