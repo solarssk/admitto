@@ -33,6 +33,7 @@ const ACTION_LABELS: Record<string, string> = {
   account_mfa_reset: "2FA reset (self-service)",
   account_password_changed: "Password changed (self-service)",
   account_session_revoked: "Session revoked (self-service)",
+  account_sso_unlinked: "SSO unlinked (self-service)",
   attendee_created_manual: "Attendee created manually",
   attendee_erased: "Attendee erased (GDPR)",
   attendees_bulk_erased: "Attendees bulk erased (GDPR)",
