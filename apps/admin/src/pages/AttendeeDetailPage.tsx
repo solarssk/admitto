@@ -1857,6 +1857,7 @@ export function AttendeeDetailPage() {
                     placeholder="Select attendance…"
                     searchPlaceholder="Search attendance…"
                     emptyLabel="No attendance options found"
+                    showLabel={false}
                     value={form.rsvp_status}
                     options={[
                       { id: "none", label: "Registered" },
@@ -1916,6 +1917,7 @@ export function AttendeeDetailPage() {
                     placeholder="Select ticket type…"
                     searchPlaceholder="Search ticket types…"
                     emptyLabel="No ticket types found"
+                    showLabel={false}
                     value={form.ticket_type}
                     options={[
                       { id: "", label: "-" },
