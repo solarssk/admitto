@@ -10,6 +10,7 @@ const updateAttendee = vi.fn();
 const fetchEventAttendees = vi.fn();
 const exportAttendees = vi.fn();
 const bulkResendTickets = vi.fn();
+const fetchBulkSendStatus = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
 
@@ -147,6 +148,7 @@ vi.mock("../../src/api/client.js", () => ({
   }),
   exportAttendees: (...args: unknown[]) => exportAttendees(...args),
   bulkResendTickets: (...args: unknown[]) => bulkResendTickets(...args),
+  fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
   sendEventBulk: vi.fn(),
   updateAttendee: (...args: unknown[]) => updateAttendee(...args),
 }));
@@ -196,6 +198,15 @@ beforeEach(() => {
   reportApiError.mockClear();
   updateAttendee.mockReset();
   fetchEventAttendees.mockReset();
+  bulkResendTickets.mockReset();
+  fetchBulkSendStatus.mockReset();
+  fetchBulkSendStatus.mockResolvedValue({
+    batchId: "batch-1",
+    total: 1,
+    queued: 0,
+    sent: 1,
+    failed: 0,
+  });
   setListItems([sampleRow]);
   mockFetchEventAttendees();
   mockMatchMedia(true);
@@ -531,6 +542,48 @@ describe("AttendeesPage revoke/restore", () => {
     fireEvent.click(findRowByName("Jane Doe").getByRole("button", { name: "Restore pass" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Could not update pass status.", "error");
+    });
+  });
+
+  it("polls bulk-send status after header Send tickets queues work", async () => {
+    bulkResendTickets.mockResolvedValueOnce({ batchId: "batch-hdr", queued: 2, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({
+      batchId: "batch-hdr",
+      total: 2,
+      queued: 0,
+      sent: 2,
+      failed: 0,
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
+    const dialog = screen.getByRole("dialog", { name: "Send tickets" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));
+    await waitFor(() => {
+      expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-hdr");
+      expect(addToast).toHaveBeenCalledWith("Send complete: 2 tickets sent.", "success");
+    });
+  });
+
+  it("toasts info when header Send tickets status polling throws", async () => {
+    bulkResendTickets.mockResolvedValueOnce({ batchId: "batch-hdr-err", queued: 1, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
+    const dialog = screen.getByRole("dialog", { name: "Send tickets" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "Could not refresh send status. Check Communication.",
+        "info",
+      );
     });
   });
 

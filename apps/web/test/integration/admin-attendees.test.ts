@@ -3724,6 +3724,30 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-resend", () => {
     }
   });
 
+  it("returns batchId null when enqueue queues nothing", async () => {
+    const spy = vi.spyOn(mailDelivery, "sendTicketEmails").mockResolvedValueOnce({
+      batchId: "ignored-batch",
+      queued: 0,
+      sent: 0,
+      skipped: [{ attendeeId: ATT_A1, reason: "already_sent" }],
+      deliveries: [],
+      resolvedTemplateId: undefined,
+    });
+    try {
+      const res = await postBulkResend("all");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        batchId: string | null;
+        queued: number;
+        skipped: number;
+        failed: number;
+      };
+      expect(body).toEqual({ batchId: null, queued: 0, skipped: 1, failed: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("returns 422 mail_not_configured instead of a raw 500 when no mail transport is set up", async () => {
     const spy = vi
       .spyOn(mailDelivery, "sendTicketEmails")
