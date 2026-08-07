@@ -12,6 +12,8 @@ import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
 import * as ticketOperations from "@admitto/tickets";
 import * as mailDelivery from "@admitto/mail-delivery";
 import type { ExportPayload } from "@admitto/mailer";
+import { getDefaultStorage } from "@admitto/storage";
+import { drainExportJobs } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
   handleBulkRevokeAttendeeItems,
@@ -4119,9 +4121,16 @@ describe("Attendees v2 — RSVP and manual create", () => {
   });
 
   it("export CSV does not expose token fields in response body", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/export?format=csv`, {
+    const queued = await app.request(`/api/admin/events/${EVENT_A}/attendees/export?format=csv`, {
       headers: { Cookie: adminCookie },
     });
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/export/jobs/${jobId}/download`,
+      { headers: { Cookie: adminCookie } },
+    );
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).not.toContain("token_enc");

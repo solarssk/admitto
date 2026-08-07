@@ -133,6 +133,8 @@ import {
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
   handleExportAttendees,
+  handleGetExportJob,
+  handleDownloadExportJob,
   handleExportSelectedAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
@@ -911,6 +913,12 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportAttendees(c, db),
+  );
+  app.get("/api/admin/events/:eventId/export/jobs/:jobId", staffAdminGate, (c) =>
+    handleGetExportJob(c, db),
+  );
+  app.get("/api/admin/events/:eventId/export/jobs/:jobId/download", staffAdminGate, (c) =>
+    handleDownloadExportJob(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/export-selected",

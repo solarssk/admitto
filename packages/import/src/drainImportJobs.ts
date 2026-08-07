@@ -3,6 +3,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
+import { claimNextAdminJob } from "@admitto/tickets";
 import {
   executeImportCommit,
   ImportCapacityExceededError,
@@ -21,20 +22,7 @@ export type DrainImportJobsResult = {
   reclaimed: number;
 };
 
-async function claimNextImportJob(db: PrismaClient) {
-  const pending = await db.adminJob.findFirst({
-    where: { type: "import_commit", status: "pending" },
-    orderBy: { created_at: "asc" },
-  });
-  if (!pending) return null;
-
-  const updated = await db.adminJob.updateMany({
-    where: { id: pending.id, status: "pending" },
-    data: { status: "running", started_at: new Date() },
-  });
-  if (updated.count === 0) return null;
-  return db.adminJob.findUniqueOrThrow({ where: { id: pending.id } });
-}
+type ClaimedImportJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 
 function failureMessage(err: unknown): string {
   if (err instanceof ImportCapacityExceededError) return err.message;
@@ -51,89 +39,6 @@ async function markFailed(db: PrismaClient, jobId: string, err: unknown): Promis
       finished_at: new Date(),
     },
   });
-}
-
-async function deleteStagedKey(storage: StorageAdapter, storageKey: string | null): Promise<void> {
-  if (!storageKey) return;
-  try {
-    await storage.delete(storageKey);
-  } catch {
-    /* best-effort */
-  }
-}
-
-async function runClaimedImportJob(
-  db: PrismaClient,
-  storage: StorageAdapter,
-  job: {
-    id: string;
-    event_id: string | null;
-    storage_key: string | null;
-    import_id: string | null;
-    overwrite: boolean;
-    force_capacity: boolean;
-    actor_user_id: string | null;
-    session_id: string | null;
-    client_timezone: string | null;
-    filename: string | null;
-  },
-): Promise<"succeeded" | "failed"> {
-  try {
-    if (!job.event_id || !job.storage_key || !job.import_id) {
-      throw new Error("import_job_incomplete");
-    }
-    const bytes = await storage.get(job.storage_key);
-    const csv = bytes.toString("utf8");
-    const result = await executeImportCommit(db, {
-      eventId: job.event_id,
-      csv,
-      overwrite: job.overwrite,
-      forceCapacity: job.force_capacity,
-      actorUserId: job.actor_user_id,
-      sessionId: job.session_id,
-      timezone: job.client_timezone,
-      filename: job.filename,
-      importId: job.import_id,
-    });
-    await markSucceeded(db, job.id, result);
-    await deleteStagedKey(storage, job.storage_key);
-    return "succeeded";
-  } catch (err) {
-    await markFailed(db, job.id, err);
-    return "failed";
-  }
-}
-
-/**
- * Process up to `limit` pending import_commit jobs. Caller holds worker `import` lock.
- * Reclaims stale `running` rows first (abandoned after worker crash).
- */
-export async function drainImportJobs(
-  db: PrismaClient,
-  storage: StorageAdapter,
-  options: { limit?: number; staleRunningMs?: number } = {},
-): Promise<DrainImportJobsResult> {
-  const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
-  const staleRunningMs = options.staleRunningMs ?? parseImportJobStaleRunningMs();
-  const { reclaimed } = await reclaimStaleImportJobs(db, storage, {
-    olderThanMs: staleRunningMs,
-  });
-
-  let claimed = 0;
-  let succeeded = 0;
-  let failed = 0;
-
-  for (let i = 0; i < limit; i += 1) {
-    const job = await claimNextImportJob(db);
-    if (!job) break;
-    claimed += 1;
-
-    const outcome = await runClaimedImportJob(db, storage, job);
-    if (outcome === "succeeded") succeeded += 1;
-    else failed += 1;
-  }
-
-  return { claimed, succeeded, failed, reclaimed };
 }
 
 async function markSucceeded(
@@ -168,4 +73,76 @@ async function markSucceeded(
       error: null,
     },
   });
+}
+
+async function bestEffortDelete(storage: StorageAdapter, key: string | null): Promise<void> {
+  if (!key) return;
+  try {
+    await storage.delete(key);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** Run one claimed import_commit job to terminal status. */
+async function processImportJob(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  job: ClaimedImportJob,
+): Promise<"succeeded" | "failed"> {
+  try {
+    if (!job.event_id || !job.storage_key || !job.import_id) {
+      throw new Error("import_job_incomplete");
+    }
+    const bytes = await storage.get(job.storage_key);
+    const csv = bytes.toString("utf8");
+    const result = await executeImportCommit(db, {
+      eventId: job.event_id,
+      csv,
+      overwrite: job.overwrite,
+      forceCapacity: job.force_capacity,
+      actorUserId: job.actor_user_id,
+      sessionId: job.session_id,
+      timezone: job.client_timezone,
+      filename: job.filename,
+      importId: job.import_id,
+    });
+    await markSucceeded(db, job.id, result);
+    await bestEffortDelete(storage, job.storage_key);
+    return "succeeded";
+  } catch (err) {
+    await markFailed(db, job.id, err);
+    return "failed";
+  }
+}
+
+/**
+ * Process up to `limit` pending import_commit jobs. Caller holds worker `import` lock.
+ * Reclaims stale `running` rows first (abandoned after worker crash).
+ */
+export async function drainImportJobs(
+  db: PrismaClient,
+  storage: StorageAdapter,
+  options: { limit?: number; staleRunningMs?: number } = {},
+): Promise<DrainImportJobsResult> {
+  const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
+  const staleRunningMs = options.staleRunningMs ?? parseImportJobStaleRunningMs();
+  const { reclaimed } = await reclaimStaleImportJobs(db, storage, {
+    olderThanMs: staleRunningMs,
+  });
+
+  let claimed = 0;
+  let succeeded = 0;
+  let failed = 0;
+
+  for (let i = 0; i < limit; i += 1) {
+    const job = await claimNextAdminJob(db, "import_commit");
+    if (!job) break;
+    claimed += 1;
+    const outcome = await processImportJob(db, storage, job);
+    if (outcome === "succeeded") succeeded += 1;
+    else failed += 1;
+  }
+
+  return { claimed, succeeded, failed, reclaimed };
 }
