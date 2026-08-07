@@ -204,28 +204,18 @@ fi
 
 # "serve": the app service (non-root by default) — migration/backup/backfill already ran to
 # completion in the migrate service (compose depends_on: condition: service_completed_successfully).
-# That dependency is only evaluated on `docker compose up`, though — a bare app restart (crash
-# loop, `docker compose restart app`, restart: unless-stopped) never re-runs migrate, so
-# best-effort retention cleanup runs here too on every app start (Codex review on PR #572);
-# neither call needs root, unlike the migration/backup steps above.
+# Retention runs only on the Admitto worker (ADR 0042), not on every app start.
 if [ "${1:-}" = "serve" ]; then
-  log "purging expired/revoked auth sessions and trusted devices with 120s timeout"
-  if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-auth-retention; then
-    log "warning: auth retention purge failed or timed out; continuing startup"
-  fi
-  log "nullifying stale email delivery snapshots with 120s timeout"
-  if ! run_as_node_cmd timeout 120 node packages/mail-delivery/dist/cli.js nullify-delivery-snapshots; then
-    log "warning: email delivery snapshot retention failed or timed out; continuing startup"
-  fi
-  log "purging stale security audit log rows with 120s timeout"
-  if ! run_as_node_cmd timeout 120 node packages/auth/dist/cli.js purge-security-audit-log; then
-    log "warning: security audit log purge failed or timed out; continuing startup"
-  fi
   exec node apps/web/dist/src/index.js
 fi
 
+# "worker": background jobs (mail drain, import/export, bounce, retention). Same image as app.
+if [ "${1:-}" = "worker" ]; then
+  exec node apps/cli/dist/index.js worker
+fi
+
 if [ "${1:-}" != "migrate" ]; then
-  log "usage: docker-entrypoint.sh migrate|serve|node <script> ..."
+  log "usage: docker-entrypoint.sh migrate|serve|worker|node <script> ..."
   exit 64
 fi
 
