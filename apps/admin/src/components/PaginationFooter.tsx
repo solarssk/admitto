@@ -60,6 +60,7 @@ export function PaginationFooter({
             placeholder="Rows per page"
             searchPlaceholder="Search…"
             emptyLabel="No options found"
+            showLabel={false}
             value={String(pageSize)}
             options={pageSizeOptions.map((size) => ({ id: String(size), label: String(size) }))}
             onChange={(id) => onPageSizeChange(Number(id))}
