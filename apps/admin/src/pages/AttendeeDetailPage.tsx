@@ -54,7 +54,7 @@ import {
 } from "../attendees/attendeeTimeline.js";
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
-import { RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
+import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
@@ -1874,13 +1874,7 @@ export function AttendeeDetailPage() {
                     emptyLabel="No attendance options found"
                     showLabel={false}
                     value={form.rsvp_status}
-                    options={[
-                      { id: "none", label: "Registered" },
-                      { id: "confirmed", label: "Confirmed" },
-                      { id: "declined", label: "Declined" },
-                      { id: "tentative", label: "Tentative" },
-                      { id: "cancelled", label: "Cancelled" },
-                    ]}
+                    options={RSVP_STATUS_OPTIONS}
                     onChange={(id) => setForm({ ...form, rsvp_status: id as RsvpStatus })}
                   />
                 </div>

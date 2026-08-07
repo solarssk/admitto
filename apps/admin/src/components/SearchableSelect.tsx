@@ -35,6 +35,12 @@ interface SearchableSelectProps {
   describedBy?: string;
   /** Native tooltip on the trigger, e.g. explaining why the field is disabled. */
   title?: string;
+  /** Floor for the panel's width, in px - default 260 fits most option sets, but a list of long
+   * labels (e.g. audit log action names like "Bounce detection check run manually") truncates
+   * more than is comfortable at that width even though it's technically working as designed
+   * (PO report). Raise it per call site instead of widening the shared default for every short
+   * list too. */
+  minWidth?: number;
   /** False for callers that already render their own visible `<label htmlFor>` around this
    * field (e.g. a FiltersMenu panel's own field wrapper) - default true renders one here, since
    * most callers don't have one of their own (PO report: the Invite/Edit user role picker had
@@ -61,12 +67,13 @@ export function SearchableSelect({
   describedBy,
   title,
   showLabel = true,
+  minWidth = 260,
   onChange,
 }: Readonly<SearchableSelectProps>) {
   const { open, setOpen, close, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
     HTMLButtonElement,
     HTMLDivElement
-  >({ align: "start", matchTriggerWidth: true, minWidth: 260 });
+  >({ align: "start", matchTriggerWidth: true, minWidth });
   const [query, setQuery] = useState("");
   const showSearch = options.length > SEARCH_THRESHOLD;
 

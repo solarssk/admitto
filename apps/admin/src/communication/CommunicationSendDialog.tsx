@@ -3,6 +3,7 @@ import { Button, ModalBackdrop } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -275,13 +276,7 @@ export function CommunicationSendDialog({
                   emptyLabel="No statuses found"
                   showLabel={false}
                   value={rsvpStatus}
-                  options={[
-                    { id: "none", label: "Registered" },
-                    { id: "confirmed", label: "Confirmed" },
-                    { id: "declined", label: "Declined" },
-                    { id: "tentative", label: "Tentative" },
-                    { id: "cancelled", label: "Cancelled" },
-                  ]}
+                  options={RSVP_STATUS_OPTIONS}
                   onChange={(id) => {
                     setRsvpStatus(id as RsvpStatus);
                     setRecipientCount(null);

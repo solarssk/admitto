@@ -21,7 +21,7 @@ import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
-import { RsvpStatusBadge } from "./rsvpStatusBadge.js";
+import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 
@@ -1010,14 +1010,7 @@ function FilterToolbar({
             searchPlaceholder="Search attendance statuses…"
             emptyLabel="No attendance statuses found"
             value={rsvpStatusFilter || "all"}
-            options={[
-              { id: "all", label: "All attendance statuses" },
-              { id: "none", label: "Registered" },
-              { id: "confirmed", label: "Confirmed" },
-              { id: "declined", label: "Declined" },
-              { id: "tentative", label: "Tentative" },
-              { id: "cancelled", label: "Cancelled" },
-            ]}
+            options={[{ id: "all", label: "All attendance statuses" }, ...RSVP_STATUS_OPTIONS]}
             onChange={(value) => onRsvpStatusFilterChange(value === "all" ? "" : (value as RsvpStatus))}
           />
         </div>
