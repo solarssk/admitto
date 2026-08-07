@@ -438,6 +438,115 @@ describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () =
   });
 });
 
+describe("GET /api/admin/events/:eventId/export/jobs/:jobId", () => {
+  beforeEach(() => {
+    rateLimitStore.reset();
+  });
+
+  it("returns job status over HTTP and 404/400 for bad job lookups", async () => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+
+    const pending = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(pending.status).toBe(200);
+    expect(await pending.json()).toMatchObject({ jobId, status: "pending" });
+    expect(pending.headers.get("Cache-Control")).toBe("no-store");
+
+    const notReady = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(notReady.status).toBe(404);
+    expect(await notReady.json()).toEqual({ error: "not_ready" });
+
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+
+    const done = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(done.status).toBe(200);
+    expect(await done.json()).toMatchObject({ jobId, status: "succeeded" });
+
+    const missing = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/does-not-exist`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "not_found" });
+
+    const blank = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/%20`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(blank.status).toBe(400);
+    expect(await blank.json()).toEqual({ error: "jobId required" });
+  });
+
+  it("download falls back to octet-stream and export.bin when job meta is sparse", async () => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: {
+        filename: null,
+        result_json: { request: { kind: "attendees_filtered", format: "csv", filters: {} } },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
+    expect(res.headers.get("Content-Disposition")).toMatch(/filename="export\.bin"/);
+  });
+
+  it("treats succeeded jobs without a storage key and array result_json as not ready / sparse meta", async () => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: { storage_key: null },
+    });
+    const noKey = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(noKey.status).toBe(404);
+    expect(await noKey.json()).toEqual({ error: "not_ready" });
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: {
+        storage_key: job.storage_key,
+        filename: null,
+        result_json: [],
+      },
+    });
+    const arrayMeta = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(arrayMeta.status).toBe(200);
+    expect(arrayMeta.headers.get("Content-Type")).toBe("application/octet-stream");
+  });
+});
+
 describe("GET /api/admin/events/:eventId/attendees/export", () => {
   beforeEach(() => {
     rateLimitStore.reset();
