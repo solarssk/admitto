@@ -9,7 +9,6 @@ import {
   Input,
   ModalBackdrop,
   PageHeader,
-  Select,
   ticketTypeChartColor,
   useToast,
 } from "@admitto/ui";
@@ -51,6 +50,7 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -991,15 +991,25 @@ function ResourceModal({
         onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
         autoFocus
       />
-      <Select
-        label="Type"
-        className="overview-resource-modal__type"
-        value={form.type}
-        onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "link" | "file" }))}
-      >
-        <option value="link">Link</option>
-        <option value="file">File</option>
-      </Select>
+      <div className="at-field">
+        <label className="at-label" htmlFor="overview-resource-type">
+          Type
+        </label>
+        <SearchableSelect
+          id="overview-resource-type"
+          label="Type"
+          placeholder="Select type…"
+          searchPlaceholder="Search types…"
+          emptyLabel="No types found"
+          showLabel={false}
+          value={form.type}
+          options={[
+            { id: "link", label: "Link" },
+            { id: "file", label: "File" },
+          ]}
+          onChange={(id) => setForm((f) => ({ ...f, type: id as "link" | "file" }))}
+        />
+      </div>
       <Input
         label="URL *"
         icon={<i className="ti ti-link" aria-hidden="true" />}
