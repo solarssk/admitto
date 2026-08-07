@@ -10,6 +10,7 @@ import type { AttendeeRowDto } from "../../src/api/types.js";
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
+const fetchBulkSendStatus = vi.fn();
 const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
 const bulkRevokeCheckIn = vi.fn();
@@ -88,6 +89,7 @@ vi.mock("../../src/api/client.js", () => ({
   exportSelectedAttendees: (...args: unknown[]) => exportSelectedAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
+  fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
   bulkDeleteAttendees: (...args: unknown[]) => bulkDeleteAttendees(...args),
   bulkCheckInAttendees: (...args: unknown[]) => bulkCheckInAttendees(...args),
   bulkRevokeCheckIn: (...args: unknown[]) => bulkRevokeCheckIn(...args),
@@ -164,6 +166,13 @@ beforeEach(() => {
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
   fetchTicketTypes.mockResolvedValue([]);
   fetchEventItems.mockResolvedValue([]);
+  fetchBulkSendStatus.mockResolvedValue({
+    batchId: "batch-1",
+    total: 1,
+    queued: 0,
+    sent: 1,
+    failed: 0,
+  });
 });
 
 afterEach(() => {
@@ -244,7 +253,7 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
       });
     });
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Sending tickets to 2 attendees.", "success");
+      expect(addToast).toHaveBeenCalledWith("Queued tickets for 2 attendees.", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
   });

@@ -23,6 +23,7 @@ import {
   bulkRevokeItems,
   exportAttendees,
   exportSelectedAttendees,
+  fetchBulkSendStatus,
   fetchEventAttendees,
   fetchEventItems,
   fetchTicketTypes,
@@ -99,7 +100,7 @@ function notifyBulkSendResult(
 
   if (failed === 0) {
     const skippedNote = skipped > 0 ? ` (${skipped} skipped)` : "";
-    addToast(`Sending tickets to ${queued} ${pluralize(queued, "attendee")}${skippedNote}.`, "success");
+    addToast(`Queued tickets for ${queued} ${pluralize(queued, "attendee")}${skippedNote}.`, "success");
     return;
   }
 
@@ -113,7 +114,34 @@ function notifyBulkSendResult(
   }
 
   const skippedNote = skipped > 0 ? `; ${skipped} skipped` : "";
-  addToast(`Sent ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
+  addToast(`Queued ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
+}
+
+/** Poll batch status until the worker drains the queue, then toast the terminal counts. */
+async function pollBulkSendCompletion(
+  eventId: string,
+  batchId: string,
+  addToast: (message: string, variant?: ToastVariant) => void,
+): Promise<void> {
+  const maxAttempts = 90;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const status = await fetchBulkSendStatus(eventId, batchId);
+    if (status.queued === 0) {
+      if (status.failed === 0) {
+        addToast(
+          `Send complete: ${status.sent} ${pluralize(status.sent, "ticket")} sent.`,
+          "success",
+        );
+      } else if (status.sent === 0) {
+        addToast(`Send failed: ${status.failed} ${pluralize(status.failed, "ticket")}.`, "error");
+      } else {
+        addToast(`Send complete: ${status.sent} sent, ${status.failed} failed.`, "warning");
+      }
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  addToast("Send is still running in the background. Check Communication for status.", "info");
 }
 
 /** Standard "N checked in (M already admitted)" toast for a bulk manual check-in result —
@@ -1148,6 +1176,11 @@ export function AttendeesPage() {
       setSendTicketsOpen(false);
       notifyBulkSendResult(result, addToast);
       setReloadToken((n) => n + 1);
+      if (result.batchId && result.queued > 0) {
+        void pollBulkSendCompletion(eventId, result.batchId, addToast).catch(() => {
+          addToast("Could not refresh send status. Check Communication.", "info");
+        });
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         reportApiError(err.status);
@@ -1207,6 +1240,11 @@ export function AttendeesPage() {
       onSuccess: (result) => {
         notifyBulkSendResult(result, addToast);
         setReloadToken((n) => n + 1);
+        if (eventId && result.batchId && result.queued > 0) {
+          void pollBulkSendCompletion(eventId, result.batchId, addToast).catch(() => {
+            addToast("Could not refresh send status. Check Communication.", "info");
+          });
+        }
       },
     });
 

@@ -1,5 +1,10 @@
 export { sendTicketEmails } from "./send.js";
 export type { SendTicketEmailsOptions, MailDeliveryDeps } from "./send.js";
+export { drainPendingDeliveries, DEFAULT_MAIL_DRAIN_LIMIT } from "./drain.js";
+export type {
+  DrainPendingDeliveriesOptions,
+  DrainPendingDeliveriesResult,
+} from "./drain.js";
 export { sendTestEmail } from "./testSend.js";
 export type { SendTestEmailParams, SendTestEmailOptions } from "./testSend.js";
 export {

@@ -3,16 +3,23 @@
  *
  *   admitto worker
  *
- * Jobs (foundation): bounce ingest + retention. Mail/import/export land in stacked PRs.
+ * Jobs: mail_delivery drain, bounce ingest, retention. Import/export land in stacked PRs.
  */
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
 import {
+  InstanceUrlRequiredError,
+  purgeAuthRetention,
+  purgeSecurityAuditLog,
+  resolveInstanceBaseUrl,
+  resolveSecurityAuditLogRetentionDays,
+} from "@admitto/auth";
+import {
+  drainPendingDeliveries,
   ingestBounces,
   nullifyDeliverySnapshots,
   parseBounceIngestTickSeconds,
 } from "@admitto/mail-delivery";
-import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "@admitto/auth";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
 import {
@@ -49,6 +56,41 @@ async function runJobSafely(job: string, run: () => Promise<void>): Promise<void
     await run();
   } catch (err) {
     log(job, `FAILED ${errMessage(err)}`);
+  }
+}
+
+async function resolveWorkerBaseUrl(db: PrismaClient): Promise<string | undefined> {
+  try {
+    return await resolveInstanceBaseUrl(db, process.env);
+  } catch (err) {
+    if (err instanceof InstanceUrlRequiredError) {
+      log("mail_delivery", "skip drain: instance URL not configured");
+      return undefined;
+    }
+    throw err;
+  }
+}
+
+async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+  const acquired = await locks.tryAcquire("mail_delivery");
+  if (!acquired) {
+    log("mail_delivery", "skipped (lock held)");
+    return;
+  }
+  try {
+    const baseUrl = await resolveWorkerBaseUrl(db);
+    if (!baseUrl) return;
+    const result = await drainPendingDeliveries(db, process.env, {}, { baseUrl });
+    if (result.claimed === 0) {
+      log("mail_delivery", "idle");
+      return;
+    }
+    log(
+      "mail_delivery",
+      `ok claimed=${result.claimed} sent=${result.sent} failed=${result.failed} skipped=${result.skipped}`,
+    );
+  } finally {
+    await locks.release("mail_delivery");
   }
 }
 
@@ -103,6 +145,7 @@ async function runWorkerTick(
     await touchWorkerHeartbeat(db);
     log("heartbeat", "ok");
   });
+  await runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks));
   await runJobSafely("bounce", () => runBounceJob(db, locks));
 
   if (!retentionIsDue(schedule, Date.now())) return;
@@ -145,7 +188,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
 
   log(
     "heartbeat",
-    `starting tick=${tickSeconds}s host=${osHostname()} (bounce + retention; mail/import/export later)`,
+    `starting tick=${tickSeconds}s host=${osHostname()} (mail_delivery + bounce + retention)`,
   );
 
   try {

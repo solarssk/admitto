@@ -51,6 +51,11 @@ export interface SendTicketEmailsOptions {
   /** Triggering admin's user id and session id at send time, when known. */
   actorUserId?: string;
   sessionId?: string;
+  /**
+   * When true, deliver via the provider in-process (legacy/tests).
+   * Default false: claim+render only; Admitto worker drains `queued` rows.
+   */
+  deliverImmediately?: boolean;
 }
 
 /** Optional test hooks for `sendTicketEmails()` (e.g. export_only sink). */
@@ -355,7 +360,8 @@ export async function deliverPendingBatch(
 }
 
 /**
- * Issue ticket emails for an event (initial or resend).
+ * Issue / claim ticket emails for an event (initial or resend).
+ * By default only enqueues `EmailDelivery` rows (`queued`); the Admitto worker drains them.
  * Skips individual attendees on not_issuable, token/link build errors, or dedup — does not abort the batch.
  */
 export async function sendTicketEmails(
@@ -368,6 +374,7 @@ export async function sendTicketEmails(
   const purpose = options.purpose ?? "initial";
   const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
   const batchId = randomUUID();
+  const deliverImmediately = options.deliverImmediately === true;
 
   if (options.recipientEmail && options.attendeeIds?.length !== 1) {
     throw new Error("recipientEmail requires exactly one attendeeId");
@@ -395,6 +402,7 @@ export async function sendTicketEmails(
     },
   });
 
+  // Provider is needed for claim `provider` snapshot even when we only enqueue.
   const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
   const pending: PendingSend[] = [];
   const skipped: SendTicketEmailsResult["skipped"] = [];
@@ -423,15 +431,18 @@ export async function sendTicketEmails(
       }
     }
 
-    if (pending.length > 0) {
+    if (deliverImmediately && pending.length > 0) {
       sentCount = await deliverPendingBatch(mailer, pending, prisma);
     }
   } finally {
     await mailer.close();
   }
 
+  const queuedCount = deliverImmediately ? sentCount : pending.length;
+
   return {
     batchId,
+    queued: queuedCount,
     sent: sentCount,
     skipped,
     deliveries: pending.map((item) => ({
