@@ -267,4 +267,40 @@ describe("drainPendingDeliveries", () => {
     );
     expect(drain.sent).toBe(1);
   });
+
+  it("prefers queued rows over backing-off failed rows when filling the claim window", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
+    await enqueueOne("att-drain-1");
+    await enqueueOne("att-drain-2");
+    const rows = await prisma.emailDelivery.findMany({
+      where: { event_id: EVENT_ID, status: "queued" },
+      orderBy: { queued_at: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    const now = Date.UTC(2026, 7, 7, 12, 0, 0);
+    // Older failed row still inside backoff — must not displace the fresh queued row.
+    await prisma.emailDelivery.update({
+      where: { id: rows[0]!.id },
+      data: {
+        status: "failed",
+        retryable: true,
+        attempts: 2,
+        attempted_at: new Date(now - 1_000),
+        queued_at: new Date(now - 60_000),
+        error: "soft fail",
+      },
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, limit: 1, baseUrl: "https://tickets.example.com", nowMs: now },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0 });
+    const sent = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: rows[1]!.id } });
+    expect(sent.status).toBe("accepted");
+    const stillFailed = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: rows[0]!.id } });
+    expect(stillFailed.status).toBe("failed");
+  });
 });

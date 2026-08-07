@@ -4,9 +4,9 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { setMailSettings } from "@admitto/mailer-config";
+import { resolveMailConfig, setMailSettings } from "@admitto/mailer-config";
 import { generateToken } from "@admitto/tickets";
-import { sendBatch } from "@admitto/mailer";
+import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveAttendeeMailLinks } from "../src/links.js";
 import { drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
@@ -16,6 +16,15 @@ vi.mock("@admitto/mailer", async (importOriginal) => {
   return {
     ...actual,
     sendBatch: vi.fn(actual.sendBatch),
+    createMailer: vi.fn(actual.createMailer),
+  };
+});
+
+vi.mock("@admitto/mailer-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/mailer-config")>();
+  return {
+    ...actual,
+    resolveMailConfig: vi.fn(actual.resolveMailConfig),
   };
 });
 
@@ -70,6 +79,22 @@ beforeEach(() => {
     async (...args) => {
       const actual = await vi.importActual<typeof import("@admitto/mailer")>("@admitto/mailer");
       return actual.sendBatch(...args);
+    },
+  );
+  vi.mocked(createMailer).mockReset();
+  vi.mocked(createMailer).mockImplementation(
+    async (...args) => {
+      const actual = await vi.importActual<typeof import("@admitto/mailer")>("@admitto/mailer");
+      return actual.createMailer(...args);
+    },
+  );
+  vi.mocked(resolveMailConfig).mockReset();
+  vi.mocked(resolveMailConfig).mockImplementation(
+    async (...args) => {
+      const actual = await vi.importActual<typeof import("@admitto/mailer-config")>(
+        "@admitto/mailer-config",
+      );
+      return actual.resolveMailConfig(...args);
     },
   );
   vi.mocked(resolveAttendeeMailLinks).mockReset();
@@ -200,6 +225,38 @@ describe("drainPendingDeliveries branch coverage", () => {
     expect(after.status).toBe("failed");
   });
 
+  it("sets retryable false when a rejected provider result exhausts attempts", async () => {
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    await prisma.emailDelivery.update({
+      where: { id: row.id },
+      data: {
+        status: "failed",
+        retryable: true,
+        attempts: 7,
+        attempted_at: new Date("2020-01-01T00:00:00.000Z"),
+        error: "soft fail",
+      },
+    });
+    vi.mocked(sendBatch).mockResolvedValueOnce({
+      total: 1,
+      sent: 0,
+      failed: 1,
+      results: [{ status: "rejected", provider: "export_only", error: "bounce" }],
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.attempts).toBe(8);
+    expect(after.retryable).toBe(false);
+  });
+
   it("skips when claim returns a row with a null snapshot field", async () => {
     await enqueueOne();
     const findMany = vi.spyOn(prisma.emailDelivery, "findMany").mockResolvedValueOnce([
@@ -226,5 +283,87 @@ describe("drainPendingDeliveries branch coverage", () => {
     } finally {
       findMany.mockRestore();
     }
+  });
+
+  it("marks claimed rows failed when mailer setup throws and continues other events", async () => {
+    const EVENT_B = "evt-mail-drain-branches-b";
+    await prisma.event.upsert({
+      where: { id: EVENT_B },
+      create: {
+        id: EVENT_B,
+        organization_id: "org-drain-b",
+        title: "Drain Branches B",
+        slug: "drain-branches-b",
+        date: new Date("2026-09-02"),
+      },
+      update: {},
+    });
+    await prisma.attendee.upsert({
+      where: { id: "att-drain-branch-b" },
+      create: {
+        id: "att-drain-branch-b",
+        event_id: EVENT_B,
+        email: "branch-b@example.com",
+        name: "Branch B",
+        public_ref: generateToken(),
+      },
+      update: {},
+    });
+
+    await prisma.emailDelivery.deleteMany({ where: { event_id: { in: [EVENT_ID, EVENT_B] } } });
+    await sendTicketEmails(
+      EVENT_ID,
+      { attendeeIds: ["att-drain-branch"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+    );
+    await sendTicketEmails(
+      EVENT_B,
+      { attendeeIds: ["att-drain-branch-b"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+    );
+
+    vi.mocked(resolveMailConfig).mockImplementation(async (eventId, ...rest) => {
+      if (eventId === EVENT_ID) throw new Error("bad transport config");
+      const actual = await vi.importActual<typeof import("@admitto/mailer-config")>(
+        "@admitto/mailer-config",
+      );
+      return actual.resolveMailConfig(eventId, ...rest);
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain.claimed).toBe(2);
+    expect(drain.failed).toBe(1);
+    expect(drain.sent).toBe(1);
+
+    const bad = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    expect(bad.status).toBe("failed");
+    expect(bad.attempts).toBeGreaterThanOrEqual(1);
+    const ok = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_B } });
+    expect(ok.status).toBe("accepted");
+  });
+
+  it("marks claimed rows failed when createMailer throws", async () => {
+    await enqueueOne();
+    vi.mocked(createMailer).mockRejectedValueOnce(new Error("mailer boom"));
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    expect(row.status).toBe("failed");
+    expect(row.error).toContain("mailer boom");
   });
 });

@@ -68,6 +68,29 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   };
 });
 
+const { pollBulkSendCompletion, setPollBulkSendCompletionActual, getPollBulkSendCompletionActual } =
+  vi.hoisted(() => {
+    let actual: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion;
+    const pollBulkSendCompletion = vi.fn();
+    return {
+      pollBulkSendCompletion,
+      setPollBulkSendCompletionActual: (
+        fn: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion,
+      ) => {
+        actual = fn;
+      },
+      getPollBulkSendCompletionActual: () => actual,
+    };
+  });
+
+vi.mock("../../src/attendees/pollBulkSendCompletion.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/attendees/pollBulkSendCompletion.js")>();
+  setPollBulkSendCompletionActual(mod.pollBulkSendCompletion);
+  return {
+    pollBulkSendCompletion: (...args: unknown[]) => pollBulkSendCompletion(...args),
+  };
+});
+
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
     status: number;
@@ -173,6 +196,9 @@ beforeEach(() => {
     sent: 1,
     failed: 0,
   });
+  pollBulkSendCompletion.mockImplementation((...args: Parameters<ReturnType<typeof getPollBulkSendCompletionActual>>) =>
+    getPollBulkSendCompletionActual()(...args),
+  );
 });
 
 afterEach(() => {
@@ -277,6 +303,91 @@ describe("AttendeesPage row selection + bulk bar (#355)", () => {
       expect(addToast).toHaveBeenCalledWith(
         "Could not refresh send status. Check Communication.",
         "info",
+      );
+    });
+  });
+
+  it("does not toast poll errors after selected-send polling was aborted on unmount", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA], total: 1, page: 1, pageSize: 25 });
+    sendEventBulk.mockResolvedValue({ batchId: "batch-abort", queued: 1, skipped: 0, failed: 0 });
+    pollBulkSendCompletion.mockImplementationOnce(async (_eventId, _batchId, _addToast, options) => {
+      const signal = options?.signal;
+      await new Promise<void>((_resolve, reject) => {
+        const fail = () => reject(new Error("stale poll"));
+        if (signal?.aborted) {
+          fail();
+          return;
+        }
+        signal?.addEventListener("abort", fail, { once: true });
+      });
+    });
+
+    const { unmount } = renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(pollBulkSendCompletion).toHaveBeenCalled();
+    });
+    unmount();
+
+    await waitFor(() => {
+      expect(addToast).not.toHaveBeenCalledWith(
+        "Could not refresh send status. Check Communication.",
+        "info",
+      );
+    });
+  });
+
+  it("aborts an in-flight selected-send poll when another selected send starts", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB], total: 2, page: 1, pageSize: 25 });
+    sendEventBulk
+      .mockResolvedValueOnce({ batchId: "batch-a", queued: 1, skipped: 0, failed: 0 })
+      .mockResolvedValueOnce({ batchId: "batch-b", queued: 1, skipped: 0, failed: 0 });
+
+    const firstSignalRef: { current?: AbortSignal } = {};
+    pollBulkSendCompletion.mockImplementation(async (_eventId, batchId, _addToast, options) => {
+      if (batchId === "batch-a") {
+        firstSignalRef.current = options?.signal;
+        await new Promise<void>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+        return;
+      }
+      return getPollBulkSendCompletionActual()(
+        _eventId,
+        batchId,
+        _addToast,
+        options,
+      );
+    });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(firstSignalRef.current).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "Send tickets" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Send tickets?" })).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(firstSignalRef.current?.aborted).toBe(true);
+      expect(pollBulkSendCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "batch-b",
+        addToast,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
     });
   });
