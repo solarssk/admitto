@@ -11,7 +11,7 @@
     "test": "npm run test --workspaces --if-present",
     "precoverage": "npm run build",
     "coverage": "npm run coverage --workspaces --if-present",
-    "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/location && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/storage && npm run build -w @admitto/import && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/ui && npm run build -w @admitto/admin && npm run build -w @admitto/web && npm run build -w @admitto/cli",
+    "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/location && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/storage && npm run build -w @admitto/import && npm run build -w @admitto/ui && npm run build -w @admitto/admin && npm run build -w @admitto/web && npm run build -w @admitto/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint 'packages/*/src/**/*.{ts,tsx}' 'apps/*/src/**/*.{ts,tsx}'",
     "db:migrate": "npm run db:migrate -w @admitto/db",
