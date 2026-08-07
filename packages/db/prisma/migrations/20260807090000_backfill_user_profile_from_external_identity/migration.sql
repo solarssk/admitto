@@ -8,6 +8,20 @@
 -- repeating db:migrate backfill script) so it never re-fires on a later deploy and clobbers a
 -- genuine future manual edit made via the Edit user modal.
 --
+-- A raw value mismatch alone can't tell a genuine pre-existing manual edit (made before this
+-- deploy, so ExternalIdentity was never touched to match it) apart from plain staleness - both
+-- look identical as "User differs from ExternalIdentity" with no other data available. Real
+-- provenance for that already exists: apps/web/src/admin/users-routes.ts's PATCH /users/:id
+-- handler writes an AdminAuditLog row (action_type user_profile_updated / user_email_changed,
+-- metadata.userId = the target) on every save of the Edit user modal - the modal always resends
+-- display_name/email/phone in that save, so any such row is real historical evidence a superadmin
+-- has touched this account's profile at least once, even for a save that didn't specifically
+-- change display_name/phone. Excluding those users entirely is deliberately conservative: some
+-- stale-but-never-actually-manually-edited accounts stay unrepaired by this one-time backfill
+-- (they're still safe, and repair correctly on their own from here via the normal login sync -
+-- once the account's own future login next changes at the IdP), but no genuine manual edit is
+-- ever at risk of being silently overwritten.
+--
 -- Picks, per user, the most recently active linked identity (highest last_login_at) as the
 -- backfill source - a user can have more than one ExternalIdentity row (multiple linked
 -- providers).
@@ -15,22 +29,36 @@ WITH latest_identity AS (
   SELECT DISTINCT ON (user_id) user_id, name, phone
   FROM "ExternalIdentity"
   ORDER BY user_id, last_login_at DESC NULLS LAST, linked_at DESC
+),
+manually_touched_users AS (
+  SELECT DISTINCT (metadata ->> 'userId') AS user_id
+  FROM "AdminAuditLog"
+  WHERE action_type IN ('user_profile_updated', 'user_email_changed')
+    AND metadata ->> 'userId' IS NOT NULL
 )
 UPDATE "User" u
 SET display_name = latest_identity.name
 FROM latest_identity
 WHERE latest_identity.user_id = u.id
   AND latest_identity.name IS NOT NULL
-  AND u.display_name IS DISTINCT FROM latest_identity.name;
+  AND u.display_name IS DISTINCT FROM latest_identity.name
+  AND NOT EXISTS (SELECT 1 FROM manually_touched_users m WHERE m.user_id = u.id);
 
 WITH latest_identity AS (
   SELECT DISTINCT ON (user_id) user_id, name, phone
   FROM "ExternalIdentity"
   ORDER BY user_id, last_login_at DESC NULLS LAST, linked_at DESC
+),
+manually_touched_users AS (
+  SELECT DISTINCT (metadata ->> 'userId') AS user_id
+  FROM "AdminAuditLog"
+  WHERE action_type IN ('user_profile_updated', 'user_email_changed')
+    AND metadata ->> 'userId' IS NOT NULL
 )
 UPDATE "User" u
 SET phone_number = latest_identity.phone
 FROM latest_identity
 WHERE latest_identity.user_id = u.id
   AND latest_identity.phone IS NOT NULL
-  AND u.phone_number IS DISTINCT FROM latest_identity.phone;
+  AND u.phone_number IS DISTINCT FROM latest_identity.phone
+  AND NOT EXISTS (SELECT 1 FROM manually_touched_users m WHERE m.user_id = u.id);
