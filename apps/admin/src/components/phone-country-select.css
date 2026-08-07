@@ -42,11 +42,11 @@
 }
 
 .phone-country-select__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  /* position/top/left/width come from useDropdownMenu's own `panelStyle` (position: fixed,
+     computed from the trigger's getBoundingClientRect()) - not CSS - so the panel floats over
+     a scrolling modal body instead of being clipped by (and inflating the scroll height of) its
+     `overflow: auto` ancestor. See searchable-select.css's own panel rule for the full story. */
   z-index: var(--z-dropdown);
-  width: max(100%, 260px);
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -57,12 +57,10 @@
   gap: var(--space-2);
 }
 
-/* Anchored above the trigger instead of below, with the panel's child order reversed (search
-   box, then list) - see .searchable-select__panel--up's own comment (searchable-select.css);
-   same useDropdownMenu-driven decision. */
+/* Anchored above the trigger, with the panel's child order reversed (search box, then list) -
+   see .searchable-select__panel--up's own comment (searchable-select.css); same
+   useDropdownMenu-driven decision. */
 .phone-country-select__panel--up {
-  top: auto;
-  bottom: calc(100% + 4px);
   flex-direction: column-reverse;
 }
 

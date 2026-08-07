@@ -81,6 +81,21 @@ export class LocalStorageAdapter implements StorageAdapter {
     return { url: `/uploads/${key}`, key };
   }
 
+  async get(key: string): Promise<Buffer> {
+    const abs = absolutePathUnderUploadRoot(key, this.env);
+    try {
+      // Path confined by absolutePathUnderUploadRoot.
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      return await fsp.readFile(abs);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        throw new StoragePathError("not_found");
+      }
+      throw err;
+    }
+  }
+
   async delete(key: string): Promise<{ deleted: boolean }> {
     const abs = absolutePathUnderUploadRoot(key, this.env);
     try {

@@ -750,9 +750,8 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send email" }));
     const dialog = await screen.findByRole("dialog", { name: "Send email" });
 
-    fireEvent.change(within(dialog).getByLabelText("Recipients"), {
-      target: { value: "ticket_type" },
-    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Recipients,/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "By ticket type" }));
 
     expect(await within(dialog).findByText("Failed to load ticket types.")).toBeTruthy();
 
@@ -760,7 +759,8 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
 
     await waitFor(() => expect(within(dialog).queryByText("Failed to load ticket types.")).toBeNull());
-    expect(within(dialog).getByText("VIP")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Ticket type,/ }));
+    expect(within(dialog).getByRole("button", { name: "VIP" })).toBeTruthy();
   });
 
   it("sends by ticket type, populating the Select from the catalog and using the picked key as the filter value (batch 04 / #351)", async () => {
@@ -775,11 +775,11 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send email" }));
     const dialog = await screen.findByRole("dialog", { name: "Send email" });
 
-    fireEvent.change(within(dialog).getByLabelText("Recipients"), {
-      target: { value: "ticket_type" },
-    });
-    expect(await within(dialog).findByRole("option", { name: "VIP" })).toBeTruthy();
-    fireEvent.change(within(dialog).getByLabelText("Ticket type"), { target: { value: "vip" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Recipients,/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "By ticket type" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Ticket type,/ }));
+    expect(await within(dialog).findByRole("button", { name: "VIP" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "VIP" }));
 
     fireEvent.click(
       Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Send")!,

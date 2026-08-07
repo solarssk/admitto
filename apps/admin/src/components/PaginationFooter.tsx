@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Button } from "@admitto/ui";
+import { SearchableSelect } from "./SearchableSelect.js";
 
 export type PaginationFooterProps = {
   idPrefix: string;
@@ -53,19 +54,17 @@ export function PaginationFooter({
         </span>
         <div className="audit-log-pagesize">
           <label htmlFor={`${idPrefix}-pagesize-select`}>Rows per page</label>
-          <select
+          <SearchableSelect
             id={`${idPrefix}-pagesize-select`}
-            name={`${idPrefix}-pagesize-select`}
-            className="at-select audit-log-pagesize-select"
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          >
-            {pageSizeOptions.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+            label="Rows per page"
+            placeholder="Rows per page"
+            searchPlaceholder="Search…"
+            emptyLabel="No options found"
+            showLabel={false}
+            value={String(pageSize)}
+            options={pageSizeOptions.map((size) => ({ id: String(size), label: String(size) }))}
+            onChange={(id) => onPageSizeChange(Number(id))}
+          />
         </div>
       </div>
       <div className="audit-log-footer__pager">

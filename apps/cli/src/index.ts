@@ -15,6 +15,7 @@ import {
 import { runSessionsPurgeAll, runSessionsRevokeUser } from "./commands/sessions.js";
 import { runRetention } from "./commands/retention.js";
 import { runStorageGc } from "./commands/storage.js";
+import { runWorker } from "./commands/worker.js";
 
 function wantsHelp(argv: string[]): boolean {
   return argv.includes("--help") || argv.includes("-h");
@@ -25,12 +26,18 @@ function wantsHelp(argv: string[]): boolean {
  * `undefined` when the combination is not recognized. `sessions purge`
  * additionally requires the `--all` flag, so it is checked separately
  * before falling back to the plain namespace:command lookup table.
+ *
+ * Top-level `worker` (no subcommand) starts the background loop (ADR 0042).
  */
 function resolveCommandHandler(
   namespace: string | undefined,
   command: string | undefined,
   argv: string[],
 ): (() => Promise<void>) | undefined {
+  if (namespace === "worker" && (command === undefined || command === "run")) {
+    return () => runWorker(prisma);
+  }
+
   if (namespace === "sessions" && command === "purge" && hasFlag("all", argv)) {
     return () => runSessionsPurgeAll(prisma);
   }

@@ -4,16 +4,16 @@ import type { PrismaClient } from "@admitto/db";
 import {
   parseAttendees,
   commitImport,
+  dryRunImportCounts,
   loadImportTicketTypes,
   type AttendeeRow,
   type ImportAttributeField,
   type SkippedRow,
 } from "@admitto/import";
+import { getDefaultStorage } from "@admitto/storage";
 import {
   loadEventCustomDataFields,
   filterCustomDataAttributeFields,
-  writeBulkActionLog,
-  acquireEventTicketTypesLock,
 } from "@admitto/tickets";
 import { xlsxBufferToCsv, ImportRowLimitError, ImportZipBombError, MAX_CSV_CHARS, MAX_IMPORT_ROWS } from "./xlsx-to-csv.js";
 import { logger } from "../logger.js";
@@ -30,10 +30,6 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 /** Maximum request body size for import routes (file cap plus multipart overhead). */
 export const MAX_IMPORT_BODY_BYTES = MAX_FILE_BYTES + MULTIPART_OVERHEAD_BYTES;
-
-/** Import commit: lock wait + row writes share this budget (queued concurrent commits). */
-const IMPORT_TX_TIMEOUT_MS = 120_000;
-const IMPORT_TX_MAX_WAIT_MS = 30_000;
 
 export type ImportInvalidRowDto = {
   rowIndex: number;
@@ -89,8 +85,9 @@ export type ImportCommitDto = {
   toSkip: number;
   created: number;
   updated: number;
-  /** Capped at ROW_DETAIL_LIMIT; toSkip above is the true total. */
+  /** Capped at ROW_DETAIL_LIMIT; skippedCount is the true committed total. */
   skipped: Array<{ email: string; reason: string }>;
+  skippedCount: number;
   /**
    * Rows that failed the commit-time re-parse (e.g. a ticket type deleted from the catalog
    * between preview and commit) and were therefore never passed into commitImport at all - they
@@ -100,6 +97,22 @@ export type ImportCommitDto = {
    */
   invalidRows: ImportInvalidRowDto[];
   invalidCount: number;
+};
+
+/** 202 response after enqueueing an import commit for the Admitto worker. */
+export type ImportCommitQueuedDto = {
+  jobId: string;
+  status: "pending";
+  importId: string;
+};
+
+/** Poll payload for GET …/import/jobs/:jobId. */
+export type ImportJobStatusDto = {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  importId: string | null;
+  error: string | null;
+  result: ImportCommitDto | null;
 };
 
 type ImportFileType = "csv" | "xlsx";
@@ -473,7 +486,7 @@ export async function handleImportPreview(c: Context, db: PrismaClient): Promise
   }
 }
 
-/** POST /api/admin/events/:eventId/import/commit */
+/** POST /api/admin/events/:eventId/import/commit — stage file + enqueue AdminJob (202). */
 export async function handleImportCommit(c: Context, db: PrismaClient): Promise<Response> {
   const importId = randomUUID();
   const startTime = Date.now();
@@ -491,164 +504,122 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
     const upload = await parseImportUpload(c, uploadCtx);
     if (upload instanceof Response) return upload;
 
-    const attributeFields = await loadImportAttributeFields(db, eventId);
-    const ticketTypes = await loadImportTicketTypes(db, eventId);
-    const parsed = parseAttendees(upload.csv, { attributeFields, ticketTypes });
+    const dry = await dryRunImportCounts(db, eventId, upload.csv, upload.overwrite);
+    const capacityResult = await assertEventCapacityForIncoming(c, db, eventId, dry.toCreate);
+    if (capacityResult instanceof Response) return capacityResult;
+    const forceCapacity = Boolean(capacityResult && "forced" in capacityResult);
 
-    // Rows the transaction's lock-time catalog recheck below drops (a type deleted in the
-    // narrow window between the pre-transaction snapshot above and the lock actually being
-    // held) - merged into the same invalidRows reporting as the commit-time parse's own
-    // invalid rows once the transaction returns.
-    let lockInvalidatedRows: { rowIndex: number; reason: string }[] = [];
+    const event = await db.event.findUniqueOrThrow({
+      where: { id: eventId },
+      select: { organization_id: true },
+    });
+    const storage = getDefaultStorage();
+    const staged = await storage.put(Buffer.from(upload.csv, "utf8"), {
+      orgId: event.organization_id,
+      eventId,
+      scope: "event",
+      ext: ".csv",
+    });
 
-    const summary = await db.$transaction(
-      async (tx) => {
-        // Locked against a concurrent ticket-type DELETE for the whole commit (TOCTOU fix, code
-        // review): the `ticketTypes` catalog snapshot loaded above, before this transaction
-        // opened, stays valid once this lock is held, since a delete's own in-use recheck can no
-        // longer slip in and remove a type this batch is about to write - closing the same gap
-        // as attendees-api-routes.ts's create/patch handlers, which take this lock for the same
-        // reason. Acquired before the capacity lock so every writer that needs both locks takes
-        // them in the same order. Only taken when the import actually validates against a
-        // catalog (ticketTypes is always defined here, but guarded the same way the option
-        // itself is documented, in case a future caller opts out).
-        if (ticketTypes) {
-          await acquireEventTicketTypesLock(tx, eventId);
-        }
-
-        // The pre-transaction snapshot above can still be stale for the handful of rows whose
-        // type was deleted in the window between that read and this lock actually being held -
-        // reread the catalog now, under the lock, and drop any row whose (already-canonicalized)
-        // key no longer exists instead of writing an attendee that references a gone type (Codex
-        // review). Rows dry-run/committed below use this rechecked set, not parsed.validRows.
-        let rowsToCommit = parsed.validRows;
-        if (ticketTypes) {
-          const freshKeys = new Set((await loadImportTicketTypes(tx, eventId)).map((t) => t.key));
-          const stillValid: AttendeeRow[] = [];
-          for (const row of parsed.validRows) {
-            if (row.ticket_type !== undefined && !freshKeys.has(row.ticket_type)) {
-              lockInvalidatedRows.push({
-                rowIndex: row.rowIndex,
-                reason: `Unknown ticket type: "${row.ticket_type}"`,
-              });
-            } else {
-              stillValid.push(row);
-            }
-          }
-          rowsToCommit = stillValid;
-        }
-
-        const dry = await commitImport(
-          eventId,
-          rowsToCommit,
-          {
-            dryRun: true,
-            overwrite: upload.overwrite,
-            ownedTransaction: true,
-            attributeFields,
-            ticketTypes,
-          },
-          tx,
-        );
-
-        const capacityResult = await assertEventCapacityForIncoming(
-          c,
-          tx,
-          eventId,
-          dry.toCreate,
-        );
-        if (capacityResult instanceof Response) {
-          throw capacityResult;
-        }
-        const capacityForced =
-          capacityResult && "forced" in capacityResult ? capacityResult : undefined;
-
-        const result = await commitImport(
-          eventId,
-          rowsToCommit,
-          {
-            dryRun: false,
-            overwrite: upload.overwrite,
-            ownedTransaction: true,
-            attributeFields,
-            ticketTypes,
-            timezone: resolveClientTimezone(c) ?? undefined,
-          },
-          tx,
-        );
-
-        await writeBulkActionLog(tx, {
+    const audit = adminAuditFromContext(c);
+    let job;
+    try {
+      job = await db.adminJob.create({
+        data: {
+          type: "import_commit",
+          status: "pending",
+          organization_id: event.organization_id,
           event_id: eventId,
-          action_type: "attendees_imported",
-          audit: adminAuditFromContext(c),
-          metadata: {
-            created: result.created,
-            updated: result.updated,
-            skipped: result.skipped.length,
-            filename: upload.filename,
-            ...(capacityForced
-              ? {
-                  forced: true,
-                  capacity: capacityForced.capacity,
-                  current: capacityForced.current,
-                }
-              : {}),
-          },
-        });
+          actor_user_id: audit.operator ?? null,
+          session_id: audit.sessionId ?? null,
+          client_timezone: resolveClientTimezone(c),
+          storage_key: staged.key,
+          filename: upload.filename,
+          overwrite: upload.overwrite,
+          force_capacity: forceCapacity,
+          import_id: importId,
+        },
+      });
+    } catch (createErr) {
+      try {
+        await storage.delete(staged.key);
+      } catch {
+        /* best-effort orphan cleanup */
+      }
+      throw createErr;
+    }
 
-        return result;
-      },
-      { timeout: IMPORT_TX_TIMEOUT_MS, maxWait: IMPORT_TX_MAX_WAIT_MS },
-    );
-
-    const allInvalidRows = [...parsed.invalidRows, ...lockInvalidatedRows];
-
-    logger.info("Import commit complete", {
+    logger.info("Import commit queued", {
       importId,
       eventId,
-      step: "commit",
+      jobId: job.id,
+      step: "enqueue",
       filename: upload.filename,
       fileSizeBytes: upload.sizeBytes,
       fileType: upload.ext,
-      created: summary.created,
-      updated: summary.updated,
-      skipped: summary.skipped.length,
-      // Rows the commit-time re-parse, or the lock-time catalog recheck, dropped before they
-      // ever reached commitImport (e.g. a ticket type deleted from the catalog between preview
-      // and commit) - same aggregation shape as the preview endpoint's logging above, for
-      // observability.
-      invalidCount: allInvalidRows.length,
-      invalidRows: allInvalidRows.map((r) => r.rowIndex),
-      invalidByType: groupInvalidByType(allInvalidRows),
-      overwrite: upload.overwrite,
+      toCreate: dry.toCreate,
+      toUpdate: dry.toUpdate,
+      toSkip: dry.toSkip,
       durationMs: Date.now() - startTime,
     });
 
-    const body: ImportCommitDto = {
-      importId,
-      toCreate: summary.toCreate,
-      toUpdate: summary.toUpdate,
-      toSkip: summary.toSkip,
-      created: summary.created,
-      updated: summary.updated,
-      skipped: skippedRowsForResponse(summary.skipped),
-      invalidRows: invalidRowsForResponse(allInvalidRows),
-      invalidCount: allInvalidRows.length,
-    };
-
-    return c.json(body);
+    return c.json(
+      {
+        jobId: job.id,
+        status: "pending",
+        importId,
+      } satisfies ImportCommitQueuedDto,
+      202,
+    );
   } catch (err) {
-    if (err instanceof Response) return err;
-    logger.error("Import commit failed", {
+    logger.error("Import commit enqueue failed", {
       importId,
       eventId,
-      step: "commit",
+      step: "enqueue",
       error: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - startTime,
     });
     return c.json({ error: "server error", importId }, 500);
   }
 }
+
+/** GET /api/admin/events/:eventId/import/jobs/:jobId */
+export async function handleGetImportJob(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const jobId = c.req.param("jobId")?.trim();
+  if (!jobId) return c.json({ error: "jobId required" }, 400);
+
+  const job = await db.adminJob.findFirst({
+    where: { id: jobId, event_id: eventId, type: "import_commit" },
+  });
+  if (!job) return c.json({ error: "not_found" }, 404);
+
+  let result: ImportCommitDto | null = null;
+  if (
+    job.status === "succeeded" &&
+    job.result_json &&
+    typeof job.result_json === "object" &&
+    !Array.isArray(job.result_json)
+  ) {
+    result = job.result_json as ImportCommitDto;
+  }
+
+  c.header("Cache-Control", "no-store");
+  return c.json({
+    jobId: job.id,
+    status: job.status as ImportJobStatusDto["status"],
+    importId: job.import_id,
+    error: job.error,
+    result,
+  } satisfies ImportJobStatusDto);
+}
+
 
 
 const IMPORT_TEMPLATE_BASE_COLUMNS = [

@@ -386,8 +386,10 @@ export interface ImportCommitResponse {
   toSkip: number;
   created: number;
   updated: number;
-  /** Capped server-side; toSkip above is the true total. */
+  /** Capped server-side; skippedCount is the true committed total when present. */
   skipped: ImportSkippedRow[];
+  /** Uncapped committed skip total (preferred over skipped.length). */
+  skippedCount?: number;
   /** Rows dropped by the commit-time re-parse before ever reaching the write step (e.g. a ticket
    * type deleted from the catalog between preview and commit) - absent from created/updated/skipped.
    * Capped server-side; invalidCount is the true total. */
@@ -395,12 +397,30 @@ export interface ImportCommitResponse {
   invalidCount: number;
 }
 
+/** 202 enqueue response from POST …/import/commit. */
+export interface ImportCommitQueuedResponse {
+  jobId: string;
+  status: "pending";
+  importId: string;
+}
+
+/** Poll payload from GET …/import/jobs/:jobId. */
+export interface ImportJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  importId: string | null;
+  error: string | null;
+  result: ImportCommitResponse | null;
+}
+
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
 export interface BulkResendResponse {
-  /** Deliveries accepted by the mail provider. */
+  /** Batch id for status polling when rows were queued. */
+  batchId: string | null;
+  /** Delivery rows left in `queued` for the worker to drain. */
   queued: number;
   skipped: number;
-  /** Delivery rows created but not accepted by the provider. */
+  /** Always 0 at enqueue time; terminal failures appear on status poll. */
   failed: number;
 }
 
@@ -1317,6 +1337,7 @@ export interface AccountRoleDto {
   role: string;
   scope_type: string;
   scope_id: string | null;
+  scope_label: string | null;
   is_oidc: boolean;
 }
 
@@ -1324,6 +1345,18 @@ export interface AccountMfaMethodDto {
   type: string;
   confirmed: boolean;
   last_used_at: string | null;
+}
+
+export interface AccountExternalIdentityDto {
+  id: string;
+  provider_id: string;
+  provider_display_name: string;
+  linked_at: string;
+}
+
+export interface AccountAvailableIdentityProviderDto {
+  id: string;
+  display_name: string;
 }
 
 export interface AccountDto {
@@ -1334,19 +1367,31 @@ export interface AccountDto {
   is_active: boolean;
   must_change_password: boolean;
   has_local_password: boolean;
+  phone_country_code: string | null;
+  phone_number: string | null;
   roles: AccountRoleDto[];
   mfa_methods: AccountMfaMethodDto[];
+  external_identities: AccountExternalIdentityDto[];
+  available_identity_providers: AccountAvailableIdentityProviderDto[];
 }
 
 export interface PatchAccountProfileBody {
   display_name?: string;
   preferred_locale?: string | null;
+  phone_country_code?: string | null;
+  phone_number?: string | null;
 }
 
 export interface PatchAccountPasswordBody {
   current_password: string;
   new_password: string;
   new_password_confirm: string;
+  code?: string;
+}
+
+export interface DeleteAccountExternalIdentityBody {
+  new_password: string;
+  current_password?: string;
   code?: string;
 }
 

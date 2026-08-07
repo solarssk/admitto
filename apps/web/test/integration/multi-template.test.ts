@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as mailDelivery from "@admitto/mail-delivery";
+import { drainPendingDeliveries } from "@admitto/mail-delivery";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
@@ -559,6 +560,13 @@ describe("multi-template API", () => {
       const body = (await res.json()) as { queued: number; skipped: number; failed: number };
       expect(body.queued).toBe(1);
       expect(body.failed).toBe(0);
+
+      await drainPendingDeliveries(
+        prisma,
+        process.env,
+        { exportSink: (payload) => { exported.push(payload); } },
+        { eventId: EVENT_A, baseUrl: "https://tickets.example.com" },
+      );
 
       expect(exported).toHaveLength(1);
       expect(exported[0]?.message.subject).toBe("Your ticket for Event");

@@ -109,6 +109,14 @@ beforeEach(() => {
   mockMatchMedia(true);
 });
 
+/** Opens a SearchableSelect filter (Action/Event, both converted from a plain <select>) and
+ * picks one option - mirrors UserEditModal.test.tsx's own SearchableSelect interaction. Used by
+ * both the Audit and Security describe blocks below. */
+function pickSearchableOption(labelPrefix: string, optionName: string) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${labelPrefix},`) }));
+  fireEvent.click(screen.getByRole("button", { name: optionName }));
+}
+
 afterEach(() => {
   cleanup();
   // resetAllMocks (not clearAllMocks): several tests here queue mockResolvedValueOnce/
@@ -181,9 +189,7 @@ describe("AuditLogPanel rendering", () => {
 
     expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
-      target: { value: "event_created" },
-    });
+    pickSearchableOption("Action", "Event created");
     expect(await screen.findByText("No matches")).toBeTruthy();
 
     cleanup();
@@ -210,9 +216,7 @@ describe("AuditLogPanel rendering", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
-      target: { value: "event_created" },
-    });
+    pickSearchableOption("Action", "Event created");
 
     // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
     // unfiltered empty state right away, even though the new request is still in flight - the
@@ -550,11 +554,29 @@ describe("AuditLogPanel rendering", () => {
     await screen.findByText("No audit log entries yet");
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const scopeSelect = await screen.findByRole("combobox", { name: "Event" });
-    const optionLabels = within(scopeSelect)
-      .getAllByRole("option")
+    fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
+    const optionsList = screen.getByRole("list", { name: "Event" });
+    const optionLabels = within(optionsList)
+      .getAllByRole("button")
       .map((option) => option.textContent);
     expect(optionLabels).toEqual(["All events", "Alpha Summit", "Zebra Kickoff"]);
+  });
+
+  it("narrows the Action filter's options when searching", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+
+    renderAuditPanel();
+    await screen.findByText("No audit log entries yet");
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Action,/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Search actions…" }), {
+      target: { value: "role" },
+    });
+
+    expect(screen.getByRole("button", { name: "Role granted" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Role revoked" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Event created" })).toBeNull();
   });
 
   it("flips the Details popover above the trigger when there's no room below", async () => {
@@ -842,14 +864,20 @@ describe("AuditLogPanel rendering", () => {
     await screen.findByText("No audit log entries yet");
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
-      target: { value: "event_created" },
-    });
+    pickSearchableOption("Action", "Event created");
+    expect(await screen.findByText("No matches")).toBeTruthy();
+
+    // Picking "All actions" back from the dropdown itself (not the Clear filters button below)
+    // exercises the same "value === all -> clear" branch a different way.
+    pickSearchableOption("Action", "All actions");
+    expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
+
+    pickSearchableOption("Action", "Event created");
     expect(await screen.findByText("No matches")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "Action" })).property("value", "");
+    expect(screen.getByRole("button", { name: "Action, All actions" })).toBeTruthy();
   });
 
   it("pages forward and back through results", async () => {
@@ -907,9 +935,7 @@ describe("AuditLogPanel rendering", () => {
     await act(async () => {});
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
-      target: { value: "event_created" },
-    });
+    pickSearchableOption("Action", "Event created");
     await act(async () => {});
 
     resolveFiltered({ entries: [], total: 0, page: 1, pageSize: 25 });
@@ -987,14 +1013,21 @@ describe("AuditLogPanel rendering", () => {
     await screen.findByText("No audit log entries yet");
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const scopeSelect = await screen.findByRole("combobox", { name: "Event" });
-    expect(within(scopeSelect).getByText("Spring Summit")).toBeTruthy();
-
-    fireEvent.change(scopeSelect, { target: { value: "evt-1" } });
+    await screen.findByRole("button", { name: /^Event,/ });
+    pickSearchableOption("Event", "Spring Summit");
 
     await waitFor(() =>
       expect(fetchAuditLog).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 1, eventId: "evt-1" }),
+        expect.anything(),
+      ),
+    );
+
+    // Picking "All events" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Event", "All events");
+    await waitFor(() =>
+      expect(fetchAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, eventId: undefined }),
         expect.anything(),
       ),
     );
@@ -1023,9 +1056,7 @@ describe("AuditLogPanel rendering", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
-      target: { value: "event_created" },
-    });
+    pickSearchableOption("Action", "Event created");
     await waitFor(() => expect(fetchAuditLog).toHaveBeenLastCalledWith(
       expect.objectContaining({ actionType: "event_created" }),
       expect.anything(),
@@ -1092,9 +1123,8 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Page 2 of 5");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Rows per page" }), {
-      target: { value: "100" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "100" }));
 
     await waitFor(() =>
       expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, pageSize: 100 }),
@@ -1144,7 +1174,7 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(fetchAuditLog).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), { target: { value: "event_created" } });
+    pickSearchableOption("Action", "Event created");
     await waitFor(() => expect(fetchAuditLog).toHaveBeenCalledTimes(2));
 
     // The first, aborted non-silent request must not clear the guard owned by the second one.
@@ -1561,9 +1591,7 @@ describe("AuditLogPanel Security view rendering", () => {
     await waitFor(() => expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Event" }), {
-      target: { value: "auth.access.denied" },
-    });
+    pickSearchableOption("Event", "Access denied");
 
     await waitFor(() =>
       expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith(
@@ -1572,6 +1600,15 @@ describe("AuditLogPanel Security view rendering", () => {
       ),
     );
     expect(await screen.findByText("No matches")).toBeTruthy();
+
+    // Picking "All event types" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Event", "All event types");
+    await waitFor(() =>
+      expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, eventType: undefined }),
+        expect.anything(),
+      ),
+    );
   });
 
   it("applies the From/To date filters (as UTC day bounds), resets to page 1, and carries them into export", async () => {
@@ -1662,9 +1699,7 @@ describe("AuditLogPanel Security view rendering", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Event" }), {
-      target: { value: "auth.access.denied" },
-    });
+    pickSearchableOption("Event", "Access denied");
 
     // hasActiveFilters flips synchronously with the filter change, so "No matches" replaces the
     // unfiltered empty state right away, even though the new request is still in flight - the
@@ -1943,11 +1978,20 @@ describe("SystemLogsPanel rendering", () => {
     openSystemLogsView();
     await screen.findByText("No log activity yet");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Source" }), { target: { value: "mail" } });
+    pickSearchableOption("Source", "Mail");
 
     await waitFor(() =>
       expect(fetchSystemLogs).toHaveBeenLastCalledWith(
         { level: undefined, source: "mail", search: undefined },
+        expect.anything(),
+      ),
+    );
+
+    // Picking "All sources" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Source", "All sources");
+    await waitFor(() =>
+      expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+        { level: undefined, source: undefined, search: undefined },
         expect.anything(),
       ),
     );
@@ -1962,11 +2006,20 @@ describe("SystemLogsPanel rendering", () => {
     openSystemLogsView();
     await screen.findByText("No log activity yet");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Level" }), { target: { value: "error" } });
+    pickSearchableOption("Level", "Error");
 
     await waitFor(() =>
       expect(fetchSystemLogs).toHaveBeenLastCalledWith(
         { level: "error", source: undefined, search: undefined },
+        expect.anything(),
+      ),
+    );
+
+    // Picking "All levels" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Level", "All levels");
+    await waitFor(() =>
+      expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+        { level: undefined, source: undefined, search: undefined },
         expect.anything(),
       ),
     );
@@ -2159,9 +2212,13 @@ describe("SystemLogsPanel rendering", () => {
     renderWithToast(<AuditLogPanel />);
     await screen.findByText("No log activity yet");
 
-    const sourceSelect = screen.getByRole("combobox", { name: "Source" });
-    expect(within(sourceSelect).getByText("Database")).toBeTruthy();
-    expect(within(sourceSelect).queryByText("DB")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Source,/ }));
+    const optionsList = screen.getByRole("list", { name: "Source" });
+    const optionLabels = within(optionsList)
+      .getAllByRole("button")
+      .map((option) => option.textContent);
+    expect(optionLabels).toContain("Database");
+    expect(optionLabels).not.toContain("DB");
   });
 
   it("clears the search box and refocuses it via the Clear search button", async () => {
@@ -2192,12 +2249,12 @@ describe("SystemLogsPanel rendering", () => {
     await screen.findByText("No log activity yet");
 
     expect(screen.getByPlaceholderText("Search message text…")).toBeTruthy();
-    expect(screen.queryByRole("combobox", { name: "Source" })).toBeNull();
-    expect(screen.queryByRole("combobox", { name: "Level" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Source,/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Level,/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    expect(await screen.findByRole("combobox", { name: "Source" })).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "Level" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /^Source,/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Level,/ })).toBeTruthy();
   });
 
   it("moves Export logs/Live into the toolbar on mobile instead of the Card header", async () => {
@@ -2322,7 +2379,8 @@ describe("EventArchivingPanel rendering", () => {
     renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Showing 1–25 of 30");
-    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "50" }));
 
     await screen.findByText("Showing 1–30 of 30");
     expect(screen.getByText("Event 25")).toBeTruthy();

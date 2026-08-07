@@ -29,6 +29,7 @@ model Organization {
   created_at            DateTime        @default(now())
   events                Event[]
   email_deliveries      EmailDelivery[]
+  admin_jobs            AdminJob[]
 }
 
 model Event {
@@ -78,6 +79,7 @@ model Event {
   bounce_ingest_settings         BounceIngestSettings?
   bounce_ingest_processed_uids   BounceIngestProcessedUid[]
   bounce_ingest_runs             BounceIngestRun[]
+  admin_jobs                     AdminJob[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -825,4 +827,49 @@ model OidcAuthState {
 
   @@index([expires_at])
   @@index([provider_id])
+}
+
+// Single-row heartbeat for Admitto worker (ADR 0042). Updated every tick regardless of job due/success.
+// DB CHECK ("id" = 'default') enforces the singleton contract (see migration).
+model BackgroundWorkerHeartbeat {
+  id           String   @id // fixed: "default"
+  last_beat_at DateTime
+  hostname     String?
+  updated_at   DateTime @updatedAt
+}
+
+// Background admin jobs (import commit, later export). Status/type are String + TS unions.
+model AdminJob {
+  id              String       @id @default(cuid())
+  type            String
+  status          String       @default("pending")
+  organization_id String
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  event_id        String?
+  event           Event?       @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  actor_user_id   String?
+  session_id      String?
+  client_timezone String?
+  storage_key     String?
+  filename        String?
+  overwrite       Boolean      @default(false)
+  force_capacity  Boolean      @default(false)
+  import_id       String?
+  to_create       Int?
+  to_update       Int?
+  to_skip         Int?
+  created_count   Int?
+  updated_count   Int?
+  skipped_count   Int?
+  invalid_count   Int?
+  error           String?      @db.Text
+  result_json     Json?
+  created_at      DateTime     @default(now())
+  started_at      DateTime?
+  finished_at     DateTime?
+  updated_at      DateTime     @updatedAt
+
+  @@index([status, type, created_at])
+  @@index([event_id, created_at(sort: Desc)])
+  @@index([organization_id, created_at(sort: Desc)])
 }
