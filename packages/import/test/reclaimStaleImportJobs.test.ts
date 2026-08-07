@@ -152,27 +152,42 @@ describe("reclaimStaleImportJobs", () => {
   it("uses default stale window and clock when options omit them", async () => {
     const deleteFn = vi.fn(async () => {});
     const storage = { delete: deleteFn } as unknown as StorageAdapter;
-    const db = dbWithJobs([{ id: "job-null-key", storage_key: null }]);
+    const dbOmit = dbWithJobs([{ id: "job-null-key", storage_key: null }]);
+    const dbZero = dbWithJobs([{ id: "job-null-key-2", storage_key: null }]);
 
     const before = Date.now();
-    const result = await reclaimStaleImportJobs(db, storage, { olderThanMs: 0 });
+    expect(await reclaimStaleImportJobs(dbOmit, storage)).toEqual({ reclaimed: 1, healed: 0 });
+    expect(await reclaimStaleImportJobs(dbZero, storage, { olderThanMs: 0 })).toEqual({
+      reclaimed: 1,
+      healed: 0,
+    });
     const after = Date.now();
 
-    expect(result).toEqual({ reclaimed: 1, healed: 0 });
     expect(deleteFn).not.toHaveBeenCalled();
-    const cutoff = (db.adminJob.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0].where
-      .started_at.lt as Date;
-    expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
-    expect(cutoff.getTime()).toBeLessThanOrEqual(after - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+    for (const db of [dbOmit, dbZero]) {
+      const cutoff = (db.adminJob.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0].where
+        .started_at.lt as Date;
+      expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+      expect(cutoff.getTime()).toBeLessThanOrEqual(after - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
+    }
   });
 
   it("does not treat missing event_id or import_id as an already-committed import", async () => {
     const storage = mockStorage();
-    const db = dbWithJobs([{ id: "job-orphan", storage_key: "k", event_id: null, import_id: null }]);
+    const dbMissingEvent = dbWithJobs([
+      { id: "job-no-event", storage_key: "k", event_id: null, import_id: "imp-1" },
+    ]);
+    const dbMissingImport = dbWithJobs([
+      { id: "job-no-import", storage_key: "k", event_id: "evt-1", import_id: null },
+    ]);
 
     await expect(
-      reclaimStaleImportJobs(db, storage, { olderThanMs: 1, now: new Date() }),
+      reclaimStaleImportJobs(dbMissingEvent, storage, { olderThanMs: 1, now: new Date() }),
     ).resolves.toEqual({ reclaimed: 1, healed: 0 });
-    expect(db.attendeeActionLog.findFirst).not.toHaveBeenCalled();
+    await expect(
+      reclaimStaleImportJobs(dbMissingImport, storage, { olderThanMs: 1, now: new Date() }),
+    ).resolves.toEqual({ reclaimed: 1, healed: 0 });
+    expect(dbMissingEvent.attendeeActionLog.findFirst).not.toHaveBeenCalled();
+    expect(dbMissingImport.attendeeActionLog.findFirst).not.toHaveBeenCalled();
   });
 });

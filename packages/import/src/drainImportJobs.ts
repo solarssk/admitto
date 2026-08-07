@@ -54,8 +54,7 @@ async function markFailed(db: PrismaClient, jobId: string, err: unknown): Promis
   });
 }
 
-async function deleteStagedKey(storage: StorageAdapter, storageKey: string | null): Promise<void> {
-  if (!storageKey) return;
+async function deleteStagedKey(storage: StorageAdapter, storageKey: string): Promise<void> {
   try {
     await storage.delete(storageKey);
   } catch {
