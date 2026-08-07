@@ -647,7 +647,7 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(screen.queryByText("Import complete")).toBeNull();
   });
 
-  it("toasts a 504 timeout when the job stays pending across the poll budget", async () => {
+  it("toasts a 408 timeout when the job stays pending across the poll budget", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
     commitImport.mockResolvedValueOnce({
@@ -674,13 +674,13 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(90 * 2000);
+      await vi.advanceTimersByTimeAsync(180 * 5000);
     });
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/still running/i);
     });
-    expect(fetchImportJobStatus).toHaveBeenCalledTimes(90);
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(180);
   });
 
   it("swallows AbortError when the page unmounts mid-poll without toasting", async () => {
