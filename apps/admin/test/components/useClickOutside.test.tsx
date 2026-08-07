@@ -10,13 +10,23 @@ function Harness({ open, onOutside }: { open: boolean; onOutside: (reason: Outsi
   return (
     <div>
       <div ref={ref} data-testid="inside">
-        <button type="button" data-testid="inside-button">
+        <button type="button" id="inside-button" data-testid="inside-button">
           inside
         </button>
       </div>
       <button type="button" data-testid="outside">
         outside
       </button>
+      {/* A DOM sibling of the container - the showLabel={false} pattern (AuditLogPanel's own
+       * "Action" caption), whose `for` points at a button that lives INSIDE the container. */}
+      <label htmlFor="inside-button" data-testid="label-for-inside">
+        caption for the inside button
+      </label>
+      {/* A label for some other, genuinely unrelated control - should behave like any other
+       * outside element. */}
+      <label htmlFor="does-not-exist" data-testid="label-for-nothing">
+        unrelated caption
+      </label>
     </div>
   );
 }
@@ -66,5 +76,26 @@ describe("useClickOutside", () => {
     render(<Harness open={false} onOutside={onOutside} />);
     fireEvent.focusIn(screen.getByTestId("outside"));
     expect(onOutside).not.toHaveBeenCalled();
+  });
+
+  it("does not call onOutside on a pointerdown on a <label for> whose control lives inside the container", () => {
+    // Regression coverage: a DOM sibling <label for="inside-button"> (a showLabel={false}
+    // caller's own external caption) natively re-dispatches a click at its labelled control a
+    // moment after this pointerdown - if this listener treated the label itself as "outside" and
+    // closed, that native forwarded click would then toggle the (now-closed) trigger open again,
+    // flickering closed-then-open on every click near the label (PO report, AuditLogPanel's
+    // "Action" filter).
+    const onOutside = vi.fn();
+    render(<Harness open onOutside={onOutside} />);
+    fireEvent.pointerDown(screen.getByTestId("label-for-inside"));
+    expect(onOutside).not.toHaveBeenCalled();
+  });
+
+  it("still calls onOutside on a pointerdown on a <label for> whose control is not inside the container", () => {
+    const onOutside = vi.fn();
+    render(<Harness open onOutside={onOutside} />);
+    fireEvent.pointerDown(screen.getByTestId("label-for-nothing"));
+    expect(onOutside).toHaveBeenCalledTimes(1);
+    expect(onOutside).toHaveBeenCalledWith("pointer");
   });
 });
