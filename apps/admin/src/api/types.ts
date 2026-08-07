@@ -386,13 +386,31 @@ export interface ImportCommitResponse {
   toSkip: number;
   created: number;
   updated: number;
-  /** Capped server-side; toSkip above is the true total. */
+  /** Capped server-side; skippedCount is the true committed total when present. */
   skipped: ImportSkippedRow[];
+  /** Uncapped committed skip total (preferred over skipped.length). */
+  skippedCount?: number;
   /** Rows dropped by the commit-time re-parse before ever reaching the write step (e.g. a ticket
    * type deleted from the catalog between preview and commit) - absent from created/updated/skipped.
    * Capped server-side; invalidCount is the true total. */
   invalidRows: ImportInvalidRow[];
   invalidCount: number;
+}
+
+/** 202 enqueue response from POST …/import/commit. */
+export interface ImportCommitQueuedResponse {
+  jobId: string;
+  status: "pending";
+  importId: string;
+}
+
+/** Poll payload from GET …/import/jobs/:jobId. */
+export interface ImportJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  importId: string | null;
+  error: string | null;
+  result: ImportCommitResponse | null;
 }
 
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */

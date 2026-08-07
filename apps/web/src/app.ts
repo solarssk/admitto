@@ -140,7 +140,7 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
-import { handleImportPreview, handleImportCommit, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
+import { handleImportPreview, handleImportCommit, handleGetImportJob, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
   handleListEventItems,
   handleCreateEventItem,
@@ -522,6 +522,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminGeocodingSearchRateLimit = rateLimit(rateLimitStore, "admin:geocoding-search");
   const adminGeocodingTimezoneRateLimit = rateLimit(rateLimitStore, "admin:geocoding-timezone");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
+  const adminImportJobStatusRateLimit = rateLimit(rateLimitStore, "admin:import-job-status");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -1120,6 +1121,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, adminImportCommitRateLimit, importBodyLimit, guardArchivedEvent((c) =>
     handleImportCommit(c, db),
   ));
+  app.get(
+    "/api/admin/events/:eventId/import/jobs/:jobId",
+    staffAdminGate,
+    adminImportJobStatusRateLimit,
+    (c) => handleGetImportJob(c, db),
+  );
   app.get("/api/admin/events/:eventId/items", staffAdminGate, (c) => handleListEventItems(c, db));
   app.post("/api/admin/events/:eventId/items", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handleCreateEventItem(c, db),
