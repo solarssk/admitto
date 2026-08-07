@@ -25,6 +25,8 @@ export type StorageListEntry = {
 export interface StorageAdapter {
   readonly provider: "local" | "s3";
   put(bytes: Buffer, opts: StoragePutOptions): Promise<{ url: string; key: string }>;
+  /** Read object bytes. Missing key throws {@link StoragePathError} or ENOENT-mapped error. */
+  get(key: string): Promise<Buffer>;
   /** Missing key is success (`deleted: false`); path escape throws. Never throws on ENOENT. */
   delete(key: string): Promise<{ deleted: boolean }>;
   exists(key: string): Promise<boolean>;

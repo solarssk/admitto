@@ -395,6 +395,22 @@ export interface ImportCommitResponse {
   invalidCount: number;
 }
 
+/** 202 enqueue response from POST …/import/commit. */
+export interface ImportCommitQueuedResponse {
+  jobId: string;
+  status: "pending";
+  importId: string;
+}
+
+/** Poll payload from GET …/import/jobs/:jobId. */
+export interface ImportJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  importId: string | null;
+  error: string | null;
+  result: ImportCommitResponse | null;
+}
+
 /** Bulk ticket send queue summary from POST .../attendees/bulk-resend. */
 export interface BulkResendResponse {
   /** Batch id for status polling when rows were queued. */

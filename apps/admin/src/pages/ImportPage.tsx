@@ -13,6 +13,7 @@ import {
   ApiError,
   commitImport,
   fetchImportHistory,
+  fetchImportJobStatus,
   previewImport,
   type EventFullMeta,
   type ImportHistoryEntry,
@@ -773,7 +774,22 @@ export function ImportPage() {
     setLoading(true);
     setCapacityBlocked(null);
     try {
-      const data = await commitImport(eventId, file, overwrite, { force: opts?.force });
+      const queued = await commitImport(eventId, file, overwrite, { force: opts?.force });
+      let data: ImportCommitResponse | null = null;
+      for (let attempt = 0; attempt < 90; attempt += 1) {
+        const status = await fetchImportJobStatus(eventId, queued.jobId);
+        if (status.status === "succeeded" && status.result) {
+          data = status.result;
+          break;
+        }
+        if (status.status === "failed") {
+          throw new ApiError(500, status.error || "Import failed.");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      if (!data) {
+        throw new ApiError(504, "Import is still running. Check history later or keep the worker running.");
+      }
       setResult(data);
       setStep("done");
       setForceCapacity(false);

@@ -140,7 +140,7 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
-import { handleImportPreview, handleImportCommit, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
+import { handleImportPreview, handleImportCommit, handleGetImportJob, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
   handleListEventItems,
   handleCreateEventItem,
@@ -1120,6 +1120,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/admin/events/:eventId/import/commit", jsonPostCsrf, staffAdminGate, adminImportCommitRateLimit, importBodyLimit, guardArchivedEvent((c) =>
     handleImportCommit(c, db),
   ));
+  app.get("/api/admin/events/:eventId/import/jobs/:jobId", staffAdminGate, (c) =>
+    handleGetImportJob(c, db),
+  );
   app.get("/api/admin/events/:eventId/items", staffAdminGate, (c) => handleListEventItems(c, db));
   app.post("/api/admin/events/:eventId/items", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
     handleCreateEventItem(c, db),

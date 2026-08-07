@@ -19,6 +19,7 @@
   "dependencies": {
     "@admitto/auth": "*",
     "@admitto/db": "*",
+    "@admitto/import": "*",
     "@admitto/mail-delivery": "*",
     "@admitto/storage": "*",
     "@admitto/tickets": "*",

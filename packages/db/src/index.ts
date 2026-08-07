@@ -42,6 +42,8 @@ export {
   type CheckInStatus,
   type AttendeeItemStateValue,
   type AttendeeActionType,
+  type AdminJobType,
+  type AdminJobStatus,
 } from './status.js';
 
 export {
@@ -55,6 +57,8 @@ export {
   ATTENDEE_ITEM_STATE,
   ATTENDEE_ACTION_TYPE,
   MAX_ATTENDEE_NOTE_LENGTH,
+  ADMIN_JOB_TYPE,
+  ADMIN_JOB_STATUS,
 } from './status.js';
 
 export {
