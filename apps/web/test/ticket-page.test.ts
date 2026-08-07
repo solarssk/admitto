@@ -185,6 +185,8 @@ describe("renderTicket", () => {
         },
       },
       "data:image/png;base64,abc",
+      undefined,
+      { walletAppleHref: "/t/token/wallet/apple", walletGoogleHref: "/t/token/wallet/google" },
     );
 
     expect(html).toContain("Standard");
@@ -200,6 +202,30 @@ describe("renderTicket", () => {
     expect(html).not.toContain("aria-disabled");
     expect(html).not.toContain("badge-\"><style>boom</style>");
     expect(html).not.toContain("<style>boom</style>");
+  });
+
+  it("omits the wallet badges and help text entirely when no wallet hrefs are provided", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
+    // The stylesheet unconditionally defines .wallet-badge-frame/.ticket__wallets rules - check
+    // the markup itself (img src, help copy) rather than class names that also appear in CSS.
+    expect(html).not.toContain("apple-wallet-badge.svg");
+    expect(html).not.toContain("google-wallet-badge.svg");
+    expect(html).not.toContain("How do I add this to my phone?");
+  });
+
+  it("renders only the configured wallet badge when just one platform has an href", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc", undefined, {
+      walletAppleHref: "/t/token/wallet/apple",
+    });
+    expect(html).toContain("apple-wallet-badge.svg");
+    expect(html).not.toContain("google-wallet-badge.svg");
+  });
+
+  it("does not show the wallet retry notice when the wallet badges are hidden", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc", undefined, {
+      walletError: true,
+    });
+    expect(html).not.toContain("Could not add this ticket to your wallet");
   });
 
   it("renders the event hours range in the meta row when both are set", () => {

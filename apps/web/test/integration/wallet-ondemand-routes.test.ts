@@ -56,6 +56,7 @@ async function seedWalletFixture(client: PrismaClient): Promise<void> {
       organization_id: ORG_ID,
       event_hours_start: "18:00",
       event_hours_end: "22:00",
+      wallet_template_id: "tmpl-wallet-gala",
     },
   });
   await client.attendee.create({
@@ -417,5 +418,23 @@ describe("On-demand wallet routes", () => {
     expect(html).toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
     expect(html).not.toContain("coming soon");
     expect(html).not.toContain("aria-disabled");
+  });
+
+  it("hides the wallet badges on the ticket page when the event has no template configured", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: null } });
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}`);
+    const html = await res.text();
+    // .wallet-badge-frame is also a CSS rule name in the unconditional stylesheet - check the
+    // actual link markup instead.
+    expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
+    expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
+
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: { wallet_template_id: "tmpl-wallet-gala" },
+    });
   });
 });

@@ -393,15 +393,19 @@ export function renderTicket(
       ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
     </div>
     <div class="ticket__perf" role="presentation"></div>
-    ${options.walletError ? `<p class="ticket__wallet-error" role="alert">Could not add this ticket to your wallet just now. Please try again.</p>` : ""}
+    ${
+      options.walletAppleHref || options.walletGoogleHref
+        ? `${options.walletError ? `<p class="ticket__wallet-error" role="alert">Could not add this ticket to your wallet just now. Please try again.</p>` : ""}
     <div class="ticket__wallets">
-      <span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref ?? "")}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet"></a></span>
-      <span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref ?? "")}"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet"></a></span>
+      ${options.walletAppleHref ? `<span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref)}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet"></a></span>` : ""}
+      ${options.walletGoogleHref ? `<span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref)}"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet"></a></span>` : ""}
     </div>
     <details class="ticket__wallet-help">
       <summary>How do I add this to my phone?</summary>
       <p>Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.</p>
-    </details>
+    </details>`
+        : ""
+    }
     ${gettingThereHtml}
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>`;
 
