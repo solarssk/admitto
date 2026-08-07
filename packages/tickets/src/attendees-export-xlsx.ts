@@ -1,14 +1,12 @@
+import ExcelJS from "exceljs";
 import type { SanitizedExportRow } from "./attendees-export.js";
 
 export async function buildExportXlsxBuffer(
   exportRows: SanitizedExportRow[],
   exportColumns: string[],
 ): Promise<Uint8Array> {
-  const exceljs = await import("exceljs");
-  const ExcelJS = exceljs.default ?? exceljs;
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Attendees");
-  ws.columns = exportColumns.map((h, i) => ({
+  const ws = wb.addWorksheet("Attendees");  ws.columns = exportColumns.map((h, i) => ({
     header: h,
     width: i === 0 ? 5 : 28,
   }));
