@@ -1123,9 +1123,8 @@ describe("AuditLogPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Page 2 of 5");
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Rows per page" }), {
-      target: { value: "100" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "100" }));
 
     await waitFor(() =>
       expect(vi.mocked(fetchAuditLog).mock.calls.at(-1)![0]).toMatchObject({ page: 1, pageSize: 100 }),
@@ -2380,7 +2379,8 @@ describe("EventArchivingPanel rendering", () => {
     renderWithToastAndRouter(<EventArchivingPanel />);
 
     await screen.findByText("Showing 1–25 of 30");
-    fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "50" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "50" }));
 
     await screen.findByText("Showing 1–30 of 30");
     expect(screen.getByText("Event 25")).toBeTruthy();

@@ -109,6 +109,30 @@ describe("WizardStep2Mail delayed loading", () => {
   });
 });
 
+describe("WizardStep2Mail Transport picker", () => {
+  it("switches provider-specific fields and resets SMTP defaults when returning to SMTP", async () => {
+    const response = smtpResponse();
+    mockFetch.mockResolvedValueOnce(response);
+    renderStep();
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Transport,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Microsoft Graph" }));
+
+    // Else branch: draft.provider !== "smtp" going in, so only `provider` itself changes -
+    // the Graph-only Tenant ID field appears, the SMTP-only host field is gone.
+    expect(await screen.findByLabelText("Tenant ID")).toBeTruthy();
+    expect(screen.queryByLabelText("SMTP host")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Transport,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "SMTP (recommended)" }));
+
+    // If branch: draft.provider was "graph", so switching to "smtp" also merges in
+    // smtpProviderDraftDefaults() - the SMTP host field is back, Tenant ID is gone.
+    expect(await screen.findByLabelText("SMTP host")).toBeTruthy();
+    expect(screen.queryByLabelText("Tenant ID")).toBeNull();
+  });
+});
+
 describe("WizardStep2Mail validation Notice", () => {
   it("shows validation errors in a Notice when save is blocked", async () => {
     const response = smtpResponse();

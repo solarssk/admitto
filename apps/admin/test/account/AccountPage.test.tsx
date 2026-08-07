@@ -236,10 +236,11 @@ describe("AccountPage toasts", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Regional format")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^Regional format,/ })).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText("Regional format"), { target: { value: "pl-PL" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Regional format,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Polski:/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -254,12 +255,13 @@ describe("AccountPage toasts", () => {
   it("selecting System default clears the locale to null and updates the example date", async () => {
     mockLoadedAccount();
     renderWithToast(<AccountPage />);
-    const select = (await screen.findByLabelText("Regional format")) as HTMLSelectElement;
-    expect(select.value).toBe("en-GB");
+    await screen.findByRole("button", { name: /^Regional format,/ });
+    expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
 
-    fireEvent.change(select, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Regional format,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^System default \(browser\):/ }));
 
-    expect(select.value).toBe("");
+    expect(screen.getByRole("button", { name: /^Regional format, System default \(browser\)/ })).toBeTruthy();
   });
 
   it("toasts profile save errors", async () => {
@@ -1574,7 +1576,7 @@ describe("AccountPage profile: account type", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByLabelText("Regional format")).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^Regional format,/ })).toBeTruthy();
     });
   });
 });

@@ -120,7 +120,8 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
     fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
     fireEvent.change(screen.getByLabelText("Department"), { target: { value: "Sales" } });
-    fireEvent.change(screen.getByLabelText("Ticket type"), { target: { value: "standard" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Standard" }));
     fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "vegetarian" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -243,9 +244,8 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     // saves itself immediately on change; it's part of the same patch as everything
     // else and only goes out when Save changes is clicked.
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "Attendance" }), {
-      target: { value: "declined" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /^Attendance,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Declined" }));
     expect(updateAttendee).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -273,15 +273,14 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     expect(screen.getByText("vintage")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    const select = (await screen.findByLabelText("Ticket type")) as HTMLSelectElement;
     await waitFor(() => {
-      expect(select.value).toBe("vintage");
+      expect(screen.getByRole("button", { name: "Ticket type, vintage (not in catalog)" })).toBeTruthy();
     });
-    expect(screen.getByText("vintage (not in catalog)")).toBeTruthy();
 
     // Reassigning to a real catalog entry still works and submits normally.
     updateAttendee.mockResolvedValueOnce(baseDetail({ ticket_type: "standard" }));
-    fireEvent.change(select, { target: { value: "standard" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ticket type, vintage (not in catalog)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Standard" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {

@@ -24,6 +24,15 @@ interface SearchableSelectProps {
   value: string;
   options: readonly SearchableSelectOption[];
   disabled?: boolean;
+  /** Gives the trigger the same error border styling as `Input`'s own `invalid` prop
+   * (`@admitto/ui`). Pair with `describedBy` pointing at the visible error text - unlike
+   * `Input`'s native `<input>` (role `textbox`), this trigger is a `<button>`, and
+   * `aria-invalid` isn't a supported property of role `button` (SonarCloud S6811), so the error
+   * is conveyed to assistive tech via `aria-describedby` instead. */
+  invalid?: boolean;
+  /** Id of the element (usually the visible error message) this trigger's `aria-describedby`
+   * should point at - see `invalid`'s own comment for why this replaces `aria-invalid` here. */
+  describedBy?: string;
   /** Native tooltip on the trigger, e.g. explaining why the field is disabled. */
   title?: string;
   /** False for callers that already render their own visible `<label htmlFor>` around this
@@ -48,6 +57,8 @@ export function SearchableSelect({
   value,
   options,
   disabled,
+  invalid,
+  describedBy,
   title,
   showLabel = true,
   onChange,
@@ -95,10 +106,11 @@ export function SearchableSelect({
         type="button"
         id={id}
         ref={triggerRef}
-        className="searchable-select__trigger"
+        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}`}
         disabled={disabled}
         title={title}
         aria-expanded={open}
+        aria-describedby={describedBy}
         aria-label={triggerLabel}
         onClick={() => setOpen((current) => !current)}
       >

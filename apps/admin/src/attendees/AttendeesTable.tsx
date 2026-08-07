@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Select, Skeleton } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -15,6 +15,7 @@ import {
 } from "../components/ArchivedGuard.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -144,19 +145,17 @@ function MobileSortControl({
 }>) {
   return (
     <div className="attendees-toolbar__filter attendees-toolbar__sort">
-      <Select
+      <SearchableSelect
         id="attendees-sort-by"
-        name="attendees-sort-by"
-        aria-label="Sort by"
+        label="Sort by"
+        placeholder="Sort by"
+        searchPlaceholder="Search columns…"
+        emptyLabel="No columns found"
+        showLabel={false}
         value={sortBy}
-        onChange={(e) => onSortChange(e.target.value as AttendeeSortBy)}
-      >
-        {MOBILE_SORT_COLUMNS.map(({ column, label }) => (
-          <option key={column} value={column}>
-            {label}
-          </option>
-        ))}
-      </Select>
+        options={MOBILE_SORT_COLUMNS.map(({ column, label }) => ({ id: column, label }))}
+        onChange={(id) => onSortChange(id as AttendeeSortBy)}
+      />
       <IconButton
         label={sortDir === "asc" ? "Sort ascending" : "Sort descending"}
         icon={<i className={`ti ${sortDir === "asc" ? "ti-sort-ascending" : "ti-sort-descending"}`} aria-hidden="true" />}
@@ -979,20 +978,19 @@ function FilterToolbar({
           <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
         )}
         <div className="attendees-toolbar__filter">
-          <Select
+          <SearchableSelect
             id="attendees-filter-type"
-            name="attendees-filter-type"
-            aria-label="Filter by ticket type"
+            label="Filter by ticket type"
+            placeholder="All ticket types"
+            searchPlaceholder="Search ticket types…"
+            emptyLabel="No ticket types found"
             value={ticketTypeFilter}
-            onChange={(e) => onTicketTypeFilterChange(e.target.value)}
-          >
-            <option value="">All ticket types</option>
-            {ticketTypes.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}
-              </option>
-            ))}
-          </Select>
+            options={[
+              { id: "", label: "All ticket types" },
+              ...ticketTypes.map((t) => ({ id: t.key, label: t.label })),
+            ]}
+            onChange={onTicketTypeFilterChange}
+          />
           {ticketTypesError && (
             <p className="mail-field-hint" role="alert">
               {ticketTypesError}{" "}
@@ -1005,50 +1003,61 @@ function FilterToolbar({
           )}
         </div>
         <div className="attendees-toolbar__filter">
-          <Select
+          <SearchableSelect
             id="attendees-filter-rsvp"
-            name="attendees-filter-rsvp"
-            aria-label="Filter by attendance"
-            value={rsvpStatusFilter}
-            onChange={(e) => onRsvpStatusFilterChange(e.target.value as "" | RsvpStatus)}
-          >
-            <option value="">All attendance statuses</option>
-            <option value="none">Registered</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="declined">Declined</option>
-            <option value="tentative">Tentative</option>
-            <option value="cancelled">Cancelled</option>
-          </Select>
+            label="Filter by attendance"
+            placeholder="All attendance statuses"
+            searchPlaceholder="Search attendance statuses…"
+            emptyLabel="No attendance statuses found"
+            value={rsvpStatusFilter || "all"}
+            options={[
+              { id: "all", label: "All attendance statuses" },
+              { id: "none", label: "Registered" },
+              { id: "confirmed", label: "Confirmed" },
+              { id: "declined", label: "Declined" },
+              { id: "tentative", label: "Tentative" },
+              { id: "cancelled", label: "Cancelled" },
+            ]}
+            onChange={(value) => onRsvpStatusFilterChange(value === "all" ? "" : (value as RsvpStatus))}
+          />
         </div>
         <div className="attendees-toolbar__filter">
-          <Select
+          <SearchableSelect
             id="attendees-filter-checkin"
-            name="attendees-filter-checkin"
-            aria-label="Filter by check-in status"
+            label="Filter by check-in status"
+            placeholder="All check-ins"
+            searchPlaceholder="Search check-in statuses…"
+            emptyLabel="No check-in statuses found"
             value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value as AttendeeStatusFilter)}
-          >
-            <option value="all">All check-ins</option>
-            <option value="admitted">Checked in</option>
-            <option value="not_admitted">Not checked in</option>
-          </Select>
+            options={[
+              { id: "all", label: "All check-ins" },
+              { id: "admitted", label: "Checked in" },
+              { id: "not_admitted", label: "Not checked in" },
+            ]}
+            onChange={(id) => onStatusFilterChange(id as AttendeeStatusFilter)}
+          />
         </div>
         <div className="attendees-toolbar__filter">
           {/* Buckets over raw delivery statuses — filters the same latest-delivery status
             * the Mail column badge shows (#522). */}
-          <Select
+          <SearchableSelect
             id="attendees-filter-mail"
-            name="attendees-filter-mail"
-            aria-label="Filter by mail delivery status"
-            value={mailStatusFilter}
-            onChange={(e) => onMailStatusFilterChange(e.target.value as "" | AttendeeMailStatusFilter)}
-          >
-            <option value="">All mail statuses</option>
-            <option value="not_sent">Not sent</option>
-            <option value="sent">Sent</option>
-            <option value="pending">Pending</option>
-            <option value="failed">Failed</option>
-          </Select>
+            label="Filter by mail delivery status"
+            placeholder="All mail statuses"
+            searchPlaceholder="Search mail statuses…"
+            emptyLabel="No mail statuses found"
+            value={mailStatusFilter || "all"}
+            options={[
+              { id: "all", label: "All mail statuses" },
+              { id: "not_sent", label: "Not sent" },
+              { id: "sent", label: "Sent" },
+              { id: "pending", label: "Pending" },
+              { id: "failed", label: "Failed" },
+            ]}
+            onChange={(value) =>
+              onMailStatusFilterChange(value === "all" ? "" : (value as AttendeeMailStatusFilter))
+            }
+          />
         </div>
       </FiltersMenu>
     </div>
@@ -1478,17 +1487,17 @@ export function AttendeesTable({
           <span>{footSummary(isInitialLoad, showFooterLoadingText, total, from, to)}</span>
           <div className="attendees-table-foot__pagesize">
             <label htmlFor="attendees-rows-per-page">Rows per page</label>
-            <select
+            <SearchableSelect
               id="attendees-rows-per-page"
-              className="at-select attendees-table-foot__pagesize-select"
-              value={pageSize}
-              onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
+              label="Rows per page"
+              placeholder="Rows per page"
+              searchPlaceholder="Search page sizes…"
+              emptyLabel="No page sizes found"
+              showLabel={false}
+              value={String(pageSize)}
+              options={[10, 25, 50, 100].map((n) => ({ id: String(n), label: String(n) }))}
+              onChange={(id) => onPageSizeChange(Number(id))}
+            />
           </div>
         </div>
         <div className="attendees-table-foot__pager">
