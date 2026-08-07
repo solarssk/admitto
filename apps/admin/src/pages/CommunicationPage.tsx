@@ -52,6 +52,7 @@ import type {
   MailTemplateListItem,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { browserClockTime } from "../utils/event-dates.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -986,7 +987,7 @@ function PreviewBody({
     return <div className="communication-preview-empty">Click Preview to render the draft.</div>;
   }
   const displayName = senderName || eventTitle;
-  const sampleTime = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const sampleTime = browserClockTime(new Date());
   return (
     <div className="communication-mail-client">
       <div className="communication-mail-client__toolbar" aria-hidden="true">

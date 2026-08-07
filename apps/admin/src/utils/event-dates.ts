@@ -71,6 +71,13 @@ export function zonedTimeLabel(iso: string, timezone = "UTC"): string {
   return offset ? `(${timezone}, ${offset})` : `(${timezone})`;
 }
 
+/** Plain "9:41 AM"-style clock time in the viewer's own locale/zone, no date or offset — for
+ * decorative sample chrome (Communication's mail-client preview "received at" stamp) that isn't
+ * a real operational timestamp and so doesn't need Category 1/2's zone-disambiguation suffix. */
+export function browserClockTime(date: Date): string {
+  return date.toLocaleTimeString(getPreferredLocale(), { hour: "numeric", minute: "2-digit" });
+}
+
 /** Browser IANA zone for Category-1 stamps in staff UI (Send test, Health check Generated). */
 export function getBrowserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
