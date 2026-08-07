@@ -466,6 +466,64 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     });
     expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
   });
+
+  it("picking 'All statuses'/'All purposes' back from the filter itself clears it as fully as Clear filters does", async () => {
+    // Regression test (bot review finding, #760): the Status/Purpose SearchableSelect onChange
+    // used to convert its own "all" sentinel to `undefined` before handing it to the page, but
+    // every other consumer here (hasActiveDeliveryFilters, the fetch params, Clear filters
+    // itself) treats the literal string "all" as the cleared state - `undefined !== "all"` kept
+    // the Filters badge active and Clear filters enabled even with "All statuses" showing.
+    fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest One");
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ status: "failed" }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "All statuses" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ status: "all" }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Purpose,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ purpose: "resend" }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Purpose,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "All purposes" }));
+    await waitFor(() => {
+      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+        "evt-1",
+        expect.objectContaining({ purpose: "all" }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
+  });
 });
 
 describe("CommunicationPage delivery log - row menu", () => {

@@ -100,9 +100,7 @@ function DeliveryToolbar({
               { id: "bounced", label: "Bounced" },
               { id: "rejected", label: "Rejected" },
             ]}
-            onChange={(id) =>
-              onStatusChange(id === "all" ? undefined : (id as EventDeliveriesListParams["status"]))
-            }
+            onChange={(id) => onStatusChange(id as EventDeliveriesListParams["status"])}
           />
         </div>
         <div className="communication-toolbar__filter">
@@ -118,9 +116,7 @@ function DeliveryToolbar({
               { id: "initial", label: "Initial send" },
               { id: "resend", label: "Resend" },
             ]}
-            onChange={(id) =>
-              onPurposeChange(id === "all" ? undefined : (id as EventDeliveriesListParams["purpose"]))
-            }
+            onChange={(id) => onPurposeChange(id as EventDeliveriesListParams["purpose"])}
           />
         </div>
         <div className="communication-toolbar__filter">
