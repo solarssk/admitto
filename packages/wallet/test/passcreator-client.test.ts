@@ -112,6 +112,21 @@ describe("PassCreatorClient.createPass", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
   });
 
+  it("maps a non-JSON error body (e.g. an upstream HTML 502 page) by HTTP status", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response("<html><body>Bad Gateway</body></html>", {
+          status: 502,
+          headers: { "Content-Type": "text/html" },
+        }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toMatchObject({
+      code: "wallet_provider_rejected",
+    });
+  });
+
   it("wraps network failures as wallet_provider_timeout", async () => {
     const fetchMock = vi.fn(async () => {
       throw new Error("fetch failed");
