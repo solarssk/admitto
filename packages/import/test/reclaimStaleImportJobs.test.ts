@@ -165,4 +165,14 @@ describe("reclaimStaleImportJobs", () => {
     expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
     expect(cutoff.getTime()).toBeLessThanOrEqual(after - DEFAULT_IMPORT_JOB_STALE_RUNNING_MS);
   });
+
+  it("does not treat missing event_id or import_id as an already-committed import", async () => {
+    const storage = mockStorage();
+    const db = dbWithJobs([{ id: "job-orphan", storage_key: "k", event_id: null, import_id: null }]);
+
+    await expect(
+      reclaimStaleImportJobs(db, storage, { olderThanMs: 1, now: new Date() }),
+    ).resolves.toEqual({ reclaimed: 1, healed: 0 });
+    expect(db.attendeeActionLog.findFirst).not.toHaveBeenCalled();
+  });
 });
