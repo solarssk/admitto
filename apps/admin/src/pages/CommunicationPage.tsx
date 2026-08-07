@@ -934,8 +934,10 @@ export function CommunicationPage() {
   const [deliveryTotal, setDeliveryTotal] = useState(0);
   const [deliveryPage, setDeliveryPage] = useState(1);
   const [deliveryPageSize, setDeliveryPageSize] = useState(DELIVERY_PAGE_SIZE_DEFAULT);
-  const [deliveryStatus, setDeliveryStatus] = useState<EventDeliveriesListParams["status"]>("all");
-  const [deliveryPurpose, setDeliveryPurpose] = useState<EventDeliveriesListParams["purpose"]>("all");
+  const [deliveryStatus, setDeliveryStatus] =
+    useState<NonNullable<EventDeliveriesListParams["status"]>>("all");
+  const [deliveryPurpose, setDeliveryPurpose] =
+    useState<NonNullable<EventDeliveriesListParams["purpose"]>>("all");
   const [deliveryTemplateId, setDeliveryTemplateId] = useState("all");
   const [deliverySearchInput, setDeliverySearchInput] = useState("");
   const [deliverySearch, setDeliverySearch] = useState("");
