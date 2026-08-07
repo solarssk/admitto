@@ -29,6 +29,24 @@ function TestMenu() {
   );
 }
 
+/** matchTriggerWidth without a minWidth floor (SearchableSelect/PhoneCountrySelect always pass
+ * one, but the option itself is optional) - the panel should just track the trigger's own
+ * width, not fall back to some nonzero default. */
+function MatchWidthMenu() {
+  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "start",
+    matchTriggerWidth: true,
+  });
+  return (
+    <div ref={rootRef}>
+      <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+        Trigger
+      </button>
+      {open && <div ref={panelRef} role="menu" style={panelStyle} />}
+    </div>
+  );
+}
+
 /** A popover of plain form controls, not `role="menuitem"` items - the Attendees list's own
  * Filters panel is shaped this way (see useDropdownMenu's own roving-focus comment). */
 function TestMenuWithoutMenuItems() {
@@ -79,6 +97,23 @@ describe("useDropdownMenu", () => {
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("matches the panel width to the trigger when matchTriggerWidth has no minWidth floor", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { top: 0, bottom: 0, height: 0, x: 0, y: 0, toJSON() {} };
+      if (this.tagName === "BUTTON") return { ...base, left: 0, right: 300, width: 300 };
+      return { ...base, left: 0, right: 0, width: 0 }; // panel
+    });
+
+    render(<MatchWidthMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+
+    expect(screen.getByRole("menu").style.width).toBe("300px");
+
+    vi.restoreAllMocks();
   });
 
   it("closes when an ancestor scrolls, but not when the scroll originates inside the panel", () => {
