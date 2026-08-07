@@ -867,6 +867,14 @@ describe("AuditLogPanel rendering", () => {
     pickSearchableOption("Action", "Event created");
     expect(await screen.findByText("No matches")).toBeTruthy();
 
+    // Picking "All actions" back from the dropdown itself (not the Clear filters button below)
+    // exercises the same "value === all -> clear" branch a different way.
+    pickSearchableOption("Action", "All actions");
+    expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
+
+    pickSearchableOption("Action", "Event created");
+    expect(await screen.findByText("No matches")).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(await screen.findByText("No audit log entries yet")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Action, All actions" })).toBeTruthy();
@@ -1011,6 +1019,15 @@ describe("AuditLogPanel rendering", () => {
     await waitFor(() =>
       expect(fetchAuditLog).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 1, eventId: "evt-1" }),
+        expect.anything(),
+      ),
+    );
+
+    // Picking "All events" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Event", "All events");
+    await waitFor(() =>
+      expect(fetchAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, eventId: undefined }),
         expect.anything(),
       ),
     );
@@ -1583,6 +1600,15 @@ describe("AuditLogPanel Security view rendering", () => {
       ),
     );
     expect(await screen.findByText("No matches")).toBeTruthy();
+
+    // Picking "All event types" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Event", "All event types");
+    await waitFor(() =>
+      expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, eventType: undefined }),
+        expect.anything(),
+      ),
+    );
   });
 
   it("applies the From/To date filters (as UTC day bounds), resets to page 1, and carries them into export", async () => {
@@ -1960,6 +1986,15 @@ describe("SystemLogsPanel rendering", () => {
         expect.anything(),
       ),
     );
+
+    // Picking "All sources" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Source", "All sources");
+    await waitFor(() =>
+      expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+        { level: undefined, source: undefined, search: undefined },
+        expect.anything(),
+      ),
+    );
   });
 
   it("refetches when the level filter changes", async () => {
@@ -1976,6 +2011,15 @@ describe("SystemLogsPanel rendering", () => {
     await waitFor(() =>
       expect(fetchSystemLogs).toHaveBeenLastCalledWith(
         { level: "error", source: undefined, search: undefined },
+        expect.anything(),
+      ),
+    );
+
+    // Picking "All levels" back exercises the "value === all -> clear" branch.
+    pickSearchableOption("Level", "All levels");
+    await waitFor(() =>
+      expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+        { level: undefined, source: undefined, search: undefined },
         expect.anything(),
       ),
     );
