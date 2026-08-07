@@ -543,18 +543,20 @@ function resolveSendTemplateId(
 
 /** Options for the template picker `SearchableSelect` — shared by the Send tab's Message card
  * and the Templates tab's picker bar so both always list the exact same templates the exact
- * same way. The virtual "Ticket email" entry only appears when there's no explicit "ticket"
- * override yet (same condition TemplatePickerBar's own count/badge logic uses). */
+ * same way, icon included. The virtual "Ticket email" entry only appears when there's no
+ * explicit "ticket" override yet (same condition TemplatePickerBar's own count/badge logic
+ * uses). Every option gets the same ticket icon - they're all a ticket email template, just a
+ * different saved copy of one, so there's no real per-template distinction to encode here. */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
-): Array<{ id: string; label: string }> {
+): Array<{ id: string; label: string; icon: string }> {
   return [
     // No "(default)" suffix here - TemplatePickerBar's own "Default template" badge already
     // says that, right next to the picker, without repeating it inside the option text too.
     ...(!templates.some((t) => t.name === "ticket")
-      ? [{ id: "virtual-ticket", label: "Ticket email" }]
+      ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
       : []),
-    ...templates.map((t) => ({ id: t.id, label: t.label })),
+    ...templates.map((t) => ({ id: t.id, label: t.label, icon: "ticket" })),
   ];
 }
 
@@ -763,6 +765,7 @@ function TemplatePickerBar({
           <SearchableSelect
             id="communication-templates-picker"
             label="Template"
+            showLabel={false}
             placeholder="Choose a template…"
             searchPlaceholder="Search templates…"
             emptyLabel="No templates found"
@@ -804,7 +807,6 @@ function TemplatePickerBar({
           <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
             {(guard) => (
               <Button
-                size="sm"
                 variant="secondary"
                 icon={<i className="ti ti-plus" aria-hidden="true" />}
                 onClick={() => requestDirtyProtectedAction({ kind: "create" })}
