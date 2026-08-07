@@ -1,15 +1,22 @@
 /**
- * Fail export AdminJobs left in `running` after a worker crash/kill.
- * Mirrors import reclaim (no auto re-queue).
+ * Fail export AdminJobs left in `running` (or never claimed `pending`) after a
+ * worker crash/kill/outage. Mirrors import reclaim (no auto re-queue).
+ *
+ * Terminal updates scrub raw search text (`q`) from result_json. Stale pending
+ * reclaim closes the gap where a never-claimed job would otherwise keep `q`
+ * forever.
  */
 import type { PrismaClient } from "@admitto/db";
 import { scrubExportJobResultJson } from "./export-job-privacy.js";
 
-/** Default: 15 minutes after started_at. Align with admin export poll budget. */
+/** Default: 15 minutes. Align with admin export poll stale window. */
 export const DEFAULT_EXPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
 
 export const STALE_EXPORT_JOB_ERROR =
   "Export job abandoned (worker stopped while running). Start the export again.";
+
+export const STALE_EXPORT_PENDING_ERROR =
+  "Export job was never picked up by the worker. Start the worker and export again.";
 
 export type ReclaimStaleExportJobsResult = {
   reclaimed: number;
@@ -23,6 +30,25 @@ export function parseExportJobStaleRunningMs(
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_EXPORT_JOB_STALE_RUNNING_MS;
   return n;
+}
+
+async function failExportJob(
+  db: PrismaClient,
+  job: { id: string; status: string; result_json: unknown },
+  error: string,
+  now: Date,
+): Promise<boolean> {
+  const scrubbed = scrubExportJobResultJson(job.result_json);
+  const updated = await db.adminJob.updateMany({
+    where: { id: job.id, status: job.status },
+    data: {
+      status: "failed",
+      error: error.slice(0, 2000),
+      finished_at: now,
+      ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed as object } : {}),
+    },
+  });
+  return updated.count > 0;
 }
 
 export async function reclaimStaleExportJobs(
@@ -39,33 +65,19 @@ export async function reclaimStaleExportJobs(
   const stale = await db.adminJob.findMany({
     where: {
       type: "export",
-      status: "running",
-      started_at: { lt: cutoff },
+      OR: [
+        { status: "running", started_at: { lt: cutoff } },
+        { status: "pending", created_at: { lt: cutoff } },
+      ],
     },
-    select: { id: true },
-    orderBy: { started_at: "asc" },
+    select: { id: true, status: true, result_json: true },
+    orderBy: { created_at: "asc" },
   });
 
   let reclaimed = 0;
   for (const job of stale) {
-    const existing = await db.adminJob.findUnique({
-      where: { id: job.id },
-      select: { result_json: true },
-    });
-    const scrubbed = scrubExportJobResultJson(existing?.result_json);
-    const updated = await db.adminJob.updateMany({
-      where: { id: job.id, status: "running" },
-      data: {
-        status: "failed",
-        error: STALE_EXPORT_JOB_ERROR.slice(0, 2000),
-        finished_at: now,
-        ...(scrubbed !== undefined && scrubbed !== null
-          ? { result_json: scrubbed as object }
-          : {}),
-      },
-    });
-    if (updated.count === 0) continue;
-    reclaimed += 1;
+    const error = job.status === "pending" ? STALE_EXPORT_PENDING_ERROR : STALE_EXPORT_JOB_ERROR;
+    if (await failExportJob(db, job, error, now)) reclaimed += 1;
   }
   return { reclaimed };
 }

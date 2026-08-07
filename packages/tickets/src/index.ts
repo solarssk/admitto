@@ -117,6 +117,7 @@ export {
   parseExportJobStaleRunningMs,
   DEFAULT_EXPORT_JOB_STALE_RUNNING_MS,
   STALE_EXPORT_JOB_ERROR,
+  STALE_EXPORT_PENDING_ERROR,
 } from "./reclaim-stale-export-jobs.js";
 export type { ReclaimStaleExportJobsResult } from "./reclaim-stale-export-jobs.js";
 export {
