@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, renderHook } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useModalFocusTrap } from "../../src/components/useModalFocusTrap.js";
+import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
 import { useRef, useState } from "react";
 
 function makePanel(): HTMLDivElement {
@@ -85,6 +86,57 @@ describe("useModalFocusTrap", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("defers Escape to a nested SearchableSelect-style picker instead of closing the modal (bot review finding, #755)", () => {
+    // This hook's own Escape handler runs on the capture phase (see below); a picker built on
+    // useDropdownMenu handles its Escape on the bubble phase, which always fires after capture -
+    // without the isAnyDropdownMenuOpen() guard this hook would always win that race and close
+    // the whole modal (or open its discard-confirmation) while the picker stayed open on top of
+    // it. Real nesting: a modal panel containing a SearchableSelect-shaped trigger+panel, both
+    // wired through the same document-level listeners the real components use.
+    function ModalWithNestedPicker({ onCancel }: { onCancel: () => void }) {
+      const panelRef = useRef<HTMLDivElement>(null);
+      useModalFocusTrap(panelRef, true, onCancel);
+      const {
+        open,
+        setOpen,
+        close,
+        rootRef,
+        triggerRef,
+        panelRef: pickerPanelRef,
+      } = useDropdownMenu<HTMLButtonElement>();
+      return (
+        <div ref={panelRef}>
+          <div ref={rootRef}>
+            <button ref={triggerRef} onClick={() => setOpen((o) => !o)}>
+              Open picker
+            </button>
+            {open && (
+              <div ref={pickerPanelRef} data-testid="picker-panel">
+                <button onClick={() => close()}>Option</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    const onCancel = vi.fn();
+    render(<ModalWithNestedPicker onCancel={onCancel} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open picker" }));
+    expect(screen.getByTestId("picker-panel")).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    // The picker closed itself; the modal never saw a "cancel".
+    expect(screen.queryByTestId("picker-panel")).toBeNull();
+    expect(onCancel).not.toHaveBeenCalled();
+
+    // With no picker open, Escape reaches the modal trap normally again.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });
 
