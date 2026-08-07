@@ -984,12 +984,12 @@ function FilterToolbar({
             placeholder="All ticket types"
             searchPlaceholder="Search ticket types…"
             emptyLabel="No ticket types found"
-            value={ticketTypeFilter || "all"}
+            value={ticketTypeFilter}
             options={[
-              { id: "all", label: "All ticket types" },
+              { id: "", label: "All ticket types" },
               ...ticketTypes.map((t) => ({ id: t.key, label: t.label })),
             ]}
-            onChange={(value) => onTicketTypeFilterChange(value === "all" ? "" : value)}
+            onChange={onTicketTypeFilterChange}
           />
           {ticketTypesError && (
             <p className="mail-field-hint" role="alert">
