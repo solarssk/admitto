@@ -202,6 +202,59 @@ describe("drainPendingDeliveries", () => {
     expect(after.status).toBe("accepted");
   });
 
+  it("does not reclaim retryable failures still inside backoff", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
+    await enqueueOne("att-drain-1");
+    const row = await prisma.emailDelivery.findFirstOrThrow({
+      where: { event_id: EVENT_ID, status: "queued" },
+    });
+    const now = Date.UTC(2026, 7, 7, 12, 0, 0);
+    await prisma.emailDelivery.update({
+      where: { id: row.id },
+      data: {
+        status: "failed",
+        retryable: true,
+        attempts: 2,
+        attempted_at: new Date(now - 1_000),
+        error: "soft fail",
+      },
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com", nowMs: now },
+    );
+    expect(drain.claimed).toBe(0);
+  });
+
+  it("does not reclaim rows that already reached the attempt cap", async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
+    await enqueueOne("att-drain-1");
+    const row = await prisma.emailDelivery.findFirstOrThrow({
+      where: { event_id: EVENT_ID, status: "queued" },
+    });
+    await prisma.emailDelivery.update({
+      where: { id: row.id },
+      data: {
+        status: "failed",
+        retryable: true,
+        attempts: 8,
+        attempted_at: new Date("2020-01-01T00:00:00.000Z"),
+        error: "soft fail",
+      },
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain.claimed).toBe(0);
+  });
+
   it("uses resolveBaseUrl when options.baseUrl is omitted", async () => {
     await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
     await enqueueOne("att-drain-1");

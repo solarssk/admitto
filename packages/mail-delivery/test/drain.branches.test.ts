@@ -170,6 +170,34 @@ describe("drainPendingDeliveries branch coverage", () => {
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
   });
 
+  it("marks retryable false when the final attempt still fails", async () => {
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    await prisma.emailDelivery.update({
+      where: { id: row.id },
+      data: {
+        status: "failed",
+        retryable: true,
+        attempts: 7,
+        attempted_at: new Date("2020-01-01T00:00:00.000Z"),
+        error: "soft fail",
+      },
+    });
+    vi.mocked(sendBatch).mockRejectedValueOnce(new Error("still down"));
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.attempts).toBe(8);
+    expect(after.retryable).toBe(false);
+    expect(after.status).toBe("failed");
+  });
+
   it("skips when claim returns a row with a null snapshot field", async () => {
     await enqueueOne();
     const findMany = vi.spyOn(prisma.emailDelivery, "findMany").mockResolvedValueOnce([
