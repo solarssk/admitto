@@ -355,6 +355,16 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     return c.json({ error: "validation_failed" }, 400);
   }
 
+  // Wallet template is a superadmin-only field in the UI (Event settings -> Wallet tab is
+  // superadmin-gated); assertEventManageAccess above also permits organisation admins, so it
+  // does not by itself enforce that boundary for this specific field.
+  if (
+    patch.wallet_template_id !== undefined &&
+    !(await canManageInstance(db, c.get("auth").userId))
+  ) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
   const existing = await loadEventSettingsRow(db, eventId);
   if (!existing) return c.json({ error: "not_found" }, 404);
 

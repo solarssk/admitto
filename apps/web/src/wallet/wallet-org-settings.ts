@@ -4,7 +4,13 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { decryptFromString, encryptToString } from "@admitto/crypto";
-import { resolvePassCreatorConfig } from "../config.js";
+
+/** Env fallback, read independently of resolvePassCreatorConfig() (config.ts) - that helper also
+ * requires PASSCREATOR_TEMPLATE_ID, which a deployment using this per-event template field
+ * instead of the legacy combined env config may not have set. */
+function envApiKey(env: Record<string, string | undefined>): string | null {
+  return env["PASSCREATOR_API_KEY"]?.trim() || null;
+}
 
 /** SystemSettings.key - JSON blob, not registered in SETTING_ENV_LOCKS. */
 export const WALLET_SETTINGS_KEY = "wallet_settings";
@@ -50,7 +56,7 @@ export async function resolveWalletApiKey(
       return null;
     }
   }
-  return resolvePassCreatorConfig(env)?.apiKey ?? null;
+  return envApiKey(env);
 }
 
 export async function describeWalletSettings(
@@ -61,7 +67,7 @@ export async function describeWalletSettings(
   if (stored?.apiKeyEnc) {
     return { apiKey: { configured: true, source: "organization" } };
   }
-  if (resolvePassCreatorConfig(env)) {
+  if (envApiKey(env)) {
     return { apiKey: { configured: true, source: "env" } };
   }
   return { apiKey: { configured: false, source: "none" } };

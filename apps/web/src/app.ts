@@ -893,14 +893,21 @@ export function createApp(options: CreateAppOptions = {}) {
       route === "/t/:eventSlug/a/:ref"
         ? `/t/${resolvedForDisplay.event.slug}/a/${agencyPublicRef}`
         : `/t/${internalToken}`;
+    // No template configured for this event (Event settings -> Wallet, left blank) - the
+    // /wallet/:platform routes would only redirect back with walletError=1, so don't offer them.
+    const walletConfigured = resolvedForDisplay.event.wallet_template_id !== null;
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
         staticMapEnabled: mapTiles.enabled,
         weather,
-        walletAppleHref: `${walletBase}/wallet/apple`,
-        walletGoogleHref: `${walletBase}/wallet/google`,
+        ...(walletConfigured
+          ? {
+              walletAppleHref: `${walletBase}/wallet/apple`,
+              walletGoogleHref: `${walletBase}/wallet/google`,
+            }
+          : {}),
         walletError: c.req.query("walletError") === "1",
       }),
       200,
