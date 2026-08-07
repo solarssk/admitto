@@ -504,8 +504,125 @@ describe("collectAdminHealth", () => {
         backgroundWorkerHeartbeat: {
           findUnique: vi.fn().mockResolvedValue({
             last_beat_at: new Date("2026-08-03T11:00:00.000Z"),
-            hostname: "stale-worker",
+            hostname: null,
           }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({
+      status: "degraded",
+      summary: expect.stringMatching(/stale/i),
+    });
+    expect(report.overall).toBe("degraded");
+  });
+
+  it("uses the 90s floor when the tick-derived stale window is smaller", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            // 100s old: stale under the 90s floor, would be fresh if we only used tick=15 (60s).
+            last_beat_at: new Date("2026-08-03T11:58:20.000Z"),
+            hostname: "floor-worker",
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "15" }),
+      now: () => now,
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({ status: "degraded" });
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "90000")).toBe(true);
+  });
+
+  it("uses the tick-derived stale window when it exceeds the 90s floor", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            // 3.5 minutes old: stale when tick=60 → staleMs=150s
+            last_beat_at: new Date("2026-08-03T11:56:30.000Z"),
+            hostname: "tick-worker",
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "60" }),
+      now: () => now,
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({ status: "degraded" });
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "150000")).toBe(true);
+  });
+
+  it("includes an empty hostname coalesce path on a fresh beat with null hostname", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            last_beat_at: new Date("2026-08-03T11:59:50.000Z"),
+            hostname: null,
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => now,
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")?.status).toBe("ok");
+  });
+
+  it("falls back when background worker heartbeat lookup throws", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockRejectedValue(new Error("db down")),
         },
       }),
       rateLimitStore: {} as never,
@@ -514,9 +631,13 @@ describe("collectAdminHealth", () => {
 
     expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")).toMatchObject({
       status: "degraded",
-      summary: expect.stringMatching(/stale/i),
+      summary: "Could not evaluate background worker",
     });
-    expect(report.overall).toBe("degraded");
+    expect(
+      report.groups[0]!.checks
+        .find((c) => c.id === "background_worker")
+        ?.details.some((d) => d.key === "reason" && d.value === "lookup_failed"),
+    ).toBe(true);
   });
 
   it("marks bounce_ingest degraded when an enabled event has a failed last run", async () => {
