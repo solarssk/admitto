@@ -620,6 +620,10 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Failed" }));
     expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "All mail statuses" }));
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith("");
   });
 
   it("reports ticket type, attendance, and check-in status filter changes", () => {
@@ -644,13 +648,50 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     fireEvent.click(screen.getByRole("button", { name: "VIP" }));
     expect(onTicketTypeFilterChange).toHaveBeenCalledWith("vip");
 
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "All ticket types" }));
+    expect(onTicketTypeFilterChange).toHaveBeenCalledWith("");
+
     fireEvent.click(screen.getByRole("button", { name: /^Filter by attendance,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmed" }));
     expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("confirmed");
 
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by attendance,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "All attendance statuses" }));
+    expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("");
     fireEvent.click(screen.getByRole("button", { name: /^Filter by check-in status,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Checked in" }));
     expect(onStatusFilterChange).toHaveBeenCalledWith("admitted");
+  });
+
+  it("does not collide with a real ticket type whose catalog key is literally 'all'", () => {
+    // Regression test (#752 review): the ticket-type filter used to double as both an
+    // empty-string sentinel AND the literal option id "all". A catalog key of "all" (e.g. a
+    // type created from the label "All" via the API or a legacy backfill) then produced two
+    // options with the same id, and selecting the real one fired the reset-to-"" path instead
+    // of filtering to it. The sentinel now lives entirely in the empty-string value, so a real
+    // "all" key can never collide with it.
+    const onTicketTypeFilterChange = vi.fn();
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        selectedIds={new Set()}
+        ticketTypes={[{ key: "all", label: "All-access pass" }]}
+        ticketTypeFilter="all"
+        onTicketTypeFilterChange={onTicketTypeFilterChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+
+    // The trigger shows the real catalog entry's label, not the "no filter" placeholder.
+    expect(screen.getByRole("button", { name: "Filter by ticket type, All-access pass" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter by ticket type, All-access pass" }));
+    fireEvent.click(screen.getByRole("button", { name: "All-access pass" }));
+    expect(onTicketTypeFilterChange).toHaveBeenCalledWith("all");
+    expect(onTicketTypeFilterChange).not.toHaveBeenCalledWith("");
   });
 });
 
