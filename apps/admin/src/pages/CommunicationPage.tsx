@@ -1907,6 +1907,12 @@ export function CommunicationPage() {
     setDeliveryPage(1);
   }
 
+  // Matches TemplateSidebar's own list exactly: every saved template, plus the virtual "Ticket
+  // email (default)" entry when there's no explicit "ticket" override yet - that virtual entry
+  // is a real, selectable, sendable template from the operator's point of view even though it
+  // has no MailTemplateListItem row of its own.
+  const templateTabCount = templates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
+
   return (
     <div className="screen">
       <PageHeader title="Communication" subtitle="Ticket email templates and delivery log" />
@@ -1919,7 +1925,7 @@ export function CommunicationPage() {
           {
             id: "templates",
             label: isDirty ? "Templates *" : "Templates",
-            count: templates.length || undefined,
+            count: templateTabCount || undefined,
           },
           { id: "log", label: "Delivery log", count: deliveryTotal || undefined },
         ]}

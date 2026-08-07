@@ -349,12 +349,14 @@
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
-  animation: at-notice-enter var(--dur-slow) var(--ease-out);
+  /* Longer than --dur-slow (260ms) and a further slide on purpose - at that token's duration
+     the motion read as an instant pop, not an entrance (PO report). */
+  animation: at-notice-enter 450ms var(--ease-out);
 }
 @keyframes at-notice-enter {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    transform: translateY(-14px);
   }
   to {
     opacity: 1;
