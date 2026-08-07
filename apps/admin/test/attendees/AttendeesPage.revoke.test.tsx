@@ -689,7 +689,7 @@ describe("AttendeesPage revoke/restore", () => {
     });
 
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: "More" })).toBeTruthy());
+    expect(await screen.findByRole("button", { name: "More" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     fireEvent.click(
