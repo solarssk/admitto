@@ -83,6 +83,10 @@
   font-size: var(--fs-sm);
 }
 
+/* Unlink SSO / Connect <provider> live in the Profile card's header "..." menu now
+   (AccountIdentityActionsMenu, apps/admin/src/components/more-actions-menu.css), not as inline
+   buttons here - a growing button row doesn't scale with an unknown number of providers. */
+
 /* Compact 2FA status row: badge + action on one line */
 .account-mfa-status-row {
   display: flex;
