@@ -18,6 +18,7 @@ import {
   parseExportJobStaleRunningMs,
   reclaimStaleExportJobs,
 } from "./reclaim-stale-export-jobs.js";
+import { scrubExportJobResultJson } from "./export-job-privacy.js";
 
 export type DrainExportJobsResult = {
   claimed: number;
@@ -71,12 +72,18 @@ function storageExt(format: AttendeesFilteredRequest["format"]): ".csv" | ".pdf"
 }
 
 async function markExportFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
+  const existing = await db.adminJob.findUnique({
+    where: { id: jobId },
+    select: { result_json: true },
+  });
+  const scrubbed = scrubExportJobResultJson(existing?.result_json);
   await db.adminJob.update({
     where: { id: jobId },
     data: {
       status: "failed",
       finished_at: new Date(),
       error: (err instanceof Error ? err.message : String(err)).slice(0, 2000),
+      ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed as object } : {}),
     },
   });
 }
@@ -122,7 +129,17 @@ async function runOneExportJob(
         filename: file.filename,
         created_count: file.rowCount,
         result_json: {
-          request,
+          request: {
+            kind: request.kind,
+            format: request.format,
+            filters: {
+              status: request.filters.status,
+              ticket_type: request.filters.ticket_type ?? null,
+              rsvp_status: request.filters.rsvp_status,
+              mail_status: request.filters.mail_status,
+              has_query: Boolean(request.filters.q && String(request.filters.q).trim()),
+            },
+          },
           filename: file.filename,
           contentType: file.contentType,
           rowCount: file.rowCount,

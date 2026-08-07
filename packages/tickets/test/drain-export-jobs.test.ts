@@ -59,6 +59,7 @@ describe("drainExportJobs", () => {
       update: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
       updateMany: ReturnType<typeof vi.fn>;
+      findUnique: ReturnType<typeof vi.fn>;
     };
     event: { findUniqueOrThrow: ReturnType<typeof vi.fn> };
   };
@@ -76,6 +77,7 @@ describe("drainExportJobs", () => {
         update: vi.fn().mockResolvedValue({}),
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue({ result_json: null }),
       },
       event: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({

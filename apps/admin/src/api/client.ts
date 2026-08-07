@@ -1482,7 +1482,7 @@ export async function exportAttendees(
   );
   const queued = await parseJson<{ jobId: string }>(enqueueRes);
 
-  for (let attempt = 0; attempt < 90; attempt += 1) {
+  for (let attempt = 0; attempt < 180; attempt += 1) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const statusRes = await fetch(
       `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(queued.jobId)}`,
@@ -1502,14 +1502,15 @@ export async function exportAttendees(
       return;
     }
     if (status.status === "failed") {
-      throw new ApiError(500, status.error || "Export failed.");
+      // 422: application failure (not transport). Avoids the global "server unavailable" banner.
+      throw new ApiError(422, status.error || "Export failed.");
     }
-    if (attempt < 89) {
-      if (signal) await sleepWithAbort(2000, signal);
-      else await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+    if (attempt < 179) {
+      if (signal) await sleepWithAbort(5000, signal);
+      else await new Promise<void>((resolve) => setTimeout(resolve, 5000));
     }
   }
-  throw new ApiError(504, "Export is still running. Keep the worker running and try again.");
+  throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
 }
 
 /** Explicit-selection export (bulk bar's "Export selected") — a POST with the ids in the JSON

@@ -21,14 +21,23 @@ describe("parseExportJobStaleRunningMs", () => {
 });
 
 describe("reclaimStaleExportJobs", () => {
-  it("fails stale running export jobs", async () => {
+  it("fails stale running export jobs and scrubs search text from result_json", async () => {
     const now = new Date("2026-08-07T12:00:00.000Z");
     const findMany = vi.fn().mockResolvedValue([{ id: "job-1" }, { id: "job-2" }]);
+    const findUnique = vi.fn().mockResolvedValue({
+      result_json: {
+        request: {
+          kind: "attendees_filtered",
+          format: "csv",
+          filters: { q: "vip@example.com", status: "all" },
+        },
+      },
+    });
     const updateMany = vi
       .fn()
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 0 });
-    const db = { adminJob: { findMany, updateMany } } as unknown as PrismaClient;
+    const db = { adminJob: { findMany, findUnique, updateMany } } as unknown as PrismaClient;
 
     await expect(reclaimStaleExportJobs(db, { olderThanMs: 60_000, now })).resolves.toEqual({
       reclaimed: 1,
@@ -39,6 +48,19 @@ describe("reclaimStaleExportJobs", () => {
         status: "failed",
         error: STALE_EXPORT_JOB_ERROR,
         finished_at: now,
+        result_json: {
+          request: {
+            kind: "attendees_filtered",
+            format: "csv",
+            filters: {
+              status: "all",
+              ticket_type: null,
+              rsvp_status: undefined,
+              mail_status: undefined,
+              has_query: true,
+            },
+          },
+        },
       },
     });
   });

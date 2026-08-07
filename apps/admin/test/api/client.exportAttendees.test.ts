@@ -151,7 +151,7 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
 
     try {
       const done = exportAttendees("evt-1", {}, "csv");
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(5000);
       await done;
 
       expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
@@ -177,7 +177,7 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     try {
       await expect(exportAttendees("evt-1", {}, "csv")).rejects.toMatchObject({
         name: "ApiError",
-        status: 500,
+        status: 422,
         message: "worker_boom",
       });
       expect(stub.createObjectURL).not.toHaveBeenCalled();
@@ -195,12 +195,12 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(exportAttendees("evt-1", {}, "csv")).rejects.toMatchObject({
-      status: 500,
+      status: 422,
       message: "Export failed.",
     });
   });
 
-  it("throws 504 after 90 pending polls", async () => {
+  it("throws 408 after 180 pending polls", async () => {
     vi.useFakeTimers();
     const fetchMock = vi
       .fn()
@@ -218,11 +218,11 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
 
     expect(err).toMatchObject({
       name: "ApiError",
-      status: 504,
+      status: 408,
       message: "Export is still running. Keep the worker running and try again.",
     });
-    // enqueue + 90 status polls
-    expect(fetchMock).toHaveBeenCalledTimes(91);
+    // enqueue + 180 status polls
+    expect(fetchMock).toHaveBeenCalledTimes(181);
   });
 
   it("throws AbortError when the signal is already aborted before polling", async () => {

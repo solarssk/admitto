@@ -119,6 +119,11 @@ export {
   STALE_EXPORT_JOB_ERROR,
 } from "./reclaim-stale-export-jobs.js";
 export type { ReclaimStaleExportJobsResult } from "./reclaim-stale-export-jobs.js";
+export {
+  redactAttendeeListFiltersForStorage,
+  scrubExportJobResultJson,
+} from "./export-job-privacy.js";
+export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
 export type {
   AttendeeExportRsvpStatus,
   AttendeeListFilterParams,

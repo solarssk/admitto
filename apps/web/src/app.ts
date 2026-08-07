@@ -1476,7 +1476,12 @@ export function createApp(options: CreateAppOptions = {}) {
       ".ttf": "font/ttf",
       ".otf": "font/otf",
     };
-    const ct = contentTypeMap[ext] ?? "application/octet-stream";
+    // Public /uploads is for branding assets only. Export/import artifacts (csv/xlsx/pdf)
+    // must go through authenticated admin download routes, not UUID obscurity.
+    const ct = contentTypeMap[ext];
+    if (!ct) {
+      return c.notFound();
+    }
     c.header("Content-Type", ct);
     c.header("Cache-Control", "public, max-age=86400");
     c.header("X-Content-Type-Options", "nosniff");

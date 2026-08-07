@@ -3,9 +3,10 @@
  * Mirrors import reclaim (no auto re-queue).
  */
 import type { PrismaClient } from "@admitto/db";
+import { scrubExportJobResultJson } from "./export-job-privacy.js";
 
-/** Default: 30 minutes after started_at. */
-export const DEFAULT_EXPORT_JOB_STALE_RUNNING_MS = 30 * 60 * 1000;
+/** Default: 15 minutes after started_at. Align with admin export poll budget. */
+export const DEFAULT_EXPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
 
 export const STALE_EXPORT_JOB_ERROR =
   "Export job abandoned (worker stopped while running). Start the export again.";
@@ -47,12 +48,20 @@ export async function reclaimStaleExportJobs(
 
   let reclaimed = 0;
   for (const job of stale) {
+    const existing = await db.adminJob.findUnique({
+      where: { id: job.id },
+      select: { result_json: true },
+    });
+    const scrubbed = scrubExportJobResultJson(existing?.result_json);
     const updated = await db.adminJob.updateMany({
       where: { id: job.id, status: "running" },
       data: {
         status: "failed",
         error: STALE_EXPORT_JOB_ERROR.slice(0, 2000),
         finished_at: now,
+        ...(scrubbed !== undefined && scrubbed !== null
+          ? { result_json: scrubbed as object }
+          : {}),
       },
     });
     if (updated.count === 0) continue;
