@@ -51,7 +51,7 @@ export async function openWorkerLockClient(connectionString: string): Promise<Wo
   }
 
   async function releaseAll(): Promise<void> {
-    for (const job of [...held]) {
+    for (const job of held) {
       await release(job);
     }
   }

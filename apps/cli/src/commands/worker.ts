@@ -17,7 +17,6 @@ import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
 
 const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const SHUTDOWN_DRAIN_MS = 120_000;
 
 function log(job: string, message: string): void {
   const ts = new Date().toISOString();
@@ -90,7 +89,6 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   const tickMs = tickSeconds * 1000;
   const locks = await openWorkerLockClient(databaseUrl);
   const signal = { stopped: false };
-  let inFlight: Promise<void> | null = null;
   let lastRetentionAt: number | null = null;
   let retentionBootDone = false;
 
@@ -108,51 +106,38 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   );
 
   try {
+    // Each tick is awaited fully before sleep; SIGTERM during a tick finishes the tick, then exits.
     while (!signal.stopped) {
-      const tickWork = (async () => {
+      try {
+        await touchWorkerHeartbeat(db);
+        log("heartbeat", "ok");
+      } catch (err) {
+        log("heartbeat", `FAILED ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      try {
+        await runBounceJob(db, locks);
+      } catch (err) {
+        log("bounce", `FAILED ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      const now = Date.now();
+      const retentionDue =
+        !retentionBootDone ||
+        lastRetentionAt == null ||
+        now - lastRetentionAt >= RETENTION_INTERVAL_MS;
+      if (retentionDue) {
         try {
-          await touchWorkerHeartbeat(db);
-          log("heartbeat", "ok");
+          await runRetentionJob(db, locks);
+          lastRetentionAt = Date.now();
+          retentionBootDone = true;
         } catch (err) {
-          log("heartbeat", `FAILED ${err instanceof Error ? err.message : String(err)}`);
+          log("retention", `FAILED ${err instanceof Error ? err.message : String(err)}`);
         }
-
-        try {
-          await runBounceJob(db, locks);
-        } catch (err) {
-          log("bounce", `FAILED ${err instanceof Error ? err.message : String(err)}`);
-        }
-
-        const now = Date.now();
-        const retentionDue =
-          !retentionBootDone ||
-          lastRetentionAt == null ||
-          now - lastRetentionAt >= RETENTION_INTERVAL_MS;
-        if (retentionDue) {
-          try {
-            await runRetentionJob(db, locks);
-            lastRetentionAt = Date.now();
-            retentionBootDone = true;
-          } catch (err) {
-            log("retention", `FAILED ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-      })();
-
-      inFlight = tickWork;
-      await tickWork;
-      inFlight = null;
+      }
 
       if (signal.stopped) break;
       await sleep(tickMs, signal);
-    }
-
-    if (inFlight) {
-      log("heartbeat", `waiting up to ${SHUTDOWN_DRAIN_MS}ms for in-flight tick`);
-      await Promise.race([
-        inFlight,
-        new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_DRAIN_MS)),
-      ]);
     }
   } finally {
     process.off("SIGTERM", onStop);
