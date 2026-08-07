@@ -19,6 +19,7 @@ import {
   DEFAULT_WORKER_HEARTBEAT_STALE_MS,
   isWorkerHeartbeatStale,
   positiveMsOr,
+  staleAdminJobOrClauses,
   WORKER_HEARTBEAT_ID,
 } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
@@ -216,10 +217,7 @@ export async function reclaimStaleImportJobs(
   const stale = await db.adminJob.findMany({
     where: {
       type: "import_commit",
-      OR: [
-        { status: "running", started_at: { lt: cutoff } },
-        ...(reclaimPending ? [{ status: "pending" as const, created_at: { lt: cutoff } }] : []),
-      ],
+      OR: staleAdminJobOrClauses(cutoff, reclaimPending),
     },
     select: {
       id: true,

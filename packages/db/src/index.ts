@@ -100,4 +100,5 @@ export {
   DEFAULT_WORKER_HEARTBEAT_STALE_MS,
   positiveMsOr,
   isWorkerHeartbeatStale,
+  staleAdminJobOrClauses,
 } from './worker-heartbeat.js';

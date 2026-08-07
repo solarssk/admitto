@@ -5,6 +5,7 @@ import {
   isWorkerHeartbeatStale,
   positiveMsOr,
   WORKER_HEARTBEAT_ID,
+  staleAdminJobOrClauses,
 } from "../src/worker-heartbeat.js";
 
 describe("positiveMsOr", () => {
@@ -53,5 +54,18 @@ describe("isWorkerHeartbeatStale", () => {
       },
     } as unknown as PrismaClient;
     await expect(isWorkerHeartbeatStale(db, now)).resolves.toBe(false);
+  });
+});
+
+describe("staleAdminJobOrClauses", () => {
+  it("includes pending only when reclaimPending is true", () => {
+    const cutoff = new Date("2026-08-07T12:00:00.000Z");
+    expect(staleAdminJobOrClauses(cutoff, false)).toEqual([
+      { status: "running", started_at: { lt: cutoff } },
+    ]);
+    expect(staleAdminJobOrClauses(cutoff, true)).toEqual([
+      { status: "running", started_at: { lt: cutoff } },
+      { status: "pending", created_at: { lt: cutoff } },
+    ]);
   });
 });
