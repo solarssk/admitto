@@ -58,4 +58,23 @@ describe("scrubExportJobResultJson", () => {
       rowCount: 3,
     });
   });
+
+  it("returns non-objects and arrays unchanged", () => {
+    expect(scrubExportJobResultJson(null)).toBeNull();
+    expect(scrubExportJobResultJson("x")).toBe("x");
+    expect(scrubExportJobResultJson([1])).toEqual([1]);
+  });
+
+  it("leaves the root alone when request or filters are not plain objects", () => {
+    expect(scrubExportJobResultJson({ request: "nope", rowCount: 1 })).toEqual({
+      request: "nope",
+      rowCount: 1,
+    });
+    expect(scrubExportJobResultJson({ request: { filters: null } })).toEqual({
+      request: { filters: null },
+    });
+    expect(scrubExportJobResultJson({ request: { filters: ["q"] } })).toEqual({
+      request: { filters: ["q"] },
+    });
+  });
 });

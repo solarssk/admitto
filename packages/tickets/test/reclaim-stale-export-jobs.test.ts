@@ -64,4 +64,38 @@ describe("reclaimStaleExportJobs", () => {
       },
     });
   });
+
+  it("uses the default stale window when olderThanMs is omitted or non-positive", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const db = { adminJob: { findMany, findUnique: vi.fn(), updateMany: vi.fn() } } as unknown as PrismaClient;
+    const before = Date.now();
+    await reclaimStaleExportJobs(db);
+    await reclaimStaleExportJobs(db, { olderThanMs: 0 });
+    const after = Date.now();
+    for (const call of findMany.mock.calls) {
+      const cutoff = call[0]!.where.started_at.lt as Date;
+      expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - DEFAULT_EXPORT_JOB_STALE_RUNNING_MS);
+      expect(cutoff.getTime()).toBeLessThanOrEqual(after - DEFAULT_EXPORT_JOB_STALE_RUNNING_MS);
+    }
+  });
+
+  it("omits result_json when the abandoned job had nothing to scrub", async () => {
+    const now = new Date("2026-08-07T12:00:00.000Z");
+    const findMany = vi.fn().mockResolvedValue([{ id: "job-empty" }]);
+    const findUnique = vi.fn().mockResolvedValue({ result_json: null });
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const db = { adminJob: { findMany, findUnique, updateMany } } as unknown as PrismaClient;
+
+    await expect(reclaimStaleExportJobs(db, { olderThanMs: 1, now })).resolves.toEqual({
+      reclaimed: 1,
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "job-empty", status: "running" },
+      data: {
+        status: "failed",
+        error: STALE_EXPORT_JOB_ERROR,
+        finished_at: now,
+      },
+    });
+  });
 });

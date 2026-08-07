@@ -344,6 +344,43 @@ describe("drainExportJobs", () => {
     );
   });
 
+  it("scrubs search text from result_json when marking a job failed", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never).mockResolvedValue(null);
+    db.adminJob.findUnique.mockResolvedValue({
+      result_json: {
+        request: {
+          kind: "attendees_filtered",
+          format: "csv",
+          filters: { q: "secret@example.com", status: "all" },
+        },
+      },
+    });
+    vi.mocked(buildAttendeesExportArtifact).mockRejectedValue(new Error("render boom"));
+
+    await expect(drainExportJobs(db as never, storage)).resolves.toMatchObject({ failed: 1 });
+    expect(db.adminJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "failed",
+          error: "render boom",
+          result_json: {
+            request: {
+              kind: "attendees_filtered",
+              format: "csv",
+              filters: {
+                status: "all",
+                ticket_type: null,
+                rsvp_status: undefined,
+                mail_status: undefined,
+                has_query: true,
+              },
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("floors a positive limit and defaults invalid limits to 1", async () => {
     vi.mocked(claimNextAdminJob)
       .mockResolvedValueOnce(baseJob({ id: "job-a" }) as never)

@@ -2,13 +2,17 @@
  * Persist export AdminJob filter metadata without raw search text (often name/email).
  * Working copy keeps `q` only while the job is pending/running; terminal updates scrub it.
  */
-import type { AttendeeListFilterParams } from "./attendees-list-filters.js";
+import type {
+  AttendeeExportRsvpStatus,
+  AttendeeListFilterParams,
+  AttendeeMailStatusFilter,
+} from "./attendees-list-filters.js";
 
 export type RedactedAttendeeListFilters = {
   status?: AttendeeListFilterParams["status"];
   ticket_type?: string | null;
-  rsvp_status?: AttendeeListFilterParams["rsvp_status"];
-  mail_status?: AttendeeListFilterParams["mail_status"];
+  rsvp_status?: AttendeeExportRsvpStatus;
+  mail_status?: AttendeeMailStatusFilter;
   has_query: boolean;
 };
 

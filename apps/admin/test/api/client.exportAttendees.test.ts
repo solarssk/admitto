@@ -243,6 +243,31 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     }
   });
 
+  it("aborts while waiting between polls when a signal is provided", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk("job-abort-poll"))
+      .mockResolvedValueOnce(jobStatus("pending"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const done = exportAttendees("evt-1", {}, "csv", controller.signal);
+    const outcome = done.then(
+      () => null,
+      (err: unknown) => err,
+    );
+    for (let i = 0; i < 20 && fetchMock.mock.calls.length < 2; i += 1) {
+      await Promise.resolve();
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(5000);
+    const err = await outcome;
+
+    expect(err).toMatchObject({ name: "AbortError" });
+  });
+
   it("downloads with a format fallback filename when job status omits filename", async () => {
     const fetchMock = vi
       .fn()

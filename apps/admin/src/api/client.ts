@@ -1457,6 +1457,64 @@ export async function downloadExportResponse(res: Response, fallbackFilename: st
 }
 
 /** Filtered export (header "Export" menu) — enqueue + poll + download. */
+function buildAttendeesExportSearchParams(
+  format: AttendeeExportFormat,
+  params: {
+    q?: string;
+    status?: string;
+    ticket_type?: string;
+    rsvp_status?: RsvpStatus;
+    mail_status?: AttendeeMailStatusFilter;
+  },
+): URLSearchParams {
+  const urlParams = new URLSearchParams({ format });
+  if (params.q) urlParams.set("q", params.q);
+  if (params.status && params.status !== "all") urlParams.set("status", params.status);
+  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
+  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
+  if (params.mail_status) urlParams.set("mail_status", params.mail_status);
+  return urlParams;
+}
+
+async function sleepExportPoll(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal) await sleepWithAbort(ms, signal);
+  else await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollExportJobUntilReady(
+  eventId: string,
+  jobId: string,
+  format: AttendeeExportFormat,
+  signal?: AbortSignal,
+): Promise<void> {
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const statusRes = await fetch(
+      `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(jobId)}`,
+      { credentials: "same-origin", signal },
+    );
+    const status = await parseJson<{
+      status: string;
+      error: string | null;
+      filename: string | null;
+    }>(statusRes);
+    if (status.status === "succeeded") {
+      const downloadRes = await fetch(
+        `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(jobId)}/download`,
+        { credentials: "same-origin", signal },
+      );
+      await downloadExportResponse(downloadRes, status.filename ?? `attendees.${format}`);
+      return;
+    }
+    if (status.status === "failed") {
+      // 422: application failure (not transport). Avoids the global "server unavailable" banner.
+      throw new ApiError(422, status.error || "Export failed.");
+    }
+    if (attempt < 179) await sleepExportPoll(5000, signal);
+  }
+  throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
+}
+
 export async function exportAttendees(
   eventId: string,
   params: {
@@ -1469,48 +1527,13 @@ export async function exportAttendees(
   format: AttendeeExportFormat,
   signal?: AbortSignal,
 ): Promise<void> {
-  const urlParams = new URLSearchParams({ format });
-  if (params.q) urlParams.set("q", params.q);
-  if (params.status && params.status !== "all") urlParams.set("status", params.status);
-  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
-  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
-  if (params.mail_status) urlParams.set("mail_status", params.mail_status);
-
+  const urlParams = buildAttendeesExportSearchParams(format, params);
   const enqueueRes = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
     { credentials: "same-origin", signal },
   );
   const queued = await parseJson<{ jobId: string }>(enqueueRes);
-
-  for (let attempt = 0; attempt < 180; attempt += 1) {
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const statusRes = await fetch(
-      `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(queued.jobId)}`,
-      { credentials: "same-origin", signal },
-    );
-    const status = await parseJson<{
-      status: string;
-      error: string | null;
-      filename: string | null;
-    }>(statusRes);
-    if (status.status === "succeeded") {
-      const downloadRes = await fetch(
-        `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(queued.jobId)}/download`,
-        { credentials: "same-origin", signal },
-      );
-      await downloadExportResponse(downloadRes, status.filename ?? `attendees.${format}`);
-      return;
-    }
-    if (status.status === "failed") {
-      // 422: application failure (not transport). Avoids the global "server unavailable" banner.
-      throw new ApiError(422, status.error || "Export failed.");
-    }
-    if (attempt < 179) {
-      if (signal) await sleepWithAbort(5000, signal);
-      else await new Promise<void>((resolve) => setTimeout(resolve, 5000));
-    }
-  }
-  throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
+  await pollExportJobUntilReady(eventId, queued.jobId, format, signal);
 }
 
 /** Explicit-selection export (bulk bar's "Export selected") — a POST with the ids in the JSON
