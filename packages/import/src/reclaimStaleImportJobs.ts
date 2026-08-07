@@ -20,7 +20,6 @@ import {
   isWorkerHeartbeatStale,
   positiveMsOr,
   staleAdminJobOrClauses,
-  WORKER_HEARTBEAT_ID,
 } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
@@ -28,10 +27,11 @@ import type { StorageAdapter } from "@admitto/storage";
 /** Default: 15 minutes. Keep in sync with admin import poll stale window (running). */
 export const DEFAULT_IMPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
 
-/** @deprecated Prefer `DEFAULT_WORKER_HEARTBEAT_STALE_MS` from `@admitto/db`. */
-export const DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS = DEFAULT_WORKER_HEARTBEAT_STALE_MS;
-
-export { WORKER_HEARTBEAT_ID, isWorkerHeartbeatStale as isWorkerHeartbeatStaleForPendingReclaim };
+export {
+  DEFAULT_WORKER_HEARTBEAT_STALE_MS as DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS,
+  WORKER_HEARTBEAT_ID,
+  isWorkerHeartbeatStale as isWorkerHeartbeatStaleForPendingReclaim,
+} from "@admitto/db";
 
 export const STALE_IMPORT_JOB_ERROR =
   "Import job abandoned (worker stopped while running). Upload the file again.";
