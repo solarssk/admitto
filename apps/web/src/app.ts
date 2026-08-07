@@ -306,6 +306,7 @@ import {
   handleGetAccount,
   handlePatchAccountProfile,
   handlePatchAccountPassword,
+  handleDeleteAccountExternalIdentity,
   handleGetAccountSessions,
   handleDeleteAccountSession,
   handlePostMfaEnroll as handlePostAccountMfaEnroll,
@@ -1292,6 +1293,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.patch("/api/account/password", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
     handlePatchAccountPassword(c, db, rateLimitStore),
+  );
+  app.delete("/api/account/external-identity", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handleDeleteAccountExternalIdentity(c, db, rateLimitStore),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>

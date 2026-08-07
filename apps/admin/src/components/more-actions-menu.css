@@ -27,9 +27,11 @@
 }
 
 .more-actions-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end") - not CSS - so the panel floats
+     over a scrolling modal body instead of being clipped by (and inflating the scroll height
+     of) its `overflow: auto` ancestor. See searchable-select.css's own panel rule for the full
+     story. */
   z-index: var(--z-dropdown);
   /* Wide enough that item hints ("CSV of 25 attendees") stay on one line (PO review). */
   min-width: 260px;
@@ -41,14 +43,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-/* Anchored above the trigger instead of below - see .searchable-select__panel--up's own
-   comment (searchable-select.css); same useDropdownMenu-driven decision, shared by every
-   consumer of this panel class (Attendees table/detail, Health check, Edit user). */
-.more-actions-menu__panel--up {
-  top: auto;
-  bottom: calc(100% + 4px);
 }
 
 /* Tooltip's trigger wrapper defaults to inline-flex (shrink-to-fit) - override to block/full

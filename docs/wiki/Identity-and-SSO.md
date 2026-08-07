@@ -56,3 +56,4 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
 - [Organisation Settings](Organisation-Settings)
 - [Logs and Audit](Logs-and-Audit)
 - [Technical Documentation](Technical-Documentation)
+- [My Account](My-Account) — staff self-service: once a provider is enabled here, each account connects or unlinks it for themselves from **My account**, without needing this page.

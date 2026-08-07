@@ -1,64 +1,86 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
+import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
 
-/** Walks up from `el` to the nearest ancestor that actually clips overflow (`overflow-y` /
- * `overflow` computed as `auto`, `scroll`, or `hidden`) - e.g. a modal's own `overflow: auto`
- * scrollport. Falls back to `document.documentElement` (the viewport) when none is found, so
- * ordinary page triggers keep behaving exactly as before this existed. */
-function nearestClippingAncestor(el: HTMLElement): HTMLElement {
-  let node = el.parentElement;
-  while (node && node !== document.body) {
-    const style = getComputedStyle(node);
-    if (style.overflowY === "auto" || style.overflowY === "scroll" || style.overflowY === "hidden") {
-      return node;
-    }
-    node = node.parentElement;
-  }
-  return document.documentElement;
+const VIEWPORT_PAD_PX = 8;
+
+const HIDDEN_FIXED_PANEL: CSSProperties = { position: "fixed", visibility: "hidden" };
+
+export interface UseDropdownMenuOptions {
+  /** Gap between trigger and panel, in px. Default 4. */
+  gap?: number;
+  /** "start" anchors the panel's left edge under the trigger's left edge (comboboxes:
+   * SearchableSelect, PhoneCountrySelect). "end" anchors its right edge under the trigger's
+   * right edge (every menu-style consumer: More actions, Export, Filters, User menu). */
+  align?: "start" | "end";
+  /** "start" alignment only: the panel's width tracks the trigger's own width (falling back to
+   * `minWidth` when the trigger is narrower) instead of the panel's own natural/CSS width. */
+  matchTriggerWidth?: boolean;
+  /** Floor for the panel width when `matchTriggerWidth` is set. */
+  minWidth?: number;
 }
 
-/** Open/close state, click-outside, Escape-to-close, and first-`menuitem` focus for a small
- * trigger-button + `role="menu"` popover — was duplicated between the Attendee Detail page's
- * Revoke menu and the Attendees list's Export menu before being extracted here. */
+/** Open/close state, click-outside, Escape-to-close, first-`menuitem` focus, and `position:
+ * fixed` placement (viewport-clamped, closes on an ancestor scroll) for a small trigger-button
+ * + popover panel — was duplicated between the Attendee Detail page's Revoke menu and the
+ * Attendees list's Export menu before being extracted here.
+ *
+ * The panel is `position: fixed` with coordinates computed from the trigger's own
+ * `getBoundingClientRect()` (the DeliveryRowMenu/DatePicker/TimezoneSelect pattern -
+ * `attachFixedOverlayLifecycle`), NOT `position: absolute` inside a `position: relative`
+ * wrapper. A plain `absolute` panel is clipped by - and inflates the scroll height of - the
+ * nearest ancestor with `overflow: auto`/`hidden` (e.g. a modal's own scrolling body), which
+ * turns the popover into part of the scrollable content instead of floating over it (PO
+ * report: the Invite/Edit user role picker grew a scrollbar and "bounced" on close because
+ * closing it shrank that inflated scroll height out from under the current scroll position).
+ * `position: fixed`'s containing block is the viewport (not the nearest scrolling ancestor), so
+ * this escapes that clipping without a portal - `useClickOutside`'s DOM-containment check
+ * (`rootRef`) keeps working unmodified since the panel is still a normal DOM child. */
 export function useDropdownMenu<
   TTrigger extends HTMLElement = HTMLButtonElement,
   TPanel extends HTMLElement = HTMLDivElement,
->() {
+>(options: UseDropdownMenuOptions = {}) {
+  const { gap = 4, align = "start", matchTriggerWidth = false, minWidth } = options;
   const [open, setOpen] = useState(false);
-  // Whether the panel should anchor above the trigger instead of below it - set once per open,
-  // see the layout effect below. Consumers add their own modifier class (e.g.
-  // `searchable-select__panel--up`) when this is true; the hook only computes the decision, it
-  // doesn't know each consumer's panel class names.
+  // Whether the panel is anchored above the trigger instead of below it - set once per open,
+  // see the layout effect below. Consumers that need more than the `top`/`left` from
+  // `panelStyle` (e.g. SearchableSelect/PhoneCountrySelect reversing their child order so the
+  // search box stays next to the trigger) add their own modifier class for that when this is
+  // true; the hook only computes the decision, it doesn't know each consumer's class names.
   const [openUpward, setOpenUpward] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>(HIDDEN_FIXED_PANEL);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<TTrigger>(null);
   const panelRef = useRef<TPanel>(null);
 
-  // `reason === "focus"` means the user already moved focus elsewhere on purpose (e.g. Tab
-  // to the next control) — forcing it back to this trigger would trap keyboard navigation,
-  // so only restore focus for every other close path (Escape, selecting an item, an
-  // outside pointerdown, or a direct programmatic close() call).
+  // `reason === "focus"`/`"scroll"` mean, respectively, that the user already moved focus
+  // elsewhere on purpose (e.g. Tab to the next control) or that an ancestor scroll closed this
+  // fixed panel out from under itself - forcing focus back to the trigger would either trap
+  // keyboard navigation or yank the page back to the trigger and undo that scroll. Every other
+  // close path (Escape, selecting an item, an outside pointerdown, a direct close() call)
+  // restores focus as normal.
   const close = (reason?: OutsideInteraction) => {
     setOpen(false);
-    // preventScroll: the trigger is already on-screen (the user just interacted with it) -
-    // without this, a trigger near the bottom of a tall, scrolled page (e.g. a card at the
-    // end of Active sessions) could get yanked back into view, jumping the whole page.
-    if (reason !== "focus") triggerRef.current?.focus({ preventScroll: true });
+    setPanelStyle(HIDDEN_FIXED_PANEL);
+    if (reason !== "focus" && reason !== "scroll") triggerRef.current?.focus({ preventScroll: true });
   };
 
   useClickOutside(rootRef, open, close);
 
-  // Flip the panel above the trigger when it doesn't fit below - a trigger near the bottom of
-  // a tall, scrolled page (e.g. Active sessions' bulk-revoke card, or any Filters button once
-  // the page is scrolled down) otherwise opens a panel that renders mostly or entirely below
-  // the viewport, forcing an extra manual scroll just to see it. Runs before paint (layout
-  // effect, not a regular effect) so the flip never flashes downward-then-upward for a frame.
-  // Decided once per open, not continuously - the reported bug is about the initial position,
-  // not the trigger moving while the panel is already open.
+  // Places the panel with `position: fixed`, computed from the trigger's own
+  // getBoundingClientRect() - see this hook's own doc comment for why fixed (not absolute)
+  // coordinates, not a CSS class, are what escape a scrollable modal body. Flips above the
+  // trigger when the panel doesn't fit below (a trigger near the bottom of a tall, scrolled
+  // page/modal otherwise opens a panel that renders mostly or entirely off-screen), and clamps
+  // horizontally to the viewport. Recomputed on open and again on resize/ancestor-scroll
+  // (`attachFixedOverlayLifecycle`) - decided once per *content* otherwise, same as before:
+  // the reported bug was about the initial position, not the trigger moving while the panel is
+  // already open with the same content.
   useLayoutEffect(() => {
     if (!open) {
       setOpenUpward(false);
+      setPanelStyle(HIDDEN_FIXED_PANEL);
       return;
     }
     const trigger = triggerRef.current;
@@ -69,23 +91,52 @@ export function useDropdownMenu<
     // `open` this effect reads) - so both are already set whenever this line is reached.
     /* v8 ignore if */
     if (!trigger || !panel) return;
-    const triggerRect = trigger.getBoundingClientRect();
-    // Clamped to whichever is smaller/larger: the viewport, or the nearest ancestor that
-    // actually clips overflow (e.g. a modal's own `overflow: auto` scrollport). Comparing
-    // against the viewport alone let a trigger near the bottom of a tall, scrolled modal open
-    // "downward" because the viewport had room, even though the modal's own edge clipped the
-    // panel first - and symmetrically, a trigger near a nested scrollport's own top (which can
-    // sit below the viewport top in a centered/nested scrollport) could be judged to have ample
-    // room above when the scrollport's own edge would clip it first.
-    const clipRect = nearestClippingAncestor(trigger).getBoundingClientRect();
-    const clipTop = Math.max(0, clipRect.top);
-    const clipBottom = Math.min(window.innerHeight, clipRect.bottom);
-    const spaceBelow = clipBottom - triggerRect.bottom;
-    const spaceAbove = triggerRect.top - clipTop;
-    const panelHeight = panel.getBoundingClientRect().height;
-    // Only flip when upward genuinely has more room - never flip into an even tighter fit.
-    setOpenUpward(panelHeight > spaceBelow && spaceAbove > spaceBelow);
-  }, [open]);
+
+    const updatePlacement = () => {
+      const triggerRect = trigger.getBoundingClientRect();
+      const panelWidth = matchTriggerWidth
+        ? Math.max(minWidth ?? 0, triggerRect.width)
+        : panel.getBoundingClientRect().width;
+      const panelHeight = panel.getBoundingClientRect().height;
+      const spaceBelow = window.innerHeight - triggerRect.bottom;
+      const spaceAbove = triggerRect.top;
+      // Only flip when upward genuinely has more room - never flip into an even tighter fit.
+      const above = panelHeight > spaceBelow && spaceAbove > spaceBelow;
+      const top = above ? triggerRect.top - panelHeight - gap : triggerRect.bottom + gap;
+
+      let left = align === "end" ? triggerRect.right - panelWidth : triggerRect.left;
+      left = Math.min(left, window.innerWidth - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.max(left, VIEWPORT_PAD_PX);
+
+      setOpenUpward(above);
+      setPanelStyle({
+        position: "fixed",
+        top,
+        left,
+        width: matchTriggerWidth ? panelWidth : undefined,
+        visibility: "visible",
+      });
+    };
+
+    updatePlacement();
+    const detachOverlayLifecycle = attachFixedOverlayLifecycle(panel, updatePlacement, () => close("scroll"));
+
+    // Re-run placement when the panel's own rendered size changes, not just on window resize -
+    // SearchableSelect/PhoneCountrySelect's list shrinks by hundreds of pixels as the user types
+    // into the search box, and a panel flipped above the trigger anchors its `top` from that
+    // height (`top = triggerRect.top - panelHeight - gap`); without this, the stale `top` stays
+    // put while the shorter content renders under it, opening a growing gap between the panel's
+    // own bottom edge and the trigger it's meant to hug (bot review finding). Guarded, not
+    // assumed present - real browsers all support it, but jsdom (this hook's ~200 other tests)
+    // does not and has no reason to.
+    if (typeof ResizeObserver === "undefined") return detachOverlayLifecycle;
+    const resizeObserver = new ResizeObserver(updatePlacement);
+    resizeObserver.observe(panel);
+    return () => {
+      detachOverlayLifecycle();
+      resizeObserver.disconnect();
+    };
+  }, [open, align, gap, matchTriggerWidth, minWidth]);
 
   useEffect(() => {
     if (!open) return;
@@ -126,5 +177,5 @@ export function useDropdownMenu<
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  return { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef };
+  return { open, setOpen, close, openUpward, panelStyle, rootRef, triggerRef, panelRef };
 }
