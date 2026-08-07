@@ -543,18 +543,19 @@ function resolveSendTemplateId(
 
 /** Options for the template picker `SearchableSelect` — shared by the Send tab's Message card
  * and the Templates tab's picker bar so both always list the exact same templates the exact
- * same way, icon included. The virtual "Ticket email" entry only appears when there's no
- * explicit "ticket" override yet (same condition TemplatePickerBar's own count/badge logic
+ * same way, icon included. The virtual "Ticket email (default)" entry only appears when there's
+ * no explicit "ticket" override yet (same condition TemplatePickerBar's own count/badge logic
  * uses). Every option gets the same ticket icon - they're all a ticket email template, just a
  * different saved copy of one, so there's no real per-template distinction to encode here. */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
 ): Array<{ id: string; label: string; icon: string }> {
   return [
-    // No "(default)" suffix here - TemplatePickerBar's own "Default template" badge already
-    // says that, right next to the picker, without repeating it inside the option text too.
+    // The "(default)" suffix is the only thing that tells the operator which option is the
+    // built-in default while just browsing the closed list - the external "Default template"
+    // badge only shows once that option is actually selected, not while scanning other options.
     ...(!templates.some((t) => t.name === "ticket")
-      ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
+      ? [{ id: "virtual-ticket", label: "Ticket email (default)", icon: "ticket" }]
       : []),
     ...templates.map((t) => ({ id: t.id, label: t.label, icon: "ticket" })),
   ];
@@ -2025,7 +2026,7 @@ export function CommunicationPage() {
       if (result.status === "sent") {
         const templateLabel =
           activeKey === "virtual-ticket"
-            ? "Ticket email"
+            ? "Ticket email (default)"
             : (templates.find((t) => t.id === activeKey)?.label ?? "Template");
         setTestStatus({
           kind: "ok",
@@ -2080,9 +2081,9 @@ export function CommunicationPage() {
   }
 
   // Matches templatePickerOptions' own list exactly: every saved template, plus the virtual
-  // "Ticket email" entry when there's no explicit "ticket" override yet - that virtual entry is
-  // a real, selectable, sendable template from the operator's point of view even though it has
-  // no MailTemplateListItem row of its own.
+  // "Ticket email (default)" entry when there's no explicit "ticket" override yet - that virtual
+  // entry is a real, selectable, sendable template from the operator's point of view even though
+  // it has no MailTemplateListItem row of its own.
   const templateTabCount = templates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
 
   return (
