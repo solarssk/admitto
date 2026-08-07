@@ -23,6 +23,7 @@ let prisma: PrismaClient;
 
 function stubProvider(): WalletPassProvider & {
   createPass: ReturnType<typeof vi.fn>;
+  findByUserProvidedId: ReturnType<typeof vi.fn>;
 } {
   return {
     provider: "stub",
