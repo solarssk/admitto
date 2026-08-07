@@ -151,6 +151,7 @@ function MobileSortControl({
         placeholder="Sort by"
         searchPlaceholder="Search columns…"
         emptyLabel="No columns found"
+        showLabel={false}
         value={sortBy}
         options={MOBILE_SORT_COLUMNS.map(({ column, label }) => ({ id: column, label }))}
         onChange={(id) => onSortChange(id as AttendeeSortBy)}
@@ -1492,6 +1493,7 @@ export function AttendeesTable({
               placeholder="Rows per page"
               searchPlaceholder="Search page sizes…"
               emptyLabel="No page sizes found"
+              showLabel={false}
               value={String(pageSize)}
               options={[10, 25, 50, 100].map((n) => ({ id: String(n), label: String(n) }))}
               onChange={(id) => onPageSizeChange(Number(id))}
