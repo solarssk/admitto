@@ -58,6 +58,7 @@
     "@admitto/mail-templates": "*",
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
+    "@simplewebauthn/server": "^13.3.2",
     "argon2": "^0.45.1",
     "jose": "^6.2.5",
     "otplib": "^13.4.1",

@@ -663,6 +663,19 @@ model UserMfaMethod {
   backup_codes_acknowledged_at DateTime? @default(now())
   /// Last accepted TOTP time step (RFC 6238) — replay protection via otplib `afterTimeStep`.
   last_totp_time_step          Int?
+  /// WebAuthn credential ID (base64url), one row per registered passkey/security key.
+  webauthn_credential_id       String?   @unique
+  /// WebAuthn credential public key (COSE), raw bytes as returned by the authenticator.
+  webauthn_public_key          Bytes?
+  /// WebAuthn signature counter — replay/clone detection (updated on every use).
+  webauthn_sign_count          Int?
+  /// WebAuthn transport hints reported at registration (e.g. "usb", "internal", "hybrid").
+  webauthn_transports          String[]
+  /// "platform" (passkey — Touch ID/Windows Hello/password manager) or "cross-platform"
+  /// (security key — USB/NFC/BLE FIDO2 device); drives which My Account row a credential shows under.
+  webauthn_attachment          String?
+  /// Authenticator Attestation GUID — identifies the authenticator model, not the user.
+  webauthn_aaguid              String?
   created_at                   DateTime  @default(now())
 
   @@index([user_id, type])
