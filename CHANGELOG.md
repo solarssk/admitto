@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Role/scope pickers** (Invite user, Edit user, Active sessions bulk revoke) show a visible "Initial role" / "Role" / "Event" caption above the dropdown instead of no caption at all, and skip the search box entirely for short option lists (4 or fewer roles) - only longer lists (organizations, events) still show one.
+- **Attendance status pickers** (Edit attendee, the Attendees list filter, Communication's send-by-status filter) show a status icon next to each option (Registered/Confirmed/Declined/Tentative/Cancelled), matching the colour grouping the status badge elsewhere already uses.
 
 ### Added
 - **Admitto background worker (foundation).** New `admitto worker` / `npm run worker` process records a heartbeat, runs bounce ingest and scheduled retention under session advisory locks, and shuts down cleanly on SIGTERM/SIGINT. HTTP paths for mail/import/export stay sync until follow-up PRs move batch work onto this worker.
