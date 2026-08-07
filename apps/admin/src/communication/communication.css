@@ -14,11 +14,95 @@
   outline-offset: 2px;
 }
 
-.communication-compose {
-  display: grid;
-  grid-template-columns: 220px 1fr 1fr;
+.communication-templates-tab {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
-  margin-bottom: var(--space-4);
+}
+
+.communication-template-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.communication-template-picker__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--control-h);
+  height: var(--control-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.communication-template-picker__select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.communication-template-picker__meta {
+  flex: none;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.communication-templates-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .communication-templates-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.communication-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.communication-editor-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.communication-editor-delete:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.communication-editor-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* No Card wrapper here (see TemplatesPreviewPanel's own comment) - .communication-mail-client
+   draws its own box, this just gives it room to sit at full column height next to the editor. */
+.communication-templates-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.communication-preview-toolbar__status {
+  font-size: var(--fs-xs);
 }
 
 .communication-send-tab {
@@ -97,72 +181,6 @@
   gap: var(--space-2);
 }
 
-.communication-templates {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.communication-templates__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-}
-
-.communication-templates__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.communication-templates__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.communication-templates__item button[type="button"]:first-child {
-  flex: 1;
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-sm);
-}
-
-.communication-templates__item--active button[type="button"]:first-child {
-  border-color: var(--accent);
-  background: var(--surface-hover);
-}
-
-.communication-templates__delete {
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: var(--space-1);
-}
-
-.communication-templates__delete:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-@media (max-width: 960px) {
-  .communication-compose {
-    grid-template-columns: 1fr;
-  }
-}
-
 .communication-editor-fieldset {
   border: 0;
   padding: 0;
@@ -198,6 +216,7 @@
 }
 
 .communication-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -218,15 +237,40 @@
   background: var(--surface-hover);
 }
 
-.communication-format-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-3) 0;
+/* Small image preview shown above the chip on hover/focus - CSS-only reveal (no JS state), only
+   ever populated for the one placeholder this editor already has a same-origin sample image
+   for (qr_image_url's SAMPLE_QR_PLACEHOLDER_DATA_URI). */
+.communication-chip-preview {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-dropdown);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.communication-chip-preview img {
+  display: block;
+  width: 72px;
+  height: 72px;
+}
+
+.communication-chip:hover .communication-chip-preview,
+.communication-chip:focus-visible .communication-chip-preview {
+  opacity: 1;
+  visibility: visible;
 }
 
 .communication-format-hint {
+  margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
 }
 

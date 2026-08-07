@@ -144,6 +144,12 @@ function renderPageWithEventSwitch() {
   );
 }
 
+/** Opens the Templates tab's picker dropdown and selects the option matching `label`. */
+async function selectTemplate(label: string) {
+  fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+  fireEvent.click(await screen.findByRole("button", { name: label }));
+}
+
 beforeEach(() => {
   blockerState.state = "unblocked";
   blockerState.proceed.mockClear();
@@ -159,6 +165,12 @@ beforeEach(() => {
   fetchEventMailSettings.mockResolvedValue({
     fields: { fromName: { value: null }, fromAddress: { value: null } },
   });
+  // The Templates tab now auto-previews on a debounce instead of requiring a click - resolve
+  // these by default so that isn't a surprise "Preview failed" toast in tests that never cared
+  // about preview content (mirrors the same default already used for the Send tab's own
+  // auto-preview in every sibling CommunicationPage test file).
+  previewEventTemplate.mockResolvedValue({ subject: "", html: "<p></p>" });
+  previewEventTemplateById.mockResolvedValue({ subject: "", html: "<p></p>" });
   fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
     if (id === "tpl-ticket") {
       return {
@@ -290,8 +302,10 @@ describe("CommunicationPage templates", () => {
 
     const optionalChip = screen.getByRole("button", { name: "{{first_name}}" });
     const requiredChip = screen.getByRole("button", { name: "{{ticket_url}}" });
-    expect(optionalChip.getAttribute("title")).toBeNull();
-    expect(requiredChip.getAttribute("title")).toBe("Required placeholder");
+    expect(optionalChip.getAttribute("title")).toBe("Attendee's first name.");
+    expect(requiredChip.getAttribute("title")).toBe(
+      "Required placeholder · Link to the attendee's own ticket page.",
+    );
 
     const subjectInput = screen.getByLabelText("Subject");
     fireEvent.focus(subjectInput);
@@ -305,27 +319,33 @@ describe("CommunicationPage templates", () => {
     expect(bodyTextarea).toHaveProperty("value", "<p>New body</p>");
   });
 
-  it("selects persisted ticket template from list", async () => {
+  it("selects persisted ticket template from the picker", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Ticket email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
     });
     expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-ticket");
   });
 
-  it("disables delete for ticket template", async () => {
+  it("shows no delete button for the ticket template, but shows one once a different template is active", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Reminder" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
-    const ticketDelete = screen.getByRole("button", { name: "Delete Ticket email" });
-    expect((ticketDelete as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Delete template" })).toBeNull();
+
+    await selectTemplate("Reminder");
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Delete template" })).toBeTruthy();
   });
 
   it("does not refetch legacy template when switching between persisted templates", async () => {
@@ -338,7 +358,7 @@ describe("CommunicationPage templates", () => {
     });
 
     fetchEventTemplate.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
@@ -356,7 +376,7 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByText("Ticket email (default)")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
@@ -368,7 +388,7 @@ describe("CommunicationPage templates", () => {
       subject_template: "Updated inherited subject",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Ticket email (default)" }));
+    await selectTemplate("Ticket email (default)");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Updated inherited subject")).toBeTruthy();
@@ -406,14 +426,7 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
-    fireEvent.click(screen.getByRole("button", { name: "Ticket email" }));
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-      const active = document.querySelector(".communication-templates__item--active");
-      expect(active?.textContent).toContain("Ticket email");
-    });
+    await selectTemplate("Reminder");
 
     resolveReminder({
       ...reminderRow,
@@ -422,10 +435,7 @@ describe("CommunicationPage templates", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-      expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
-      const active = document.querySelector(".communication-templates__item--active");
-      expect(active?.textContent).toContain("Ticket email");
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
   });
 
@@ -440,6 +450,7 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
@@ -454,10 +465,10 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
     const dialog = screen.getByRole("dialog", { name: "New template" });
     const input = within(dialog).getByLabelText("Template label");
     fireEvent.change(input, { target: { value: "Announcement" } });
@@ -479,14 +490,16 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
     expect(screen.getByDisplayValue("Edited ticket")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
-    expect(screen.queryByText("New template")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "New template" })).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
@@ -505,13 +518,13 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Dirty draft" } });
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
     await waitFor(() => {
-      expect(screen.getByText("New template")).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "New template" })).toBeTruthy();
     });
   });
 
@@ -524,8 +537,16 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
+    // Delete now only ever targets the currently open template (the mockup's own layout - no
+    // more per-row delete in a list) - so testing "dirty + delete" means editing the template
+    // you're about to delete, not a bystander one.
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Dirty draft" } });
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
@@ -550,13 +571,13 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
     await waitFor(() => {
-      expect(screen.getByText("New template")).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "New template" })).toBeTruthy();
     });
 
     const createDialog = screen.getByRole("dialog", { name: "New template" });
@@ -580,9 +601,9 @@ describe("CommunicationPage templates", () => {
     createEventTemplate.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
     const createDialog = await screen.findByRole("dialog", { name: "New template" });
     fireEvent.change(within(createDialog).getByLabelText("Template label"), {
       target: { value: "Announcement" },
@@ -591,6 +612,22 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
     });
+  });
+
+  it("updates the preview automatically as the draft changes - no Preview button needed", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById
+      .mockResolvedValueOnce({ subject: "Initial subject", html: "<p>Initial</p>" })
+      .mockResolvedValueOnce({ subject: "Updated subject", html: "<p>Updated</p>" });
+
+    renderPage();
+
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(await screen.findByText("Initial subject", {}, { timeout: 2000 })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("HTML body"), { target: { value: "<p>New body</p>" } });
+
+    expect(await screen.findByText("Updated subject", {}, { timeout: 2000 })).toBeTruthy();
   });
 
   it("toasts operator-safe preview failure", async () => {
@@ -605,15 +642,16 @@ describe("CommunicationPage templates", () => {
       body_template: "<mjml></mjml>",
       template_format: "mjml" as const,
     });
-    previewEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    previewEventTemplateById.mockRejectedValue(new ApiError(500, "secret_internal"));
+
     renderPage();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
-    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      },
+      { timeout: 2000 },
+    );
   });
 
   it("switches formats and renders a successful compiled preview", async () => {
@@ -624,17 +662,18 @@ describe("CommunicationPage templates", () => {
     });
 
     renderPage();
-    await screen.findByRole("button", { name: "Preview" });
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
     fireEvent.click(await screen.findByRole("button", { name: "Switch format" }));
     expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "HTML" }));
+    fireEvent.click(screen.getByRole("radio", { name: "HTML" }));
     fireEvent.click(await screen.findByRole("button", { name: "Switch format" }));
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(await screen.findByText("Preview subject")).toBeTruthy();
+    expect(await screen.findByText("Preview subject", {}, { timeout: 2000 })).toBeTruthy();
     expect(screen.getByTitle("Email preview").getAttribute("srcdoc")).toBe("<p>Rendered preview</p>");
   });
 
@@ -642,9 +681,11 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
 
     renderPage();
-    await screen.findByRole("button", { name: "Preview" });
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
     fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
@@ -660,9 +701,11 @@ describe("CommunicationPage templates", () => {
     });
 
     renderPage();
-    await screen.findByRole("button", { name: "Preview" });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
     expect(screen.getByLabelText("MJML body")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
   });
@@ -670,14 +713,15 @@ describe("CommunicationPage templates", () => {
   it("renders inline validation errors returned by preview", async () => {
     const { TemplateValidationError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockResolvedValue([ticketRow]);
-    previewEventTemplateById.mockRejectedValueOnce(
+    previewEventTemplateById.mockRejectedValue(
       new TemplateValidationError(["Subject must include {{ticket_url}}"]),
     );
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Preview" }));
 
-    expect(await screen.findByText("Subject must include {{ticket_url}}")).toBeTruthy();
+    expect(
+      await screen.findByText("Subject must include {{ticket_url}}", {}, { timeout: 2000 }),
+    ).toBeTruthy();
   });
 
   it("toasts operator-safe template switch failure", async () => {
@@ -685,10 +729,11 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reminder" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
     fetchEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
     });
@@ -746,35 +791,6 @@ describe("CommunicationPage templates", () => {
     expect(screen.getByRole("status").className).toContain("mail-preview--error");
   });
 
-  it("does not switch editor when deleting a non-active template", async () => {
-    deleteEventTemplate.mockResolvedValue(undefined);
-    fetchEventTemplates
-      .mockResolvedValueOnce([ticketRow, reminderRow, announcementRow])
-      .mockResolvedValueOnce([ticketRow, reminderRow]);
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
-    await waitFor(() => {
-      expect(screen.getByText("Delete template?")).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-
-    await waitFor(() => {
-      expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-ann");
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-  });
-
   it("loads the remaining ticket template after deleting the active non-ticket template", async () => {
     deleteEventTemplate.mockResolvedValue(undefined);
     fetchEventTemplates
@@ -786,10 +802,10 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
@@ -805,10 +821,10 @@ describe("CommunicationPage templates", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: "Ticket email (default)" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    expect(await screen.findByText("Ticket email (default)")).toBeTruthy();
+    await selectTemplate("Reminder");
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
@@ -853,12 +869,12 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -870,21 +886,20 @@ describe("CommunicationPage templates", () => {
         screen.getByText("Template deleted. Could not load ticket template. Reload the page."),
       ).toBeTruthy();
       expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
-      expect(screen.getByRole("button", { name: "Ticket email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("value", "");
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", true);
       expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", true);
       expect(screen.getByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
       expect(reportApiError).toHaveBeenCalledWith(500);
     });
 
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Ticket email" }));
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
     });
   });
 
@@ -932,12 +947,12 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -947,9 +962,9 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", true);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
     await waitFor(() => {
-      expect(screen.getByText("New template")).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "New template" })).toBeTruthy();
     });
 
     const createDialog = screen.getByRole("dialog", { name: "New template" });
@@ -962,7 +977,6 @@ describe("CommunicationPage templates", () => {
       expect(createEventTemplate).toHaveBeenCalled();
       expect(screen.getByDisplayValue("Announcement")).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
     });
   });
 
@@ -982,12 +996,12 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByText("Ticket email (default)")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -1014,10 +1028,14 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Announcement" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Announcement");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Announcement subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -1038,10 +1056,14 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Announcement" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Announcement");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Announcement subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -1063,23 +1085,27 @@ describe("CommunicationPage templates", () => {
     renderPageWithEventSwitch();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Reminder" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "New template" })).toHaveProperty("disabled", true);
     });
 
     fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: "New template" })).toHaveProperty("disabled", false);
       expect(screen.queryByText("Delete template?")).toBeNull();
     });
   });

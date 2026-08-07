@@ -52,11 +52,12 @@ import type {
   MailTemplateListItem,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { browserClockTime } from "../utils/event-dates.js";
+import { browserClockTime, formatEventDate } from "../utils/event-dates.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
@@ -81,6 +82,67 @@ type TestSendStatus =
  * to fill it in. Filtered client-side, not removed from the server's ALLOWED_PLACEHOLDERS
  * whitelist, so it's not a backward-compat break for any already-saved template. */
 const HIDDEN_PLACEHOLDERS = new Set(["header_image_url"]);
+
+const TEMPLATE_FORMAT_OPTIONS: ReadonlyArray<SegmentedOption<TemplateFormat>> = [
+  { value: "mjml", label: "MJML" },
+  { value: "html", label: "HTML" },
+];
+
+/** Groups the insert-placeholder chips into readable sections instead of one long flat row -
+ * a custom asset token (name not listed in any group) falls back to its own trailing "Images"
+ * group, added dynamically in TemplateEditorCard below. */
+const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[] }> = [
+  { label: "Attendee", names: ["first_name", "last_name", "full_name", "email"] },
+  {
+    label: "Event",
+    names: [
+      "event_name",
+      "event_date",
+      "event_location",
+      "event_address",
+      "event_map_url",
+      "google_maps_url",
+      "apple_maps_url",
+      "directions_text",
+      "accessibility_text",
+    ],
+  },
+  { label: "Ticket & QR", names: ["ticket_url", "qr_image_url", "download_page_url"] },
+  { label: "Wallet", names: ["apple_wallet_url", "google_wallet_url"] },
+  { label: "Branding", names: ["logo_url"] },
+];
+
+/** Wallet-add links get a ticket icon on their chip (like the image chips get a photo icon) -
+ * they're not images, but they're just as easy to skim past as a bare token otherwise. */
+const WALLET_PLACEHOLDERS = new Set(["apple_wallet_url", "google_wallet_url"]);
+
+/** One-line explanation shown as the chip's tooltip - what a token actually resolves to, not
+ * just its name. Custom image asset tokens (dynamic, not in this map) fall back to a generic
+ * description rather than showing no tooltip at all. */
+function placeholderDescription(name: string, isImage: boolean): string {
+  const known: Record<string, string> = {
+    first_name: "Attendee's first name.",
+    last_name: "Attendee's last name.",
+    full_name: "Attendee's full name.",
+    email: "Attendee's email address.",
+    event_name: "This event's title.",
+    event_date: "This event's date, formatted for the event's own timezone.",
+    event_location: "Venue name.",
+    event_address: "Venue's street address.",
+    event_map_url: "Static map image of the venue.",
+    google_maps_url: "Link to open the venue in Google Maps.",
+    apple_maps_url: "Link to open the venue in Apple Maps.",
+    directions_text: "Getting-there directions, if set in Event settings.",
+    accessibility_text: "Accessibility notes, if set in Event settings.",
+    ticket_url: "Link to the attendee's own ticket page.",
+    qr_image_url: "The attendee's scannable QR code image.",
+    download_page_url: "Link to the ticket download page.",
+    apple_wallet_url: "Link to add the ticket to Apple Wallet.",
+    google_wallet_url: "Link to add the ticket to Google Wallet.",
+    logo_url: "Your organisation's logo image.",
+  };
+  return known[name] ?? (isImage ? "Custom image asset for this event." : `{{${name}}}`);
+}
 
 /** Insert placeholder text at the textarea cursor selection. */
 function insertAtCursor(value: string, insertion: string, start: number, end: number): string {
@@ -478,6 +540,21 @@ function resolveSendTemplateId(
   return activeKey;
 }
 
+/** Options for the template picker `SearchableSelect` — shared by the Send tab's Message card
+ * and the Templates tab's picker bar so both always list the exact same templates the exact
+ * same way. The virtual "Ticket email (default)" entry only appears when there's no explicit
+ * "ticket" override yet (same condition TemplatePickerBar's own count/badge logic uses). */
+function templatePickerOptions(
+  templates: MailTemplateListItem[],
+): Array<{ id: string; label: string }> {
+  return [
+    ...(!templates.some((t) => t.name === "ticket")
+      ? [{ id: "virtual-ticket", label: "Ticket email (default)" }]
+      : []),
+    ...templates.map((t) => ({ id: t.id, label: t.label })),
+  ];
+}
+
 /** Confirmation message for the delete-template dialog. */
 function deleteConfirmMessage(
   pendingDelete: { templateId: string; name: string } | null,
@@ -600,12 +677,7 @@ function SendTab({
               searchPlaceholder="Search templates…"
               emptyLabel="No templates found"
               value={activeKey}
-              options={[
-                ...(!templates.some((t) => t.name === "ticket")
-                  ? [{ id: "virtual-ticket", label: "Ticket email (default)" }]
-                  : []),
-                ...templates.map((t) => ({ id: t.id, label: t.label })),
-              ]}
+              options={templatePickerOptions(templates)}
               onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
             />
           </div>
@@ -656,109 +728,165 @@ function SendTab({
   );
 }
 
-/** Template picker sidebar: the inherited-ticket entry (only shown when no explicit "ticket"
- * template exists yet) plus every saved template, each selectable and (except "ticket") deletable. */
-function TemplateSidebar({
+/** Top toolbar for the Templates tab: which template is open, when it was last saved (or a
+ * "Default template" badge for the virtual entry, which has no save history of its own), and
+ * "New template". The template list used to live in a side rail; moving the picker up here
+ * frees that width for the editor/preview split below instead of splitting the page three ways. */
+function TemplatePickerBar({
   event,
   templateActionBusy,
   templates,
   activeKey,
+  source,
   requestDirtyProtectedAction,
 }: Readonly<{
   event: EventDto;
   templateActionBusy: boolean;
   templates: MailTemplateListItem[];
   activeKey: string;
+  source: EventTemplateDto["source"];
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
 }>) {
+  const activeMeta = templates.find((t) => t.id === activeKey);
+  const isDefault = activeKey === "virtual-ticket" && source !== "event";
   return (
-    <nav className="communication-templates" aria-label="Email templates">
-      <div className="communication-templates__header">
-        <span>Templates</span>
+    <Card>
+      <div className="communication-template-picker">
+        <span className="communication-template-picker__icon" aria-hidden="true">
+          <i className="ti ti-ticket" />
+        </span>
+        <div className="communication-half-field communication-template-picker__select">
+          <SearchableSelect
+            id="communication-templates-picker"
+            label="Template"
+            placeholder="Choose a template…"
+            searchPlaceholder="Search templates…"
+            emptyLabel="No templates found"
+            value={activeKey}
+            disabled={templateActionBusy}
+            options={templatePickerOptions(templates)}
+            onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+          />
+        </div>
+        <span className="communication-template-picker__meta">
+          {isDefault ? (
+            <Badge variant="neutral">Default template</Badge>
+          ) : (
+            activeMeta && `Last edited ${formatEventDate(activeMeta.updated_at, "UTC")}`
+          )}
+        </span>
         <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
           {(guard) => (
             <Button
               size="sm"
               variant="secondary"
+              icon={<i className="ti ti-plus" aria-hidden="true" />}
               onClick={() => requestDirtyProtectedAction({ kind: "create" })}
               {...guard}
             >
-              New
+              New template
             </Button>
           )}
         </ArchivedGuard>
       </div>
-      <ul className="communication-templates__list">
-        {!templates.some((t) => t.name === "ticket") && (
-          <li
-            className={[
-              "communication-templates__item",
-              activeKey === "virtual-ticket" && "communication-templates__item--active",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <button
-              type="button"
-              disabled={templateActionBusy}
-              onClick={() => requestDirtyProtectedAction({ kind: "select", key: "virtual-ticket" })}
-            >
-              Ticket email (default)
-            </button>
-          </li>
-        )}
-        {templates.map((t) => (
-          <li
-            key={t.id}
-            className={[
-              "communication-templates__item",
-              activeKey === t.id && "communication-templates__item--active",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <button
-              type="button"
-              disabled={templateActionBusy}
-              onClick={() => requestDirtyProtectedAction({ kind: "select", key: t.id })}
-            >
-              {t.label}
-            </button>
-            <ArchivedGuard
-              event={event}
-              reasonId={`delete-template-${t.id}-reason`}
-              disabled={t.name === "ticket" || templateActionBusy}
-            >
-              {(guard) => (
-                <button
-                  type="button"
-                  className="communication-templates__delete"
-                  aria-label={`Delete ${t.label}`}
-                  onClick={() =>
-                    requestDirtyProtectedAction({
-                      kind: "delete",
-                      templateId: t.id,
-                      name: t.name,
-                    })
-                  }
-                  {...guard}
-                >
-                  <i className="ti ti-trash" aria-hidden="true" />
-                </button>
-              )}
-            </ArchivedGuard>
-          </li>
-        ))}
-      </ul>
-    </nav>
+    </Card>
   );
 }
 
 /** Placeholder chips, subject/format/body editor fields, validation errors, and the
  * preview/save actions row for the currently selected template. */
+/** Insert-placeholder chips, grouped into readable sections (Attendee/Event/Ticket & QR/Wallet/
+ * Branding) instead of one long flat row - a placeholder outside every fixed group (a custom
+ * per-event image asset token) falls into its own trailing "Images" group. */
+function PlaceholderChips({
+  allowedPlaceholders,
+  imagePlaceholders,
+  requiredPlaceholders,
+  onInsertPlaceholder,
+}: Readonly<{
+  allowedPlaceholders: string[];
+  imagePlaceholders: string[];
+  requiredPlaceholders: string[];
+  onInsertPlaceholder: (name: string) => void;
+}>) {
+  const allowedSet = new Set(allowedPlaceholders);
+  const grouped = new Set<string>();
+  const groups = PLACEHOLDER_GROUPS.map((g) => ({
+    label: g.label,
+    names: g.names.filter((n) => allowedSet.has(n)),
+  })).filter((g) => g.names.length > 0);
+  groups.forEach((g) => g.names.forEach((n) => grouped.add(n)));
+  const custom = allowedPlaceholders.filter((n) => !grouped.has(n));
+  if (custom.length > 0) groups.push({ label: "Images", names: custom });
+
+  return (
+    <>
+      {groups.map((group) => (
+        <div key={group.label} className="communication-ph-row">
+          <span className="communication-overline">{group.label}</span>
+          <div className="communication-chips">
+            {group.names.map((p) => (
+              <PlaceholderChip
+                key={p}
+                name={p}
+                isImage={imagePlaceholders.includes(p)}
+                isRequired={requiredPlaceholders.includes(p)}
+                onInsert={onInsertPlaceholder}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** One placeholder chip - required ones are outlined, image ones get a photo icon (plus a
+ * hover thumbnail for `qr_image_url`, the one image type this editor already has a same-origin
+ * sample source for), wallet-add links get a ticket icon so they read as "important" the same
+ * way an image chip does instead of blending into a bare-token wall of text. */
+function PlaceholderChip({
+  name,
+  isImage,
+  isRequired,
+  onInsert,
+}: Readonly<{
+  name: string;
+  isImage: boolean;
+  isRequired: boolean;
+  onInsert: (name: string) => void;
+}>) {
+  const titleParts = [
+    isRequired && "Required placeholder",
+    placeholderDescription(name, isImage),
+  ].filter((part): part is string => Boolean(part));
+  return (
+    <button
+      type="button"
+      className={["communication-chip", isRequired && "communication-chip--required"]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={() => onInsert(name)}
+      title={titleParts.join(" · ")}
+    >
+      {isImage && <i className="ti ti-photo" aria-hidden="true" />}
+      {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
+      {`{{${name}}}`}
+      {name === "qr_image_url" && (
+        <span className="communication-chip-preview" role="presentation">
+          <img src={SAMPLE_QR_PLACEHOLDER_DATA_URI} alt="" width={72} height={72} />
+        </span>
+      )}
+    </button>
+  );
+}
+
 function TemplateEditorCard({
   event,
   activeTemplateName,
+  canDelete,
+  templateActionBusy,
+  onDelete,
   allowedPlaceholders,
   imagePlaceholders,
   requiredPlaceholders,
@@ -774,8 +902,6 @@ function TemplateEditorCard({
   body,
   setBody,
   validationErrors,
-  previewLoading,
-  onPreview,
   saving,
   isDirty,
   saveButtonLabel,
@@ -783,6 +909,9 @@ function TemplateEditorCard({
 }: Readonly<{
   event: EventDto;
   activeTemplateName: string;
+  canDelete: boolean;
+  templateActionBusy: boolean;
+  onDelete: () => void;
   allowedPlaceholders: string[];
   imagePlaceholders: string[];
   requiredPlaceholders: string[];
@@ -798,8 +927,6 @@ function TemplateEditorCard({
   body: string;
   setBody: Dispatch<SetStateAction<string>>;
   validationErrors: string[];
-  previewLoading: boolean;
-  onPreview: () => Promise<void>;
   saving: boolean;
   isDirty: boolean;
   saveButtonLabel: string;
@@ -808,35 +935,43 @@ function TemplateEditorCard({
   return (
     <Card
       title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
-      actions={<Badge variant="neutral">Outlook-safe</Badge>}
-    >
-      <div className="communication-ph-row">
-        <span className="communication-overline">Insert placeholder</span>
-        <div className="communication-chips">
-          {allowedPlaceholders.map((p) => {
-            const isImage = imagePlaceholders.includes(p);
-            const isRequired = requiredPlaceholders.includes(p);
-            const titleParts = [
-              isRequired && "Required placeholder",
-              isImage && "Inserts a ready-to-use image",
-            ].filter((part): part is string => Boolean(part));
-            return (
-              <button
-                key={p}
-                type="button"
-                className={["communication-chip", isRequired && "communication-chip--required"]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onInsertPlaceholder(p)}
-                title={titleParts.length ? titleParts.join(" · ") : undefined}
-              >
-                {isImage && <i className="ti ti-photo" aria-hidden="true" />}
-                {`{{${p}}}`}
-              </button>
-            );
-          })}
+      actions={
+        <div className="communication-editor-actions">
+          <Segmented
+            ariaLabel="Template format"
+            value={format}
+            onChange={onRequestFormat}
+            options={TEMPLATE_FORMAT_OPTIONS}
+          />
+          {canDelete && (
+            <ArchivedGuard event={event} reasonId="delete-template-reason" disabled={templateActionBusy}>
+              {(guard) => (
+                <button
+                  type="button"
+                  className="communication-editor-delete"
+                  aria-label="Delete template"
+                  onClick={onDelete}
+                  {...guard}
+                >
+                  <i className="ti ti-trash" aria-hidden="true" />
+                </button>
+              )}
+            </ArchivedGuard>
+          )}
         </div>
-      </div>
+      }
+    >
+      <p className="communication-format-hint muted">
+        Changing format does not convert the template body — switching a non-empty template asks
+        for confirmation first.
+      </p>
+
+      <PlaceholderChips
+        allowedPlaceholders={allowedPlaceholders}
+        imagePlaceholders={imagePlaceholders}
+        requiredPlaceholders={requiredPlaceholders}
+        onInsertPlaceholder={onInsertPlaceholder}
+      />
 
       <Tooltip
         content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -854,27 +989,6 @@ function TemplateEditorCard({
           />
         </fieldset>
       </Tooltip>
-
-      <div className="communication-format-row">
-        <Button
-          variant={format === "mjml" ? "primary" : "secondary"}
-          size="sm"
-          onClick={() => onRequestFormat("mjml")}
-        >
-          MJML
-        </Button>
-        <Button
-          variant={format === "html" ? "primary" : "secondary"}
-          size="sm"
-          onClick={() => onRequestFormat("html")}
-        >
-          HTML
-        </Button>
-        <span className="communication-format-hint muted">
-          Changing format does not convert the template body — switching a non-empty template
-          asks for confirmation first.
-        </span>
-      </div>
 
       <Tooltip
         content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -907,17 +1021,6 @@ function TemplateEditorCard({
       )}
 
       <div className="communication-actions">
-        <ArchivedGuard
-          event={event}
-          reasonId="preview-template-reason"
-          disabled={previewLoading || editorSnapshotMissing}
-        >
-          {(guard) => (
-            <Button variant="secondary" onClick={() => void onPreview()} {...guard}>
-              {previewLoading ? "Previewing…" : "Preview"}
-            </Button>
-          )}
-        </ArchivedGuard>
         <ArchivedGuard
           event={event}
           reasonId="save-template-reason"
@@ -1030,21 +1133,33 @@ function PreviewBody({
   );
 }
 
-function PreviewCard({
+/** Templates tab's preview column - no Card wrapper (the mail-client chrome below already draws
+ * its own box; wrapping it in a second one nested it inside a card-in-a-card border, per PO
+ * report) and no manual refresh button, since the editor auto-previews on a debounce instead of
+ * requiring a click. */
+function TemplatesPreviewPanel({
   previewHtml,
   previewSubject,
   eventTitle,
   senderName,
   senderAddress,
+  previewLoading,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
   eventTitle: string;
   senderName: string | null;
   senderAddress: string | null;
+  previewLoading: boolean;
 }>) {
   return (
-    <Card title="Preview">
+    <div className="communication-templates-preview">
+      <div className="communication-preview-toolbar">
+        <span className="communication-preview-toolbar__label">
+          <i className="ti ti-eye" aria-hidden="true" /> Preview
+        </span>
+        {previewLoading && <span className="communication-preview-toolbar__status muted">Updating…</span>}
+      </div>
       <PreviewBody
         previewHtml={previewHtml}
         previewSubject={previewSubject}
@@ -1052,7 +1167,7 @@ function PreviewCard({
         senderName={senderName}
         senderAddress={senderAddress}
       />
-    </Card>
+    </div>
   );
 }
 
@@ -1784,6 +1899,22 @@ export function CommunicationPage() {
     }
   };
 
+  // Templates tab: live preview instead of click-to-preview, debounced so rapid typing fires one
+  // render request after a pause rather than one per keystroke. Only while that tab is actually
+  // open - the Send tab already gets its own immediate (non-debounced) preview-on-template-switch
+  // effect inside SendTab itself, since there's no draft being typed there to debounce against.
+  useEffect(() => {
+    if (tab !== "templates" || editorSnapshotMissing) return;
+    const t = window.setTimeout(() => {
+      void handlePreview();
+    }, 500);
+    return () => window.clearTimeout(t);
+    // handlePreview closes over live subject/body/format/activeKey state and is a fresh function
+    // every render (same reasoning as SendTab's own preview-on-switch effect) - only these
+    // primitives should actually restart the debounce timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, subject, body, format, activeKey, editorSnapshotMissing]);
+
   const performSave = async () => {
     if (!eventId) return;
     setValidationErrors([]);
@@ -1810,8 +1941,6 @@ export function CommunicationPage() {
         );
       }
       addToast("Template saved.", "success");
-      setPreviewSubject(null);
-      setPreviewHtml(null);
     } catch (err) {
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
@@ -1907,10 +2036,10 @@ export function CommunicationPage() {
     setDeliveryPage(1);
   }
 
-  // Matches TemplateSidebar's own list exactly: every saved template, plus the virtual "Ticket
-  // email (default)" entry when there's no explicit "ticket" override yet - that virtual entry
-  // is a real, selectable, sendable template from the operator's point of view even though it
-  // has no MailTemplateListItem row of its own.
+  // Matches templatePickerOptions' own list exactly: every saved template, plus the virtual
+  // "Ticket email (default)" entry when there's no explicit "ticket" override yet - that virtual
+  // entry is a real, selectable, sendable template from the operator's point of view even though
+  // it has no MailTemplateListItem row of its own.
   const templateTabCount = templates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
 
   return (
@@ -1966,21 +2095,29 @@ export function CommunicationPage() {
       )}
 
       {tab === "templates" && (
-        <>
-          <DefaultTemplateBanner activeKey={activeKey} source={source} />
+        <div className="communication-templates-tab">
+          <TemplatePickerBar
+            event={event}
+            templateActionBusy={templateActionBusy}
+            templates={templates}
+            activeKey={activeKey}
+            source={source}
+            requestDirtyProtectedAction={requestDirtyProtectedAction}
+          />
 
-          <div className="communication-compose">
-            <TemplateSidebar
-              event={event}
-              templateActionBusy={templateActionBusy}
-              templates={templates}
-              activeKey={activeKey}
-              requestDirtyProtectedAction={requestDirtyProtectedAction}
-            />
-
+          <div className="communication-templates-split">
             <TemplateEditorCard
               event={event}
               activeTemplateName={activeTemplateName}
+              canDelete={activeTemplateName !== "ticket"}
+              templateActionBusy={templateActionBusy}
+              onDelete={() =>
+                requestDirtyProtectedAction({
+                  kind: "delete",
+                  templateId: activeKey,
+                  name: activeTemplateName,
+                })
+              }
               allowedPlaceholders={allowedPlaceholders}
               imagePlaceholders={imagePlaceholders}
               requiredPlaceholders={requiredPlaceholders}
@@ -1996,20 +2133,19 @@ export function CommunicationPage() {
               body={body}
               setBody={setBody}
               validationErrors={validationErrors}
-              previewLoading={previewLoading}
-              onPreview={handlePreview}
               saving={saving}
               isDirty={isDirty}
               saveButtonLabel={saveButtonLabel}
               onSave={handleSave}
             />
 
-            <PreviewCard
+            <TemplatesPreviewPanel
               previewHtml={previewHtml}
               previewSubject={previewSubject}
               eventTitle={event.title}
               senderName={senderName}
               senderAddress={senderAddress}
+              previewLoading={previewLoading}
             />
           </div>
 
@@ -2022,7 +2158,7 @@ export function CommunicationPage() {
             onTestSend={handleTestSend}
             testStatus={testStatus}
           />
-        </>
+        </div>
       )}
 
       {tab === "log" && (

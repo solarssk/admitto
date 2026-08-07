@@ -149,16 +149,23 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("CommunicationPage archived lockdown", () => {
-  it("disables send email, new/delete template, preview, save, send test, and the editor fieldset", async () => {
+  it("disables send email, new/delete template, save, send test, and the editor fieldset", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
 
-    expectArchivedLock(screen.getByRole("button", { name: "New" }));
-    expectArchivedLock(screen.getByRole("button", { name: "Delete Reminder" }));
-    expectArchivedLock(screen.getByRole("button", { name: "Preview" }));
+    expectArchivedLock(screen.getByRole("button", { name: "New template" }));
+
+    // Delete only ever targets the currently open template - the ticket template itself is
+    // never deletable at all, so switch to Reminder first to reach an actual delete button.
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+    expectArchivedLock(screen.getByRole("button", { name: "Delete template" }));
 
     // Save is already disabled while the form isn't dirty (editing is impossible
     // anyway since the fieldset below is disabled) — confirm it stays blocked.
@@ -181,10 +188,10 @@ describe("CommunicationPage archived lockdown", () => {
     expect(
       (screen.getByRole("button", { name: "{{first_name}}" }) as HTMLButtonElement).disabled,
     ).toBe(false);
-    expect((screen.getByRole("button", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("radio", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
-    expect((screen.getByRole("button", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("radio", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
   });
