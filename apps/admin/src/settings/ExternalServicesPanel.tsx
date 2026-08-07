@@ -527,6 +527,7 @@ export function ExternalServicesPanel() {
                     placeholder="Select provider…"
                     searchPlaceholder="Search providers…"
                     emptyLabel="No providers found"
+                    showLabel={false}
                     value={weatherDraft.provider}
                     options={[
                       { id: "metno", label: "MET Norway" },
@@ -678,6 +679,7 @@ export function ExternalServicesPanel() {
                     placeholder="Select provider…"
                     searchPlaceholder="Search providers…"
                     emptyLabel="No providers found"
+                    showLabel={false}
                     value={normalizeMapsProvider(mapsDraft.geocodingProvider)}
                     options={[{ id: "nominatim", label: "OpenStreetMap (Nominatim)" }]}
                     disabled={saving || mapsTesting}
