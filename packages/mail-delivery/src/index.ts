@@ -5,6 +5,13 @@ export type {
   DrainPendingDeliveriesOptions,
   DrainPendingDeliveriesResult,
 } from "./drain.js";
+export {
+  MAX_MAIL_DRAIN_ATTEMPTS,
+  MAIL_DRAIN_BACKOFF_BASE_MS,
+  MAIL_DRAIN_BACKOFF_CAP_MS,
+  mailDrainRetryBackoffMs,
+  isMailDrainRetryDue,
+} from "./drain-retry.js";
 export { sendTestEmail } from "./testSend.js";
 export type { SendTestEmailParams, SendTestEmailOptions } from "./testSend.js";
 export {

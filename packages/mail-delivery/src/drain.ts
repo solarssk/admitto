@@ -7,6 +7,12 @@ import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
 import { createMailer, sendBatch, type MailerAdapter } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
+import {
+  MAX_MAIL_DRAIN_ATTEMPTS,
+  isMailDrainAttemptsExhausted,
+  isMailDrainRetryDue,
+  nextMailDrainAttempts,
+} from "./drain-retry.js";
 import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
@@ -23,6 +29,8 @@ export interface DrainPendingDeliveriesOptions {
   includeRetryableFailed?: boolean;
   /** Resolved public instance URL (env BASE_URL or DB instance_url). */
   baseUrl?: string;
+  /** Override "now" for backoff tests. */
+  nowMs?: number;
 }
 
 export interface DrainPendingDeliveriesResult {
@@ -38,17 +46,19 @@ type SnapshotRow = {
   attendee_id: string;
   purpose: string;
   status: string;
+  attempts: number;
+  attempted_at: Date | null;
   recipient_email: string | null;
   rendered_subject: string | null;
   rendered_html: string | null;
 };
 
-function deliveryUpdateFromBatchError(err: unknown) {
+function deliveryUpdateFromBatchError(err: unknown, exhausted: boolean) {
   const now = new Date();
   const message = err instanceof Error ? err.message : String(err);
   return {
     status: "failed" as const,
-    retryable: true,
+    retryable: !exhausted,
     error: sanitizeDeliveryError(message),
     attempted_at: now,
     failed_at: now,
@@ -64,6 +74,7 @@ async function claimDrainCandidates(
       ? Math.floor(options.limit)
       : DEFAULT_MAIL_DRAIN_LIMIT;
   const includeFailed = options.includeRetryableFailed !== false;
+  const nowMs = options.nowMs ?? Date.now();
 
   const statusClause = includeFailed
     ? {
@@ -74,11 +85,15 @@ async function claimDrainCandidates(
       }
     : { status: "queued" };
 
-  return prisma.emailDelivery.findMany({
+  // Over-fetch so per-row exponential backoff can filter without raw SQL.
+  const take = includeFailed ? Math.min(limit * 4, Math.max(limit, 200)) : limit;
+
+  const rows = await prisma.emailDelivery.findMany({
     where: {
       ...(options.eventId ? { event_id: options.eventId } : {}),
       AND: [
         statusClause,
+        { attempts: { lt: MAX_MAIL_DRAIN_ATTEMPTS } },
         {
           recipient_email: { not: null },
           rendered_subject: { not: null },
@@ -87,18 +102,23 @@ async function claimDrainCandidates(
       ],
     },
     orderBy: { queued_at: "asc" },
-    take: limit,
+    take,
     select: {
       id: true,
       event_id: true,
       attendee_id: true,
       purpose: true,
       status: true,
+      attempts: true,
+      attempted_at: true,
       recipient_email: true,
       rendered_subject: true,
       rendered_html: true,
     },
   });
+
+  const due = rows.filter((row) => isMailDrainRetryDue(row, nowMs));
+  return due.slice(0, limit);
 }
 
 async function sendOneFromSnapshot(
@@ -124,6 +144,8 @@ async function sendOneFromSnapshot(
   );
 
   const isRetry = delivery.status === "failed";
+  const nextAttempts = nextMailDrainAttempts(delivery.attempts);
+  const exhausted = isMailDrainAttemptsExhausted(nextAttempts);
   const message = {
     to: delivery.recipient_email,
     subject: materialized.subject,
@@ -139,17 +161,26 @@ async function sendOneFromSnapshot(
     if (!result) {
       await prisma.emailDelivery.update({
         where: { id: delivery.id },
-        data: { attempts: { increment: 1 } },
+        data: {
+          status: "failed",
+          retryable: !exhausted,
+          error: sanitizeDeliveryError("empty provider result"),
+          attempted_at: new Date(),
+          failed_at: new Date(),
+          attempts: nextAttempts,
+        },
       });
       return "failed";
     }
     const update = mapSendResultToDelivery(result);
+    const failedLike = update.status === "failed" || update.status === "rejected";
     await prisma.emailDelivery.update({
       where: { id: delivery.id },
       data: {
         ...update,
         provider: result.provider,
-        attempts: { increment: 1 },
+        attempts: nextAttempts,
+        ...(failedLike && exhausted ? { retryable: false } : {}),
       },
     });
     return result.status === "accepted" || result.status === "sent" ? "sent" : "failed";
@@ -157,8 +188,8 @@ async function sendOneFromSnapshot(
     await prisma.emailDelivery.update({
       where: { id: delivery.id },
       data: {
-        ...deliveryUpdateFromBatchError(err),
-        attempts: { increment: 1 },
+        ...deliveryUpdateFromBatchError(err, exhausted),
+        attempts: nextAttempts,
       },
     });
     return "failed";
