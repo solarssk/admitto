@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, Notice, Select } from "@admitto/ui";
+import { Button, Card, Notice } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
+
+const RSVP_STATUS_OPTIONS: ReadonlyArray<{ id: RsvpStatus; label: string }> = [
+  { id: "none", label: "Registered" },
+  { id: "confirmed", label: "Confirmed" },
+  { id: "declined", label: "Declined" },
+  { id: "tentative", label: "Tentative" },
+  { id: "cancelled", label: "Cancelled" },
+];
 
 interface CommunicationSendPanelProps {
   event: ArchivedGuardEvent;
@@ -20,6 +29,17 @@ interface CommunicationSendPanelProps {
 }
 
 type SendPhase = "form" | "polling" | "done";
+
+const RECIPIENT_OPTIONS: ReadonlyArray<{
+  value: BulkSendFilter["type"];
+  label: string;
+  icon: string;
+}> = [
+  { value: "all", label: "All attendees", icon: "ti-users" },
+  { value: "rsvp_status", label: "By RSVP status", icon: "ti-calendar-event" },
+  { value: "ticket_type", label: "By ticket type", icon: "ti-ticket" },
+  { value: "no_delivery", label: "No delivery for this template", icon: "ti-mail-off" },
+];
 
 /** Recipients filter, dry-run count, and batch send/status for the currently selected template.
  * Inline panel for the Send tab - carries the same form/count/send/poll logic that used to live
@@ -149,6 +169,7 @@ export function CommunicationSendPanel({
   };
 
   const filterReady = filterType !== "ticket_type" || ticketType.trim().length > 0;
+  const pickerLocked = busy || phase !== "form";
 
   const runDryRun = async () => {
     if (!filterReady) {
@@ -224,118 +245,133 @@ export function CommunicationSendPanel({
   };
 
   return (
-    <Card title="Recipients">
-      {error && (
-        <Notice variant="error" role="alert">
-          {error}
-        </Notice>
-      )}
-      {phase === "form" && (
-        <>
-          <p className="mail-field-hint">Choose recipients for this template.</p>
-          <Select
-            label="Recipients"
-            value={filterType}
-            onChange={(e) => {
-              setFilterType(e.target.value as BulkSendFilter["type"]);
-              setRecipientCount(null);
-              setError(null);
-            }}
-          >
-            <option value="all">All attendees</option>
-            <option value="no_delivery">No delivery for this template</option>
-            <option value="rsvp_status">By attendance status</option>
-            <option value="ticket_type">By ticket type</option>
-          </Select>
-          {filterType === "rsvp_status" && (
-            <Select
-              label="Attendance status"
-              value={rsvpStatus}
-              onChange={(e) => {
-                setRsvpStatus(e.target.value as RsvpStatus);
-                setRecipientCount(null);
-              }}
-            >
-              <option value="none">Registered</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="declined">Declined</option>
-              <option value="tentative">Tentative</option>
-              <option value="cancelled">Cancelled</option>
-            </Select>
-          )}
-          {filterType === "ticket_type" && (
-            <Select
-              label="Ticket type"
-              value={ticketType}
-              onChange={(e) => {
-                setTicketType(e.target.value);
+    <>
+      <Card title="Recipients">
+        <p className="mail-field-hint">Choose who should get this email.</p>
+        <div className="communication-recipient-cards" role="radiogroup" aria-label="Recipients">
+          {RECIPIENT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={filterType === opt.value}
+              disabled={pickerLocked}
+              className={[
+                "communication-recipient-card",
+                filterType === opt.value && "communication-recipient-card--active",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => {
+                setFilterType(opt.value);
                 setRecipientCount(null);
                 setError(null);
               }}
             >
-              <option value="">Choose…</option>
-              {ticketTypes.map((type) => (
-                <option key={type.key} value={type.key}>
-                  {type.label}
-                </option>
-              ))}
-            </Select>
-          )}
-          {filterType === "ticket_type" && ticketTypesError && (
-            <p className="mail-field-hint" role="alert">
-              {ticketTypesError}{" "}
-              <button
-                type="button"
-                className="link-btn"
-                onClick={() => setTicketTypesRetryToken((n) => n + 1)}
-              >
-                Retry
-              </button>
-            </p>
-          )}
-          {filterType === "ticket_type" && !filterReady && (
-            <p className="mail-field-hint">Choose a ticket type to count or send.</p>
-          )}
-          {recipientCount != null && (
-            <output className="mail-field-hint communication-send-panel__recipient-count">
-              <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
-            </output>
-          )}
-          <div className="communication-send-panel__actions">
-            <Button
+              <i className={`ti ${opt.icon}`} aria-hidden="true" />
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+        {filterType === "rsvp_status" && (
+          <SearchableSelect
+            id="communication-send-rsvp-status"
+            label="Attendance status"
+            placeholder="Select status…"
+            searchPlaceholder="Search statuses…"
+            emptyLabel="No statuses found"
+            value={rsvpStatus}
+            disabled={pickerLocked}
+            options={RSVP_STATUS_OPTIONS}
+            onChange={(id) => {
+              setRsvpStatus(id as RsvpStatus);
+              setRecipientCount(null);
+            }}
+          />
+        )}
+        {filterType === "ticket_type" && (
+          <SearchableSelect
+            id="communication-send-ticket-type"
+            label="Ticket type"
+            placeholder="Choose…"
+            searchPlaceholder="Search ticket types…"
+            emptyLabel="No ticket types found"
+            value={ticketType}
+            disabled={pickerLocked}
+            options={ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
+            onChange={(id) => {
+              setTicketType(id);
+              setRecipientCount(null);
+              setError(null);
+            }}
+          />
+        )}
+        {filterType === "ticket_type" && ticketTypesError && (
+          <p className="mail-field-hint" role="alert">
+            {ticketTypesError}{" "}
+            <button
               type="button"
-              variant="secondary"
-              disabled={busy || !filterReady}
-              onClick={() => void runDryRun()}
+              className="link-btn"
+              onClick={() => setTicketTypesRetryToken((n) => n + 1)}
             >
-              {busy ? "Checking…" : "Count recipients"}
-            </Button>
-            <ArchivedGuard event={event} reasonId="send-email-reason" disabled={busy || !filterReady}>
-              {(guard) => (
-                <Button type="button" variant="primary" onClick={() => void runSend()} {...guard}>
-                  {busy ? "Sending…" : "Send"}
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-        </>
-      )}
-      {(phase === "polling" || phase === "done") && (
-        <>
-          {resultMessage && <output className="mail-field-hint">{resultMessage}</output>}
-          {batchStatus && phase === "polling" && (
-            <p className="mail-field-hint">
-              Queued: {batchStatus.queued} · Sent: {batchStatus.sent} · Failed:{" "}
-              {batchStatus.failed}
-            </p>
-          )}
-          <div className="communication-send-panel__actions">
-            <Button type="button" variant="secondary" disabled={busy} onClick={resetForm}>
-              Send another
-            </Button>
-          </div>
-        </>
-      )}
-    </Card>
+              Retry
+            </button>
+          </p>
+        )}
+        {filterType === "ticket_type" && !filterReady && (
+          <p className="mail-field-hint">Choose a ticket type to count or send.</p>
+        )}
+      </Card>
+
+      <Card title="Review & send">
+        {error && (
+          <Notice variant="error" role="alert">
+            {error}
+          </Notice>
+        )}
+        {phase === "form" && (
+          <>
+            {recipientCount != null && (
+              <output className="mail-field-hint communication-send-panel__recipient-count">
+                <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
+              </output>
+            )}
+            <div className="communication-send-panel__actions">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy || !filterReady}
+                onClick={() => void runDryRun()}
+              >
+                {busy ? "Checking…" : "Count recipients"}
+              </Button>
+              <ArchivedGuard event={event} reasonId="send-email-reason" disabled={busy || !filterReady}>
+                {(guard) => (
+                  <Button type="button" variant="primary" onClick={() => void runSend()} {...guard}>
+                    {busy ? "Sending…" : "Send"}
+                  </Button>
+                )}
+              </ArchivedGuard>
+            </div>
+          </>
+        )}
+        {(phase === "polling" || phase === "done") && (
+          <>
+            {resultMessage && <output className="mail-field-hint">{resultMessage}</output>}
+            {batchStatus && phase === "polling" && (
+              <p className="mail-field-hint">
+                Queued: {batchStatus.queued} · Sent: {batchStatus.sent} · Failed:{" "}
+                {batchStatus.failed}
+              </p>
+            )}
+            <div className="communication-send-panel__actions">
+              <Button type="button" variant="secondary" disabled={busy} onClick={resetForm}>
+                Send another
+              </Button>
+            </div>
+          </>
+        )}
+      </Card>
+    </>
   );
 }

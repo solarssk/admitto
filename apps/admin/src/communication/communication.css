@@ -37,6 +37,42 @@
   gap: var(--space-4);
 }
 
+.communication-recipient-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-4);
+}
+
+.communication-recipient-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.communication-recipient-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.communication-recipient-card--active {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.communication-recipient-card i {
+  color: var(--text-muted);
+}
+
 .communication-send-panel__actions {
   display: flex;
   gap: var(--space-2);

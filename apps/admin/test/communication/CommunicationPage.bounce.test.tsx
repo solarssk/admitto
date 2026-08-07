@@ -38,8 +38,11 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
   fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
   fetchEventTemplateById: vi.fn(),
-  previewEventTemplate: vi.fn(),
-  previewEventTemplateById: vi.fn(),
+  // The Send tab (now the default landing tab) auto-renders a preview on mount - resolve these
+  // by default so that doesn't surface as an unrelated "Preview failed" error toast in tests
+  // that never cared about preview content.
+  previewEventTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
+  previewEventTemplateById: vi.fn().mockResolvedValue({ subject: "", html: "" }),
   saveEventTemplate: vi.fn(),
   saveEventTemplateById: vi.fn(),
   createEventTemplate: vi.fn(),

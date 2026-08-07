@@ -45,8 +45,7 @@ describe("CommunicationSendPanel", () => {
   it("uses attendance labels for the attendance recipient filter", () => {
     render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "By attendance status" }));
+    fireEvent.click(screen.getByRole("radio", { name: "By RSVP status" }));
 
     expect(screen.getByRole("button", { name: /^Attendance status,/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^Attendance status,/ }));
@@ -60,8 +59,7 @@ describe("CommunicationSendPanel", () => {
   it("disables send until ticket type is non-empty", async () => {
     render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "By ticket type" }));
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
     const sendBtn = screen.getByRole("button", { name: "Send" });
     const countBtn = screen.getByRole("button", { name: "Count recipients" });
@@ -242,8 +240,7 @@ describe("CommunicationSendPanel", () => {
       <CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-a" templateId="tpl-1" />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "By ticket type" }));
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
@@ -305,8 +302,7 @@ describe("CommunicationSendPanel", () => {
       <CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-a" templateId="tpl-1" />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "By ticket type" }));
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {

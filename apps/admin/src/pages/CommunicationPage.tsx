@@ -524,6 +524,11 @@ function SendTab({
   previewSubject,
   previewLoading,
   onPreview,
+  testEmail,
+  setTestEmail,
+  testSending,
+  onTestSend,
+  testStatus,
 }: Readonly<{
   event: EventDto;
   templates: MailTemplateListItem[];
@@ -536,7 +541,23 @@ function SendTab({
   previewSubject: string | null;
   previewLoading: boolean;
   onPreview: () => Promise<void>;
+  testEmail: string;
+  setTestEmail: Dispatch<SetStateAction<string>>;
+  testSending: boolean;
+  onTestSend: () => Promise<void>;
+  testStatus: { kind: "ok" | "error"; message: string } | null;
 }>) {
+  // Keeps the preview in sync with whichever template is picked, matching the mockup's
+  // always-rendered preview - unlike the Templates tab, there's no draft being actively typed
+  // into here, so there's no reason to make the admin click a separate Preview button first.
+  useEffect(() => {
+    void onPreview();
+    // onPreview closes over live subject/body/format state and is a fresh function every
+    // render, so it's intentionally left out here - only an actual template switch should
+    // re-trigger this, not every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey]);
+
   return (
     <div className="communication-send-tab">
       <Card title="Message">
@@ -554,24 +575,28 @@ function SendTab({
             </option>
           ))}
         </Select>
-        <div className="communication-actions">
-          <ArchivedGuard event={event} reasonId="preview-template-reason" disabled={previewLoading}>
-            {(guard) => (
-              <Button variant="secondary" onClick={() => void onPreview()} {...guard}>
-                {previewLoading ? "Previewing…" : "Preview"}
-              </Button>
-            )}
-          </ArchivedGuard>
-        </div>
+        {previewLoading ? (
+          <div className="communication-preview-empty">Loading preview…</div>
+        ) : (
+          <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} />
+        )}
       </Card>
-
-      <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} />
 
       <CommunicationSendPanel
         event={event}
         eventId={eventId}
         templateId={sendTemplateId}
         snapshotMissing={editorSnapshotMissing}
+      />
+
+      <SendTestCard
+        event={event}
+        testEmail={testEmail}
+        setTestEmail={setTestEmail}
+        testSending={testSending}
+        editorSnapshotMissing={editorSnapshotMissing}
+        onTestSend={onTestSend}
+        testStatus={testStatus}
       />
     </div>
   );
@@ -856,6 +881,33 @@ function TemplateEditorCard({
 }
 
 /** Rendered email preview: the compiled HTML in a sandboxed iframe, or a prompt to run Preview. */
+/** Rendered subject + sandboxed iframe body, or the empty-state prompt - no Card wrapper, so it
+ * can sit inside either its own "Preview" card (Templates tab) or the Send tab's "Message" card. */
+function PreviewBody({
+  previewHtml,
+  previewSubject,
+}: Readonly<{
+  previewHtml: string | null;
+  previewSubject: string | null;
+}>) {
+  return previewHtml ? (
+    <>
+      <div className="communication-preview-subject">
+        <strong>Subject</strong>
+        <span>{previewSubject}</span>
+      </div>
+      <iframe
+        className="communication-preview-frame"
+        title="Email preview"
+        sandbox=""
+        srcDoc={previewHtml}
+      />
+    </>
+  ) : (
+    <div className="communication-preview-empty">Click Preview to render the draft.</div>
+  );
+}
+
 function PreviewCard({
   previewHtml,
   previewSubject,
@@ -865,22 +917,7 @@ function PreviewCard({
 }>) {
   return (
     <Card title="Preview">
-      {previewHtml ? (
-        <>
-          <div className="communication-preview-subject">
-            <strong>Subject</strong>
-            <span>{previewSubject}</span>
-          </div>
-          <iframe
-            className="communication-preview-frame"
-            title="Email preview"
-            sandbox=""
-            srcDoc={previewHtml}
-          />
-        </>
-      ) : (
-        <div className="communication-preview-empty">Click Preview to render the draft.</div>
-      )}
+      <PreviewBody previewHtml={previewHtml} previewSubject={previewSubject} />
     </Card>
   );
 }
@@ -1681,6 +1718,11 @@ export function CommunicationPage() {
           previewSubject={previewSubject}
           previewLoading={previewLoading}
           onPreview={handlePreview}
+          testEmail={testEmail}
+          setTestEmail={setTestEmail}
+          testSending={testSending}
+          onTestSend={handleTestSend}
+          testStatus={testStatus}
         />
       )}
 
