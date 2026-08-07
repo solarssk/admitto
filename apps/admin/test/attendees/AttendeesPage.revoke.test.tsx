@@ -116,6 +116,29 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   };
 });
 
+const { pollBulkSendCompletion, setPollBulkSendCompletionActual, getPollBulkSendCompletionActual } =
+  vi.hoisted(() => {
+    let actual: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion;
+    const pollBulkSendCompletion = vi.fn();
+    return {
+      pollBulkSendCompletion,
+      setPollBulkSendCompletionActual: (
+        fn: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion,
+      ) => {
+        actual = fn;
+      },
+      getPollBulkSendCompletionActual: () => actual,
+    };
+  });
+
+vi.mock("../../src/attendees/pollBulkSendCompletion.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../../src/attendees/pollBulkSendCompletion.js")>();
+  setPollBulkSendCompletionActual(mod.pollBulkSendCompletion);
+  return {
+    pollBulkSendCompletion: (...args: unknown[]) => pollBulkSendCompletion(...args),
+  };
+});
+
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
     status: number;
@@ -207,6 +230,10 @@ beforeEach(() => {
     sent: 1,
     failed: 0,
   });
+  pollBulkSendCompletion.mockReset();
+  pollBulkSendCompletion.mockImplementation((...args: Parameters<ReturnType<typeof getPollBulkSendCompletionActual>>) =>
+    getPollBulkSendCompletionActual()(...args),
+  );
   setListItems([sampleRow]);
   mockFetchEventAttendees();
   mockMatchMedia(true);
@@ -583,6 +610,110 @@ describe("AttendeesPage revoke/restore", () => {
       expect(addToast).toHaveBeenCalledWith(
         "Could not refresh send status. Check Communication.",
         "info",
+      );
+    });
+  });
+
+  it("does not start header-send status polling when enqueue queues nothing", async () => {
+    bulkResendTickets.mockResolvedValueOnce({ batchId: "batch-hdr-empty", queued: 0, skipped: 2, failed: 0 });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
+        name: "Send tickets",
+      }),
+    );
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("No tickets were queued (2 skipped).", "info");
+    });
+    expect(pollBulkSendCompletion).not.toHaveBeenCalled();
+  });
+
+  it("does not toast poll errors after header-send polling was aborted on unmount", async () => {
+    bulkResendTickets.mockResolvedValueOnce({ batchId: "batch-hdr-abort", queued: 1, skipped: 0, failed: 0 });
+    pollBulkSendCompletion.mockImplementationOnce(async (_eventId, _batchId, _addToast, options) => {
+      const signal = options?.signal;
+      await new Promise<void>((_resolve, reject) => {
+        const fail = () => reject(new Error("stale poll"));
+        if (signal?.aborted) {
+          fail();
+          return;
+        }
+        signal?.addEventListener("abort", fail, { once: true });
+      });
+    });
+
+    const { unmount } = renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
+        name: "Send tickets",
+      }),
+    );
+    await waitFor(() => expect(pollBulkSendCompletion).toHaveBeenCalled());
+    unmount();
+    await waitFor(() => {
+      expect(addToast).not.toHaveBeenCalledWith(
+        "Could not refresh send status. Check Communication.",
+        "info",
+      );
+    });
+  });
+
+  it("aborts an in-flight header-send poll when another header send starts", async () => {
+    bulkResendTickets
+      .mockResolvedValueOnce({ batchId: "batch-hdr-a", queued: 1, skipped: 0, failed: 0 })
+      .mockResolvedValueOnce({ batchId: "batch-hdr-b", queued: 1, skipped: 0, failed: 0 });
+    const firstSignalRef: { current?: AbortSignal } = {};
+    pollBulkSendCompletion.mockImplementation(async (_eventId, batchId, addToastArg, options) => {
+      if (batchId === "batch-hdr-a") {
+        firstSignalRef.current = options?.signal;
+        await new Promise<void>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+        return;
+      }
+      return getPollBulkSendCompletionActual()(_eventId, batchId, addToastArg, options);
+    });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "More" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
+        name: "Send tickets",
+      }),
+    );
+    await waitFor(() => expect(firstSignalRef.current).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
+        name: "Send tickets",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(firstSignalRef.current?.aborted).toBe(true);
+      expect(pollBulkSendCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "batch-hdr-b",
+        addToast,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
     });
   });
