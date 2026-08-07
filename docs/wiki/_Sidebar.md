@@ -5,6 +5,7 @@
 **Start Here**
 
 - [About Admitto](About-Admitto)
+- [My Account](My-Account)
 - [Roles and Permissions](Roles-and-Permissions)
 - [First Event Checklist](First-Event-Checklist)
 
