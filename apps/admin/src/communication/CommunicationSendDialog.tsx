@@ -223,7 +223,12 @@ export function CommunicationSendDialog({
   };
 
   return (
-    <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
+    <dialog
+      open
+      className="add-attendee-modal communication-send-dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
       <ModalBackdrop onClose={closeIfAllowed} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
       <div className="add-attendee-modal__scroll" ref={scrollRef}>
@@ -325,7 +330,7 @@ export function CommunicationSendDialog({
               <p className="mail-field-hint">Choose a ticket type to count or send.</p>
             )}
             {recipientCount != null && (
-              <output className="mail-field-hint">
+              <output className="mail-field-hint communication-send-dialog__recipient-count">
                 <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
               </output>
             )}

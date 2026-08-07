@@ -619,7 +619,7 @@ function TemplateEditorCard({
   setActiveField,
   editorSnapshotMissing,
   format,
-  setFormat,
+  onRequestFormat,
   bodyRef,
   body,
   setBody,
@@ -643,7 +643,7 @@ function TemplateEditorCard({
   setActiveField: Dispatch<SetStateAction<ActiveField>>;
   editorSnapshotMissing: boolean;
   format: TemplateFormat;
-  setFormat: Dispatch<SetStateAction<TemplateFormat>>;
+  onRequestFormat: (next: TemplateFormat) => void;
   bodyRef: RefObject<HTMLTextAreaElement | null>;
   body: string;
   setBody: Dispatch<SetStateAction<string>>;
@@ -709,19 +709,20 @@ function TemplateEditorCard({
         <Button
           variant={format === "mjml" ? "primary" : "secondary"}
           size="sm"
-          onClick={() => setFormat("mjml")}
+          onClick={() => onRequestFormat("mjml")}
         >
           MJML
         </Button>
         <Button
           variant={format === "html" ? "primary" : "secondary"}
           size="sm"
-          onClick={() => setFormat("html")}
+          onClick={() => onRequestFormat("html")}
         >
           HTML
         </Button>
         <span className="communication-format-hint muted">
-          Changing format does not convert the template body.
+          Changing format does not convert the template body — switching a non-empty template
+          asks for confirmation first.
         </span>
       </div>
 
@@ -963,13 +964,32 @@ export function CommunicationPage() {
   const [pendingDelete, setPendingDelete] = useState<{ templateId: string; name: string } | null>(
     null,
   );
+  const [pendingFormat, setPendingFormat] = useState<TemplateFormat | null>(null);
 
   const isDirty = isTemplateDirty(
     { subject, body, format },
     { subject: savedSubject, body: savedBody, format: savedFormat },
   );
   const localConfirmOpen =
-    dirtyConfirmOpen || deleteConfirmOpen || createDialogOpen || overrideConfirmOpen;
+    dirtyConfirmOpen ||
+    deleteConfirmOpen ||
+    createDialogOpen ||
+    overrideConfirmOpen ||
+    pendingFormat !== null;
+
+  /** Switching MJML<->HTML never converts the body, so it's blind data loss on a non-empty
+   * template - gate it behind an explicit confirm instead of flipping state on click. */
+  const requestFormatChange = useCallback(
+    (next: TemplateFormat) => {
+      if (next === format) return;
+      if (body.trim() === "" && subject.trim() === "") {
+        setFormat(next);
+        return;
+      }
+      setPendingFormat(next);
+    },
+    [format, body, subject],
+  );
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       isDirty &&
@@ -1567,7 +1587,7 @@ export function CommunicationPage() {
     <div className="screen">
       <PageHeader
         title="Communication"
-        subtitle="Outlook-safe ticket email · Microsoft Graph transport"
+        subtitle="Ticket email templates and delivery log"
         actions={
           sendTemplateId ? (
             <ArchivedGuard event={event} reasonId="send-email-reason">
@@ -1616,7 +1636,7 @@ export function CommunicationPage() {
               setActiveField={setActiveField}
               editorSnapshotMissing={editorSnapshotMissing}
               format={format}
-              setFormat={setFormat}
+              onRequestFormat={requestFormatChange}
               bodyRef={bodyRef}
               body={body}
               setBody={setBody}
@@ -1735,6 +1755,19 @@ export function CommunicationPage() {
         loading={saving}
         onCancel={() => setOverrideConfirmOpen(false)}
         onConfirm={() => void performSave()}
+      />
+      <ConfirmDialog
+        open={pendingFormat !== null}
+        title={`Switch to ${pendingFormat === "html" ? "HTML" : "MJML"}?`}
+        message="Changing format does not convert the template body - the current content will likely stop rendering correctly and this can't be undone automatically."
+        confirmLabel="Switch format"
+        confirmVariant="danger"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          if (pendingFormat) setFormat(pendingFormat);
+          setPendingFormat(null);
+        }}
+        onCancel={() => setPendingFormat(null)}
       />
       <ConfirmDialog
         open={blocker.state === "blocked" && !localConfirmOpen}

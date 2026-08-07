@@ -622,13 +622,44 @@ describe("CommunicationPage templates", () => {
     await screen.findByRole("button", { name: "Preview" });
 
     fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Switch format" }));
     expect(screen.getByLabelText("MJML body")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "HTML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Switch format" }));
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("Preview subject")).toBeTruthy();
     expect(screen.getByTitle("Email preview").getAttribute("srcdoc")).toBe("<p>Rendered preview</p>");
+  });
+
+  it("keeps the format unchanged when the switch-format confirmation is cancelled", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+
+    renderPage();
+    await screen.findByRole("button", { name: "Preview" });
+
+    fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    expect(screen.getByLabelText("HTML body")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
+  });
+
+  it("switches format without confirmation when the body is empty", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventTemplateById.mockResolvedValue({
+      ...ticketRow,
+      subject_template: "",
+      body_template: "",
+      compiled_html_template: "",
+    });
+
+    renderPage();
+    await screen.findByRole("button", { name: "Preview" });
+
+    fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
   });
 
   it("renders inline validation errors returned by preview", async () => {
