@@ -13,8 +13,8 @@
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
 
-/** Default: 30 minutes after started_at. Override via options / env. */
-export const DEFAULT_IMPORT_JOB_STALE_RUNNING_MS = 30 * 60 * 1000;
+/** Default: 15 minutes after started_at. Keep in sync with admin import poll budget. */
+export const DEFAULT_IMPORT_JOB_STALE_RUNNING_MS = 15 * 60 * 1000;
 
 export const STALE_IMPORT_JOB_ERROR =
   "Import job abandoned (worker stopped while running). Upload the file again.";

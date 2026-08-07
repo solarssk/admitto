@@ -133,7 +133,7 @@ describe("waitForImportJobResult", () => {
     const ac = new AbortController();
     await expect(
       waitForImportJobResult("evt-1", "job-1", ac.signal, { sleep: async () => {} }),
-    ).rejects.toMatchObject({ status: 500, message: "disk full" });
+    ).rejects.toMatchObject({ status: 422, message: "disk full" });
   });
 
   it("treats succeeded with a null result as a terminal error", async () => {
@@ -165,10 +165,10 @@ describe("waitForImportJobResult", () => {
     const ac = new AbortController();
     await expect(
       waitForImportJobResult("evt-1", "job-1", ac.signal, { sleep: async () => {} }),
-    ).rejects.toMatchObject({ status: 500, message: "Import failed." });
+    ).rejects.toMatchObject({ status: 422, message: "Import failed." });
   });
 
-  it("throws 504 when the poll budget is exhausted while still pending", async () => {
+  it("throws 408 when the poll budget is exhausted while still pending", async () => {
     fetchImportJobStatus.mockResolvedValue({
       jobId: "job-1",
       status: "pending",
@@ -182,7 +182,7 @@ describe("waitForImportJobResult", () => {
         maxAttempts: 2,
         sleep: async () => {},
       }),
-    ).rejects.toMatchObject({ status: 504, message: expect.stringMatching(/still running/i) });
+    ).rejects.toMatchObject({ status: 408, message: expect.stringMatching(/still running/i) });
     expect(fetchImportJobStatus).toHaveBeenCalledTimes(2);
   });
 

@@ -1,8 +1,8 @@
 import { ApiError, fetchImportJobStatus } from "../api/client.js";
 import type { ImportCommitResponse } from "../api/types.js";
 
-const DEFAULT_POLL_ATTEMPTS = 90;
-const DEFAULT_POLL_INTERVAL_MS = 2000;
+const DEFAULT_POLL_ATTEMPTS = 180;
+const DEFAULT_POLL_INTERVAL_MS = 5000;
 
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
@@ -53,14 +53,15 @@ export async function waitForImportJobResult(
       throw new ApiError(500, "Import finished without a result.");
     }
     if (status.status === "failed") {
-      throw new ApiError(500, status.error || "Import failed.");
+      // 422: application failure (not transport). Avoids the global "server unavailable" banner.
+      throw new ApiError(422, status.error || "Import failed.");
     }
     if (attempt < maxAttempts - 1) {
       await sleep(intervalMs, signal);
     }
   }
   throw new ApiError(
-    504,
+    408,
     "Import is still running. Check history later or keep the worker running.",
   );
 }

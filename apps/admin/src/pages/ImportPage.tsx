@@ -796,6 +796,8 @@ export function ImportPage() {
       );
     } catch (err) {
       if (isAbortError(err)) return;
+      // Refresh history so a failed/reclaimed job is visible even when the wait ended early.
+      setHistoryToken((n) => n + 1);
       const capacityMeta = extractCapacityBlockedMeta(err);
       if (capacityMeta) {
         if (!ac.signal.aborted) setCapacityBlocked(capacityMeta);
