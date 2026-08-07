@@ -15,8 +15,10 @@ export type { DrainImportJobsResult } from "./drainImportJobs.js";
 export {
   reclaimStaleImportJobs,
   parseImportJobStaleRunningMs,
+  importResultJsonFromAuditMetadata,
   DEFAULT_IMPORT_JOB_STALE_RUNNING_MS,
   STALE_IMPORT_JOB_ERROR,
+  STALE_IMPORT_PENDING_ERROR,
 } from "./reclaimStaleImportJobs.js";
 export type {
   ReclaimStaleImportJobsResult,

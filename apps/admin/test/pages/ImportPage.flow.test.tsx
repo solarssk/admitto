@@ -108,6 +108,8 @@ function mockQueuedCommitSuccess(
     importId,
     error: null,
     result,
+    created_at: "2026-08-07T12:00:00.000Z",
+    started_at: "2026-08-07T12:00:01.000Z",
   });
 }
 
@@ -617,6 +619,8 @@ describe("ImportPage upload → preview → commit flow", () => {
         importId: "imp-1",
         error: null,
         result: null,
+        created_at: "2026-08-07T12:00:00.000Z",
+        started_at: null,
       })
       .mockResolvedValueOnce({
         jobId: "job-poll",
@@ -634,6 +638,8 @@ describe("ImportPage upload → preview → commit flow", () => {
           invalidRows: [],
           invalidCount: 0,
         },
+        created_at: "2026-08-07T12:00:00.000Z",
+        started_at: "2026-08-07T12:00:05.000Z",
       });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
@@ -905,6 +911,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
         created: 312,
         updated: 171,
         skipped: 4,
+        status: "succeeded",
+        error: null,
       },
     ]);
     renderPage();
@@ -1048,6 +1056,8 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
         created: 5,
         updated: 1,
         skipped: 0,
+        status: "succeeded",
+        error: null,
       },
     ]);
     let resolveSecond!: (items: unknown) => void;

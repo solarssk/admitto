@@ -166,6 +166,7 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry, showL
           <tr>
             <th>Date</th>
             <th>File</th>
+            <th>Status</th>
             <th>Created</th>
             <th>Updated</th>
             <th>Skipped</th>
@@ -179,6 +180,15 @@ function renderImportHistoryBody({ history, error, eventTimezone, onRetry, showL
               </td>
               <td className="import-history__file">
                 {entry.filename ?? <span className="import-sample__empty">-</span>}
+              </td>
+              <td
+                className={
+                  entry.status === "failed"
+                    ? "import-history__num import-history__num--warn"
+                    : "import-history__num import-history__num--ok"
+                }
+              >
+                {entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}
               </td>
               <td className="import-history__num import-history__num--ok">{entry.created}</td>
               <td className="import-history__num import-history__num--warn">{entry.updated}</td>

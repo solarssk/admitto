@@ -19,6 +19,19 @@ vi.mock("../../src/api/client.js", () => ({
   fetchImportJobStatus: (...args: unknown[]) => fetchImportJobStatus(...args),
 }));
 
+function pendingStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    jobId: "job-1",
+    status: "pending",
+    importId: "imp-1",
+    error: null,
+    result: null,
+    created_at: "2026-08-07T12:00:00.000Z",
+    started_at: null,
+    ...overrides,
+  };
+}
+
 describe("sleepWithAbort", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -77,6 +90,8 @@ describe("waitForImportJobResult", () => {
       importId: "imp-1",
       error: null,
       result,
+      created_at: "2026-08-07T12:00:00.000Z",
+      started_at: "2026-08-07T12:00:01.000Z",
     });
     const ac = new AbortController();
     await expect(waitForImportJobResult("evt-1", "job-1", ac.signal, { sleep: async () => {} })).resolves.toEqual(
@@ -87,13 +102,7 @@ describe("waitForImportJobResult", () => {
   it("polls pending then succeeded with the default sleep", async () => {
     vi.useFakeTimers();
     fetchImportJobStatus
-      .mockResolvedValueOnce({
-        jobId: "job-1",
-        status: "pending",
-        importId: "imp-1",
-        error: null,
-        result: null,
-      })
+      .mockResolvedValueOnce(pendingStatus())
       .mockResolvedValueOnce({
         jobId: "job-1",
         status: "succeeded",
@@ -110,11 +119,14 @@ describe("waitForImportJobResult", () => {
           invalidRows: [],
           invalidCount: 0,
         },
+        created_at: "2026-08-07T12:00:00.000Z",
+        started_at: "2026-08-07T12:00:05.000Z",
       });
     const ac = new AbortController();
     const done = waitForImportJobResult("evt-1", "job-1", ac.signal, {
       maxAttempts: 5,
       intervalMs: 1000,
+      now: () => Date.parse("2026-08-07T12:00:10.000Z"),
     });
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(1000);
@@ -124,11 +136,7 @@ describe("waitForImportJobResult", () => {
 
   it("throws ApiError when the job fails, using the server message", async () => {
     fetchImportJobStatus.mockResolvedValueOnce({
-      jobId: "job-1",
-      status: "failed",
-      importId: "imp-1",
-      error: "disk full",
-      result: null,
+      ...pendingStatus({ status: "failed", error: "disk full" }),
     });
     const ac = new AbortController();
     await expect(
@@ -143,6 +151,8 @@ describe("waitForImportJobResult", () => {
       importId: "imp-1",
       error: null,
       result: null,
+      created_at: "2026-08-07T12:00:00.000Z",
+      started_at: "2026-08-07T12:00:01.000Z",
     });
     const ac = new AbortController();
     await expect(
@@ -156,11 +166,7 @@ describe("waitForImportJobResult", () => {
 
   it("falls back to Import failed. when the failed job has no error text", async () => {
     fetchImportJobStatus.mockResolvedValueOnce({
-      jobId: "job-1",
-      status: "failed",
-      importId: "imp-1",
-      error: null,
-      result: null,
+      ...pendingStatus({ status: "failed", error: null }),
     });
     const ac = new AbortController();
     await expect(
@@ -168,37 +174,69 @@ describe("waitForImportJobResult", () => {
     ).rejects.toMatchObject({ status: 422, message: "Import failed." });
   });
 
-  it("throws 408 when the poll budget is exhausted while still pending", async () => {
-    fetchImportJobStatus.mockResolvedValue({
-      jobId: "job-1",
-      status: "pending",
-      importId: "imp-1",
-      error: null,
-      result: null,
-    });
+  it("throws 408 when created_at is past the stale window while still pending", async () => {
+    fetchImportJobStatus.mockResolvedValue(pendingStatus());
     const ac = new AbortController();
     await expect(
       waitForImportJobResult("evt-1", "job-1", ac.signal, {
-        maxAttempts: 2,
+        maxAttempts: 5,
         sleep: async () => {},
+        now: () => Date.parse("2026-08-07T12:15:00.000Z"),
       }),
     ).rejects.toMatchObject({ status: 408, message: expect.stringMatching(/still running/i) });
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("anchors the stale window on started_at after the worker claims the job", async () => {
+    vi.useFakeTimers();
+    fetchImportJobStatus
+      .mockResolvedValueOnce(
+        pendingStatus({
+          status: "running",
+          created_at: "2026-08-07T11:00:00.000Z",
+          started_at: "2026-08-07T12:10:00.000Z",
+        }),
+      )
+      .mockResolvedValueOnce({
+        jobId: "job-1",
+        status: "succeeded",
+        importId: "imp-1",
+        error: null,
+        result: {
+          importId: "imp-1",
+          toCreate: 1,
+          toUpdate: 0,
+          toSkip: 0,
+          created: 1,
+          updated: 0,
+          skipped: [],
+          invalidRows: [],
+          invalidCount: 0,
+        },
+        created_at: "2026-08-07T11:00:00.000Z",
+        started_at: "2026-08-07T12:10:00.000Z",
+      });
+    const ac = new AbortController();
+    // 14 minutes after created_at, but only 4 minutes after started_at → keep polling.
+    const done = waitForImportJobResult("evt-1", "job-1", ac.signal, {
+      maxAttempts: 5,
+      intervalMs: 1000,
+      now: () => Date.parse("2026-08-07T12:14:00.000Z"),
+    });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(done).resolves.toMatchObject({ created: 1 });
     expect(fetchImportJobStatus).toHaveBeenCalledTimes(2);
   });
 
   it("propagates AbortError when aborted during sleep", async () => {
     vi.useFakeTimers();
-    fetchImportJobStatus.mockResolvedValue({
-      jobId: "job-1",
-      status: "pending",
-      importId: "imp-1",
-      error: null,
-      result: null,
-    });
+    fetchImportJobStatus.mockResolvedValue(pendingStatus());
     const ac = new AbortController();
     const done = waitForImportJobResult("evt-1", "job-1", ac.signal, {
       maxAttempts: 5,
       intervalMs: 5000,
+      now: () => Date.parse("2026-08-07T12:00:10.000Z"),
     });
     await Promise.resolve();
     ac.abort();
