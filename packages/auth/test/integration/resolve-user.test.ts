@@ -162,4 +162,86 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
     });
     expect(third.groupsChanged).toBe(false);
   });
+
+  it("re-syncs User.display_name from fresh IdP claims on a later login", async () => {
+    const subject = "name-resync-subject";
+    const first = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "name-resync@example.com",
+      name: "Original Name",
+    });
+    expect(first.user.display_name).toBe("Original Name");
+
+    const second = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "name-resync@example.com",
+      name: "Updated Name",
+    });
+    expect(second.user.display_name).toBe("Updated Name");
+
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: first.user.id } });
+    expect(stored.display_name).toBe("Updated Name");
+  });
+
+  it("preserves a superadmin's manual display_name edit instead of overwriting it from the IdP", async () => {
+    const subject = "name-override-subject";
+    const first = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "name-override@example.com",
+      name: "IdP Name",
+    });
+
+    // Simulate a superadmin manually editing the profile (UserEditModal.tsx -> PATCH /users/:id).
+    await prisma.user.update({
+      where: { id: first.user.id },
+      data: { display_name: "Manually Overridden Name" },
+    });
+
+    const second = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "name-override@example.com",
+      name: "New IdP Name",
+    });
+    expect(second.user.display_name).toBe("Manually Overridden Name");
+
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: first.user.id } });
+    expect(stored.display_name).toBe("Manually Overridden Name");
+  });
+
+  it("re-syncs User.phone_number from fresh IdP claims on a later login", async () => {
+    const subject = "phone-resync-subject";
+    const first = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "phone-resync@example.com",
+      phone: "+15550000001",
+    });
+    expect(first.user.phone_number).toBe("+15550000001");
+
+    const second = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "phone-resync@example.com",
+      phone: "+15550000002",
+    });
+    expect(second.user.phone_number).toBe("+15550000002");
+
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: first.user.id } });
+    expect(stored.phone_number).toBe("+15550000002");
+  });
+
+  it("preserves a superadmin's manual phone_number edit instead of overwriting it from the IdP", async () => {
+    const subject = "phone-override-subject";
+    const first = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "phone-override@example.com",
+      phone: "+15550000003",
+    });
+
+    // Simulate a superadmin manually editing the profile (UserEditModal.tsx -> PATCH /users/:id).
+    await prisma.user.update({
+      where: { id: first.user.id },
+      data: { phone_number: "+15559999999" },
+    });
+
+    const second = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "phone-override@example.com",
+      phone: "+15550000004",
+    });
+    expect(second.user.phone_number).toBe("+15559999999");
+
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: first.user.id } });
+    expect(stored.phone_number).toBe("+15559999999");
+  });
 });
