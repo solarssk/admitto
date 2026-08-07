@@ -380,9 +380,6 @@ export function CommunicationSendPanel({
             </button>
           </p>
         )}
-        {filterType === "ticket_type" && !filterReady && (
-          <p className="mail-field-hint">Choose a ticket type to count or send.</p>
-        )}
         {error && (
           <Notice variant="error" role="alert">
             {error}

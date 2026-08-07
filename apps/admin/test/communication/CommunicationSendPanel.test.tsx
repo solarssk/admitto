@@ -65,7 +65,6 @@ describe("CommunicationSendPanel", () => {
     const countBtn = screen.getByRole("button", { name: "Count recipients" });
     expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
     expect((countBtn as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/Choose a ticket type/i)).toBeTruthy();
   });
 
   it("ignores late runSend results after the selected template changes", async () => {
@@ -327,7 +326,6 @@ describe("CommunicationSendPanel", () => {
     // The stale "vip" selection from event A must not still be silently active on event B -
     // the select reverts to its placeholder and Count/Send disable again until re-chosen.
     expect(screen.getByRole("button", { name: "Ticket type, none selected" })).toBeTruthy();
-    expect(screen.getByText("Choose a ticket type to count or send.")).toBeTruthy();
     expect(
       (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
     ).toBe(true);

@@ -1916,7 +1916,11 @@ export function CommunicationPage() {
         onChange={setTab}
         tabs={[
           { id: "send", label: "Send" },
-          { id: "templates", label: isDirty ? "Templates *" : "Templates" },
+          {
+            id: "templates",
+            label: isDirty ? "Templates *" : "Templates",
+            count: templates.length || undefined,
+          },
           { id: "log", label: "Delivery log", count: deliveryTotal || undefined },
         ]}
       />
