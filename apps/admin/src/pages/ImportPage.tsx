@@ -635,6 +635,49 @@ function ValidationSummaryCard({
   );
 }
 
+const IMPORT_POLL_ATTEMPTS = 90;
+const IMPORT_POLL_INTERVAL_MS = 2000;
+
+function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Poll worker job until succeeded result, failed, or poll budget exhausted. */
+async function waitForImportJobResult(
+  eventId: string,
+  jobId: string,
+  signal: AbortSignal,
+): Promise<ImportCommitResponse> {
+  for (let attempt = 0; attempt < IMPORT_POLL_ATTEMPTS; attempt += 1) {
+    const status = await fetchImportJobStatus(eventId, jobId, signal);
+    if (status.status === "succeeded" && status.result) {
+      return status.result;
+    }
+    if (status.status === "failed") {
+      throw new ApiError(500, status.error || "Import failed.");
+    }
+    await sleepWithAbort(IMPORT_POLL_INTERVAL_MS, signal);
+  }
+  throw new ApiError(
+    504,
+    "Import is still running. Check history later or keep the worker running.",
+  );
+}
+
 /** Admin flow: upload CSV/XLSX → preview counts → commit import. */
 export function ImportPage() {
   const { eventId } = useParams();
@@ -781,35 +824,7 @@ export function ImportPage() {
     setCapacityBlocked(null);
     try {
       const queued = await commitImport(eventId, file, overwrite, { force: opts?.force });
-      let data: ImportCommitResponse | null = null;
-      for (let attempt = 0; attempt < 90; attempt += 1) {
-        const status = await fetchImportJobStatus(eventId, queued.jobId, ac.signal);
-        if (status.status === "succeeded" && status.result) {
-          data = status.result;
-          break;
-        }
-        if (status.status === "failed") {
-          throw new ApiError(500, status.error || "Import failed.");
-        }
-        await new Promise<void>((resolve, reject) => {
-          const onAbort = () => {
-            window.clearTimeout(timer);
-            reject(new DOMException("Aborted", "AbortError"));
-          };
-          const timer = window.setTimeout(() => {
-            ac.signal.removeEventListener("abort", onAbort);
-            resolve();
-          }, 2000);
-          if (ac.signal.aborted) {
-            onAbort();
-            return;
-          }
-          ac.signal.addEventListener("abort", onAbort, { once: true });
-        });
-      }
-      if (!data) {
-        throw new ApiError(504, "Import is still running. Check history later or keep the worker running.");
-      }
+      const data = await waitForImportJobResult(eventId, queued.jobId, ac.signal);
       setResult(data);
       setStep("done");
       setForceCapacity(false);

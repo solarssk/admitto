@@ -9,6 +9,7 @@ import { renderWithToast } from "../test-utils.js";
 const fetchEventCustomFields = vi.fn();
 const previewImport = vi.fn();
 const commitImport = vi.fn();
+const fetchImportJobStatus = vi.fn();
 const fetchImportHistory = vi.fn();
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
@@ -39,6 +40,7 @@ vi.mock("../../src/api/client.js", () => ({
   previewImport: (...args: unknown[]) => previewImport(...args),
   fetchImportHistory: (...args: unknown[]) => fetchImportHistory(...args),
   commitImport: (...args: unknown[]) => commitImport(...args),
+  fetchImportJobStatus: (...args: unknown[]) => fetchImportJobStatus(...args),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -59,6 +61,26 @@ function renderPage() {
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** Queue 202 + one succeeded poll with the given commit result payload. */
+function mockQueuedCommitSuccess(
+  result: Record<string, unknown>,
+  jobId = "job-1",
+): void {
+  const importId = typeof result.importId === "string" ? result.importId : "imp-1";
+  commitImport.mockResolvedValueOnce({
+    jobId,
+    status: "pending",
+    importId,
+  });
+  fetchImportJobStatus.mockResolvedValueOnce({
+    jobId,
+    status: "succeeded",
+    importId,
+    error: null,
+    result,
+  });
 }
 
 function samplePreview(overrides: Partial<Record<string, unknown>> = {}) {
@@ -104,7 +126,7 @@ describe("ImportPage upload → preview → commit flow", () => {
   it("selects a file, toggles overwrite, previews, and commits", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 1,
       toUpdate: 0,
@@ -455,7 +477,7 @@ describe("ImportPage upload → preview → commit flow", () => {
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 0,
       toUpdate: 0,
@@ -493,6 +515,16 @@ describe("ImportPage upload → preview → commit flow", () => {
         new ApiError(409, "event full", "event_full", { capacity: 10, current: 10, incoming: 2 }),
       )
       .mockResolvedValueOnce({
+        jobId: "job-force",
+        status: "pending",
+        importId: "imp-1",
+      });
+    fetchImportJobStatus.mockResolvedValueOnce({
+      jobId: "job-force",
+      status: "succeeded",
+      importId: "imp-1",
+      error: null,
+      result: {
         importId: "imp-1",
         toCreate: 2,
         toUpdate: 0,
@@ -502,7 +534,8 @@ describe("ImportPage upload → preview → commit flow", () => {
         skipped: [],
         invalidRows: [],
         invalidCount: 0,
-      });
+      },
+    });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
@@ -856,7 +889,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
   it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 1,
       toUpdate: 0,
@@ -897,7 +930,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
   it("notes the true total on the done screen when the server capped commit's skipped/invalid row detail (CodeRabbit review)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 0,
       toUpdate: 0,
