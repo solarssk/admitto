@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Bounce detection Recent checks** no longer renders as a raw browser bullet list under Last automatic check. The history is a compact styled list with status icons, scrolls inside a capped height when there are many runs (slim on-theme scrollbar only when needed), and the latest run is not duplicated below the summary card.
+
 ### Added
+- **OIDC identity providers gain configurable given name, family name, and phone claims**, alongside the existing email/name/groups claims in Identity provider settings. When the combined name claim is absent from the token, the display name falls back to the given + family name claims instead of being left blank.
 - **Bounce detection last automatic check.** Event settings → Mailing shows the latest bounce-ingest run (time, OK/Failed, message counts). **Run check now** in the card header triggers a one-off ingest and updates the card (Test connection still does not). Settings → Health adds a soft **Bounce detection** row (`not_configured` / `ok` / `degraded`) based on enabled events' last runs. Does not affect `/healthz`.
 - **Bounce detection Check every** now controls when each event is due for bounce-ingest. The deploy loop wakes on `BOUNCE_INGEST_TICK_SECONDS` (default 60; legacy `BOUNCE_INGEST_INTERVAL_SECONDS` still accepted as the tick) and skips events whose poll interval has not elapsed.
 - **Bounce-ingest System Logs bridge.** When `OPS_HEALTH_TOKEN` and `BOUNCE_INGEST_APP_URL` are set, each event run POSTs `mail_bounce_ingest_ok` / `mail_bounce_ingest_failed` into Settings → Logs (mail). Missing config is a quiet no-op (stdout only).
@@ -213,6 +217,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SonarCloud maintainability cleanup across `apps/web` (routes, auth, rate-limit, admin API handlers, page templates): removed unused/duplicate imports, replaced `parseInt` with `Number.parseInt`, simplified manual null-checks and ternaries to optional chaining/`??`/`??=`, and hoisted a nested function declaration out of `createApp` — mechanical, no behavior change.
 
 ### Fixed
+- **SSO sign-in now re-syncs the account's display name and phone number from the identity provider on every subsequent login**, not just the first one — a name change in the IdP (e.g. after marriage, a corrected typo) previously never reached the local account. A superadmin's own manual edit to a user's display name or phone number in the Edit user modal still wins over the IdP and is not overwritten on the user's next sign-in. Accounts already stale from before this fix (their linked identity's last-known IdP name/phone had already drifted from the account under the old, first-login-only behavior) are repaired by a one-time backfill so they aren't mistaken for a manual override and permanently skipped.
 - **Event item / ops-config admin API now retries on every Postgres serialization conflict, not just Prisma's direct `P2034` code.** Under Prisma's driver adapters, a genuine conflict can instead surface wrapped (Postgres `40001` / `TransactionWriteConflict`), which this endpoint previously treated as a hard failure instead of retrying — now it uses the same detection already relied on for OIDC role-grant revokes.
 - **Bounce-ingest System Logs POST aborts after 2 seconds**, so a hung app cannot stall the mailbox poll from the ingest `finally` block.
 - **Audit log shows friendly labels** for bounce detection and other previously unmapped actions (support contact, weather/maps settings, SMTP/bounce probes, location, session device label) instead of raw snake_case.

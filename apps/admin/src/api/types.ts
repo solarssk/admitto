@@ -1552,6 +1552,9 @@ export interface ProviderDetailDto {
   claim_email: string;
   claim_name: string;
   claim_groups: string;
+  claim_given_name: string;
+  claim_family_name: string;
+  claim_phone: string;
   enabled: boolean;
   login_button_label: string | null;
   mappings: ProviderMappingDto[];
@@ -1572,6 +1575,9 @@ export interface ProviderRequestBody {
   claim_email?: string;
   claim_name?: string;
   claim_groups?: string;
+  claim_given_name?: string;
+  claim_family_name?: string;
+  claim_phone?: string;
   enabled?: boolean;
   login_button_label?: string | null;
   /** Mapping shape mirrors `ProviderMappingDto` except `scope_id` is nullable on
