@@ -1177,6 +1177,185 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       where: { event_id: EVENT_A, email: "slot-left@example.com" },
     });
   });
+
+  it("allows superadmin force=1 when import would exceed capacity", async () => {
+    const password_hash = await hashPassword(PASSWORD);
+    const superEmail = "admin-import-super@example.com";
+    await prisma.session.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.userMfaMethod.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.roleAssignment.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.user.deleteMany({ where: { email: superEmail } });
+    const priorSuper = await prisma.roleAssignment.findFirst({
+      where: { role: "superadmin", scope_type: "instance" },
+      select: { id: true, user_id: true },
+    });
+    const superUser = await prisma.user.create({ data: { email: superEmail, password_hash } });
+    try {
+      if (priorSuper) {
+        await prisma.roleAssignment.update({
+          where: { id: priorSuper.id },
+          data: { user_id: superUser.id },
+        });
+      } else {
+        await prisma.roleAssignment.create({
+          data: {
+            user_id: superUser.id,
+            role: "superadmin",
+            scope_type: "instance",
+            scope_id: null,
+          },
+        });
+      }
+      await prisma.userMfaMethod.create({
+        data: {
+          user_id: superUser.id,
+          type: "totp",
+          secret_enc: encryptTotpSecret(generateTotpSecret()),
+          confirmed_at: new Date(),
+        },
+      });
+      const superCookie = await sessionCookieFor(superUser.id);
+      const current = await prisma.attendee.count({
+        where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
+      });
+      const csv = [
+        "first_name,last_name,email",
+        "Forced,One,force-import-one@example.com",
+        "Forced,Two,force-import-two@example.com",
+      ].join("\n");
+      await withSavedEventCapacity(current, async () => {
+        const { status, body } = await postCommitAndDrain(
+          EVENT_A,
+          csvFormData(csv, "force.csv"),
+          superCookie,
+          true,
+        );
+        expect(status).toBe(202);
+        const job = await prisma.adminJob.findUniqueOrThrow({
+          where: { id: String(body.jobId) },
+        });
+        expect(job.force_capacity).toBe(true);
+        expect(job.client_timezone).toBeNull();
+      });
+    } finally {
+      await prisma.attendee.deleteMany({
+        where: {
+          event_id: EVENT_A,
+          email: { in: ["force-import-one@example.com", "force-import-two@example.com"] },
+        },
+      });
+      if (priorSuper) {
+        await prisma.roleAssignment.update({
+          where: { id: priorSuper.id },
+          data: { user_id: priorSuper.user_id },
+        });
+      } else {
+        await prisma.roleAssignment.deleteMany({
+          where: { user_id: superUser.id, role: "superadmin", scope_type: "instance" },
+        });
+      }
+      await prisma.session.deleteMany({ where: { user_id: superUser.id } });
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: superUser.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: superUser.id } });
+      await prisma.user.delete({ where: { id: superUser.id } });
+    }
+  });
+
+  it("stores client timezone on the queued job when the header is valid", async () => {
+    const csv = ["first_name,last_name,email", "Tz,Guest,tz-guest@example.com"].join("\n");
+    const res = await app.request(`/api/admin/events/${EVENT_A}/import/commit`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        ...sameOrigin,
+        "x-client-timezone": "Europe/Warsaw",
+      },
+      body: csvFormData(csv, "tz.csv"),
+    });
+    expect(res.status).toBe(202);
+    const { jobId } = (await res.json()) as { jobId: string };
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job.client_timezone).toBe("Europe/Warsaw");
+    expect(job.force_capacity).toBe(false);
+    await drainImportJobs(prisma, getDefaultStorage(), { limit: 5 });
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_A, email: "tz-guest@example.com" },
+    });
+  });
+});
+
+describe("GET /api/admin/events/:eventId/import/jobs/:jobId", () => {
+  it("returns 400/404 for blank and unknown job ids", async () => {
+    const blank = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/%20`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(blank.status).toBe(400);
+    expect(await blank.json()).toEqual({ error: "jobId required" });
+
+    const missing = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/does-not-exist`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "not_found" });
+  });
+
+  it("returns 403 for operators and null result while pending or failed", async () => {
+    const csv = ["first_name,last_name,email", "Pending,Job,pending-job@example.com"].join("\n");
+    const queued = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv, "pending.csv"),
+      adminCookie,
+    );
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+
+    const forbidden = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(forbidden.status).toBe(403);
+
+    const pending = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(pending.status).toBe(200);
+    expect(await pending.json()).toMatchObject({
+      jobId,
+      status: "pending",
+      result: null,
+    });
+    expect(pending.headers.get("Cache-Control")).toBe("no-store");
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: { status: "failed", error: "boom", result_json: null, finished_at: new Date() },
+    });
+    const failed = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(await failed.json()).toMatchObject({
+      status: "failed",
+      error: "boom",
+      result: null,
+    });
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: { status: "succeeded", error: null, result_json: "oops" },
+    });
+    const badJson = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect((await badJson.json()).result).toBeNull();
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: { status: "succeeded", error: null, result_json: ["not-an-object"] },
+    });
+    const arrayJson = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect((await arrayJson.json()).result).toBeNull();
+  });
 });
 
 describe("GET /api/admin/events/:eventId/import/template", () => {

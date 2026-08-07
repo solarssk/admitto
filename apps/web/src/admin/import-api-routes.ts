@@ -529,7 +529,7 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
         event_id: eventId,
         actor_user_id: audit.operator ?? null,
         session_id: audit.sessionId ?? null,
-        client_timezone: resolveClientTimezone(c) ?? null,
+        client_timezone: resolveClientTimezone(c),
         storage_key: staged.key,
         filename: upload.filename,
         overwrite: upload.overwrite,
@@ -590,7 +590,12 @@ export async function handleGetImportJob(c: Context, db: PrismaClient): Promise<
   if (!job) return c.json({ error: "not_found" }, 404);
 
   let result: ImportCommitDto | null = null;
-  if (job.status === "succeeded" && job.result_json && typeof job.result_json === "object") {
+  if (
+    job.status === "succeeded" &&
+    job.result_json &&
+    typeof job.result_json === "object" &&
+    !Array.isArray(job.result_json)
+  ) {
     result = job.result_json as ImportCommitDto;
   }
 
