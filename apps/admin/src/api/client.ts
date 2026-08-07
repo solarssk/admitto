@@ -19,7 +19,6 @@ import type {
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
-  ImportCommitResponse,
   ImportCommitQueuedResponse,
   ImportJobStatusResponse,
   BulkResendResponse,
