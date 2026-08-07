@@ -5,7 +5,7 @@ export function printUsage(): void {
 Usage: admitto <namespace> <command> [options]
 
 Namespaces:
-  worker       Background loop (bounce ingest + retention; ADR 0042) — long-running
+  worker       Background loop (bounce ingest + retention; ADR 0042) - long-running
   checkin      Manual attendee admission when the SPA/scanner is down
   attendees    Emergency CSV export (paper backup list)
   mail         Retry failed email deliveries

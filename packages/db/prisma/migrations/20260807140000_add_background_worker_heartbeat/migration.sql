@@ -5,5 +5,6 @@ CREATE TABLE "BackgroundWorkerHeartbeat" (
     "hostname" TEXT,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "BackgroundWorkerHeartbeat_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "BackgroundWorkerHeartbeat_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "BackgroundWorkerHeartbeat_singleton" CHECK ("id" = 'default')
 );

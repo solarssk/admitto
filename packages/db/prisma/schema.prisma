@@ -815,6 +815,7 @@ model OidcAuthState {
 }
 
 // Single-row heartbeat for Admitto worker (ADR 0042). Updated every tick regardless of job due/success.
+// DB CHECK ("id" = 'default') enforces the singleton contract (see migration).
 model BackgroundWorkerHeartbeat {
   id           String   @id // fixed: "default"
   last_beat_at DateTime

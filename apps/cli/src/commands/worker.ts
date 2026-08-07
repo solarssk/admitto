@@ -69,11 +69,12 @@ async function runBounceJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
 }
 
-async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+/** @returns true when this process held the lock and finished retention work. */
+async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
   const acquired = await locks.tryAcquire("retention");
   if (!acquired) {
     log("retention", "skipped (lock held)");
-    return;
+    return false;
   }
   try {
     const retentionDays = resolveSecurityAuditLogRetentionDays(process.env);
@@ -87,6 +88,7 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
       "retention",
       `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted}`,
     );
+    return true;
   } finally {
     await locks.release("retention");
   }
@@ -114,7 +116,8 @@ async function runWorkerTick(
   if (!retentionIsDue(schedule, Date.now())) return;
 
   await runJobSafely("retention", async () => {
-    await runRetentionJob(db, locks);
+    const completed = await runRetentionJob(db, locks);
+    if (!completed) return;
     schedule.lastRetentionAt = Date.now();
     schedule.bootDone = true;
   });
