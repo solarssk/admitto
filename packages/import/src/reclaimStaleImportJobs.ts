@@ -5,6 +5,10 @@
  * stays running forever and the UI polls until timeout. Prefer fail (not
  * re-queue): a mid-commit crash may leave partial DB work; safe recovery is
  * operator re-upload.
+ *
+ * When the import transaction already committed (`attendees_imported` audit with
+ * matching importId) but the worker died before clearing `running`, mark the job
+ * succeeded instead of failed so operators are not told to re-upload duplicates.
  */
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
@@ -17,6 +21,8 @@ export const STALE_IMPORT_JOB_ERROR =
 
 export type ReclaimStaleImportJobsResult = {
   reclaimed: number;
+  /** Stale running jobs whose import already landed; marked succeeded. */
+  healed: number;
 };
 
 export type ReclaimStaleImportJobsOptions = {
@@ -48,9 +54,26 @@ async function deleteStagedKey(storage: StorageAdapter, storageKey: string | nul
   }
 }
 
+async function importAlreadyCommitted(
+  db: PrismaClient,
+  eventId: string | null,
+  importId: string | null,
+): Promise<boolean> {
+  if (!eventId || !importId) return false;
+  const row = await db.attendeeActionLog.findFirst({
+    where: {
+      event_id: eventId,
+      action_type: "attendees_imported",
+      metadata: { path: ["importId"], equals: importId },
+    },
+    select: { id: true },
+  });
+  return row != null;
+}
+
 /**
- * Mark stale running import_commit jobs failed and delete staged CSV (best-effort).
- * Caller should hold the worker `import` lock.
+ * Mark stale running import_commit jobs failed (or heal to succeeded when import landed)
+ * and delete staged CSV (best-effort). Caller should hold the worker `import` lock.
  */
 export async function reclaimStaleImportJobs(
   db: PrismaClient,
@@ -70,24 +93,33 @@ export async function reclaimStaleImportJobs(
       status: "running",
       started_at: { lt: cutoff },
     },
-    select: { id: true, storage_key: true },
+    select: { id: true, storage_key: true, event_id: true, import_id: true },
     orderBy: { started_at: "asc" },
   });
 
   let reclaimed = 0;
+  let healed = 0;
   for (const job of stale) {
+    const landed = await importAlreadyCommitted(db, job.event_id, job.import_id);
     const updated = await db.adminJob.updateMany({
       where: { id: job.id, status: "running" },
-      data: {
-        status: "failed",
-        error: STALE_IMPORT_JOB_ERROR.slice(0, 2000),
-        finished_at: now,
-      },
+      data: landed
+        ? {
+            status: "succeeded",
+            error: null,
+            finished_at: now,
+          }
+        : {
+            status: "failed",
+            error: STALE_IMPORT_JOB_ERROR.slice(0, 2000),
+            finished_at: now,
+          },
     });
     if (updated.count === 0) continue;
     await deleteStagedKey(storage, job.storage_key);
-    reclaimed += 1;
+    if (landed) healed += 1;
+    else reclaimed += 1;
   }
 
-  return { reclaimed };
+  return { reclaimed, healed };
 }

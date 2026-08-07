@@ -6,7 +6,6 @@ import type { StorageAdapter } from "@admitto/storage";
 import {
   executeImportCommit,
   ImportCapacityExceededError,
-  type ExecuteImportCommitResult,
 } from "./executeImportCommit.js";
 import {
   parseImportJobStaleRunningMs,
@@ -19,6 +18,8 @@ export type DrainImportJobsResult = {
   failed: number;
   /** Stale `running` jobs marked failed before claiming. */
   reclaimed: number;
+  /** Stale `running` jobs healed to succeeded (import already committed). */
+  healed: number;
 };
 
 async function claimNextImportJob(db: PrismaClient) {
@@ -84,7 +85,7 @@ async function runClaimedImportJob(
     }
     const bytes = await storage.get(job.storage_key);
     const csv = bytes.toString("utf8");
-    const result = await executeImportCommit(db, {
+    await executeImportCommit(db, {
       eventId: job.event_id,
       csv,
       overwrite: job.overwrite,
@@ -94,8 +95,9 @@ async function runClaimedImportJob(
       timezone: job.client_timezone,
       filename: job.filename,
       importId: job.import_id,
+      adminJobId: job.id,
     });
-    await markSucceeded(db, job.id, result);
+    // Succeeded status is committed inside executeImportCommit when adminJobId is set.
     await deleteStagedKey(storage, job.storage_key);
     return "succeeded";
   } catch (err) {
@@ -115,7 +117,7 @@ export async function drainImportJobs(
 ): Promise<DrainImportJobsResult> {
   const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
   const staleRunningMs = options.staleRunningMs ?? parseImportJobStaleRunningMs();
-  const { reclaimed } = await reclaimStaleImportJobs(db, storage, {
+  const { reclaimed, healed } = await reclaimStaleImportJobs(db, storage, {
     olderThanMs: staleRunningMs,
   });
 
@@ -133,39 +135,5 @@ export async function drainImportJobs(
     else failed += 1;
   }
 
-  return { claimed, succeeded, failed, reclaimed };
-}
-
-async function markSucceeded(
-  db: PrismaClient,
-  jobId: string,
-  result: ExecuteImportCommitResult,
-): Promise<void> {
-  await db.adminJob.update({
-    where: { id: jobId },
-    data: {
-      status: "succeeded",
-      finished_at: new Date(),
-      to_create: result.toCreate,
-      to_update: result.toUpdate,
-      to_skip: result.toSkip,
-      created_count: result.created,
-      updated_count: result.updated,
-      skipped_count: result.skippedCount,
-      invalid_count: result.invalidCount,
-      result_json: {
-        importId: result.importId,
-        toCreate: result.toCreate,
-        toUpdate: result.toUpdate,
-        toSkip: result.toSkip,
-        created: result.created,
-        updated: result.updated,
-        skipped: result.skipped,
-        skippedCount: result.skippedCount,
-        invalidRows: result.invalidRows,
-        invalidCount: result.invalidCount,
-      },
-      error: null,
-    },
-  });
+  return { claimed, succeeded, failed, reclaimed, healed };
 }

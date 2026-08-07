@@ -30,6 +30,11 @@ export type ExecuteImportCommitParams = {
   timezone: string | null;
   filename: string | null;
   importId: string;
+  /**
+   * When set, mark this AdminJob `succeeded` inside the same DB transaction as the import
+   * commit so a crash after commit cannot leave the job `running` for the stale reaper.
+   */
+  adminJobId?: string | null;
 };
 
 export type ExecuteImportCommitResult = {
@@ -171,6 +176,37 @@ export async function executeImportCommit(
             : {}),
         },
       });
+
+      if (params.adminJobId) {
+        const invalidCombined = [...parsed.invalidRows, ...lockInvalidatedRows];
+        await tx.adminJob.updateMany({
+          where: { id: params.adminJobId, status: "running" },
+          data: {
+            status: "succeeded",
+            finished_at: new Date(),
+            to_create: result.toCreate,
+            to_update: result.toUpdate,
+            to_skip: result.toSkip,
+            created_count: result.created,
+            updated_count: result.updated,
+            skipped_count: result.skipped.length,
+            invalid_count: invalidCombined.length,
+            result_json: {
+              importId: params.importId,
+              toCreate: result.toCreate,
+              toUpdate: result.toUpdate,
+              toSkip: result.toSkip,
+              created: result.created,
+              updated: result.updated,
+              skipped: capRows(result.skipped),
+              skippedCount: result.skipped.length,
+              invalidRows: capRows(invalidCombined),
+              invalidCount: invalidCombined.length,
+            },
+            error: null,
+          },
+        });
+      }
 
       return result;
     },
