@@ -723,6 +723,11 @@ model IdentityProvider {
   claim_email            String   @default("email")
   claim_name             String   @default("name")
   claim_groups           String   @default("groups")
+  // Fallback claims used to compose display name when the combined `claim_name` claim is
+  // absent from the token (some IdPs only send given/family name, not a pre-joined "name").
+  claim_given_name       String   @default("given_name")
+  claim_family_name      String   @default("family_name")
+  claim_phone            String   @default("phone_number")
   enabled                Boolean  @default(false)
   display_name           String
   login_button_label     String?
@@ -747,6 +752,7 @@ model ExternalIdentity {
   user          User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
   email         String?
   name          String?
+  phone         String?
   groups        String[]         @default([])
   linked_at     DateTime         @default(now())
   last_login_at DateTime?

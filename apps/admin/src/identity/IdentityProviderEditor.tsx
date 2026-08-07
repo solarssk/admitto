@@ -89,6 +89,9 @@ function draftFromDetail(detail: ProviderDetailDto): ProviderDraft {
     claim_email: detail.claim_email,
     claim_name: detail.claim_name,
     claim_groups: detail.claim_groups,
+    claim_given_name: detail.claim_given_name,
+    claim_family_name: detail.claim_family_name,
+    claim_phone: detail.claim_phone,
     enabled: detail.enabled,
     login_button_label: detail.login_button_label ?? "",
   };
@@ -114,6 +117,9 @@ function buildSaveBody(
     claim_email: draft.claim_email.trim() || undefined,
     claim_name: draft.claim_name.trim() || undefined,
     claim_groups: draft.claim_groups.trim() || undefined,
+    claim_given_name: draft.claim_given_name.trim() || undefined,
+    claim_family_name: draft.claim_family_name.trim() || undefined,
+    claim_phone: draft.claim_phone.trim() || undefined,
     enabled: draft.enabled,
     // Empty label clears to the product default; a string sets it.
     login_button_label: draft.login_button_label.trim() || null,
@@ -803,8 +809,33 @@ export function IdentityProviderEditor({
             value={draft.claim_name}
             invalid={Boolean(errors.claim_name)}
             error={errors.claim_name}
+            hint="Falls back to the given/family name claims below when this claim is absent."
             onChange={(e) => setDraft((d) => setField(d, "claim_name", e.target.value))}
             placeholder="name"
+          />
+          <Input
+            label="Given name claim"
+            value={draft.claim_given_name}
+            invalid={Boolean(errors.claim_given_name)}
+            error={errors.claim_given_name}
+            onChange={(e) => setDraft((d) => setField(d, "claim_given_name", e.target.value))}
+            placeholder="given_name"
+          />
+          <Input
+            label="Family name claim"
+            value={draft.claim_family_name}
+            invalid={Boolean(errors.claim_family_name)}
+            error={errors.claim_family_name}
+            onChange={(e) => setDraft((d) => setField(d, "claim_family_name", e.target.value))}
+            placeholder="family_name"
+          />
+          <Input
+            label="Phone claim"
+            value={draft.claim_phone}
+            invalid={Boolean(errors.claim_phone)}
+            error={errors.claim_phone}
+            onChange={(e) => setDraft((d) => setField(d, "claim_phone", e.target.value))}
+            placeholder="phone_number"
           />
           <Input
             label="Groups claim"

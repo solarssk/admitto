@@ -20,7 +20,7 @@ Have a separate working Superadmin session, an approved test account, and the id
 
 1. Open **Organisation settings**, then **Identity**.
 2. Add or open an OIDC provider.
-3. Enter the display name, issuer, client details, endpoints, and claims required by the form.
+3. Enter the display name, issuer, client details, endpoints, and claims required by the form. Given name and family name claims are optional fallbacks used only when the provider does not send a single combined name claim; the phone claim is optional and only takes effect for providers that return it.
 4. Use discovery or the test action when available before saving.
 5. Configure group-to-role mappings only after confirming the provider's group claim.
 6. Save the provider and test sign-in with a non-critical account.
@@ -34,13 +34,14 @@ The test account can sign in through the configured provider and receives only t
 
 - OIDC and local sign-in are separate authentication methods.
 - A group mapping can add or remove scoped roles on later sign-ins. Manual assignments are not treated as provider-owned grants.
+- A signed-in user's display name and phone number re-sync from the provider on every sign-in. A superadmin's own manual edit to either field in Users and Roles Administration takes priority and is not overwritten by a later sign-in.
 - The system prevents removal of the last active instance Superadmin assignment.
 - Enabling Cloudflare Access with incorrect audience or path values can block staff access.
 - Secrets are never displayed again after saving.
 
 ## What changes after this action
 
-Enabled providers appear in the staff sign-in flow. Updated mappings apply when affected users sign in again. Access enforcement applies to configured paths after it is enabled.
+Enabled providers appear in the staff sign-in flow. Updated mappings apply when affected users sign in again. Display name and phone number changes made at the identity provider also apply the next time the affected user signs in. Access enforcement applies to configured paths after it is enabled.
 
 ## Common problems
 
