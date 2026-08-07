@@ -612,6 +612,10 @@ describe("ImportPage upload → preview → commit flow", () => {
       status: "pending",
       importId: "imp-1",
     });
+    // Job timestamps must be within IMPORT_JOB_CLIENT_STALE_MS of Date.now(); fixed Aug 7
+    // noon UTC goes stale against CI wall clock later the same day.
+    const createdAt = new Date(Date.now() - 60_000).toISOString();
+    const startedAt = new Date(Date.now() - 55_000).toISOString();
     fetchImportJobStatus
       .mockResolvedValueOnce({
         jobId: "job-poll",
@@ -619,7 +623,7 @@ describe("ImportPage upload → preview → commit flow", () => {
         importId: "imp-1",
         error: null,
         result: null,
-        created_at: "2026-08-07T12:00:00.000Z",
+        created_at: createdAt,
         started_at: null,
       })
       .mockResolvedValueOnce({
@@ -638,8 +642,8 @@ describe("ImportPage upload → preview → commit flow", () => {
           invalidRows: [],
           invalidCount: 0,
         },
-        created_at: "2026-08-07T12:00:00.000Z",
-        started_at: "2026-08-07T12:00:05.000Z",
+        created_at: createdAt,
+        started_at: startedAt,
       });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
