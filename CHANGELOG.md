@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Role/status/sign-in-method/event filters** (Users & roles, Active sessions, Role assignments) no longer show a duplicated caption - these already had their own label around the field, which the new caption below would have doubled up.
 - **SearchableSelect/PhoneCountrySelect panels flipped above their trigger** now stay anchored to it as their content resizes (e.g. typing into the search box narrows the list), instead of leaving a growing gap between the panel and the trigger.
 
+### Security
+- **`nanoid` pinned to `^3.3.17`.** Versions before that have a high-severity flaw where a custom generator can loop indefinitely if called with `size: 0` ([GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8)). Root `package.json` `overrides` now forces the patched version across every transitive dependency that pulls it in, following the same pattern already used for `esbuild`/`uuid`/`vite`/`react`/`brace-expansion`.
+
 ### Changed
 - **Role/scope pickers** (Invite user, Edit user, Active sessions bulk revoke) show a visible "Initial role" / "Role" / "Event" caption above the dropdown instead of no caption at all, and skip the search box entirely for short option lists (4 or fewer roles) - only longer lists (organizations, events) still show one.
 - **Attendance status pickers** (Edit attendee, the Attendees list filter, Communication's send-by-status filter) show a status icon next to each option (Registered/Confirmed/Declined/Tentative/Cancelled), matching the colour grouping the status badge elsewhere already uses.
