@@ -6,6 +6,7 @@ import {
   useState,
   type Dispatch,
   type MutableRefObject,
+  type ReactNode,
   type RefObject,
   type SetStateAction,
 } from "react";
@@ -1077,6 +1078,7 @@ function PreviewBody({
   eventTitle,
   senderName,
   senderAddress,
+  toolbarLabel,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
@@ -1085,6 +1087,10 @@ function PreviewBody({
    * falls back to the event title so the preview never shows a blank sender. */
   senderName: string | null;
   senderAddress: string | null;
+  /** Renders in place of the inert back-arrow, as real (not aria-hidden) content - lets a
+   * caller (Templates tab) fold its own "Preview"/"Updating…" caption into this same bar
+   * instead of stacking a second one above it. Omit to keep the plain decorative arrow. */
+  toolbarLabel?: ReactNode;
 }>) {
   if (!previewHtml) {
     return <div className="communication-preview-empty">Click Preview to render the draft.</div>;
@@ -1093,9 +1099,13 @@ function PreviewBody({
   const sampleTime = browserClockTime(new Date());
   return (
     <div className="communication-mail-client">
-      <div className="communication-mail-client__toolbar" aria-hidden="true">
-        <i className="ti ti-arrow-left" aria-hidden="true" />
-        <span className="communication-mail-client__toolbar-actions">
+      <div className="communication-mail-client__toolbar" aria-hidden={toolbarLabel ? undefined : true}>
+        {toolbarLabel ? (
+          <span className="communication-mail-client__toolbar-label">{toolbarLabel}</span>
+        ) : (
+          <i className="ti ti-arrow-left" aria-hidden="true" />
+        )}
+        <span className="communication-mail-client__toolbar-actions" aria-hidden="true">
           <i className="ti ti-archive" aria-hidden="true" />
           <i className="ti ti-trash" aria-hidden="true" />
           <i className="ti ti-corner-up-left" aria-hidden="true" />
@@ -1152,20 +1162,33 @@ function TemplatesPreviewPanel({
   senderAddress: string | null;
   previewLoading: boolean;
 }>) {
+  const updatingStatus = previewLoading ? <span className="muted"> · Updating…</span> : null;
   return (
     <div className="communication-templates-preview">
-      <div className="communication-preview-toolbar">
-        <span className="communication-preview-toolbar__label">
-          <i className="ti ti-eye" aria-hidden="true" /> Preview
-        </span>
-        {previewLoading && <span className="communication-preview-toolbar__status muted">Updating…</span>}
-      </div>
+      {/* Once a preview exists, PreviewBody's own toolbar carries this same caption (see
+          toolbarLabel below) - a standalone row here too would just repeat it. Kept only for
+          the brief empty/loading window before any preview has rendered yet, so the column
+          isn't blank with no heading at all. */}
+      {!previewHtml && (
+        <div className="communication-preview-toolbar">
+          <span className="communication-preview-toolbar__label">
+            <i className="ti ti-eye" aria-hidden="true" /> Preview
+          </span>
+          {updatingStatus}
+        </div>
+      )}
       <PreviewBody
         previewHtml={previewHtml}
         previewSubject={previewSubject}
         eventTitle={eventTitle}
         senderName={senderName}
         senderAddress={senderAddress}
+        toolbarLabel={
+          <>
+            <i className="ti ti-eye" aria-hidden="true" /> Preview
+            {updatingStatus}
+          </>
+        }
       />
     </div>
   );

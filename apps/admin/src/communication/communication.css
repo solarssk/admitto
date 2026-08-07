@@ -51,11 +51,13 @@
   white-space: nowrap;
 }
 
+/* No align-items: start here on purpose - the row sizes to the editor Card's own natural
+   height (it's always the taller side), and default stretch then pulls the shorter preview
+   column up to match it instead of leaving empty space under a short mail-client box. */
 .communication-templates-split {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
-  align-items: start;
 }
 
 @media (max-width: 960px) {
@@ -99,6 +101,21 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  height: 100%;
+}
+
+/* Grows the mail-client box (and its iframe) to fill that stretched height instead of sitting
+   at its own short natural height with empty space below - scoped to the Templates tab only,
+   the Send tab's own preview stays its natural content height inside the Message card. */
+.communication-templates-preview .communication-mail-client {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.communication-templates-preview .communication-preview-frame {
+  flex: 1 1 auto;
 }
 
 .communication-preview-toolbar__status {
@@ -374,6 +391,17 @@
 .communication-mail-client__toolbar-actions {
   display: flex;
   gap: var(--space-4);
+}
+
+/* Real (non-decorative) content sharing the toolbar's left slot with the archive/trash/reply/
+   dots icons - own smaller font-size since the bar's 1.1rem is sized for those icon glyphs,
+   not body text. */
+.communication-mail-client__toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
 }
 
 .communication-mail-client__subject {
