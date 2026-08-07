@@ -36,13 +36,41 @@ function csvResponse(filename: string) {
   };
 }
 
+function enqueueOk(jobId = "job-export-1") {
+  return {
+    ok: true,
+    json: async () => ({ jobId }),
+  };
+}
+
+function jobStatus(status: string, extras: { error?: string | null; filename?: string | null } = {}) {
+  return {
+    ok: true,
+    json: async () => ({
+      status,
+      error: extras.error === undefined ? null : extras.error,
+      filename: extras.filename === undefined ? null : extras.filename,
+    }),
+  };
+}
+
+function enqueueThenDownload(filename: string) {
+  return vi
+    .fn()
+    .mockResolvedValueOnce(enqueueOk())
+    .mockResolvedValueOnce(jobStatus("succeeded", { filename }))
+    .mockResolvedValueOnce(csvResponse(filename));
+}
+
 describe("exportAttendees (client) — thin wrapper coverage", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   it("builds the export URL from filter params and triggers the browser download", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(csvResponse("attendees-evt-1-2026-07-20.csv"));
+    const filename = "attendees-evt-1-2026-07-20.csv";
+    const fetchMock = enqueueThenDownload(filename);
     vi.stubGlobal("fetch", fetchMock);
     const stub = stubBlobDownload();
 
@@ -58,8 +86,14 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
         "/api/admin/events/evt-1/attendees/export?format=csv&q=vip&status=admitted&ticket_type=vip&rsvp_status=confirmed&mail_status=sent",
       );
       expect(init).toMatchObject({ credentials: "same-origin" });
+      expect(fetchMock.mock.calls[1]?.[0]).toBe(
+        "/api/admin/events/evt-1/export/jobs/job-export-1",
+      );
+      expect(fetchMock.mock.calls[2]?.[0]).toBe(
+        "/api/admin/events/evt-1/export/jobs/job-export-1/download",
+      );
       expect(stub.createObjectURL).toHaveBeenCalledOnce();
-      expect(stub.anchorClicks).toEqual(["attendees-evt-1-2026-07-20.csv"]);
+      expect(stub.anchorClicks).toEqual([filename]);
       expect(stub.revokeObjectURL).toHaveBeenCalledWith("blob:mock-export");
     } finally {
       stub.restore();
@@ -67,7 +101,7 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
   });
 
   it("omits status=all and empty filters from the query string", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(csvResponse("attendees.csv"));
+    const fetchMock = enqueueThenDownload("attendees.csv");
     vi.stubGlobal("fetch", fetchMock);
     const stub = stubBlobDownload();
 
@@ -86,6 +120,7 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
+      statusText: "Bad Request",
       json: async () => ({ error: "export_too_large" }),
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -96,6 +131,112 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
         status: 400,
         message: "export_too_large",
       });
+      expect(stub.createObjectURL).not.toHaveBeenCalled();
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("polls pending status then downloads when the job succeeds", async () => {
+    vi.useFakeTimers();
+    const filename = "attendees-evt-1.csv";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk("job-pending-1"))
+      .mockResolvedValueOnce(jobStatus("pending"))
+      .mockResolvedValueOnce(jobStatus("succeeded", { filename }))
+      .mockResolvedValueOnce(csvResponse(filename));
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      const done = exportAttendees("evt-1", {}, "csv");
+      await vi.advanceTimersByTimeAsync(2000);
+      await done;
+
+      expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+        "/api/admin/events/evt-1/attendees/export?format=csv",
+        "/api/admin/events/evt-1/export/jobs/job-pending-1",
+        "/api/admin/events/evt-1/export/jobs/job-pending-1",
+        "/api/admin/events/evt-1/export/jobs/job-pending-1/download",
+      ]);
+      expect(stub.anchorClicks).toEqual([filename]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("throws ApiError when the export job status is failed", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk())
+      .mockResolvedValueOnce(jobStatus("failed", { error: "worker_boom" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      await expect(exportAttendees("evt-1", {}, "csv")).rejects.toMatchObject({
+        name: "ApiError",
+        status: 500,
+        message: "worker_boom",
+      });
+      expect(stub.createObjectURL).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("uses the default failed message when job error is null", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk())
+      .mockResolvedValueOnce(jobStatus("failed", { error: null }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(exportAttendees("evt-1", {}, "csv")).rejects.toMatchObject({
+      status: 500,
+      message: "Export failed.",
+    });
+  });
+
+  it("throws 504 after 90 pending polls", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk("job-slow"))
+      .mockResolvedValue(jobStatus("pending"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const done = exportAttendees("evt-1", {}, "csv");
+    const outcome = done.then(
+      () => null,
+      (err: unknown) => err,
+    );
+    await vi.runAllTimersAsync();
+    const err = await outcome;
+
+    expect(err).toMatchObject({
+      name: "ApiError",
+      status: 504,
+      message: "Export is still running. Keep the worker running and try again.",
+    });
+    // enqueue + 90 status polls
+    expect(fetchMock).toHaveBeenCalledTimes(91);
+  });
+
+  it("throws AbortError when the signal is already aborted before polling", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = vi.fn().mockResolvedValueOnce(enqueueOk());
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      await expect(exportAttendees("evt-1", {}, "csv", controller.signal)).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(stub.createObjectURL).not.toHaveBeenCalled();
     } finally {
       stub.restore();

@@ -1453,7 +1453,7 @@ export async function downloadExportResponse(res: Response, fallbackFilename: st
   URL.revokeObjectURL(url);
 }
 
-/** Filtered export (header "Export" menu) — the current list filters as XLSX/CSV/PDF. */
+/** Filtered export (header "Export" menu) — enqueue + poll + download. */
 export async function exportAttendees(
   eventId: string,
   params: {
@@ -1473,11 +1473,37 @@ export async function exportAttendees(
   if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
   if (params.mail_status) urlParams.set("mail_status", params.mail_status);
 
-  const res = await fetch(
+  const enqueueRes = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
     { credentials: "same-origin", signal },
   );
-  await downloadExportResponse(res, `attendees.${format}`);
+  const queued = await parseJson<{ jobId: string }>(enqueueRes);
+
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const statusRes = await fetch(
+      `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(queued.jobId)}`,
+      { credentials: "same-origin", signal },
+    );
+    const status = await parseJson<{
+      status: string;
+      error: string | null;
+      filename: string | null;
+    }>(statusRes);
+    if (status.status === "succeeded") {
+      const downloadRes = await fetch(
+        `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(queued.jobId)}/download`,
+        { credentials: "same-origin", signal },
+      );
+      await downloadExportResponse(downloadRes, status.filename ?? `attendees.${format}`);
+      return;
+    }
+    if (status.status === "failed") {
+      throw new ApiError(500, status.error || "Export failed.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new ApiError(504, "Export is still running. Keep the worker running and try again.");
 }
 
 /** Explicit-selection export (bulk bar's "Export selected") — a POST with the ids in the JSON
