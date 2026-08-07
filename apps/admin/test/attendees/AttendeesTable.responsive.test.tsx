@@ -659,7 +659,6 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Filter by attendance,/ }));
     fireEvent.click(screen.getByRole("button", { name: "All attendance statuses" }));
     expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("");
-
     fireEvent.click(screen.getByRole("button", { name: /^Filter by check-in status,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Checked in" }));
     expect(onStatusFilterChange).toHaveBeenCalledWith("admitted");
