@@ -677,6 +677,47 @@ describe("ImportPage upload → preview → commit flow", () => {
     expect(fetchImportJobStatus).toHaveBeenCalledTimes(90);
   });
 
+  it("swallows AbortError when the page unmounts mid-poll without toasting", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-leave",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus.mockImplementation(
+      (_eventId: string, _jobId: string, signal?: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const view = renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await waitFor(() => {
+      expect(fetchImportJobStatus).toHaveBeenCalled();
+    });
+
+    view.unmount();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(screen.queryByText("Import complete")).toBeNull();
+  });
+
   it("ignores a cancelled file picker and resets to the upload step when a new file is chosen after preview", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
