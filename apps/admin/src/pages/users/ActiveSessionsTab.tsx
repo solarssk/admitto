@@ -324,6 +324,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                     placeholder="Rows per page"
                     searchPlaceholder="Search…"
                     emptyLabel="No options found"
+                    showLabel={false}
                     value={String(pageSize)}
                     options={PAGE_SIZE_OPTIONS.map((size) => ({
                       id: String(size),
@@ -375,6 +376,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
             placeholder="Select event…"
             searchPlaceholder="Search events…"
             emptyLabel="No events found"
+            showLabel={false}
             value={selectedEventId}
             options={[
               { id: "", label: "Select event…" },
