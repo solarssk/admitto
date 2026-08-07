@@ -468,6 +468,21 @@ function resolveOrphanedTicketType(ticketType: string, ticketTypes: TicketTypeDt
   return ticketTypes.some((type) => type.key === ticketType) ? null : ticketType;
 }
 
+/** Ticket type picker options: the "-" (none) sentinel, the orphaned type surfaced by
+ * `resolveOrphanedTicketType` if there is one, then the event's own catalog. Extracted out of
+ * the component (SonarCloud S3776). */
+function buildTicketTypeOptions(
+  orphanedTicketType: string | null,
+  ticketTypes: TicketTypeDto[],
+): { id: string; label: string }[] {
+  const options = [{ id: "", label: "-" }];
+  if (orphanedTicketType) {
+    options.push({ id: orphanedTicketType, label: `${orphanedTicketType} (not in catalog)` });
+  }
+  options.push(...ticketTypes.map((type) => ({ id: type.key, label: type.label })));
+  return options;
+}
+
 /** Overview tab: read-only profile, additional info, wallet placeholder, event items, and
  * delivery history - extracted out of the component (SonarCloud S3776: keeps this tab's own
  * conditional rendering out of the component's cognitive-complexity count). */
@@ -1919,13 +1934,7 @@ export function AttendeeDetailPage() {
                     emptyLabel="No ticket types found"
                     showLabel={false}
                     value={form.ticket_type}
-                    options={[
-                      { id: "", label: "-" },
-                      ...(orphanedTicketType
-                        ? [{ id: orphanedTicketType, label: `${orphanedTicketType} (not in catalog)` }]
-                        : []),
-                      ...ticketTypes.map((type) => ({ id: type.key, label: type.label })),
-                    ]}
+                    options={buildTicketTypeOptions(orphanedTicketType, ticketTypes)}
                     onChange={(id) => setForm({ ...form, ticket_type: id })}
                   />
                 </div>
