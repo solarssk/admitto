@@ -74,8 +74,11 @@ const baseAccount: AccountDto = {
   is_active: true,
   must_change_password: false,
   has_local_password: true,
+  phone_country_code: null,
+  phone_number: null,
   roles: [],
   mfa_methods: [],
+  external_identities: [],
 };
 
 const totpEnrolledAccount: AccountDto = {
@@ -241,6 +244,17 @@ describe("AccountPage toasts", () => {
     vi.advanceTimersByTime(10_000);
     expect(screen.getByTestId("at-toast").textContent).toMatch(/Reload this page/);
     vi.useRealTimers();
+  });
+
+  it("selecting System default clears the locale to null and updates the example date", async () => {
+    mockLoadedAccount();
+    renderWithToast(<AccountPage />);
+    const select = (await screen.findByLabelText("Regional format")) as HTMLSelectElement;
+    expect(select.value).toBe("en-GB");
+
+    fireEvent.change(select, { target: { value: "" } });
+
+    expect(select.value).toBe("");
   });
 
   it("toasts profile save errors", async () => {
@@ -1418,42 +1432,134 @@ describe("AccountPage toasts", () => {
   });
 });
 
-describe("AccountPage profile: sign-in method", () => {
-  it("shows 'Local password' for accounts with only local password", async () => {
-    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, roles: [] });
+describe("AccountPage profile: phone number", () => {
+  it("pre-fills the country code and number from the account, and saves changes to both", async () => {
+    mockLoadedAccount({ ...baseAccount, phone_country_code: "+48", phone_number: "500100200" });
+    mockPatchProfile.mockResolvedValueOnce({
+      display_name: baseAccount.display_name,
+      preferred_locale: baseAccount.preferred_locale,
+      phone_country_code: "+1",
+      phone_number: "5551234",
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Phone country code, Poland \+48/ })).toBeTruthy();
+    });
+    expect((document.getElementById("account-phone-number") as HTMLInputElement).value).toBe("500100200");
+
+    fireEvent.click(screen.getByRole("button", { name: /Phone country code/ }));
+    fireEvent.change(screen.getByLabelText("Search country or dial code"), {
+      target: { value: "United States" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /United States/ }));
+    fireEvent.change(document.getElementById("account-phone-number")!, { target: { value: "5551234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({
+        phone_country_code: "+1",
+        phone_number: "5551234",
+      });
+    });
+  });
+
+  it("sends null for only the field that was cleared (phone fields are diffed independently)", async () => {
+    mockLoadedAccount({ ...baseAccount, phone_country_code: "+48", phone_number: "500100200" });
+    mockPatchProfile.mockResolvedValueOnce({
+      display_name: baseAccount.display_name,
+      preferred_locale: baseAccount.preferred_locale,
+      phone_country_code: "+48",
+      phone_number: null,
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect((document.getElementById("account-phone-number") as HTMLInputElement).value).toBe("500100200");
+    });
+
+    fireEvent.change(document.getElementById("account-phone-number")!, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ phone_number: null });
+    });
+  });
+
+  it("does not send phone fields when they are unchanged", async () => {
+    mockLoadedAccount();
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, display_name: "New Name" });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Display name")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "New Name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ display_name: "New Name" });
+    });
+  });
+});
+
+describe("AccountPage profile: account type", () => {
+  it("shows 'Local account' and the password hint for accounts with only a local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: true, external_identities: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password")).toBeTruthy();
+      expect(screen.getByText("Local account")).toBeTruthy();
     });
+    expect(screen.getByText(/Signed in with a password you set/)).toBeTruthy();
   });
 
-  it("shows 'Identity provider (SSO)' for accounts without local password", async () => {
+  it("shows 'Managed by <provider>' and the IdP hint for accounts without a local password", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: false,
-      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+      external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Identity provider (SSO)")).toBeTruthy();
+      expect(screen.getByText("Managed by Okta")).toBeTruthy();
     });
+    expect(screen.getByText(/password and two-factor authentication are managed there/)).toBeTruthy();
   });
 
-  it("shows 'Local password + Identity provider' when both are present", async () => {
+  it("prioritizes the linked provider and mentions the fallback password when the account has both", async () => {
     mockFetchAccount.mockResolvedValue({
       ...baseAccount,
       has_local_password: true,
-      roles: [{ id: "r1", role: "admin", is_oidc: true }],
+      external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
     });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Local password + Identity provider")).toBeTruthy();
+      expect(screen.getByText("Managed by Okta")).toBeTruthy();
+    });
+    expect(screen.getByText(/local password available as a fallback/)).toBeTruthy();
+  });
+
+  it("joins multiple linked providers by name", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      has_local_password: false,
+      external_identities: [
+        { id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" },
+        { id: "ei2", provider_id: "p2", provider_display_name: "Authentik", linked_at: "2026-01-02T00:00:00.000Z" },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Managed by Okta + Authentik")).toBeTruthy();
     });
   });
 
@@ -1465,6 +1571,108 @@ describe("AccountPage profile: sign-in method", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Regional format")).toBeTruthy();
     });
+  });
+});
+
+describe("AccountPage profile: email field", () => {
+  it("shows the account email in a disabled field, not a plain read-only row", async () => {
+    mockLoadedAccount();
+
+    renderWithToast(<AccountPage />);
+    const emailField = (await screen.findByLabelText("Email")) as HTMLInputElement;
+    expect(emailField.value).toBe("admin@example.com");
+    expect(emailField.disabled).toBe(true);
+    expect(screen.getByText("Email cannot be changed here.")).toBeTruthy();
+  });
+});
+
+describe("AccountPage profile: role display", () => {
+  it("shows the role in a disabled, read-only control (not editable)", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", scope_label: "Acme Events", is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    const trigger = await screen.findByRole("button", { name: /Role, Administrator/ });
+    expect((trigger as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows an explanatory hint for a superadmin role, with no scope chips", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "superadmin", scope_type: "instance", scope_id: null, scope_label: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Superadmin")).toBeTruthy();
+    });
+    expect(screen.getByText(/Superadmin has access to every event and organization/)).toBeTruthy();
+    expect(document.querySelector(".account-scope-chip")).toBeNull();
+  });
+
+  it("shows one named chip per scope for a non-superadmin role", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [
+        { id: "r1", role: "admin", scope_type: "organization", scope_id: "org-1", scope_label: "Acme Events", is_oidc: false },
+        { id: "r2", role: "admin", scope_type: "organization", scope_id: "org-2", scope_label: "Beta Org", is_oidc: false },
+      ],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Acme Events")).toBeTruthy();
+    });
+    expect(screen.getByText("Beta Org")).toBeTruthy();
+    expect(screen.getByText(/Admin has management access within the organizations/)).toBeTruthy();
+  });
+
+  it("marks a chip as identity-provider-managed when that assignment is IdP-sourced", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-1", scope_label: "Autumn Summit", is_oidc: true }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Autumn Summit")).toBeTruthy();
+    });
+    const chip = screen.getByText("Autumn Summit").closest(".account-scope-chip");
+    expect(chip?.querySelector(".ti-cloud-lock")).toBeTruthy();
+    // The icon is aria-hidden and its title isn't reliably exposed to screen readers or touch/
+    // keyboard users, so this distinction also needs real text in the accessibility tree -
+    // same sr-only pattern StaffUserListItem already uses for the same "(IdP)" signal.
+    expect(chip?.querySelector(".sr-only")?.textContent).toBe("Managed by identity provider");
+  });
+
+  it("falls back to the raw scope id when a scope name isn't resolvable", async () => {
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      roles: [{ id: "r1", role: "operator", scope_type: "event", scope_id: "evt-deleted", scope_label: null, is_oidc: false }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("evt-deleted")).toBeTruthy();
+    });
+  });
+
+  it("shows a plain message when no role is assigned, with no role control", async () => {
+    mockFetchAccount.mockResolvedValue({ ...baseAccount, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByText("No role assigned.")).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: /^Role,/ })).toBeFalsy();
   });
 });
 
@@ -1490,7 +1698,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });
@@ -1520,7 +1728,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });
@@ -1547,7 +1755,7 @@ describe("AccountPage: no role assigned", () => {
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText("Roles")).toBeTruthy();
+      expect(screen.getByText("Role")).toBeTruthy();
     });
     expect(screen.queryByText(/doesn't have any role assigned yet/)).toBeNull();
   });

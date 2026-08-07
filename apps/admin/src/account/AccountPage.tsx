@@ -14,8 +14,12 @@ import {
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AccountDto, AccountRoleDto, MfaEnrollResponse, SessionListDto } from "../api/types.js";
+import { roleLabel } from "../auth/role-labels.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
+import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatRelativeTime, zonedTimeLabel } from "../utils/event-dates.js";
@@ -88,11 +92,99 @@ function isTotpEnrolled(account: AccountDto): boolean {
   return account.mfa_methods.some((m) => m.type === "totp" && m.confirmed);
 }
 
-function signInMethod(account: AccountDto): string {
-  const hasOidc = account.roles.some((r) => r.is_oidc);
-  if (account.has_local_password && hasOidc) return "Local password + Identity provider";
-  if (!account.has_local_password) return "Identity provider (SSO)";
-  return "Local password";
+function accountTypeHint(account: AccountDto, isManaged: boolean): string {
+  if (!isManaged) return "Signed in with a password you set. Manage it in the Password section below.";
+  if (account.has_local_password) {
+    return "Signed in through your organization's identity provider, with a local password available as a fallback. Manage it in the Password section below.";
+  }
+  return "Signed in through your organization's identity provider — password and two-factor authentication are managed there.";
+}
+
+/** How this account exists, not how the current browser session happens to be signed in - "Local
+ * account" when it only has a password, or "Managed by <provider>" naming the actual linked
+ * identity provider(s) (not a generic "SSO") whenever any are linked, since the IdP is the
+ * source of truth for sign-in once linked even if a local fallback password also exists. Reuses
+ * the same disabled SearchableSelect shape as the Role field below for one consistent look. */
+function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
+  const providers = account.external_identities;
+  const isManaged = providers.length > 0;
+  const label = isManaged ? `Managed by ${providers.map((p) => p.provider_display_name).join(" + ")}` : "Local account";
+  const hint = accountTypeHint(account, isManaged);
+
+  return (
+    <div className="account-role-display">
+      <label className="at-label" htmlFor="account-type">Account type</label>
+      <SearchableSelect
+        id="account-type"
+        label="Account type"
+        placeholder="Account type"
+        searchPlaceholder=""
+        emptyLabel=""
+        value="current"
+        options={[{ id: "current", label, icon: isManaged ? "shield-lock" : "key" }]}
+        disabled
+        title="Account type is determined automatically and can't be changed here."
+        onChange={() => {}}
+      />
+      <p className="at-hint">{hint}</p>
+    </div>
+  );
+}
+
+const ROLE_TYPE_OPTIONS = [
+  { id: "superadmin", label: roleLabel("superadmin"), icon: "crown" },
+  { id: "admin", label: roleLabel("admin"), icon: "building" },
+  { id: "operator", label: roleLabel("operator"), icon: "calendar-event" },
+];
+
+const ROLE_ACCESS_DESCRIPTION: Record<string, string> = {
+  superadmin: "Superadmin has access to every event and organization in this instance.",
+  admin: "Admin has management access within the organizations listed below.",
+  operator: "Operator has check-in and event-day access for the events listed below.",
+};
+
+/** Read-only role display, borrowed from the admin Edit user modal's own "Role & access" section
+ * (SearchableSelect, disabled - the same control that section already shows when an admin views
+ * their own account) instead of a plain badge list, plus the actual scope names (event titles /
+ * organization names) as chips, resolved server-side from the account's own assignments. */
+function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
+  const primary = account.roles[0];
+  if (!primary) return <p className="at-hint">No role assigned.</p>;
+
+  return (
+    <div className="account-role-display">
+      <label className="at-label" htmlFor="account-role">Role</label>
+      <SearchableSelect
+        id="account-role"
+        label="Role"
+        placeholder="No role assigned"
+        searchPlaceholder="Search roles…"
+        emptyLabel="No roles found"
+        value={primary.role}
+        options={ROLE_TYPE_OPTIONS}
+        disabled
+        title="Roles are read-only. Contact an administrator to change access."
+        onChange={() => {}}
+      />
+      <p className="at-hint">Only an administrator can change this. {ROLE_ACCESS_DESCRIPTION[primary.role]}</p>
+      {primary.role !== "superadmin" && account.roles.length > 0 && (
+        <div className="account-scope-chips">
+          {account.roles.map((r) => (
+            <span key={r.id} className="account-scope-chip">
+              <i className={`ti ti-${r.scope_type === "event" ? "calendar-event" : "building"}`} aria-hidden="true" />
+              {r.is_oidc && (
+                <>
+                  <i className="ti ti-cloud-lock" aria-hidden="true" title="Managed by identity provider" />
+                  <span className="sr-only">Managed by identity provider</span>
+                </>
+              )}
+              {r.scope_label ?? r.scope_id ?? "Unknown"}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function redirectToLoginIfUnauthorized(err: unknown): boolean {
@@ -132,6 +224,8 @@ export function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [preferredLocale, setPreferredLocale] = useState<string | null>(null);
+  const [phoneCountryCode, setPhoneCountryCode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -173,6 +267,8 @@ export function AccountPage() {
       setAccount(data);
       setDisplayName(data.display_name ?? "");
       setPreferredLocale(data.preferred_locale);
+      setPhoneCountryCode(data.phone_country_code ?? "");
+      setPhoneNumber(data.phone_number ?? "");
       setPreferredLocaleStore(data.preferred_locale ?? undefined);
     } catch (err) {
       if (signal?.aborted) return;
@@ -250,7 +346,9 @@ export function AccountPage() {
   const otherSessions = sessions.filter((s) => !s.isCurrent);
   const profileDirty =
     displayName !== (account.display_name ?? "") ||
-    preferredLocale !== account.preferred_locale;
+    preferredLocale !== account.preferred_locale ||
+    phoneCountryCode !== (account.phone_country_code ?? "") ||
+    phoneNumber !== (account.phone_number ?? "");
   const passwordMismatch =
     confirmPassword.length > 0 && newPassword.length > 0 && confirmPassword !== newPassword;
   const passwordFormValid =
@@ -736,12 +834,18 @@ export function AccountPage() {
         setProfileSaving(true);
         const localeChanged = preferredLocale !== account.preferred_locale;
         try {
+          const phoneCountryCodeChanged = phoneCountryCode !== (account.phone_country_code ?? "");
+          const phoneNumberChanged = phoneNumber !== (account.phone_number ?? "");
           const result = await patchAccountProfile({
             ...(displayName !== (account.display_name ?? "") && { display_name: displayName }),
             ...(localeChanged && { preferred_locale: preferredLocale }),
+            ...(phoneCountryCodeChanged && { phone_country_code: phoneCountryCode }),
+            ...(phoneNumberChanged && { phone_number: phoneNumber || null }),
           });
           setDisplayName(result.display_name ?? "");
           setPreferredLocale(result.preferred_locale);
+          setPhoneCountryCode(result.phone_country_code ?? "");
+          setPhoneNumber(result.phone_number ?? "");
           setPreferredLocaleStore(result.preferred_locale ?? undefined);
           addToast(
             localeChanged
@@ -755,54 +859,54 @@ export function AccountPage() {
           addToast(operatorApiErrorMessage(err, "Failed to save profile."), "error");
         } finally { setProfileSaving(false); }
       }}>Save</Button></div>}>
-        <div className="account-profile-grid">
-          <div className="account-profile-editable">
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-display-name">Display name</label>
-              <Input id="account-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} />
-              <p className="mail-field-hint">{displayName.length}/120 characters</p>
+        <div className="account-profile-editable">
+          <Input
+            id="account-display-name"
+            label="Display name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            maxLength={120}
+            hint={`${displayName.length}/120 characters`}
+          />
+          <Input id="account-email" label="Email" value={account.email} disabled hint="Email cannot be changed here." />
+          <Select
+            id="account-locale"
+            label="Regional format"
+            value={preferredLocale ?? ""}
+            onChange={(e) => setPreferredLocale(e.target.value || null)}
+            disabled={profileSaving}
+            hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
+          >
+            {LOCALE_OPTIONS.map((opt) => (
+              <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
+                {opt.label}: {opt.example}
+              </option>
+            ))}
+          </Select>
+          <div className="at-field">
+            <label className="at-label" htmlFor="account-phone-number">Phone number</label>
+            <div className="account-phone-row">
+              <PhoneCountrySelect
+                id="account-phone-country-code"
+                label="Phone country code"
+                value={phoneCountryCode}
+                disabled={profileSaving}
+                onChange={setPhoneCountryCode}
+              />
+              <Input
+                id="account-phone-number"
+                icon={<i className="ti ti-phone" aria-hidden="true" />}
+                type="tel"
+                value={phoneNumber}
+                disabled={profileSaving}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                {...NO_AUTOFILL_PROPS}
+              />
             </div>
-            <Select
-              id="account-locale"
-              label="Regional format"
-              value={preferredLocale ?? ""}
-              onChange={(e) => setPreferredLocale(e.target.value || null)}
-              disabled={profileSaving}
-              hint={`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
-            >
-              {LOCALE_OPTIONS.map((opt) => (
-                <option key={opt.value ?? "_system"} value={opt.value ?? ""}>
-                  {opt.label}: {opt.example}
-                </option>
-              ))}
-            </Select>
+            <span className="at-hint">For internal contact only - not shown on tickets.</span>
           </div>
-          <dl className="account-info-rows">
-            <div className="account-info-row">
-              <dt>Email</dt>
-              <dd>
-                <span>{account.email}</span>
-                <span className="account-info-hint">Email cannot be changed here.</span>
-              </dd>
-            </div>
-            <div className="account-info-row">
-              <dt>Sign-in</dt>
-              <dd><span>{signInMethod(account)}</span></dd>
-            </div>
-            {account.roles.length > 0 && (
-              <div className="account-info-row">
-                <dt>Roles</dt>
-                <dd>
-                  <div className="account-role-list">
-                    {account.roles.map((r) => (
-                      <Badge key={r.id} variant="neutral">{r.role}{r.is_oidc ? " (IdP)" : ""}</Badge>
-                    ))}
-                  </div>
-                  <span className="account-info-hint">Roles are read-only. Contact an administrator to change access.</span>
-                </dd>
-              </div>
-            )}
-          </dl>
+          <AccountRoleDisplay account={account} />
+          <AccountTypeField account={account} />
         </div>
       </Card>
 

@@ -221,11 +221,13 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       is_active: true,
       must_change_password: true,
       password_hash: true,
+      phone_country_code: true,
+      phone_number: true,
     },
   });
   if (!user) return c.json({ error: "unauthorized" }, 401);
 
-  const [assignments, oidcGrants, mfaMethods] = await Promise.all([
+  const [assignments, oidcGrants, mfaMethods, externalIdentities] = await Promise.all([
     db.roleAssignment.findMany({
       where: { user_id: userId },
       select: { id: true, role: true, scope_type: true, scope_id: true },
@@ -238,9 +240,32 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       where: { user_id: userId },
       select: { type: true, confirmed_at: true, last_used_at: true },
     }),
+    db.externalIdentity.findMany({
+      where: { user_id: userId },
+      select: { id: true, provider_id: true, linked_at: true, provider: { select: { display_name: true } } },
+    }),
   ]);
 
   const oidcAssignmentIds = new Set(oidcGrants.map((g) => g.role_assignment_id));
+
+  // Resolve each assignment's scope_id to the human label shown on the account page (event
+  // title / organization name) - only the specific events/organizations this account is already
+  // assigned to, never a full list, so this needs no extra permission beyond viewing your own
+  // account.
+  const eventScopeIds = assignments.filter((a) => a.scope_type === "event" && a.scope_id).map((a) => a.scope_id!);
+  const orgScopeIds = assignments.filter((a) => a.scope_type === "organization" && a.scope_id).map((a) => a.scope_id!);
+  const [scopedEvents, scopedOrgs] = await Promise.all([
+    eventScopeIds.length ? db.event.findMany({ where: { id: { in: eventScopeIds } }, select: { id: true, title: true } }) : [],
+    orgScopeIds.length ? db.organization.findMany({ where: { id: { in: orgScopeIds } }, select: { id: true, name: true } }) : [],
+  ]);
+  const eventTitleById = new Map(scopedEvents.map((e) => [e.id, e.title]));
+  const orgNameById = new Map(scopedOrgs.map((o) => [o.id, o.name]));
+
+  function scopeLabel(a: (typeof assignments)[number]): string | null {
+    if (a.scope_type === "event") return (a.scope_id && eventTitleById.get(a.scope_id)) ?? null;
+    if (a.scope_type === "organization") return (a.scope_id && orgNameById.get(a.scope_id)) ?? null;
+    return null;
+  }
 
   return c.json({
     id: user.id,
@@ -250,17 +275,26 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     has_local_password: hasLocalPassword(user.password_hash),
+    phone_country_code: user.phone_country_code,
+    phone_number: user.phone_number,
     roles: assignments.map((a) => ({
       id: a.id,
       role: a.role,
       scope_type: a.scope_type,
       scope_id: a.scope_id,
+      scope_label: scopeLabel(a),
       is_oidc: oidcAssignmentIds.has(a.id),
     })),
     mfa_methods: mfaMethods.map((m) => ({
       type: m.type,
       confirmed: m.confirmed_at !== null,
       last_used_at: m.last_used_at?.toISOString() ?? null,
+    })),
+    external_identities: externalIdentities.map((ei) => ({
+      id: ei.id,
+      provider_id: ei.provider_id,
+      provider_display_name: ei.provider.display_name,
+      linked_at: ei.linked_at.toISOString(),
     })),
   });
 }
@@ -274,13 +308,23 @@ const profileSchema = z
       .refine((v) => isSupportedLocale(v), { message: "Unsupported locale" })
       .nullable()
       .optional(),
+    // Both nullable (not just optional) - the account page always sends one or the other for
+    // both phone fields, using null to mean "clear it", same convention as the admin-side
+    // PATCH /api/admin/users/:id (buildPatchUserData in users-routes.ts).
+    phone_country_code: z.string().max(8).nullable().optional(),
+    phone_number: z.string().max(40).nullable().optional(),
   })
   .strict()
-  .refine((d) => d.display_name !== undefined || d.preferred_locale !== undefined, {
-    message: "Nothing to update",
-  });
+  .refine(
+    (d) =>
+      d.display_name !== undefined ||
+      d.preferred_locale !== undefined ||
+      d.phone_country_code !== undefined ||
+      d.phone_number !== undefined,
+    { message: "Nothing to update" },
+  );
 
-/** PATCH /api/account/profile — update display name and/or preferred locale (no re-auth). */
+/** PATCH /api/account/profile — update display name, preferred locale, and/or phone (no re-auth). */
 export async function handlePatchAccountProfile(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -294,23 +338,36 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   const parsed = profileSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const data: { display_name?: string | null; preferred_locale?: string | null } = {};
+  const data: {
+    display_name?: string | null;
+    preferred_locale?: string | null;
+    phone_country_code?: string | null;
+    phone_number?: string | null;
+  } = {};
   if (parsed.data.display_name !== undefined) {
     data.display_name = parsed.data.display_name.trim() || null;
   }
   if (parsed.data.preferred_locale !== undefined) {
     data.preferred_locale = parsed.data.preferred_locale;
   }
+  if (parsed.data.phone_country_code !== undefined) {
+    data.phone_country_code = parsed.data.phone_country_code?.trim() || null;
+  }
+  if (parsed.data.phone_number !== undefined) {
+    data.phone_number = parsed.data.phone_number?.trim() || null;
+  }
 
   const updated = await db.user.update({
     where: { id: userId },
     data,
-    select: { display_name: true, preferred_locale: true },
+    select: { display_name: true, preferred_locale: true, phone_country_code: true, phone_number: true },
   });
 
   return c.json({
     display_name: updated.display_name,
     preferred_locale: sanitizePreferredLocale(updated.preferred_locale),
+    phone_country_code: updated.phone_country_code,
+    phone_number: updated.phone_number,
   });
 }
 
