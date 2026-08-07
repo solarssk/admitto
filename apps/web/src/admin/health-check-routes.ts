@@ -1288,6 +1288,63 @@ export async function fileStorageRow(
   };
 }
 
+/** Soft check: Admitto worker heartbeat (does not affect /healthz). */
+async function backgroundWorkerRow(
+  db: PrismaClient,
+  checkedAt: string,
+  now: Date,
+  env: NodeJS.ProcessEnv,
+): Promise<HealthCheckRow> {
+  const tickSeconds = parseBounceIngestTickSeconds(env);
+  const staleMs = Math.max(90_000, tickSeconds * 2 * 1000 + 30_000);
+  const beat = await db.backgroundWorkerHeartbeat.findUnique({
+    where: { id: "default" },
+    select: { last_beat_at: true, hostname: true },
+  });
+  if (!beat) {
+    return {
+      id: "background_worker",
+      label: "Background worker",
+      status: "degraded",
+      summary: "Worker has never reported a heartbeat. Run npm run worker or the compose worker service.",
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["reason", "never_ran"],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+  const ageMs = now.getTime() - beat.last_beat_at.getTime();
+  if (ageMs > staleMs) {
+    return {
+      id: "background_worker",
+      label: "Background worker",
+      status: "degraded",
+      summary: "Worker heartbeat is stale. Mail queue, import, export, and bounce may be delayed.",
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["reason", "stale"],
+        ["last_beat_at", beat.last_beat_at.toISOString()],
+        ["hostname", beat.hostname ?? ""],
+        ["stale_after_ms", String(staleMs)],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+  return {
+    id: "background_worker",
+    label: "Background worker",
+    status: "ok",
+    summary: "Worker heartbeat is fresh",
+    details: detailsFromEntries([
+      ["status", "ok"],
+      ["last_beat_at", beat.last_beat_at.toISOString()],
+      ["hostname", beat.hostname ?? ""],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
 function buildGroup(
   id: HealthGroupId,
   label: string,
@@ -1406,11 +1463,24 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
+  const backgroundWorkerFallback: HealthCheckRow = {
+    id: "background_worker",
+    label: "Background worker",
+    status: "degraded",
+    summary: "Could not evaluate background worker",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
   const [
     setup,
     gauges,
     email,
     bounceIngest,
+    backgroundWorker,
     idpRows,
     cfAccess,
     address,
@@ -1425,6 +1495,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       collectGauges(deps.db).catch(() => gaugesFallback),
       emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
       bounceIngestRow(deps.db, checkedAt, now, env).catch(() => bounceIngestFallback),
+      backgroundWorkerRow(deps.db, checkedAt, now, env).catch(() => backgroundWorkerFallback),
       identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
       cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
       addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
@@ -1451,6 +1522,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     }),
     setupToRedisRow(setup.redis, checkedAt),
     setupToEncryptionRow(setup.encryption, checkedAt),
+    backgroundWorker,
     mailQueueRow(gauges.email_deliveries_queued, gauges.email_deliveries_failed_retryable, checkedAt),
     setupToInstanceUrlRow(setup.base_url, checkedAt),
     fileStorage,

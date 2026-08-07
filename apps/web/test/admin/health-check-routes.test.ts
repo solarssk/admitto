@@ -375,6 +375,13 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
     bounceIngestSettings: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // Fresh beat so Core stays ok unless a test overrides the heartbeat mock.
+    backgroundWorkerHeartbeat: {
+      findUnique: vi.fn().mockResolvedValue({
+        last_beat_at: new Date(),
+        hostname: "test-worker",
+      }),
+    },
     ...overrides,
   } as unknown as PrismaClient;
 }
@@ -418,6 +425,8 @@ describe("collectAdminHealth", () => {
     const core = report.groups[0]!.checks;
     expect(core.find((c) => c.id === "database")?.label).toBe("Database");
     expect(core.find((c) => c.id === "rate_limit_storage")?.label).toBe("Rate-limit storage");
+    expect(core.find((c) => c.id === "background_worker")?.label).toBe("Background worker");
+    expect(core.find((c) => c.id === "background_worker")?.status).toBe("ok");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.label).toBe("Mail delivery queue");
     expect(core.find((c) => c.id === "file_storage")?.label).toBe("File storage");
     expect(core.find((c) => c.id === "file_storage")?.status).toBe("ok");
@@ -451,6 +460,63 @@ describe("collectAdminHealth", () => {
         .find((c) => c.id === "database")
         ?.details.some((d) => d.key === "last_checked" && d.value === report.generated_at),
     ).toBe(true);
+  });
+
+  it("marks background_worker degraded when no heartbeat row exists", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")).toMatchObject({
+      status: "degraded",
+      summary: expect.stringMatching(/never reported a heartbeat/i),
+    });
+    expect(report.overall).toBe("degraded");
+  });
+
+  it("marks background_worker degraded when the heartbeat is stale", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            last_beat_at: new Date("2026-08-03T11:00:00.000Z"),
+            hostname: "stale-worker",
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")).toMatchObject({
+      status: "degraded",
+      summary: expect.stringMatching(/stale/i),
+    });
+    expect(report.overall).toBe("degraded");
   });
 
   it("marks bounce_ingest degraded when an enabled event has a failed last run", async () => {
