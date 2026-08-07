@@ -1127,8 +1127,8 @@ describe("ReportsPage admission log", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Guest 51")).toBeTruthy();
 
-    const pageSizeSelect = screen.getByLabelText("Rows per page") as HTMLSelectElement;
-    fireEvent.change(pageSizeSelect, { target: { value: "100" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "100" }));
 
     // All 51 rows fit on one page at size 100 - the pager disappears and page 1's rows return,
     // proving the page index reset instead of staying on the now out-of-range page 2.
@@ -1350,20 +1350,18 @@ describe("ReportsPage admission log", () => {
     expect(screen.getByText("Literal Guest")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const select = screen.getByLabelText("Filter by ticket type") as HTMLSelectElement;
-    const options = Array.from(select.options).map((o) => o.value);
-    // The two buckets must not share a select option value.
-    expect(new Set(options).size).toBe(options.length);
 
-    fireEvent.change(select, { target: { value: "__none__" } });
+    // The two buckets must filter to distinct guests - if their encoded filter values collided,
+    // picking either option below would show both instead of just one.
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "(none)" }));
     await waitFor(() => {
       expect(screen.getByText("Null Guest")).toBeTruthy();
     });
     expect(screen.queryByText("Literal Guest")).toBeNull();
 
-    const literalOption = Array.from(select.options).find((o) => o.textContent === "__none__ (not in catalog)");
-    if (!literalOption) throw new Error("option for the literal __none__ bucket not found");
-    fireEvent.change(select, { target: { value: literalOption.value } });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "__none__ (not in catalog)" }));
     await waitFor(() => {
       expect(screen.getByText("Literal Guest")).toBeTruthy();
     });
@@ -1471,11 +1469,12 @@ describe("ReportsPage admission log", () => {
     expect(screen.getByText("Deleted user")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
-    const operatorSelect = screen.getByLabelText("Filter by operator") as HTMLSelectElement;
-    const optionLabels = Array.from(operatorSelect.options).map((o) => o.textContent);
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by operator,/ }));
+    const operatorList = screen.getByRole("list", { name: "Filter by operator" });
+    const optionLabels = within(operatorList).getAllByRole("button").map((o) => o.textContent);
     expect(optionLabels).toEqual(["All operators", "Anna Kowalska", "Marek Nowak", "(No operator)"]);
 
-    fireEvent.change(operatorSelect, { target: { value: "operator:user-marek" } });
+    fireEvent.click(screen.getByRole("button", { name: "Marek Nowak" }));
     await waitFor(() => {
       expect(screen.queryByText("Scanner Guest")).toBeNull();
     });
@@ -1486,11 +1485,8 @@ describe("ReportsPage admission log", () => {
     // could otherwise make this ambiguous depending on the exact counts in play.
     expect(screen.getByRole("button", { name: /Filters/ }).textContent).toMatch(/1/);
 
-    const noOperatorOption = Array.from(operatorSelect.options).find(
-      (o) => o.textContent === "(No operator)",
-    );
-    if (!noOperatorOption) throw new Error("'(No operator)' option not found");
-    fireEvent.change(operatorSelect, { target: { value: noOperatorOption.value } });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by operator,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "(No operator)" }));
     await waitFor(() => {
       expect(screen.getByText("No Operator Guest")).toBeTruthy();
     });

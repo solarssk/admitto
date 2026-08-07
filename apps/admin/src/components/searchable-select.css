@@ -33,6 +33,14 @@
   box-shadow: var(--ring);
 }
 
+.searchable-select__trigger--invalid {
+  border-color: var(--status-error);
+}
+
+.searchable-select__trigger--invalid:focus-visible {
+  box-shadow: 0 0 0 var(--ring-width) var(--status-error-tint);
+}
+
 .searchable-select__label {
   min-width: 0;
   overflow: hidden;

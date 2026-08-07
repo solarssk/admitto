@@ -28,6 +28,7 @@ import type {
 import { fetchAttendeeCustomFields, type CustomDataFieldDef } from "../attendees/customData.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { isAbortError, waitForImportJobResult } from "../import/waitForImportJobResult.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -642,6 +643,7 @@ export function ImportPage() {
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const commitPollAbortRef = useRef<AbortController | null>(null);
   const superadmin = isSuperadmin(assignments);
 
   const [step, setStep] = useState<Step>("upload");
@@ -678,6 +680,8 @@ export function ImportPage() {
       cancelled = true;
     };
   }, [eventId]);
+
+  useEffect(() => () => commitPollAbortRef.current?.abort(), []);
 
   const handleApiError = (err: unknown) => handleImportApiError(err, reportApiError, addToast);
 
@@ -770,27 +774,36 @@ export function ImportPage() {
 
   const onCommit = async (opts?: { force?: boolean }) => {
     if (!eventId || !file || !preview) return;
+    commitPollAbortRef.current?.abort();
+    const ac = new AbortController();
+    commitPollAbortRef.current = ac;
     setLoading(true);
     setCapacityBlocked(null);
     try {
-      const data = await commitImport(eventId, file, overwrite, { force: opts?.force });
+      const queued = await commitImport(eventId, file, overwrite, {
+        force: opts?.force,
+        signal: ac.signal,
+      });
+      const data = await waitForImportJobResult(eventId, queued.jobId, ac.signal);
       setResult(data);
       setStep("done");
       setForceCapacity(false);
       setHistoryToken((n) => n + 1);
+      const skippedTotal = data.skippedCount ?? data.skipped.length;
       addToast(
-        `Attendees imported: ${data.created} created, ${data.updated} updated, ${data.skipped.length} skipped`,
+        `Attendees imported: ${data.created} created, ${data.updated} updated, ${skippedTotal} skipped`,
         "success",
       );
     } catch (err) {
+      if (isAbortError(err)) return;
       const capacityMeta = extractCapacityBlockedMeta(err);
       if (capacityMeta) {
-        setCapacityBlocked(capacityMeta);
+        if (!ac.signal.aborted) setCapacityBlocked(capacityMeta);
       } else {
         handleApiError(err);
       }
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   };
 

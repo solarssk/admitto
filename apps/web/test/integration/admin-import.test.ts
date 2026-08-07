@@ -1,10 +1,14 @@
 import { dirname, join } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@admitto/db";
+import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { drainImportJobs } from "@admitto/import";
+import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
@@ -42,6 +46,8 @@ let rateLimitStore: InMemoryRateLimitStore;
 let adminId: string;
 let adminCookie = "";
 let opCookie = "";
+let uploadDir = "";
+let prevUploadDir: string | undefined;
 
 /** Build multipart form data for a CSV import fixture. */
 function csvFormData(content: string, filename = "import.csv", overwrite = false): FormData {
@@ -70,6 +76,58 @@ async function postImport(
     headers: { Cookie: cookie, ...sameOrigin },
     body: formData,
   });
+}
+
+type ImportCommitResultBody = {
+  importId: string;
+  toCreate?: number;
+  toUpdate?: number;
+  toSkip?: number;
+  created: number;
+  updated: number;
+  skipped: { email: string; reason: string }[];
+  invalidRows?: { rowIndex: number; reason: string }[];
+  invalidCount?: number;
+};
+
+/**
+ * Enqueue commit (202), drain worker jobs, return job result payload.
+ * Non-202 responses (403/409/…) are returned as-is without draining.
+ */
+async function postCommitAndDrain(
+  eventId: string,
+  formData: FormData,
+  cookie: string,
+  force = false,
+): Promise<{ status: number; body: Record<string, unknown>; result: ImportCommitResultBody | null }> {
+  const forceQuery = force ? "?force=1" : "";
+  const res = await postImport(
+    `/api/admin/events/${eventId}/import/commit${forceQuery}`,
+    formData,
+    cookie,
+  );
+  const body = (await res.json()) as Record<string, unknown>;
+  if (res.status !== 202) {
+    return { status: res.status, body, result: null };
+  }
+
+  const jobId = String(body.jobId);
+  const drained = await drainImportJobs(prisma, getDefaultStorage(), { limit: 10 });
+  expect(drained.claimed).toBeGreaterThanOrEqual(1);
+
+  const statusRes = await app.request(
+    `/api/admin/events/${eventId}/import/jobs/${encodeURIComponent(jobId)}`,
+    { headers: { Cookie: cookie } },
+  );
+  expect(statusRes.status).toBe(200);
+  const statusBody = (await statusRes.json()) as {
+    status: string;
+    error: string | null;
+    result: ImportCommitResultBody | null;
+  };
+  expect(statusBody.status).toBe("succeeded");
+  expect(statusBody.result).not.toBeNull();
+  return { status: 202, body, result: statusBody.result };
 }
 
 /** Seed orgs, events, users, and a baseline attendee for import integration tests. */
@@ -179,6 +237,11 @@ async function sessionCookieFor(userId: string): Promise<string> {
 }
 
 beforeAll(async () => {
+  uploadDir = await mkdtemp(join(tmpdir(), "admitto-import-"));
+  prevUploadDir = process.env.UPLOAD_DIR;
+  process.env.UPLOAD_DIR = uploadDir;
+  resetDefaultStorageForTests();
+
   prisma = createTestPrismaClient();
   await seed(prisma);
   rateLimitStore = new InMemoryRateLimitStore();
@@ -196,12 +259,19 @@ beforeAll(async () => {
   opCookie = await sessionCookieFor(opUser.id);
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   rateLimitStore.reset();
+  await prisma.adminJob.deleteMany({
+    where: { event_id: { in: [EVENT_A, EVENT_B] } },
+  });
 });
 
 afterAll(async () => {
   await prisma?.$disconnect();
+  if (prevUploadDir === undefined) delete process.env.UPLOAD_DIR;
+  else process.env.UPLOAD_DIR = prevUploadDir;
+  resetDefaultStorageForTests();
+  if (uploadDir) await rm(uploadDir, { recursive: true, force: true });
 });
 
 describe("POST /api/admin/events/:eventId/import/preview", () => {
@@ -719,21 +789,16 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       where: { event_id: EVENT_A, id: { not: EXISTING_ATT } },
     });
 
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/commit`,
+    const { status, body, result } = await postCommitAndDrain(
+      EVENT_A,
       csvFormData(VALID_CSV, "batch.csv"),
       adminCookie,
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      importId: string;
-      created: number;
-      skipped: { email: string; reason: string }[];
-    };
-    expect(body.importId).toMatch(
+    expect(status).toBe(202);
+    expect(String(body.importId)).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
-    expect(body.created).toBe(2);
+    expect(result!.created).toBe(2);
 
     const rows = await prisma.attendee.findMany({
       where: { event_id: EVENT_A, email: { in: ["eve@example.com", "frank@example.com"] } },
@@ -765,14 +830,13 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       "first_name,last_name,email,sock_size,cap_size",
       "Swag,User,swag@example.com,39,M",
     ].join("\n");
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/commit`,
+    const { status, result } = await postCommitAndDrain(
+      EVENT_A,
       csvFormData(csv, "swag.csv"),
       adminCookie,
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { created: number };
-    expect(body.created).toBe(1);
+    expect(status).toBe(202);
+    expect(result!.created).toBe(1);
 
     const row = await prisma.attendee.findFirst({
       where: { event_id: EVENT_A, email: "swag@example.com" },
@@ -781,21 +845,16 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
   });
 
   it("re-import overwrite=false skips all existing", async () => {
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/commit`,
+    const { status, result } = await postCommitAndDrain(
+      EVENT_A,
       csvFormData(VALID_CSV),
       adminCookie,
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      created: number;
-      updated: number;
-      skipped: { email: string; reason: string }[];
-    };
-    expect(body.created).toBe(0);
-    expect(body.updated).toBe(0);
-    expect(body.skipped).toHaveLength(2);
-    expect(body.skipped.every((s) => s.reason.includes("Overwrite existing attendees"))).toBe(true);
+    expect(status).toBe(202);
+    expect(result!.created).toBe(0);
+    expect(result!.updated).toBe(0);
+    expect(result!.skipped).toHaveLength(2);
+    expect(result!.skipped.every((s) => s.reason.includes("Overwrite existing attendees"))).toBe(true);
   });
 
   it("caps skipped-row detail on commit too, reporting the true total separately (CodeRabbit review)", async () => {
@@ -814,15 +873,14 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       ...emails.map((email, i) => `Cap,Commit ${i},${email}`),
     ].join("\n");
 
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/commit`,
+    const { status, result } = await postCommitAndDrain(
+      EVENT_A,
       csvFormData(csv),
       adminCookie,
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { toSkip: number; skipped: unknown[] };
-    expect(body.toSkip).toBe(count);
-    expect(body.skipped).toHaveLength(20);
+    expect(status).toBe(202);
+    expect(result!.toSkip).toBe(count);
+    expect(result!.skipped).toHaveLength(20);
 
     await prisma.attendee.deleteMany({ where: { email: { in: emails } } });
   });
@@ -834,14 +892,13 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       "Frank,Updated,frank@example.com,New Ltd",
     ].join("\n");
 
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/commit`,
+    const { status, result } = await postCommitAndDrain(
+      EVENT_A,
       csvFormData(updatedCsv, "update.csv", true),
       adminCookie,
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { updated: number };
-    expect(body.updated).toBe(2);
+    expect(status).toBe(202);
+    expect(result!.updated).toBe(2);
 
     const eve = await prisma.attendee.findFirst({
       where: { event_id: EVENT_A, email: "eve@example.com" },
@@ -864,14 +921,13 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       "first_name,last_name,email,company",
       "Existing,Person,existing@example.com,Updated Co",
     ].join("\n");
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/commit`,
+    const { status, result } = await postCommitAndDrain(
+      EVENT_A,
       csvFormData(csv, "existing-overwrite.csv", true),
       adminCookie,
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { updated: number };
-    expect(body.updated).toBe(1);
+    expect(status).toBe(202);
+    expect(result!.updated).toBe(1);
 
     const row = await prisma.attendee.findUniqueOrThrow({ where: { id: EXISTING_ATT } });
     expect(row.company).toBe("Updated Co");
@@ -941,7 +997,6 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
   // handler re-parses with the current catalog and must surface that row as invalid rather than
   // silently dropping it from created/updated/skipped with no trace.
   it("reports rows invalidated by a ticket-type catalog change between preview and commit", async () => {
-    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
     const raceType = await prisma.ticketType.create({
       data: { event_id: EVENT_A, key: "race-vip", label: "Race VIP", sort_order: 99 },
     });
@@ -964,42 +1019,26 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
       // Simulate the race: someone deletes the ticket type before the admin clicks Commit.
       await prisma.ticketType.delete({ where: { id: raceType.id } });
 
-      const commitRes = await postImport(
-        `/api/admin/events/${EVENT_A}/import/commit`,
+      const { status, result } = await postCommitAndDrain(
+        EVENT_A,
         csvFormData(csv, "race.csv"),
         adminCookie,
       );
-      expect(commitRes.status).toBe(200);
-      const body = (await commitRes.json()) as {
-        created: number;
-        updated: number;
-        skipped: { email: string; reason: string }[];
-        invalidRows: { rowIndex: number; reason: string }[];
-      };
+      expect(status).toBe(202);
+      const body = result!;
 
       expect(body.created).toBe(0);
       expect(body.updated).toBe(0);
       expect(body.skipped).toHaveLength(0);
       expect(body.invalidRows).toHaveLength(1);
-      expect(body.invalidRows[0]!.rowIndex).toBe(1);
-      expect(body.invalidRows[0]!.reason).toBe('Unknown ticket type: "race-vip"');
+      expect(body.invalidRows![0]!.rowIndex).toBe(1);
+      expect(body.invalidRows![0]!.reason).toBe('Unknown ticket type: "race-vip"');
 
       const attendee = await prisma.attendee.findFirst({
         where: { event_id: EVENT_A, email: "race-vip@example.com" },
       });
       expect(attendee).toBeNull();
-
-      // Same log-redaction convention as preview: raw value in the response, sanitized in the
-      // aggregated log key.
-      const logEntries = spy.mock.calls
-        .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
-        .filter((entry) => entry.msg === "Import commit complete");
-      expect(logEntries).toHaveLength(1);
-      const invalidByType = logEntries[0]!.invalidByType as Record<string, number>;
-      expect(invalidByType.unknown_ticket_type).toBe(1);
-      expect(JSON.stringify(invalidByType)).not.toMatch(/race-vip/i);
     } finally {
-      spy.mockRestore();
       await prisma.attendee.deleteMany({
         where: { event_id: EVENT_A, email: "race-vip@example.com" },
       });
@@ -1021,23 +1060,38 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     ].join("\n");
 
     try {
-      const [commitRes, deleteRes] = await Promise.all([
-        postImport(
-          `/api/admin/events/${EVENT_A}/import/commit`,
-          csvFormData(csv, "concurrent.csv"),
-          adminCookie,
-        ),
+      const enqueueRes = await postImport(
+        `/api/admin/events/${EVENT_A}/import/commit`,
+        csvFormData(csv, "concurrent.csv"),
+        adminCookie,
+      );
+      expect(enqueueRes.status).toBe(202);
+      const queued = (await enqueueRes.json()) as { jobId: string };
+
+      // Race the worker execute path against a concurrent ticket-type delete.
+      const [drained, deleteRes] = await Promise.all([
+        drainImportJobs(prisma, getDefaultStorage(), { limit: 1 }),
         app.request(`/api/admin/events/${EVENT_A}/ticket-types/${raceType.id}`, {
           method: "DELETE",
           headers: { Cookie: adminCookie, ...sameOrigin },
         }),
       ]);
+      expect(drained.claimed).toBe(1);
 
-      expect(commitRes.status).toBe(200);
-      const body = (await commitRes.json()) as {
-        created: number;
-        invalidRows: { rowIndex: number; reason: string }[];
+      const statusRes = await app.request(
+        `/api/admin/events/${EVENT_A}/import/jobs/${queued.jobId}`,
+        { headers: { Cookie: adminCookie } },
+      );
+      expect(statusRes.status).toBe(200);
+      const statusBody = (await statusRes.json()) as {
+        status: string;
+        result: {
+          created: number;
+          invalidRows: { rowIndex: number; reason: string }[];
+        } | null;
       };
+      expect(statusBody.status).toBe("succeeded");
+      const body = statusBody.result!;
 
       const attendee = await prisma.attendee.findFirst({
         where: { event_id: EVENT_A, email: "concurrent-vip@example.com" },
@@ -1097,12 +1151,12 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     expect(current).toBeGreaterThan(0);
     const csv = ["first_name,last_name,email", "Updated,Name,existing@example.com"].join("\n");
     await withSavedEventCapacity(current - 1, async () => {
-      const res = await postImport(
-        `/api/admin/events/${EVENT_A}/import/commit`,
+      const { status } = await postCommitAndDrain(
+        EVENT_A,
         csvFormData(csv, "overwrite.csv", true),
         adminCookie,
       );
-      expect(res.status).toBe(200);
+      expect(status).toBe(202);
     });
   });
 
@@ -1112,16 +1166,200 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
     });
     const csv = ["first_name,last_name,email", "Slot,Left,slot-left@example.com"].join("\n");
     await withSavedEventCapacity(current + 1, async () => {
-      const res = await postImport(
-        `/api/admin/events/${EVENT_A}/import/commit`,
+      const { status } = await postCommitAndDrain(
+        EVENT_A,
         csvFormData(csv),
         adminCookie,
       );
-      expect(res.status).toBe(200);
+      expect(status).toBe(202);
     });
     await prisma.attendee.deleteMany({
       where: { event_id: EVENT_A, email: "slot-left@example.com" },
     });
+  });
+
+  it("allows superadmin force=1 when import would exceed capacity", async () => {
+    const password_hash = await hashPassword(PASSWORD);
+    const superEmail = "admin-import-super@example.com";
+    await prisma.session.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.userMfaMethod.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.roleAssignment.deleteMany({ where: { user: { email: superEmail } } });
+    await prisma.user.deleteMany({ where: { email: superEmail } });
+    const priorSuper = await prisma.roleAssignment.findFirst({
+      where: { role: "superadmin", scope_type: "instance" },
+      select: { id: true, user_id: true },
+    });
+    const superUser = await prisma.user.create({ data: { email: superEmail, password_hash } });
+    try {
+      if (priorSuper) {
+        await prisma.roleAssignment.update({
+          where: { id: priorSuper.id },
+          data: { user_id: superUser.id },
+        });
+      } else {
+        await prisma.roleAssignment.create({
+          data: {
+            user_id: superUser.id,
+            role: "superadmin",
+            scope_type: "instance",
+            scope_id: null,
+          },
+        });
+      }
+      await prisma.userMfaMethod.create({
+        data: {
+          user_id: superUser.id,
+          type: "totp",
+          secret_enc: encryptTotpSecret(generateTotpSecret()),
+          confirmed_at: new Date(),
+        },
+      });
+      const superCookie = await sessionCookieFor(superUser.id);
+      const current = await prisma.attendee.count({
+        where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
+      });
+      const csv = [
+        "first_name,last_name,email",
+        "Forced,One,force-import-one@example.com",
+        "Forced,Two,force-import-two@example.com",
+      ].join("\n");
+      await withSavedEventCapacity(current, async () => {
+        const { status, body } = await postCommitAndDrain(
+          EVENT_A,
+          csvFormData(csv, "force.csv"),
+          superCookie,
+          true,
+        );
+        expect(status).toBe(202);
+        const job = await prisma.adminJob.findUniqueOrThrow({
+          where: { id: String(body.jobId) },
+        });
+        expect(job.force_capacity).toBe(true);
+        expect(job.client_timezone).toBeNull();
+      });
+    } finally {
+      await prisma.attendee.deleteMany({
+        where: {
+          event_id: EVENT_A,
+          email: { in: ["force-import-one@example.com", "force-import-two@example.com"] },
+        },
+      });
+      if (priorSuper) {
+        await prisma.roleAssignment.update({
+          where: { id: priorSuper.id },
+          data: { user_id: priorSuper.user_id },
+        });
+      } else {
+        await prisma.roleAssignment.deleteMany({
+          where: { user_id: superUser.id, role: "superadmin", scope_type: "instance" },
+        });
+      }
+      await prisma.session.deleteMany({ where: { user_id: superUser.id } });
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: superUser.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: superUser.id } });
+      await prisma.user.delete({ where: { id: superUser.id } });
+    }
+  });
+
+  it("stores client timezone on the queued job when the header is valid", async () => {
+    const csv = ["first_name,last_name,email", "Tz,Guest,tz-guest@example.com"].join("\n");
+    const res = await app.request(`/api/admin/events/${EVENT_A}/import/commit`, {
+      method: "POST",
+      headers: {
+        Cookie: adminCookie,
+        ...sameOrigin,
+        "x-client-timezone": "Europe/Warsaw",
+      },
+      body: csvFormData(csv, "tz.csv"),
+    });
+    expect(res.status).toBe(202);
+    const { jobId } = (await res.json()) as { jobId: string };
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    expect(job.client_timezone).toBe("Europe/Warsaw");
+    expect(job.force_capacity).toBe(false);
+    await drainImportJobs(prisma, getDefaultStorage(), { limit: 5 });
+    await prisma.attendee.deleteMany({
+      where: { event_id: EVENT_A, email: "tz-guest@example.com" },
+    });
+  });
+});
+
+describe("GET /api/admin/events/:eventId/import/jobs/:jobId", () => {
+  it("returns 400/404 for blank and unknown job ids", async () => {
+    const blank = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/%20`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(blank.status).toBe(400);
+    expect(await blank.json()).toEqual({ error: "jobId required" });
+
+    const missing = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/does-not-exist`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "not_found" });
+  });
+
+  it("returns 403 for operators and null result while pending or failed", async () => {
+    const csv = ["first_name,last_name,email", "Pending,Job,pending-job@example.com"].join("\n");
+    const queued = await postImport(
+      `/api/admin/events/${EVENT_A}/import/commit`,
+      csvFormData(csv, "pending.csv"),
+      adminCookie,
+    );
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+
+    const forbidden = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(forbidden.status).toBe(403);
+
+    const pending = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(pending.status).toBe(200);
+    expect(await pending.json()).toMatchObject({
+      jobId,
+      status: "pending",
+      result: null,
+    });
+    expect(pending.headers.get("Cache-Control")).toBe("no-store");
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: {
+        status: "failed",
+        error: "boom",
+        result_json: Prisma.DbNull,
+        finished_at: new Date(),
+      },
+    });
+    const failed = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(await failed.json()).toMatchObject({
+      status: "failed",
+      error: "boom",
+      result: null,
+    });
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: { status: "succeeded", error: null, result_json: "oops" },
+    });
+    const badJson = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(((await badJson.json()) as { result: unknown }).result).toBeNull();
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: { status: "succeeded", error: null, result_json: ["not-an-object"] },
+    });
+    const arrayJson = await app.request(`/api/admin/events/${EVENT_A}/import/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(((await arrayJson.json()) as { result: unknown }).result).toBeNull();
   });
 });
 

@@ -9,6 +9,7 @@ import { renderWithToast } from "../test-utils.js";
 const fetchEventCustomFields = vi.fn();
 const previewImport = vi.fn();
 const commitImport = vi.fn();
+const fetchImportJobStatus = vi.fn();
 const fetchImportHistory = vi.fn();
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
@@ -39,6 +40,7 @@ vi.mock("../../src/api/client.js", () => ({
   previewImport: (...args: unknown[]) => previewImport(...args),
   fetchImportHistory: (...args: unknown[]) => fetchImportHistory(...args),
   commitImport: (...args: unknown[]) => commitImport(...args),
+  fetchImportJobStatus: (...args: unknown[]) => fetchImportJobStatus(...args),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -59,6 +61,26 @@ function renderPage() {
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** Queue 202 + one succeeded poll with the given commit result payload. */
+function mockQueuedCommitSuccess(
+  result: Record<string, unknown>,
+  jobId = "job-1",
+): void {
+  const importId = typeof result.importId === "string" ? result.importId : "imp-1";
+  commitImport.mockResolvedValueOnce({
+    jobId,
+    status: "pending",
+    importId,
+  });
+  fetchImportJobStatus.mockResolvedValueOnce({
+    jobId,
+    status: "succeeded",
+    importId,
+    error: null,
+    result,
+  });
 }
 
 function samplePreview(overrides: Partial<Record<string, unknown>> = {}) {
@@ -104,7 +126,7 @@ describe("ImportPage upload → preview → commit flow", () => {
   it("selects a file, toggles overwrite, previews, and commits", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 1,
       toUpdate: 0,
@@ -134,7 +156,10 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByLabelText(/Dry run/));
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
     await waitFor(() => {
-      expect(commitImport).toHaveBeenCalledWith("evt-1", expect.any(File), true, { force: false });
+      expect(commitImport).toHaveBeenCalledWith("evt-1", expect.any(File), true, {
+        force: false,
+        signal: expect.any(AbortSignal),
+      });
     });
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Attendees imported: 1 created/);
@@ -455,7 +480,7 @@ describe("ImportPage upload → preview → commit flow", () => {
   it("shows rows the commit-time re-parse invalidated (e.g. a ticket type deleted between preview and commit)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 0,
       toUpdate: 0,
@@ -493,6 +518,16 @@ describe("ImportPage upload → preview → commit flow", () => {
         new ApiError(409, "event full", "event_full", { capacity: 10, current: 10, incoming: 2 }),
       )
       .mockResolvedValueOnce({
+        jobId: "job-force",
+        status: "pending",
+        importId: "imp-1",
+      });
+    fetchImportJobStatus.mockResolvedValueOnce({
+      jobId: "job-force",
+      status: "succeeded",
+      importId: "imp-1",
+      error: null,
+      result: {
         importId: "imp-1",
         toCreate: 2,
         toUpdate: 0,
@@ -502,7 +537,8 @@ describe("ImportPage upload → preview → commit flow", () => {
         skipped: [],
         invalidRows: [],
         invalidCount: 0,
-      });
+      },
+    });
     renderPage();
     expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
 
@@ -521,8 +557,172 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(2 attendees\)$/ }));
 
     await waitFor(() => {
-      expect(commitImport).toHaveBeenLastCalledWith("evt-1", expect.any(File), false, { force: true });
+      expect(commitImport).toHaveBeenLastCalledWith("evt-1", expect.any(File), false, {
+        force: true,
+        signal: expect.any(AbortSignal),
+      });
     });
+  });
+
+  it("polls pending then succeeded with the abort signal", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-poll",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus
+      .mockResolvedValueOnce({
+        jobId: "job-poll",
+        status: "pending",
+        importId: "imp-1",
+        error: null,
+        result: null,
+      })
+      .mockResolvedValueOnce({
+        jobId: "job-poll",
+        status: "succeeded",
+        importId: "imp-1",
+        error: null,
+        result: {
+          importId: "imp-1",
+          toCreate: 1,
+          toUpdate: 0,
+          toSkip: 0,
+          created: 1,
+          updated: 0,
+          skipped: [],
+          invalidRows: [],
+          invalidCount: 0,
+        },
+      });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(await screen.findByText("Import complete")).toBeTruthy();
+    expect(fetchImportJobStatus).toHaveBeenCalledWith("evt-1", "job-poll", expect.any(AbortSignal));
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("toasts when the import job fails while polling", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-fail",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus.mockResolvedValueOnce({
+      jobId: "job-fail",
+      status: "failed",
+      importId: "imp-1",
+      error: "Import failed.",
+      result: null,
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Import failed/);
+    });
+    expect(screen.queryByText("Import complete")).toBeNull();
+  });
+
+  it("toasts a 504 timeout when the job stays pending across the poll budget", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-stuck",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus.mockResolvedValue({
+      jobId: "job-stuck",
+      status: "pending",
+      importId: "imp-1",
+      error: null,
+      result: null,
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(90 * 2000);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/still running/i);
+    });
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(90);
+  });
+
+  it("swallows AbortError when the page unmounts mid-poll without toasting", async () => {
+    fetchEventCustomFields.mockResolvedValue([]);
+    previewImport.mockResolvedValueOnce(samplePreview());
+    commitImport.mockResolvedValueOnce({
+      jobId: "job-leave",
+      status: "pending",
+      importId: "imp-1",
+    });
+    fetchImportJobStatus.mockImplementation(
+      (_eventId: string, _jobId: string, signal?: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const view = renderPage();
+    expect(await screen.findByRole("button", { name: "Validate file" })).toBeTruthy();
+
+    selectFile();
+    fireEvent.click(screen.getByRole("button", { name: "Validate file" }));
+    expect(await screen.findByText("To create")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/Dry run/));
+    fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
+
+    await waitFor(() => {
+      expect(fetchImportJobStatus).toHaveBeenCalled();
+    });
+
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    view.unmount();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(screen.queryByText("Import complete")).toBeNull();
   });
 
   it("ignores a cancelled file picker and resets to the upload step when a new file is chosen after preview", async () => {
@@ -737,7 +937,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
   it("shows the mockup done screen after commit and 'Import another file' resets the flow", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 1,
       toUpdate: 0,
@@ -778,7 +978,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
   it("notes the true total on the done screen when the server capped commit's skipped/invalid row detail (CodeRabbit review)", async () => {
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(samplePreview());
-    commitImport.mockResolvedValueOnce({
+    mockQueuedCommitSuccess({
       importId: "imp-1",
       toCreate: 0,
       toUpdate: 0,

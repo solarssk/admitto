@@ -129,3 +129,18 @@ export const MAX_ATTENDEE_NOTE_LENGTH = 2000;
 
 /** Terminal success statuses — initial dedup skips when an existing row has one of these. */
 export const EMAIL_DELIVERY_SUCCESS_STATUSES: readonly EmailDeliveryStatus[] = ['accepted', 'sent', 'delivered'];
+
+/** AdminJob.type values (ADR 0042). */
+export type AdminJobType = 'import_commit' | 'export';
+
+export const ADMIN_JOB_TYPE = ['import_commit', 'export'] as const satisfies AdminJobType[];
+
+/** AdminJob.status values. */
+export type AdminJobStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+export const ADMIN_JOB_STATUS = [
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+] as const satisfies AdminJobStatus[];

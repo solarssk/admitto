@@ -116,14 +116,6 @@
   margin-bottom: var(--space-4);
 }
 
-/* The global .at-select rule (apps/admin/src/staff.css) caps native <select>
-   elements at max-width: 24rem for filter-style contexts elsewhere in the app.
-   Override it here so Ticket type matches the other fields' full column width
-   (same technique as apps/admin/src/account/account-page.css). */
-.add-attendee-modal__fields .at-select {
-  max-width: none;
-}
-
 .add-attendee-modal__error {
   margin: 0 0 12px;
   color: var(--status-error);

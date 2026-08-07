@@ -121,9 +121,8 @@ describe("AttendeesPage mail delivery status filter (#522)", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    fireEvent.change(screen.getByLabelText("Filter by mail delivery status"), {
-      target: { value: "failed" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
 
     await waitFor(() => {
       expect(fetchEventAttendees).toHaveBeenLastCalledWith(

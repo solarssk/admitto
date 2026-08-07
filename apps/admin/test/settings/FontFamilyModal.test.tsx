@@ -31,6 +31,19 @@ function fileInputOf(row: HTMLElement): HTMLInputElement {
   return row.querySelector(".fontfam-row__file input[type=file]") as HTMLInputElement;
 }
 
+/** WEIGHT_OPTIONS labels all end in the numeric weight (e.g. "Regular 400"), so the trigger's
+ * own accessible name - "Weight, Regular 400" - carries the value a native combobox would have
+ * exposed via .value. */
+function weightOf(row: HTMLElement): string {
+  const trigger = within(row).getByRole("button", { name: /^Weight,/ });
+  return trigger.textContent?.match(/(\d+)$/)?.[1] ?? "";
+}
+
+function selectWeight(row: HTMLElement, optionLabel: string): void {
+  fireEvent.click(within(row).getByRole("button", { name: /^Weight,/ }));
+  fireEvent.click(within(row).getByRole("button", { name: optionLabel }));
+}
+
 beforeEach(() => {
   // jsdom implements neither the FontFace constructor nor document.fonts (the CSS Font
   // Loading API) - both are stubbed here for the instant local upload preview.
@@ -97,9 +110,9 @@ describe("FontFamilyModal", () => {
     expect(screen.getByLabelText("Family name")).toHaveProperty("value", "Acme Sans");
     expect(rows()).toHaveLength(2);
     const [first, second] = rows();
-    expect(within(first!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "400");
+    expect(weightOf(first!)).toBe("400");
     expect(within(first!).getByText("regular.woff2")).toBeTruthy();
-    expect(within(second!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "700");
+    expect(weightOf(second!)).toBe("700");
     expect(within(second!).getByRole("radio", { name: "Italic" }).getAttribute("aria-checked")).toBe("true");
     // Already-saved variants need no re-upload - Save is enabled immediately.
     expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(false);
@@ -140,7 +153,7 @@ describe("FontFamilyModal", () => {
 
     await waitFor(() => expect(rows()).toHaveLength(1));
     const row = rows()[0]!;
-    expect(within(row).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "700");
+    expect(weightOf(row)).toBe("700");
     expect(within(row).getByRole("radio", { name: "Italic" }).getAttribute("aria-checked")).toBe("true");
     await waitFor(() => expect(screen.getByLabelText("Family name")).toHaveProperty("value", "Acme Sans"));
   });
@@ -159,8 +172,8 @@ describe("FontFamilyModal", () => {
 
     await waitFor(() => expect(rows()).toHaveLength(2));
     const [thinRow, blackRow] = rows();
-    expect(within(thinRow!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "100");
-    expect(within(blackRow!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "900");
+    expect(weightOf(thinRow!)).toBe("100");
+    expect(weightOf(blackRow!)).toBe("900");
   });
 
   it("uploads the dropped file to the server and shows it as loaded", async () => {
@@ -393,7 +406,7 @@ describe("FontFamilyModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Add a variant manually/ }));
     expect(rows()).toHaveLength(1);
-    expect(within(rows()[0]!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "100");
+    expect(weightOf(rows()[0]!)).toBe("100");
     expect(within(rows()[0]!).getByRole("radio", { name: "Normal" }).getAttribute("aria-checked")).toBe("true");
   });
 
@@ -601,12 +614,12 @@ describe("FontFamilyModal", () => {
       expect(isDisabled(screen.getByRole("button", { name: "Save font family" }))).toBe(false);
     });
     const [first, second] = rows();
-    expect(within(first!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "400");
+    expect(weightOf(first!)).toBe("400");
 
-    fireEvent.change(within(second!).getByRole("combobox", { name: "Weight" }), { target: { value: "400" } });
+    selectWeight(second!, "Regular 400");
 
     // The change still applies - both rows now read 400/normal...
-    expect(within(second!).getByRole("combobox", { name: "Weight" })).toHaveProperty("value", "400");
+    expect(weightOf(second!)).toBe("400");
     // ...but a browser can only ever render one file per combo, so this now blocks Save instead
     // of just a transient, missable toast.
     expect(first!.className).toContain("fontfam-row--duplicate");

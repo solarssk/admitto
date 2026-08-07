@@ -117,12 +117,12 @@ describe("AddAttendeeModal", () => {
       <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
     );
 
-    const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
-    await screen.findByRole("option", { name: "VIP" });
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    await screen.findByRole("button", { name: "VIP" });
 
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
-    fireEvent.change(select, { target: { value: "vip" } });
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
     await waitFor(() => {
       expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
         false,
@@ -215,12 +215,12 @@ describe("AddAttendeeModal", () => {
       <AddAttendeeModal eventId="evt-a" open onClose={() => {}} onCreated={() => {}} />,
     );
 
-    const select = await screen.findByLabelText<HTMLSelectElement>("Ticket type");
-    await screen.findByRole("option", { name: "VIP" });
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    await screen.findByRole("button", { name: "VIP" });
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
-    fireEvent.change(select, { target: { value: "vip" } });
-    expect(select.value).toBe("vip");
+    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
+    expect(screen.getByRole("button", { name: "Ticket type, VIP" })).toBeTruthy();
 
     // Event B's own catalog fetch never settles in this test - submitting must still be allowed
     // (ticket_type is optional), but the "vip" selection from event A must not leak through to it.
@@ -229,7 +229,7 @@ describe("AddAttendeeModal", () => {
     rerender(<AddAttendeeModal eventId="evt-b" open onClose={() => {}} onCreated={() => {}} />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText<HTMLSelectElement>("Ticket type").value).toBe("");
+      expect(screen.getByRole("button", { name: "Ticket type, none selected" })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
 
