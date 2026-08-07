@@ -27,10 +27,10 @@ const SENT_QUEUED_TIME_HINT =
 interface DeliveryToolbarProps {
   searchInput: string;
   onSearchChange: (value: string) => void;
-  status: EventDeliveriesListParams["status"];
-  onStatusChange: (value: EventDeliveriesListParams["status"]) => void;
-  purpose: EventDeliveriesListParams["purpose"];
-  onPurposeChange: (value: EventDeliveriesListParams["purpose"]) => void;
+  status: NonNullable<EventDeliveriesListParams["status"]>;
+  onStatusChange: (value: NonNullable<EventDeliveriesListParams["status"]>) => void;
+  purpose: NonNullable<EventDeliveriesListParams["purpose"]>;
+  onPurposeChange: (value: NonNullable<EventDeliveriesListParams["purpose"]>) => void;
   templateId: string;
   onTemplateIdChange: (value: string) => void;
   templates: MailTemplateListItem[];
@@ -89,7 +89,7 @@ function DeliveryToolbar({
             placeholder="All statuses"
             searchPlaceholder="Search statuses…"
             emptyLabel="No statuses found"
-            value={status ?? "all"}
+            value={status}
             options={[
               { id: "all", label: "All statuses" },
               { id: "queued", label: "Queued" },
@@ -100,7 +100,7 @@ function DeliveryToolbar({
               { id: "bounced", label: "Bounced" },
               { id: "rejected", label: "Rejected" },
             ]}
-            onChange={(id) => onStatusChange(id as EventDeliveriesListParams["status"])}
+            onChange={(id) => onStatusChange(id as NonNullable<EventDeliveriesListParams["status"]>)}
           />
         </div>
         <div className="communication-toolbar__filter">
@@ -110,13 +110,13 @@ function DeliveryToolbar({
             placeholder="All purposes"
             searchPlaceholder="Search purposes…"
             emptyLabel="No purposes found"
-            value={purpose ?? "all"}
+            value={purpose}
             options={[
               { id: "all", label: "All purposes" },
               { id: "initial", label: "Initial send" },
               { id: "resend", label: "Resend" },
             ]}
-            onChange={(id) => onPurposeChange(id as EventDeliveriesListParams["purpose"])}
+            onChange={(id) => onPurposeChange(id as NonNullable<EventDeliveriesListParams["purpose"]>)}
           />
         </div>
         <div className="communication-toolbar__filter">
@@ -303,10 +303,10 @@ export interface DeliveryLogTabProps {
   onPageChange: (page: number) => void;
   pageSize: number;
   onPageSizeChange: (size: number) => void;
-  status: EventDeliveriesListParams["status"];
-  onStatusChange: (value: EventDeliveriesListParams["status"]) => void;
-  purpose: EventDeliveriesListParams["purpose"];
-  onPurposeChange: (value: EventDeliveriesListParams["purpose"]) => void;
+  status: NonNullable<EventDeliveriesListParams["status"]>;
+  onStatusChange: (value: NonNullable<EventDeliveriesListParams["status"]>) => void;
+  purpose: NonNullable<EventDeliveriesListParams["purpose"]>;
+  onPurposeChange: (value: NonNullable<EventDeliveriesListParams["purpose"]>) => void;
   templateId: string;
   onTemplateIdChange: (value: string) => void;
   searchInput: string;
