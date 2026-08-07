@@ -997,13 +997,13 @@ export function AccountPage() {
               searchPlaceholder="Search regional formats…"
               emptyLabel="No regional formats found"
               showLabel={false}
-              value={preferredLocale ?? ""}
+              value={preferredLocale ?? "system-default"}
               options={LOCALE_OPTIONS.map((opt) => ({
-                id: opt.value ?? "",
+                id: opt.value ?? "system-default",
                 label: `${opt.label}: ${opt.example}`,
               }))}
               disabled={profileSaving}
-              onChange={(id) => setPreferredLocale(id || null)}
+              onChange={(id) => setPreferredLocale(id === "system-default" ? null : id)}
             />
             <span className="at-hint">
               {`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
