@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Bounce detection Recent checks** no longer renders as a raw browser bullet list under Last automatic check. The history is a compact styled list with status icons, scrolls inside a capped height when there are many runs (slim on-theme scrollbar only when needed), and the latest run is not duplicated below the summary card.
+
 ### Added
 - **OIDC identity providers gain configurable given name, family name, and phone claims**, alongside the existing email/name/groups claims in Identity provider settings. When the combined name claim is absent from the token, the display name falls back to the given + family name claims instead of being left blank.
 - **Bounce detection last automatic check.** Event settings → Mailing shows the latest bounce-ingest run (time, OK/Failed, message counts). **Run check now** in the card header triggers a one-off ingest and updates the card (Test connection still does not). Settings → Health adds a soft **Bounce detection** row (`not_configured` / `ok` / `degraded`) based on enabled events' last runs. Does not affect `/healthz`.
