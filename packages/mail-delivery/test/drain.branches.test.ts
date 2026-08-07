@@ -1,0 +1,172 @@
+/**
+ * Branch coverage for drainPendingDeliveries failure/skip paths.
+ * Uses vi.mock so spies intercept the bindings drain.ts imports.
+ */
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestPrismaClient } from "@admitto/db/testing";
+import { setMailSettings } from "@admitto/mailer-config";
+import { generateToken } from "@admitto/tickets";
+import { sendBatch } from "@admitto/mailer";
+import { resolveAttendeeMailLinks } from "../src/links.js";
+import { drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
+import { resetDb } from "./resetDb.js";
+
+vi.mock("@admitto/mailer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/mailer")>();
+  return {
+    ...actual,
+    sendBatch: vi.fn(actual.sendBatch),
+  };
+});
+
+vi.mock("../src/links.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/links.js")>();
+  return {
+    ...actual,
+    resolveAttendeeMailLinks: vi.fn(actual.resolveAttendeeMailLinks),
+  };
+});
+
+const prisma = createTestPrismaClient();
+const EVENT_ID = "evt-mail-drain-branches";
+
+beforeAll(async () => {
+  await resetDb();
+  await prisma.organization.create({
+    data: { id: "org-drain-b", name: "Drain Branches Org", slug: "drain-branches-org" },
+  });
+  await prisma.event.create({
+    data: {
+      id: EVENT_ID,
+      organization_id: "org-drain-b",
+      title: "Drain Branches",
+      slug: "drain-branches",
+      date: new Date("2026-09-01"),
+    },
+  });
+  await setMailSettings(
+    { scopeType: "organization", scopeId: "org-drain-b" },
+    { provider: "export_only", fromAddress: "events@example.com" },
+    prisma,
+  );
+  await prisma.attendee.create({
+    data: {
+      id: "att-drain-branch",
+      event_id: EVENT_ID,
+      email: "branch@example.com",
+      name: "Branch",
+      public_ref: generateToken(),
+    },
+  });
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+beforeEach(() => {
+  vi.mocked(sendBatch).mockReset();
+  vi.mocked(sendBatch).mockImplementation(
+    async (...args) => {
+      const actual = await vi.importActual<typeof import("@admitto/mailer")>("@admitto/mailer");
+      return actual.sendBatch(...args);
+    },
+  );
+  vi.mocked(resolveAttendeeMailLinks).mockReset();
+  vi.mocked(resolveAttendeeMailLinks).mockImplementation(
+    async (...args) => {
+      const actual = await vi.importActual<typeof import("../src/links.js")>("../src/links.js");
+      return actual.resolveAttendeeMailLinks(...args);
+    },
+  );
+});
+
+async function enqueueOne() {
+  await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
+  await sendTicketEmails(
+    EVENT_ID,
+    { attendeeIds: ["att-drain-branch"] },
+    prisma,
+    { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+    { exportSink: () => undefined },
+  );
+}
+
+describe("drainPendingDeliveries branch coverage", () => {
+  it("skips when resolveAttendeeMailLinks throws", async () => {
+    await enqueueOne();
+    vi.mocked(resolveAttendeeMailLinks).mockRejectedValueOnce(new Error("gone"));
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1 });
+  });
+
+  it("marks failed when sendBatch throws an Error", async () => {
+    await enqueueOne();
+    vi.mocked(sendBatch).mockRejectedValueOnce(new Error("transport down"));
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain.failed).toBe(1);
+  });
+
+  it("marks failed when sendBatch throws a non-Error", async () => {
+    await enqueueOne();
+    vi.mocked(sendBatch).mockRejectedValueOnce("raw-string-failure");
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain.failed).toBe(1);
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    expect(row.error).toContain("raw-string-failure");
+  });
+
+  it("marks failed when sendBatch returns an empty results array", async () => {
+    await enqueueOne();
+    vi.mocked(sendBatch).mockResolvedValueOnce({
+      total: 1,
+      sent: 0,
+      failed: 1,
+      results: [],
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+  });
+
+  it("counts rejected provider results as failed", async () => {
+    await enqueueOne();
+    vi.mocked(sendBatch).mockResolvedValueOnce({
+      total: 1,
+      sent: 0,
+      failed: 1,
+      results: [{ status: "rejected", provider: "export_only", error: "bounce" }],
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+  });
+});

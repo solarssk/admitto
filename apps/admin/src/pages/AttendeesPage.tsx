@@ -23,7 +23,6 @@ import {
   bulkRevokeItems,
   exportAttendees,
   exportSelectedAttendees,
-  fetchBulkSendStatus,
   fetchEventAttendees,
   fetchEventItems,
   fetchTicketTypes,
@@ -43,6 +42,7 @@ import type {
 } from "../api/types.js";
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
+import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -115,33 +115,6 @@ function notifyBulkSendResult(
 
   const skippedNote = skipped > 0 ? `; ${skipped} skipped` : "";
   addToast(`Queued ${queued} ${pluralize(queued, "ticket")}; ${failed} failed${skippedNote}.`, "warning");
-}
-
-/** Poll batch status until the worker drains the queue, then toast the terminal counts. */
-async function pollBulkSendCompletion(
-  eventId: string,
-  batchId: string,
-  addToast: (message: string, variant?: ToastVariant) => void,
-): Promise<void> {
-  const maxAttempts = 90;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const status = await fetchBulkSendStatus(eventId, batchId);
-    if (status.queued === 0) {
-      if (status.failed === 0) {
-        addToast(
-          `Send complete: ${status.sent} ${pluralize(status.sent, "ticket")} sent.`,
-          "success",
-        );
-      } else if (status.sent === 0) {
-        addToast(`Send failed: ${status.failed} ${pluralize(status.failed, "ticket")}.`, "error");
-      } else {
-        addToast(`Send complete: ${status.sent} sent, ${status.failed} failed.`, "warning");
-      }
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-  }
-  addToast("Send is still running in the background. Check Communication for status.", "info");
 }
 
 /** Standard "N checked in (M already admitted)" toast for a bulk manual check-in result —
