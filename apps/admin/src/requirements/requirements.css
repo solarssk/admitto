@@ -232,7 +232,7 @@
 
 .icon-picker__item--selected {
   background: var(--surface-card);
-  border-color: var(--accent);
+  border-color: var(--primary);
   color: var(--text-primary);
 }
 
