@@ -27,3 +27,20 @@ export async function isWorkerHeartbeatStale(
   if (!row) return true;
   return now.getTime() - row.last_beat_at.getTime() >= staleMs;
 }
+
+/**
+ * Prisma `OR` clauses for stale running jobs, plus aged pending when the worker
+ * heartbeat gate says reclaim pending is safe.
+ */
+export function staleAdminJobOrClauses(
+  cutoff: Date,
+  reclaimPending: boolean,
+): Array<
+  | { status: "running"; started_at: { lt: Date } }
+  | { status: "pending"; created_at: { lt: Date } }
+> {
+  return [
+    { status: "running", started_at: { lt: cutoff } },
+    ...(reclaimPending ? [{ status: "pending" as const, created_at: { lt: cutoff } }] : []),
+  ];
+}
