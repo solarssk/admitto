@@ -234,8 +234,19 @@ export interface FinishWebauthnAssertionResult {
   credentialRowId: string;
 }
 
-/** Verify an authentication response against the credential it claims to be, updating its sign
- * counter. Returns null on any verification failure, unknown credential, or counter regression. */
+/**
+ * Verify an authentication response against the credential it claims to be, updating its sign
+ * counter. Returns null on any verification failure, unknown credential, or counter regression.
+ *
+ * `expectedChallenge` is the caller's responsibility to make single-use: this function does not
+ * store, consume, or invalidate it. The caller must persist each challenge keyed uniquely (e.g.
+ * per session) and delete it immediately after this call — success or failure — so a captured
+ * response can never be replayed against a still-valid challenge. The sign-counter check alone
+ * is not a substitute: many real authenticators (most platform passkeys) always report counter
+ * `0`, and `@simplewebauthn/server` only rejects a counter *regression* when at least one of the
+ * stored/new values is nonzero — an authenticator stuck at `0` gets no counter-based replay
+ * protection at all, so single-use challenge storage is the only real defense in that case.
+ */
 export async function finishWebauthnAssertion(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,

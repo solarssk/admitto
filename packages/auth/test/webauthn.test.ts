@@ -196,6 +196,45 @@ describe("WebAuthn registration", () => {
     const begin = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
     expect(begin?.options.excludeCredentials?.map((c) => c.id)).toContain(firstResponse.id);
   });
+
+  it("stores the transports the browser reported at registration", async () => {
+    const userId = "user-wa-transports";
+    await createAdmin(userId, "wa-transports@example.com");
+
+    const authenticator = createVirtualAuthenticator();
+    const begin = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
+    const response = authenticator.register({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
+    // The virtual authenticator doesn't report transports by default (matches many real
+    // authenticators) — set them here the way a browser's getTransports() would, to exercise the
+    // "real transports reported" side of the `credential.transports ?? []` fallback.
+    response.response.transports = ["usb", "nfc"];
+
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "cross-platform", null, RP);
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
+    expect(row?.webauthn_transports).toEqual(["usb", "nfc"]);
+  });
+
+  it("uses the user's display name in registration options when set", async () => {
+    const userId = "user-wa-display-name";
+    await prisma.user.create({
+      data: {
+        id: userId,
+        email: "wa-display-name@example.com",
+        password_hash: await hashPassword(PASSWORD),
+        display_name: "Ada Lovelace",
+      },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "admin", scope_type: "instance", scope_id: null },
+    });
+
+    const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    expect(begin?.options.user.displayName).toBe("Ada Lovelace");
+  });
+
+  it("returns null starting a registration for an unknown user", async () => {
+    expect(await beginWebauthnRegistration(prisma, "user-does-not-exist", "platform", RP)).toBeNull();
+  });
 });
 
 describe("WebAuthn credential management", () => {

@@ -670,7 +670,7 @@ model UserMfaMethod {
   /// WebAuthn signature counter — replay/clone detection (updated on every use).
   webauthn_sign_count          Int?
   /// WebAuthn transport hints reported at registration (e.g. "usb", "internal", "hybrid").
-  webauthn_transports          String[]
+  webauthn_transports          String[] @default([])
   /// "platform" (passkey — Touch ID/Windows Hello/password manager) or "cross-platform"
   /// (security key — USB/NFC/BLE FIDO2 device); drives which My Account row a credential shows under.
   webauthn_attachment          String?
