@@ -12,7 +12,6 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import type { AttendeeStatus } from "@admitto/db/status";
-import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   loadEventCustomDataFields,
   buildCustomDataFromInput,
@@ -60,15 +59,9 @@ import {
   type AttendeeSortBy,
   type AttendeeSortDir,
   type ExportAttendeeSqlRow,
+  buildAttendeesExportArtifact,
 } from "@admitto/tickets";
-import {
-  buildExportColumns,
-  buildExportCsv,
-  buildSanitizedExportRows,
-  type SanitizedExportRow,
-} from "@admitto/tickets/attendees-export";
 import { canManageInstance } from "@admitto/auth";
-import { buildExportPdfBuffer } from "./attendees-export-pdf.js";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -78,6 +71,7 @@ import {
   resolveClientTimezone,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
+import { loadEventAdminJob } from "./admin-job-http.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
@@ -193,44 +187,6 @@ const createAttendeeSchema = z
     custom_data: customDataFieldsRecordSchema.optional(),
   })
   .strict();
-
-/** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
-async function buildExportXlsxBuffer(
-  exportRows: SanitizedExportRow[],
-  exportColumns: string[],
-): Promise<Uint8Array> {
-  const exceljs = await import("exceljs");
-  const ExcelJS = exceljs.default ?? exceljs;
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Attendees");
-  ws.columns = exportColumns.map((h, i) => ({
-    header: h,
-    width: i === 0 ? 5 : 28,
-  }));
-  for (const r of exportRows) {
-    const row = ws.addRow([
-      r.check_off,
-      r.name,
-      r.email,
-      r.company,
-      r.department,
-      r.ticket_type,
-      r.check_in_status,
-      r.admitted_at,
-      ...r.attribute_values,
-    ]);
-    row.getCell(1).alignment = { horizontal: "center" };
-  }
-  ws.pageSetup = {
-    fitToPage: true,
-    fitToWidth: 1,
-    fitToHeight: 0,
-    orientation: "landscape",
-    paperSize: 9,
-  };
-  ws.views = [{ state: "frozen", ySplit: 1 }];
-  return new Uint8Array(await wb.xlsx.writeBuffer());
-}
 
 /** Append bulk audit row after a successful filtered or explicit-selection export (no raw
  * search term, no attendee ids — `selected_count` is how many ids the operator requested,
@@ -838,70 +794,25 @@ async function buildExportFileResponse(
     | { status: string; ticket_type?: string; mail_status?: string; has_query: boolean }
     | { selected_count: number },
 ): Promise<Response> {
-  const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const [attributeFieldsResult, ticketTypes] = await Promise.all([
-    loadEventCustomDataFields(db, eventId).catch((err) => err),
-    loadEventTicketTypes(db, eventId),
-  ]);
-  if (attributeFieldsResult instanceof Error) {
-    return c.json({ error: customDataErrorCode(attributeFieldsResult) }, 400);
-  }
-  const attributeFields = attributeFieldsResult;
-
-  const exportColumns = buildExportColumns(attributeFields);
-  const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone, ticketTypes);
-
-  const timestamp = new Date().toISOString().slice(0, 10);
-  const filename = `attendees-${eventId}-${timestamp}.${format}`;
-
-  if (format === "csv") {
-    const csv = buildExportCsv(exportRows, exportColumns);
-    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
-    return new Response(csv, {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": attachmentContentDisposition(filename),
-        "Cache-Control": "no-store",
-        "Pragma": "no-cache",
-      },
-    });
+  let artifact;
+  try {
+    artifact = await buildAttendeesExportArtifact(db, eventId, rows, format, event);
+  } catch (err) {
+    return c.json({ error: customDataErrorCode(err) }, 400);
   }
 
-  if (format === "pdf") {
-    const bytes = await buildExportPdfBuffer(exportRows, exportColumns, {
-      title: event.title,
-      date: event.date,
-    });
-    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
-    return new Response(bytes, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": attachmentContentDisposition(filename),
-        "Cache-Control": "no-store",
-        "Pragma": "no-cache",
-      },
-    });
-  }
-
-  const bytes = await buildExportXlsxBuffer(exportRows, exportColumns);
-  await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
-  return new Response(bytes, {
+  await auditAttendeesExported(db, c, eventId, format, artifact.rowCount, auditFilters);
+  return new Response(new Uint8Array(artifact.bytes), {
     headers: {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": attachmentContentDisposition(filename),
+      "Content-Type": artifact.contentType,
+      "Content-Disposition": attachmentContentDisposition(artifact.filename),
       "Cache-Control": "no-store",
       "Pragma": "no-cache",
     },
   });
 }
 
-/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no
- * tokens). An explicit-selection export (checked rows in the bulk bar) is a separate POST
- * endpoint (`handleExportSelectedAttendees`, below) — its ids never travel in a query string,
- * since the default reverse-proxy access log records the full request URI (unlike this app's
- * own PII-free access log), and a selection of attendee ids is exactly the kind of detail that
- * log shouldn't retain. */
+/** GET /api/admin/events/:eventId/attendees/export — enqueue filtered export (202). */
 export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -920,7 +831,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { title: true, date: true, timezone: true },
+    select: { title: true, date: true, timezone: true, organization_id: true },
   });
   if (!event) {
     return c.json({ error: "not_found" }, 404);
@@ -931,12 +842,69 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
   }
 
-  const rows = await findFilteredAttendeesForExport(db, eventId, filterParams);
-  return buildExportFileResponse(db, c, eventId, rows, format, event, {
-    status,
-    ticket_type,
-    mail_status,
-    has_query: Boolean(q),
+  const audit = adminAuditFromContext(c);
+  const job = await db.adminJob.create({
+    data: {
+      type: "export",
+      status: "pending",
+      organization_id: event.organization_id,
+      event_id: eventId,
+      actor_user_id: audit.operator ?? null,
+      session_id: audit.sessionId ?? null,
+      client_timezone: resolveClientTimezone(c) ?? null,
+      result_json: {
+        request: {
+          kind: "attendees_filtered",
+          format,
+          filters: filterParams,
+        },
+      },
+    },
+  });
+
+  return c.json({ jobId: job.id, status: "pending", format, rowCount: total }, 202);
+}
+
+/** GET /api/admin/events/:eventId/export/jobs/:jobId */
+export async function handleGetExportJob(c: Context, db: PrismaClient): Promise<Response> {
+  const loaded = await loadEventAdminJob(c, db, "export");
+  if (loaded instanceof Response) return loaded;
+  const { job } = loaded;
+
+  c.header("Cache-Control", "no-store");
+  return c.json({
+    jobId: job.id,
+    status: job.status,
+    error: job.error,
+    filename: job.filename,
+    rowCount: job.created_count,
+  });
+}
+
+/** GET /api/admin/events/:eventId/export/jobs/:jobId/download */
+export async function handleDownloadExportJob(c: Context, db: PrismaClient): Promise<Response> {
+  const loaded = await loadEventAdminJob(c, db, "export");
+  if (loaded instanceof Response) return loaded;
+  const { job } = loaded;
+  if (job.status !== "succeeded" || !job.storage_key) return c.json({ error: "not_ready" }, 404);
+
+  const { getDefaultStorage } = await import("@admitto/storage");
+  const bytes = await getDefaultStorage().get(job.storage_key);
+  const meta =
+    job.result_json && typeof job.result_json === "object" && !Array.isArray(job.result_json)
+      ? (job.result_json as Record<string, unknown>)
+      : {};
+  const contentType =
+    typeof meta.contentType === "string" ? meta.contentType : "application/octet-stream";
+  const filename = job.filename ?? "export.bin";
+
+  return new Response(bytes, {
+    headers: {
+      "Content-Type": contentType,
+      "Content-Disposition": attachmentContentDisposition(filename),
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+    },
   });
 }
 
