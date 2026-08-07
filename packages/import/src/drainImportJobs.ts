@@ -8,11 +8,17 @@ import {
   ImportCapacityExceededError,
   type ExecuteImportCommitResult,
 } from "./executeImportCommit.js";
+import {
+  parseImportJobStaleRunningMs,
+  reclaimStaleImportJobs,
+} from "./reclaimStaleImportJobs.js";
 
 export type DrainImportJobsResult = {
   claimed: number;
   succeeded: number;
   failed: number;
+  /** Stale `running` jobs marked failed before claiming. */
+  reclaimed: number;
 };
 
 async function claimNextImportJob(db: PrismaClient) {
@@ -100,13 +106,19 @@ async function runClaimedImportJob(
 
 /**
  * Process up to `limit` pending import_commit jobs. Caller holds worker `import` lock.
+ * Reclaims stale `running` rows first (abandoned after worker crash).
  */
 export async function drainImportJobs(
   db: PrismaClient,
   storage: StorageAdapter,
-  options: { limit?: number } = {},
+  options: { limit?: number; staleRunningMs?: number } = {},
 ): Promise<DrainImportJobsResult> {
   const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
+  const staleRunningMs = options.staleRunningMs ?? parseImportJobStaleRunningMs();
+  const { reclaimed } = await reclaimStaleImportJobs(db, storage, {
+    olderThanMs: staleRunningMs,
+  });
+
   let claimed = 0;
   let succeeded = 0;
   let failed = 0;
@@ -121,7 +133,7 @@ export async function drainImportJobs(
     else failed += 1;
   }
 
-  return { claimed, succeeded, failed };
+  return { claimed, succeeded, failed, reclaimed };
 }
 
 async function markSucceeded(
