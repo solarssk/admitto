@@ -11,6 +11,7 @@ import {
   WalletProviderError,
   type WalletPassInput,
   type WalletPassProvider,
+  type WalletPassResult,
 } from "@admitto/wallet";
 import type { GeocodingProvider } from "@admitto/location";
 import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
@@ -666,53 +667,73 @@ export function createApp(options: CreateAppOptions = {}) {
     const existing = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
     let providerUrls: { apple_url: string | null; android_url: string | null };
 
+    async function markActive(
+      userProvidedId: string,
+      result: WalletPassResult,
+    ): Promise<{ apple_url: string | null; android_url: string | null }> {
+      await db.walletPass.upsert({
+        where: { attendee_id: attendee.id },
+        create: {
+          attendee_id: attendee.id,
+          provider: "passcreator",
+          provider_pass_id: result.providerPassId,
+          user_provided_id: userProvidedId,
+          download_url: result.downloadUrl,
+          apple_url: result.appleUrl,
+          android_url: result.androidUrl,
+          status: "active",
+          issued_at: new Date(),
+        },
+        update: {
+          provider: "passcreator",
+          provider_pass_id: result.providerPassId,
+          user_provided_id: userProvidedId,
+          download_url: result.downloadUrl,
+          apple_url: result.appleUrl,
+          android_url: result.androidUrl,
+          status: "active",
+          last_error_code: null,
+          issued_at: new Date(),
+        },
+      });
+      return { apple_url: result.appleUrl, android_url: result.androidUrl };
+    }
+
     if (existing && existing.status === "active") {
       providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
     } else {
+      const input = await buildWalletPassInput(resolved);
       try {
-        const input = await buildWalletPassInput(resolved);
         const result = await passCreatorClient.createPass(input);
-        await db.walletPass.upsert({
-          where: { attendee_id: attendee.id },
-          create: {
-            attendee_id: attendee.id,
-            provider: "passcreator",
-            provider_pass_id: result.providerPassId,
-            user_provided_id: input.userProvidedId,
-            download_url: result.downloadUrl,
-            apple_url: result.appleUrl,
-            android_url: result.androidUrl,
-            status: "active",
-            issued_at: new Date(),
-          },
-          update: {
-            provider: "passcreator",
-            provider_pass_id: result.providerPassId,
-            user_provided_id: input.userProvidedId,
-            download_url: result.downloadUrl,
-            apple_url: result.appleUrl,
-            android_url: result.androidUrl,
-            status: "active",
-            last_error_code: null,
-            issued_at: new Date(),
-          },
-        });
-        providerUrls = { apple_url: result.appleUrl, android_url: result.androidUrl };
+        providerUrls = await markActive(input.userProvidedId, result);
       } catch (err) {
         const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
-        console.error("PassCreator createPass failed:", err);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "wallet_pass_create_failed",
-          fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
-        });
-        await db.walletPass.upsert({
-          where: { attendee_id: attendee.id },
-          create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
-          update: { status: "failed", last_error_code: code },
-        });
-        return c.redirect(`${backHref}?walletError=1`, 302);
+
+        // A concurrent request for the same attendee can win the race and create the pass first -
+        // PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recover
+        // the winner's pass instead of overwriting its "active" row with "failed" (which would
+        // otherwise make every later click retry forever against an already-existing pass).
+        const recovered =
+          code === "wallet_provider_duplicate"
+            ? await passCreatorClient.findByUserProvidedId(input.userProvidedId).catch(() => null)
+            : null;
+        if (recovered) {
+          providerUrls = await markActive(input.userProvidedId, recovered);
+        } else {
+          console.error("PassCreator createPass failed:", err);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_pass_create_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
+          });
+          await db.walletPass.upsert({
+            where: { attendee_id: attendee.id },
+            create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
+            update: { status: "failed", last_error_code: code },
+          });
+          return c.redirect(`${backHref}?walletError=1`, 302);
+        }
       }
     }
 
@@ -1774,7 +1795,33 @@ export function createApp(options: CreateAppOptions = {}) {
   for (const platform of ["apple", "google"] as const) {
     app.get(`/t/:token/wallet/${platform}`, async (c) => {
       const token = c.req.param("token");
-      const resolved = await resolveTicket(token, db).catch(() => null);
+      let resolved;
+      try {
+        resolved = await resolveTicket(token, db);
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientInitializationError ||
+          err instanceof Prisma.PrismaClientKnownRequestError ||
+          err instanceof Prisma.PrismaClientUnknownRequestError
+        ) {
+          console.error("resolveTicket database error:", err);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "ticket_resolution_failed",
+            fields: { route: "/t/:token/wallet/:platform", errorKind: "database" },
+          });
+        } else {
+          console.error("resolveTicket unexpected error:", err);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "ticket_resolution_failed",
+            fields: { route: "/t/:token/wallet/:platform", errorKind: "unexpected" },
+          });
+        }
+        return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      }
       if (!resolved) return htmlWithSecurityHeaders(c, renderNotFound(), 404);
       return handleWalletRedirect(c, resolved, platform, `/t/${token}`);
     });
@@ -1784,7 +1831,19 @@ export function createApp(options: CreateAppOptions = {}) {
   for (const platform of ["apple", "google"] as const) {
     app.get(`/t/:eventSlug/a/:ref/wallet/${platform}`, async (c) => {
       const { eventSlug, ref } = c.req.param();
-      const resolved = await findAttendeeForEventRoute(eventSlug, ref, db).catch(() => null);
+      let resolved;
+      try {
+        resolved = await findAttendeeForEventRoute(eventSlug, ref, db);
+      } catch (err) {
+        console.error("findAttendeeForEventRoute error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_agency_lookup_failed",
+          fields: { route: "/t/:eventSlug/a/:ref/wallet/:platform" },
+        });
+        return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      }
       if (resolved?.mode !== "agency") return htmlWithSecurityHeaders(c, renderNotFound(), 404);
       return handleWalletRedirect(c, resolved, platform, `/t/${eventSlug}/a/${ref}`);
     });
