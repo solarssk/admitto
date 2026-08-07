@@ -321,6 +321,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       placeholder="All sources"
       searchPlaceholder="Search sources…"
       emptyLabel="No sources found"
+      showLabel={false}
       value={source || "all"}
       options={[
         { id: "all", label: "All sources" },
@@ -339,6 +340,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       placeholder="All levels"
       searchPlaceholder="Search levels…"
       emptyLabel="No levels found"
+      showLabel={false}
       value={level || "all"}
       options={[
         { id: "all", label: "All levels" },

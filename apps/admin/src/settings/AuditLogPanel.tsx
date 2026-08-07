@@ -972,6 +972,7 @@ function AuditFilterFields({ filters, setFilters, setPage, events }: Readonly<Au
           placeholder="All actions"
           searchPlaceholder="Search actions…"
           emptyLabel="No actions found"
+          showLabel={false}
           value={filters.actionType || "all"}
           options={[
             { id: "all", label: "All actions" },
@@ -993,6 +994,7 @@ function AuditFilterFields({ filters, setFilters, setPage, events }: Readonly<Au
           placeholder="All events"
           searchPlaceholder="Search events…"
           emptyLabel="No events found"
+          showLabel={false}
           value={filters.eventId || "all"}
           options={[
             { id: "all", label: "All events" },
@@ -1027,6 +1029,7 @@ function SecurityFilterFields({ filters, setFilters, setPage }: Readonly<Securit
         placeholder="All event types"
         searchPlaceholder="Search event types…"
         emptyLabel="No event types found"
+        showLabel={false}
         value={filters.eventType || "all"}
         options={[
           { id: "all", label: "All event types" },
