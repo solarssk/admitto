@@ -18,6 +18,11 @@ import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
 
 const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+type RetentionSchedule = {
+  lastRetentionAt: number | null;
+  bootDone: boolean;
+};
+
 function log(job: string, message: string): void {
   const ts = new Date().toISOString();
   console.log(`[worker:${job}] ${ts} ${message}`);
@@ -33,6 +38,18 @@ function sleep(ms: number, signal: { stopped: boolean }): Promise<void> {
       }
     }, 200);
   });
+}
+
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+async function runJobSafely(job: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    log(job, `FAILED ${errMessage(err)}`);
+  }
 }
 
 async function runBounceJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
@@ -75,6 +92,34 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
   }
 }
 
+function retentionIsDue(schedule: RetentionSchedule, now: number): boolean {
+  return (
+    !schedule.bootDone ||
+    schedule.lastRetentionAt == null ||
+    now - schedule.lastRetentionAt >= RETENTION_INTERVAL_MS
+  );
+}
+
+async function runWorkerTick(
+  db: PrismaClient,
+  locks: WorkerLockClient,
+  schedule: RetentionSchedule,
+): Promise<void> {
+  await runJobSafely("heartbeat", async () => {
+    await touchWorkerHeartbeat(db);
+    log("heartbeat", "ok");
+  });
+  await runJobSafely("bounce", () => runBounceJob(db, locks));
+
+  if (!retentionIsDue(schedule, Date.now())) return;
+
+  await runJobSafely("retention", async () => {
+    await runRetentionJob(db, locks);
+    schedule.lastRetentionAt = Date.now();
+    schedule.bootDone = true;
+  });
+}
+
 /**
  * Long-running worker. Resolves when SIGTERM/SIGINT handled (or fatal lock client error).
  * Does not disconnect Prisma (caller owns that).
@@ -89,8 +134,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   const tickMs = tickSeconds * 1000;
   const locks = await openWorkerLockClient(databaseUrl);
   const signal = { stopped: false };
-  let lastRetentionAt: number | null = null;
-  let retentionBootDone = false;
+  const retention: RetentionSchedule = { lastRetentionAt: null, bootDone: false };
 
   const onStop = () => {
     if (signal.stopped) return;
@@ -108,34 +152,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   try {
     // Each tick is awaited fully before sleep; SIGTERM during a tick finishes the tick, then exits.
     while (!signal.stopped) {
-      try {
-        await touchWorkerHeartbeat(db);
-        log("heartbeat", "ok");
-      } catch (err) {
-        log("heartbeat", `FAILED ${err instanceof Error ? err.message : String(err)}`);
-      }
-
-      try {
-        await runBounceJob(db, locks);
-      } catch (err) {
-        log("bounce", `FAILED ${err instanceof Error ? err.message : String(err)}`);
-      }
-
-      const now = Date.now();
-      const retentionDue =
-        !retentionBootDone ||
-        lastRetentionAt == null ||
-        now - lastRetentionAt >= RETENTION_INTERVAL_MS;
-      if (retentionDue) {
-        try {
-          await runRetentionJob(db, locks);
-          lastRetentionAt = Date.now();
-          retentionBootDone = true;
-        } catch (err) {
-          log("retention", `FAILED ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
-
+      await runWorkerTick(db, locks, retention);
       if (signal.stopped) break;
       await sleep(tickMs, signal);
     }
