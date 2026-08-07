@@ -130,9 +130,9 @@
    this row never wraps, so the trigger never relocates to the left edge the way "More
    actions" could — no mobile-only override needed here. */
 .attendees-filters-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end") - not CSS. See
+     searchable-select.css's own panel rule for the full story. */
   z-index: var(--z-dropdown);
   width: 260px;
   background: var(--surface-card);
@@ -879,9 +879,9 @@
 }
 
 .attendees-export-menu__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* position/top/left come from useDropdownMenu's own `panelStyle` (position: fixed, computed
+     from the trigger's getBoundingClientRect(), align: "end") - not CSS. See
+     searchable-select.css's own panel rule for the full story. */
   z-index: var(--z-dropdown);
   min-width: 240px;
   background: var(--surface-card);
@@ -892,13 +892,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-/* Anchored above the trigger instead of below - see .searchable-select__panel--up's own
-   comment (searchable-select.css); same useDropdownMenu-driven decision. */
-.attendees-export-menu__panel--up {
-  top: auto;
-  bottom: calc(100% + 4px);
 }
 
 .attendees-export-menu__item {

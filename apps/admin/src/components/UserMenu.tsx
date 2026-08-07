@@ -42,7 +42,10 @@ function RoleAvatar({ tier, size }: Readonly<{ tier: RoleTier; size?: "md" }>) {
  * sign-out button) into one dropdown. */
 export function UserMenu({ user, assignments }: Readonly<{ user: AuthUser; assignments: RoleAssignment[] }>) {
   const navigate = useNavigate();
-  const { open, setOpen, close, openUpward, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+    gap: 8,
+  });
   const tier = roleTier(assignments);
   const displayName = user.display_name || user.email.split("@")[0] || "Staff";
 
@@ -61,11 +64,7 @@ export function UserMenu({ user, assignments }: Readonly<{ user: AuthUser; assig
         <i className="ti ti-chevron-down user-menu__chevron" aria-hidden="true" />
       </button>
       {open && (
-        <div
-          className={`user-menu__panel${openUpward ? " user-menu__panel--up" : ""}`}
-          role="menu"
-          ref={panelRef}
-        >
+        <div className="user-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           <div className="user-menu__head">
             <RoleAvatar tier={tier} size="md" />
             <div className="user-menu__head-text">

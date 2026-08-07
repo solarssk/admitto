@@ -50,11 +50,11 @@
 }
 
 .searchable-select__panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  /* position/top/left/width come from useDropdownMenu's own `panelStyle` (position: fixed,
+     computed from the trigger's getBoundingClientRect()) - not CSS - so the panel floats over
+     a scrolling modal body instead of being clipped by (and inflating the scroll height of) its
+     `overflow: auto` ancestor. */
   z-index: var(--z-dropdown);
-  width: max(100%, 260px);
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -65,16 +65,13 @@
   gap: var(--space-2);
 }
 
-/* Anchored above the trigger instead of below - useDropdownMenu's own layout effect decides
-   this once per open, when there isn't enough room below (e.g. a trigger near the bottom of a
-   tall, scrolled page). Also reverses the panel's own child order (search box, then list) so
-   the search box - the control the user's attention and cursor are already at, right next to
-   the trigger they just clicked - stays anchored beside the trigger instead of jumping to the
-   far edge of the panel; the option list occupies the space that opened up above it, in its
-   own unchanged top-to-bottom order (PO review, live on the bulk-revoke Event picker). */
+/* Reverses the panel's own child order (search box, then list) so the search box - the control
+   the user's attention and cursor are already at, right next to the trigger they just clicked -
+   stays anchored beside the trigger instead of jumping to the far edge of the panel; the option
+   list occupies the space that opened up above it, in its own unchanged top-to-bottom order
+   (PO review, live on the bulk-revoke Event picker). useDropdownMenu's own layout effect decides
+   when this applies (not enough room below the trigger). */
 .searchable-select__panel--up {
-  top: auto;
-  bottom: calc(100% + 4px);
   flex-direction: column-reverse;
 }
 

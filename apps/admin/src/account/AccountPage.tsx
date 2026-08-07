@@ -123,6 +123,7 @@ function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
       <SearchableSelect
         id="account-type"
         label="Account type"
+        showLabel={false}
         placeholder="Account type"
         searchPlaceholder=""
         emptyLabel=""
@@ -236,6 +237,7 @@ function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
       <SearchableSelect
         id="account-role"
         label="Role"
+        showLabel={false}
         placeholder="No role assigned"
         searchPlaceholder="Search roles…"
         emptyLabel="No roles found"
