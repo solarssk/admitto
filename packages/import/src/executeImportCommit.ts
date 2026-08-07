@@ -40,6 +40,8 @@ export type ExecuteImportCommitResult = {
   created: number;
   updated: number;
   skipped: SkippedRow[];
+  /** Uncapped committed skip total (skipped array is capped for the response payload). */
+  skippedCount: number;
   invalidRows: Array<{ rowIndex: number; reason: string }>;
   invalidCount: number;
 };
@@ -184,6 +186,7 @@ export async function executeImportCommit(
     created: summary.created,
     updated: summary.updated,
     skipped: capRows(summary.skipped),
+    skippedCount: summary.skipped.length,
     invalidRows: capRows(allInvalid),
     invalidCount: allInvalid.length,
   };

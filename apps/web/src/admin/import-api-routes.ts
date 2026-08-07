@@ -85,8 +85,9 @@ export type ImportCommitDto = {
   toSkip: number;
   created: number;
   updated: number;
-  /** Capped at ROW_DETAIL_LIMIT; toSkip above is the true total. */
+  /** Capped at ROW_DETAIL_LIMIT; skippedCount is the true committed total. */
   skipped: Array<{ email: string; reason: string }>;
+  skippedCount: number;
   /**
    * Rows that failed the commit-time re-parse (e.g. a ticket type deleted from the catalog
    * between preview and commit) and were therefore never passed into commitImport at all - they
@@ -521,22 +522,32 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
     });
 
     const audit = adminAuditFromContext(c);
-    const job = await db.adminJob.create({
-      data: {
-        type: "import_commit",
-        status: "pending",
-        organization_id: event.organization_id,
-        event_id: eventId,
-        actor_user_id: audit.operator ?? null,
-        session_id: audit.sessionId ?? null,
-        client_timezone: resolveClientTimezone(c),
-        storage_key: staged.key,
-        filename: upload.filename,
-        overwrite: upload.overwrite,
-        force_capacity: forceCapacity,
-        import_id: importId,
-      },
-    });
+    let job;
+    try {
+      job = await db.adminJob.create({
+        data: {
+          type: "import_commit",
+          status: "pending",
+          organization_id: event.organization_id,
+          event_id: eventId,
+          actor_user_id: audit.operator ?? null,
+          session_id: audit.sessionId ?? null,
+          client_timezone: resolveClientTimezone(c),
+          storage_key: staged.key,
+          filename: upload.filename,
+          overwrite: upload.overwrite,
+          force_capacity: forceCapacity,
+          import_id: importId,
+        },
+      });
+    } catch (createErr) {
+      try {
+        await storage.delete(staged.key);
+      } catch {
+        /* best-effort orphan cleanup */
+      }
+      throw createErr;
+    }
 
     logger.info("Import commit queued", {
       importId,

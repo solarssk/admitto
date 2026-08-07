@@ -136,6 +136,24 @@ describe("waitForImportJobResult", () => {
     ).rejects.toMatchObject({ status: 500, message: "disk full" });
   });
 
+  it("treats succeeded with a null result as a terminal error", async () => {
+    fetchImportJobStatus.mockResolvedValue({
+      jobId: "job-1",
+      status: "succeeded",
+      importId: "imp-1",
+      error: null,
+      result: null,
+    });
+    const ac = new AbortController();
+    await expect(
+      waitForImportJobResult("evt-1", "job-1", ac.signal, {
+        maxAttempts: 3,
+        sleep: async () => {},
+      }),
+    ).rejects.toMatchObject({ status: 500, message: "Import finished without a result." });
+    expect(fetchImportJobStatus).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to Import failed. when the failed job has no error text", async () => {
     fetchImportJobStatus.mockResolvedValueOnce({
       jobId: "job-1",

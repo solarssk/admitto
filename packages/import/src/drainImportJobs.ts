@@ -90,12 +90,11 @@ async function runClaimedImportJob(
       importId: job.import_id,
     });
     await markSucceeded(db, job.id, result);
+    await deleteStagedKey(storage, job.storage_key);
     return "succeeded";
   } catch (err) {
     await markFailed(db, job.id, err);
     return "failed";
-  } finally {
-    await deleteStagedKey(storage, job.storage_key);
   }
 }
 
@@ -140,7 +139,7 @@ async function markSucceeded(
       to_skip: result.toSkip,
       created_count: result.created,
       updated_count: result.updated,
-      skipped_count: result.toSkip,
+      skipped_count: result.skippedCount,
       invalid_count: result.invalidCount,
       result_json: {
         importId: result.importId,
@@ -150,6 +149,7 @@ async function markSucceeded(
         created: result.created,
         updated: result.updated,
         skipped: result.skipped,
+        skippedCount: result.skippedCount,
         invalidRows: result.invalidRows,
         invalidCount: result.invalidCount,
       },

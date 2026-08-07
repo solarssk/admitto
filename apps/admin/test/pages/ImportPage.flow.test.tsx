@@ -156,7 +156,10 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByLabelText(/Dry run/));
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(1 attendee\)$/ }));
     await waitFor(() => {
-      expect(commitImport).toHaveBeenCalledWith("evt-1", expect.any(File), true, { force: false });
+      expect(commitImport).toHaveBeenCalledWith("evt-1", expect.any(File), true, {
+        force: false,
+        signal: expect.any(AbortSignal),
+      });
     });
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Attendees imported: 1 created/);
@@ -554,7 +557,10 @@ describe("ImportPage upload → preview → commit flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Commit import \(2 attendees\)$/ }));
 
     await waitFor(() => {
-      expect(commitImport).toHaveBeenLastCalledWith("evt-1", expect.any(File), false, { force: true });
+      expect(commitImport).toHaveBeenLastCalledWith("evt-1", expect.any(File), false, {
+        force: true,
+        signal: expect.any(AbortSignal),
+      });
     });
   });
 
@@ -708,6 +714,7 @@ describe("ImportPage upload → preview → commit flow", () => {
       expect(fetchImportJobStatus).toHaveBeenCalled();
     });
 
+    expect(screen.queryByTestId("at-toast")).toBeNull();
     view.unmount();
 
     await act(async () => {

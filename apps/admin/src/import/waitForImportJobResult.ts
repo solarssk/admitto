@@ -4,7 +4,7 @@ import type { ImportCommitResponse } from "../api/types.js";
 const DEFAULT_POLL_ATTEMPTS = 90;
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 
-function isAbortError(err: unknown): boolean {
+export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
 
@@ -48,18 +48,19 @@ export async function waitForImportJobResult(
       throw new DOMException("Aborted", "AbortError");
     }
     const status = await fetchImportJobStatus(eventId, jobId, signal);
-    if (status.status === "succeeded" && status.result) {
-      return status.result;
+    if (status.status === "succeeded") {
+      if (status.result) return status.result;
+      throw new ApiError(500, "Import finished without a result.");
     }
     if (status.status === "failed") {
       throw new ApiError(500, status.error || "Import failed.");
     }
-    await sleep(intervalMs, signal);
+    if (attempt < maxAttempts - 1) {
+      await sleep(intervalMs, signal);
+    }
   }
   throw new ApiError(
     504,
     "Import is still running. Check history later or keep the worker running.",
   );
 }
-
-export { isAbortError };
