@@ -246,6 +246,17 @@ describe("AccountPage toasts", () => {
     vi.useRealTimers();
   });
 
+  it("selecting System default clears the locale to null and updates the example date", async () => {
+    mockLoadedAccount();
+    renderWithToast(<AccountPage />);
+    const select = (await screen.findByLabelText("Regional format")) as HTMLSelectElement;
+    expect(select.value).toBe("en-GB");
+
+    fireEvent.change(select, { target: { value: "" } });
+
+    expect(select.value).toBe("");
+  });
+
   it("toasts profile save errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");

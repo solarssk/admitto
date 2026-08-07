@@ -170,6 +170,46 @@ describe("GET /api/account", () => {
     }
   });
 
+  it("resolves an organization-scoped role's scope_id to the organization's name", async () => {
+    // "operator", not "admin": same MFA reasoning as the deleted-scope test above.
+    const created = await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "operator", scope_type: "organization", scope_id: ORG_ACCOUNT },
+    });
+    try {
+      const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+      const body = (await res.json()) as { roles: Array<{ id: string; scope_label: string | null }> };
+      expect(body.roles.find((r) => r.id === created.id)?.scope_label).toBe("Account Test Org");
+    } finally {
+      await prisma.roleAssignment.delete({ where: { id: created.id } });
+    }
+  });
+
+  it("returns a null scope_label for an organization-scoped role pointing at a since-deleted org", async () => {
+    const created = await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "operator", scope_type: "organization", scope_id: "org-does-not-exist" },
+    });
+    try {
+      const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+      const body = (await res.json()) as { roles: Array<{ id: string; scope_label: string | null }> };
+      expect(body.roles.find((r) => r.id === created.id)?.scope_label).toBeNull();
+    } finally {
+      await prisma.roleAssignment.delete({ where: { id: created.id } });
+    }
+  });
+
+  it("returns a null scope_label for an instance-scoped role (neither event nor organization)", async () => {
+    // adminUserId is bootstrapped as instance-scoped superadmin (see beforeAll) - the one seeded
+    // fixture whose role assignment is neither "event" nor "organization" scoped. Superadmin is
+    // in the default mfa_required_roles set, so the session's own full-session MFA policy check
+    // (assertFullSessionMfaPolicy) rejects it as unauthorized until TOTP is confirmed.
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account", { headers: { Cookie: adminCookie } });
+    const body = (await res.json()) as { roles: Array<{ scope_type: string; scope_label: string | null }> };
+    const superadminRole = body.roles.find((r) => r.scope_type === "instance");
+    expect(superadminRole).toBeDefined();
+    expect(superadminRole?.scope_label).toBeNull();
+  });
+
   it("returns an empty external_identities array when nothing is linked", async () => {
     const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
     const body = (await res.json()) as { external_identities: unknown[] };

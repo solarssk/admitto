@@ -835,7 +835,7 @@ export function AccountPage() {
           const result = await patchAccountProfile({
             ...(displayName !== (account.display_name ?? "") && { display_name: displayName }),
             ...(localeChanged && { preferred_locale: preferredLocale }),
-            ...(phoneCountryCodeChanged && { phone_country_code: phoneCountryCode || null }),
+            ...(phoneCountryCodeChanged && { phone_country_code: phoneCountryCode }),
             ...(phoneNumberChanged && { phone_number: phoneNumber || null }),
           });
           setDisplayName(result.display_name ?? "");
