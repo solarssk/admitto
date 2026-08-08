@@ -19,7 +19,6 @@ import {
   Input,
   Notice,
   PageHeader,
-  Select,
   Spinner,
   Tabs,
   Tooltip,
@@ -189,15 +188,28 @@ const WALLET_BADGE_ASSET: Record<string, { src: string; alt: string }> = {
   google_wallet_url: { src: "/assets/google-wallet-badge.svg", alt: "Add to Google Wallet" },
 };
 
-/** Markup inserted for a wallet placeholder — a ready-to-use badge button (the real Apple/Google
+/** Markup inserted for a wallet placeholder: a ready-to-use badge button (the real Apple/Google
  * badge image, linked to `{{name}}`), not a bare token. Unlike imagePlaceholderMarkup, `{{name}}`
  * itself goes in `href`, not `src` - a wallet placeholder is a link value, the badge graphic is a
- * fixed asset, not something the placeholder resolves to. */
+ * fixed asset, not something the placeholder resolves to. Relative `/assets/...` src values are
+ * absolutized at render/send time via `BASE_URL` (see absolutizeBundledTicketAssetUrls). */
 function walletButtonMarkup(name: string, format: TemplateFormat): string {
   const badge = WALLET_BADGE_ASSET[name];
+  if (!badge) return `{{${name}}}`;
   return format === "mjml"
     ? `<mj-image href="{{${name}}}" src="${badge.src}" alt="${badge.alt}" width="200px" />`
     : `<a href="{{${name}}}"><img src="${badge.src}" alt="${badge.alt}" width="200" style="max-width:100%;" /></a>`;
+}
+
+/** Body insert for a placeholder chip: image markup, wallet badge button, or a bare token. */
+function bodyPlaceholderInsert(
+  name: string,
+  format: TemplateFormat,
+  imagePlaceholders: readonly string[],
+): string {
+  if (imagePlaceholders.includes(name)) return imagePlaceholderMarkup(name, format);
+  if (WALLET_PLACEHOLDERS.has(name)) return walletButtonMarkup(name, format);
+  return `{{${name}}}`;
 }
 
 /** True when [start, end] falls inside the `<mjml>...</mjml>` root found in `value` — strictly
@@ -912,6 +924,8 @@ function PlaceholderChips({
   if (logoUrl) samples.logo_url = logoUrl;
   if (headerImageUrl) samples.header_image_url = headerImageUrl;
 
+  const showWalletNotice = groups.some((g) => g.label === "Wallet");
+
   return (
     <>
       {groups.map((group) => (
@@ -931,6 +945,12 @@ function PlaceholderChips({
           </div>
         </div>
       ))}
+      {showWalletNotice && (
+        <Notice variant="info" className="communication-wallet-notice">
+          Wallet chips insert an Add to Wallet badge button. Apple and Google Wallet links are not
+          generated yet, so do not use these badges in messages you send to attendees.
+        </Notice>
+      )}
     </>
   );
 }
@@ -962,6 +982,9 @@ function PlaceholderChip({
   sample?: string;
 }>) {
   const [sampleFailed, setSampleFailed] = useState(false);
+  useEffect(() => {
+    setSampleFailed(false);
+  }, [sample]);
   const showSample = !!sample && !sampleFailed;
   const titleParts = [
     isRequired && "Required placeholder",
@@ -1110,10 +1133,9 @@ function TemplateEditorCard({
               onChange={(e) => setBody(e.target.value)}
               onFocus={() => setActiveField("body")}
               onKeyDown={(e) => {
-                // Tab's default action moves focus to the next field, same as any other input -
-                // fine for a form, wrong for a code editor, where the operator expects Tab to
-                // indent instead of leaving the textarea entirely.
-                if (e.key !== "Tab") return;
+                // Plain Tab indents (code-editor habit). Shift+Tab keeps the browser default so
+                // keyboard users can still move focus back out of the textarea.
+                if (e.key !== "Tab" || e.shiftKey) return;
                 e.preventDefault();
                 const el = e.currentTarget;
                 const start = el.selectionStart;
@@ -2093,18 +2115,16 @@ export function CommunicationPage() {
 
   const insertPlaceholder = (name: string) => {
     // Subjects are plain text (no HTML rendering), so always insert the bare token there. In the
-    // body, an image placeholder gets a ready-to-use image element instead of a bare token —
+    // body, an image placeholder gets a ready-to-use image element instead of a bare token:
     // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src. A
     // wallet placeholder similarly gets a ready-made badge button (the real Apple/Google badge
     // image, linked to the placeholder) instead of a bare token nobody would otherwise turn into
     // a clickable button by hand.
     const bareToken = `{{${name}}}`;
     const token =
-      activeField === "body" && imagePlaceholders.includes(name)
-        ? imagePlaceholderMarkup(name, format)
-        : activeField === "body" && WALLET_PLACEHOLDERS.has(name)
-          ? walletButtonMarkup(name, format)
-          : bareToken;
+      activeField === "body"
+        ? bodyPlaceholderInsert(name, format, imagePlaceholders)
+        : bareToken;
     if (activeField === "subject") {
       insertTokenIntoField(subjectRef.current, token, bareToken, setSubject);
       return;

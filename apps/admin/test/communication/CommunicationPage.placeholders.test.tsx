@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -69,6 +69,8 @@ const legacyTemplate = {
   subject_template: "Hello",
   body_template: "<p>Hi</p>",
   template_format: "mjml" as const,
+  logo_url: "",
+  header_image_url: "",
 };
 
 function renderPage() {
@@ -76,6 +78,24 @@ function renderPage() {
     <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=templates"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function renderPageWithEventSwitch() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-a/communication?tab=templates"]}>
+      <Routes>
+        <Route
+          path="/admin/events/:eventId/communication"
+          element={
+            <>
+              <Link to="/admin/events/evt-b/communication?tab=templates">Switch event</Link>
+              <CommunicationPage />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -458,5 +478,94 @@ describe("CommunicationPage placeholder chip list", () => {
     expect(bodyTextarea.value).toContain(
       '<mj-image href="{{google_wallet_url}}" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet" width="200px" />',
     );
+  });
+
+  it("inserts HTML wallet badge markup when the template format is HTML", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      template_format: "html",
+      body_template: "<p>Hi</p>",
+      allowed_placeholders: ["first_name", "apple_wallet_url", "google_wallet_url"],
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("HTML body")).toBeTruthy();
+    });
+
+    const bodyTextarea = screen.getByLabelText("HTML body") as HTMLTextAreaElement;
+    focusAtEnd(bodyTextarea);
+    fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
+    expect(bodyTextarea.value).toContain(
+      '<a href="{{apple_wallet_url}}"><img src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet" width="200" style="max-width:100%;" /></a>',
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "{{google_wallet_url}}" }));
+    expect(bodyTextarea.value).toContain(
+      '<a href="{{google_wallet_url}}"><img src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet" width="200" style="max-width:100%;" /></a>',
+    );
+  });
+
+  it("warns that wallet badge links are not generated yet", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      allowed_placeholders: ["first_name", "apple_wallet_url"],
+    });
+    renderPage();
+    expect(
+      await screen.findByText(/Wallet chips insert an Add to Wallet badge button/i),
+    ).toBeTruthy();
+  });
+
+  it("updates chip sample images when branding changes after an event switch", async () => {
+    fetchEventTemplate.mockImplementation(async (eventId: string) => ({
+      ...legacyTemplate,
+      allowed_placeholders: ["first_name", "logo_url"],
+      image_placeholders: ["logo_url"],
+      logo_url:
+        eventId === "evt-a"
+          ? "https://cdn.example.com/logo-a.png"
+          : "https://cdn.example.com/logo-b.png",
+    }));
+    fetchEventTemplates.mockResolvedValue([]);
+
+    renderPageWithEventSwitch();
+    await waitFor(() => {
+      const chip = screen.getByRole("button", { name: "{{logo_url}}" });
+      expect(chip.querySelector("img.communication-chip-thumb")?.getAttribute("src")).toBe(
+        "https://cdn.example.com/logo-a.png",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+    await waitFor(() => {
+      const nextChip = screen.getByRole("button", { name: "{{logo_url}}" });
+      expect(nextChip.querySelector("img.communication-chip-thumb")?.getAttribute("src")).toBe(
+        "https://cdn.example.com/logo-b.png",
+      );
+    });
+  });
+
+  it("indents on Tab in the body editor but lets Shift+Tab leave the field", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      body_template:
+        "<mjml><mj-body><mj-section><mj-column><mj-text>Hi</mj-text></mj-column></mj-section></mj-body></mjml>",
+    });
+    renderPage();
+    const body = (await screen.findByLabelText("MJML body")) as HTMLTextAreaElement;
+    body.focus();
+    body.setSelectionRange(0, 0);
+
+    fireEvent.keyDown(body, { key: "Tab" });
+    expect(body.value.startsWith("  ")).toBe(true);
+
+    const shiftTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    body.dispatchEvent(shiftTab);
+    expect(shiftTab.defaultPrevented).toBe(false);
   });
 });

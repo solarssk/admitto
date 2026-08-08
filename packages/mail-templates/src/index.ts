@@ -38,6 +38,7 @@ export {
   materializeStoredDeliveryMessage,
   materializeStoredDeliveryMessageRedacted,
   stripEmptyUrlAttributes,
+  absolutizeBundledTicketAssetUrls,
   STORAGE_DEFERRED_LINK_PLACEHOLDERS,
 } from "./render.js";
 export {
