@@ -12,6 +12,12 @@ export interface DeliveryRowMenuProps {
    * already has its own page-level "Resend ticket" action. */
   onResend?: (row: DeliveryDto) => void;
   onDismiss?: (row: DeliveryDto) => void;
+  /** True once Resend or Dismiss has already been used for this row (the caller tracks this,
+   * keyed by row id) - greys out both actions instead of leaving them clickable forever, since
+   * the row's own `status` stays "bounced" permanently (it's a historical record) even after the
+   * attendee's bounce is actually resolved one way or the other. Shown disabled rather than
+   * hidden, so it stays visible that the row was already acted on. */
+  bounceResolved?: boolean;
 }
 
 const MARGIN = 5;
@@ -39,6 +45,7 @@ export function DeliveryRowMenu({
   onViewDetails,
   onResend,
   onDismiss,
+  bounceResolved = false,
 }: Readonly<DeliveryRowMenuProps>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   // A name with no id is a historical snapshot of a template that was deleted. Passing
@@ -129,6 +136,8 @@ export function DeliveryRowMenu({
               type="button"
               role="menuitem"
               className="delivery-row-menu__item"
+              disabled={bounceResolved}
+              title={bounceResolved ? "Already handled" : undefined}
               onClick={() => {
                 setOpen(false);
                 onResend(row);
@@ -143,6 +152,8 @@ export function DeliveryRowMenu({
               type="button"
               role="menuitem"
               className="delivery-row-menu__item"
+              disabled={bounceResolved}
+              title={bounceResolved ? "Already handled" : undefined}
               onClick={() => {
                 setOpen(false);
                 onDismiss(row);

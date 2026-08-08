@@ -152,6 +152,9 @@ interface DeliveryListContentProps {
   onViewDetails: (row: DeliveryDto) => void;
   onResend: (row: DeliveryDto) => void;
   onDismiss: (row: DeliveryDto) => void;
+  /** Delivery ids whose Resend/Dismiss has already been used - see DeliveryRowMenu's own
+   * bounceResolved prop for why this can't just be derived from row.status. */
+  resolvedBounceRowIds: Set<string>;
   onRetry: () => void;
 }
 
@@ -169,6 +172,7 @@ function DeliveryListContent({
   onViewDetails,
   onResend,
   onDismiss,
+  resolvedBounceRowIds,
   onRetry,
 }: Readonly<DeliveryListContentProps>) {
   if (loading && deliveries.length === 0) {
@@ -221,6 +225,7 @@ function DeliveryListContent({
                 onViewDetails={onViewDetails}
                 onResend={onResend}
                 onDismiss={onDismiss}
+                bounceResolved={resolvedBounceRowIds.has(row.id)}
               />
             </div>
             <div className="communication-card__meta">
@@ -297,6 +302,7 @@ function DeliveryListContent({
                 onViewDetails={onViewDetails}
                 onResend={onResend}
                 onDismiss={onDismiss}
+                bounceResolved={resolvedBounceRowIds.has(row.id)}
               />
               </td>
             </tr>
@@ -381,6 +387,7 @@ export function DeliveryLogTab({
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [resolvedBounceRowIds, setResolvedBounceRowIds] = useState<Set<string>>(new Set());
   const { addToast } = useToast();
   const showLoadingText = useDelayedLoading(deliveriesLoading && deliveries.length === 0);
 
@@ -400,10 +407,15 @@ export function DeliveryLogTab({
     }
   }
 
+  function markBounceRowResolved(rowId: string) {
+    setResolvedBounceRowIds((prev) => new Set(prev).add(rowId));
+  }
+
   async function handleResend(row: DeliveryDto) {
     try {
       await resendTicket(eventId, row.attendee_id, { templateId: row.template_id ?? undefined });
       addToast(`Resent to ${row.attendee_name}.`, "success");
+      markBounceRowResolved(row.id);
       onBounceHandled?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Resend failed."), "error");
@@ -414,6 +426,7 @@ export function DeliveryLogTab({
     try {
       await dismissBounce(eventId, row.attendee_id);
       addToast(`Dismissed the bounce notice for ${row.attendee_name}.`, "success");
+      markBounceRowResolved(row.id);
       onBounceHandled?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to dismiss the bounce notice."), "error");
@@ -478,6 +491,7 @@ export function DeliveryLogTab({
         onViewDetails={setDetailsRow}
         onResend={(row) => void handleResend(row)}
         onDismiss={(row) => void handleDismiss(row)}
+        resolvedBounceRowIds={resolvedBounceRowIds}
         onRetry={onRetry}
       />
       {deliveryTotal > 0 && (

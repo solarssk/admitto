@@ -565,4 +565,61 @@ describe("CommunicationPage bounce banner", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
     expect(await screen.findByText("Failed to dismiss the bounce notice.")).toBeTruthy();
   });
+
+  it("greys out Resend and Dismiss bounce for a row once its dismiss succeeds", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+    await waitFor(() => {
+      expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
+    });
+
+    // Reopen the same row's menu - the row itself still reports status "bounced" forever (it's a
+    // historical record), so both actions must now show as already handled instead of staying
+    // clickable indefinitely.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    const resendItem = screen.getByRole("menuitem", { name: "Resend" }) as HTMLButtonElement;
+    const dismissItem = screen.getByRole("menuitem", { name: "Dismiss bounce" }) as HTMLButtonElement;
+    expect(resendItem.disabled).toBe(true);
+    expect(dismissItem.disabled).toBe(true);
+  });
 });

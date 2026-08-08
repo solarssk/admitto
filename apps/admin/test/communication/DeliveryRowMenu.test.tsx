@@ -181,4 +181,31 @@ describe("DeliveryRowMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Dismiss bounce" })).toBeNull();
   });
+
+  it("greys out both Resend and Dismiss bounce once bounceResolved is true, without hiding them", () => {
+    const bouncedRow = { ...row, status: "bounced" };
+    const onResend = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <DeliveryRowMenu
+        row={bouncedRow}
+        onViewSentMessage={vi.fn()}
+        onViewDetails={vi.fn()}
+        onResend={onResend}
+        onDismiss={onDismiss}
+        bounceResolved
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    const resendItem = screen.getByRole("menuitem", { name: "Resend" }) as HTMLButtonElement;
+    const dismissItem = screen.getByRole("menuitem", { name: "Dismiss bounce" }) as HTMLButtonElement;
+    expect(resendItem.disabled).toBe(true);
+    expect(dismissItem.disabled).toBe(true);
+
+    fireEvent.click(resendItem);
+    fireEvent.click(dismissItem);
+    expect(onResend).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
 });
