@@ -368,7 +368,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                 onChange={(e) => setToken(e.target.value)}
                 onBlur={() => setTokenTouched(true)}
                 placeholder="sponsor_logo"
-                error={tokenErrorText}
+                invalid={Boolean(tokenErrorText)}
               />
               <div className="mail-test-send__send-control">
                 <Button
@@ -383,7 +383,11 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
               </div>
             </div>
           </div>
-          {!tokenErrorText && (
+          {tokenErrorText ? (
+            <p className="at-hint at-hint--error image-asset-library__name-hint" role="alert">
+              {tokenErrorText}
+            </p>
+          ) : (
             <p className="at-hint image-asset-library__name-hint">
               Lowercase letters, numbers, and underscores only. Used as {"{{name}}"} in email templates.
             </p>

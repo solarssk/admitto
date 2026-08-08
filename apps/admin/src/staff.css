@@ -6844,6 +6844,9 @@ output.mail-field-hint {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /* Keep the existing Badge pulse until Overview/Reports switch to .overview-live-indicator
+   * (stacked follow-up). Both selectors share the same keyframe. */
+  .overview-live-badge .at-badge__dot,
   .overview-live-indicator__dot {
     animation: overview-live-pulse 1.6s ease-in-out infinite;
   }
