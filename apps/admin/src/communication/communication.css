@@ -719,3 +719,29 @@
   text-align: center;
   color: var(--text-muted);
 }
+
+/* Communication header: "Documentation" is a single short action, same shape as Reports'
+   "Export" - keep it beside the title on mobile too instead of the shared PageHeader's default
+   stack-below-full-width, and shrink it to match .reports-pageheader/.event-settings-pageheader/
+   .settings-pageheader verbatim (drifting from those reads as a mismatch - PO review, see
+   staff.css). */
+@media (max-width: 767px) {
+  .communication-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .communication-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .communication-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .communication-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+}

@@ -15,7 +15,7 @@ Save and test the selected template. Review attendee pass status, email addresse
 
 ## Steps
 
-1. Open **Communication**, select the template, and choose **Send email**. A selected-attendee send can also start from **Attendees**.
+1. Open **Communication**, then the **Send** tab, and select the template. A selected-attendee send can also start from **Attendees**.
 2. Choose a recipient filter.
 3. Select **Count recipients** and compare the count with your expectation.
 4. If the count is wrong, cancel and correct the filter or attendee data.
