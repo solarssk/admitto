@@ -270,14 +270,14 @@ export interface AttendeeDetailDto {
   ticket_type: string | null;
   status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
-  admitted_at: string | null;
   created_at: string;
+  admitted_at: string | null;
   /** Acting admin's IANA timezone at attendee-creation time, when known (manual add / import). */
   client_timezone: string | null;
   updated_at: string;
   rsvp_status: RsvpStatus;
-  rsvp_updated_at: string | null;
   rsvp_source: string | null;
+  rsvp_updated_at: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];

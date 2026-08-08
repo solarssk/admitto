@@ -63,6 +63,8 @@ const CODE_MESSAGES: Record<string, string> = {
   "invalid file content": "The file could not be read. Check that it is a valid CSV or XLSX.",
   item_in_use: "This item is in use and cannot be changed.",
   last_superadmin: "Cannot remove or deactivate the last superadmin.",
+  legacy_name_requires_both_fields:
+    "This attendee doesn't have separate first and last names yet. Set both fields together.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
   manual_lookup_disabled: "Manual lookup is disabled for this event. Use QR scan only.",
   mail_not_configured:

@@ -201,6 +201,8 @@ async function seed(client: PrismaClient) {
         event_id: EVENT_A,
         email: "bob@example.com",
         name: "Bob Beta",
+        first_name: "Bob",
+        last_name: "Beta",
         company: "Beta Ltd",
         ticket_type: "standard",
         token_hash: hashToken(generateToken()),
@@ -2044,7 +2046,8 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { name: string };
-    expect(body.name).toBe("Bob Updated");
+    // last_name "Beta" is untouched by this first_name-only patch and stays in `name`.
+    expect(body.name).toBe("Bob Updated Beta");
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
@@ -2097,6 +2100,62 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const meta = log!.metadata as { fields?: string[] };
     expect(meta.fields).toContain("last_name");
     expect(meta.fields).not.toContain("first_name");
+  });
+
+  it("rejects a partial name patch on a legacy attendee (both split fields still null) - would silently drop half of `name` (Codex review, PR790)", async () => {
+    const legacy = await prisma.attendee.create({
+      data: {
+        id: "att-admin-legacy-name-partial",
+        event_id: EVENT_A,
+        email: "legacy-partial@example.com",
+        name: "Zhang Wei",
+        first_name: null,
+        last_name: null,
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${legacy.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        first_name: "Wei",
+        expected_updated_at: legacy.updated_at.toISOString(),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("legacy_name_requires_both_fields");
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect(after.name).toBe("Zhang Wei");
+    expect(after.first_name).toBeNull();
+    expect(after.last_name).toBeNull();
+  });
+
+  it("migrates a legacy attendee when both first_name and last_name are patched together", async () => {
+    const legacy = await prisma.attendee.create({
+      data: {
+        id: "att-admin-legacy-name-full",
+        event_id: EVENT_A,
+        email: "legacy-full@example.com",
+        name: "Zhang Wei",
+        first_name: null,
+        last_name: null,
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${legacy.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        first_name: "Wei",
+        last_name: "Zhang",
+        expected_updated_at: legacy.updated_at.toISOString(),
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { name: string; first_name: string; last_name: string };
+    expect(body.first_name).toBe("Wei");
+    expect(body.last_name).toBe("Zhang");
+    expect(body.name).toBe("Wei Zhang");
   });
 
   it("logs before/after values for the approved safe subset - email/company/department/ticket_type (PO review)", async () => {
@@ -2572,7 +2631,8 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(body.error).toBe("stale_write");
 
     const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
-    expect(row.name).toBe("Stale Test First");
+    // last_name "Beta" is untouched by this first_name-only patch and stays in `name`.
+    expect(row.name).toBe("Stale Test First Beta");
   });
 
   it("allows no-op PATCH without expected_updated_at", async () => {
@@ -4452,7 +4512,11 @@ describe("Attendees v2 — RSVP and manual create", () => {
       const followUpRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
         method: "PATCH",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ first_name: "Pass Revoke Admitted (edited)", expected_updated_at: patched.updated_at }),
+        body: JSON.stringify({
+          first_name: "Pass Revoke Admitted (edited)",
+          last_name: "Smith",
+          expected_updated_at: patched.updated_at,
+        }),
       });
       expect(followUpRes.status).toBe(200);
     } finally {

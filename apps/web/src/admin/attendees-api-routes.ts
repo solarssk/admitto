@@ -1044,6 +1044,28 @@ function applyCustomDataFieldPatches(
   }
 }
 
+/** Diff first_name/last_name against existing values and rebuild `name` from the pair, for
+ * `computePatchChanges` below — mutates `data`/`fields` only when a component actually changed
+ * (SonarCloud S3776: keeps this out of computePatchChanges's cognitive-complexity count). */
+function applyNamePatchFields(
+  existing: { first_name: string | null; last_name: string | null },
+  patch: { first_name?: string; last_name?: string },
+  data: Prisma.AttendeeUncheckedUpdateInput,
+  fields: string[],
+): void {
+  if (patch.first_name === undefined && patch.last_name === undefined) return;
+  const nextFirstName = patch.first_name ?? existing.first_name;
+  const nextLastName = patch.last_name ?? existing.last_name;
+  const firstNameChanged = nextFirstName !== existing.first_name;
+  const lastNameChanged = nextLastName !== existing.last_name;
+  if (!firstNameChanged && !lastNameChanged) return;
+  data.first_name = nextFirstName;
+  data.last_name = nextLastName;
+  data.name = [nextFirstName, nextLastName].filter(Boolean).join(" ");
+  if (firstNameChanged) fields.push("first_name");
+  if (lastNameChanged) fields.push("last_name");
+}
+
 /** Compute Prisma update payload, changed field names, and before/after values (for
  * LOGGED_VALUE_FIELDS only) from a PATCH body. */
 function computePatchChanges(
@@ -1081,19 +1103,7 @@ function computePatchChanges(
     return customData;
   };
 
-  if (patch.first_name !== undefined || patch.last_name !== undefined) {
-    const nextFirstName = patch.first_name ?? existing.first_name;
-    const nextLastName = patch.last_name ?? existing.last_name;
-    const firstNameChanged = nextFirstName !== existing.first_name;
-    const lastNameChanged = nextLastName !== existing.last_name;
-    if (firstNameChanged || lastNameChanged) {
-      data.first_name = nextFirstName;
-      data.last_name = nextLastName;
-      data.name = [nextFirstName, nextLastName].filter(Boolean).join(" ");
-      if (firstNameChanged) fields.push("first_name");
-      if (lastNameChanged) fields.push("last_name");
-    }
-  }
+  applyNamePatchFields(existing, patch, data, fields);
   if (patch.email !== undefined && patch.email !== existing.email) {
     data.email = patch.email;
     fields.push("email");
@@ -1209,10 +1219,23 @@ function computeStatusChange(
  * inside the PATCH transaction, under the same advisory lock ticket-type DELETE uses (TOCTOU
  * fix, code review) - see the comment there. */
 async function validateAndNormalizeProfilePatch(
-  existing: { custom_data: unknown },
+  existing: { custom_data: unknown; first_name: string | null; last_name: string | null },
   profilePatch: Omit<PatchInput, "rsvp_status" | "status">,
   loadAllowedFieldsOnce: () => Promise<EventItemContent[]>,
 ): Promise<{ error: string } | null> {
+  // A legacy attendee (both split fields still null, pre-dating this migration) only has its
+  // full name in `name`. Patching just one of first_name/last_name would derive the other half
+  // from null and silently drop the rest of the name from `name` (Codex review, PR790) - require
+  // both together until the record has been migrated to real split fields.
+  const suppliesFirstName = profilePatch.first_name !== undefined;
+  const suppliesLastName = profilePatch.last_name !== undefined;
+  if (
+    suppliesFirstName !== suppliesLastName &&
+    (existing.first_name === null || existing.last_name === null)
+  ) {
+    return { error: "legacy_name_requires_both_fields" };
+  }
+
   if (profilePatch.custom_data_fields) {
     try {
       profilePatch.custom_data_fields = validateCustomDataPatch(
@@ -1557,6 +1580,29 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 }
 
+/** Writes the central admin audit row (Instance Settings → Audit log) for an attendee lifecycle
+ * event - factors out the actor/session/ip/timezone boilerplate shared by every call site below
+ * (SonarCloud duplication). See the note on attendee_erased below for why these events need a
+ * record outside the attendee's own (deletable) AttendeeActionLog trail. */
+async function writeAttendeeLifecycleAuditLog(
+  tx: Prisma.TransactionClient,
+  c: Context,
+  audit: OpsAuditContext,
+  organizationId: string | null,
+  actionType: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  await writeAdminAuditLog(tx, {
+    organizationId,
+    actorUserId: audit.operator ?? c.get("auth").userId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType,
+    metadata,
+  });
+}
+
 /** DELETE /api/admin/events/:eventId/attendees/:id — GDPR erasure path. */
 export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -1613,20 +1659,12 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
     // attendees) to meet GDPR Art. 33/34 breach-notification duties, which is impossible if
     // the identity is gone from every table. Lawful basis: Art. 6(1)(f) legitimate interest
     // (security monitoring), scoped to this one admin-only log - not the erasure action itself.
-    await writeAdminAuditLog(tx, {
-      organizationId: existing.event.organization_id,
-      actorUserId: audit.operator ?? c.get("auth").userId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "attendee_erased",
-      metadata: {
-        event_id: eventId,
-        event_title: existing.event.title,
-        attendee_id: attendeeId,
-        attendee_name: existing.name,
-        attendee_email: existing.email,
-      },
+    await writeAttendeeLifecycleAuditLog(tx, c, audit, existing.event.organization_id, "attendee_erased", {
+      event_id: eventId,
+      event_title: existing.event.title,
+      attendee_id: attendeeId,
+      attendee_name: existing.name,
+      attendee_email: existing.email,
     });
     return "deleted" as const;
   });
@@ -1706,20 +1744,19 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
     // See the matching note on attendee_erased above - name/email are deliberately included in
     // this one central, superadmin-only log (not the erasure action's own AttendeeActionLog
     // entry) so a security incident affecting multiple attendees at once is investigable.
-    await writeAdminAuditLog(tx, {
-      organizationId: event?.organization_id ?? null,
-      actorUserId: audit.operator ?? c.get("auth").userId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "attendees_bulk_erased",
-      metadata: {
+    await writeAttendeeLifecycleAuditLog(
+      tx,
+      c,
+      audit,
+      event?.organization_id ?? null,
+      "attendees_bulk_erased",
+      {
         event_id: eventId,
         event_title: event?.title,
         count: deleted.length,
         attendees: deleted.map((a) => ({ id: a.id, name: a.name, email: a.email })),
       },
-    });
+    );
     return deleted.length;
   });
 
@@ -2472,20 +2509,12 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
       // the matching note on attendee_erased above for why attendee lifecycle events need a
       // record outside the attendee's own (deletable) AttendeeActionLog trail.
       const event = await tx.event.findUnique({ where: { id: eventId }, select: { organization_id: true, title: true } });
-      await writeAdminAuditLog(tx, {
-        organizationId: event?.organization_id ?? null,
-        actorUserId: audit.operator ?? c.get("auth").userId,
-        sessionId: audit.sessionId,
-        ip: audit.ip,
-        timezone: audit.timezone,
-        actionType: "attendee_created_manual",
-        metadata: {
-          event_id: eventId,
-          event_title: event?.title,
-          attendee_id: row.id,
-          attendee_name: row.name,
-          attendee_email: row.email,
-        },
+      await writeAttendeeLifecycleAuditLog(tx, c, audit, event?.organization_id ?? null, "attendee_created_manual", {
+        event_id: eventId,
+        event_title: event?.title,
+        attendee_id: row.id,
+        attendee_name: row.name,
+        attendee_email: row.email,
       });
 
       return row;
