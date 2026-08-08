@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
-import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
+import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
 import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const fetchEventTemplates = vi.fn();
@@ -16,6 +16,7 @@ const deleteEventTemplate = vi.fn();
 const previewEventTemplate = vi.fn();
 const previewEventTemplateById = vi.fn();
 const saveEventTemplateById = vi.fn();
+const testSendEventTemplate = vi.fn();
 const testSendEventTemplateById = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventMailSettings = vi.fn();
@@ -54,7 +55,7 @@ vi.mock("../../src/api/client.js", () => ({
   saveEventTemplateById: (...args: unknown[]) => saveEventTemplateById(...args),
   createEventTemplate: (...args: unknown[]) => createEventTemplate(...args),
   deleteEventTemplate: (...args: unknown[]) => deleteEventTemplate(...args),
-  testSendEventTemplate: vi.fn(),
+  testSendEventTemplate: (...args: unknown[]) => testSendEventTemplate(...args),
   testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   fetchBulkSendStatus: vi.fn(),
@@ -119,6 +120,16 @@ const announcementRow = {
 function renderPage() {
   return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=templates"]}>
+      <Routes>
+        <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function renderSendPage() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
       </Routes>
@@ -206,6 +217,7 @@ afterEach(() => {
   previewEventTemplateById.mockReset();
   saveEventTemplateById.mockReset();
   testSendEventTemplateById.mockReset();
+  testSendEventTemplate.mockReset();
   vi.useRealTimers();
 });
 
@@ -1302,5 +1314,267 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
 
     expect(blockerState.reset).toHaveBeenCalled();
+  });
+
+  it("opens the Templates tab from the Send tab preview toolbar", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderSendPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Open template/ }));
+    expect(await screen.findByLabelText("Subject")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Saved" })).toBeTruthy();
+  });
+
+  it("shows the configured sender address and Updating status while preview refreshes", async () => {
+    let resolvePreview: ((value: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventMailSettings.mockResolvedValue({
+      fields: {
+        fromName: { value: "Admitto Mailer" },
+        fromAddress: { value: "tickets@example.com" },
+      },
+    });
+    previewEventTemplateById
+      .mockResolvedValueOnce({ subject: "Hello", html: "<p>First</p>" })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePreview = resolve;
+          }),
+      );
+
+    renderPage();
+    expect(await screen.findByText(/tickets@example\.com/)).toBeTruthy();
+    expect(screen.getByText("Admitto Mailer")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited subject" } });
+    expect(await screen.findByText(/Updating/)).toBeTruthy();
+    await act(async () => {
+      resolvePreview?.({ subject: "Edited subject", html: "<p>Second</p>" });
+      await Promise.resolve();
+    });
+  });
+
+  it("renders QR, wallet, and custom image placeholder chips with their tooltips", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    fetchEventTemplate.mockResolvedValueOnce({
+      ...legacyTemplate,
+      allowed_placeholders: [
+        "first_name",
+        "qr_image_url",
+        "apple_wallet_url",
+        "google_wallet_url",
+        "sponsor_banner",
+        "mystery_token",
+      ],
+      image_placeholders: ["qr_image_url", "sponsor_banner"],
+      required_url_placeholders: [],
+    });
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "{{qr_image_url}}" })).toBeTruthy();
+    });
+
+    expect(screen.getByText("Images")).toBeTruthy();
+    expect(getTooltipText(screen.getByRole("button", { name: "{{sponsor_banner}}" }))).toBe(
+      "Custom image asset for this event.",
+    );
+    expect(getTooltipText(screen.getByRole("button", { name: "{{mystery_token}}" }))).toBe(
+      "{{mystery_token}}",
+    );
+    expect(getTooltipText(screen.getByRole("button", { name: "{{apple_wallet_url}}" }))).toBe(
+      "Link to add the ticket to Apple Wallet.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "{{qr_image_url}}" }));
+    fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
+  });
+
+  it("no-ops when the already-selected format radio is clicked again", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("HTML body")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "HTML" }));
+    expect(screen.getByLabelText("HTML body")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
+  });
+
+  it("reports the previewed subject on a clean test send and hides it while dirty", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockResolvedValue({ subject: "Saved subject", html: "<p>Hi</p>" });
+    testSendEventTemplateById.mockResolvedValue({ status: "sent" });
+
+    renderPage();
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "ops@example.com" } });
+    expect(await screen.findByText("Saved subject")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(within(screen.getByRole("status")).getByText("Saved subject")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Dirty subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(within(screen.getByRole("status")).queryByText("Subject")).toBeNull();
+  });
+
+  it("uses the named template label, a generic failed message, and a non-API error path on test send", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    testSendEventTemplateById
+      .mockResolvedValueOnce({ status: "failed" })
+      .mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "ops@example.com" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Send failed.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Send failed.")).toBeTruthy();
+  });
+
+  it("test-sends the inherited virtual ticket template by name", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    testSendEventTemplate.mockResolvedValue({ status: "sent" });
+
+    renderPage();
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "ops@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(testSendEventTemplate).toHaveBeenCalled();
+    expect(within(screen.getByRole("status")).getByText("Ticket email")).toBeTruthy();
+  });
+
+  it("ignores stale preview responses when switching templates mid-flight", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    previewEventTemplateById.mockImplementation(((_eventId: string, id: string) => {
+      if (id === "tpl-ticket") {
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve({ subject: "Reminder preview", html: "<p>Rem</p>" });
+    }) as typeof previewEventTemplateById);
+
+    renderPage();
+    await waitFor(() => {
+      expect(previewEventTemplateById).toHaveBeenCalled();
+    });
+    await selectTemplate("Reminder");
+    expect(await screen.findByText("Reminder preview")).toBeTruthy();
+    await act(async () => {
+      resolveFirst?.({ subject: "Stale ticket", html: "<p>Stale</p>" });
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Stale ticket")).toBeNull();
+  });
+
+  it("aborts in-flight overview and mail-settings fetches on unmount", async () => {
+    let resolveMail: ((value: unknown) => void) | undefined;
+    let rejectMail: ((reason?: unknown) => void) | undefined;
+    let rejectOverview: ((reason?: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventOverview.mockImplementation(
+      (_eventId: string, signal?: AbortSignal) =>
+        new Promise((_, reject) => {
+          rejectOverview = reject;
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    );
+    fetchEventMailSettings
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveMail = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectMail = reject;
+          }),
+      );
+
+    const first = renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    first.unmount();
+    await act(async () => {
+      resolveMail?.({
+        fields: { fromName: { value: "Late" }, fromAddress: { value: "late@example.com" } },
+      });
+      await Promise.resolve();
+    });
+
+    // Second mount: overview rejects with a non-AbortError after abort so the
+    // `ac.signal.aborted` guard (not just the AbortError instanceof check) is exercised.
+    fetchEventOverview.mockImplementation(
+      (_eventId: string, signal?: AbortSignal) =>
+        new Promise((_, reject) => {
+          rejectOverview = reject;
+          signal?.addEventListener("abort", () => {
+            queueMicrotask(() => reject(new Error("late overview")));
+          });
+        }),
+    );
+    const second = renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    second.unmount();
+    await act(async () => {
+      rejectMail?.(new Error("gone"));
+      rejectOverview?.(new Error("late overview"));
+      await Promise.resolve();
+    });
+  });
+});
+
+describe("recoverLegacyAfterDelete", () => {
+  it("warns to reload when there is no cached inherited ticket to fall back to", async () => {
+    fetchEventTemplate.mockRejectedValueOnce(new Error("gone"));
+    const applyLegacyTemplate = vi.fn();
+    const setActiveKey = vi.fn();
+    const addToast = vi.fn();
+
+    await recoverLegacyAfterDelete({
+      scopeEventId: "evt-1",
+      seq: 1,
+      deleteTemplateSeqRef: { current: 1 },
+      currentEventIdRef: { current: "evt-1" },
+      legacyTemplateRef: { current: null },
+      applyLegacyTemplate,
+      setActiveKey,
+      addToast,
+    });
+
+    expect(applyLegacyTemplate).not.toHaveBeenCalled();
+    expect(setActiveKey).toHaveBeenCalledWith("virtual-ticket");
+    expect(addToast).toHaveBeenCalledWith(
+      "Template deleted. Could not load default ticket. Reload the page.",
+      "warning",
+    );
+  });
+});
+
+describe("resolveTestSendTemplateLabel", () => {
+  it("falls back to Template when the active id is no longer in the list", () => {
+    expect(resolveTestSendTemplateLabel("virtual-ticket", [])).toBe("Ticket email");
+    expect(resolveTestSendTemplateLabel("tpl-missing", [{ id: "tpl-other", label: "Other" }])).toBe(
+      "Template",
+    );
   });
 });

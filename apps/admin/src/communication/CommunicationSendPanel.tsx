@@ -163,7 +163,6 @@ export function CommunicationSendPanel({
     const ac = new AbortController();
 
     const poll = async () => {
-      if (cancelled) return;
       try {
         const status = await fetchBulkSendStatus(eventId, batchId, ac.signal);
         if (cancelled) return;

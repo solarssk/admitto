@@ -419,4 +419,374 @@ describe("CommunicationSendPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     expect(await screen.findByRole("button", { name: "VIP" })).toBeTruthy();
   });
+
+  it("posts ticket_type / rsvp_status / no_delivery filters from Count recipients", async () => {
+    fetchTicketTypes.mockResolvedValue([
+      {
+        id: "tt-1",
+        key: "vip",
+        label: "VIP",
+        color: "purple",
+        sort_order: 0,
+        attendee_count: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    sendEventBulk.mockResolvedValue({ recipientCount: 2 });
+
+    render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Ticket type,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "VIP" }));
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenLastCalledWith("evt-1", {
+        templateId: "tpl-1",
+        filter: { type: "ticket_type", value: "vip" },
+        dryRun: true,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: "By attendance status" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Attendance status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenLastCalledWith("evt-1", {
+        templateId: "tpl-1",
+        filter: { type: "rsvp_status", value: "confirmed" },
+        dryRun: true,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: "Not yet emailed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenLastCalledWith("evt-1", {
+        templateId: "tpl-1",
+        filter: { type: "no_delivery" },
+        dryRun: true,
+      });
+    });
+  });
+
+  it("shows the empty and singular dry-run recipient notices", async () => {
+    let dryRuns = 0;
+    sendEventBulk.mockImplementation(async () => {
+      dryRuns += 1;
+      return { recipientCount: dryRuns === 1 ? 0 : 1 };
+    });
+
+    render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    expect(await screen.findByText("No recipients match this filter.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(/1 recipient matched/);
+    });
+  });
+
+  it("ignores a dry-run body without recipientCount and late dry-run results after a template switch", async () => {
+    let resolveDry: ((value: unknown) => void) | undefined;
+    let calls = 0;
+    sendEventBulk.mockImplementation(() => {
+      calls += 1;
+      if (calls === 1) return Promise.resolve({});
+      return new Promise((resolve) => {
+        resolveDry = resolve;
+      });
+    });
+
+    const { rerender } = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByText("No recipients match this filter.")).toBeNull();
+    expect(screen.queryByText(/recipients matched/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Checking…" })).toBeTruthy();
+    });
+    rerender(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-2"
+      />,
+    );
+    await act(async () => {
+      resolveDry?.({ recipientCount: 9 });
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("9")).toBeNull();
+    expect(screen.getByRole("button", { name: "Count recipients" })).toBeTruthy();
+  });
+
+  it("ignores a late dry-run failure after the selected template changes", async () => {
+    let rejectDry: ((reason?: unknown) => void) | undefined;
+    sendEventBulk.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectDry = reject;
+        }),
+    );
+
+    const { rerender } = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Checking…" })).toBeTruthy();
+    });
+    rerender(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-2"
+      />,
+    );
+    await act(async () => {
+      rejectDry?.(new Error("network"));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/Dry run failed/)).toBeNull();
+  });
+
+  it("ignores a late send failure after the selected template changes", async () => {
+    let rejectSend: ((reason?: unknown) => void) | undefined;
+    sendEventBulk.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectSend = reject;
+        }),
+    );
+
+    const { rerender } = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sending…" })).toBeTruthy();
+    });
+    rerender(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-2"
+      />,
+    );
+    await act(async () => {
+      rejectSend?.(new Error("network"));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(/Send failed/)).toBeNull();
+  });
+
+  it("reports queued-zero with skipped-only, failed-only, and neither detail", async () => {
+    sendEventBulk
+      .mockResolvedValueOnce({ batchId: "b1", queued: 0, skipped: 3, failed: 0 })
+      .mockResolvedValueOnce({ batchId: "b2", queued: 0, skipped: 0, failed: 2 })
+      .mockResolvedValueOnce({ batchId: "b3", queued: 0, skipped: 0, failed: 0 });
+
+    const { rerender } = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("No emails queued (3 skipped).")).toBeTruthy();
+
+    rerender(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-2"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("No emails queued (2 failed).")).toBeTruthy();
+
+    rerender(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-3"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("No emails queued.")).toBeTruthy();
+  });
+
+  it("ignores ticket-type fetch failures after the panel unmounts", async () => {
+    let rejectTypes: ((reason?: unknown) => void) | undefined;
+    fetchTicketTypes.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectTypes = reject;
+        }),
+    );
+
+    const { unmount } = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
+    unmount();
+    await act(async () => {
+      rejectTypes?.(new Error("gone"));
+      await Promise.resolve();
+    });
+  });
+
+  it("ignores poll results and poll failures after the panel unmounts mid-send", async () => {
+    let resolveStatus: ((value: unknown) => void) | undefined;
+    let rejectStatus: ((reason?: unknown) => void) | undefined;
+    sendEventBulk.mockReset();
+    fetchBulkSendStatus.mockReset();
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+
+    const first = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(fetchBulkSendStatus).toHaveBeenCalled();
+    });
+    first.unmount();
+    await act(async () => {
+      resolveStatus?.({ queued: 0, sent: 2, failed: 0 });
+      await Promise.resolve();
+    });
+
+    fetchBulkSendStatus.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectStatus = reject;
+        }),
+    );
+    const second = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(fetchBulkSendStatus).toHaveBeenCalledTimes(2);
+    });
+    second.unmount();
+    await act(async () => {
+      rejectStatus?.(new Error("network"));
+      await Promise.resolve();
+    });
+  });
+
+  it("ignores a scheduled poll tick after the panel unmounts", async () => {
+    // Kept as a regression: cleanup must clear the 2s poll timer so a late tick cannot
+    // call fetchBulkSendStatus after unmount (the cancelled guard at the top of poll was
+    // removed as dead - clearTimeout already prevents re-entry).
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    sendEventBulk.mockReset();
+    fetchBulkSendStatus.mockReset();
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValueOnce({ queued: 1, sent: 1, failed: 0 });
+
+    const view = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-1"
+        templateId="tpl-1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(fetchBulkSendStatus).toHaveBeenCalledTimes(1);
+    });
+    view.unmount();
+    fetchBulkSendStatus.mockClear();
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+      await Promise.resolve();
+    });
+    expect(fetchBulkSendStatus).not.toHaveBeenCalled();
+  });
 });
