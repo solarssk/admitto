@@ -936,6 +936,23 @@ describe("CommunicationPage templates", () => {
     expect(screen.getByRole("status").className).toContain("mail-preview--error");
   });
 
+  it("keeps reporting the address a test send actually used after the field is edited again", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    testSendEventTemplateById.mockResolvedValueOnce({ status: "sent" });
+
+    renderPage();
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "first@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(screen.getByText(/to first@example\.com/)).toBeTruthy();
+
+    fireEvent.change(email, { target: { value: "second@example.com" } });
+
+    expect(screen.getByText(/to first@example\.com/)).toBeTruthy();
+    expect(screen.queryByText(/to second@example\.com/)).toBeNull();
+  });
+
   it("loads the remaining ticket template after deleting the active non-ticket template", async () => {
     deleteEventTemplate.mockResolvedValue(undefined);
     fetchEventTemplates

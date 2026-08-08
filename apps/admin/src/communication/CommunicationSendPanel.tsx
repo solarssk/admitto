@@ -26,6 +26,11 @@ interface CommunicationSendPanelProps {
   /** True only when the editor's template snapshot failed to load - the one case where there is
    * truly nothing to send, as opposed to "no explicit override" (which still sends the default). */
   snapshotMissing: boolean;
+  /** True when the Templates tab editor has unsaved changes. A bulk send always renders the
+   * saved template server-side (only `templateId` is posted, never the live draft), so sending
+   * while dirty would silently deliver the previous saved content to every recipient instead of
+   * what's on screen - blocked here rather than letting that happen. */
+  isDirty: boolean;
 }
 
 type SendPhase = "form" | "polling" | "done";
@@ -82,6 +87,7 @@ export function CommunicationSendPanel({
   eventId,
   templateId,
   snapshotMissing,
+  isDirty,
 }: Readonly<CommunicationSendPanelProps>) {
   const runIdRef = useRef(0);
 
@@ -382,6 +388,12 @@ export function CommunicationSendPanel({
         )}
         {phase === "form" && (
           <>
+            {isDirty && (
+              <Notice variant="warning">
+                You have unsaved template changes. Save them on the Templates tab first, otherwise
+                sending delivers the last saved version, not what's on screen.
+              </Notice>
+            )}
             {recipientCount != null &&
               (recipientCount === 0 ? (
                 <Notice variant="warning" as="output">
@@ -402,7 +414,11 @@ export function CommunicationSendPanel({
               >
                 {busy ? "Checking…" : "Count recipients"}
               </Button>
-              <ArchivedGuard event={event} reasonId="send-email-reason" disabled={busy || !filterReady}>
+              <ArchivedGuard
+                event={event}
+                reasonId="send-email-reason"
+                disabled={busy || !filterReady || isDirty}
+              >
                 {(guard) => (
                   <Button
                     type="button"

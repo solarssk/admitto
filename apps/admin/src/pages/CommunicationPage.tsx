@@ -71,8 +71,8 @@ type TemplateFormat = "mjml" | "html";
  * they name exactly what got sent, since "Test email sent." alone doesn't say which template or
  * confirm the subject line actually used. */
 type TestSendStatus =
-  | { kind: "ok"; message: string; template: string; subject: string | null }
-  | { kind: "error"; message: string };
+  | { kind: "ok"; message: string; template: string; subject: string | null; email: string }
+  | { kind: "error"; message: string; email: string };
 
 /** Placeholders that stay valid (already-saved templates using them keep rendering) but are no
  * longer offered as an insertable chip: `header_image_url` has no organisation-level branding
@@ -620,6 +620,7 @@ function SendTab({
   eventId,
   sendTemplateId,
   editorSnapshotMissing,
+  isDirty,
   previewHtml,
   previewSubject,
   previewLoading,
@@ -641,6 +642,7 @@ function SendTab({
   eventId: string;
   sendTemplateId: string | undefined;
   editorSnapshotMissing: boolean;
+  isDirty: boolean;
   previewHtml: string | null;
   previewSubject: string | null;
   previewLoading: boolean;
@@ -723,6 +725,7 @@ function SendTab({
         eventId={eventId}
         templateId={sendTemplateId}
         snapshotMissing={editorSnapshotMissing}
+        isDirty={isDirty}
       />
 
       <SendTestCard
@@ -1284,7 +1287,7 @@ function SendTestCard({
             </div>
           </div>
         </div>
-        {testStatus && <TestSendResultPreview status={testStatus} email={testEmail} />}
+        {testStatus && <TestSendResultPreview status={testStatus} />}
       </div>
     </Card>
   );
@@ -1293,13 +1296,7 @@ function SendTestCard({
 /** Same "nice report" pattern as the mail transport Send test email card (Event/Organisation
  * settings) - reuses its global .mail-preview* classes so a test-send result always looks the
  * same everywhere in the app, just without that card's transport/bounce-specific fields. */
-function TestSendResultPreview({
-  status,
-  email,
-}: Readonly<{
-  status: TestSendStatus;
-  email: string;
-}>) {
+function TestSendResultPreview({ status }: Readonly<{ status: TestSendStatus }>) {
   const isOk = status.kind === "ok";
   return (
     <output className={`mail-preview ${isOk ? "mail-preview--ok" : "mail-preview--error"}`}>
@@ -1311,7 +1308,7 @@ function TestSendResultPreview({
           />
           <div className="mail-preview__head-text">
             <b>{status.message}</b>
-            <span>to {email}</span>
+            <span>to {status.email}</span>
           </div>
         </div>
       </div>
@@ -2034,13 +2031,17 @@ export function CommunicationPage() {
 
   const handleTestSend = async () => {
     if (!eventId || editorSnapshotMissing) return;
+    // Snapshotted once so the result below always reports the address this request actually
+    // used, even if the operator edits the field again while the request is in flight or after
+    // it resolves.
+    const submittedEmail = testEmail.trim();
     setTestStatus(null);
     setTestSending(true);
     try {
       const result =
         activeKey === "virtual-ticket"
-          ? await testSendEventTemplate(eventId, { to: testEmail.trim() })
-          : await testSendEventTemplateById(eventId, activeKey, { to: testEmail.trim() });
+          ? await testSendEventTemplate(eventId, { to: submittedEmail })
+          : await testSendEventTemplateById(eventId, activeKey, { to: submittedEmail });
       if (result.status === "sent") {
         const templateLabel =
           activeKey === "virtual-ticket"
@@ -2051,9 +2052,10 @@ export function CommunicationPage() {
           message: "Test email sent.",
           template: templateLabel,
           subject: testSendReportedSubject(isDirty, previewSubject),
+          email: submittedEmail,
         });
       } else {
-        setTestStatus({ kind: "error", message: result.error ?? "Send failed." });
+        setTestStatus({ kind: "error", message: result.error ?? "Send failed.", email: submittedEmail });
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -2062,9 +2064,9 @@ export function CommunicationPage() {
           err.status === 400 && hasApiErrorCode(err, "validation_failed")
             ? "Enter a valid email address."
             : operatorApiErrorMessage(err, "Send failed.");
-        setTestStatus({ kind: "error", message });
+        setTestStatus({ kind: "error", message, email: submittedEmail });
       } else {
-        setTestStatus({ kind: "error", message: "Send failed." });
+        setTestStatus({ kind: "error", message: "Send failed.", email: submittedEmail });
       }
     } finally {
       setTestSending(false);
@@ -2141,6 +2143,7 @@ export function CommunicationPage() {
           eventId={eventId}
           sendTemplateId={sendTemplateId}
           editorSnapshotMissing={editorSnapshotMissing}
+          isDirty={isDirty}
           previewHtml={previewHtml}
           previewSubject={previewSubject}
           previewLoading={previewLoading}

@@ -30,21 +30,21 @@ afterEach(() => {
 
 describe("CommunicationSendPanel", () => {
   it("shows a placeholder instead of the form when the editor snapshot failed to load", () => {
-    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" snapshotMissing />);
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" snapshotMissing isDirty={false} />);
 
     expect(screen.getByText("Could not load the ticket template. Reload the page.")).toBeTruthy();
     expect(screen.queryByLabelText("Recipients")).toBeNull();
   });
 
   it("still shows the send form with no explicit template override (backend falls back to the built-in default)", () => {
-    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" snapshotMissing={false} />);
+    render(<CommunicationSendPanel event={activeEvent} eventId="evt-1" snapshotMissing={false} isDirty={false} />);
 
     expect(screen.getByLabelText("Recipients")).toBeTruthy();
     expect(screen.queryByText("Could not load the ticket template. Reload the page.")).toBeNull();
   });
 
   it("uses attendance labels for the attendance recipient filter", () => {
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("radio", { name: "By attendance status" }));
 
@@ -58,7 +58,7 @@ describe("CommunicationSendPanel", () => {
   });
 
   it("disables send until ticket type is non-empty", async () => {
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
@@ -69,8 +69,18 @@ describe("CommunicationSendPanel", () => {
   });
 
   it("disables Send but not Count recipients for an archived event", () => {
-    render(<CommunicationSendPanel event={archivedEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={archivedEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
 
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("disables Send but not Count recipients while the template has unsaved changes", () => {
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty eventId="evt-1" templateId="tpl-1" />);
+
+    expect(screen.getByText(/unsaved template changes/i)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
       false,
@@ -87,7 +97,7 @@ describe("CommunicationSendPanel", () => {
     );
 
     const { rerender } = render(
-      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />,
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -98,7 +108,7 @@ describe("CommunicationSendPanel", () => {
 
     // Switching to a different template mid-send is the inline-panel equivalent of closing
     // the old modal - it must reset the form and ignore whatever the stale request resolves to.
-    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-2" />);
+    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-2" />);
 
     await act(async () => {
       resolveSend?.({ batchId: "batch-1", queued: 3, skipped: 0, failed: 0 });
@@ -113,7 +123,7 @@ describe("CommunicationSendPanel", () => {
   it("shows detail when send returns queued zero with skipped/failed counts", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 0, skipped: 2, failed: 1 });
 
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -126,7 +136,7 @@ describe("CommunicationSendPanel", () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 1 });
 
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByText("Send complete: 1 sent, 1 failed.")).toBeTruthy();
@@ -141,7 +151,7 @@ describe("CommunicationSendPanel", () => {
         .mockResolvedValueOnce({ queued: 2, sent: 0, failed: 0 })
         .mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0 });
 
-      render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+      render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
       fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
       // Flush the initial sendEventBulk call and the first poll() it triggers.
@@ -165,7 +175,7 @@ describe("CommunicationSendPanel", () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
 
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -185,7 +195,7 @@ describe("CommunicationSendPanel", () => {
     );
 
     const { rerender } = render(
-      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />,
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -194,7 +204,7 @@ describe("CommunicationSendPanel", () => {
       expect(fetchBulkSendStatus).toHaveBeenCalled();
     });
 
-    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-2" />);
+    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-2" />);
 
     expect(pollSignal?.aborted).toBe(true);
   });
@@ -203,7 +213,7 @@ describe("CommunicationSendPanel", () => {
     sendEventBulk.mockResolvedValue({ batchId: null, queued: 0, skipped: 0, failed: 0 });
 
     const { rerender } = render(
-      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />,
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -212,8 +222,8 @@ describe("CommunicationSendPanel", () => {
       expect(screen.getByText(/No recipients matched/i)).toBeTruthy();
     });
 
-    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-2" />);
-    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-2" />);
+    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
 
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
     expect(screen.queryByText(/No recipients matched/i)).toBeNull();
@@ -221,7 +231,7 @@ describe("CommunicationSendPanel", () => {
 
   it("shows the recipient count after a successful dry run", async () => {
     sendEventBulk.mockResolvedValueOnce({ recipientCount: 5 });
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
     expect(await screen.findByText(/recipients matched/)).toBeTruthy();
     expect(screen.getByText("5")).toBeTruthy();
@@ -235,7 +245,7 @@ describe("CommunicationSendPanel", () => {
   it("shows operator-safe dry run failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     sendEventBulk.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
     await waitFor(() => {
       expect(screen.getByText(/Dry run failed/)).toBeTruthy();
@@ -246,7 +256,7 @@ describe("CommunicationSendPanel", () => {
   it("shows operator-safe send failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     sendEventBulk.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
       expect(screen.getByText(/Send failed/)).toBeTruthy();
@@ -258,7 +268,7 @@ describe("CommunicationSendPanel", () => {
     sendEventBulk.mockRejectedValueOnce(
       new ApiError(422, "instance_url_required", "instance_url_required"),
     );
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
       expect(screen.getByText(/Instance URL/)).toBeTruthy();
@@ -287,7 +297,7 @@ describe("CommunicationSendPanel", () => {
     );
 
     const { rerender } = render(
-      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-a" templateId="tpl-1" />,
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-a" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
@@ -297,7 +307,7 @@ describe("CommunicationSendPanel", () => {
       expect(screen.getByRole("button", { name: "VIP (Event A)" })).toBeTruthy();
     });
 
-    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-b" templateId="tpl-1" />);
+    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-b" templateId="tpl-1" />);
 
     await waitFor(() => {
       expect(fetchTicketTypes).toHaveBeenCalledWith("evt-b");
@@ -349,7 +359,7 @@ describe("CommunicationSendPanel", () => {
     ]);
 
     const { rerender } = render(
-      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-a" templateId="tpl-1" />,
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-a" templateId="tpl-1" />,
     );
 
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
@@ -367,7 +377,7 @@ describe("CommunicationSendPanel", () => {
       ).toBe(false);
     });
 
-    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-b" templateId="tpl-1" />);
+    rerender(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-b" templateId="tpl-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await waitFor(() => {
@@ -396,7 +406,7 @@ describe("CommunicationSendPanel", () => {
       },
     ]);
 
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
     expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
