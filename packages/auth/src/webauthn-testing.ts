@@ -15,6 +15,15 @@ import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simp
 export interface VirtualAuthenticator {
   register(params: { challenge: string; rpID: string; origin: string }): RegistrationResponseJSON;
   authenticate(params: { challenge: string; rpID: string; origin: string }): AuthenticationResponseJSON;
+  /** Registration response with a real, well-formed "packed" self-attestation (no x5c) whose
+   * signature was computed over the wrong data — exercises `verifyRegistrationResponse`
+   * resolving with `{ verified: false }` (a real, non-throwing rejection distinct from the
+   * malformed/mismatched-input cases that throw instead). */
+  registerWithInvalidAttestationSignature(params: {
+    challenge: string;
+    rpID: string;
+    origin: string;
+  }): RegistrationResponseJSON;
 }
 
 /** Derived from the encoder's own signature rather than importing tiny-cbor's `CBORType`
@@ -108,6 +117,45 @@ export function createVirtualAuthenticator(): VirtualAuthenticator {
         rawId: idB64,
         response: {
           clientDataJSON: isoBase64URL.fromBuffer(clientDataJSON("webauthn.create", challenge, origin)),
+          attestationObject: isoBase64URL.fromBuffer(attestationObject),
+        },
+        clientExtensionResults: {},
+        type: "public-key",
+      };
+    },
+    registerWithInvalidAttestationSignature({ challenge, rpID, origin }) {
+      const aaguid = new Uint8Array(16);
+      const attestedCredentialData = concatBytes([
+        aaguid,
+        uint16BE(credentialId.length),
+        credentialId,
+        isoCBOR.encode(cosePublicKey),
+      ]);
+      const authData = authenticatorData(rpID, attestedCredentialData);
+      const cdj = clientDataJSON("webauthn.create", challenge, origin);
+      const clientDataHash = new Uint8Array(createHash("sha256").update(cdj).digest());
+      // Real ECDSA signature (from this authenticator's own key, so it's structurally valid),
+      // but computed over the client data hash alone instead of `authData + clientDataHash` -
+      // fails @simplewebauthn's signature check without throwing, unlike every other rejection
+      // path in this file's other tests.
+      const badSignature = createSign("sha256").update(clientDataHash).sign(privateKey);
+      const attStmt = new Map<string, CBORValue>([
+        ["sig", new Uint8Array(badSignature)],
+        ["alg", cose.COSEALG.ES256],
+      ]);
+      const attestationObject = isoCBOR.encode(
+        new Map<string, CBORValue>([
+          ["fmt", "packed"],
+          ["attStmt", attStmt],
+          ["authData", authData],
+        ]),
+      );
+      const idB64 = isoBase64URL.fromBuffer(credentialId);
+      return {
+        id: idB64,
+        rawId: idB64,
+        response: {
+          clientDataJSON: isoBase64URL.fromBuffer(cdj),
           attestationObject: isoBase64URL.fromBuffer(attestationObject),
         },
         clientExtensionResults: {},
