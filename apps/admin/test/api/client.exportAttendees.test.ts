@@ -245,6 +245,54 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps polling a fresh started_at until the job succeeds (stale window not yet elapsed)", async () => {
+    // Claimed 4 minutes ago: inside the 15-minute running window, so no early 408.
+    vi.useFakeTimers({ now: new Date("2026-08-08T12:00:00.000Z") });
+    const filename = "attendees-evt-1.csv";
+    const startedAt = "2026-08-08T11:56:00.000Z";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk("job-fresh-start"))
+      .mockResolvedValueOnce(jobStatus("running", { started_at: startedAt }))
+      .mockResolvedValueOnce(jobStatus("succeeded", { filename, started_at: startedAt }))
+      .mockResolvedValueOnce(csvResponse(filename));
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      const done = exportAttendees("evt-1", {}, "csv");
+      await vi.advanceTimersByTimeAsync(5000);
+      await done;
+      expect(stub.anchorClicks).toEqual([filename]);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("ignores a non-parseable started_at and keeps polling", async () => {
+    vi.useFakeTimers();
+    const filename = "attendees-evt-1.csv";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(enqueueOk("job-bad-started"))
+      .mockResolvedValueOnce(jobStatus("running", { started_at: "not-a-date" }))
+      .mockResolvedValueOnce(jobStatus("succeeded", { filename, started_at: "not-a-date" }))
+      .mockResolvedValueOnce(csvResponse(filename));
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      const done = exportAttendees("evt-1", {}, "csv");
+      await vi.advanceTimersByTimeAsync(5000);
+      await done;
+      expect(stub.anchorClicks).toEqual([filename]);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      stub.restore();
+    }
+  });
+
   it("throws AbortError when the signal is already aborted before polling", async () => {
     const controller = new AbortController();
     controller.abort();
