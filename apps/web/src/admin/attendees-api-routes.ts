@@ -29,7 +29,6 @@ import {
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   countFilteredAttendees,
-  findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
   findSelectedAttendeesForExport,
   isAdmittable,
