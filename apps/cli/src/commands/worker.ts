@@ -105,13 +105,13 @@ async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
   try {
     const result = await drainImportJobs(db, getDefaultStorage(), { limit: 1 });
-    if (result.claimed === 0) {
+    if (result.claimed === 0 && result.reclaimed === 0 && result.healed === 0) {
       log("import", "idle");
       return;
     }
     log(
       "import",
-      `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed}`,
+      `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed} reclaimed=${result.reclaimed} healed=${result.healed}`,
     );
   } finally {
     await locks.release("import");

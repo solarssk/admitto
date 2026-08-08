@@ -12,6 +12,21 @@ export type {
 } from "./executeImportCommit.js";
 export { drainImportJobs } from "./drainImportJobs.js";
 export type { DrainImportJobsResult } from "./drainImportJobs.js";
+export {
+  reclaimStaleImportJobs,
+  parseImportJobStaleRunningMs,
+  importResultJsonFromAuditMetadata,
+  isWorkerHeartbeatStaleForPendingReclaim,
+  DEFAULT_IMPORT_JOB_STALE_RUNNING_MS,
+  DEFAULT_IMPORT_PENDING_HEARTBEAT_STALE_MS,
+  WORKER_HEARTBEAT_ID,
+  STALE_IMPORT_JOB_ERROR,
+  STALE_IMPORT_PENDING_ERROR,
+} from "./reclaimStaleImportJobs.js";
+export type {
+  ReclaimStaleImportJobsResult,
+  ReclaimStaleImportJobsOptions,
+} from "./reclaimStaleImportJobs.js";
 export type {
   AttendeeRow,
   ImportAttributeField,
