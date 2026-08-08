@@ -530,6 +530,77 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("toasts Update failed when metadata save rejects with a non-API error", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    updateEventTemplateMetadata.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
+    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Update failed.")).toBeTruthy();
+    });
+  });
+
+  it("keeps the edit modal open on Escape/Cancel while a metadata save is in flight", async () => {
+    updateEventTemplateMetadata.mockImplementation(() => new Promise(() => {}));
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
+    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(within(editDialog).getByRole("button", { name: "Saving…" })).toBeTruthy();
+    });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByRole("dialog", { name: "Edit template" })).toBeTruthy();
+  });
+
+  it("closes the edit modal when Cancel is clicked while idle", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
+    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Edit template" })).toBeNull();
+  });
+
   it("deletes the active template from inside the edit modal", async () => {
     deleteEventTemplate.mockResolvedValue(undefined);
     fetchEventTemplates
@@ -1507,6 +1578,82 @@ describe("CommunicationPage templates", () => {
     expect(screen.queryByText("Template updated.")).toBeNull();
     expect(screen.getByRole("button", { name: "Template, Ticket B" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Template, Final reminder" })).toBeNull();
+  });
+
+  it("ignores a stale metadata failure after switching events mid-flight", async () => {
+    let rejectPatch!: (err: Error) => void;
+    updateEventTemplateMetadata.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectPatch = reject;
+        }),
+    );
+    fetchEventTemplates.mockImplementation(async (id: string) => {
+      if (id === "evt-a") return [ticketRow, reminderRow];
+      return [{ ...ticketRow, id: "tpl-ticket-b", label: "Ticket B" }];
+    });
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+      if (id === "tpl-rem") {
+        return { ...reminderRow, body_template: "<mjml></mjml>" };
+      }
+      if (id === "tpl-ticket-b") {
+        return { ...ticketRow, id: "tpl-ticket-b", label: "Ticket B", body_template: "<mjml></mjml>" };
+      }
+      return { ...ticketRow, body_template: "<mjml></mjml>" };
+    });
+
+    renderPageWithEventSwitch();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
+    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Template, Ticket B" })).toBeTruthy();
+    });
+
+    await act(async () => {
+      rejectPatch(new Error("network down"));
+    });
+
+    expect(screen.queryByText("Update failed.")).toBeNull();
+    expect(screen.queryByText("Request failed.")).toBeNull();
+  });
+
+  it("disables content Save while a metadata save is in flight", async () => {
+    updateEventTemplateMetadata.mockImplementation(() => new Promise(() => {}));
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited reminder" } });
+    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
+    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(within(editDialog).getByRole("button", { name: "Saving…" })).toBeTruthy();
+    });
+
+    const saveBtn = screen.getByRole("button", { name: "Save *" }) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBe(true);
   });
 
   it("discards unsaved changes and lets the blocked navigation proceed", async () => {

@@ -117,4 +117,35 @@ describe("EditTemplateModal", () => {
     expect(onDelete).toHaveBeenCalledWith("tpl-rem");
     expect(screen.queryByRole("dialog", { name: "Delete template?" })).toBeNull();
   });
+
+  it("ignores Escape on the nested delete confirm while busy", () => {
+    const { rerender } = render(
+      <EditTemplateModal
+        open
+        template={reminder}
+        busy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByRole("dialog", { name: "Delete template?" })).toBeTruthy();
+
+    rerender(
+      <EditTemplateModal
+        open
+        template={reminder}
+        busy
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.getByRole("dialog", { name: "Delete template?" })).toBeTruthy();
+  });
 });

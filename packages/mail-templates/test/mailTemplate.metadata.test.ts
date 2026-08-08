@@ -68,4 +68,26 @@ describe("updateMailTemplateMetadata", () => {
       }),
     );
   });
+
+  it("leaves icon and description untouched when only label is sent", async () => {
+    const update = vi.fn().mockResolvedValue({
+      id: "tpl-1",
+      name: "reminder",
+      label: "Only label",
+      icon: "bell",
+      description: "Kept",
+      template_format: "mjml",
+      subject_template: "Hi",
+      updated_at: new Date("2026-01-03T00:00:00.000Z"),
+    });
+    const prisma = { mailTemplate: { update } };
+
+    await updateMailTemplateMetadata("tpl-1", { label: "Only label" }, prisma as never);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { label: "Only label" },
+      }),
+    );
+  });
 });
