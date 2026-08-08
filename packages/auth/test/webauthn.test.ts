@@ -161,6 +161,27 @@ describe("WebAuthn registration", () => {
     expect(result).toBeNull();
   });
 
+  it("rejects a well-formed but cryptographically invalid attestation signature", async () => {
+    const userId = "user-wa-bad-attestation-sig";
+    await createAdmin(userId, "wa-bad-attestation-sig@example.com");
+
+    const authenticator = createVirtualAuthenticator();
+    const begin = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    // Unlike the other rejection tests above (all of which make @simplewebauthn's verifier throw
+    // before it ever computes a `verified` result), this response has a real, well-formed
+    // "packed" attestation whose signature doesn't match - the verifier resolves normally with
+    // `{ verified: false }`, exercising finishWebauthnRegistration's own `!verification.verified`
+    // check rather than its `catch` block.
+    const response = authenticator.registerWithInvalidAttestationSignature({
+      challenge: begin!.challenge,
+      rpID: RP.rpID,
+      origin: RP.origin,
+    });
+
+    const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", null, RP);
+    expect(result).toBeNull();
+  });
+
   it("rejects a response for a different origin", async () => {
     const userId = "user-wa-bad-origin";
     await createAdmin(userId, "wa-bad-origin@example.com");
