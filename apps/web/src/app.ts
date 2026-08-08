@@ -133,6 +133,8 @@ import {
   handleResendEventAttendeeTicket,
   handleBulkResendTickets,
   handleExportAttendees,
+  handleGetExportJob,
+  handleDownloadExportJob,
   handleExportSelectedAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
@@ -912,6 +914,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/attendees/export", staffAdminGate, adminExportRateLimit, (c) =>
     handleExportAttendees(c, db),
   );
+  app.get("/api/admin/events/:eventId/export/jobs/:jobId", staffAdminGate, (c) =>
+    handleGetExportJob(c, db),
+  );
+  app.get("/api/admin/events/:eventId/export/jobs/:jobId/download", staffAdminGate, (c) =>
+    handleDownloadExportJob(c, db),
+  );
   app.post(
     "/api/admin/events/:eventId/attendees/export-selected",
     jsonPostCsrf,
@@ -1468,7 +1476,12 @@ export function createApp(options: CreateAppOptions = {}) {
       ".ttf": "font/ttf",
       ".otf": "font/otf",
     };
-    const ct = contentTypeMap[ext] ?? "application/octet-stream";
+    // Public /uploads is for branding assets only. Export/import artifacts (csv/xlsx/pdf)
+    // must go through authenticated admin download routes, not UUID obscurity.
+    const ct = contentTypeMap[ext];
+    if (!ct) {
+      return c.notFound();
+    }
     c.header("Content-Type", ct);
     c.header("Cache-Control", "public, max-age=86400");
     c.header("X-Content-Type-Options", "nosniff");

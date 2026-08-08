@@ -3,7 +3,7 @@ import { formatEventDate } from "@admitto/mail-templates";
 import {
   EXPORT_BASE_COLUMNS,
   type SanitizedExportRow,
-} from "@admitto/tickets/attendees-export";
+} from "./attendees-export.js";
 
 /** Fixed column PDF widths for export (includes check-off). Attribute columns appended at runtime.
  * Prefer Name + Email for paper checklists. Admitted at (≥75) fits YYYY-MM-DD HH:mm at 8pt. */

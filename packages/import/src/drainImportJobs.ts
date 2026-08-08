@@ -3,6 +3,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import type { StorageAdapter } from "@admitto/storage";
+import { claimNextAdminJob } from "@admitto/tickets";
 import {
   executeImportCommit,
   ImportCapacityExceededError,
@@ -22,20 +23,7 @@ export type DrainImportJobsResult = {
   healed: number;
 };
 
-async function claimNextImportJob(db: PrismaClient) {
-  const pending = await db.adminJob.findFirst({
-    where: { type: "import_commit", status: "pending" },
-    orderBy: { created_at: "asc" },
-  });
-  if (!pending) return null;
-
-  const updated = await db.adminJob.updateMany({
-    where: { id: pending.id, status: "pending" },
-    data: { status: "running", started_at: new Date() },
-  });
-  if (updated.count === 0) return null;
-  return db.adminJob.findUniqueOrThrow({ where: { id: pending.id } });
-}
+type ClaimedImportJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 
 function failureMessage(err: unknown): string {
   if (err instanceof ImportCapacityExceededError) return err.message;
@@ -54,29 +42,19 @@ async function markFailed(db: PrismaClient, jobId: string, err: unknown): Promis
   });
 }
 
-async function deleteStagedKey(storage: StorageAdapter, storageKey: string): Promise<void> {
+async function bestEffortDelete(storage: StorageAdapter, key: string): Promise<void> {
   try {
-    await storage.delete(storageKey);
+    await storage.delete(key);
   } catch {
     /* best-effort */
   }
 }
 
-async function runClaimedImportJob(
+/** Run one claimed import_commit job to terminal status. */
+async function processImportJob(
   db: PrismaClient,
   storage: StorageAdapter,
-  job: {
-    id: string;
-    event_id: string | null;
-    storage_key: string | null;
-    import_id: string | null;
-    overwrite: boolean;
-    force_capacity: boolean;
-    actor_user_id: string | null;
-    session_id: string | null;
-    client_timezone: string | null;
-    filename: string | null;
-  },
+  job: ClaimedImportJob,
 ): Promise<"succeeded" | "failed"> {
   try {
     if (!job.event_id || !job.storage_key || !job.import_id) {
@@ -97,7 +75,7 @@ async function runClaimedImportJob(
       adminJobId: job.id,
     });
     // Succeeded status is committed inside executeImportCommit when adminJobId is set.
-    await deleteStagedKey(storage, job.storage_key);
+    await bestEffortDelete(storage, job.storage_key);
     return "succeeded";
   } catch (err) {
     await markFailed(db, job.id, err);
@@ -125,11 +103,10 @@ export async function drainImportJobs(
   let failed = 0;
 
   for (let i = 0; i < limit; i += 1) {
-    const job = await claimNextImportJob(db);
+    const job = await claimNextAdminJob(db, "import_commit");
     if (!job) break;
     claimed += 1;
-
-    const outcome = await runClaimedImportJob(db, storage, job);
+    const outcome = await processImportJob(db, storage, job);
     if (outcome === "succeeded") succeeded += 1;
     else failed += 1;
   }

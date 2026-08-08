@@ -23,6 +23,7 @@ import {
   requireEventId,
   resolveClientTimezone,
 } from "./admin-helpers.js";
+import { loadEventAdminJob } from "./admin-job-http.js";
 import { assertEventCapacityForIncoming } from "./event-capacity.js";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -587,20 +588,9 @@ export async function handleImportCommit(c: Context, db: PrismaClient): Promise<
 
 /** GET /api/admin/events/:eventId/import/jobs/:jobId */
 export async function handleGetImportJob(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const jobId = c.req.param("jobId")?.trim();
-  if (!jobId) return c.json({ error: "jobId required" }, 400);
-
-  const job = await db.adminJob.findFirst({
-    where: { id: jobId, event_id: eventId, type: "import_commit" },
-  });
-  if (!job) return c.json({ error: "not_found" }, 404);
+  const loaded = await loadEventAdminJob(c, db, "import_commit");
+  if (loaded instanceof Response) return loaded;
+  const { job } = loaded;
 
   let result: ImportCommitDto | null = null;
   if (
