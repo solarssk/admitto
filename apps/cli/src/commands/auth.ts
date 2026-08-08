@@ -3,7 +3,7 @@ import {
   bootstrapSuperadmin,
   findUserByEmail,
   generateEmergencyRecoveryCode,
-  logMfaBreakGlass,
+  logMfaBreakGlassCli,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
   PasswordPolicyError,
@@ -102,7 +102,7 @@ export async function runAuthResetMfa(db: PrismaClient): Promise<void> {
   }
   const { userId } = await verifyTargetUserPassword(db, email);
   await resetUserMfa(db, userId);
-  await logMfaBreakGlass(db, { action: "reset_mfa", email, userId });
+  await logMfaBreakGlassCli(db, { action: "reset_mfa", email, userId });
   console.log(`MFA reset for ${email} (sessions and trusted devices revoked).`);
 }
 
@@ -113,6 +113,6 @@ export async function runAuthGenerateEmergencyRecovery(db: PrismaClient): Promis
   }
   const { userId } = await verifyTargetUserPassword(db, email);
   const { code } = await generateEmergencyRecoveryCode(db, userId);
-  await logMfaBreakGlass(db, { action: "generate_emergency_recovery", email, userId });
+  await logMfaBreakGlassCli(db, { action: "generate_emergency_recovery", email, userId });
   console.log(`Emergency one-time recovery code (shown once): ${code}`);
 }
