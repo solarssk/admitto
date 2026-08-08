@@ -342,6 +342,10 @@ export interface DeliveryLogTabProps {
   hasActiveFilters: boolean;
   onClearFilters: () => void;
   onRetry: () => void;
+  /** Kept by CommunicationPage so a completed bounce action remains disabled after the log tab
+   * unmounts while the operator visits another tab. */
+  resolvedBounceRowIds: Set<string>;
+  onBounceRowResolved: (rowId: string) => void;
   /** Fired after a row's Resend/Dismiss action succeeds - refreshes the Communication header's
    * bounce count. The deliveries list itself doesn't need an explicit refetch here; it already
    * polls on its own (Live toggle above). */
@@ -381,13 +385,14 @@ export function DeliveryLogTab({
   hasActiveFilters,
   onClearFilters,
   onRetry,
+  resolvedBounceRowIds,
+  onBounceRowResolved,
   onBounceHandled,
 }: Readonly<DeliveryLogTabProps>) {
   const isDesktop = useIsDesktop();
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [resolvedBounceRowIds, setResolvedBounceRowIds] = useState<Set<string>>(new Set());
   const { addToast } = useToast();
   const showLoadingText = useDelayedLoading(deliveriesLoading && deliveries.length === 0);
 
@@ -408,7 +413,7 @@ export function DeliveryLogTab({
   }
 
   function markBounceRowResolved(rowId: string) {
-    setResolvedBounceRowIds((prev) => new Set(prev).add(rowId));
+    onBounceRowResolved(rowId);
   }
 
   async function handleResend(row: DeliveryDto) {

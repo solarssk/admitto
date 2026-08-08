@@ -613,9 +613,12 @@ describe("CommunicationPage bounce banner", () => {
       expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
     });
 
+    fireEvent.click(screen.getByRole("tab", { name: "Send" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
+    await screen.findByText("Guest One");
+
     // Reopen the same row's menu - the row itself still reports status "bounced" forever (it's a
-    // historical record), so both actions must now show as already handled instead of staying
-    // clickable indefinitely.
+    // historical record), so both actions must stay handled even after leaving the log tab.
     fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
     const resendItem = screen.getByRole("menuitem", { name: "Resend" }) as HTMLButtonElement;
     const dismissItem = screen.getByRole("menuitem", { name: "Dismiss bounce" }) as HTMLButtonElement;
