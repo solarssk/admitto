@@ -98,10 +98,10 @@ function formatRelativeTime(iso: string | null): string {
  * breathing dot; Overview/Reports have no pause toggle. */
 function LiveStatusIndicator() {
   return (
-    <span className="overview-live-indicator" role="status" aria-label="Live">
+    <output className="overview-live-indicator" aria-label="Live">
       <span className="overview-live-indicator__dot" aria-hidden="true" />
-      Live
-    </span>
+      <span>Live</span>
+    </output>
   );
 }
 
@@ -361,6 +361,30 @@ function CheckInProgressCard({
   const breakdown = (overview.ticket_type_breakdown ?? []).filter((t) => t.count > 0);
   const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
 
+  let ticketTypeBar: ReactNode = null;
+  if (breakdown.length === 1) {
+    ticketTypeBar = (
+      <span
+        className="overview-tt-bar__seg"
+        style={{
+          width: "100%",
+          background: ticketTypeChartColor(breakdown[0]!.color),
+        }}
+      />
+    );
+  } else if (breakdown.length > 1) {
+    ticketTypeBar = breakdown.map((t) => (
+      <span
+        key={t.key}
+        className="overview-tt-bar__seg"
+        style={{
+          width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
+          background: ticketTypeChartColor(t.color),
+        }}
+      />
+    ));
+  }
+
   // A ring at a permanent 0% is noise, not information, when there's nobody to check in yet —
   // same icon+text placeholder treatment as Recent activity's empty state instead (PO review).
   const body =
@@ -401,28 +425,7 @@ function CheckInProgressCard({
 
         <div className="overview-tt-breakdown">
           <span className="overline">By ticket type</span>
-          <div className="overview-tt-bar">
-            {breakdown.length === 0 ? null : breakdown.length === 1 ? (
-              <span
-                className="overview-tt-bar__seg"
-                style={{
-                  width: "100%",
-                  background: ticketTypeChartColor(breakdown[0]!.color),
-                }}
-              />
-            ) : (
-              breakdown.map((t) => (
-                <span
-                  key={t.key}
-                  className="overview-tt-bar__seg"
-                  style={{
-                    width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
-                    background: ticketTypeChartColor(t.color),
-                  }}
-                />
-              ))
-            )}
-          </div>
+          <div className="overview-tt-bar">{ticketTypeBar}</div>
           {breakdown.length > 0 && (
             <div className="overview-tt-legend">
               {breakdown.map((t) => (

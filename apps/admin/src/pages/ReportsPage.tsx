@@ -405,10 +405,10 @@ function checkinMethodBreakdownRows(
  * breathing dot; Overview/Reports have no pause toggle. */
 function LiveStatusIndicator() {
   return (
-    <span className="overview-live-indicator" role="status" aria-label="Live">
+    <output className="overview-live-indicator" aria-label="Live">
       <span className="overview-live-indicator__dot" aria-hidden="true" />
-      Live
-    </span>
+      <span>Live</span>
+    </output>
   );
 }
 
@@ -512,6 +512,59 @@ function AdmissionLog({
       />
     );
 
+  const desktopAdmissionLog =
+    paged.length === 0 ? (
+      admissionLogEmptyState
+    ) : (
+      <div className="sessions-table-wrap attendees-list-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Attendee</th>
+              <th>Ticket type</th>
+              <th>Admitted at</th>
+              <th>Checked in by</th>
+              <th>Items</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.map((row) => (
+              <tr key={row.attendee_id}>
+                <td>
+                  <Link
+                    to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+                    className="reports-log-user reports-log-user-link"
+                  >
+                    <strong>{row.name}</strong>
+                    <span className="reports-mono reports-muted">{row.email}</span>
+                  </Link>
+                </td>
+                <td>
+                  {row.ticket_type === null ? (
+                    <Badge variant="neutral">(none)</Badge>
+                  ) : (
+                    <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                  )}
+                </td>
+                <td className="reports-mono">
+                  {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
+                </td>
+                <td>
+                  <div className="reports-log-user">
+                    <span>{operatorDisplayLabel(row)}</span>
+                    {row.device_id && (
+                      <span className="reports-mono reports-muted">{row.device_id}</span>
+                    )}
+                  </div>
+                </td>
+                <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+
   return (
     <Card
       title="Admission log"
@@ -567,57 +620,7 @@ function AdmissionLog({
         </p>
       )}
       {isDesktop ? (
-        paged.length === 0 ? (
-          admissionLogEmptyState
-        ) : (
-          <div className="sessions-table-wrap attendees-list-table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Attendee</th>
-                  <th>Ticket type</th>
-                  <th>Admitted at</th>
-                  <th>Checked in by</th>
-                  <th>Items</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paged.map((row) => (
-                  <tr key={row.attendee_id}>
-                    <td>
-                      <Link
-                        to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
-                        className="reports-log-user reports-log-user-link"
-                      >
-                        <strong>{row.name}</strong>
-                        <span className="reports-mono reports-muted">{row.email}</span>
-                      </Link>
-                    </td>
-                    <td>
-                      {row.ticket_type === null ? (
-                        <Badge variant="neutral">(none)</Badge>
-                      ) : (
-                        <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
-                      )}
-                    </td>
-                    <td className="reports-mono">
-                      {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
-                    </td>
-                    <td>
-                      <div className="reports-log-user">
-                        <span>{operatorDisplayLabel(row)}</span>
-                        {row.device_id && (
-                          <span className="reports-mono reports-muted">{row.device_id}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
+        desktopAdmissionLog
       ) : (
         <div className="reports-log-cards">
           {paged.length === 0 ? (

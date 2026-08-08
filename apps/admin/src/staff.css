@@ -6815,6 +6815,7 @@ output.mail-field-hint {
   gap: 6px;
   height: var(--control-h-sm);
   padding: 0 10px;
+  border: none;
   border-radius: var(--radius);
   background: var(--status-ok);
   color: #fff;
