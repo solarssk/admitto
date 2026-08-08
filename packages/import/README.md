@@ -45,7 +45,7 @@ Headers are case-insensitive and trimmed.
 ## Overwrite semantics
 
 - `overwrite=false` (default) — existing attendees are always skipped.
-- `overwrite=true` — updates `name`, `ticket_type`, `company`, `department` only.
+- `overwrite=true` — updates `name`, `first_name`, `last_name`, `ticket_type`, `company`, `department` only.
 - Fields **never** overwritten regardless of mode: `status`, `qr_payload`, `external_uuid`, `token`.
 
 ## Programmatic API
