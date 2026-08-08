@@ -21,6 +21,22 @@ describe("isSerializationFailure", () => {
     ).toBe(true);
   });
 
+  it("is true for a bare DriverAdapterError TransactionWriteConflict", () => {
+    expect(
+      isSerializationFailure({
+        name: "DriverAdapterError",
+        cause: { kind: "TransactionWriteConflict" },
+      }),
+    ).toBe(true);
+    expect(
+      isSerializationFailure({
+        name: "DriverAdapterError",
+        cause: { originalCode: "40001" },
+      }),
+    ).toBe(true);
+    expect(isSerializationFailure({ kind: "TransactionWriteConflict" })).toBe(true);
+  });
+
   it("is false for other error codes and non-error values", () => {
     expect(isSerializationFailure({ code: "P2002" })).toBe(false);
     expect(isSerializationFailure(null)).toBe(false);
