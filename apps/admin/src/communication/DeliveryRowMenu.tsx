@@ -41,6 +41,9 @@ export function DeliveryRowMenu({
   onDismiss,
 }: Readonly<DeliveryRowMenuProps>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  // A name with no id is a historical snapshot of a template that was deleted. Passing
+  // `undefined` to the resend endpoint would select the current default template instead.
+  const canResend = row.template_id !== null || row.template_name === null;
   // `position: fixed` from the very first mount (not just once useLayoutEffect below computes
   // real coordinates) - otherwise the panel briefly sits at its CSS default (static, in-flow
   // inside the "inline-flex" trigger wrapper) for the one frame before the effect repositions
@@ -121,7 +124,7 @@ export function DeliveryRowMenu({
             <i className="ti ti-list-details" aria-hidden="true" />{" "}
             View delivery details
           </button>
-          {row.status === "bounced" && onResend && (
+          {row.status === "bounced" && canResend && onResend && (
             <button
               type="button"
               role="menuitem"

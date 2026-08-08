@@ -150,6 +150,29 @@ describe("DeliveryRowMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Dismiss bounce" })).toBeNull();
   });
 
+  it("does not offer Resend when the delivery template was deleted", () => {
+    const bouncedDeletedTemplateRow = {
+      ...row,
+      status: "bounced" as const,
+      template_id: null,
+      template_name: "Deleted event template",
+    };
+    render(
+      <DeliveryRowMenu
+        row={bouncedDeletedTemplateRow}
+        onViewSentMessage={vi.fn()}
+        onViewDetails={vi.fn()}
+        onResend={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+
+    expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Dismiss bounce" })).toBeTruthy();
+  });
+
   it("does not show Resend/Dismiss for a bounced row when the callbacks are omitted (Attendee Detail's own delivery card)", () => {
     const bouncedRow = { ...row, status: "bounced" };
     render(<DeliveryRowMenu row={bouncedRow} onViewSentMessage={vi.fn()} onViewDetails={vi.fn()} />);
