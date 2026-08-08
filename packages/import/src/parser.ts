@@ -14,7 +14,13 @@ import type {
   ParseResult,
 } from "./types.js";
 
-const CANONICAL_COLUMNS = RESERVED_CUSTOM_DATA_SOURCE_FIELDS;
+/** Header names the parser still recognizes as canonical import columns, so they don't trigger
+ * the unknown-column warning below - deliberately excludes "name": that stays reserved for
+ * custom_data (RESERVED_CUSTOM_DATA_SOURCE_FIELDS, so an attribute field can't collide with the
+ * DB column), but the parser no longer reads a `name` column, so one in the file should surface
+ * the warning like any other unsupported column instead of being silently accepted (Codex
+ * review, PR792). */
+const CANONICAL_COLUMNS = RESERVED_CUSTOM_DATA_SOURCE_FIELDS.filter((column) => column !== "name");
 
 const emailSchema = z.string().email();
 

@@ -72,6 +72,12 @@ describe("parseAttendees — header normalisation", () => {
     expect(result.validRows).toHaveLength(1);
   });
 
+  it("warns about a removed `name` column instead of silently discarding it (Codex review, PR792)", () => {
+    const result = parseAttendees(`name,first_name,last_name,email\nJan Kowalski,Jan,K,jan@example.com`);
+    expect(result.warnings.some((w) => w.includes('Unknown column ignored: "name"'))).toBe(true);
+    expect(result.validRows).toHaveLength(1);
+  });
+
   it("warns when the required email column is absent", () => {
     const result = parseAttendees("first_name,last_name\nJan,Kowalski");
     expect(result.warnings).toContain("CSV has no 'email' column. All rows will be invalid");

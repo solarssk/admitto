@@ -36,7 +36,7 @@ New attendees are created, permitted fields on matched attendees are updated whe
 
 ## Important decisions
 
-- Use `first_name` plus `last_name`, or use the single `name` column. `email` is always required.
+- `first_name`, `last_name`, and `email` are always required. A `name` column is not supported and is ignored with a warning.
 - External UUID and QR values are optional and should be used only when an external ticket source already owns them.
 - Matching uses agency identifiers first when present, then email. Conflicting identifiers are skipped.
 - With overwrite off, matching attendees are skipped.
