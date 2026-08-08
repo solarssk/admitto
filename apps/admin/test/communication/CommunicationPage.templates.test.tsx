@@ -1479,6 +1479,32 @@ describe("CommunicationPage templates", () => {
     expect(screen.queryByText("Stale ticket")).toBeNull();
   });
 
+  it("ignores stale preview failures when a newer preview has already started", async () => {
+    let rejectFirst: ((reason?: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    previewEventTemplateById.mockImplementation(((_eventId: string, id: string) => {
+      if (id === "tpl-ticket") {
+        return new Promise((_, reject) => {
+          rejectFirst = reject;
+        });
+      }
+      return Promise.resolve({ subject: "Reminder preview", html: "<p>Rem</p>" });
+    }) as typeof previewEventTemplateById);
+
+    renderPage();
+    await waitFor(() => {
+      expect(previewEventTemplateById).toHaveBeenCalled();
+    });
+    await selectTemplate("Reminder");
+    expect(await screen.findByText("Reminder preview")).toBeTruthy();
+    await act(async () => {
+      rejectFirst?.(new Error("stale fail"));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Preview failed.")).toBeNull();
+    expect(screen.getByText("Reminder preview")).toBeTruthy();
+  });
+
   it("aborts in-flight overview and mail-settings fetches on unmount", async () => {
     let resolveMail: ((value: unknown) => void) | undefined;
     let rejectMail: ((reason?: unknown) => void) | undefined;

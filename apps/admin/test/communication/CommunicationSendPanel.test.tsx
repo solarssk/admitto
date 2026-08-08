@@ -693,11 +693,14 @@ describe("CommunicationSendPanel", () => {
       />,
     );
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
+    expect(fetchTicketTypes).toHaveBeenCalled();
     unmount();
     await act(async () => {
       rejectTypes?.(new Error("gone"));
       await Promise.resolve();
     });
+    // Cancelled path must not resurrect error UI after unmount.
+    expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
   });
 
   it("ignores poll results and poll failures after the panel unmounts mid-send", async () => {
