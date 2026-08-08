@@ -2059,6 +2059,32 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(JSON.stringify(meta)).not.toContain("Bob Updated");
   });
 
+  it("updates attendee when only last_name is patched (first_name untouched)", async () => {
+    const created = await prisma.attendee.create({
+      data: {
+        id: "att-admin-last-name-only",
+        event_id: EVENT_A,
+        email: "last-name-only@example.com",
+        name: "Original Guest",
+        first_name: "Original",
+        last_name: "Guest",
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        last_name: "UpdatedGuest",
+        expected_updated_at: created.updated_at.toISOString(),
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { name: string; first_name: string; last_name: string };
+    expect(body.first_name).toBe("Original");
+    expect(body.last_name).toBe("UpdatedGuest");
+    expect(body.name).toBe("Original UpdatedGuest");
+  });
+
   it("logs before/after values for the approved safe subset - email/company/department/ticket_type (PO review)", async () => {
     // Explicit known starting state, not whatever earlier tests in this file left ATT_A2 in -
     // company/department can resolve from custom_data (operator-parity sync), so a value read
