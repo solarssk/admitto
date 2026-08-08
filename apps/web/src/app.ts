@@ -131,6 +131,7 @@ import {
   handleBulkTicketTypeEventAttendees,
   handleBulkRsvpEventAttendees,
   handleResendEventAttendeeTicket,
+  handleDismissAttendeeBounce,
   handleBulkResendTickets,
   handleExportAttendees,
   handleGetExportJob,
@@ -1009,6 +1010,12 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminResendRateLimit,
     guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/dismiss-bounce",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDismissAttendeeBounce(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/revoke-checkin",

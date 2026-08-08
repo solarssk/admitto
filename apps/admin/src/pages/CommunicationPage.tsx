@@ -1999,23 +1999,30 @@ export function CommunicationPage() {
     setEmailBounced(0);
   }, [eventId]);
 
+  const loadEmailBounced = useCallback(
+    (signal?: AbortSignal) => {
+      if (!eventId) return;
+      void fetchEventOverview(eventId, signal)
+        .then((data) => {
+          if (!signal?.aborted) setEmailBounced(data.email_bounced);
+        })
+        .catch((err) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          if (signal?.aborted) return;
+          setEmailBounced(0);
+          if (err instanceof ApiError) {
+            reportApiError(err.status);
+          }
+        });
+    },
+    [eventId, reportApiError],
+  );
+
   useEffect(() => {
-    if (!eventId) return;
     const ac = new AbortController();
-    void fetchEventOverview(eventId, ac.signal)
-      .then((data) => {
-        if (!ac.signal.aborted) setEmailBounced(data.email_bounced);
-      })
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        if (ac.signal.aborted) return;
-        setEmailBounced(0);
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-        }
-      });
+    loadEmailBounced(ac.signal);
     return () => ac.abort();
-  }, [eventId, reportApiError]);
+  }, [loadEmailBounced]);
 
   // Preview's sender row shows the real configured "From" - falls back to the event title
   // (previous behavior) if mail settings can't be read, e.g. an operator role without access
@@ -2505,6 +2512,7 @@ export function CommunicationPage() {
           hasActiveFilters={hasActiveDeliveryFilters}
           onClearFilters={clearDeliveryFilters}
           onRetry={() => void loadDeliveries()}
+          onBounceHandled={() => loadEmailBounced()}
         />
       )}
 

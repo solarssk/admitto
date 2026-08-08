@@ -258,6 +258,10 @@ model Attendee {
   // Null = not yet admitted. Reset only by explicit admin revert action.
   admitted_at         DateTime?
   admitted_by         String?
+  // Set when an admin dismisses the Communication bounce notifier for this attendee (Delivery
+  // log row menu). Only covers bounces up to this timestamp - a later delivery that bounces
+  // again re-surfaces, since that is new information, not the same unresolved bounce.
+  email_bounce_dismissed_at DateTime?
   created_at          DateTime            @default(now())
   // Acting admin's IANA timezone at the moment this row was created (manual add / import
   // commit) — null for rows predating this column or created outside a browser request.

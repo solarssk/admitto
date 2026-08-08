@@ -10,6 +10,7 @@ const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
 const fetchEventTemplates = vi.fn();
 const fetchEventDeliveries = vi.fn();
+const dismissBounce = vi.fn();
 const reportApiError = vi.fn();
 
 // A fresh `vi.fn()` per call (as this used to return) breaks CommunicationPage's own
@@ -37,6 +38,9 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
   fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
   fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
+  dismissBounce: (...args: unknown[]) => dismissBounce(...args),
+  resendTicket: vi.fn(),
+  exportDeliveryLog: vi.fn(),
   fetchEventTemplateById: vi.fn(),
   // The Send tab (now the default landing tab) auto-renders a preview on mount - resolve these
   // by default so that doesn't surface as an unrelated "Preview failed" error toast in tests
@@ -254,6 +258,58 @@ describe("CommunicationPage bounce banner", () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/emails bounced/i)).toBeNull();
+    });
+  });
+
+  it("refreshes the bounce count after dismissing a bounce from the delivery log", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+    await waitFor(() => {
+      expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
+    });
+    // Once on mount, once again after the dismiss succeeds.
+    await waitFor(() => {
+      expect(fetchEventOverview).toHaveBeenCalledTimes(2);
     });
   });
 });

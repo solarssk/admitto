@@ -7,6 +7,11 @@ export interface DeliveryRowMenuProps {
   row: DeliveryDto;
   onViewSentMessage: (row: DeliveryDto) => void;
   onViewDetails: (row: DeliveryDto) => void;
+  /** Only offered for a bounced row, and only when the caller supplies both - the Attendee
+   * Detail page's own "Delivery history" card reuses this same menu without them, since it
+   * already has its own page-level "Resend ticket" action. */
+  onResend?: (row: DeliveryDto) => void;
+  onDismiss?: (row: DeliveryDto) => void;
 }
 
 const MARGIN = 5;
@@ -28,7 +33,13 @@ const VIEWPORT_PADDING = 8;
  * long as no ancestor sets transform/filter/contain/will-change, which none here does). Keeping
  * the panel a normal DOM child (instead of portaling) also means useDropdownMenu's own
  * outside-click detection (DOM-containment via rootRef) keeps working unmodified. */
-export function DeliveryRowMenu({ row, onViewSentMessage, onViewDetails }: Readonly<DeliveryRowMenuProps>) {
+export function DeliveryRowMenu({
+  row,
+  onViewSentMessage,
+  onViewDetails,
+  onResend,
+  onDismiss,
+}: Readonly<DeliveryRowMenuProps>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   // `position: fixed` from the very first mount (not just once useLayoutEffect below computes
   // real coordinates) - otherwise the panel briefly sits at its CSS default (static, in-flow
@@ -110,6 +121,34 @@ export function DeliveryRowMenu({ row, onViewSentMessage, onViewDetails }: Reado
             <i className="ti ti-list-details" aria-hidden="true" />{" "}
             View delivery details
           </button>
+          {row.status === "bounced" && onResend && (
+            <button
+              type="button"
+              role="menuitem"
+              className="delivery-row-menu__item"
+              onClick={() => {
+                setOpen(false);
+                onResend(row);
+              }}
+            >
+              <i className="ti ti-send" aria-hidden="true" />{" "}
+              Resend
+            </button>
+          )}
+          {row.status === "bounced" && onDismiss && (
+            <button
+              type="button"
+              role="menuitem"
+              className="delivery-row-menu__item"
+              onClick={() => {
+                setOpen(false);
+                onDismiss(row);
+              }}
+            >
+              <i className="ti ti-mail-off" aria-hidden="true" />{" "}
+              Dismiss bounce
+            </button>
+          )}
         </div>
       )}
     </div>
