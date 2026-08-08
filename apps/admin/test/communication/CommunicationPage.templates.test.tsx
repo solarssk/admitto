@@ -2165,3 +2165,56 @@ describe("resolveTestSendTemplateLabel", () => {
     );
   });
 });
+
+function renderSendTab() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=send"]}>
+      <Routes>
+        <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("CommunicationPage Send tab template description", () => {
+  it("shows the built-in default description for the virtual ticket template", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    renderSendTab();
+
+    expect(
+      await screen.findByText(
+        "The built-in ticket confirmation email, sent automatically until this event saves its own override.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows a saved template's own description", async () => {
+    fetchEventTemplates.mockResolvedValue([
+      { ...reminderRow, description: "Sent 24h before the event to confirmed attendees." },
+    ]);
+    renderSendTab();
+
+    await screen.findByRole("button", { name: /^Template,/ });
+    await selectTemplate("Reminder");
+    expect(
+      await screen.findByText("Sent 24h before the event to confirmed attendees."),
+    ).toBeTruthy();
+  });
+
+  it("shows nothing when a saved template has no description", async () => {
+    fetchEventTemplates.mockResolvedValue([reminderRow]);
+    renderSendTab();
+
+    await screen.findByRole("button", { name: /^Template,/ });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Template, Reminder" })).toBeTruthy();
+    });
+    expect(screen.queryByText(/^Sent 24h before/)).toBeNull();
+    expect(
+      screen.queryByText(
+        "The built-in ticket confirmation email, sent automatically until this event saves its own override.",
+      ),
+    ).toBeNull();
+  });
+});

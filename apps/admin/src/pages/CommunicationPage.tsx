@@ -614,6 +614,22 @@ function templatePickerOptions(
   ];
 }
 
+/** The virtual "Ticket email" entry has no MailTemplateListItem row of its own to read a
+ * description from (see templatePickerOptions above) - it gets a fixed, built-in one instead, so
+ * the Send tab's picker never reads as blank for the one template every event actually starts
+ * with. */
+const VIRTUAL_TICKET_DESCRIPTION =
+  "The built-in ticket confirmation email, sent automatically until this event saves its own override.";
+
+/** Selected template's own description, shown under the Send tab's picker so an admin can tell
+ * what a template is for without leaving this tab to open its edit modal. Null (real template,
+ * never given one) renders nothing here - unlike the virtual entry, there's no sensible default
+ * text to invent for someone else's saved template. */
+function activeTemplateDescription(activeKey: string, templates: MailTemplateListItem[]): string | null {
+  if (activeKey === "virtual-ticket") return VIRTUAL_TICKET_DESCRIPTION;
+  return templates.find((t) => t.id === activeKey)?.description ?? null;
+}
+
 /** Bounced-email warning banner shown above the tabs; renders nothing when there are no bounces. */
 function EmailBounceBanner({ count, onViewLog }: Readonly<{ count: number; onViewLog: () => void }>) {
   if (count <= 0) return null;
@@ -712,6 +728,8 @@ function SendTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, eventId, isActive, savedSubject, savedBody, savedFormat]);
 
+  const templateDescription = activeTemplateDescription(activeKey, templates);
+
   return (
     <div className="communication-send-tab">
       {/* Message + test-send unmount when leaving the tab (avoid duplicate a11y tree vs Templates).
@@ -741,6 +759,7 @@ function SendTab({
                 onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
               />
             </div>
+            {templateDescription && <p className="mail-field-hint">{templateDescription}</p>}
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
             {previewLoading ? (
               <div className="communication-preview-empty">Loading preview…</div>
