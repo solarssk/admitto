@@ -659,6 +659,10 @@ function SendTab({
   sendTemplateId,
   editorSnapshotMissing,
   isDirty,
+  isActive,
+  savedSubject,
+  savedBody,
+  savedFormat,
   previewHtml,
   previewSubject,
   previewLoading,
@@ -681,6 +685,12 @@ function SendTab({
   sendTemplateId: string | undefined;
   editorSnapshotMissing: boolean;
   isDirty: boolean;
+  /** False while the tab is kept mounted but hidden so bulk-send polling can finish. */
+  isActive: boolean;
+  /** Last-saved template content - Send preview must match what bulk/test send will deliver. */
+  savedSubject: string;
+  savedBody: string;
+  savedFormat: TemplateFormat;
   previewHtml: string | null;
   previewSubject: string | null;
   previewLoading: boolean;
@@ -694,69 +704,71 @@ function SendTab({
   onTestSend: () => Promise<void>;
   testStatus: TestSendStatus | null;
 }>) {
-  // Keeps the preview in sync with whichever template is picked, matching the mockup's
-  // always-rendered preview - unlike the Templates tab, there's no draft being actively typed
-  // into here, so there's no reason to make the admin click a separate Preview button first.
+  // Preview the *saved* template when this tab is shown (or when that saved snapshot changes).
+  // Skip while inactive so a Templates-tab draft preview is not overwritten in the background.
   useEffect(() => {
+    if (!isActive) return;
     void onPreview();
-    // onPreview closes over live subject/body/format state and is a fresh function every
-    // render, so it's intentionally left out here - only an actual template or event switch
-    // should re-trigger this, not every render.
+    // onPreview is a fresh function every render; only these primitives should re-trigger it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, eventId]);
+  }, [activeKey, eventId, isActive, savedSubject, savedBody, savedFormat]);
 
   return (
     <div className="communication-send-tab">
-      <Card
-        title={
-          <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
-            Message
-          </HintLabel>
-        }
-      >
-        <div className="settings-card-stack">
-          <p className="settings-card-intro">
-            Pick which saved template this event's ticket emails use, and preview exactly what
-            recipients will see before you send.
-          </p>
-          <div className="communication-half-field">
-            <SearchableSelect
-              id="communication-send-template"
-              label="Template"
-              placeholder="Choose a template…"
-              searchPlaceholder="Search templates…"
-              emptyLabel="No templates found"
-              value={activeKey}
-              options={templatePickerOptions(templates)}
-              onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
-            />
+      {/* Message + test-send unmount when leaving the tab (avoid duplicate a11y tree vs Templates).
+          The bulk-send panel stays mounted so an in-flight poll is not aborted. */}
+      {isActive && (
+        <Card
+          title={
+            <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
+              Message
+            </HintLabel>
+          }
+        >
+          <div className="settings-card-stack">
+            <p className="settings-card-intro">
+              Pick which saved template this event's ticket emails use, and preview exactly what
+              recipients will see before you send.
+            </p>
+            <div className="communication-half-field">
+              <SearchableSelect
+                id="communication-send-template"
+                label="Template"
+                placeholder="Choose a template…"
+                searchPlaceholder="Search templates…"
+                emptyLabel="No templates found"
+                value={activeKey}
+                options={templatePickerOptions(templates)}
+                onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+              />
+            </div>
+            <DefaultTemplateBanner activeKey={activeKey} source={source} />
+            <div className="communication-preview-toolbar">
+              <span className="communication-preview-toolbar__label">
+                <i className="ti ti-eye" aria-hidden="true" /> Preview
+              </span>
+              <button
+                type="button"
+                className="communication-preview-toolbar__open"
+                onClick={onOpenTemplate}
+              >
+                <i className="ti ti-external-link" aria-hidden="true" /> Open template
+              </button>
+            </div>
+            {previewLoading ? (
+              <div className="communication-preview-empty">Loading preview…</div>
+            ) : (
+              <PreviewBody
+                previewHtml={previewHtml}
+                previewSubject={previewSubject}
+                eventTitle={event.title}
+                senderName={senderName}
+                senderAddress={senderAddress}
+              />
+            )}
           </div>
-          <DefaultTemplateBanner activeKey={activeKey} source={source} />
-          <div className="communication-preview-toolbar">
-            <span className="communication-preview-toolbar__label">
-              <i className="ti ti-eye" aria-hidden="true" /> Preview
-            </span>
-            <button
-              type="button"
-              className="communication-preview-toolbar__open"
-              onClick={onOpenTemplate}
-            >
-              <i className="ti ti-external-link" aria-hidden="true" /> Open template
-            </button>
-          </div>
-          {previewLoading ? (
-            <div className="communication-preview-empty">Loading preview…</div>
-          ) : (
-            <PreviewBody
-              previewHtml={previewHtml}
-              previewSubject={previewSubject}
-              eventTitle={event.title}
-              senderName={senderName}
-              senderAddress={senderAddress}
-            />
-          )}
-        </div>
-      </Card>
+        </Card>
+      )}
 
       <CommunicationSendPanel
         event={event}
@@ -766,15 +778,17 @@ function SendTab({
         isDirty={isDirty}
       />
 
-      <SendTestCard
-        event={event}
-        testEmail={testEmail}
-        setTestEmail={setTestEmail}
-        testSending={testSending}
-        editorSnapshotMissing={editorSnapshotMissing}
-        onTestSend={onTestSend}
-        testStatus={testStatus}
-      />
+      {isActive && (
+        <SendTestCard
+          event={event}
+          testEmail={testEmail}
+          setTestEmail={setTestEmail}
+          testSending={testSending}
+          editorSnapshotMissing={editorSnapshotMissing}
+          onTestSend={onTestSend}
+          testStatus={testStatus}
+        />
+      )}
     </div>
   );
 }
@@ -1640,6 +1654,16 @@ export function CommunicationPage() {
     [subject, body, format],
   );
 
+  /** Payload for Send-tab preview / anything that must match bulk send (saved template only). */
+  const savedTemplatePayload = useCallback(
+    () => ({
+      subject_template: savedSubject,
+      body_template: savedBody,
+      template_format: savedFormat,
+    }),
+    [savedSubject, savedBody, savedFormat],
+  );
+
   const applyLegacyTemplate = useCallback((data: EventTemplateDto) => {
     setEditorSnapshotMissing(false);
     setSource(data.source);
@@ -2132,7 +2156,11 @@ export function CommunicationPage() {
     insertTokenIntoField(bodyRef.current, token, bareToken, setBody);
   };
 
-  const handlePreview = async () => {
+  const runPreview = async (payload: {
+    subject_template: string;
+    body_template: string;
+    template_format: TemplateFormat;
+  }) => {
     if (!eventId || editorSnapshotMissing) return;
     const scopeEventId = eventId;
     const seq = ++previewSeqRef.current;
@@ -2141,8 +2169,8 @@ export function CommunicationPage() {
     try {
       const data =
         activeKey === "virtual-ticket"
-          ? await previewEventTemplate(scopeEventId, templatePayload())
-          : await previewEventTemplateById(scopeEventId, activeKey, templatePayload());
+          ? await previewEventTemplate(scopeEventId, payload)
+          : await previewEventTemplateById(scopeEventId, activeKey, payload);
       if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
@@ -2164,6 +2192,16 @@ export function CommunicationPage() {
     } finally {
       if (seq === previewSeqRef.current) setPreviewLoading(false);
     }
+  };
+
+  /** Templates tab: live draft preview (what the editor currently holds). */
+  const handlePreview = async () => {
+    await runPreview(templatePayload());
+  };
+
+  /** Send tab: last-saved snapshot only - bulk/test send never use the unsaved draft. */
+  const handleSendPreview = async () => {
+    await runPreview(savedTemplatePayload());
   };
 
   // Templates tab: live preview instead of click-to-preview, debounced so rapid typing fires one
@@ -2342,7 +2380,9 @@ export function CommunicationPage() {
         }}
       />
 
-      {tab === "send" && (
+      {/* Keep Send mounted while other tabs are open so an in-flight bulk-send poll is not torn
+          down (and the form reset) when the operator briefly opens Templates or Delivery log. */}
+      <div hidden={tab !== "send"}>
         <SendTab
           event={event}
           templates={templates}
@@ -2353,12 +2393,16 @@ export function CommunicationPage() {
           sendTemplateId={sendTemplateId}
           editorSnapshotMissing={editorSnapshotMissing}
           isDirty={isDirty}
+          isActive={tab === "send"}
+          savedSubject={savedSubject}
+          savedBody={savedBody}
+          savedFormat={savedFormat}
           previewHtml={previewHtml}
           previewSubject={previewSubject}
           previewLoading={previewLoading}
           senderName={senderName}
           senderAddress={senderAddress}
-          onPreview={handlePreview}
+          onPreview={handleSendPreview}
           onOpenTemplate={() => setTab("templates")}
           testEmail={testEmail}
           setTestEmail={setTestEmail}
@@ -2366,7 +2410,7 @@ export function CommunicationPage() {
           onTestSend={handleTestSend}
           testStatus={testStatus}
         />
-      )}
+      </div>
 
       {tab === "templates" && (
         <div className="communication-templates-tab">
