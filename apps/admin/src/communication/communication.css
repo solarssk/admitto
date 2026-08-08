@@ -363,38 +363,6 @@
   font-size: var(--fs-sm);
 }
 
-.communication-preview-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--fs-sm);
-}
-
-.communication-preview-toolbar__label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.communication-preview-toolbar__open {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--primary);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.communication-preview-toolbar__open:hover {
-  color: var(--primary-hover);
-}
-
 /* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
  * as a light surface, dark mode here would look like a broken/unstyled email, not a themed one. */
 .communication-mail-client {

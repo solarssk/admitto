@@ -670,7 +670,6 @@ function SendTab({
   senderName,
   senderAddress,
   onPreview,
-  onOpenTemplate,
   testEmail,
   setTestEmail,
   testSending,
@@ -698,7 +697,6 @@ function SendTab({
   senderName: string | null;
   senderAddress: string | null;
   onPreview: () => Promise<void>;
-  onOpenTemplate: () => void;
   testEmail: string;
   setTestEmail: Dispatch<SetStateAction<string>>;
   testSending: boolean;
@@ -744,18 +742,6 @@ function SendTab({
               />
             </div>
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
-            <div className="communication-preview-toolbar">
-              <span className="communication-preview-toolbar__label">
-                <i className="ti ti-eye" aria-hidden="true" /> Preview
-              </span>
-              <button
-                type="button"
-                className="communication-preview-toolbar__open"
-                onClick={onOpenTemplate}
-              >
-                <i className="ti ti-external-link" aria-hidden="true" /> Open template
-              </button>
-            </div>
             {previewLoading ? (
               <div className="communication-preview-empty">Loading preview…</div>
             ) : (
@@ -765,6 +751,11 @@ function SendTab({
                 eventTitle={event.title}
                 senderName={senderName}
                 senderAddress={senderAddress}
+                toolbarLabel={
+                  <>
+                    <i className="ti ti-eye" aria-hidden="true" /> Preview
+                  </>
+                }
               />
             )}
           </div>
@@ -2416,7 +2407,6 @@ export function CommunicationPage() {
           senderName={senderName}
           senderAddress={senderAddress}
           onPreview={handleSendPreview}
-          onOpenTemplate={() => setTab("templates")}
           testEmail={testEmail}
           setTestEmail={setTestEmail}
           testSending={testSending}
