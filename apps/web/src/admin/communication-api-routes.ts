@@ -1019,7 +1019,9 @@ export async function handlePutEventTemplateById(
           subject,
           body: templateBody,
           format,
-          label: body.label ?? existing.label,
+          // Omit label when the PUT body did not send one so a concurrent metadata PATCH
+          // (rename) is not silently overwritten by the stale `existing.label` snapshot.
+          ...(body.label !== undefined ? { label: body.label } : {}),
         },
         tx,
       );

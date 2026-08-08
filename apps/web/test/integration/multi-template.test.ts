@@ -1197,4 +1197,33 @@ describe("multi-template API", () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not_found" });
   });
+
+  it("PUT /templates/:id without label leaves a metadata rename intact", async () => {
+    const created = await postNamedTemplate(app, "Reminder");
+    const patch = await patchTemplateMetadata(app, created.id, {
+      label: "Reminder (renamed)",
+      icon: "bell",
+    });
+    expect(patch.status).toBe(200);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${created.id}`, {
+      method: "PUT",
+      headers: {
+        Cookie: adminCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({
+        subject_template: "Updated {{event_name}}",
+        body_template: DEFAULT_BODY_MJML,
+        template_format: "mjml",
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.mailTemplate.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.label).toBe("Reminder (renamed)");
+    expect(row.icon).toBe("bell");
+    expect(row.subject_template).toBe("Updated {{event_name}}");
+  });
 });

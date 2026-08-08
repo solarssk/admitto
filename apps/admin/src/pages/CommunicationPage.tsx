@@ -753,6 +753,7 @@ function SendTab({
 function TemplatePickerBar({
   event,
   templateActionBusy,
+  contentSaving,
   templates,
   activeKey,
   source,
@@ -762,6 +763,8 @@ function TemplatePickerBar({
 }: Readonly<{
   event: EventDto;
   templateActionBusy: boolean;
+  /** Content Save in flight - blocks identity Edit so metadata PATCH cannot race the PUT. */
+  contentSaving: boolean;
   templates: MailTemplateListItem[];
   activeKey: string;
   source: EventTemplateDto["source"];
@@ -771,6 +774,7 @@ function TemplatePickerBar({
 }>) {
   const activeMeta = templates.find((t) => t.id === activeKey);
   const isDefault = activeKey === "virtual-ticket" && source !== "event";
+  const identityBusy = templateActionBusy || contentSaving;
   return (
     <Card>
       <div className="communication-template-picker">
@@ -802,7 +806,7 @@ function TemplatePickerBar({
           <ArchivedGuard
             event={event}
             reasonId="edit-template-reason"
-            disabled={!canEdit || templateActionBusy}
+            disabled={!canEdit || identityBusy}
             tooltip={!canEdit ? "Save this template once to edit its details." : undefined}
           >
             {(guard) => (
@@ -956,6 +960,7 @@ function TemplateEditorCard({
   setBody,
   validationErrors,
   saving,
+  templateActionBusy,
   isDirty,
   saveButtonLabel,
   onSave,
@@ -978,6 +983,7 @@ function TemplateEditorCard({
   setBody: Dispatch<SetStateAction<string>>;
   validationErrors: string[];
   saving: boolean;
+  templateActionBusy: boolean;
   isDirty: boolean;
   saveButtonLabel: string;
   onSave: () => void;
@@ -1058,7 +1064,7 @@ function TemplateEditorCard({
         <ArchivedGuard
           event={event}
           reasonId="save-template-reason"
-          disabled={saving || !isDirty || editorSnapshotMissing}
+          disabled={saving || templateActionBusy || !isDirty || editorSnapshotMissing}
         >
           {(guard) => (
             <Button
@@ -1420,6 +1426,7 @@ export function CommunicationPage() {
   const previewSeqRef = useRef(0);
   const createTemplateSeqRef = useRef(0);
   const deleteTemplateSeqRef = useRef(0);
+  const metadataSaveSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
   const currentEventIdRef = useRef(eventId);
   /** Latest legacy ticket snapshot; refreshed on each virtual-ticket selection and after save. */
@@ -1682,14 +1689,18 @@ export function CommunicationPage() {
 
   const executeSaveTemplateMetadata = useCallback(
     async (templateId: string, draft: { label: string; icon: string | null; description: string | null }) => {
-      if (!eventId) return;
+      const scopeEventId = eventId;
+      if (!scopeEventId || saving) return;
+      const seq = ++metadataSaveSeqRef.current;
       setTemplateActionBusy(true);
       try {
-        const updated = await updateEventTemplateMetadata(eventId, templateId, draft);
+        const updated = await updateEventTemplateMetadata(scopeEventId, templateId, draft);
+        if (isDeleteStale(seq, scopeEventId, metadataSaveSeqRef.current, currentEventIdRef.current)) return;
         setTemplates((prev) => sortTemplates(prev.map((t) => (t.id === templateId ? updated : t))));
         setEditModalOpen(false);
         addToast("Template updated.", "success");
       } catch (err) {
+        if (isDeleteStale(seq, scopeEventId, metadataSaveSeqRef.current, currentEventIdRef.current)) return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
           addToast(operatorApiErrorMessage(err, "Request failed."), "error");
@@ -1697,10 +1708,12 @@ export function CommunicationPage() {
           addToast("Update failed.", "error");
         }
       } finally {
-        setTemplateActionBusy(false);
+        if (seq === metadataSaveSeqRef.current) {
+          setTemplateActionBusy(false);
+        }
       }
     },
-    [eventId, reportApiError, addToast],
+    [eventId, reportApiError, addToast, saving],
   );
 
   const sendTemplateId = resolveSendTemplateId(editorSnapshotMissing, activeKey, templates);
@@ -1760,6 +1773,7 @@ export function CommunicationPage() {
   useEffect(() => {
     currentEventIdRef.current = eventId;
     deleteTemplateSeqRef.current += 1;
+    metadataSaveSeqRef.current += 1;
     setTemplateActionBusy(false);
     setEditModalOpen(false);
   }, [eventId]);
@@ -1997,7 +2011,7 @@ export function CommunicationPage() {
   }, [tab, subject, body, format, activeKey, editorSnapshotMissing]);
 
   const performSave = async () => {
-    if (!eventId) return;
+    if (!eventId || templateActionBusy) return;
     setValidationErrors([]);
     setSaving(true);
     try {
@@ -2187,6 +2201,7 @@ export function CommunicationPage() {
           <TemplatePickerBar
             event={event}
             templateActionBusy={templateActionBusy}
+            contentSaving={saving}
             templates={templates}
             activeKey={activeKey}
             source={source}
@@ -2215,6 +2230,7 @@ export function CommunicationPage() {
               setBody={setBody}
               validationErrors={validationErrors}
               saving={saving}
+              templateActionBusy={templateActionBusy}
               isDirty={isDirty}
               saveButtonLabel={saveButtonLabel}
               onSave={handleSave}
@@ -2293,9 +2309,9 @@ export function CommunicationPage() {
       <EditTemplateModal
         open={editModalOpen}
         template={activeTemplateMeta}
-        busy={templateActionBusy}
+        busy={templateActionBusy || saving}
         onClose={() => {
-          if (templateActionBusy) return;
+          if (templateActionBusy || saving) return;
           setEditModalOpen(false);
         }}
         onSave={(templateId, draft) => void executeSaveTemplateMetadata(templateId, draft)}

@@ -1444,6 +1444,71 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("ignores a stale metadata save after switching events mid-flight", async () => {
+    let resolvePatch!: (value: unknown) => void;
+    updateEventTemplateMetadata.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        }),
+    );
+    fetchEventTemplates.mockImplementation(async (id: string) => {
+      if (id === "evt-a") return [ticketRow, reminderRow];
+      return [{ ...ticketRow, id: "tpl-ticket-b", label: "Ticket B" }];
+    });
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+      if (id === "tpl-rem") {
+        return { ...reminderRow, body_template: "<mjml></mjml>" };
+      }
+      if (id === "tpl-ticket-b") {
+        return { ...ticketRow, id: "tpl-ticket-b", label: "Ticket B", body_template: "<mjml></mjml>" };
+      }
+      return { ...ticketRow, body_template: "<mjml></mjml>" };
+    });
+
+    renderPageWithEventSwitch();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
+    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Final reminder" },
+    });
+    fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
+
+    expect(updateEventTemplateMetadata).toHaveBeenCalledWith("evt-a", "tpl-rem", {
+      label: "Final reminder",
+      icon: null,
+      description: null,
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Template, Ticket B" })).toBeTruthy();
+    });
+
+    await act(async () => {
+      resolvePatch({
+        ...reminderRow,
+        label: "Final reminder",
+        icon: "clock",
+        description: null,
+      });
+    });
+
+    expect(screen.queryByText("Template updated.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Template, Ticket B" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Template, Final reminder" })).toBeNull();
+  });
+
   it("discards unsaved changes and lets the blocked navigation proceed", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     renderPage();
