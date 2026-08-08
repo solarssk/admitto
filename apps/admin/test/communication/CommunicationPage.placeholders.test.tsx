@@ -415,4 +415,48 @@ describe("CommunicationPage placeholder chip list", () => {
       '<mj-image src="{{event_map_url}}" alt="Event location map" width="200px" />',
     );
   });
+
+  // Regression: apple_wallet_url/google_wallet_url are link values, not images (see the
+  // "Wallet" group comment in PlaceholderChips) - a bare {{apple_wallet_url}} token never
+  // renders as a clickable button on its own, so the chip inserts a ready-made badge instead,
+  // same "ready-to-use element" treatment as image placeholders get via imagePlaceholderMarkup.
+  it("inserts a ready-to-use Apple Wallet badge button, not a bare token, when clicking {{apple_wallet_url}}", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      allowed_placeholders: ["first_name", "apple_wallet_url"],
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    });
+
+    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    focusAtEnd(bodyTextarea);
+    fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
+
+    // The placeholder token is the link (href) - the badge graphic is a real, fixed asset
+    // (WALLET_BADGE_ASSET), never something {{apple_wallet_url}} itself resolves to as `src`.
+    expect(bodyTextarea.value).toContain(
+      '<mj-image href="{{apple_wallet_url}}" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet" width="200px" />',
+    );
+  });
+
+  it("inserts a ready-to-use Google Wallet badge button, not a bare token, when clicking {{google_wallet_url}}", async () => {
+    fetchEventTemplate.mockResolvedValue({
+      ...legacyTemplate,
+      allowed_placeholders: ["first_name", "google_wallet_url"],
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    });
+
+    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    focusAtEnd(bodyTextarea);
+    fireEvent.click(screen.getByRole("button", { name: "{{google_wallet_url}}" }));
+
+    expect(bodyTextarea.value).toContain(
+      '<mj-image href="{{google_wallet_url}}" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet" width="200px" />',
+    );
+  });
 });

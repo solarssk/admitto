@@ -181,6 +181,25 @@ function imagePlaceholderMarkup(name: string, format: TemplateFormat): string {
     : `<img src="{{${name}}}" alt="${alt}" width="200" style="max-width:100%;" />`;
 }
 
+/** The real wallet badge SVGs (see PlaceholderChips' `samples`/apps/web/src/wallet-badges.ts),
+ * used as the *image* half of the ready-made button below - the placeholder itself is only ever
+ * the link half (`href`), never the image `src`. */
+const WALLET_BADGE_ASSET: Record<string, { src: string; alt: string }> = {
+  apple_wallet_url: { src: "/assets/apple-wallet-badge.svg", alt: "Add to Apple Wallet" },
+  google_wallet_url: { src: "/assets/google-wallet-badge.svg", alt: "Add to Google Wallet" },
+};
+
+/** Markup inserted for a wallet placeholder — a ready-to-use badge button (the real Apple/Google
+ * badge image, linked to `{{name}}`), not a bare token. Unlike imagePlaceholderMarkup, `{{name}}`
+ * itself goes in `href`, not `src` - a wallet placeholder is a link value, the badge graphic is a
+ * fixed asset, not something the placeholder resolves to. */
+function walletButtonMarkup(name: string, format: TemplateFormat): string {
+  const badge = WALLET_BADGE_ASSET[name];
+  return format === "mjml"
+    ? `<mj-image href="{{${name}}}" src="${badge.src}" alt="${badge.alt}" width="200px" />`
+    : `<a href="{{${name}}}"><img src="${badge.src}" alt="${badge.alt}" width="200" style="max-width:100%;" /></a>`;
+}
+
 /** True when [start, end] falls inside the `<mjml>...</mjml>` root found in `value` — strictly
  * after the opening tag's closing `>` and at/before the closing tag's start. Returns true (i.e.
  * "assume fine, don't second-guess it") when no recognizable `<mjml ...>`/`</mjml>` pair exists,
@@ -2075,12 +2094,17 @@ export function CommunicationPage() {
   const insertPlaceholder = (name: string) => {
     // Subjects are plain text (no HTML rendering), so always insert the bare token there. In the
     // body, an image placeholder gets a ready-to-use image element instead of a bare token —
-    // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src.
+    // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src. A
+    // wallet placeholder similarly gets a ready-made badge button (the real Apple/Google badge
+    // image, linked to the placeholder) instead of a bare token nobody would otherwise turn into
+    // a clickable button by hand.
     const bareToken = `{{${name}}}`;
     const token =
       activeField === "body" && imagePlaceholders.includes(name)
         ? imagePlaceholderMarkup(name, format)
-        : bareToken;
+        : activeField === "body" && WALLET_PLACEHOLDERS.has(name)
+          ? walletButtonMarkup(name, format)
+          : bareToken;
     if (activeField === "subject") {
       insertTokenIntoField(subjectRef.current, token, bareToken, setSubject);
       return;
