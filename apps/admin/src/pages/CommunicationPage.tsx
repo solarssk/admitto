@@ -756,10 +756,10 @@ function SendTab({
                 emptyLabel="No templates found"
                 value={activeKey}
                 options={templatePickerOptions(templates)}
+                hint={templateDescription ?? undefined}
                 onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
               />
             </div>
-            {templateDescription && <p className="mail-field-hint">{templateDescription}</p>}
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
             <PreviewBody
               previewHtml={previewHtml}
