@@ -81,6 +81,8 @@ import { resolveBulkSendAttendeeIds, BULK_SEND_LIMIT } from "./bulk-send-routes.
 const ATTENDEE_DETAIL_SELECT = {
   id: true,
   name: true,
+  first_name: true,
+  last_name: true,
   email: true,
   company: true,
   department: true,
@@ -102,7 +104,8 @@ const rsvpStatusSchema = z.enum(RSVP_STATUSES);
 
 const patchAttendeeFieldsSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
+    first_name: z.string().trim().max(100).optional(),
+    last_name: z.string().trim().max(100).optional(),
     email: z.string().trim().email().max(254).optional(),
     company: z.string().trim().max(200).optional().nullable(),
     department: z.string().trim().max(200).optional().nullable(),
@@ -179,7 +182,8 @@ const customDataFieldsRecordSchema = z.record(
 const createAttendeeSchema = z
   .object({
     email: z.string().trim().email().max(254),
-    name: z.string().trim().min(1).max(200),
+    first_name: z.string().trim().min(1).max(100),
+    last_name: z.string().trim().max(100),
     company: z.string().trim().max(200).optional(),
     department: z.string().trim().max(200).optional(),
     ticket_type: z.string().trim().max(100).optional(),
@@ -277,6 +281,8 @@ export type AttendeeNoteDto = {
 export type AttendeeDetailDto = {
   id: string;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
   email: string;
   company: string | null;
   department: string | null;
@@ -694,6 +700,8 @@ async function buildAttendeeDetailDto(
   row: {
     id: string;
     name: string;
+    first_name: string | null;
+    last_name: string | null;
     email: string;
     company: string | null;
     department: string | null;
@@ -721,6 +729,8 @@ async function buildAttendeeDetailDto(
   return {
     id: row.id,
     name: row.name,
+    first_name: row.first_name,
+    last_name: row.last_name,
     email: row.email,
     company,
     department,
@@ -1039,6 +1049,8 @@ function applyCustomDataFieldPatches(
 function computePatchChanges(
   existing: {
     name: string;
+    first_name: string | null;
+    last_name: string | null;
     email: string;
     company: string | null;
     department: string | null;
@@ -1069,9 +1081,15 @@ function computePatchChanges(
     return customData;
   };
 
-  if (patch.name !== undefined && patch.name !== existing.name) {
-    data.name = patch.name;
-    fields.push("name");
+  if (patch.first_name !== undefined || patch.last_name !== undefined) {
+    const nextFirstName = patch.first_name ?? existing.first_name;
+    const nextLastName = patch.last_name ?? existing.last_name;
+    if (nextFirstName !== existing.first_name || nextLastName !== existing.last_name) {
+      data.first_name = nextFirstName;
+      data.last_name = nextLastName;
+      data.name = [nextFirstName, nextLastName].filter(Boolean).join(" ");
+      fields.push("first_name", "last_name");
+    }
   }
   if (patch.email !== undefined && patch.email !== existing.email) {
     data.email = patch.email;
@@ -2364,7 +2382,8 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const { email, name, company, department, ticket_type, custom_data } = parsed.data;
+  const { email, first_name, last_name, company, department, ticket_type, custom_data } = parsed.data;
+  const name = [first_name, last_name].filter(Boolean).join(" ");
 
   const duplicate = await db.attendee.findFirst({
     where: { event_id: eventId, email: { equals: email, mode: "insensitive" } },
@@ -2417,6 +2436,8 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
           event_id: eventId,
           email,
           name,
+          first_name,
+          last_name,
           company: company?.trim() ? company.trim() : null,
           department: department?.trim() ? department.trim() : null,
           ticket_type: ticket_type?.trim() ? ticket_type.trim() : null,

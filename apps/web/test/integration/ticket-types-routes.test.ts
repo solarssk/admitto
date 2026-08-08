@@ -548,7 +548,8 @@ describe("DELETE /api/admin/events/:eventId/ticket-types/:typeId", () => {
         headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
         body: JSON.stringify({
           email,
-          name: "Race Guest",
+          first_name: "Race Guest",
+          last_name: "",
           ticket_type: "race_delete_create",
         }),
       }),

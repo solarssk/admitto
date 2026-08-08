@@ -2023,7 +2023,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Must Not Update" }),
+      body: JSON.stringify({ first_name: "Must Not Update" }),
     });
 
     expect(res.status).toBe(403);
@@ -2038,7 +2038,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Bob Updated",
+        first_name: "Bob Updated",
         expected_updated_at: expectedUpdatedAt,
       }),
     });
@@ -2052,9 +2052,10 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(log).not.toBeNull();
     const meta = log!.metadata as { fields?: string[] };
-    expect(meta.fields).toEqual(expect.arrayContaining(["name"]));
-    // name is deliberately never one of LOGGED_VALUE_FIELDS - only the fixed business/contact
-    // fields below (email/company/department/ticket_type) get their value logged (PO review).
+    expect(meta.fields).toEqual(expect.arrayContaining(["first_name", "last_name"]));
+    // first_name/last_name are deliberately never in LOGGED_VALUE_FIELDS - only the fixed
+    // business/contact fields below (email/company/department/ticket_type) get their value
+    // logged (PO review).
     expect(JSON.stringify(meta)).not.toContain("Bob Updated");
   });
 
@@ -2357,7 +2358,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Bob Renamed",
+        first_name: "Bob Renamed",
         expected_updated_at: await currentUpdatedAt(ATT_A2),
       }),
     });
@@ -2405,7 +2406,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Bob With Legacy Size",
+        first_name: "Bob With Legacy Size",
         expected_updated_at: await currentUpdatedAt(ATT_A2),
       }),
     });
@@ -2512,7 +2513,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Stale Test First",
+        first_name: "Stale Test First",
         expected_updated_at: staleUpdatedAt,
       }),
     });
@@ -2522,7 +2523,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Stale Test Second",
+        first_name: "Stale Test Second",
         expected_updated_at: staleUpdatedAt,
       }),
     });
@@ -2535,7 +2536,6 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
   });
 
   it("allows no-op PATCH without expected_updated_at", async () => {
-    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
     const beforeLogs = await prisma.attendeeActionLog.count({
       where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
     });
@@ -2543,7 +2543,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: row.name }),
+      body: JSON.stringify({}),
     });
     expect(res.status).toBe(200);
 
@@ -3946,7 +3946,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "manual@example.com",
-        name: "Manual Guest",
+        first_name: "Manual Guest",
+        last_name: "",
         company: "Manual Co",
       }),
     });
@@ -4004,7 +4005,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "bad-select@example.com",
-        name: "Bad Select",
+        first_name: "Bad Select",
+        last_name: "",
         custom_data: { shirt_size: "XL" },
       }),
     });
@@ -4030,7 +4032,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "null-field@example.com",
-        name: "Null Field",
+        first_name: "Null Field",
+        last_name: "",
         custom_data: { lunch: null },
       }),
     });
@@ -4053,7 +4056,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "missing-size@example.com",
-        name: "Missing Size",
+        first_name: "Missing Size",
+        last_name: "",
       }),
     });
     expect(res.status).toBe(400);
@@ -4073,7 +4077,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "long-field@example.com",
-        name: "Long Field",
+        first_name: "Long Field",
+        last_name: "",
         custom_data: { shirt_size: "x".repeat(101) },
       }),
     });
@@ -4088,7 +4093,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "unknown-type@example.com",
-        name: "Unknown Type",
+        first_name: "Unknown Type",
+        last_name: "",
         ticket_type: "bogus-type",
       }),
     });
@@ -4104,7 +4110,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "anna@example.com", name: "Duplicate" }),
+      body: JSON.stringify({ email: "anna@example.com", first_name: "Duplicate", last_name: "" }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };
@@ -4115,7 +4121,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "op-blocked@example.com", name: "Blocked" }),
+      body: JSON.stringify({ email: "op-blocked@example.com", first_name: "Blocked", last_name: "" }),
     });
     expect(res.status).toBe(403);
   });
@@ -4145,7 +4151,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
         method: "POST",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "full@example.com", name: "Full Event" }),
+        body: JSON.stringify({ email: "full@example.com", first_name: "Full Event", last_name: "" }),
       });
       expect(res.status).toBe(409);
       const body = (await res.json()) as { code: string; capacity: number; current: number };
@@ -4198,7 +4204,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?force=1`, {
           method: "POST",
           headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "forced@example.com", name: "Forced Guest" }),
+          body: JSON.stringify({ email: "forced@example.com", first_name: "Forced Guest", last_name: "" }),
         });
         expect(res.status).toBe(201);
         const created = (await res.json()) as { id: string };
@@ -4244,7 +4250,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "after-cancel@example.com", name: "After Cancel" }),
+          body: JSON.stringify({ email: "after-cancel@example.com", first_name: "After Cancel", last_name: "" }),
         });
         expect(res.status).toBe(201);
         const created = (await res.json()) as { id: string };
@@ -4274,7 +4280,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "fills-cancel-slot@example.com", name: "Fills Cancel Slot" }),
+          body: JSON.stringify({ email: "fills-cancel-slot@example.com", first_name: "Fills Cancel Slot", last_name: "" }),
         });
         expect(fillRes.status).toBe(201);
         fillerId = ((await fillRes.json()) as { id: string }).id;
@@ -4406,7 +4412,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       const followUpRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
         method: "PATCH",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Pass Revoke Admitted (edited)", expected_updated_at: patched.updated_at }),
+        body: JSON.stringify({ first_name: "Pass Revoke Admitted (edited)", expected_updated_at: patched.updated_at }),
       });
       expect(followUpRes.status).toBe(200);
     } finally {
@@ -4496,7 +4502,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "fills-slot@example.com", name: "Fills Slot" }),
+          body: JSON.stringify({ email: "fills-slot@example.com", first_name: "Fills Slot", last_name: "" }),
         });
         expect(fillRes.status).toBe(201);
         fillerId = ((await fillRes.json()) as { id: string }).id;

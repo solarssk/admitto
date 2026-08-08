@@ -58,7 +58,7 @@ describe("AddAttendeeModal", () => {
     const submit = screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan Kowalski" } });
     expect(submit.disabled).toBe(true);
 
     fireEvent.change(screen.getByLabelText("Email *"), {
@@ -82,7 +82,7 @@ describe("AddAttendeeModal", () => {
     expect(email.getAttribute("data-1p-ignore")).toBe("true");
     expect(email.getAttribute("data-lpignore")).toBe("true");
 
-    expect(screen.getByText(/enter their email and name/i)).toBeTruthy();
+    expect(screen.getByText(/enter their email and first name/i)).toBeTruthy();
 
     const requiredHint = screen.getByText("* Required");
     const addButton = screen.getByRole("button", { name: "Add attendee" });
@@ -95,7 +95,7 @@ describe("AddAttendeeModal", () => {
     render(
       <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
     );
-    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     await waitFor(() => {
       expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
@@ -120,7 +120,7 @@ describe("AddAttendeeModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await screen.findByRole("button", { name: "VIP" });
 
-    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "VIP" }));
     await waitFor(() => {
@@ -167,7 +167,7 @@ describe("AddAttendeeModal", () => {
 
     await screen.findByText("Failed to load ticket types.");
 
-    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
 
     // ticket_type is optional - a broken catalog fetch must not block adding an attendee with no
@@ -189,7 +189,7 @@ describe("AddAttendeeModal", () => {
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
     await screen.findByText("Loading ticket types…");
-    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
 
     // Same reasoning as the load-failure case above - loading is a transient state, not a reason
@@ -217,7 +217,7 @@ describe("AddAttendeeModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     await screen.findByRole("button", { name: "VIP" });
-    fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Jan Kowalski" } });
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan Kowalski" } });
     fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "VIP" }));
     expect(screen.getByRole("button", { name: "Ticket type, VIP" })).toBeTruthy();

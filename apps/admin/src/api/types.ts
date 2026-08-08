@@ -262,6 +262,8 @@ export interface AttendeeNoteDto {
 export interface AttendeeDetailDto {
   id: string;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
   email: string;
   company: string | null;
   department: string | null;
@@ -313,7 +315,8 @@ export interface AttendeesListParams {
 }
 
 export interface UpdateAttendeePatch {
-  name?: string;
+  first_name?: string;
+  last_name?: string;
   email?: string;
   company?: string | null;
   department?: string | null;
