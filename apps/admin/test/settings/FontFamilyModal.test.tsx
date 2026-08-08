@@ -122,6 +122,11 @@ describe("FontFamilyModal", () => {
     renderWithToast(<FontFamilyModal open onClose={vi.fn()} onSaved={vi.fn()} />);
 
     expect(screen.getByText("Create font family")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Upload one or more font files for this family. We guess weight and style from file names.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByLabelText("Family name")).toHaveProperty("value", "");
     expect(rows()).toHaveLength(0);
   });
