@@ -66,3 +66,12 @@ export interface SetMailTemplateInput {
   format: TemplateFormat;
   label?: string;
 }
+
+/** Identity-only fields (name/icon/description) - distinct from SetMailTemplateInput, which is
+ * content (subject/body/format) and goes through MJML compilation + placeholder validation.
+ * `undefined` means "leave unchanged"; `null` (icon/description only) means "clear to default". */
+export interface UpdateMailTemplateMetadataInput {
+  label?: string;
+  icon?: string | null;
+  description?: string | null;
+}

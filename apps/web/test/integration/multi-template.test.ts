@@ -149,6 +149,23 @@ async function postNamedTemplate(
   return (await res.json()) as { id: string; name: string; label: string };
 }
 
+async function patchTemplateMetadata(
+  testApp: ReturnType<typeof createApp>,
+  templateId: string,
+  body: Record<string, unknown>,
+  eventId = EVENT_A,
+) {
+  return testApp.request(`/api/admin/events/${eventId}/templates/${templateId}`, {
+    method: "PATCH",
+    headers: {
+      Cookie: adminCookie,
+      "Content-Type": "application/json",
+      ...sameOrigin,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 async function ensureEventB(client: PrismaClient) {
   const existing = await client.event.findUnique({ where: { id: EVENT_B } });
   if (existing) return;
@@ -1100,5 +1117,84 @@ describe("multi-template API", () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not_found" });
     expect(exported).toHaveLength(0);
+  });
+
+  it("PATCH /templates/:id updates label/icon/description without touching content", async () => {
+    const created = await postNamedTemplate(app, "Reminder");
+
+    const res = await patchTemplateMetadata(app, created.id, {
+      label: "Reminder (renamed)",
+      icon: "bell",
+      description: "Sent 24h before the event.",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      label: string;
+      icon: string | null;
+      description: string | null;
+    };
+    expect(body.label).toBe("Reminder (renamed)");
+    expect(body.icon).toBe("bell");
+    expect(body.description).toBe("Sent 24h before the event.");
+
+    const row = await prisma.mailTemplate.findUniqueOrThrow({ where: { id: created.id } });
+    expect(row.label).toBe("Reminder (renamed)");
+    expect(row.icon).toBe("bell");
+    expect(row.description).toBe("Sent 24h before the event.");
+    expect(row.subject_template).toBe("Your message for {{event_name}}");
+  });
+
+  it("PATCH /templates/:id clears icon/description back to null via explicit null", async () => {
+    const created = await postNamedTemplate(app, "Follow-up");
+    await patchTemplateMetadata(app, created.id, { icon: "bell", description: "Some note" });
+
+    const res = await patchTemplateMetadata(app, created.id, { icon: null, description: null });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { icon: string | null; description: string | null };
+    expect(body.icon).toBeNull();
+    expect(body.description).toBeNull();
+  });
+
+  it("PATCH /templates/:id treats an empty-string icon/description as clearing to null", async () => {
+    const created = await postNamedTemplate(app, "Waitlist");
+    await patchTemplateMetadata(app, created.id, { icon: "bell", description: "Some note" });
+
+    const res = await patchTemplateMetadata(app, created.id, { icon: "", description: "" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { icon: string | null; description: string | null };
+    expect(body.icon).toBeNull();
+    expect(body.description).toBeNull();
+  });
+
+  it("PATCH /templates/:id omitting a field leaves it unchanged", async () => {
+    const created = await postNamedTemplate(app, "Save the date");
+    await patchTemplateMetadata(app, created.id, { icon: "bell", description: "Some note" });
+
+    const res = await patchTemplateMetadata(app, created.id, { label: "Save the date (v2)" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      label: string;
+      icon: string | null;
+      description: string | null;
+    };
+    expect(body.label).toBe("Save the date (v2)");
+    expect(body.icon).toBe("bell");
+    expect(body.description).toBe("Some note");
+  });
+
+  it("PATCH /templates/:id rejects a non-kebab-case icon name", async () => {
+    const created = await postNamedTemplate(app, "Invalid icon test");
+
+    const res = await patchTemplateMetadata(app, created.id, { icon: "Not_Valid Icon!" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
+
+  it("PATCH /templates/:id returns 404 for a template from another event", async () => {
+    const foreignTemplate = await ensureEventBForeignTemplate(app, prisma);
+
+    const res = await patchTemplateMetadata(app, foreignTemplate.id, { label: "Hijacked" });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_found" });
   });
 });

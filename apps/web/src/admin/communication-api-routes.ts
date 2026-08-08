@@ -18,6 +18,7 @@ import {
   resolveEventImageAssetVars,
   createMailTemplate,
   setMailTemplate,
+  updateMailTemplateMetadata,
   validateTemplate,
   materializeStoredDeliveryMessageRedacted,
   UnknownPlaceholdersError,
@@ -71,6 +72,9 @@ export const MAX_TEMPLATE_BODY_BYTES =
 
 /** Max JSON body for POST `/template/test-send` (`{ to }` only). */
 export const MAX_TEMPLATE_TEST_SEND_BODY_BYTES = 4_096;
+
+/** Max JSON body for PATCH `/templates/:templateId` (`{ label?, icon?, description? }` only). */
+export const MAX_TEMPLATE_METADATA_BODY_BYTES = 4_096;
 
 const templateBodySchema = z
   .object({
@@ -808,6 +812,25 @@ const updateTemplateBodySchema = z
   })
   .strict();
 
+// eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
+const tablerIconNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const templateIconSchema = z.string().trim().max(64).regex(tablerIconNamePattern, "invalid icon");
+
+const updateTemplateMetadataBodySchema = z
+  .object({
+    label: z.string().trim().min(1).max(120).optional(),
+    icon: z
+      .union([templateIconSchema, z.literal(""), z.null()])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v || null)),
+    description: z
+      .union([z.string().trim().max(500), z.null()])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v || null)),
+  })
+  .strict();
+
 const EMPTY_TEMPLATE_SUBJECT = "Your message for {{event_name}}";
 const EMPTY_TEMPLATE_BODY_MJML = `<mjml>
   <mj-body>
@@ -876,6 +899,8 @@ export type EventTemplateListItemDto = {
   id: string;
   name: string;
   label: string;
+  icon: string | null;
+  description: string | null;
   template_format: TemplateFormat;
   subject_template: string;
   updated_at: string;
@@ -901,6 +926,8 @@ export async function handleListEventTemplates(c: Context, db: PrismaClient): Pr
       id: true,
       name: true,
       label: true,
+      icon: true,
+      description: true,
       template_format: true,
       subject_template: true,
       updated_at: true,
@@ -911,6 +938,8 @@ export async function handleListEventTemplates(c: Context, db: PrismaClient): Pr
     id: row.id,
     name: row.name,
     label: row.label,
+    icon: row.icon,
+    description: row.description,
     template_format: row.template_format as TemplateFormat,
     subject_template: row.subject_template,
     updated_at: row.updated_at.toISOString(),
@@ -935,6 +964,8 @@ export async function handleGetEventTemplateById(c: Context, db: PrismaClient): 
     id: row.id,
     name: row.name,
     label: row.label,
+    icon: row.icon,
+    description: row.description,
     template_format: row.template_format as TemplateFormat,
     subject_template: row.subject_template,
     body_template: row.body_template,
@@ -1025,6 +1056,44 @@ export async function handlePutEventTemplateById(
   }
 
   return handleGetEventTemplateById(c, db);
+}
+
+/** PATCH /api/admin/events/:eventId/templates/:templateId — identity fields only
+ * (label/icon/description); no MJML compilation, no placeholder validation, since none of
+ * these fields ever appear in the rendered email. */
+export async function handlePatchEventTemplateMetadata(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const eventId = requireEventId(c);
+  if (eventId instanceof Response) return eventId;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const templateId = c.req.param("templateId") ?? "";
+  const existing = await getEventTemplateRow(db, eventId, templateId);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  let body: z.infer<typeof updateTemplateMetadataBodySchema>;
+  try {
+    body = updateTemplateMetadataBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  const updated = await updateMailTemplateMetadata(templateId, body, db);
+
+  return c.json({
+    id: updated.id,
+    name: updated.name,
+    label: updated.label,
+    icon: updated.icon,
+    description: updated.description,
+    template_format: updated.template_format as TemplateFormat,
+    subject_template: updated.subject_template,
+    updated_at: updated.updated_at.toISOString(),
+  } satisfies EventTemplateListItemDto);
 }
 
 /** Create the event's template row inside a transaction, serialized against the image-assets
@@ -1153,6 +1222,8 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
           id: created.id,
           name: created.name,
           label: created.label,
+          icon: created.icon,
+          description: created.description,
           template_format: created.template_format as TemplateFormat,
           subject_template: created.subject_template,
           body_template: created.body_template,

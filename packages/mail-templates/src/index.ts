@@ -57,9 +57,10 @@ export {
   resolveTemplateById,
   createMailTemplate,
   setMailTemplate,
+  updateMailTemplateMetadata,
   TemplateNotFoundError,
 } from "./mailTemplate.js";
-export type { CreatedMailTemplateRow } from "./mailTemplate.js";
+export type { CreatedMailTemplateRow, MailTemplateMetadataRow } from "./mailTemplate.js";
 export {
   resolveBranding,
   resolveBrandingFromEvent,
@@ -90,6 +91,7 @@ export type {
   RenderedTemplate,
   BrandingUrls,
   SetMailTemplateInput,
+  UpdateMailTemplateMetadataInput,
 } from "./types.js";
 export type { SetBrandingInput, BrandingUpdateData, EventImageAssetPlaceholders } from "./branding.js";
 export type { RenderTemplateInput, RenderOptions } from "./render.js";

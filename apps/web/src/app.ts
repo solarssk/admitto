@@ -200,11 +200,13 @@ import {
   handleListEventTemplates,
   handleGetEventTemplateById,
   handlePutEventTemplateById,
+  handlePatchEventTemplateMetadata,
   handleCreateEventTemplate,
   handleDeleteEventTemplate,
   handlePreviewEventTemplateById,
   MAX_TEMPLATE_BODY_BYTES,
   MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+  MAX_TEMPLATE_METADATA_BODY_BYTES,
 } from "./admin/communication-api-routes.js";
 import { handleBulkSend, handleBulkSendStatus } from "./admin/bulk-send-routes.js";
 import { handleEventStream } from "./admin/checkin-stream-routes.js";
@@ -540,6 +542,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const templateTestSendBodyLimit = bodyLimit({
     maxSize: MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const templateMetadataBodyLimit = bodyLimit({
+    maxSize: MAX_TEMPLATE_METADATA_BODY_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const mailSettingsBodyLimit = bodyLimit({
@@ -1063,6 +1069,13 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     templateBodyLimit,
     guardArchivedEvent((c) => handlePutEventTemplateById(c, db)),
+  );
+  app.patch(
+    "/api/admin/events/:eventId/templates/:templateId",
+    jsonPostCsrf,
+    staffAdminGate,
+    templateMetadataBodyLimit,
+    guardArchivedEvent((c) => handlePatchEventTemplateMetadata(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/templates",

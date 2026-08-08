@@ -34,6 +34,7 @@ import type {
   UpdateOpsConfigPatch,
   EventTemplateDto,
   SaveTemplateBody,
+  UpdateTemplateMetadataBody,
   PreviewTemplateResponse,
   MailTemplateListItem,
   MailTemplateDetail,
@@ -1209,6 +1210,19 @@ export async function saveEventTemplateById(
     jsonPutInit(body),
   );
   return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Update an event-scoped mail template's identity fields (label/icon/description) only. */
+export async function updateEventTemplateMetadata(
+  eventId: string,
+  templateId: string,
+  body: UpdateTemplateMetadataBody,
+): Promise<MailTemplateListItem> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
+    jsonPatchInit(body),
+  );
+  return parseJson<MailTemplateListItem>(res);
 }
 
 /** Create a new event-scoped mail template. */
