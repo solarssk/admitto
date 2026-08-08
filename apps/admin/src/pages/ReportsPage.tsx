@@ -15,6 +15,7 @@ import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -400,10 +401,17 @@ function checkinMethodBreakdownRows(
   });
 }
 
-/** Primary "who scanned this" label - mirrors AuditLogPanel.tsx's actorDisplay 3-way fallback
- * (display_name, then email, then "Deleted user"), plus a distinct "(No operator)" case: unlike
- * AdminAuditLog, a check-in can legitimately have no operator at all (the legacy/emergency
- * bearer path, ALLOW_CHECKIN_BEARER). */
+/** Decorative live signal in card headers. Active look (not a disabled button) with a
+ * breathing dot; Overview/Reports have no pause toggle. */
+function LiveStatusIndicator() {
+  return (
+    <span className="overview-live-indicator" role="status" aria-label="Live">
+      <span className="overview-live-indicator__dot" aria-hidden="true" />
+      Live
+    </span>
+  );
+}
+
 function operatorDisplayLabel(row: {
   operator_user_id: string | null;
   operator_display_name: string | null;
@@ -489,6 +497,20 @@ function AdmissionLog({
   const safePage = Math.min(page, totalPages);
   const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
   const activeFilterCount = (typeFilter !== "all" ? 1 : 0) + (operatorFilter !== "all" ? 1 : 0);
+  const admissionLogEmptyState =
+    activeFilterCount > 0 ? (
+      <EmptyState
+        icon={<i className="ti ti-filter-off" aria-hidden="true" />}
+        title="No matches"
+        description="Try different filters, or clear them to see everything."
+      />
+    ) : (
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="No admissions yet"
+        description="Admissions will appear here once attendees check in."
+      />
+    );
 
   return (
     <Card
@@ -545,152 +567,116 @@ function AdmissionLog({
         </p>
       )}
       {isDesktop ? (
-        <div className="reports-log-table-wrap">
-          <table className="reports-log-table">
-            <thead>
-              <tr>
-                <th>Attendee</th>
-                <th>Ticket type</th>
-                <th>Admitted at</th>
-                <th>Checked in by</th>
-                <th>Items</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.map((row) => (
-                <tr key={row.attendee_id}>
-                  <td>
-                    <Link
-                      to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
-                      className="reports-log-user reports-log-user-link"
-                    >
-                      <strong>{row.name}</strong>
-                      <span className="reports-mono reports-muted">{row.email}</span>
-                    </Link>
-                  </td>
-                  <td>
-                    {row.ticket_type === null ? (
-                      <Badge variant="neutral">(none)</Badge>
-                    ) : (
-                      <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
-                    )}
-                  </td>
-                  <td className="reports-mono">
-                    {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
-                  </td>
-                  <td>
-                    <div className="reports-log-user">
-                      <span>{operatorDisplayLabel(row)}</span>
-                      {row.device_id && (
-                        <span className="reports-mono reports-muted">{row.device_id}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "-"}</td>
-                </tr>
-              ))}
-              {paged.length === 0 && (
+        paged.length === 0 ? (
+          admissionLogEmptyState
+        ) : (
+          <div className="sessions-table-wrap attendees-list-table-wrap">
+            <table className="table">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="reports-log-empty">
-                    No admissions match the filter.
-                  </td>
+                  <th>Attendee</th>
+                  <th>Ticket type</th>
+                  <th>Admitted at</th>
+                  <th>Checked in by</th>
+                  <th>Items</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {paged.map((row) => (
+                  <tr key={row.attendee_id}>
+                    <td>
+                      <Link
+                        to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+                        className="reports-log-user reports-log-user-link"
+                      >
+                        <strong>{row.name}</strong>
+                        <span className="reports-mono reports-muted">{row.email}</span>
+                      </Link>
+                    </td>
+                    <td>
+                      {row.ticket_type === null ? (
+                        <Badge variant="neutral">(none)</Badge>
+                      ) : (
+                        <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                      )}
+                    </td>
+                    <td className="reports-mono">
+                      {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
+                    </td>
+                    <td>
+                      <div className="reports-log-user">
+                        <span>{operatorDisplayLabel(row)}</span>
+                        {row.device_id && (
+                          <span className="reports-mono reports-muted">{row.device_id}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="reports-muted">{row.items.length > 0 ? row.items.join(", ") : "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       ) : (
         <div className="reports-log-cards">
-          {paged.map((row) => (
-            <Link
-              key={row.attendee_id}
-              to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
-              className="reports-log-card"
-            >
-              <div className="reports-log-card__top">
-                <span className="reports-log-card__name">{row.name}</span>
-                <span className="reports-log-card__time reports-mono">
-                  {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
-                </span>
-              </div>
-              <div className="reports-log-card__meta">
-                {row.ticket_type === null ? (
-                  <Badge variant="neutral">(none)</Badge>
-                ) : (
-                  <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
-                )}
-                {/* Icon-prefixed, not bare text - two plain <span>s back to back (e.g.
-                    "scanner-01 Badge, Gift bag") read as one ambiguous string with nothing
-                    marking where one field ends and the next begins (PO review). Operator is
-                    always shown (the always-available, non-spoofable signal); device is a
-                    secondary annotation shown only when a session actually set one. */}
-                <span className="reports-log-card__meta-item">
-                  <i className="ti ti-user" aria-hidden="true" />
-                  {operatorDisplayLabel(row)}
-                </span>
-                {row.device_id && (
-                  <span className="reports-log-card__meta-item">
-                    <i className="ti ti-device-desktop" aria-hidden="true" />
-                    {row.device_id}
+          {paged.length === 0 ? (
+            admissionLogEmptyState
+          ) : (
+            paged.map((row) => (
+              <Link
+                key={row.attendee_id}
+                to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+                className="reports-log-card"
+              >
+                <div className="reports-log-card__top">
+                  <span className="reports-log-card__name">{row.name}</span>
+                  <span className="reports-log-card__time reports-mono">
+                    {formatAdmittedTime(row.admitted_at, timeZone, includeAdmissionDate)}
                   </span>
-                )}
-                <span className="reports-log-card__meta-item">
-                  <i className="ti ti-package" aria-hidden="true" />
-                  {row.items.length > 0 ? row.items.join(", ") : "-"}
-                </span>
-              </div>
-            </Link>
-          ))}
-          {paged.length === 0 && <p className="reports-log-empty">No admissions match the filter.</p>}
-        </div>
-      )}
-      <div className="reports-log-foot">
-        <span className="reports-muted">
-          Showing {paged.length} of {total}
-        </span>
-        <div className="reports-log-foot__controls">
-          <label className="reports-log-pagesize">
-            <span>Rows per page</span>
-            <SearchableSelect
-              id="reports-log-pagesize-select"
-              label="Rows per page"
-              placeholder="Rows per page"
-              searchPlaceholder="Search…"
-              emptyLabel="No options found"
-              showLabel={false}
-              value={String(pageSize)}
-              options={LOG_PAGE_SIZE_OPTIONS.map((size) => ({ id: String(size), label: String(size) }))}
-              onChange={(id) => {
-                setPageSize(Number(id));
-                setPage(1);
-              }}
-            />
-          </label>
-          {total > pageSize && (
-            <div className="reports-log-pager">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={safePage === 1}
-                onClick={() => setPage(() => Math.max(1, safePage - 1))}
-              >
-                Previous
-              </Button>
-              <span>
-                Page {safePage} of {totalPages}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={safePage >= totalPages}
-                onClick={() => setPage(() => Math.min(totalPages, safePage + 1))}
-              >
-                Next
-              </Button>
-            </div>
+                </div>
+                <div className="reports-log-card__meta">
+                  {row.ticket_type === null ? (
+                    <Badge variant="neutral">(none)</Badge>
+                  ) : (
+                    <TicketTypeBadge ticketType={row.ticket_type} catalog={ticketTypes} />
+                  )}
+                  <span className="reports-log-card__meta-item">
+                    <i className="ti ti-user" aria-hidden="true" />
+                    {operatorDisplayLabel(row)}
+                  </span>
+                  {row.device_id && (
+                    <span className="reports-log-card__meta-item">
+                      <i className="ti ti-device-desktop" aria-hidden="true" />
+                      {row.device_id}
+                    </span>
+                  )}
+                  <span className="reports-log-card__meta-item">
+                    <i className="ti ti-package" aria-hidden="true" />
+                    {row.items.length > 0 ? row.items.join(", ") : "-"}
+                  </span>
+                </div>
+              </Link>
+            ))
           )}
         </div>
-      </div>
+      )}
+      <PaginationFooter
+        idPrefix="reports-admission-log"
+        page={safePage}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        totalRows={total}
+        pageSizeOptions={LOG_PAGE_SIZE_OPTIONS}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+        // Step from safePage, not raw `page`: after a live/filter shrink clamps the view,
+        // paginationHandlers' Previous would burn down a stale page counter before moving.
+        onPrevious={() => setPage(Math.max(1, safePage - 1))}
+        onNext={() => setPage(Math.min(totalPages, safePage + 1))}
+      />
     </Card>
   );
 }
@@ -1036,11 +1022,7 @@ export function ReportsPage() {
           <div className="reports-panels">
             <Card
               title="Hourly admissions"
-              actions={
-                <Badge variant="ok" dot className="overview-live-badge">
-                  live
-                </Badge>
-              }
+              actions={<LiveStatusIndicator />}
             >
               <HourlyChart byHour={data.by_hour} peakHour={data.summary.peak_hour} />
             </Card>
