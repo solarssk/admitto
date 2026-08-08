@@ -759,6 +759,17 @@ describe("CommunicationPage templates", () => {
     ).toBeTruthy();
   });
 
+  it("toasts a generic message when preview fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockRejectedValue(new Error("network unavailable"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Preview failed/);
+    });
+  });
+
   it("toasts operator-safe template switch failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
@@ -1242,5 +1253,37 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByRole("button", { name: "New template" })).toHaveProperty("disabled", false);
       expect(screen.queryByText("Delete template?")).toBeNull();
     });
+  });
+
+  it("discards unsaved changes and lets the blocked navigation proceed", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    blockerState.state = "blocked";
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Ignored" } });
+
+    expect(await screen.findByText("Discard unsaved changes?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(blockerState.proceed).toHaveBeenCalled();
+  });
+
+  it("keeps editing and resets the blocked navigation", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    blockerState.state = "blocked";
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Ignored" } });
+
+    expect(await screen.findByText("Discard unsaved changes?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(blockerState.reset).toHaveBeenCalled();
   });
 });

@@ -19,7 +19,6 @@ import {
   Input,
   Notice,
   PageHeader,
-  Select,
   Tabs,
   Tooltip,
   useToast,
@@ -523,6 +522,13 @@ type TemplateSelectionLoad =
 /** Minimal client-side email shape check (submit is via button, not native form validation). */
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
+}
+
+/** Test-send always renders from the saved template, not the live draft - only report the
+ * previewed subject when it's known to match (no unsaved edits), rather than claiming an
+ * unsaved draft subject was what actually went out. */
+function testSendReportedSubject(isDirty: boolean, previewSubject: string | null): string | null {
+  return isDirty ? null : previewSubject;
 }
 
 /** The template id to send from the Send tab (`CommunicationSendPanel`) — the current explicit
@@ -2044,10 +2050,7 @@ export function CommunicationPage() {
           kind: "ok",
           message: "Test email sent.",
           template: templateLabel,
-          // Test-send always renders from the saved template, not the live draft - only report
-          // the previewed subject when it's known to match (no unsaved edits), rather than
-          // claiming an unsaved draft subject was what actually went out.
-          subject: isDirty ? null : previewSubject,
+          subject: testSendReportedSubject(isDirty, previewSubject),
         });
       } else {
         setTestStatus({ kind: "error", message: result.error ?? "Send failed." });

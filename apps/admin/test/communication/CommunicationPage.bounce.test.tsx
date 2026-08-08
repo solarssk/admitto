@@ -197,6 +197,19 @@ describe("CommunicationPage bounce banner", () => {
     expect(screen.queryByText(/emails bounced/i)).toBeNull();
   });
 
+  it("reports the API status when the overview fetch fails with an ApiError", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockRejectedValue(new ApiError(500, "internal_error"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+    });
+    expect(reportApiError).toHaveBeenCalledWith(500);
+  });
+
   it("clears stale bounce banner when navigating to another event", async () => {
     fetchEventTemplate.mockResolvedValue(templatePayload);
     let resolveSecondOverview: (value: unknown) => void;

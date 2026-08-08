@@ -206,11 +206,9 @@ export function CommunicationSendPanel({
   // non-destructive and re-enabling the cards a beat later just for that read as flicker.
   const pickerLocked = phase !== "form";
 
+  // Both runDryRun and runSend are only ever invoked from a button gated by
+  // disabled={busy || !filterReady} below - filterReady is guaranteed true here.
   const runDryRun = async () => {
-    if (!filterReady) {
-      setError("Choose a ticket type.");
-      return;
-    }
     const runId = runIdRef.current;
     setBusy(true);
     setError(null);
@@ -234,10 +232,6 @@ export function CommunicationSendPanel({
   };
 
   const runSend = async () => {
-    if (!filterReady) {
-      setError("Choose a ticket type.");
-      return;
-    }
     const runId = runIdRef.current;
     setBusy(true);
     setError(null);
