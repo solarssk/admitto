@@ -48,6 +48,11 @@ function renderModal(field: EventCustomFieldDto | null) {
 describe("EventCustomFieldModal — create", () => {
   it("shows a live ID preview derived from the label", () => {
     renderModal(null);
+    expect(
+      screen.getByText(
+        "Collect extra attendee details on import and show them to operators during check-in.",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText("needs_parking")).toBeNull();
     fireEvent.change(screen.getByLabelText("Display label"), {
       target: { value: "Needs Parking" },
@@ -55,23 +60,19 @@ describe("EventCustomFieldModal — create", () => {
     expect(screen.getByText("needs_parking")).toBeTruthy();
   });
 
-  it("blocks save when the display label is empty", async () => {
+  it("keeps Create field disabled when the display label is empty", () => {
     renderModal(null);
-    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
-    await waitFor(() => {
-      expect(screen.getByText("Enter a display label using letters or numbers.")).toBeTruthy();
-    });
+    expect(screen.getByRole("button", { name: "Create field" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText("Enter a display label using letters or numbers.")).toBeNull();
     expect(createEventCustomField).not.toHaveBeenCalled();
   });
 
-  it("blocks save for a select field with no options", async () => {
+  it("keeps Create field disabled for a select field with no options", () => {
     renderModal(null);
     fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Size" } });
     fireEvent.click(screen.getByRole("button", { name: "Select" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create field" }));
-    await waitFor(() => {
-      expect(screen.getByText("Select fields need at least one option.")).toBeTruthy();
-    });
+    expect(screen.getByRole("button", { name: "Create field" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText("Select fields need at least one option.")).toBeNull();
     expect(createEventCustomField).not.toHaveBeenCalled();
   });
 
@@ -160,6 +161,7 @@ describe("EventCustomFieldModal — create", () => {
 describe("EventCustomFieldModal — edit", () => {
   it("pre-fills the form and keeps the field key fixed", () => {
     renderModal(dietaryField);
+    expect(screen.getByText("Update how this field appears to operators.")).toBeTruthy();
     expect(screen.getByLabelText("Display label")).toHaveProperty("value", "Dietary requirements");
     expect(screen.getByText("dietary")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Something else" } });

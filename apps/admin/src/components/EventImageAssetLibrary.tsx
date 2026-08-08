@@ -359,8 +359,8 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
             </span>
             <span className="image-asset-library__dropzone-hint">PNG, JPG, WebP · max 2 MB</span>
           </button>
-          <div className="image-asset-library__add-fields">
-            <div className="image-asset-library__token-field">
+          <div className="mail-test-send__row">
+            <div className="mail-test-send__controls">
               <Input
                 label="Name"
                 value={token}
@@ -369,22 +369,25 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                 onBlur={() => setTokenTouched(true)}
                 placeholder="sponsor_logo"
                 error={tokenErrorText}
-                hint={
-                  tokenErrorText
-                    ? undefined
-                    : "Lowercase letters, numbers, and underscores only. Used as {{name}} in email templates."
-                }
               />
-            </div>
-            <div className="image-asset-library__add-btn-wrap">
-              <span className="at-label image-asset-library__add-btn-spacer" aria-hidden="true">
-                &nbsp;
-              </span>
-              <Button type="button" variant="secondary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
-                {uploading ? "Adding…" : "Add asset"}
-              </Button>
+              <div className="mail-test-send__send-control">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!canSubmit}
+                  icon={<i className="ti ti-plus" aria-hidden="true" />}
+                  onClick={() => void handleSubmit()}
+                >
+                  {uploading ? "Adding…" : "Add asset"}
+                </Button>
+              </div>
             </div>
           </div>
+          {!tokenErrorText && (
+            <p className="at-hint image-asset-library__name-hint">
+              Lowercase letters, numbers, and underscores only. Used as {"{{name}}"} in email templates.
+            </p>
+          )}
           {formError ? (
             <p className="at-hint at-hint--error" role="alert">
               {formError}

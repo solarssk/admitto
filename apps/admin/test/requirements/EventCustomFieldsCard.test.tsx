@@ -85,10 +85,15 @@ describe("EventCustomFieldsCard", () => {
     expect(within(shirtRow!).getByText("Yes")).toBeTruthy();
   });
 
-  it("opens the add-field modal", () => {
+  it("shows the add-field modal with a header subtitle", () => {
     renderCard([]);
     fireEvent.click(screen.getByRole("button", { name: "Add field" }));
     expect(screen.getByRole("heading", { name: "Add custom field" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Collect extra attendee details on import and show them to operators during check-in.",
+      ),
+    ).toBeTruthy();
   });
 
   it("opens the edit modal pre-filled for an existing field", () => {

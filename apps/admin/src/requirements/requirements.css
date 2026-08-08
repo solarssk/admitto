@@ -380,14 +380,30 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: var(--space-4);
+  /* No divider under the subtitle — same as add-attendee / FontFamily modals. */
+  padding-bottom: 0;
 }
 
 .event-item-modal__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: var(--fs-h3);
   font-weight: 600;
+}
+
+.event-item-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
 }
 
 .event-item-modal__subtitle {

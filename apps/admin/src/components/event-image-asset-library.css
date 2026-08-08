@@ -69,53 +69,16 @@
   display: none;
 }
 
-.image-asset-library__add-fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-3);
-  margin-top: 0;
+/* Hint sits under the Name+Add row so the button can align with the input (mail-test-send
+ * uses flex-end; an Input hint inside .at-field would pull the button down to the hint). */
+.image-asset-library__name-hint {
+  margin: var(--space-1) 0 0;
+  max-width: calc((100% - var(--space-4)) / 2);
 }
 
-.image-asset-library__token-field {
-  flex: 1;
-  min-width: 220px;
-}
-
-/* Mirrors .at-field's label + control stack so the button lines up with the
-   Name input itself, not with the bottom of its hint/error line below. */
-.image-asset-library__add-btn-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.image-asset-library__add-btn-spacer {
-  visibility: hidden;
-}
-
-/* Below 480px, 220px min-width plus the "Add asset" button often squeezes the Name field down
-   to little more than that floor - not the "fills the field like everywhere else" width it
-   should have (PO review). Stack instead: Name field gets the full card width, button keeps its
-   natural size below it, right-aligned like the danger zone's own mobile buttons. */
-@media (max-width: 480px) {
-  .image-asset-library__add-fields {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .image-asset-library__token-field {
-    min-width: 0;
-  }
-
-  .image-asset-library__add-btn-wrap {
-    align-self: flex-end;
-  }
-
-  /* Only needed to line up with the Name input in the side-by-side layout - stacked below it,
-     it would just add dead space above the button. */
-  .image-asset-library__add-btn-spacer {
-    display: none;
+@media (max-width: 720px) {
+  .image-asset-library__name-hint {
+    max-width: none;
   }
 }
 

@@ -3626,7 +3626,7 @@
 
 /* Font family upload modal (FontFamilyModal) */
 .fontfam-modal-body {
-  padding: 4px 20px 4px;
+  padding: 0;
 }
 
 .fontfam-dropzone {
@@ -5766,19 +5766,36 @@ output.mail-field-hint {
 
 .audit-log-card__top {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--space-2);
 }
 
-.audit-log-card__time {
-  /* Was flex: none - fine while the secondary line was just a short city name, but the
-     actor-local line now also carries a tz abbreviation and country ("GMT+2 for actor
-     (Warsaw, Poland)"), long enough that a fixed-width sibling next to the action badge
-     pushed the card wider than the viewport instead of wrapping. */
-  flex: 1 1 auto;
+.audit-log-card__action {
+  flex: none;
   min-width: 0;
-  text-align: right;
+  max-width: 100%;
+  width: 100%;
+}
+
+.audit-log-card__action .at-badge {
+  white-space: normal;
+  text-align: left;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.35;
+  padding-block: 4px;
+  box-sizing: border-box;
+  vertical-align: top;
+}
+
+.audit-log-card__time {
+  /* Stacked under the action badge on cards so long labels never squeeze beside UTC /
+     user-local time (and the ti-user icon in UserLocalTimeLine). */
+  flex: none;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
 }
 
 .audit-log-card__meta {
@@ -6791,16 +6808,43 @@ output.mail-field-hint {
 }
 
 /* Recent activity */
-/* Live indicator now renders as <Badge variant="ok" dot> (the app's existing dot-badge pattern,
- * e.g. CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled" pills) — this class only adds
- * the pulse that's specific to a live-connection signal, on top of Badge's own pill styling. */
+/* Decorative live indicator — solid success chip with a breathing white dot (not a disabled button). */
+.overview-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h-sm);
+  padding: 0 10px;
+  border-radius: var(--radius);
+  background: var(--status-ok);
+  color: #fff;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.overview-live-indicator__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  flex: none;
+}
+
 @keyframes overview-live-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .overview-live-badge .at-badge__dot {
+  .overview-live-indicator__dot {
     animation: overview-live-pulse 1.6s ease-in-out infinite;
   }
 }
@@ -7264,9 +7308,32 @@ output.mail-field-hint {
 }
 
 .overview-modal__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: var(--fs-h3);
   font-weight: 600;
+}
+
+.overview-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.overview-modal__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 
 .overview-modal__body {
