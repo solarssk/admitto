@@ -41,6 +41,17 @@ export function AttendeePicker({
     };
   }, []);
 
+  // Event switch: drop in-flight results and the typed query so a slow prior search cannot paint
+  // another event's attendees under the new picker (or leave stale chips via parent selection).
+  useEffect(() => {
+    if (searchTimerRef.current != null) window.clearTimeout(searchTimerRef.current);
+    seqRef.current += 1;
+    setQuery("");
+    setResults([]);
+    setVisible(false);
+    setSearching(false);
+  }, [eventId]);
+
   const selectedIds = new Set(selected.map((a) => a.id));
 
   const runSearch = async (q: string) => {
@@ -64,10 +75,13 @@ export function AttendeePicker({
     setQuery(text);
     if (searchTimerRef.current != null) window.clearTimeout(searchTimerRef.current);
     const trimmed = text.trim();
+    // Invalidate any in-flight search immediately - including while the debounce timer is still
+    // waiting - so a slow prior response cannot land under the newly typed query.
+    seqRef.current += 1;
+    setResults([]);
+    setVisible(false);
     if (trimmed.length < MIN_QUERY_LENGTH) {
-      seqRef.current += 1;
-      setResults([]);
-      setVisible(false);
+      setSearching(false);
       return;
     }
     searchTimerRef.current = window.setTimeout(() => void runSearch(trimmed), SEARCH_DEBOUNCE_MS);

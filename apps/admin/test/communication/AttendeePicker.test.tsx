@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AttendeePicker } from "../../src/communication/AttendeePicker.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
@@ -121,5 +121,60 @@ describe("AttendeePicker", () => {
     expect((screen.getByRole("button", { name: "Remove Alex Example" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it("drops a slow prior search when the query changes before the debounce fires", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    fetchEventAttendees.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    fetchEventAttendees.mockResolvedValueOnce({
+      items: [attendee({ id: "att-2", name: "Sam Sample", email: "sam@example.com" })],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "al" } });
+    await waitFor(() => expect(fetchEventAttendees).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "sa" } });
+    await waitFor(() => expect(fetchEventAttendees).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveFirst?.({
+        items: [attendee({ id: "att-1", name: "Alex Example", email: "alex@example.com" })],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("button", { name: /^Alex Example/ })).toBeNull();
+    expect(await screen.findByRole("button", { name: /^Sam Sample/ })).toBeTruthy();
+  });
+
+  it("clears query and results when eventId changes", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [attendee()],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    const { rerender } = render(
+      <AttendeePicker eventId="evt-a" selected={[]} onChange={() => {}} />,
+    );
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+    expect(await screen.findByRole("button", { name: /^Alex Example/ })).toBeTruthy();
+
+    rerender(<AttendeePicker eventId="evt-b" selected={[]} onChange={() => {}} />);
+
+    expect((screen.getByLabelText("Search attendees") as HTMLInputElement).value).toBe("");
+    expect(screen.queryByRole("button", { name: /^Alex Example/ })).toBeNull();
   });
 });

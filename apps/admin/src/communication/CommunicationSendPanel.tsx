@@ -126,9 +126,12 @@ export function CommunicationSendPanel({
   }, []);
 
   // Clears count/result/batch UI without touching the admin's chosen filter strategy (all /
-  // ticket type / RSVP). Ticket type *value* and options are cleared by the fetch effect below.
+  // ticket type / RSVP / specific attendees). Ticket type *value* and options are cleared by the
+  // fetch effect below. Selected attendee chips *are* cleared on event switch - those IDs belong
+  // to the previous event and must not be submitted against the new one.
   const resetSendOutcome = useCallback(() => {
     runIdRef.current += 1;
+    setSelectedAttendees([]);
     setRecipientCount(null);
     setPhase("form");
     setBusy(false);

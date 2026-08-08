@@ -896,4 +896,31 @@ describe("CommunicationSendPanel", () => {
       true,
     );
   });
+
+  it("clears selected attendees when the event changes", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [{ id: "att-1", name: "Alex Example", email: "alex@example.com" }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    const { rerender } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-a" templateId="tpl-1" />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "Specific attendees" }));
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Alex Example/ }));
+    expect(screen.getByText("Alex Example")).toBeTruthy();
+
+    rerender(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-b" templateId="tpl-1" />,
+    );
+
+    expect(screen.queryByText("Alex Example")).toBeNull();
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
 });
