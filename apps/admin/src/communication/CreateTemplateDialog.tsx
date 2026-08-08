@@ -64,7 +64,7 @@ export function CreateTemplateDialog({
         </h2>
         <p className="add-attendee-modal__hint">
           Creates a new, blank template for this event. Give it a short label to find it in the
-          picker later — you'll write the subject and body next.
+          picker later. You'll write the subject and body next.
         </p>
         <Input
           label="Template label"

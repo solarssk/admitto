@@ -780,7 +780,7 @@ function TemplatePickerBar({
           activeMeta && (
             <Badge variant="neutral">
               <i className="ti ti-clock" aria-hidden="true" /> Last edited{" "}
-              {formatEventDate(activeMeta.updated_at, "UTC")}
+              {formatEventDate(activeMeta.updated_at, event.timezone)}
             </Badge>
           )
         )}
@@ -914,7 +914,7 @@ function PlaceholderChip({
         {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
         {`{{${name}}}`}
         {isQr && (
-          <span className="communication-chip-preview" role="presentation">
+          <span className="communication-chip-preview" aria-hidden="true">
             <img src={SAMPLE_QR_PLACEHOLDER_DATA_URI} alt="" width={100} height={100} />
           </span>
         )}
@@ -982,7 +982,7 @@ function TemplateEditorCard({
       }
     >
       <p className="communication-format-hint muted">
-        Changing format does not convert the template body — switching a non-empty template asks
+        Changing format does not convert the template body. Switching a non-empty template asks
         for confirmation first.
       </p>
 
@@ -1327,6 +1327,8 @@ function TestSendResultPreview({
   );
 }
 
+const TAB_IDS = ["send", "templates", "log"] as const;
+
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
   const { eventId } = useParams();
@@ -1339,7 +1341,7 @@ export function CommunicationPage() {
   // of always resetting to Send.
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const tab = tabParam === "log" ? "log" : tabParam === "templates" ? "templates" : "send";
+  const tab = TAB_IDS.find((id) => id === tabParam) ?? "send";
   const setTab = useCallback(
     (next: string) => {
       setSearchParams(
@@ -1407,6 +1409,7 @@ export function CommunicationPage() {
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
+  const previewSeqRef = useRef(0);
   const createTemplateSeqRef = useRef(0);
   const deleteTemplateSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
@@ -1924,6 +1927,7 @@ export function CommunicationPage() {
 
   const handlePreview = async () => {
     if (!eventId || editorSnapshotMissing) return;
+    const seq = ++previewSeqRef.current;
     setPreviewLoading(true);
     setValidationErrors([]);
     try {
@@ -1931,9 +1935,11 @@ export function CommunicationPage() {
         activeKey === "virtual-ticket"
           ? await previewEventTemplate(eventId, templatePayload())
           : await previewEventTemplateById(eventId, activeKey, templatePayload());
+      if (seq !== previewSeqRef.current) return;
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
     } catch (err) {
+      if (seq !== previewSeqRef.current) return;
       setPreviewSubject(null);
       setPreviewHtml(null);
       if (err instanceof TemplateValidationError) {
@@ -1945,7 +1951,7 @@ export function CommunicationPage() {
         addToast("Preview failed.", "error");
       }
     } finally {
-      setPreviewLoading(false);
+      if (seq === previewSeqRef.current) setPreviewLoading(false);
     }
   };
 
@@ -2038,7 +2044,10 @@ export function CommunicationPage() {
           kind: "ok",
           message: "Test email sent.",
           template: templateLabel,
-          subject: previewSubject,
+          // Test-send always renders from the saved template, not the live draft - only report
+          // the previewed subject when it's known to match (no unsaved edits), rather than
+          // claiming an unsaved draft subject was what actually went out.
+          subject: isDirty ? null : previewSubject,
         });
       } else {
         setTestStatus({ kind: "error", message: result.error ?? "Send failed." });

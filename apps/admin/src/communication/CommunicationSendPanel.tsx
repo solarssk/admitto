@@ -173,6 +173,7 @@ export function CommunicationSendPanel({
       } catch (err) {
         if (cancelled || ac.signal.aborted) return;
         setError(operatorApiErrorMessage(err, "Failed to load send status."));
+        setResultMessage(null);
         setPhase("done");
       }
     };

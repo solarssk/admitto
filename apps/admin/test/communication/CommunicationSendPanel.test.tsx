@@ -20,6 +20,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 fetchTicketTypes.mockResolvedValue([]);
 
 const activeEvent = { archived_at: null };
+const archivedEvent = { archived_at: "2026-01-01T00:00:00.000Z" };
 
 afterEach(() => {
   cleanup();
@@ -65,6 +66,15 @@ describe("CommunicationSendPanel", () => {
     const countBtn = screen.getByRole("button", { name: "Count recipients" });
     expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
     expect((countBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("disables Send but not Count recipients for an archived event", () => {
+    render(<CommunicationSendPanel event={archivedEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 
   it("ignores late runSend results after the selected template changes", async () => {
