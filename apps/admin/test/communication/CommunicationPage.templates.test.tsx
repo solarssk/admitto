@@ -553,6 +553,29 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("shows each template's own icon in the picker, falling back to the default when unset", async () => {
+    fetchEventTemplates.mockResolvedValue([{ ...reminderRow, icon: "bell" }, announcementRow]);
+
+    renderPage();
+
+    const trigger = await screen.findByRole("button", { name: "Template, Ticket email" });
+    expect(trigger.querySelector(".ti-ticket")).toBeTruthy();
+
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Template, Reminder" }).querySelector(".ti-bell"),
+      ).toBeTruthy();
+    });
+
+    await selectTemplate("Announcement");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Template, Announcement" }).querySelector(".ti-mail"),
+      ).toBeTruthy();
+    });
+  });
+
   it("does not refetch legacy template when switching between persisted templates", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 

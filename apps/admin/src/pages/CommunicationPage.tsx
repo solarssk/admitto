@@ -62,6 +62,7 @@ import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { EditTemplateModal } from "../communication/EditTemplateModal.js";
+import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
@@ -562,8 +563,9 @@ function resolveSendTemplateId(
  * same way, icon included. The virtual "Ticket email" entry only appears when there's no
  * explicit "ticket" override yet (same condition TemplatePickerBar's own count/badge logic
  * uses) - it keeps the ticket icon (it IS the built-in ticket template); every real saved
- * template gets a different icon (mail) so the two read as visually distinct kinds of thing
- * without needing a text label to say so. Real per-template icons are tracked separately. */
+ * template uses its own chosen icon (set via the edit modal), falling back to the same default
+ * shown there when unset, so the two read as visually distinct kinds of thing by default without
+ * needing a text label to say so. */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
 ): Array<{ id: string; label: string; icon: string }> {
@@ -571,7 +573,7 @@ function templatePickerOptions(
     ...(!templates.some((t) => t.name === "ticket")
       ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
       : []),
-    ...templates.map((t) => ({ id: t.id, label: t.label, icon: "mail" })),
+    ...templates.map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
   ];
 }
 
