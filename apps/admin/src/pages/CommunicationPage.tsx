@@ -851,11 +851,20 @@ function PlaceholderChips({
   imagePlaceholders,
   requiredPlaceholders,
   onInsertPlaceholder,
+  eventId,
+  logoUrl,
+  headerImageUrl,
 }: Readonly<{
   allowedPlaceholders: string[];
   imagePlaceholders: string[];
   requiredPlaceholders: string[];
   onInsertPlaceholder: (name: string) => void;
+  eventId: string;
+  /** Resolved real branding (event -> organization -> "") - shown as-is when configured; no
+   * preview at all (falls back to the generic photo icon) when neither scope has one set, since
+   * there's no further built-in default to show. */
+  logoUrl: string;
+  headerImageUrl: string;
 }>) {
   const allowedSet = new Set(allowedPlaceholders);
   const grouped = new Set<string>();
@@ -866,6 +875,17 @@ function PlaceholderChips({
   groups.forEach((g) => g.names.forEach((n) => grouped.add(n)));
   const custom = allowedPlaceholders.filter((n) => !grouped.has(n));
   if (custom.length > 0) groups.push({ label: "Images", names: custom });
+
+  // The real per-event/org values a send would actually use - not samples. qr_image_url has no
+  // real-until-sent equivalent (it's generated per attendee), so it keeps an illustrative sample
+  // instead (see CHIP_QR_SAMPLE_DATA_URI). event_map_url always points at the real static-map
+  // route; PlaceholderChip falls back to the generic icon itself if that 404s (no location set).
+  const samples: Record<string, string> = {
+    qr_image_url: CHIP_QR_SAMPLE_DATA_URI,
+    event_map_url: `/m/${encodeURIComponent(eventId)}.png`,
+  };
+  if (logoUrl) samples.logo_url = logoUrl;
+  if (headerImageUrl) samples.header_image_url = headerImageUrl;
 
   return (
     <>
@@ -880,6 +900,7 @@ function PlaceholderChips({
                 isImage={imagePlaceholders.includes(p)}
                 isRequired={requiredPlaceholders.includes(p)}
                 onInsert={onInsertPlaceholder}
+                sample={samples[p]}
               />
             ))}
           </div>
@@ -891,26 +912,32 @@ function PlaceholderChips({
 
 /** One placeholder chip - required ones are outlined, wallet-add links get a ticket icon so
  * they read as "important" the same way an image chip does instead of blending into a bare-
- * token wall of text. A chip with a sample image (see IMAGE_PLACEHOLDER_SAMPLES) shows that
- * image instead of a text tooltip - a picture of what the placeholder looks like is more useful
- * than a description once there are several image placeholders to tell apart, and required-ness
- * still reads from the chip's own outline styling either way. It's always visible as a small
+ * token wall of text. A chip with a `sample` image (see PlaceholderChips - the real configured
+ * logo/header, the real per-event map, or an illustrative QR graphic) shows that image instead
+ * of a text tooltip - a picture of what the placeholder looks like is more useful than a
+ * description once there are several image placeholders to tell apart, and required-ness still
+ * reads from the chip's own outline styling either way. It's always visible as a small
  * thumbnail (not hover-only - a hidden-until-hover preview is easy to miss entirely), plus a
- * larger version on hover/focus for anyone who wants a closer look. Chips without a sample
- * (plain text/link placeholders, and per-event custom image tokens with no fixed sample) keep
- * the app's own Tooltip (@admitto/ui), not a native browser title tooltip. */
+ * larger version on hover/focus for anyone who wants a closer look. A sample that fails to load
+ * (event_map_url 404s when the event has no location set) falls back to the plain icon+tooltip
+ * presentation, same as a chip with no sample at all. Chips without a (working) sample - plain
+ * text/link placeholders, and per-event custom image tokens with no fixed sample - keep the
+ * app's own Tooltip (@admitto/ui), not a native browser title tooltip. */
 function PlaceholderChip({
   name,
   isImage,
   isRequired,
   onInsert,
+  sample,
 }: Readonly<{
   name: string;
   isImage: boolean;
   isRequired: boolean;
   onInsert: (name: string) => void;
+  sample?: string;
 }>) {
-  const sample = IMAGE_PLACEHOLDER_SAMPLES[name];
+  const [sampleFailed, setSampleFailed] = useState(false);
+  const showSample = !!sample && !sampleFailed;
   const titleParts = [
     isRequired && "Required placeholder",
     placeholderDescription(name, isImage),
@@ -923,21 +950,28 @@ function PlaceholderChip({
         .join(" ")}
       onClick={() => onInsert(name)}
     >
-      {sample ? (
-        <img className="communication-chip-thumb" src={sample} alt="" width={16} height={16} />
+      {showSample ? (
+        <img
+          className="communication-chip-thumb"
+          src={sample}
+          alt=""
+          width={16}
+          height={16}
+          onError={() => setSampleFailed(true)}
+        />
       ) : (
         isImage && <i className="ti ti-photo" aria-hidden="true" />
       )}
       {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
       {`{{${name}}}`}
-      {sample && (
+      {showSample && (
         <span className="communication-chip-preview" aria-hidden="true">
           <img src={sample} alt="" width={100} height={100} />
         </span>
       )}
     </button>
   );
-  return sample ? chip : <Tooltip content={titleParts.join(" · ")}>{chip}</Tooltip>;
+  return showSample ? chip : <Tooltip content={titleParts.join(" · ")}>{chip}</Tooltip>;
 }
 
 function TemplateEditorCard({
@@ -947,6 +981,8 @@ function TemplateEditorCard({
   imagePlaceholders,
   requiredPlaceholders,
   onInsertPlaceholder,
+  brandingLogoUrl,
+  brandingHeaderUrl,
   subjectRef,
   subject,
   setSubject,
@@ -970,6 +1006,8 @@ function TemplateEditorCard({
   imagePlaceholders: string[];
   requiredPlaceholders: string[];
   onInsertPlaceholder: (name: string) => void;
+  brandingLogoUrl: string;
+  brandingHeaderUrl: string;
   subjectRef: RefObject<HTMLInputElement | null>;
   subject: string;
   setSubject: Dispatch<SetStateAction<string>>;
@@ -1010,6 +1048,9 @@ function TemplateEditorCard({
         imagePlaceholders={imagePlaceholders}
         requiredPlaceholders={requiredPlaceholders}
         onInsertPlaceholder={onInsertPlaceholder}
+        eventId={event.id}
+        logoUrl={brandingLogoUrl}
+        headerImageUrl={brandingHeaderUrl}
       />
 
       <Tooltip
@@ -1140,52 +1181,15 @@ function sampleQrDataUri(): string {
   );
 }
 
-/** Light background, a couple of crossing roads, and a classic map-pin marker. */
-function sampleMapDataUri(): string {
-  return svgDataUri(
-    '<rect width="200" height="200" fill="#e8ede7"/>' +
-      '<path d="M0 60 L200 40" stroke="#c9d3c8" stroke-width="10" fill="none"/>' +
-      '<path d="M0 140 L200 155" stroke="#c9d3c8" stroke-width="10" fill="none"/>' +
-      '<path d="M70 0 L60 200" stroke="#c9d3c8" stroke-width="8" fill="none"/>' +
-      '<path d="M150 0 L165 200" stroke="#c9d3c8" stroke-width="8" fill="none"/>' +
-      '<path d="M100 60 C80 60 70 80 70 95 C70 115 100 145 100 145 C100 145 130 115 130 95 C130 80 120 60 100 60 Z" fill="#e03131"/>' +
-      '<circle cx="100" cy="93" r="12" fill="#fff"/>',
-  );
-}
-
-/** A generic circular emblem, standing in for "some organisation's logo". */
-function sampleLogoDataUri(): string {
-  return svgDataUri(
-    '<rect width="200" height="200" fill="#f1f3f5"/>' +
-      '<circle cx="100" cy="100" r="55" fill="#495057"/>' +
-      '<circle cx="100" cy="100" r="55" fill="none" stroke="#ced4da" stroke-width="2"/>' +
-      '<path d="M100 65 L130 135 L70 135 Z" fill="#fff"/>',
-  );
-}
-
-/** The classic "photo" placeholder motif (frame + sun + mountains) - reads as "an image goes
- * here" the same way it does on the wider web, unlike a text-labeled box. */
-function sampleHeaderDataUri(): string {
-  return svgDataUri(
-    '<rect width="200" height="200" fill="#e7f0fb"/>' +
-      '<rect x="20" y="70" width="160" height="90" fill="#fff" stroke="#ced4da" stroke-width="2"/>' +
-      '<circle cx="150" cy="95" r="12" fill="#ffd43b"/>' +
-      '<path d="M20 160 L70 105 L100 135 L130 100 L180 160 Z" fill="#74c0fc"/>',
-  );
-}
-
-/** Sample images for the placeholder-chip hover preview (see IMAGE_PLACEHOLDER_SAMPLES below) -
- * these look like their real-world counterpart, since their only job is helping an admin
- * recognize which chip is which in the picker. Deliberately NOT reused for the rendered email
- * preview below (see SAMPLE_QR_PLACEHOLDER_DATA_URI) - a realistic-looking-but-fake QR code
- * substituted into "what the recipient will actually see" reads as a real, scannable code with
- * no indication it isn't; the honest, clearly-labeled placeholder there is the correct one. */
-const IMAGE_PLACEHOLDER_SAMPLES: Record<string, string> = {
-  qr_image_url: sampleQrDataUri(),
-  logo_url: sampleLogoDataUri(),
-  header_image_url: sampleHeaderDataUri(),
-  event_map_url: sampleMapDataUri(),
-};
+/** Placeholder-chip hover preview for qr_image_url (see PlaceholderChips) - QR has no real
+ * until-sent equivalent (it's generated per attendee), so this stays an illustrative sample
+ * that looks like a QR code, for recognition in the picker. logo_url/header_image_url/
+ * event_map_url use the real configured/resolved values instead (built in PlaceholderChips) -
+ * deliberately NOT reused for the rendered *email* preview below (see
+ * SAMPLE_QR_PLACEHOLDER_DATA_URI) - a realistic-looking-but-fake QR code substituted into "what
+ * the recipient will actually see" reads as a real, scannable code with no indication it isn't;
+ * the honest, clearly-labeled placeholder there is the correct one. */
+const CHIP_QR_SAMPLE_DATA_URI = sampleQrDataUri();
 
 /** Swapped into the rendered *email* preview (not the chip picker above) in place of the
  * backend's fixed sample QR URL, which nothing actually hosts - stays an honest, clearly-labeled
@@ -1474,6 +1478,11 @@ export function CommunicationPage() {
   const [allowedPlaceholders, setAllowedPlaceholders] = useState<string[]>([]);
   const [requiredPlaceholders, setRequiredPlaceholders] = useState<string[]>([]);
   const [imagePlaceholders, setImagePlaceholders] = useState<string[]>([]);
+  /** Resolved event/org branding (event -> organization -> ""), for the placeholder-chip hover
+   * preview - fetched once on load, same for every template since it's a property of the event,
+   * not of whichever template is currently open. */
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState("");
+  const [brandingHeaderUrl, setBrandingHeaderUrl] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [format, setFormat] = useState<TemplateFormat>("mjml");
@@ -1887,6 +1896,8 @@ export function CommunicationPage() {
         setAllowedPlaceholders(data.allowed_placeholders.filter((p) => !HIDDEN_PLACEHOLDERS.has(p)));
         setRequiredPlaceholders(data.required_url_placeholders);
         setImagePlaceholders(data.image_placeholders ?? []);
+        setBrandingLogoUrl(data.logo_url);
+        setBrandingHeaderUrl(data.header_image_url);
         const ticket = items.find((t) => t.name === "ticket");
         if (ticket) {
           setActiveKey(ticket.id);
@@ -2314,6 +2325,8 @@ export function CommunicationPage() {
               imagePlaceholders={imagePlaceholders}
               requiredPlaceholders={requiredPlaceholders}
               onInsertPlaceholder={insertPlaceholder}
+              brandingLogoUrl={brandingLogoUrl}
+              brandingHeaderUrl={brandingHeaderUrl}
               subjectRef={subjectRef}
               subject={subject}
               setSubject={setSubject}
