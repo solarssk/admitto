@@ -880,9 +880,13 @@ function PlaceholderChips({
   // real-until-sent equivalent (it's generated per attendee), so it keeps an illustrative sample
   // instead (see CHIP_QR_SAMPLE_DATA_URI). event_map_url always points at the real static-map
   // route; PlaceholderChip falls back to the generic icon itself if that 404s (no location set).
+  // apple_wallet_url/google_wallet_url use the same real badge assets the ticket page itself
+  // renders (served at these exact paths - see apps/web/src/wallet-badges.ts), not samples.
   const samples: Record<string, string> = {
     qr_image_url: CHIP_QR_SAMPLE_DATA_URI,
     event_map_url: `/m/${encodeURIComponent(eventId)}.png`,
+    apple_wallet_url: "/assets/apple-wallet-badge.svg",
+    google_wallet_url: "/assets/google-wallet-badge.svg",
   };
   if (logoUrl) samples.logo_url = logoUrl;
   if (headerImageUrl) samples.header_image_url = headerImageUrl;
@@ -1084,6 +1088,21 @@ function TemplateEditorCard({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onFocus={() => setActiveField("body")}
+              onKeyDown={(e) => {
+                // Tab's default action moves focus to the next field, same as any other input -
+                // fine for a form, wrong for a code editor, where the operator expects Tab to
+                // indent instead of leaving the textarea entirely.
+                if (e.key !== "Tab") return;
+                e.preventDefault();
+                const el = e.currentTarget;
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                const next = `${body.slice(0, start)}  ${body.slice(end)}`;
+                setBody(next);
+                requestAnimationFrame(() => {
+                  el.selectionStart = el.selectionEnd = start + 2;
+                });
+              }}
               disabled={editorSnapshotMissing}
             />
           </div>

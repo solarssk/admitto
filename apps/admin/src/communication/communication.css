@@ -250,6 +250,10 @@
   width: 16px;
   height: 16px;
   border-radius: 2px;
+  /* Real images (the event's own map/logo) rarely arrive pre-cropped square like the QR/badge
+     SVGs did - contain (not cover) so a wide map or wallet badge letterboxes instead of having
+     its edges cropped off or getting stretched into the wrong aspect ratio. */
+  object-fit: contain;
 }
 
 /* Larger image preview shown above the chip on hover/focus - CSS-only reveal (no JS state).
@@ -277,6 +281,7 @@
   display: block;
   width: 100px;
   height: 100px;
+  object-fit: contain;
 }
 
 .communication-chip:hover .communication-chip-preview,
@@ -310,6 +315,28 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-sm);
   resize: vertical;
+  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll (staff.css /
+     attendees.css) - the body is long enough to scroll on most real templates, and the native
+     scrollbar reads as inconsistent with the rest of the app next to it. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.communication-textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.communication-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.communication-textarea::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.communication-textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .communication-errors {
