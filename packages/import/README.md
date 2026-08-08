@@ -29,16 +29,13 @@ npx tsx src/cli.ts --event <eventId> --file attendees.csv --commit --overwrite
 | Column | Required | Notes |
 |--------|----------|-------|
 | `email` | Yes | Validated; used as match key (Mode A) |
-| `first_name` | Yes* | |
-| `last_name` | Yes* | |
-| `name` | Yes* | Alternative to `first_name`+`last_name` |
+| `first_name` | Yes | |
+| `last_name` | Yes | |
 | `external_uuid` | No | Match key for Mode B; never overwritten |
 | `qr_payload` | No | Agency QR payload; never overwritten |
 | `ticket_type` | No | |
 | `company` | No | |
 | `department` | No | |
-
-\* Provide either `first_name`+`last_name` or `name`.
 
 Headers are case-insensitive and trimmed.
 

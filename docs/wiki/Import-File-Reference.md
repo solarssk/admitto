@@ -10,8 +10,8 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 | Column | Required | Meaning |
 |---|---|---|
 | `email` | Yes | Valid attendee email. Stored in lowercase and used as the normal match key. |
-| `first_name` + `last_name` | One name form | Both are required when separate name columns are used. |
-| `name` | One name form | Alternative to separate name columns. A single-word name creates a warning and an empty last name. |
+| `first_name` | Yes | Attendee's first name. |
+| `last_name` | Yes | Attendee's last name. |
 | `ticket_type` | No | Must match a configured ticket type label or key. The value is normalised to the configured key. |
 | `company` | No | Attendee company. |
 | `department` | No | Attendee department or team. |
@@ -29,7 +29,7 @@ Download the current CSV template from **Import attendees**. Headers are trimmed
 
 ## Overwrite behaviour
 
-With **Overwrite existing attendees** off, a matching attendee is skipped. With it on, Admitto can update the name, ticket type, company, department, and supplied custom-field values. It does not replace pass status, QR payload, external UUID, or the secure ticket token.
+With **Overwrite existing attendees** off, a matching attendee is skipped. With it on, Admitto can update the first name, last name, ticket type, company, department, and supplied custom-field values. It does not replace pass status, QR payload, external UUID, or the secure ticket token.
 
 ## Validation results
 
