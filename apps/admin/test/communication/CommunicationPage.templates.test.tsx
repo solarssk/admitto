@@ -1049,6 +1049,30 @@ describe("CommunicationPage templates", () => {
     ).toBeTruthy();
   });
 
+  it("lists multiple preview validation errors as a bullet list", async () => {
+    const { TemplateValidationError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockRejectedValue(
+      new TemplateValidationError(["Missing {{ticket_url}}", "Missing {{first_name}}"]),
+    );
+
+    renderPage();
+
+    expect(await screen.findByText("Missing {{ticket_url}}", {}, { timeout: 2000 })).toBeTruthy();
+    expect(screen.getByText("Missing {{first_name}}")).toBeTruthy();
+  });
+
+  it("Send-tab preview uses the legacy endpoint for the virtual ticket template", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    previewEventTemplate.mockResolvedValue({ subject: "Inherited subject", html: "<p>Inherited</p>" });
+
+    renderSendPage();
+
+    expect(await screen.findByText("Inherited subject")).toBeTruthy();
+    expect(previewEventTemplate).toHaveBeenCalled();
+    expect(previewEventTemplateById).not.toHaveBeenCalled();
+  });
+
   it("toasts a generic message when preview fails outside the API layer", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     previewEventTemplateById.mockRejectedValue(new Error("network unavailable"));

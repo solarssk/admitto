@@ -193,7 +193,7 @@ const WALLET_BADGE_ASSET: Record<string, { src: string; alt: string }> = {
  * itself goes in `href`, not `src` - a wallet placeholder is a link value, the badge graphic is a
  * fixed asset, not something the placeholder resolves to. Relative `/assets/...` src values are
  * absolutized at render/send time via `BASE_URL` (see absolutizeBundledTicketAssetUrls). */
-function walletButtonMarkup(name: string, format: TemplateFormat): string {
+export function walletButtonMarkup(name: string, format: TemplateFormat): string {
   const badge = WALLET_BADGE_ASSET[name];
   if (!badge) return `{{${name}}}`;
   return format === "mjml"
@@ -202,7 +202,7 @@ function walletButtonMarkup(name: string, format: TemplateFormat): string {
 }
 
 /** Body insert for a placeholder chip: image markup, wallet badge button, or a bare token. */
-function bodyPlaceholderInsert(
+export function bodyPlaceholderInsert(
   name: string,
   format: TemplateFormat,
   imagePlaceholders: readonly string[],
