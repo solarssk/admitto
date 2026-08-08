@@ -197,6 +197,24 @@ describe("POST /api/account/mfa/webauthn/register/begin", () => {
     await prisma.session.delete({ where: { id: oidcSession.session.id } });
   });
 
+  it("returns 400 for a malformed JSON body", async () => {
+    const res = await app.request("/api/account/mfa/webauthn/register/begin", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for a body that fails schema validation", async () => {
+    const res = await app.request("/api/account/mfa/webauthn/register/begin", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: "not-a-real-attachment" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("returns 403 webauthn_disabled when the instance setting is off", async () => {
     await prisma.systemSettings.upsert({
       where: { key: SETTING_WEBAUTHN_ENABLED },
@@ -247,6 +265,24 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
 
     const second = await registerCredential(userCookie, "cross-platform", "Key 2");
     expect((second.finishBody as { backupCodes: string[] }).backupCodes).toEqual([]);
+  });
+
+  it("returns 400 for a malformed JSON body", async () => {
+    const res = await app.request("/api/account/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for a body that fails schema validation", async () => {
+    const res = await app.request("/api/account/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: "platform" }), // missing required `response`
+    });
+    expect(res.status).toBe(400);
   });
 
   it("returns 400 challenge_expired when finish is called without a matching begin", async () => {
@@ -311,6 +347,20 @@ describe("GET /api/account/mfa/webauthn", () => {
     expect(body.credentials.map((c) => c.label)).toEqual(["First", "Second"]);
     expect(body.credentials.map((c) => c.attachment)).toEqual(["platform", "cross-platform"]);
   });
+
+  it("reports lastUsedAt as null for a row that predates that column being populated", async () => {
+    const { finishBody } = await registerCredential(userCookie, "platform", "No last-used-at yet");
+    const credentialId = (finishBody as { id: string }).id;
+    // finishWebauthnRegistration always sets last_used_at at creation - this directly clears it to
+    // exercise the response mapper's own `?? null` fallback for a case only possible from data
+    // that predates that column (or a future code path that doesn't set it), not from anything
+    // today's registration flow can produce itself.
+    await prisma.userMfaMethod.update({ where: { id: credentialId }, data: { last_used_at: null } });
+
+    const res = await app.request("/api/account/mfa/webauthn", { headers: { Cookie: userCookie } });
+    const body = (await res.json()) as { credentials: { id: string; lastUsedAt: string | null }[] };
+    expect(body.credentials.find((c) => c.id === credentialId)?.lastUsedAt).toBeNull();
+  });
 });
 
 describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
@@ -325,6 +375,32 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
     });
     expect(res.status).toBe(200);
     expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(0);
+  });
+
+  it("treats a malformed JSON body the same as no body (no step-up code supplied)", async () => {
+    const { finishBody } = await registerCredential(userCookie, "platform");
+    const credentialId = (finishBody as { id: string }).id;
+
+    const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(0);
+  });
+
+  it("returns 400 for a body that fails schema validation", async () => {
+    const { finishBody } = await registerCredential(userCookie, "platform");
+    const credentialId = (finishBody as { id: string }).id;
+
+    const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: 123456 }), // must be a string
+    });
+    expect(res.status).toBe(400);
+    expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(1);
   });
 
   it("returns 404 for another user's credential (no IDOR)", async () => {
