@@ -1049,7 +1049,12 @@ function TemplateEditorCard({
         </fieldset>
       </Tooltip>
 
-      {validationErrors.length > 0 && (
+      {validationErrors.length === 1 && (
+        <Notice variant="error" role="alert" className="communication-errors">
+          {validationErrors[0]}
+        </Notice>
+      )}
+      {validationErrors.length > 1 && (
         <Notice variant="error" role="alert" className="communication-errors">
           <ul>
             {validationErrors.map((msg) => (
@@ -1096,30 +1101,89 @@ const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
 /** Matches `DEFAULT_SAMPLE_VARS.email` (packages/mail-templates/src/preview.ts) - the "to"
  * address every preview is rendered for, shown in the mail-client chrome below. */
 const SAMPLE_RECIPIENT_EMAIL = "alex@example.com";
-function samplePlaceholderDataUri(label: string): string {
+function svgDataUri(inner: string): string {
   return (
     "data:image/svg+xml;charset=UTF-8," +
     encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
-        '<rect width="200" height="200" fill="#f1f3f5"/>' +
-        '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
-        `<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">${label}</text>` +
-        '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>' +
-        "</svg>",
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">${inner}</svg>`,
     )
   );
 }
 
-const SAMPLE_QR_PLACEHOLDER_DATA_URI = samplePlaceholderDataUri("Sample QR");
+/** A real-looking (but not scannable) QR pattern: the three corner finder squares every QR code
+ * has, plus a fixed, deterministic scatter of data modules elsewhere - recognizable as "this is
+ * a QR code" at a glance, unlike a text-labeled box. */
+function sampleQrDataUri(): string {
+  const modules = 20;
+  const m = 200 / modules;
+  const finder = (mx: number, my: number) =>
+    `<rect x="${mx * m}" y="${my * m}" width="${7 * m}" height="${7 * m}" fill="#1a1a1a"/>` +
+    `<rect x="${(mx + 1) * m}" y="${(my + 1) * m}" width="${5 * m}" height="${5 * m}" fill="#fff"/>` +
+    `<rect x="${(mx + 2) * m}" y="${(my + 2) * m}" width="${3 * m}" height="${3 * m}" fill="#1a1a1a"/>`;
+  const inFinderZone = (x: number, y: number) =>
+    (x < 8 && y < 8) || (x >= modules - 8 && y < 8) || (x < 8 && y >= modules - 8);
+  let cells = "";
+  for (let y = 0; y < modules; y++) {
+    for (let x = 0; x < modules; x++) {
+      if (inFinderZone(x, y)) continue;
+      if ((x * 7 + y * 13 + x * y) % 3 === 0) {
+        cells += `<rect x="${x * m}" y="${y * m}" width="${m}" height="${m}" fill="#1a1a1a"/>`;
+      }
+    }
+  }
+  return svgDataUri(
+    '<rect width="200" height="200" fill="#fff"/>' +
+      finder(0, 0) +
+      finder(modules - 7, 0) +
+      finder(0, modules - 7) +
+      cells,
+  );
+}
+
+/** Light background, a couple of crossing roads, and a classic map-pin marker. */
+function sampleMapDataUri(): string {
+  return svgDataUri(
+    '<rect width="200" height="200" fill="#e8ede7"/>' +
+      '<path d="M0 60 L200 40" stroke="#c9d3c8" stroke-width="10" fill="none"/>' +
+      '<path d="M0 140 L200 155" stroke="#c9d3c8" stroke-width="10" fill="none"/>' +
+      '<path d="M70 0 L60 200" stroke="#c9d3c8" stroke-width="8" fill="none"/>' +
+      '<path d="M150 0 L165 200" stroke="#c9d3c8" stroke-width="8" fill="none"/>' +
+      '<path d="M100 60 C80 60 70 80 70 95 C70 115 100 145 100 145 C100 145 130 115 130 95 C130 80 120 60 100 60 Z" fill="#e03131"/>' +
+      '<circle cx="100" cy="93" r="12" fill="#fff"/>',
+  );
+}
+
+/** A generic circular emblem, standing in for "some organisation's logo". */
+function sampleLogoDataUri(): string {
+  return svgDataUri(
+    '<rect width="200" height="200" fill="#f1f3f5"/>' +
+      '<circle cx="100" cy="100" r="55" fill="#495057"/>' +
+      '<circle cx="100" cy="100" r="55" fill="none" stroke="#ced4da" stroke-width="2"/>' +
+      '<path d="M100 65 L130 135 L70 135 Z" fill="#fff"/>',
+  );
+}
+
+/** The classic "photo" placeholder motif (frame + sun + mountains) - reads as "an image goes
+ * here" the same way it does on the wider web, unlike a text-labeled box. */
+function sampleHeaderDataUri(): string {
+  return svgDataUri(
+    '<rect width="200" height="200" fill="#e7f0fb"/>' +
+      '<rect x="20" y="70" width="160" height="90" fill="#fff" stroke="#ced4da" stroke-width="2"/>' +
+      '<circle cx="150" cy="95" r="12" fill="#ffd43b"/>' +
+      '<path d="M20 160 L70 105 L100 135 L130 100 L180 160 Z" fill="#74c0fc"/>',
+  );
+}
+
+const SAMPLE_QR_PLACEHOLDER_DATA_URI = sampleQrDataUri();
 /** Sample images for the other fixed image placeholders (custom per-event asset tokens have no
  * fixed sample - they keep the generic photo icon + text tooltip instead). Real branding/map
  * images are configured per event/org and aren't available to fetch from this page today, so
  * these are illustrative stand-ins - same "sample, not live data" approach as the QR one above. */
 const IMAGE_PLACEHOLDER_SAMPLES: Record<string, string> = {
   qr_image_url: SAMPLE_QR_PLACEHOLDER_DATA_URI,
-  logo_url: samplePlaceholderDataUri("Sample logo"),
-  header_image_url: samplePlaceholderDataUri("Sample header"),
-  event_map_url: samplePlaceholderDataUri("Sample map"),
+  logo_url: sampleLogoDataUri(),
+  header_image_url: sampleHeaderDataUri(),
+  event_map_url: sampleMapDataUri(),
 };
 
 function sanitizeSamplePreviewHtml(html: string): string {
@@ -1997,8 +2061,11 @@ export function CommunicationPage() {
       setPreviewHtml(data.html);
     } catch (err) {
       if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
-      setPreviewSubject(null);
-      setPreviewHtml(null);
+      // Deliberately NOT clearing previewSubject/previewHtml here - same reasoning as
+      // applySelectTemplate's own comment: the last successful preview stays on screen (stale
+      // but not wrong) instead of the whole mail-client box collapsing to empty text every time
+      // a keystroke makes the draft briefly invalid (PO report: the mail-client imitation must
+      // never disappear - the validation error below the editor is the right place for this).
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
       } else if (err instanceof ApiError) {
