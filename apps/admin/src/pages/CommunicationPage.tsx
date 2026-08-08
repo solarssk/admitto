@@ -1174,17 +1174,28 @@ function sampleHeaderDataUri(): string {
   );
 }
 
-const SAMPLE_QR_PLACEHOLDER_DATA_URI = sampleQrDataUri();
-/** Sample images for the other fixed image placeholders (custom per-event asset tokens have no
- * fixed sample - they keep the generic photo icon + text tooltip instead). Real branding/map
- * images are configured per event/org and aren't available to fetch from this page today, so
- * these are illustrative stand-ins - same "sample, not live data" approach as the QR one above. */
+/** Sample images for the placeholder-chip hover preview (see IMAGE_PLACEHOLDER_SAMPLES below) -
+ * these look like their real-world counterpart, since their only job is helping an admin
+ * recognize which chip is which in the picker. Deliberately NOT reused for the rendered email
+ * preview below (see SAMPLE_QR_PLACEHOLDER_DATA_URI) - a realistic-looking-but-fake QR code
+ * substituted into "what the recipient will actually see" reads as a real, scannable code with
+ * no indication it isn't; the honest, clearly-labeled placeholder there is the correct one. */
 const IMAGE_PLACEHOLDER_SAMPLES: Record<string, string> = {
-  qr_image_url: SAMPLE_QR_PLACEHOLDER_DATA_URI,
+  qr_image_url: sampleQrDataUri(),
   logo_url: sampleLogoDataUri(),
   header_image_url: sampleHeaderDataUri(),
   event_map_url: sampleMapDataUri(),
 };
+
+/** Swapped into the rendered *email* preview (not the chip picker above) in place of the
+ * backend's fixed sample QR URL, which nothing actually hosts - stays an honest, clearly-labeled
+ * "not a real code" placeholder on purpose, unlike the chip preview's realistic graphic. */
+const SAMPLE_QR_PLACEHOLDER_DATA_URI = svgDataUri(
+  '<rect width="200" height="200" fill="#f1f3f5"/>' +
+    '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
+    '<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">Sample QR</text>' +
+    '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>',
+);
 
 function sanitizeSamplePreviewHtml(html: string): string {
   return html.split(SAMPLE_QR_IMAGE_URL).join(SAMPLE_QR_PLACEHOLDER_DATA_URI).split(SAMPLE_TICKET_URL).join("#");
