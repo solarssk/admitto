@@ -34,7 +34,6 @@ import type {
 } from "../api/types.js";
 import {
   calendarDateInZone,
-  formatEventCalendarDate,
   formatEventDate,
   formatEventDateTime,
   formatRelativeTime as formatRelativeTimeShared,
@@ -57,6 +56,8 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
+const OVERVIEW_SUBTITLE =
+  "Track attendance, check-in progress, and setup status for this event.";
 const RECENT_CHECKINS_MAX = 8;
 // Mirrors RECENT_ACTIVITY_LIMIT in apps/web/src/admin/overview-routes.ts — the merged feed must
 // honor the same 30-item contract as the server response it's reconciling against.
@@ -93,6 +94,17 @@ function formatRelativeTime(iso: string | null): string {
 }
 
 /** "13:00" -> "13:00–14:00" for the check-in progress card's busiest-hour glance stat. */
+/** Decorative live signal in card headers. Active look (not a disabled button) with a
+ * breathing dot; Overview/Reports have no pause toggle. */
+function LiveStatusIndicator() {
+  return (
+    <output className="overview-live-indicator" aria-label="Live">
+      <span className="overview-live-indicator__dot" aria-hidden="true" />
+      <span>Live</span>
+    </output>
+  );
+}
+
 function formatBusiestHourRange(hour: string): string {
   const [hh, mm = "00"] = hour.split(":");
   const h = Number(hh);
@@ -349,6 +361,31 @@ function CheckInProgressCard({
   const breakdown = (overview.ticket_type_breakdown ?? []).filter((t) => t.count > 0);
   const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
 
+  let ticketTypeBar: ReactNode = null;
+  if (breakdown.length === 1) {
+    ticketTypeBar = (
+      <span
+        className="overview-tt-bar__seg"
+        style={{
+          width: "100%",
+          background: ticketTypeChartColor(breakdown[0]!.color),
+        }}
+      />
+    );
+  } else if (breakdown.length > 1) {
+    // breakdown only includes count > 0, so breakdownTotal is always > 0 here.
+    ticketTypeBar = breakdown.map((t) => (
+      <span
+        key={t.key}
+        className="overview-tt-bar__seg"
+        style={{
+          width: `${(t.count / breakdownTotal) * 100}%`,
+          background: ticketTypeChartColor(t.color),
+        }}
+      />
+    ));
+  }
+
   // A ring at a permanent 0% is noise, not information, when there's nobody to check in yet —
   // same icon+text placeholder treatment as Recent activity's empty state instead (PO review).
   const body =
@@ -387,21 +424,10 @@ function CheckInProgressCard({
           </div>
         </div>
 
-        {breakdown.length > 1 && (
-          <div className="overview-tt-breakdown">
-            <span className="overline">By ticket type</span>
-            <div className="overview-tt-bar">
-              {breakdown.map((t) => (
-                <span
-                  key={t.key}
-                  className="overview-tt-bar__seg"
-                  style={{
-                    width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
-                    background: ticketTypeChartColor(t.color),
-                  }}
-                />
-              ))}
-            </div>
+        <div className="overview-tt-breakdown">
+          <span className="overline">By ticket type</span>
+          <div className="overview-tt-bar">{ticketTypeBar}</div>
+          {breakdown.length > 0 && (
             <div className="overview-tt-legend">
               {breakdown.map((t) => (
                 <span key={t.key} className="overview-tt-legend__item">
@@ -413,8 +439,8 @@ function CheckInProgressCard({
                 </span>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="overview-glance">
           <div className="overview-glance__tile">
@@ -604,18 +630,9 @@ function RecentActivityCard({
             ariaLabel="Filter activity"
             className="overview-activity-filter"
           />
-          {/* Reuses the app's established dot-badge pattern for a live/active signal (Badge
-           * variant="ok" dot — same as CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled"
-           * pills) instead of a bespoke dot+text pair; .overview-live-badge only adds the pulse.
-           * Always rendered (#C review): this affirms "this feed receives live updates" as a
-           * static design element, matching the mockup, not the literal SSE handshake state — it
-           * used to be gated behind `streamConnected`, which is false for a beat right after page
-           * load and during a reconnect, making the badge flicker in and out. The actual
-           * connection health already has its own surface (e.g. CheckInPage's stream status
-           * banner), so this one stays unconditional. */}
-          <Badge variant="ok" dot className="overview-live-badge">
-            live
-          </Badge>
+          {/* Decorative success Live button (role=status), matching Org Settings Logs —
+           * always rendered as a static design element, not gated on the SSE handshake. */}
+          <LiveStatusIndicator />
         </>
       }
     >
@@ -714,12 +731,16 @@ function NotesSection({
 function OverviewModal({
   titleId,
   title,
+  iconClass,
+  description,
   onClose,
   footer,
   children,
 }: Readonly<{
   titleId: string;
   title: string;
+  iconClass: string;
+  description: string;
   onClose: () => void;
   footer: ReactNode;
   children: ReactNode;
@@ -732,8 +753,10 @@ function OverviewModal({
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="overview-modal__panel">
         <h2 id={titleId} className="overview-modal__title">
+          <i className={`ti ${iconClass}`} aria-hidden="true" />
           {title}
         </h2>
+        <p className="overview-modal__subtitle">{description}</p>
         <div className="overview-modal__body">{children}</div>
         <div className="overview-modal__footer">{footer}</div>
       </div>
@@ -770,6 +793,8 @@ function PinnedNoteModal({
     <OverviewModal
       titleId={titleId}
       title={note ? "Edit pinned note" : "Add pinned note"}
+      iconClass="ti-pin"
+      description="Shown to all staff on this overview. Use for day-of instructions."
       onClose={onClose}
       footer={
         <>
@@ -850,6 +875,8 @@ function ContactModal({
     <OverviewModal
       titleId={titleId}
       title={contact ? "Edit contact" : "Add contact"}
+      iconClass="ti-address-book"
+      description="Add a key person staff can reach during the event."
       onClose={onClose}
       footer={
         <>
@@ -967,6 +994,8 @@ function ResourceModal({
     <OverviewModal
       titleId={titleId}
       title={resource ? "Edit link or file" : "Add link or file"}
+      iconClass="ti-link"
+      description="Share a useful link or file reference with staff on this overview."
       onClose={onClose}
       footer={
         <>
@@ -1679,10 +1708,8 @@ export function EventOverviewPage() {
   return (
     <div className="screen">
       <PageHeader
-        title={event.title}
-        subtitle={
-          [formatEventCalendarDate(eventDateIso), event.location].filter(Boolean).join(" · ")
-        }
+        title="Overview"
+        subtitle={OVERVIEW_SUBTITLE}
         actions={event.archived_at ? <Badge variant="neutral">Archived · read-only</Badge> : undefined}
       />
 
