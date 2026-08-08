@@ -214,6 +214,19 @@ export async function logMfaBreakGlass(
   });
 }
 
+/** `logMfaBreakGlass` for the break-glass CLI commands specifically (`reset-mfa`,
+ * `generate-emergency-recovery`, in both `packages/auth/src/cli.ts` and `apps/cli/src/commands/
+ * auth.ts`). Always quiet - unlike `logMfaBreakGlass` itself, this wrapper's `ctx` has no `quiet`
+ * field to set, so a future break-glass call site can't reintroduce the raw-JSON-on-terminal bug
+ * by simply forgetting to pass `quiet: true`; every CLI command gets the right behavior by
+ * construction instead of by convention. */
+export async function logMfaBreakGlassCli(
+  db: Db,
+  ctx: { action: string; email: string; userId?: string; ip?: string },
+): Promise<void> {
+  await logMfaBreakGlass(db, { ...ctx, quiet: true });
+}
+
 /** Emit `auth.mfa.success` after TOTP or recovery code verification and persist a durable
  * `SecurityAuditLog` row (raw `user_id`, not the stdout fingerprint - a durable row needs to be
  * genuinely queryable/joinable to the User table). */

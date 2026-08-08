@@ -19,7 +19,7 @@ import { findUserByEmail, normalizeEmail } from "./user.js";
 import { verifyPassword } from "./password.js";
 import { resetUserMfa } from "./mfa/enrollment.js";
 import { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
-import { logMfaBreakGlass } from "./audit.js";
+import { logMfaBreakGlassCli } from "./audit.js";
 import { loadEnvFile } from "@admitto/shared/load-env-file";
 import { assertNoPasswordArgv, CliError, readPasswordFromStdin } from "./cli-helpers.js";
 import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "./retention.js";
@@ -139,7 +139,7 @@ async function runResetMfa(): Promise<void> {
 
   const { userId } = await verifyTargetUserPassword(email);
   await resetUserMfa(prisma, userId);
-  await logMfaBreakGlass(prisma, { action: "reset_mfa", email, userId, quiet: true });
+  await logMfaBreakGlassCli(prisma, { action: "reset_mfa", email, userId });
   console.log(`MFA reset for ${email} (sessions and trusted devices revoked).`);
 }
 
@@ -149,7 +149,7 @@ async function runGenerateEmergencyRecovery(): Promise<void> {
 
   const { userId } = await verifyTargetUserPassword(email);
   const { code } = await generateEmergencyRecoveryCode(prisma, userId);
-  await logMfaBreakGlass(prisma, { action: "generate_emergency_recovery", email, userId, quiet: true });
+  await logMfaBreakGlassCli(prisma, { action: "generate_emergency_recovery", email, userId });
   console.log(`Emergency one-time recovery code (shown once): ${code}`);
 }
 

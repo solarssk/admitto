@@ -8,6 +8,7 @@ import {
   logLoginSuccess,
   logLogout,
   logMfaBreakGlass,
+  logMfaBreakGlassCli,
   logMfaFailure,
   logMfaRecoveryConsumed,
   logMfaSuccess,
@@ -306,6 +307,33 @@ describe("audit", () => {
           event_type: "auth.mfa.break_glass",
           user_id: "user-1",
           ip: null,
+          metadata: { action: "generate_emergency_recovery" },
+        },
+      });
+    });
+  });
+
+  describe("logMfaBreakGlassCli", () => {
+    it("never prints the stdout JSON, unlike logMfaBreakGlass's own default", async () => {
+      const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+      await logMfaBreakGlassCli(fakeDb(), { action: "reset_mfa", email: "admin@example.com", userId: "user-1" });
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("still persists the durable SecurityAuditLog row", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logMfaBreakGlassCli(fakeDb(create), {
+        action: "generate_emergency_recovery",
+        email: "admin@example.com",
+        userId: "user-1",
+        ip: "1.2.3.4",
+      });
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.mfa.break_glass",
+          user_id: "user-1",
+          ip: "1.2.3.4",
           metadata: { action: "generate_emergency_recovery" },
         },
       });
