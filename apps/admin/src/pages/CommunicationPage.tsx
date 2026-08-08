@@ -761,22 +761,19 @@ function SendTab({
             </div>
             {templateDescription && <p className="mail-field-hint">{templateDescription}</p>}
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
-            {previewLoading ? (
-              <div className="communication-preview-empty">Loading preview…</div>
-            ) : (
-              <PreviewBody
-                previewHtml={previewHtml}
-                previewSubject={previewSubject}
-                eventTitle={event.title}
-                senderName={senderName}
-                senderAddress={senderAddress}
-                toolbarLabel={
-                  <>
-                    <i className="ti ti-eye" aria-hidden="true" /> Preview
-                  </>
-                }
-              />
-            )}
+            <PreviewBody
+              previewHtml={previewHtml}
+              previewSubject={previewSubject}
+              eventTitle={event.title}
+              senderName={senderName}
+              senderAddress={senderAddress}
+              loading={previewLoading}
+              toolbarLabel={
+                <>
+                  <i className="ti ti-eye" aria-hidden="true" /> Preview
+                </>
+              }
+            />
           </div>
         </Card>
       )}
@@ -1313,9 +1310,9 @@ function PreviewBody({
   toolbarLabel?: ReactNode;
   /** Shows the mail-client chrome immediately with a spinner in place of the rendered body,
    * instead of the plain empty-state text, while a preview fetch is in flight - so the card
-   * itself never appears to load late, only its content does. Only the Templates tab (which
-   * auto-previews on every mount/switch) passes this; the Send tab keeps its own separate
-   * loading branch before ever reaching this component. */
+   * itself never appears to load late, only its content does. Both tabs auto-preview on every
+   * mount/template switch, so both pass this instead of swapping the whole card for a bare
+   * "Loading preview…" line. */
   loading?: boolean;
 }>) {
   if (!previewHtml && !loading) {

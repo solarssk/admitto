@@ -2218,3 +2218,35 @@ describe("CommunicationPage Send tab template description", () => {
     ).toBeNull();
   });
 });
+
+describe("CommunicationPage Send tab preview reload", () => {
+  it("keeps the mail-client chrome (last preview) mounted while a new one loads after switching templates, instead of flashing empty", async () => {
+    fetchEventTemplates.mockResolvedValue([reminderRow, announcementRow]);
+    let resolveAnnouncementPreview: ((value: unknown) => void) | undefined;
+    previewEventTemplateById.mockImplementation(async (_eventId: string, templateId: string) => {
+      if (templateId === "tpl-rem") {
+        return { subject: "Reminder preview subject", html: "<p>Reminder body</p>" };
+      }
+      return new Promise((resolve) => {
+        resolveAnnouncementPreview = resolve;
+      });
+    });
+
+    renderSendTab();
+    await screen.findByRole("button", { name: /^Template,/ });
+    await selectTemplate("Reminder");
+    await screen.findByText("Reminder preview subject");
+
+    await selectTemplate("Announcement");
+    await waitFor(() => expect(resolveAnnouncementPreview).toBeDefined());
+
+    // The new preview is still in flight - the last successful one stays on screen (stale but
+    // not wrong) instead of the whole mail-client card unmounting to an empty/loading placeholder
+    // and remounting once the fetch resolves (the bug: "cały podgląd miga" on template switch).
+    expect(screen.getByText("Reminder preview subject")).toBeTruthy();
+    expect(screen.queryByText("Preview will appear here.")).toBeNull();
+
+    resolveAnnouncementPreview?.({ subject: "Announcement preview subject", html: "<p>Ann body</p>" });
+    expect(await screen.findByText("Announcement preview subject")).toBeTruthy();
+  });
+});
