@@ -19,7 +19,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 
 1. Open **Attendees**.
 2. Select **Add attendee**.
-3. Enter the required name and email details.
+3. Enter the required first name, last name, and email. Last name is required even for a single-name attendee.
 4. Select a ticket type and complete any event-specific fields when needed.
 5. Save the attendee.
 6. Open the new record and check the displayed details.
