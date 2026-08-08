@@ -1733,11 +1733,12 @@ describe("CommunicationPage templates", () => {
     expect(blockerState.reset).toHaveBeenCalled();
   });
 
-  it("opens the Templates tab from the Send tab preview toolbar", async () => {
+  it("switches from the Send tab to Templates via the tab bar", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     renderSendPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: /Open template/ }));
+    await screen.findByRole("tab", { name: /Send/i, selected: true });
+    fireEvent.click(screen.getByRole("tab", { name: /Templates/i }));
     expect(await screen.findByLabelText("Subject")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Saved" })).toBeTruthy();
   });

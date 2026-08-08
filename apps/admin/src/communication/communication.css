@@ -713,3 +713,15 @@
     display: none;
   }
 }
+
+/* Very narrow phones: shared content padding leaves ~272px at 320px. Restoring a column stack
+   here keeps the Documentation action reachable without horizontal scroll. */
+@media (max-width: 380px) {
+  .communication-pageheader .at-pageheader__row {
+    flex-direction: column;
+  }
+
+  .communication-pageheader .at-pageheader__actions {
+    justify-content: flex-start;
+  }
+}
