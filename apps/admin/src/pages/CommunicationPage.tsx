@@ -876,17 +876,19 @@ function PlaceholderChips({
   const custom = allowedPlaceholders.filter((n) => !grouped.has(n));
   if (custom.length > 0) groups.push({ label: "Images", names: custom });
 
+  // Only for placeholders that actually render as <img src>, i.e. IMAGE_PLACEHOLDERS (see
+  // packages/mail-templates/src/placeholders.ts) - apple_wallet_url/google_wallet_url are link
+  // values (an <mj-button href>, same category as ticket_url), not images, so a picture-style
+  // preview would wrongly imply inserting the chip renders a picture. They keep the plain
+  // icon+tooltip treatment instead (WALLET_PLACEHOLDERS' ti-ticket icon, below).
+  //
   // The real per-event/org values a send would actually use - not samples. qr_image_url has no
   // real-until-sent equivalent (it's generated per attendee), so it keeps an illustrative sample
   // instead (see CHIP_QR_SAMPLE_DATA_URI). event_map_url always points at the real static-map
   // route; PlaceholderChip falls back to the generic icon itself if that 404s (no location set).
-  // apple_wallet_url/google_wallet_url use the same real badge assets the ticket page itself
-  // renders (served at these exact paths - see apps/web/src/wallet-badges.ts), not samples.
   const samples: Record<string, string> = {
     qr_image_url: CHIP_QR_SAMPLE_DATA_URI,
     event_map_url: `/m/${encodeURIComponent(eventId)}.png`,
-    apple_wallet_url: "/assets/apple-wallet-badge.svg",
-    google_wallet_url: "/assets/google-wallet-badge.svg",
   };
   if (logoUrl) samples.logo_url = logoUrl;
   if (headerImageUrl) samples.header_image_url = headerImageUrl;
