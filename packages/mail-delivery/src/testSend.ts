@@ -6,6 +6,7 @@ import {
   resolveBrandingFromEvent,
   resolveEventImageAssetVars,
   resolveTemplateById,
+  sanitizeSampleLinksForTestSend,
 } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
@@ -68,6 +69,10 @@ export async function sendTestEmail(
         env,
       });
     }
+    // Sample data only (see this function's own doc comment) - the sample ticket_url/qr_image_url
+    // point at a domain nothing hosts, so swap them for safe placeholders before this reaches a
+    // real inbox, same as the admin's own in-browser preview already does client-side.
+    rendered = sanitizeSampleLinksForTestSend(rendered);
     const result = await mailer.send({
       to: params.toAddress,
       subject: rendered.subject,

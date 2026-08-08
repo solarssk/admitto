@@ -22,6 +22,7 @@ import {
   materializeStoredDeliveryMessageRedacted,
   UnknownPlaceholdersError,
   MjmlCompileError,
+  friendlyMjmlErrorMessage,
   PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
   resolveTemplateById,
@@ -163,9 +164,10 @@ function templateValidationResponse(c: Context, errors: string[]): Response {
   return c.json({ error: "template_validation_failed", errors }, 400);
 }
 
-/** Return 400 JSON when MJML compilation fails. */
+/** Return 400 JSON when MJML compilation fails. Operator-facing text only - never the raw
+ * compiler message (internal jargon, and formattedMessage embeds a server file path). */
 function mjmlCompileErrorResponse(c: Context, err: MjmlCompileError): Response {
-  const errors = err.errors.map((e) => e.formattedMessage ?? e.message);
+  const errors = err.errors.map((e) => friendlyMjmlErrorMessage(e));
   return c.json({ error: "template_validation_failed", errors }, 400);
 }
 

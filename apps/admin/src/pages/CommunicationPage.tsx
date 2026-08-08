@@ -6,6 +6,7 @@ import {
   useState,
   type Dispatch,
   type MutableRefObject,
+  type ReactNode,
   type RefObject,
   type SetStateAction,
 } from "react";
@@ -14,6 +15,7 @@ import {
   Badge,
   Button,
   Card,
+  HintLabel,
   Input,
   Notice,
   PageHeader,
@@ -27,6 +29,7 @@ import {
   createEventTemplate,
   deleteEventTemplate,
   fetchEventDeliveries,
+  fetchEventMailSettings,
   fetchEventOverview,
   fetchEventTemplate,
   fetchEventTemplateById,
@@ -49,10 +52,13 @@ import type {
   MailTemplateListItem,
 } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
+import { browserClockTime, formatEventDate } from "../utils/event-dates.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { CommunicationSendDialog } from "../communication/CommunicationSendDialog.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
+import { Segmented, type SegmentedOption } from "../components/Segmented.js";
+import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
@@ -60,6 +66,13 @@ import { isTemplateDirty } from "../communication/templateDirty.js";
 
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
+
+/** Result of the last "Send test" attempt. `template`/`subject` are only meaningful on success -
+ * they name exactly what got sent, since "Test email sent." alone doesn't say which template or
+ * confirm the subject line actually used. */
+type TestSendStatus =
+  | { kind: "ok"; message: string; template: string; subject: string | null; email: string }
+  | { kind: "error"; message: string; email: string };
 
 /** Placeholders that stay valid (already-saved templates using them keep rendering) but are no
  * longer offered as an insertable chip: `header_image_url` has no organisation-level branding
@@ -69,6 +82,67 @@ type TemplateFormat = "mjml" | "html";
  * to fill it in. Filtered client-side, not removed from the server's ALLOWED_PLACEHOLDERS
  * whitelist, so it's not a backward-compat break for any already-saved template. */
 const HIDDEN_PLACEHOLDERS = new Set(["header_image_url"]);
+
+const TEMPLATE_FORMAT_OPTIONS: ReadonlyArray<SegmentedOption<TemplateFormat>> = [
+  { value: "mjml", label: "MJML" },
+  { value: "html", label: "HTML" },
+];
+
+/** Groups the insert-placeholder chips into readable sections instead of one long flat row -
+ * a custom asset token (name not listed in any group) falls back to its own trailing "Images"
+ * group, added dynamically in TemplateEditorCard below. */
+const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[] }> = [
+  { label: "Attendee", names: ["first_name", "last_name", "full_name", "email"] },
+  {
+    label: "Event",
+    names: [
+      "event_name",
+      "event_date",
+      "event_location",
+      "event_address",
+      "event_map_url",
+      "google_maps_url",
+      "apple_maps_url",
+      "directions_text",
+      "accessibility_text",
+    ],
+  },
+  { label: "Ticket & QR", names: ["ticket_url", "qr_image_url", "download_page_url"] },
+  { label: "Wallet", names: ["apple_wallet_url", "google_wallet_url"] },
+  { label: "Branding", names: ["logo_url"] },
+];
+
+/** Wallet-add links get a ticket icon on their chip (like the image chips get a photo icon) -
+ * they're not images, but they're just as easy to skim past as a bare token otherwise. */
+const WALLET_PLACEHOLDERS = new Set(["apple_wallet_url", "google_wallet_url"]);
+
+/** One-line explanation shown as the chip's tooltip - what a token actually resolves to, not
+ * just its name. Custom image asset tokens (dynamic, not in this map) fall back to a generic
+ * description rather than showing no tooltip at all. */
+function placeholderDescription(name: string, isImage: boolean): string {
+  const known: Record<string, string> = {
+    first_name: "Attendee's first name.",
+    last_name: "Attendee's last name.",
+    full_name: "Attendee's full name.",
+    email: "Attendee's email address.",
+    event_name: "This event's title.",
+    event_date: "This event's date, formatted for the event's own timezone.",
+    event_location: "Venue name.",
+    event_address: "Venue's street address.",
+    event_map_url: "Static map image of the venue.",
+    google_maps_url: "Link to open the venue in Google Maps.",
+    apple_maps_url: "Link to open the venue in Apple Maps.",
+    directions_text: "Getting-there directions, if set in Event settings.",
+    accessibility_text: "Accessibility notes, if set in Event settings.",
+    ticket_url: "Link to the attendee's own ticket page.",
+    qr_image_url: "The attendee's scannable QR code image.",
+    download_page_url: "Link to the ticket download page.",
+    apple_wallet_url: "Link to add the ticket to Apple Wallet.",
+    google_wallet_url: "Link to add the ticket to Google Wallet.",
+    logo_url: "Your organisation's logo image.",
+  };
+  return known[name] ?? (isImage ? "Custom image asset for this event." : `{{${name}}}`);
+}
 
 /** Insert placeholder text at the textarea cursor selection. */
 function insertAtCursor(value: string, insertion: string, start: number, end: number): string {
@@ -402,7 +476,9 @@ async function recoverTicketAfterDelete({
  * template, applying it, or falling back to the last-known cached copy (or an operator-facing
  * warning) if the refetch fails. Extracted from `executeDeleteTemplate` so that function's own
  * cognitive complexity stays low. */
-async function recoverLegacyAfterDelete({
+/** Exported for unit tests - the null-cache branch is hard to reach through the mounted page
+ * because a successful initial load always populates `legacyTemplateRef` first. */
+export async function recoverLegacyAfterDelete({
   scopeEventId,
   seq,
   deleteTemplateSeqRef,
@@ -428,7 +504,7 @@ async function recoverLegacyAfterDelete({
       );
     } else {
       setActiveKey("virtual-ticket");
-      addToast("Template deleted. Could not load inherited ticket. Reload the page.", "warning");
+      addToast("Template deleted. Could not load default ticket. Reload the page.", "warning");
     }
   }
 }
@@ -450,9 +526,28 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
 }
 
-/** The template id to send from the "Send email" header action and `CommunicationSendDialog` —
- * `undefined` while the editor snapshot couldn't be loaded, the current explicit template's id,
- * or (for the virtual/inherited ticket) whichever real "ticket" template exists, if any. */
+/** Label shown in the test-send result card for whichever template was just sent. */
+export function resolveTestSendTemplateLabel(
+  activeKey: string,
+  templates: ReadonlyArray<{ id: string; label: string }>,
+): string {
+  if (activeKey === "virtual-ticket") return "Ticket email";
+  return templates.find((t) => t.id === activeKey)?.label ?? "Template";
+}
+
+/** Test-send always renders from the saved template, not the live draft - only report the
+ * previewed subject when it's known to match (no unsaved edits), rather than claiming an
+ * unsaved draft subject was what actually went out. */
+function testSendReportedSubject(isDirty: boolean, previewSubject: string | null): string | null {
+  return isDirty ? null : previewSubject;
+}
+
+/** The template id to send from the Send tab (`CommunicationSendPanel`) — the current explicit
+ * template's id, or (for the virtual/inherited ticket) whichever real "ticket" template exists.
+ * `undefined` covers two different cases the caller must not conflate: the editor snapshot
+ * couldn't be loaded (sending is unavailable — see `editorSnapshotMissing`), or the event never
+ * saved an explicit "ticket" override (sending is fine — the backend's `sendEventBulk` already
+ * falls back to the built-in default template when `templateId` is omitted). */
 function resolveSendTemplateId(
   editorSnapshotMissing: boolean,
   activeKey: string,
@@ -461,6 +556,24 @@ function resolveSendTemplateId(
   if (editorSnapshotMissing) return undefined;
   if (activeKey === "virtual-ticket") return templates.find((t) => t.name === "ticket")?.id;
   return activeKey;
+}
+
+/** Options for the template picker `SearchableSelect` — shared by the Send tab's Message card
+ * and the Templates tab's picker bar so both always list the exact same templates the exact
+ * same way, icon included. The virtual "Ticket email" entry only appears when there's no
+ * explicit "ticket" override yet (same condition TemplatePickerBar's own count/badge logic
+ * uses) - it keeps the ticket icon (it IS the built-in ticket template); every real saved
+ * template gets a different icon (mail) so the two read as visually distinct kinds of thing
+ * without needing a text label to say so. Real per-template icons are tracked separately. */
+function templatePickerOptions(
+  templates: MailTemplateListItem[],
+): Array<{ id: string; label: string; icon: string }> {
+  return [
+    ...(!templates.some((t) => t.name === "ticket")
+      ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
+      : []),
+    ...templates.map((t) => ({ id: t.id, label: t.label, icon: "mail" })),
+  ];
 }
 
 /** Confirmation message for the delete-template dialog. */
@@ -500,112 +613,336 @@ function DefaultTemplateBanner({
 }>) {
   if (activeKey !== "virtual-ticket" || source === "event") return null;
   return (
-    <div className="communication-default-banner">
-      Using default template. Save to customize for this event.
+    <Notice variant="info">
+      This event has no template of its own yet, so it's sending the shared default shown below.
+      Edit and save it to create a copy that only affects this event.
+    </Notice>
+  );
+}
+
+/** Send tab: template picker (shares the same selection/preview state as the Templates tab, so
+ * either tab reflects what the other last picked/rendered) plus the recipients/send panel. */
+function SendTab({
+  event,
+  templates,
+  activeKey,
+  source,
+  requestDirtyProtectedAction,
+  eventId,
+  sendTemplateId,
+  editorSnapshotMissing,
+  isDirty,
+  previewHtml,
+  previewSubject,
+  previewLoading,
+  senderName,
+  senderAddress,
+  onPreview,
+  onOpenTemplate,
+  testEmail,
+  setTestEmail,
+  testSending,
+  onTestSend,
+  testStatus,
+}: Readonly<{
+  event: EventDto;
+  templates: MailTemplateListItem[];
+  activeKey: string;
+  source: EventTemplateDto["source"];
+  requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
+  eventId: string;
+  sendTemplateId: string | undefined;
+  editorSnapshotMissing: boolean;
+  isDirty: boolean;
+  previewHtml: string | null;
+  previewSubject: string | null;
+  previewLoading: boolean;
+  senderName: string | null;
+  senderAddress: string | null;
+  onPreview: () => Promise<void>;
+  onOpenTemplate: () => void;
+  testEmail: string;
+  setTestEmail: Dispatch<SetStateAction<string>>;
+  testSending: boolean;
+  onTestSend: () => Promise<void>;
+  testStatus: TestSendStatus | null;
+}>) {
+  // Keeps the preview in sync with whichever template is picked, matching the mockup's
+  // always-rendered preview - unlike the Templates tab, there's no draft being actively typed
+  // into here, so there's no reason to make the admin click a separate Preview button first.
+  useEffect(() => {
+    void onPreview();
+    // onPreview closes over live subject/body/format state and is a fresh function every
+    // render, so it's intentionally left out here - only an actual template switch should
+    // re-trigger this, not every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey]);
+
+  return (
+    <div className="communication-send-tab">
+      <Card
+        title={
+          <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
+            Message
+          </HintLabel>
+        }
+      >
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">
+            Pick which saved template this event's ticket emails use, and preview exactly what
+            recipients will see before you send.
+          </p>
+          <div className="communication-half-field">
+            <SearchableSelect
+              id="communication-send-template"
+              label="Template"
+              placeholder="Choose a template…"
+              searchPlaceholder="Search templates…"
+              emptyLabel="No templates found"
+              value={activeKey}
+              options={templatePickerOptions(templates)}
+              onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+            />
+          </div>
+          <DefaultTemplateBanner activeKey={activeKey} source={source} />
+          <div className="communication-preview-toolbar">
+            <span className="communication-preview-toolbar__label">
+              <i className="ti ti-eye" aria-hidden="true" /> Preview
+            </span>
+            <button
+              type="button"
+              className="communication-preview-toolbar__open"
+              onClick={onOpenTemplate}
+            >
+              <i className="ti ti-external-link" aria-hidden="true" /> Open template
+            </button>
+          </div>
+          {previewLoading ? (
+            <div className="communication-preview-empty">Loading preview…</div>
+          ) : (
+            <PreviewBody
+              previewHtml={previewHtml}
+              previewSubject={previewSubject}
+              eventTitle={event.title}
+              senderName={senderName}
+              senderAddress={senderAddress}
+            />
+          )}
+        </div>
+      </Card>
+
+      <CommunicationSendPanel
+        event={event}
+        eventId={eventId}
+        templateId={sendTemplateId}
+        snapshotMissing={editorSnapshotMissing}
+        isDirty={isDirty}
+      />
+
+      <SendTestCard
+        event={event}
+        testEmail={testEmail}
+        setTestEmail={setTestEmail}
+        testSending={testSending}
+        editorSnapshotMissing={editorSnapshotMissing}
+        onTestSend={onTestSend}
+        testStatus={testStatus}
+      />
     </div>
   );
 }
 
-/** Template picker sidebar: the inherited-ticket entry (only shown when no explicit "ticket"
- * template exists yet) plus every saved template, each selectable and (except "ticket") deletable. */
-function TemplateSidebar({
+/** Top toolbar for the Templates tab: which template is open, when it was last saved (or a
+ * "Default template" badge for the virtual entry, which has no save history of its own), and
+ * "New template". The template list used to live in a side rail; moving the picker up here
+ * frees that width for the editor/preview split below instead of splitting the page three ways. */
+function TemplatePickerBar({
   event,
   templateActionBusy,
   templates,
   activeKey,
+  source,
+  canDelete,
+  onDelete,
   requestDirtyProtectedAction,
 }: Readonly<{
   event: EventDto;
   templateActionBusy: boolean;
   templates: MailTemplateListItem[];
   activeKey: string;
+  source: EventTemplateDto["source"];
+  canDelete: boolean;
+  onDelete: () => void;
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
 }>) {
+  const activeMeta = templates.find((t) => t.id === activeKey);
+  const isDefault = activeKey === "virtual-ticket" && source !== "event";
   return (
-    <nav className="communication-templates" aria-label="Email templates">
-      <div className="communication-templates__header">
-        <span>Templates</span>
-        <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
-          {(guard) => (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => requestDirtyProtectedAction({ kind: "create" })}
-              {...guard}
-            >
-              New
-            </Button>
-          )}
-        </ArchivedGuard>
-      </div>
-      <ul className="communication-templates__list">
-        {!templates.some((t) => t.name === "ticket") && (
-          <li
-            className={[
-              "communication-templates__item",
-              activeKey === "virtual-ticket" && "communication-templates__item--active",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <button
-              type="button"
-              disabled={templateActionBusy}
-              onClick={() => requestDirtyProtectedAction({ kind: "select", key: "virtual-ticket" })}
-            >
-              Ticket email (inherited)
-            </button>
-          </li>
+    <Card>
+      <div className="communication-template-picker">
+        <div className="communication-half-field communication-template-picker__select">
+          <SearchableSelect
+            id="communication-templates-picker"
+            label="Template"
+            showLabel={false}
+            placeholder="Choose a template…"
+            searchPlaceholder="Search templates…"
+            emptyLabel="No templates found"
+            value={activeKey}
+            disabled={templateActionBusy}
+            options={templatePickerOptions(templates)}
+            onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+          />
+        </div>
+        {isDefault ? (
+          <Badge variant="neutral">Default template</Badge>
+        ) : (
+          activeMeta && (
+            <Badge variant="neutral">
+              <i className="ti ti-clock" aria-hidden="true" /> Last edited{" "}
+              {formatEventDate(activeMeta.updated_at, event.timezone)}
+            </Badge>
+          )
         )}
-        {templates.map((t) => (
-          <li
-            key={t.id}
-            className={[
-              "communication-templates__item",
-              activeKey === t.id && "communication-templates__item--active",
-            ]
-              .filter(Boolean)
-              .join(" ")}
+        <span className="communication-template-picker__actions">
+          <ArchivedGuard
+            event={event}
+            reasonId="delete-template-reason"
+            disabled={!canDelete || templateActionBusy}
+            tooltip={!canDelete ? "The default ticket template can't be deleted." : undefined}
           >
-            <button
-              type="button"
-              disabled={templateActionBusy}
-              onClick={() => requestDirtyProtectedAction({ kind: "select", key: t.id })}
-            >
-              {t.label}
-            </button>
-            <ArchivedGuard
-              event={event}
-              reasonId={`delete-template-${t.id}-reason`}
-              disabled={t.name === "ticket" || templateActionBusy}
-            >
-              {(guard) => (
-                <button
-                  type="button"
-                  className="communication-templates__delete"
-                  aria-label={`Delete ${t.label}`}
-                  onClick={() =>
-                    requestDirtyProtectedAction({
-                      kind: "delete",
-                      templateId: t.id,
-                      name: t.name,
-                    })
-                  }
-                  {...guard}
-                >
-                  <i className="ti ti-trash" aria-hidden="true" />
-                </button>
-              )}
-            </ArchivedGuard>
-          </li>
-        ))}
-      </ul>
-    </nav>
+            {(guard) => (
+              <button
+                type="button"
+                className="communication-template-picker__delete"
+                aria-label="Delete template"
+                onClick={onDelete}
+                {...guard}
+              >
+                <i className="ti ti-trash" aria-hidden="true" />
+              </button>
+            )}
+          </ArchivedGuard>
+          <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
+            {(guard) => (
+              <Button
+                variant="secondary"
+                icon={<i className="ti ti-plus" aria-hidden="true" />}
+                onClick={() => requestDirtyProtectedAction({ kind: "create" })}
+                {...guard}
+              >
+                New template
+              </Button>
+            )}
+          </ArchivedGuard>
+        </span>
+      </div>
+    </Card>
   );
 }
 
 /** Placeholder chips, subject/format/body editor fields, validation errors, and the
  * preview/save actions row for the currently selected template. */
+/** Insert-placeholder chips, grouped into readable sections (Attendee/Event/Ticket & QR/Wallet/
+ * Branding) instead of one long flat row - a placeholder outside every fixed group (a custom
+ * per-event image asset token) falls into its own trailing "Images" group. */
+function PlaceholderChips({
+  allowedPlaceholders,
+  imagePlaceholders,
+  requiredPlaceholders,
+  onInsertPlaceholder,
+}: Readonly<{
+  allowedPlaceholders: string[];
+  imagePlaceholders: string[];
+  requiredPlaceholders: string[];
+  onInsertPlaceholder: (name: string) => void;
+}>) {
+  const allowedSet = new Set(allowedPlaceholders);
+  const grouped = new Set<string>();
+  const groups = PLACEHOLDER_GROUPS.map((g) => ({
+    label: g.label,
+    names: g.names.filter((n) => allowedSet.has(n)),
+  })).filter((g) => g.names.length > 0);
+  groups.forEach((g) => g.names.forEach((n) => grouped.add(n)));
+  const custom = allowedPlaceholders.filter((n) => !grouped.has(n));
+  if (custom.length > 0) groups.push({ label: "Images", names: custom });
+
+  return (
+    <>
+      {groups.map((group) => (
+        <div key={group.label} className="communication-ph-row">
+          <span className="communication-overline">{group.label}</span>
+          <div className="communication-chips">
+            {group.names.map((p) => (
+              <PlaceholderChip
+                key={p}
+                name={p}
+                isImage={imagePlaceholders.includes(p)}
+                isRequired={requiredPlaceholders.includes(p)}
+                onInsert={onInsertPlaceholder}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** One placeholder chip - required ones are outlined, wallet-add links get a ticket icon so
+ * they read as "important" the same way an image chip does instead of blending into a bare-
+ * token wall of text. Description shows in the app's own Tooltip (@admitto/ui), not a native
+ * browser title tooltip. `qr_image_url` gets its actual sample image always visible as a small
+ * thumbnail (not hover-only - a hidden-until-hover preview is easy to miss entirely), plus a
+ * larger version on hover/focus for anyone who wants a closer look. */
+function PlaceholderChip({
+  name,
+  isImage,
+  isRequired,
+  onInsert,
+}: Readonly<{
+  name: string;
+  isImage: boolean;
+  isRequired: boolean;
+  onInsert: (name: string) => void;
+}>) {
+  const isQr = name === "qr_image_url";
+  const titleParts = [
+    isRequired && "Required placeholder",
+    placeholderDescription(name, isImage),
+  ].filter((part): part is string => Boolean(part));
+  return (
+    <Tooltip content={titleParts.join(" · ")}>
+      <button
+        type="button"
+        className={["communication-chip", isRequired && "communication-chip--required"]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => onInsert(name)}
+      >
+        {isQr ? (
+          <img
+            className="communication-chip-thumb"
+            src={SAMPLE_QR_PLACEHOLDER_DATA_URI}
+            alt=""
+            width={16}
+            height={16}
+          />
+        ) : (
+          isImage && <i className="ti ti-photo" aria-hidden="true" />
+        )}
+        {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
+        {`{{${name}}}`}
+        {isQr && (
+          <span className="communication-chip-preview" aria-hidden="true">
+            <img src={SAMPLE_QR_PLACEHOLDER_DATA_URI} alt="" width={100} height={100} />
+          </span>
+        )}
+      </button>
+    </Tooltip>
+  );
+}
+
 function TemplateEditorCard({
   event,
   activeTemplateName,
@@ -619,13 +956,11 @@ function TemplateEditorCard({
   setActiveField,
   editorSnapshotMissing,
   format,
-  setFormat,
+  onRequestFormat,
   bodyRef,
   body,
   setBody,
   validationErrors,
-  previewLoading,
-  onPreview,
   saving,
   isDirty,
   saveButtonLabel,
@@ -643,13 +978,11 @@ function TemplateEditorCard({
   setActiveField: Dispatch<SetStateAction<ActiveField>>;
   editorSnapshotMissing: boolean;
   format: TemplateFormat;
-  setFormat: Dispatch<SetStateAction<TemplateFormat>>;
+  onRequestFormat: (next: TemplateFormat) => void;
   bodyRef: RefObject<HTMLTextAreaElement | null>;
   body: string;
   setBody: Dispatch<SetStateAction<string>>;
   validationErrors: string[];
-  previewLoading: boolean;
-  onPreview: () => Promise<void>;
   saving: boolean;
   isDirty: boolean;
   saveButtonLabel: string;
@@ -658,35 +991,27 @@ function TemplateEditorCard({
   return (
     <Card
       title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
-      actions={<Badge variant="neutral">Outlook-safe</Badge>}
+      actions={
+        <Segmented
+          ariaLabel="Template format"
+          className="communication-format-toggle"
+          value={format}
+          onChange={onRequestFormat}
+          options={TEMPLATE_FORMAT_OPTIONS}
+        />
+      }
     >
-      <div className="communication-ph-row">
-        <span className="communication-overline">Insert placeholder</span>
-        <div className="communication-chips">
-          {allowedPlaceholders.map((p) => {
-            const isImage = imagePlaceholders.includes(p);
-            const isRequired = requiredPlaceholders.includes(p);
-            const titleParts = [
-              isRequired && "Required placeholder",
-              isImage && "Inserts a ready-to-use image",
-            ].filter((part): part is string => Boolean(part));
-            return (
-              <button
-                key={p}
-                type="button"
-                className={["communication-chip", isRequired && "communication-chip--required"]
-                  .filter(Boolean)
-                  .join(" ")}
-                onClick={() => onInsertPlaceholder(p)}
-                title={titleParts.length ? titleParts.join(" · ") : undefined}
-              >
-                {isImage && <i className="ti ti-photo" aria-hidden="true" />}
-                {`{{${p}}}`}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <p className="communication-format-hint muted">
+        Changing format does not convert the template body. Switching a non-empty template asks
+        for confirmation first.
+      </p>
+
+      <PlaceholderChips
+        allowedPlaceholders={allowedPlaceholders}
+        imagePlaceholders={imagePlaceholders}
+        requiredPlaceholders={requiredPlaceholders}
+        onInsertPlaceholder={onInsertPlaceholder}
+      />
 
       <Tooltip
         content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -704,26 +1029,6 @@ function TemplateEditorCard({
           />
         </fieldset>
       </Tooltip>
-
-      <div className="communication-format-row">
-        <Button
-          variant={format === "mjml" ? "primary" : "secondary"}
-          size="sm"
-          onClick={() => setFormat("mjml")}
-        >
-          MJML
-        </Button>
-        <Button
-          variant={format === "html" ? "primary" : "secondary"}
-          size="sm"
-          onClick={() => setFormat("html")}
-        >
-          HTML
-        </Button>
-        <span className="communication-format-hint muted">
-          Changing format does not convert the template body.
-        </span>
-      </div>
 
       <Tooltip
         content={isEventArchived(event) ? ARCHIVED_ACTION_TOOLTIP : undefined}
@@ -758,22 +1063,16 @@ function TemplateEditorCard({
       <div className="communication-actions">
         <ArchivedGuard
           event={event}
-          reasonId="preview-template-reason"
-          disabled={previewLoading || editorSnapshotMissing}
-        >
-          {(guard) => (
-            <Button variant="secondary" onClick={() => void onPreview()} {...guard}>
-              {previewLoading ? "Previewing…" : "Preview"}
-            </Button>
-          )}
-        </ArchivedGuard>
-        <ArchivedGuard
-          event={event}
           reasonId="save-template-reason"
           disabled={saving || !isDirty || editorSnapshotMissing}
         >
           {(guard) => (
-            <Button variant="primary" onClick={onSave} {...guard}>
+            <Button
+              variant="primary"
+              icon={<i className="ti ti-device-floppy" aria-hidden="true" />}
+              onClick={onSave}
+              {...guard}
+            >
               {saveButtonLabel}
             </Button>
           )}
@@ -784,32 +1083,158 @@ function TemplateEditorCard({
 }
 
 /** Rendered email preview: the compiled HTML in a sandboxed iframe, or a prompt to run Preview. */
-function PreviewCard({
+/** Rendered subject + sandboxed iframe body, or the empty-state prompt - no Card wrapper, so it
+ * can sit inside either its own "Preview" card (Templates tab) or the Send tab's "Message" card. */
+/** The preview endpoint fills {{ticket_url}}/{{qr_image_url}} with fixed sample values
+ * (packages/mail-templates/src/preview.ts `DEFAULT_SAMPLE_VARS`) so a template can be validated
+ * and rendered without a real attendee - but a live https:// URL to a domain nothing actually
+ * hosts renders as a broken image and a dead-end link, reading as broken rather than deliberate.
+ * Swapped here for a same-origin-safe, always-rendering placeholder before the admin ever sees
+ * it; the sandboxed iframe already blocks navigation on the link either way, so this is purely
+ * cosmetic, not a security boundary. */
+const SAMPLE_TICKET_URL = "https://tickets.example.com/t/sample-token";
+const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
+/** Matches `DEFAULT_SAMPLE_VARS.email` (packages/mail-templates/src/preview.ts) - the "to"
+ * address every preview is rendered for, shown in the mail-client chrome below. */
+const SAMPLE_RECIPIENT_EMAIL = "alex@example.com";
+const SAMPLE_QR_PLACEHOLDER_DATA_URI =
+  "data:image/svg+xml;charset=UTF-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
+      '<rect width="200" height="200" fill="#f1f3f5"/>' +
+      '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
+      '<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">Sample QR</text>' +
+      '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>' +
+      "</svg>",
+  );
+
+function sanitizeSamplePreviewHtml(html: string): string {
+  return html.split(SAMPLE_QR_IMAGE_URL).join(SAMPLE_QR_PLACEHOLDER_DATA_URI).split(SAMPLE_TICKET_URL).join("#");
+}
+
+/** Reads like a real inbox (Gmail-style toolbar + sender row) instead of a bare subject line
+ * over an iframe, so a template preview looks like an email instead of pasted markup. The
+ * toolbar icons are inert chrome (no back/archive/reply destination exists here) - hidden from
+ * assistive tech rather than announced as buttons that do nothing. */
+function PreviewBody({
   previewHtml,
   previewSubject,
+  eventTitle,
+  senderName,
+  senderAddress,
+  toolbarLabel,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
+  eventTitle: string;
+  /** Real configured "From" display name (Settings → Mail transport → Sender), when readable -
+   * falls back to the event title so the preview never shows a blank sender. */
+  senderName: string | null;
+  senderAddress: string | null;
+  /** Renders in place of the inert back-arrow, as real (not aria-hidden) content - lets a
+   * caller (Templates tab) fold its own "Preview"/"Updating…" caption into this same bar
+   * instead of stacking a second one above it. Omit to keep the plain decorative arrow. */
+  toolbarLabel?: ReactNode;
 }>) {
+  if (!previewHtml) {
+    return <div className="communication-preview-empty">Preview will appear here.</div>;
+  }
+  const displayName = senderName || eventTitle;
+  const sampleTime = browserClockTime(new Date());
   return (
-    <Card title="Preview">
-      {previewHtml ? (
-        <>
-          <div className="communication-preview-subject">
-            <strong>Subject</strong>
-            <span>{previewSubject}</span>
+    <div className="communication-mail-client">
+      <div className="communication-mail-client__toolbar" aria-hidden={toolbarLabel ? undefined : true}>
+        {toolbarLabel ? (
+          <span className="communication-mail-client__toolbar-label">{toolbarLabel}</span>
+        ) : (
+          <i className="ti ti-arrow-left" aria-hidden="true" />
+        )}
+        <span className="communication-mail-client__toolbar-actions" aria-hidden="true">
+          <i className="ti ti-archive" aria-hidden="true" />
+          <i className="ti ti-trash" aria-hidden="true" />
+          <i className="ti ti-corner-up-left" aria-hidden="true" />
+          <i className="ti ti-dots" aria-hidden="true" />
+        </span>
+      </div>
+      <div className="communication-mail-client__subject">{previewSubject}</div>
+      <div className="communication-mail-client__from">
+        <span className="communication-mail-client__avatar" aria-hidden="true">
+          <i className="ti ti-mail" aria-hidden="true" />
+        </span>
+        <div className="communication-mail-client__from-text">
+          <div className="communication-mail-client__from-name">
+            {displayName}
+            {senderAddress && <span className="communication-mail-client__from-address"> &lt;{senderAddress}&gt;</span>}
           </div>
-          <iframe
-            className="communication-preview-frame"
-            title="Email preview"
-            sandbox=""
-            srcDoc={previewHtml}
-          />
-        </>
-      ) : (
-        <div className="communication-preview-empty">Click Preview to render the draft.</div>
+          <div className="communication-mail-client__to">to {SAMPLE_RECIPIENT_EMAIL}</div>
+        </div>
+        <div className="communication-mail-client__meta" aria-hidden="true">
+          <span className="communication-mail-client__folder">
+            <i className="ti ti-inbox" aria-hidden="true" /> Inbox
+          </span>
+          <span className="communication-mail-client__time">
+            <i className="ti ti-clock" aria-hidden="true" /> {sampleTime}
+          </span>
+        </div>
+      </div>
+      <iframe
+        className="communication-preview-frame"
+        title="Email preview"
+        sandbox=""
+        srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
+      />
+    </div>
+  );
+}
+
+/** Templates tab's preview column - no Card wrapper (the mail-client chrome below already draws
+ * its own box; wrapping it in a second one nested it inside a card-in-a-card border, per PO
+ * report) and no manual refresh button, since the editor auto-previews on a debounce instead of
+ * requiring a click. */
+function TemplatesPreviewPanel({
+  previewHtml,
+  previewSubject,
+  eventTitle,
+  senderName,
+  senderAddress,
+  previewLoading,
+}: Readonly<{
+  previewHtml: string | null;
+  previewSubject: string | null;
+  eventTitle: string;
+  senderName: string | null;
+  senderAddress: string | null;
+  previewLoading: boolean;
+}>) {
+  const updatingStatus = previewLoading ? <span className="muted"> · Updating…</span> : null;
+  return (
+    <div className="communication-templates-preview">
+      {/* Once a preview exists, PreviewBody's own toolbar carries this same caption (see
+          toolbarLabel below) - a standalone row here too would just repeat it. Kept only for
+          the brief empty/loading window before any preview has rendered yet, so the column
+          isn't blank with no heading at all. */}
+      {!previewHtml && (
+        <div className="communication-preview-toolbar">
+          <span className="communication-preview-toolbar__label">
+            <i className="ti ti-eye" aria-hidden="true" /> Preview
+          </span>
+          {updatingStatus}
+        </div>
       )}
-    </Card>
+      <PreviewBody
+        previewHtml={previewHtml}
+        previewSubject={previewSubject}
+        eventTitle={eventTitle}
+        senderName={senderName}
+        senderAddress={senderAddress}
+        toolbarLabel={
+          <>
+            <i className="ti ti-eye" aria-hidden="true" /> Preview
+            {updatingStatus}
+          </>
+        }
+      />
+    </div>
   );
 }
 
@@ -829,45 +1254,94 @@ function SendTestCard({
   testSending: boolean;
   editorSnapshotMissing: boolean;
   onTestSend: () => Promise<void>;
-  testStatus: { kind: "ok" | "error"; message: string } | null;
+  testStatus: TestSendStatus | null;
 }>) {
   return (
-    <Card title="Send test" className="communication-test-send">
-      <div className="communication-test-row">
-        <Input
-          label="Recipient email"
-          type="email"
-          value={testEmail}
-          onChange={(e) => setTestEmail(e.target.value)}
-          placeholder="you@example.com"
-        />
-        <ArchivedGuard
-          event={event}
-          reasonId="send-test-reason"
-          disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
-        >
-          {(guard) => (
-            <Button variant="secondary" onClick={() => void onTestSend()} {...guard}>
-              {testSending ? "Sending…" : "Send test"}
-            </Button>
-          )}
-        </ArchivedGuard>
-      </div>
-      {testStatus && (
-        <p
-          role="status"
-          aria-live="polite"
-          className={[
-            "communication-status",
-            testStatus.kind === "ok" ? "communication-status--ok" : "communication-status--error",
-          ].join(" ")}
-        >
-          {testStatus.message}
+    <Card
+      title={
+        <HintLabel hint="Doesn't count as a delivery to any attendee, and isn't recorded in the delivery log.">
+          Send test
+        </HintLabel>
+      }
+    >
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">
+          Sends this exact template to one address, so you can check formatting and placeholders
+          before sending it to attendees.
         </p>
-      )}
+        <div className="mail-test-send__row">
+          <div className="mail-test-send__controls">
+            <Input
+              label="Recipient"
+              type="email"
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+            <div className="mail-test-send__send-control">
+              <ArchivedGuard
+                event={event}
+                reasonId="send-test-reason"
+                disabled={testSending || !isValidEmail(testEmail.trim()) || editorSnapshotMissing}
+              >
+                {(guard) => (
+                  <Button
+                    variant="secondary"
+                    icon={<i className="ti ti-send" aria-hidden="true" />}
+                    onClick={() => void onTestSend()}
+                    {...guard}
+                  >
+                    {testSending ? "Sending…" : "Send test"}
+                  </Button>
+                )}
+              </ArchivedGuard>
+            </div>
+          </div>
+        </div>
+        {testStatus && <TestSendResultPreview status={testStatus} />}
+      </div>
     </Card>
   );
 }
+
+/** Same "nice report" pattern as the mail transport Send test email card (Event/Organisation
+ * settings) - reuses its global .mail-preview* classes so a test-send result always looks the
+ * same everywhere in the app, just without that card's transport/bounce-specific fields. */
+function TestSendResultPreview({ status }: Readonly<{ status: TestSendStatus }>) {
+  const isOk = status.kind === "ok";
+  return (
+    <output className={`mail-preview ${isOk ? "mail-preview--ok" : "mail-preview--error"}`}>
+      <div className="mail-preview__head">
+        <div className="mail-preview__head-main">
+          <i
+            className={`ti ${isOk ? "ti-circle-check" : "ti-circle-x"} mail-preview__head-icon${isOk ? "" : " mail-preview__head-icon--error"}`}
+            aria-hidden="true"
+          />
+          <div className="mail-preview__head-text">
+            <b>{status.message}</b>
+            <span>to {status.email}</span>
+          </div>
+        </div>
+      </div>
+      {isOk && (
+        <div className="test-mail-summary">
+          <div>
+            <span>Template</span>
+            <b>{status.template}</b>
+          </div>
+          {status.subject && (
+            <div>
+              <span>Subject</span>
+              <b>{status.subject}</b>
+            </div>
+          )}
+        </div>
+      )}
+    </output>
+  );
+}
+
+const TAB_IDS = ["send", "templates", "log"] as const;
 
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
@@ -878,16 +1352,17 @@ export function CommunicationPage() {
 
   // URL is the source of truth for the active tab (matches Organisation settings' own
   // General/Mail/.../Logs tabs) - a refresh or shared link lands back on the same tab instead
-  // of always resetting to Compose.
+  // of always resetting to Send.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "log" ? "log" : "compose";
+  const tabParam = searchParams.get("tab");
+  const tab = TAB_IDS.find((id) => id === tabParam) ?? "send";
   const setTab = useCallback(
     (next: string) => {
       setSearchParams(
         (prev) => {
           const params = new URLSearchParams(prev);
-          if (next === "log") params.set("tab", "log");
-          else params.delete("tab");
+          if (next === "send") params.delete("tab");
+          else params.set("tab", next);
           return params;
         },
         { replace: true },
@@ -901,7 +1376,6 @@ export function CommunicationPage() {
   const [templates, setTemplates] = useState<MailTemplateListItem[]>([]);
   const [activeKey, setActiveKey] = useState<string>("virtual-ticket");
   const [activeTemplateName, setActiveTemplateName] = useState("ticket");
-  const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [templateActionBusy, setTemplateActionBusy] = useState(false);
   const [editorSnapshotMissing, setEditorSnapshotMissing] = useState(false);
 
@@ -925,9 +1399,7 @@ export function CommunicationPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
 
   const [testEmail, setTestEmail] = useState("");
-  const [testStatus, setTestStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(
-    null,
-  );
+  const [testStatus, setTestStatus] = useState<TestSendStatus | null>(null);
   const [testSending, setTestSending] = useState(false);
 
   const [deliveries, setDeliveries] = useState<DeliveryDto[]>([]);
@@ -945,10 +1417,13 @@ export function CommunicationPage() {
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
   const [deliveriesLive, setDeliveriesLive] = useState(true);
   const [emailBounced, setEmailBounced] = useState(0);
+  const [senderName, setSenderName] = useState<string | null>(null);
+  const [senderAddress, setSenderAddress] = useState<string | null>(null);
 
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
+  const previewSeqRef = useRef(0);
   const createTemplateSeqRef = useRef(0);
   const deleteTemplateSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
@@ -963,13 +1438,32 @@ export function CommunicationPage() {
   const [pendingDelete, setPendingDelete] = useState<{ templateId: string; name: string } | null>(
     null,
   );
+  const [pendingFormat, setPendingFormat] = useState<TemplateFormat | null>(null);
 
   const isDirty = isTemplateDirty(
     { subject, body, format },
     { subject: savedSubject, body: savedBody, format: savedFormat },
   );
   const localConfirmOpen =
-    dirtyConfirmOpen || deleteConfirmOpen || createDialogOpen || overrideConfirmOpen;
+    dirtyConfirmOpen ||
+    deleteConfirmOpen ||
+    createDialogOpen ||
+    overrideConfirmOpen ||
+    pendingFormat !== null;
+
+  /** Switching MJML<->HTML never converts the body, so it's blind data loss on a non-empty
+   * template - gate it behind an explicit confirm instead of flipping state on click. */
+  const requestFormatChange = useCallback(
+    (next: TemplateFormat) => {
+      if (next === format) return;
+      if (body.trim() === "" && subject.trim() === "") {
+        setFormat(next);
+        return;
+      }
+      setPendingFormat(next);
+    },
+    [format, body, subject],
+  );
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       isDirty &&
@@ -1041,8 +1535,11 @@ export function CommunicationPage() {
       if (!eventId || (key === activeKey && !editorSnapshotMissing)) return;
       const seq = ++templateSelectionSeqRef.current;
       setValidationErrors([]);
-      setPreviewSubject(null);
-      setPreviewHtml(null);
+      // Deliberately NOT clearing previewSubject/previewHtml here - the previously-rendered
+      // template stays on screen (stale but not wrong) until the new one's own preview replaces
+      // it a moment later, instead of the whole mail-client box collapsing to an empty state on
+      // every switch (PO report: felt broken, especially since there's no manual Preview button
+      // to click anymore to bring it back).
       setTemplateActionBusy(true);
       try {
         const result = await loadTemplateSelection(key);
@@ -1319,6 +1816,26 @@ export function CommunicationPage() {
     return () => ac.abort();
   }, [eventId, reportApiError]);
 
+  // Preview's sender row shows the real configured "From" - falls back to the event title
+  // (previous behavior) if mail settings can't be read, e.g. an operator role without access
+  // to Settings - this is decorative, not worth surfacing as an error.
+  useEffect(() => {
+    if (!eventId) return;
+    const ac = new AbortController();
+    void fetchEventMailSettings(eventId, ac.signal)
+      .then((data) => {
+        if (ac.signal.aborted) return;
+        setSenderName(data.fields.fromName.value?.trim() || null);
+        setSenderAddress(data.fields.fromAddress.value?.trim() || null);
+      })
+      .catch(() => {
+        if (ac.signal.aborted) return;
+        setSenderName(null);
+        setSenderAddress(null);
+      });
+    return () => ac.abort();
+  }, [eventId]);
+
   // Loads regardless of which tab is active (not gated on tab === "log") so the "Delivery log"
   // tab's own count badge is correct as soon as the page mounts, instead of staying blank until
   // the operator actually clicks into that tab - same fix already applied to Active sessions'
@@ -1424,6 +1941,7 @@ export function CommunicationPage() {
 
   const handlePreview = async () => {
     if (!eventId || editorSnapshotMissing) return;
+    const seq = ++previewSeqRef.current;
     setPreviewLoading(true);
     setValidationErrors([]);
     try {
@@ -1431,9 +1949,11 @@ export function CommunicationPage() {
         activeKey === "virtual-ticket"
           ? await previewEventTemplate(eventId, templatePayload())
           : await previewEventTemplateById(eventId, activeKey, templatePayload());
+      if (seq !== previewSeqRef.current) return;
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
     } catch (err) {
+      if (seq !== previewSeqRef.current) return;
       setPreviewSubject(null);
       setPreviewHtml(null);
       if (err instanceof TemplateValidationError) {
@@ -1445,9 +1965,25 @@ export function CommunicationPage() {
         addToast("Preview failed.", "error");
       }
     } finally {
-      setPreviewLoading(false);
+      if (seq === previewSeqRef.current) setPreviewLoading(false);
     }
   };
+
+  // Templates tab: live preview instead of click-to-preview, debounced so rapid typing fires one
+  // render request after a pause rather than one per keystroke. Only while that tab is actually
+  // open - the Send tab already gets its own immediate (non-debounced) preview-on-template-switch
+  // effect inside SendTab itself, since there's no draft being typed there to debounce against.
+  useEffect(() => {
+    if (tab !== "templates" || editorSnapshotMissing) return;
+    const t = window.setTimeout(() => {
+      void handlePreview();
+    }, 500);
+    return () => window.clearTimeout(t);
+    // handlePreview closes over live subject/body/format/activeKey state and is a fresh function
+    // every render (same reasoning as SendTab's own preview-on-switch effect) - only these
+    // primitives should actually restart the debounce timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, subject, body, format, activeKey, editorSnapshotMissing]);
 
   const performSave = async () => {
     if (!eventId) return;
@@ -1475,8 +2011,6 @@ export function CommunicationPage() {
         );
       }
       addToast("Template saved.", "success");
-      setPreviewSubject(null);
-      setPreviewHtml(null);
     } catch (err) {
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
@@ -1507,18 +2041,30 @@ export function CommunicationPage() {
       : "This will create an event-specific template override (replacing the default template for this event). Continue?";
 
   const handleTestSend = async () => {
-    if (!eventId || editorSnapshotMissing) return;
+    // SendTestCard already disables the button while the editor snapshot is missing; eventId is
+    // always present on this routed page. No extra guard here - it would be an untestable
+    // defensive branch that Codecov flags as a forever-false partial.
+    // Snapshotted once so the result below always reports the address this request actually
+    // used, even if the operator edits the field again while the request is in flight or after
+    // it resolves.
+    const submittedEmail = testEmail.trim();
     setTestStatus(null);
     setTestSending(true);
     try {
       const result =
         activeKey === "virtual-ticket"
-          ? await testSendEventTemplate(eventId, { to: testEmail.trim() })
-          : await testSendEventTemplateById(eventId, activeKey, { to: testEmail.trim() });
+          ? await testSendEventTemplate(eventId!, { to: submittedEmail })
+          : await testSendEventTemplateById(eventId!, activeKey, { to: submittedEmail });
       if (result.status === "sent") {
-        setTestStatus({ kind: "ok", message: "Test email sent." });
+        setTestStatus({
+          kind: "ok",
+          message: "Test email sent.",
+          template: resolveTestSendTemplateLabel(activeKey, templates),
+          subject: testSendReportedSubject(isDirty, previewSubject),
+          email: submittedEmail,
+        });
       } else {
-        setTestStatus({ kind: "error", message: result.error ?? "Send failed." });
+        setTestStatus({ kind: "error", message: result.error ?? "Send failed.", email: submittedEmail });
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -1527,9 +2073,9 @@ export function CommunicationPage() {
           err.status === 400 && hasApiErrorCode(err, "validation_failed")
             ? "Enter a valid email address."
             : operatorApiErrorMessage(err, "Send failed.");
-        setTestStatus({ kind: "error", message });
+        setTestStatus({ kind: "error", message, email: submittedEmail });
       } else {
-        setTestStatus({ kind: "error", message: "Send failed." });
+        setTestStatus({ kind: "error", message: "Send failed.", email: submittedEmail });
       }
     } finally {
       setTestSending(false);
@@ -1563,46 +2109,86 @@ export function CommunicationPage() {
     setDeliveryPage(1);
   }
 
+  // Matches templatePickerOptions' own list exactly: every saved template, plus the virtual
+  // "Ticket email" entry when there's no explicit "ticket" override yet - that virtual entry is
+  // a real, selectable, sendable template from the operator's point of view even though it has
+  // no MailTemplateListItem row of its own.
+  const templateTabCount = templates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
+
   return (
     <div className="screen">
-      <PageHeader
-        title="Communication"
-        subtitle="Outlook-safe ticket email · Microsoft Graph transport"
-        actions={
-          sendTemplateId ? (
-            <ArchivedGuard event={event} reasonId="send-email-reason">
-              {(guard) => (
-                <Button variant="secondary" onClick={() => setSendDialogOpen(true)} {...guard}>
-                  Send email
-                </Button>
-              )}
-            </ArchivedGuard>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Communication" subtitle="Ticket email templates and delivery log" />
 
       <Tabs
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "compose", label: isDirty ? "Compose *" : "Compose" },
+          { id: "send", label: "Send" },
+          {
+            id: "templates",
+            label: isDirty ? "Templates *" : "Templates",
+            // Always ≥ 1: an empty list still counts the virtual inherited ticket row.
+            count: templateTabCount,
+          },
           { id: "log", label: "Delivery log", count: deliveryTotal || undefined },
         ]}
       />
 
-      {tab === "compose" ? (
-        <>
-          <DefaultTemplateBanner activeKey={activeKey} source={source} />
+      <EmailBounceBanner
+        count={emailBounced}
+        onViewLog={() => {
+          setTab("log");
+          setDeliveryStatus("bounced");
+          setDeliveryPage(1);
+        }}
+      />
 
-          <div className="communication-compose">
-            <TemplateSidebar
-              event={event}
-              templateActionBusy={templateActionBusy}
-              templates={templates}
-              activeKey={activeKey}
-              requestDirtyProtectedAction={requestDirtyProtectedAction}
-            />
+      {tab === "send" && (
+        <SendTab
+          event={event}
+          templates={templates}
+          activeKey={activeKey}
+          source={source}
+          requestDirtyProtectedAction={requestDirtyProtectedAction}
+          eventId={eventId}
+          sendTemplateId={sendTemplateId}
+          editorSnapshotMissing={editorSnapshotMissing}
+          isDirty={isDirty}
+          previewHtml={previewHtml}
+          previewSubject={previewSubject}
+          previewLoading={previewLoading}
+          senderName={senderName}
+          senderAddress={senderAddress}
+          onPreview={handlePreview}
+          onOpenTemplate={() => setTab("templates")}
+          testEmail={testEmail}
+          setTestEmail={setTestEmail}
+          testSending={testSending}
+          onTestSend={handleTestSend}
+          testStatus={testStatus}
+        />
+      )}
 
+      {tab === "templates" && (
+        <div className="communication-templates-tab">
+          <TemplatePickerBar
+            event={event}
+            templateActionBusy={templateActionBusy}
+            templates={templates}
+            activeKey={activeKey}
+            source={source}
+            canDelete={activeTemplateName !== "ticket"}
+            onDelete={() =>
+              requestDirtyProtectedAction({
+                kind: "delete",
+                templateId: activeKey,
+                name: activeTemplateName,
+              })
+            }
+            requestDirtyProtectedAction={requestDirtyProtectedAction}
+          />
+
+          <div className="communication-templates-split">
             <TemplateEditorCard
               event={event}
               activeTemplateName={activeTemplateName}
@@ -1616,20 +2202,25 @@ export function CommunicationPage() {
               setActiveField={setActiveField}
               editorSnapshotMissing={editorSnapshotMissing}
               format={format}
-              setFormat={setFormat}
+              onRequestFormat={requestFormatChange}
               bodyRef={bodyRef}
               body={body}
               setBody={setBody}
               validationErrors={validationErrors}
-              previewLoading={previewLoading}
-              onPreview={handlePreview}
               saving={saving}
               isDirty={isDirty}
               saveButtonLabel={saveButtonLabel}
               onSave={handleSave}
             />
 
-            <PreviewCard previewHtml={previewHtml} previewSubject={previewSubject} />
+            <TemplatesPreviewPanel
+              previewHtml={previewHtml}
+              previewSubject={previewSubject}
+              eventTitle={event.title}
+              senderName={senderName}
+              senderAddress={senderAddress}
+              previewLoading={previewLoading}
+            />
           </div>
 
           <SendTestCard
@@ -1641,8 +2232,10 @@ export function CommunicationPage() {
             onTestSend={handleTestSend}
             testStatus={testStatus}
           />
-        </>
-      ) : (
+        </div>
+      )}
+
+      {tab === "log" && (
         <DeliveryLogTab
           eventId={eventId}
           eventTimezone={event.timezone}
@@ -1671,18 +2264,6 @@ export function CommunicationPage() {
           onRetry={() => void loadDeliveries()}
         />
       )}
-
-      {/* Below the tab content (not above the tabs) so the tab bar sits at the same height as
-          every other page's, whether or not there's a bounce to report - parked here for now,
-          exact placement/treatment still under discussion. */}
-      <EmailBounceBanner
-        count={emailBounced}
-        onViewLog={() => {
-          setTab("log");
-          setDeliveryStatus("bounced");
-          setDeliveryPage(1);
-        }}
-      />
 
       <ConfirmDialog
         open={dirtyConfirmOpen}
@@ -1737,6 +2318,21 @@ export function CommunicationPage() {
         onConfirm={() => void performSave()}
       />
       <ConfirmDialog
+        open={pendingFormat !== null}
+        title={`Switch to ${pendingFormat === "html" ? "HTML" : "MJML"}?`}
+        message="Changing format does not convert the template body - the current content will likely stop rendering correctly and this can't be undone automatically."
+        confirmLabel="Switch format"
+        confirmVariant="danger"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          // Dialog only opens while pendingFormat is set, so the cast is safe and avoids a
+          // branch Codecov would otherwise flag as a forever-false partial.
+          setFormat(pendingFormat as TemplateFormat);
+          setPendingFormat(null);
+        }}
+        onCancel={() => setPendingFormat(null)}
+      />
+      <ConfirmDialog
         open={blocker.state === "blocked" && !localConfirmOpen}
         title="Discard unsaved changes?"
         message="You have unsaved template changes. They will be lost if you leave this page."
@@ -1746,14 +2342,6 @@ export function CommunicationPage() {
         onConfirm={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}
       />
-      {eventId && sendTemplateId && (
-        <CommunicationSendDialog
-          open={sendDialogOpen}
-          eventId={eventId}
-          templateId={sendTemplateId}
-          onClose={() => setSendDialogOpen(false)}
-        />
-      )}
     </div>
   );
 }

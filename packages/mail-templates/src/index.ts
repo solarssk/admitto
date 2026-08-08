@@ -28,6 +28,8 @@ export {
   UnquotedAttributePlaceholderError,
   MjmlCompileError,
 } from "./errors.js";
+export type { MjmlRawError } from "./errors.js";
+export { friendlyMjmlErrorMessage } from "./mjmlErrorMessages.js";
 export { compileTemplate } from "./compile.js";
 export {
   renderTemplate,
@@ -72,6 +74,7 @@ export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,
   buildBaseTemplateVars,
+  sanitizeSampleLinksForTestSend,
 } from "./preview.js";
 export type { PreviewTemplateOptions } from "./preview.js";
 export { buildEventLocationTemplateVars } from "./locationVars.js";

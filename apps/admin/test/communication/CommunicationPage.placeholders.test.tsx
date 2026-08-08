@@ -43,6 +43,10 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventMailSettings: vi.fn().mockResolvedValue({
+    fields: { fromName: { value: null }, fromAddress: { value: null } },
+  }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -68,7 +72,7 @@ const legacyTemplate = {
 
 function renderPage() {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
+    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=templates"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
       </Routes>

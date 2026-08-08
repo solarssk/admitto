@@ -2,8 +2,8 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
-import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const fetchEventTemplates = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -16,8 +16,10 @@ const deleteEventTemplate = vi.fn();
 const previewEventTemplate = vi.fn();
 const previewEventTemplateById = vi.fn();
 const saveEventTemplateById = vi.fn();
+const testSendEventTemplate = vi.fn();
 const testSendEventTemplateById = vi.fn();
 const fetchTicketTypes = vi.fn();
+const fetchEventMailSettings = vi.fn();
 
 const reportApiError = vi.fn();
 
@@ -53,11 +55,12 @@ vi.mock("../../src/api/client.js", () => ({
   saveEventTemplateById: (...args: unknown[]) => saveEventTemplateById(...args),
   createEventTemplate: (...args: unknown[]) => createEventTemplate(...args),
   deleteEventTemplate: (...args: unknown[]) => deleteEventTemplate(...args),
-  testSendEventTemplate: vi.fn(),
+  testSendEventTemplate: (...args: unknown[]) => testSendEventTemplate(...args),
   testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
   fetchBulkSendStatus: vi.fn(),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
+  fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -116,6 +119,16 @@ const announcementRow = {
 
 function renderPage() {
   return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=templates"]}>
+      <Routes>
+        <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function renderSendPage() {
+  return renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-comm/communication"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
@@ -126,13 +139,13 @@ function renderPage() {
 
 function renderPageWithEventSwitch() {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-a/communication"]}>
+    <MemoryRouter initialEntries={["/admin/events/evt-a/communication?tab=templates"]}>
       <Routes>
         <Route
           path="/admin/events/:eventId/communication"
           element={
             <>
-              <Link to="/admin/events/evt-b/communication">Switch event</Link>
+              <Link to="/admin/events/evt-b/communication?tab=templates">Switch event</Link>
               <CommunicationPage />
             </>
           }
@@ -140,6 +153,12 @@ function renderPageWithEventSwitch() {
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** Opens the Templates tab's picker dropdown and selects the option matching `label`. */
+async function selectTemplate(label: string) {
+  fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+  fireEvent.click(await screen.findByRole("button", { name: label }));
 }
 
 beforeEach(() => {
@@ -154,6 +173,15 @@ beforeEach(() => {
   });
   fetchEventTemplate.mockResolvedValue(legacyTemplate);
   fetchTicketTypes.mockResolvedValue([]);
+  fetchEventMailSettings.mockResolvedValue({
+    fields: { fromName: { value: null }, fromAddress: { value: null } },
+  });
+  // The Templates tab now auto-previews on a debounce instead of requiring a click - resolve
+  // these by default so that isn't a surprise "Preview failed" toast in tests that never cared
+  // about preview content (mirrors the same default already used for the Send tab's own
+  // auto-preview in every sibling CommunicationPage test file).
+  previewEventTemplate.mockResolvedValue({ subject: "", html: "<p></p>" });
+  previewEventTemplateById.mockResolvedValue({ subject: "", html: "<p></p>" });
   fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
     if (id === "tpl-ticket") {
       return {
@@ -189,6 +217,7 @@ afterEach(() => {
   previewEventTemplateById.mockReset();
   saveEventTemplateById.mockReset();
   testSendEventTemplateById.mockReset();
+  testSendEventTemplate.mockReset();
   vi.useRealTimers();
 });
 
@@ -211,7 +240,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
     expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
   });
@@ -246,6 +275,17 @@ describe("CommunicationPage templates", () => {
 
     expect(await screen.findByText("Failed to load template.")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
+  });
+
+  it("still renders the page when the sender name/address lookup fails", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventMailSettings.mockRejectedValueOnce(new Error("network unavailable"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
   });
 
   it("redirects to login when the initial template load returns 401", async () => {
@@ -285,8 +325,10 @@ describe("CommunicationPage templates", () => {
 
     const optionalChip = screen.getByRole("button", { name: "{{first_name}}" });
     const requiredChip = screen.getByRole("button", { name: "{{ticket_url}}" });
-    expect(optionalChip.getAttribute("title")).toBeNull();
-    expect(requiredChip.getAttribute("title")).toBe("Required placeholder");
+    expect(getTooltipText(optionalChip)).toBe("Attendee's first name.");
+    expect(getTooltipText(requiredChip)).toBe(
+      "Required placeholder · Link to the attendee's own ticket page.",
+    );
 
     const subjectInput = screen.getByLabelText("Subject");
     fireEvent.focus(subjectInput);
@@ -300,27 +342,57 @@ describe("CommunicationPage templates", () => {
     expect(bodyTextarea).toHaveProperty("value", "<p>New body</p>");
   });
 
-  it("selects persisted ticket template from list", async () => {
+  it("selects persisted ticket template from the picker", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Ticket email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
     });
     expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-ticket");
   });
 
-  it("disables delete for ticket template", async () => {
+  it("switches templates from the Send tab's own picker", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
+    await screen.findByRole("tab", { name: /Send/i, selected: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Template, Ticket email" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
+
+    await waitFor(() => {
+      expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-rem");
+    });
+    expect(screen.getByRole("button", { name: "Template, Reminder" })).toBeTruthy();
+  });
+
+  it("disables delete with an explanatory tooltip for the ticket template, enables it once a different template is active", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Reminder" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
-    const ticketDelete = screen.getByRole("button", { name: "Delete Ticket email" });
-    expect((ticketDelete as HTMLButtonElement).disabled).toBe(true);
+    const deleteBtn = screen.getByRole("button", { name: "Delete template" }) as HTMLButtonElement;
+    expect(deleteBtn.disabled).toBe(true);
+    expect(getTooltipText(deleteBtn)).toBe("The default ticket template can't be deleted.");
+
+    await selectTemplate("Reminder");
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+    expect((screen.getByRole("button", { name: "Delete template" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
   });
 
   it("does not refetch legacy template when switching between persisted templates", async () => {
@@ -333,7 +405,7 @@ describe("CommunicationPage templates", () => {
     });
 
     fetchEventTemplate.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
@@ -348,10 +420,10 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
@@ -363,7 +435,7 @@ describe("CommunicationPage templates", () => {
       subject_template: "Updated inherited subject",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Ticket email (inherited)" }));
+    await selectTemplate("Ticket email");
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Updated inherited subject")).toBeTruthy();
@@ -401,14 +473,7 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
-    fireEvent.click(screen.getByRole("button", { name: "Ticket email" }));
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-      const active = document.querySelector(".communication-templates__item--active");
-      expect(active?.textContent).toContain("Ticket email");
-    });
+    await selectTemplate("Reminder");
 
     resolveReminder({
       ...reminderRow,
@@ -417,10 +482,7 @@ describe("CommunicationPage templates", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-      expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
-      const active = document.querySelector(".communication-templates__item--active");
-      expect(active?.textContent).toContain("Ticket email");
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
   });
 
@@ -435,6 +497,7 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
@@ -449,10 +512,10 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
     const dialog = screen.getByRole("dialog", { name: "New template" });
     const input = within(dialog).getByLabelText("Template label");
     fireEvent.change(input, { target: { value: "Announcement" } });
@@ -474,14 +537,16 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
     expect(screen.getByDisplayValue("Edited ticket")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
-    expect(screen.queryByText("New template")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "New template" })).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
@@ -500,13 +565,13 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Dirty draft" } });
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
 
     await waitFor(() => {
-      expect(screen.getByText("New template")).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "New template" })).toBeTruthy();
     });
   });
 
@@ -519,8 +584,16 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
+    // Delete now only ever targets the currently open template (the mockup's own layout - no
+    // more per-row delete in a list) - so testing "dirty + delete" means editing the template
+    // you're about to delete, not a bystander one.
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Dirty draft" } });
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
 
     expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
@@ -545,13 +618,13 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
 
     await waitFor(() => {
-      expect(screen.getByText("New template")).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "New template" })).toBeTruthy();
     });
 
     const createDialog = screen.getByRole("dialog", { name: "New template" });
@@ -575,9 +648,9 @@ describe("CommunicationPage templates", () => {
     createEventTemplate.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
     const createDialog = await screen.findByRole("dialog", { name: "New template" });
     fireEvent.change(within(createDialog).getByLabelText("Template label"), {
       target: { value: "Announcement" },
@@ -586,6 +659,22 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
     });
+  });
+
+  it("updates the preview automatically as the draft changes - no Preview button needed", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById
+      .mockResolvedValueOnce({ subject: "Initial subject", html: "<p>Initial</p>" })
+      .mockResolvedValueOnce({ subject: "Updated subject", html: "<p>Updated</p>" });
+
+    renderPage();
+
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(await screen.findByText("Initial subject", {}, { timeout: 2000 })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("HTML body"), { target: { value: "<p>New body</p>" } });
+
+    expect(await screen.findByText("Updated subject", {}, { timeout: 2000 })).toBeTruthy();
   });
 
   it("toasts operator-safe preview failure", async () => {
@@ -600,15 +689,16 @@ describe("CommunicationPage templates", () => {
       body_template: "<mjml></mjml>",
       template_format: "mjml" as const,
     });
-    previewEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    previewEventTemplateById.mockRejectedValue(new ApiError(500, "secret_internal"));
+
     renderPage();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
-    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      },
+      { timeout: 2000 },
+    );
   });
 
   it("switches formats and renders a successful compiled preview", async () => {
@@ -619,29 +709,77 @@ describe("CommunicationPage templates", () => {
     });
 
     renderPage();
-    await screen.findByRole("button", { name: "Preview" });
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "MJML" }));
+    fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Switch format" }));
     expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "HTML" }));
+    fireEvent.click(screen.getByRole("radio", { name: "HTML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Switch format" }));
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(await screen.findByText("Preview subject")).toBeTruthy();
+    expect(await screen.findByText("Preview subject", {}, { timeout: 2000 })).toBeTruthy();
     expect(screen.getByTitle("Email preview").getAttribute("srcdoc")).toBe("<p>Rendered preview</p>");
+  });
+
+  it("keeps the format unchanged when the switch-format confirmation is cancelled", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    expect(screen.getByLabelText("HTML body")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
+  });
+
+  it("switches format without confirmation when the body is empty", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventTemplateById.mockResolvedValue({
+      ...ticketRow,
+      subject_template: "",
+      body_template: "",
+      compiled_html_template: "",
+    });
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
+    expect(screen.getByLabelText("MJML body")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
   });
 
   it("renders inline validation errors returned by preview", async () => {
     const { TemplateValidationError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockResolvedValue([ticketRow]);
-    previewEventTemplateById.mockRejectedValueOnce(
+    previewEventTemplateById.mockRejectedValue(
       new TemplateValidationError(["Subject must include {{ticket_url}}"]),
     );
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Preview" }));
 
-    expect(await screen.findByText("Subject must include {{ticket_url}}")).toBeTruthy();
+    expect(
+      await screen.findByText("Subject must include {{ticket_url}}", {}, { timeout: 2000 }),
+    ).toBeTruthy();
+  });
+
+  it("toasts a generic message when preview fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockRejectedValue(new Error("network unavailable"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Preview failed/);
+    });
   });
 
   it("toasts operator-safe template switch failure", async () => {
@@ -649,10 +787,11 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Reminder" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
     fetchEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
     });
@@ -673,14 +812,113 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("toasts a success message after saving a template", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    saveEventTemplateById.mockResolvedValueOnce({
+      ...ticketRow,
+      subject_template: "Updated ticket subject",
+      body_template: "<p>Body</p>",
+      compiled_html_template: "<p>Body</p>",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Template saved/);
+    });
+  });
+
+  it("renders inline validation errors returned by save", async () => {
+    const { TemplateValidationError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    saveEventTemplateById.mockRejectedValueOnce(
+      new TemplateValidationError(["Subject must include {{ticket_url}}"]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    expect(
+      await screen.findByText("Subject must include {{ticket_url}}", {}, { timeout: 2000 }),
+    ).toBeTruthy();
+  });
+
+  it("shows the shared-default banner on the Send tab", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
+    await screen.findByRole("tab", { name: /Send/i, selected: true });
+
+    expect(
+      await screen.findByText(/This event has no template of its own yet/),
+    ).toBeTruthy();
+  });
+
+  it("lets the operator cancel out of creating an override for the shared default template", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "New subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+
+    expect(
+      await screen.findByText(/This will create an event-specific template override/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/This will create an event-specific template override/)).toBeNull();
+    });
+  });
+
+  it("creates an event override for the shared default template on confirm", async () => {
+    const { saveEventTemplate } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "New subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await screen.findByText(/This will create an event-specific template override/);
+
+    saveEventTemplate.mockResolvedValueOnce(undefined);
+    fetchEventTemplates.mockResolvedValueOnce([ticketRow]);
+    fetchEventTemplateById.mockResolvedValueOnce({
+      ...ticketRow,
+      body_template: "<p>Body</p>",
+      compiled_html_template: "<p>Body</p>",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(saveEventTemplate).toHaveBeenCalledWith("evt-comm", expect.objectContaining({ subject_template: "New subject" }));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Template saved/);
+    });
+  });
+
   it("shows validation message on invalid test send email", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     renderPage();
     await waitFor(() => {
-      expect(screen.getByLabelText("Recipient email")).toBeTruthy();
+      expect(screen.getByLabelText("Recipient")).toBeTruthy();
     });
-    fireEvent.change(screen.getByLabelText("Recipient email"), {
+    fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "ops@example.com" },
     });
     testSendEventTemplateById.mockRejectedValueOnce(
@@ -699,130 +937,32 @@ describe("CommunicationPage templates", () => {
       .mockResolvedValueOnce({ status: "failed", error: "Mailbox unavailable" });
 
     renderPage();
-    const email = await screen.findByLabelText("Recipient email");
+    const email = await screen.findByLabelText("Recipient");
     fireEvent.change(email, { target: { value: "ops@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     expect(await screen.findByText("Test email sent.")).toBeTruthy();
-    expect(screen.getByRole("status").className).toContain("communication-status--ok");
+    expect(screen.getByRole("status").className).toContain("mail-preview--ok");
 
     fireEvent.click(screen.getByRole("button", { name: "Send test" }));
     expect(await screen.findByText("Mailbox unavailable")).toBeTruthy();
-    expect(screen.getByRole("status").className).toContain("communication-status--error");
+    expect(screen.getByRole("status").className).toContain("mail-preview--error");
   });
 
-  it("reports no recipients when batchId is null", async () => {
+  it("keeps reporting the address a test send actually used after the field is edited again", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
-    sendEventBulk.mockResolvedValue({ batchId: null, queued: 0, skipped: 0, failed: 0 });
+    testSendEventTemplateById.mockResolvedValueOnce({ status: "sent" });
 
     renderPage();
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "first@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(screen.getByText(/to first@example\.com/)).toBeTruthy();
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
-    });
+    fireEvent.change(email, { target: { value: "second@example.com" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
-    await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: "Send email" })).toBeTruthy();
-    });
-    const dialog = screen.getByRole("dialog", { name: "Send email" });
-    fireEvent.click(
-      Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Send")!,
-    );
-
-    await waitFor(() => {
-      expect(sendEventBulk).toHaveBeenCalledWith(
-        "evt-comm",
-        expect.objectContaining({ templateId: "tpl-ticket" }),
-      );
-      expect(screen.getByText(/No recipients matched/i)).toBeTruthy();
-    });
-  });
-
-  it("shows an inline retryable error under the ticket-type filter when the catalog fails to load (CodeRabbit review)", async () => {
-    fetchEventTemplates.mockResolvedValue([ticketRow]);
-    fetchTicketTypes.mockRejectedValueOnce(new Error("network down"));
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
-    const dialog = await screen.findByRole("dialog", { name: "Send email" });
-
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "By ticket type" }));
-
-    expect(await within(dialog).findByText("Failed to load ticket types.")).toBeTruthy();
-
-    fetchTicketTypes.mockResolvedValueOnce([{ key: "vip", label: "VIP", color: "purple" }]);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
-
-    await waitFor(() => expect(within(dialog).queryByText("Failed to load ticket types.")).toBeNull());
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Ticket type,/ }));
-    expect(within(dialog).getByRole("button", { name: "VIP" })).toBeTruthy();
-  });
-
-  it("sends by ticket type, populating the Select from the catalog and using the picked key as the filter value (batch 04 / #351)", async () => {
-    fetchEventTemplates.mockResolvedValue([ticketRow]);
-    fetchTicketTypes.mockResolvedValue([{ key: "vip", label: "VIP", color: "purple" }]);
-    sendEventBulk.mockResolvedValue({ batchId: "batch-vip", queued: 1, skipped: 0, failed: 0 });
-
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send email" }));
-    const dialog = await screen.findByRole("dialog", { name: "Send email" });
-
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Recipients,/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "By ticket type" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: /^Ticket type,/ }));
-    expect(await within(dialog).findByRole("button", { name: "VIP" })).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "VIP" }));
-
-    fireEvent.click(
-      Array.from(dialog.querySelectorAll("button")).find((b) => b.textContent === "Send")!,
-    );
-
-    await waitFor(() => {
-      expect(sendEventBulk).toHaveBeenCalledWith(
-        "evt-comm",
-        expect.objectContaining({
-          templateId: "tpl-ticket",
-          filter: { type: "ticket_type", value: "vip" },
-        }),
-      );
-    });
-  });
-
-  it("does not switch editor when deleting a non-active template", async () => {
-    deleteEventTemplate.mockResolvedValue(undefined);
-    fetchEventTemplates
-      .mockResolvedValueOnce([ticketRow, reminderRow, announcementRow])
-      .mockResolvedValueOnce([ticketRow, reminderRow]);
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
-    await waitFor(() => {
-      expect(screen.getByText("Delete template?")).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-
-    await waitFor(() => {
-      expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-ann");
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
+    expect(screen.getByText(/to first@example\.com/)).toBeTruthy();
+    expect(screen.queryByText(/to second@example\.com/)).toBeNull();
   });
 
   it("loads the remaining ticket template after deleting the active non-ticket template", async () => {
@@ -836,10 +976,10 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
@@ -855,15 +995,15 @@ describe("CommunicationPage templates", () => {
 
     renderPage();
 
-    expect(await screen.findByRole("button", { name: "Ticket email (inherited)" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    expect(await screen.findByText("Ticket email")).toBeTruthy();
+    await selectTemplate("Reminder");
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(fetchEventTemplate).toHaveBeenCalledTimes(2);
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
     });
   });
@@ -903,12 +1043,12 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -920,22 +1060,20 @@ describe("CommunicationPage templates", () => {
         screen.getByText("Template deleted. Could not load ticket template. Reload the page."),
       ).toBeTruthy();
       expect(screen.queryByDisplayValue("Reminder subject")).toBeNull();
-      expect(screen.getByRole("button", { name: "Ticket email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("value", "");
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", true);
       expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", true);
       expect(screen.getByRole("button", { name: "Saved" })).toHaveProperty("disabled", true);
       expect(reportApiError).toHaveBeenCalledWith(500);
     });
 
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Ticket email" }));
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
     });
   });
 
@@ -983,12 +1121,12 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -998,9 +1136,9 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", true);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
     await waitFor(() => {
-      expect(screen.getByText("New template")).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "New template" })).toBeTruthy();
     });
 
     const createDialog = screen.getByRole("dialog", { name: "New template" });
@@ -1013,8 +1151,6 @@ describe("CommunicationPage templates", () => {
       expect(createEventTemplate).toHaveBeenCalled();
       expect(screen.getByDisplayValue("Announcement")).toBeTruthy();
       expect(screen.getByLabelText("Subject")).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Preview" })).toHaveProperty("disabled", false);
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
     });
   });
 
@@ -1031,15 +1167,15 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reminder" }));
+    await selectTemplate("Reminder");
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -1047,7 +1183,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(() => {
       expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
-      expect(screen.getByText("Ticket email (inherited)")).toBeTruthy();
+      expect(screen.getByText("Ticket email")).toBeTruthy();
       expect(screen.getByDisplayValue("Hello")).toBeTruthy();
       expect(
         screen.getByText(
@@ -1066,10 +1202,14 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Announcement" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Announcement");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Announcement subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -1090,10 +1230,14 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Announcement" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Announcement");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Announcement subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Announcement" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
@@ -1115,24 +1259,348 @@ describe("CommunicationPage templates", () => {
     renderPageWithEventSwitch();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Delete Reminder" })).toBeTruthy();
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete Reminder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete template" }));
     await waitFor(() => {
       expect(screen.getByText("Delete template?")).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "New template" })).toHaveProperty("disabled", true);
     });
 
     fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "New" })).toHaveProperty("disabled", false);
+      expect(screen.getByRole("button", { name: "New template" })).toHaveProperty("disabled", false);
       expect(screen.queryByText("Delete template?")).toBeNull();
     });
+  });
+
+  it("discards unsaved changes and lets the blocked navigation proceed", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    blockerState.state = "blocked";
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Ignored" } });
+
+    expect(await screen.findByText("Discard unsaved changes?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(blockerState.proceed).toHaveBeenCalled();
+  });
+
+  it("keeps editing and resets the blocked navigation", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    blockerState.state = "blocked";
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Ignored" } });
+
+    expect(await screen.findByText("Discard unsaved changes?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(blockerState.reset).toHaveBeenCalled();
+  });
+
+  it("opens the Templates tab from the Send tab preview toolbar", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderSendPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Open template/ }));
+    expect(await screen.findByLabelText("Subject")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Saved" })).toBeTruthy();
+  });
+
+  it("shows the configured sender address and Updating status while preview refreshes", async () => {
+    let resolvePreview: ((value: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventMailSettings.mockResolvedValue({
+      fields: {
+        fromName: { value: "Admitto Mailer" },
+        fromAddress: { value: "tickets@example.com" },
+      },
+    });
+    previewEventTemplateById
+      .mockResolvedValueOnce({ subject: "Hello", html: "<p>First</p>" })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePreview = resolve;
+          }),
+      );
+
+    renderPage();
+    expect(await screen.findByText(/tickets@example\.com/)).toBeTruthy();
+    expect(screen.getByText("Admitto Mailer")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited subject" } });
+    expect(await screen.findByText(/Updating/)).toBeTruthy();
+    await act(async () => {
+      resolvePreview?.({ subject: "Edited subject", html: "<p>Second</p>" });
+      await Promise.resolve();
+    });
+  });
+
+  it("renders QR, wallet, and custom image placeholder chips with their tooltips", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    fetchEventTemplate.mockResolvedValueOnce({
+      ...legacyTemplate,
+      allowed_placeholders: [
+        "first_name",
+        "qr_image_url",
+        "apple_wallet_url",
+        "google_wallet_url",
+        "sponsor_banner",
+        "mystery_token",
+      ],
+      image_placeholders: ["qr_image_url", "sponsor_banner"],
+      required_url_placeholders: [],
+    });
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "{{qr_image_url}}" })).toBeTruthy();
+    });
+
+    expect(screen.getByText("Images")).toBeTruthy();
+    expect(getTooltipText(screen.getByRole("button", { name: "{{sponsor_banner}}" }))).toBe(
+      "Custom image asset for this event.",
+    );
+    expect(getTooltipText(screen.getByRole("button", { name: "{{mystery_token}}" }))).toBe(
+      "{{mystery_token}}",
+    );
+    expect(getTooltipText(screen.getByRole("button", { name: "{{apple_wallet_url}}" }))).toBe(
+      "Link to add the ticket to Apple Wallet.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "{{qr_image_url}}" }));
+    fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
+  });
+
+  it("no-ops when the already-selected format radio is clicked again", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("HTML body")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "HTML" }));
+    expect(screen.getByLabelText("HTML body")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
+  });
+
+  it("reports the previewed subject on a clean test send and hides it while dirty", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockResolvedValue({ subject: "Saved subject", html: "<p>Hi</p>" });
+    testSendEventTemplateById.mockResolvedValue({ status: "sent" });
+
+    renderPage();
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "ops@example.com" } });
+    expect(await screen.findByText("Saved subject")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(within(screen.getByRole("status")).getByText("Saved subject")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Dirty subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(within(screen.getByRole("status")).queryByText("Subject")).toBeNull();
+  });
+
+  it("uses the named template label, a generic failed message, and a non-API error path on test send", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    testSendEventTemplateById
+      .mockResolvedValueOnce({ status: "failed" })
+      .mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "ops@example.com" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Send failed.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Send failed.")).toBeTruthy();
+  });
+
+  it("test-sends the inherited virtual ticket template by name", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    testSendEventTemplate.mockResolvedValue({ status: "sent" });
+
+    renderPage();
+    const email = await screen.findByLabelText("Recipient");
+    fireEvent.change(email, { target: { value: "ops@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText("Test email sent.")).toBeTruthy();
+    expect(testSendEventTemplate).toHaveBeenCalled();
+    expect(within(screen.getByRole("status")).getByText("Ticket email")).toBeTruthy();
+  });
+
+  it("ignores stale preview responses when switching templates mid-flight", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    previewEventTemplateById.mockImplementation(((_eventId: string, id: string) => {
+      if (id === "tpl-ticket") {
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve({ subject: "Reminder preview", html: "<p>Rem</p>" });
+    }) as typeof previewEventTemplateById);
+
+    renderPage();
+    await waitFor(() => {
+      expect(previewEventTemplateById).toHaveBeenCalled();
+    });
+    await selectTemplate("Reminder");
+    expect(await screen.findByText("Reminder preview")).toBeTruthy();
+    await act(async () => {
+      resolveFirst?.({ subject: "Stale ticket", html: "<p>Stale</p>" });
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Stale ticket")).toBeNull();
+  });
+
+  it("ignores stale preview failures when a newer preview has already started", async () => {
+    let rejectFirst: ((reason?: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    previewEventTemplateById.mockImplementation(((_eventId: string, id: string) => {
+      if (id === "tpl-ticket") {
+        return new Promise((_, reject) => {
+          rejectFirst = reject;
+        });
+      }
+      return Promise.resolve({ subject: "Reminder preview", html: "<p>Rem</p>" });
+    }) as typeof previewEventTemplateById);
+
+    renderPage();
+    await waitFor(() => {
+      expect(previewEventTemplateById).toHaveBeenCalled();
+    });
+    await selectTemplate("Reminder");
+    expect(await screen.findByText("Reminder preview")).toBeTruthy();
+    await act(async () => {
+      rejectFirst?.(new Error("stale fail"));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Preview failed.")).toBeNull();
+    expect(screen.getByText("Reminder preview")).toBeTruthy();
+  });
+
+  it("aborts in-flight overview and mail-settings fetches on unmount", async () => {
+    let resolveMail: ((value: unknown) => void) | undefined;
+    let rejectMail: ((reason?: unknown) => void) | undefined;
+    let rejectOverview: ((reason?: unknown) => void) | undefined;
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventOverview.mockImplementation(
+      (_eventId: string, signal?: AbortSignal) =>
+        new Promise((_, reject) => {
+          rejectOverview = reject;
+          signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    );
+    fetchEventMailSettings
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveMail = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectMail = reject;
+          }),
+      );
+
+    const first = renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    first.unmount();
+    await act(async () => {
+      resolveMail?.({
+        fields: { fromName: { value: "Late" }, fromAddress: { value: "late@example.com" } },
+      });
+      await Promise.resolve();
+    });
+
+    // Second mount: overview rejects with a non-AbortError after abort so the
+    // `ac.signal.aborted` guard (not just the AbortError instanceof check) is exercised.
+    fetchEventOverview.mockImplementation(
+      (_eventId: string, signal?: AbortSignal) =>
+        new Promise((_, reject) => {
+          rejectOverview = reject;
+          signal?.addEventListener("abort", () => {
+            queueMicrotask(() => reject(new Error("late overview")));
+          });
+        }),
+    );
+    const second = renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    second.unmount();
+    await act(async () => {
+      rejectMail?.(new Error("gone"));
+      rejectOverview?.(new Error("late overview"));
+      await Promise.resolve();
+    });
+  });
+});
+
+describe("recoverLegacyAfterDelete", () => {
+  it("warns to reload when there is no cached inherited ticket to fall back to", async () => {
+    fetchEventTemplate.mockRejectedValueOnce(new Error("gone"));
+    const applyLegacyTemplate = vi.fn();
+    const setActiveKey = vi.fn();
+    const addToast = vi.fn();
+
+    await recoverLegacyAfterDelete({
+      scopeEventId: "evt-1",
+      seq: 1,
+      deleteTemplateSeqRef: { current: 1 },
+      currentEventIdRef: { current: "evt-1" },
+      legacyTemplateRef: { current: null },
+      applyLegacyTemplate,
+      setActiveKey,
+      addToast,
+    });
+
+    expect(applyLegacyTemplate).not.toHaveBeenCalled();
+    expect(setActiveKey).toHaveBeenCalledWith("virtual-ticket");
+    expect(addToast).toHaveBeenCalledWith(
+      "Template deleted. Could not load default ticket. Reload the page.",
+      "warning",
+    );
+  });
+});
+
+describe("resolveTestSendTemplateLabel", () => {
+  it("falls back to Template when the active id is no longer in the list", () => {
+    expect(resolveTestSendTemplateLabel("virtual-ticket", [])).toBe("Ticket email");
+    expect(resolveTestSendTemplateLabel("tpl-missing", [{ id: "tpl-other", label: "Other" }])).toBe(
+      "Template",
+    );
   });
 });

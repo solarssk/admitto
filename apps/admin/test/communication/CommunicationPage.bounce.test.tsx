@@ -38,8 +38,11 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
   fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
   fetchEventTemplateById: vi.fn(),
-  previewEventTemplate: vi.fn(),
-  previewEventTemplateById: vi.fn(),
+  // The Send tab (now the default landing tab) auto-renders a preview on mount - resolve these
+  // by default so that doesn't surface as an unrelated "Preview failed" error toast in tests
+  // that never cared about preview content.
+  previewEventTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
+  previewEventTemplateById: vi.fn().mockResolvedValue({ subject: "", html: "" }),
   saveEventTemplate: vi.fn(),
   saveEventTemplateById: vi.fn(),
   createEventTemplate: vi.fn(),
@@ -48,6 +51,10 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventMailSettings: vi.fn().mockResolvedValue({
+    fields: { fromName: { value: null }, fromAddress: { value: null } },
+  }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -146,7 +153,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
     });
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -185,9 +192,22 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
     });
     expect(screen.queryByText(/emails bounced/i)).toBeNull();
+  });
+
+  it("reports the API status when the overview fetch fails with an ApiError", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockRejectedValue(new ApiError(500, "internal_error"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+    });
+    expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
   it("clears stale bounce banner when navigating to another event", async () => {

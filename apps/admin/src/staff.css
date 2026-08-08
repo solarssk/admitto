@@ -6872,6 +6872,21 @@ output.mail-field-hint {
   line-height: 1;
 }
 
+/* MJML/HTML format toggle (Communication's Templates tab editor card) — same fix as
+ * .seg-control.overview-activity-filter above, for the identical reason: rendered inline in the
+ * editor Card's header `actions` row rather than a row of its own. */
+.seg-control.communication-format-toggle {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+}
+
+.seg-control.communication-format-toggle .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  line-height: 1;
+}
+
 /* Fixed height (not max-height) so the card's footprint stays stable regardless of how many
  * items the All/Issues filter matches — max-height let the scroll container (and the whole card)
  * collapse down to a single item's height when "Issues" had few/no matches. Matches the Check-in
