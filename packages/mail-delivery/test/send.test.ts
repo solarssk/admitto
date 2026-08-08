@@ -76,6 +76,75 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("sendTicketEmails name fields", () => {
+  // Own event, isolated from EVENT_ID's fixed 3-attendee count assertions elsewhere in this file.
+  const NAME_FIELDS_EVENT_ID = "evt-mail-send-name-fields";
+
+  beforeAll(async () => {
+    await prisma.event.create({
+      data: {
+        id: NAME_FIELDS_EVENT_ID,
+        organization_id: "org-mail",
+        title: "Mail Event (name fields)",
+        slug: "mail-event-name-fields",
+        date: new Date("2026-09-01"),
+      },
+    });
+  });
+
+  it("uses first_name/last_name directly when set, instead of splitting name", async () => {
+    // "Zhang Wei" naively splits to first_name="Zhang" (actually the family name) - explicit
+    // fields must win over that guess. If the send path fell back to splitDisplayName(name)
+    // here, the greeting would read "Hi Zhang," instead.
+    await prisma.attendee.create({
+      data: {
+        id: "att-explicit-name-fields",
+        event_id: NAME_FIELDS_EVENT_ID,
+        email: "wei@example.com",
+        name: "Zhang Wei",
+        first_name: "Wei",
+        last_name: "Zhang",
+      },
+    });
+    exported.length = 0;
+
+    await sendTicketEmails(
+      NAME_FIELDS_EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-explicit-name-fields"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const weiExport = exported.find((p) => p.message.to === "wei@example.com");
+    expect(weiExport?.message.html).toContain("Hi Wei,");
+    expect(weiExport?.message.html).not.toContain("Hi Zhang,");
+  });
+
+  it("falls back to splitting name when first_name/last_name are still null (un-migrated attendee)", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-null-name-fields",
+        event_id: NAME_FIELDS_EVENT_ID,
+        email: "dana@example.com",
+        name: "Dana Example",
+      },
+    });
+    exported.length = 0;
+
+    await sendTicketEmails(
+      NAME_FIELDS_EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-null-name-fields"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const danaExport = exported.find((p) => p.message.to === "dana@example.com");
+    expect(danaExport?.message.html).toContain("Hi Dana,");
+  });
+});
+
 describe("sendTicketEmails", () => {
   it("sends ticket emails and creates EmailDelivery rows", async () => {
     exported.length = 0;
