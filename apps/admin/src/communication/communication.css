@@ -725,3 +725,21 @@
     justify-content: flex-start;
   }
 }
+
+/* Send tab's selected-template description, under the picker. .mail-field-hint is tuned for a
+   short one-line field hint (negative top margin to pull it snug under a field) - an operator's
+   free-text description can run long or, per a PO stress test, have no natural break at all, so
+   this gets its own normal-spaced block with a 2-line clamp instead (same clamp technique as
+   requirements-item-desc in requirements.css), rather than letting it sprawl or crowd the field
+   above it. */
+.communication-template-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  margin: var(--space-1) 0 var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: var(--lh-normal, 1.4);
+}

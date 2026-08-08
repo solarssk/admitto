@@ -759,7 +759,9 @@ function SendTab({
                 onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
               />
             </div>
-            {templateDescription && <p className="mail-field-hint">{templateDescription}</p>}
+            {templateDescription && (
+              <p className="communication-template-description">{templateDescription}</p>
+            )}
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
             <PreviewBody
               previewHtml={previewHtml}
