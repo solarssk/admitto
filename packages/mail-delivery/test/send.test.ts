@@ -148,6 +148,32 @@ describe("sendTicketEmails name fields", () => {
     expect(partialExport?.message.html).not.toContain("Hi Partial,");
   });
 
+  it("uses the real field even when only first_name is set (last_name still null)", async () => {
+    // Mirror of the last_name-only case above: reachable via a PATCH that only touches
+    // first_name. last_name must fall back to "" here, not to a value split out of name.
+    await prisma.attendee.create({
+      data: {
+        id: "att-first-name-only",
+        event_id: NAME_FIELDS_EVENT_ID,
+        email: "onlyfirst@example.com",
+        name: "Only First",
+        first_name: "RealFirstName",
+      },
+    });
+    exported.length = 0;
+
+    await sendTicketEmails(
+      NAME_FIELDS_EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-first-name-only"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const onlyFirstExport = exported.find((p) => p.message.to === "onlyfirst@example.com");
+    expect(onlyFirstExport?.message.html).toContain("Hi RealFirstName,");
+  });
+
   it("falls back to splitting name when first_name/last_name are still null (un-migrated attendee)", async () => {
     await prisma.attendee.create({
       data: {
