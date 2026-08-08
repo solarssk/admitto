@@ -241,10 +241,10 @@
   background: var(--surface-hover);
 }
 
-/* Always-visible small thumbnail for qr_image_url - a hover-only preview is too easy to never
-   discover at all (PO report: "I don't see anything"), so this is the guaranteed baseline; the
-   larger .communication-chip-preview below is a bonus for a closer look, not the only way to
-   see it. */
+/* Always-visible small thumbnail for image placeholders (see IMAGE_PLACEHOLDER_SAMPLES) - a
+   hover-only preview is too easy to never discover at all (PO report: "I don't see anything"),
+   so this is the guaranteed baseline; the larger .communication-chip-preview below is a bonus
+   for a closer look, not the only way to see it. */
 .communication-chip-thumb {
   display: block;
   width: 16px;
@@ -252,14 +252,13 @@
   border-radius: 2px;
 }
 
-/* Larger image preview shown below the chip on hover/focus - CSS-only reveal (no JS state), only
-   ever populated for the one placeholder this editor already has a same-origin sample image for
-   (qr_image_url's SAMPLE_QR_PLACEHOLDER_DATA_URI). Opens downward, not upward: these chips sit
-   near the top of the card, right under the header, so popping upward left it with nowhere to
-   render and no reliable way to notice it (PO report, repeated). */
+/* Larger image preview shown above the chip on hover/focus - CSS-only reveal (no JS state).
+   Opens upward: every chip with a sample image (qr_image_url, logo_url, header_image_url,
+   event_map_url) lives at least one row below the placeholder list's own top edge, so there's
+   always room above; unlike a chip in the very first row, which would have nowhere to render it. */
 .communication-chip-preview {
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   z-index: var(--z-dropdown);
@@ -479,6 +478,14 @@
   min-height: 320px;
   border: none;
   background: #fff;
+}
+
+/* Same box as the iframe above (so swapping between them causes no layout shift) with a
+   centered spinner instead of rendered content, while a preview fetch is in flight. */
+.communication-preview-frame--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Toolbar lives inside the log Card (like attendees-toolbar), not above it - search fills

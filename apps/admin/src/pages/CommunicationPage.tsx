@@ -19,6 +19,8 @@ import {
   Input,
   Notice,
   PageHeader,
+  Select,
+  Spinner,
   Tabs,
   Tooltip,
   useToast,
@@ -889,10 +891,14 @@ function PlaceholderChips({
 
 /** One placeholder chip - required ones are outlined, wallet-add links get a ticket icon so
  * they read as "important" the same way an image chip does instead of blending into a bare-
- * token wall of text. Description shows in the app's own Tooltip (@admitto/ui), not a native
- * browser title tooltip. `qr_image_url` gets its actual sample image always visible as a small
+ * token wall of text. A chip with a sample image (see IMAGE_PLACEHOLDER_SAMPLES) shows that
+ * image instead of a text tooltip - a picture of what the placeholder looks like is more useful
+ * than a description once there are several image placeholders to tell apart, and required-ness
+ * still reads from the chip's own outline styling either way. It's always visible as a small
  * thumbnail (not hover-only - a hidden-until-hover preview is easy to miss entirely), plus a
- * larger version on hover/focus for anyone who wants a closer look. */
+ * larger version on hover/focus for anyone who wants a closer look. Chips without a sample
+ * (plain text/link placeholders, and per-event custom image tokens with no fixed sample) keep
+ * the app's own Tooltip (@admitto/ui), not a native browser title tooltip. */
 function PlaceholderChip({
   name,
   isImage,
@@ -904,41 +910,34 @@ function PlaceholderChip({
   isRequired: boolean;
   onInsert: (name: string) => void;
 }>) {
-  const isQr = name === "qr_image_url";
+  const sample = IMAGE_PLACEHOLDER_SAMPLES[name];
   const titleParts = [
     isRequired && "Required placeholder",
     placeholderDescription(name, isImage),
   ].filter((part): part is string => Boolean(part));
-  return (
-    <Tooltip content={titleParts.join(" · ")}>
-      <button
-        type="button"
-        className={["communication-chip", isRequired && "communication-chip--required"]
-          .filter(Boolean)
-          .join(" ")}
-        onClick={() => onInsert(name)}
-      >
-        {isQr ? (
-          <img
-            className="communication-chip-thumb"
-            src={SAMPLE_QR_PLACEHOLDER_DATA_URI}
-            alt=""
-            width={16}
-            height={16}
-          />
-        ) : (
-          isImage && <i className="ti ti-photo" aria-hidden="true" />
-        )}
-        {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
-        {`{{${name}}}`}
-        {isQr && (
-          <span className="communication-chip-preview" aria-hidden="true">
-            <img src={SAMPLE_QR_PLACEHOLDER_DATA_URI} alt="" width={100} height={100} />
-          </span>
-        )}
-      </button>
-    </Tooltip>
+  const chip = (
+    <button
+      type="button"
+      className={["communication-chip", isRequired && "communication-chip--required"]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={() => onInsert(name)}
+    >
+      {sample ? (
+        <img className="communication-chip-thumb" src={sample} alt="" width={16} height={16} />
+      ) : (
+        isImage && <i className="ti ti-photo" aria-hidden="true" />
+      )}
+      {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
+      {`{{${name}}}`}
+      {sample && (
+        <span className="communication-chip-preview" aria-hidden="true">
+          <img src={sample} alt="" width={100} height={100} />
+        </span>
+      )}
+    </button>
   );
+  return sample ? chip : <Tooltip content={titleParts.join(" · ")}>{chip}</Tooltip>;
 }
 
 function TemplateEditorCard({
@@ -1097,16 +1096,31 @@ const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
 /** Matches `DEFAULT_SAMPLE_VARS.email` (packages/mail-templates/src/preview.ts) - the "to"
  * address every preview is rendered for, shown in the mail-client chrome below. */
 const SAMPLE_RECIPIENT_EMAIL = "alex@example.com";
-const SAMPLE_QR_PLACEHOLDER_DATA_URI =
-  "data:image/svg+xml;charset=UTF-8," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
-      '<rect width="200" height="200" fill="#f1f3f5"/>' +
-      '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
-      '<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">Sample QR</text>' +
-      '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>' +
-      "</svg>",
+function samplePlaceholderDataUri(label: string): string {
+  return (
+    "data:image/svg+xml;charset=UTF-8," +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
+        '<rect width="200" height="200" fill="#f1f3f5"/>' +
+        '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
+        `<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">${label}</text>` +
+        '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>' +
+        "</svg>",
+    )
   );
+}
+
+const SAMPLE_QR_PLACEHOLDER_DATA_URI = samplePlaceholderDataUri("Sample QR");
+/** Sample images for the other fixed image placeholders (custom per-event asset tokens have no
+ * fixed sample - they keep the generic photo icon + text tooltip instead). Real branding/map
+ * images are configured per event/org and aren't available to fetch from this page today, so
+ * these are illustrative stand-ins - same "sample, not live data" approach as the QR one above. */
+const IMAGE_PLACEHOLDER_SAMPLES: Record<string, string> = {
+  qr_image_url: SAMPLE_QR_PLACEHOLDER_DATA_URI,
+  logo_url: samplePlaceholderDataUri("Sample logo"),
+  header_image_url: samplePlaceholderDataUri("Sample header"),
+  event_map_url: samplePlaceholderDataUri("Sample map"),
+};
 
 function sanitizeSamplePreviewHtml(html: string): string {
   return html.split(SAMPLE_QR_IMAGE_URL).join(SAMPLE_QR_PLACEHOLDER_DATA_URI).split(SAMPLE_TICKET_URL).join("#");
@@ -1123,6 +1137,7 @@ function PreviewBody({
   senderName,
   senderAddress,
   toolbarLabel,
+  loading = false,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
@@ -1135,8 +1150,14 @@ function PreviewBody({
    * caller (Templates tab) fold its own "Preview"/"Updating…" caption into this same bar
    * instead of stacking a second one above it. Omit to keep the plain decorative arrow. */
   toolbarLabel?: ReactNode;
+  /** Shows the mail-client chrome immediately with a spinner in place of the rendered body,
+   * instead of the plain empty-state text, while a preview fetch is in flight - so the card
+   * itself never appears to load late, only its content does. Only the Templates tab (which
+   * auto-previews on every mount/switch) passes this; the Send tab keeps its own separate
+   * loading branch before ever reaching this component. */
+  loading?: boolean;
 }>) {
-  if (!previewHtml) {
+  if (!previewHtml && !loading) {
     return <div className="communication-preview-empty">Preview will appear here.</div>;
   }
   const displayName = senderName || eventTitle;
@@ -1177,12 +1198,18 @@ function PreviewBody({
           </span>
         </div>
       </div>
-      <iframe
-        className="communication-preview-frame"
-        title="Email preview"
-        sandbox=""
-        srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
-      />
+      {previewHtml ? (
+        <iframe
+          className="communication-preview-frame"
+          title="Email preview"
+          sandbox=""
+          srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
+        />
+      ) : (
+        <div className="communication-preview-frame communication-preview-frame--loading">
+          <Spinner label="Loading preview" />
+        </div>
+      )}
     </div>
   );
 }
@@ -1209,24 +1236,13 @@ function TemplatesPreviewPanel({
   const updatingStatus = previewLoading ? <span className="muted"> · Updating…</span> : null;
   return (
     <div className="communication-templates-preview">
-      {/* Once a preview exists, PreviewBody's own toolbar carries this same caption (see
-          toolbarLabel below) - a standalone row here too would just repeat it. Kept only for
-          the brief empty/loading window before any preview has rendered yet, so the column
-          isn't blank with no heading at all. */}
-      {!previewHtml && (
-        <div className="communication-preview-toolbar">
-          <span className="communication-preview-toolbar__label">
-            <i className="ti ti-eye" aria-hidden="true" /> Preview
-          </span>
-          {updatingStatus}
-        </div>
-      )}
       <PreviewBody
         previewHtml={previewHtml}
         previewSubject={previewSubject}
         eventTitle={eventTitle}
         senderName={senderName}
         senderAddress={senderAddress}
+        loading={previewLoading}
         toolbarLabel={
           <>
             <i className="ti ti-eye" aria-hidden="true" /> Preview
