@@ -112,12 +112,15 @@ When an agent repeats a mistake, add a precise rule here (or in a scoped `.curso
 
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
 
-**Before push / claiming CI will pass:** run the tests for what you changed **and** the same
+**Before push / claiming CI will pass:** run the **full package test suite** for every workspace
+you changed (e.g. `npm test -w @admitto/admin`, not a single `--run some.test.ts`), **and** the same
 gate CI uses for those packages (`npm run build` / typecheck when `.ts`/`.tsx` or tests included
-in `tsc` changed). Vitest alone is not enough: `apps/web` and `apps/admin` both build with
+in `tsc` changed). A subset Vitest run is for debugging only and does **not** authorize push.
+Vitest alone is not enough for typecheck: `apps/web` and `apps/admin` both build with
 `tsc` (CI jobs fail on `TS18047` / `TS2493` even when Vitest is green). Touching admin UI means
 `npm run build -w @admitto/admin` before push; touching web means `npm run build -w @admitto/web`.
-Prefer `npm test` (or the CI job subset you changed) after build. Do not push on red. For fetch
+Prefer full `npm test` when blast radius is unclear. Do not push on red. Cite the commands and
+pass/fail in the handoff. For fetch
 mocks in web tests, type the first argument (`input: string | URL`); bare `vi.fn(async () => …)`
 makes `mock.calls[0][0]` a `TS2493` under `tsc` even when Vitest is green. After a null-check on
 React state, nest handlers must use narrowed locals (`const weather = weatherDraft`) — TypeScript

@@ -306,9 +306,12 @@ export interface ImportHistoryEntry {
   created: number;
   updated: number;
   skipped: number;
+  /** Terminal AdminJob status (succeeded imports and failed/reclaimed jobs). */
+  status: "succeeded" | "failed";
+  error: string | null;
 }
 
-/** Recent committed imports for the event (newest first), read from the audit log. */
+/** Recent import jobs for the event (newest first), including failed/reclaimed. */
 export async function fetchImportHistory(
   eventId: string,
   signal?: AbortSignal,

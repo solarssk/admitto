@@ -113,6 +113,8 @@ export type ImportJobStatusDto = {
   importId: string | null;
   error: string | null;
   result: ImportCommitDto | null;
+  created_at: string;
+  started_at: string | null;
 };
 
 type ImportFileType = "csv" | "xlsx";
@@ -617,6 +619,8 @@ export async function handleGetImportJob(c: Context, db: PrismaClient): Promise<
     importId: job.import_id,
     error: job.error,
     result,
+    created_at: job.created_at.toISOString(),
+    started_at: job.started_at ? job.started_at.toISOString() : null,
   } satisfies ImportJobStatusDto);
 }
 
@@ -644,19 +648,51 @@ export type ImportHistoryEntryDto = {
   created: number;
   updated: number;
   skipped: number;
+  status: "succeeded" | "failed";
+  error: string | null;
 };
 
 function importHistoryNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-/** Reads recent `attendees_imported` bulk action rows from the audit log - shared by the
- * import-history endpoint and the overview activity feed, which just need different limits. */
+function countsFromImportJob(job: {
+  created_count: number | null;
+  updated_count: number | null;
+  skipped_count: number | null;
+  result_json: unknown;
+  filename: string | null;
+}): { created: number; updated: number; skipped: number; filename: string | null } {
+  const fromColumns = {
+    created: job.created_count ?? 0,
+    updated: job.updated_count ?? 0,
+    skipped: job.skipped_count ?? 0,
+  };
+  if (
+    job.result_json &&
+    typeof job.result_json === "object" &&
+    !Array.isArray(job.result_json)
+  ) {
+    const meta = job.result_json as Record<string, unknown>;
+    return {
+      created: importHistoryNumber(meta.created) || fromColumns.created,
+      updated: importHistoryNumber(meta.updated) || fromColumns.updated,
+      skipped:
+        importHistoryNumber(meta.skippedCount) ||
+        importHistoryNumber(meta.skipped) ||
+        fromColumns.skipped,
+      filename: job.filename,
+    };
+  }
+  return { ...fromColumns, filename: job.filename };
+}
+
+/** Successful import batches for the overview activity feed (audit log). */
 export async function loadRecentImportBatches(
   db: PrismaClient,
   eventId: string,
   limit: number,
-): Promise<ImportHistoryEntryDto[]> {
+): Promise<Array<Omit<ImportHistoryEntryDto, "status" | "error"> & { status?: "succeeded" }>> {
   const rows = await db.attendeeActionLog.findMany({
     where: { event_id: eventId, action_type: "attendees_imported" },
     orderBy: { created_at: "desc" },
@@ -676,14 +712,56 @@ export async function loadRecentImportBatches(
       created: importHistoryNumber(meta.created),
       updated: importHistoryNumber(meta.updated),
       skipped: importHistoryNumber(meta.skipped),
+      status: "succeeded" as const,
     };
   });
 }
 
-/** GET /api/admin/events/:eventId/import/history — recent commits from the audit log. The
- * `attendees_imported` bulk action rows written at commit time already carry everything the
- * history card shows (filename + created/updated/skipped counts), so this is a read of the
- * existing log, not a new table. */
+/** Terminal import_commit AdminJobs for the Import page history (includes failed/reclaimed). */
+export async function loadRecentImportJobs(
+  db: PrismaClient,
+  eventId: string,
+  limit: number,
+): Promise<ImportHistoryEntryDto[]> {
+  const jobs = await db.adminJob.findMany({
+    where: {
+      event_id: eventId,
+      type: "import_commit",
+      status: { in: ["succeeded", "failed"] },
+    },
+    orderBy: { finished_at: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      created_at: true,
+      finished_at: true,
+      status: true,
+      error: true,
+      filename: true,
+      created_count: true,
+      updated_count: true,
+      skipped_count: true,
+      result_json: true,
+    },
+  });
+
+  return jobs.map((job) => {
+    const counts = countsFromImportJob(job);
+    const when = job.finished_at ?? job.created_at;
+    return {
+      id: job.id,
+      created_at: when.toISOString(),
+      filename: counts.filename,
+      created: counts.created,
+      updated: counts.updated,
+      skipped: counts.skipped,
+      status: job.status === "failed" ? "failed" : "succeeded",
+      error: job.status === "failed" ? job.error : null,
+    };
+  });
+}
+
+/** GET /api/admin/events/:eventId/import/history — recent terminal import jobs (success + failure). */
 export async function handleGetImportHistory(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -691,7 +769,7 @@ export async function handleGetImportHistory(c: Context, db: PrismaClient): Prom
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const items = await loadRecentImportBatches(db, eventId, IMPORT_HISTORY_LIMIT);
+  const items = await loadRecentImportJobs(db, eventId, IMPORT_HISTORY_LIMIT);
 
   c.header("Cache-Control", "no-store");
   return c.json({ items });
