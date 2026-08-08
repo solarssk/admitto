@@ -1084,11 +1084,14 @@ function computePatchChanges(
   if (patch.first_name !== undefined || patch.last_name !== undefined) {
     const nextFirstName = patch.first_name ?? existing.first_name;
     const nextLastName = patch.last_name ?? existing.last_name;
-    if (nextFirstName !== existing.first_name || nextLastName !== existing.last_name) {
+    const firstNameChanged = nextFirstName !== existing.first_name;
+    const lastNameChanged = nextLastName !== existing.last_name;
+    if (firstNameChanged || lastNameChanged) {
       data.first_name = nextFirstName;
       data.last_name = nextLastName;
       data.name = [nextFirstName, nextLastName].filter(Boolean).join(" ");
-      fields.push("first_name", "last_name");
+      if (firstNameChanged) fields.push("first_name");
+      if (lastNameChanged) fields.push("last_name");
     }
   }
   if (patch.email !== undefined && patch.email !== existing.email) {

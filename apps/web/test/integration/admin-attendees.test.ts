@@ -2052,7 +2052,11 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(log).not.toBeNull();
     const meta = log!.metadata as { fields?: string[] };
-    expect(meta.fields).toEqual(expect.arrayContaining(["first_name", "last_name"]));
+    // Only first_name was patched - last_name must not appear, or the activity timeline
+    // (which renders every entry in metadata.fields) falsely implies it changed too (bot
+    // review).
+    expect(meta.fields).toContain("first_name");
+    expect(meta.fields).not.toContain("last_name");
     // first_name/last_name are deliberately never in LOGGED_VALUE_FIELDS - only the fixed
     // business/contact fields below (email/company/department/ticket_type) get their value
     // logged (PO review).
@@ -2083,6 +2087,16 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(body.first_name).toBe("Original");
     expect(body.last_name).toBe("UpdatedGuest");
     expect(body.name).toBe("Original UpdatedGuest");
+
+    // Only last_name actually changed - the audit trail (and the activity timeline that
+    // renders it) must not claim first_name changed too (bot review).
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: created.id, action_type: "attendee_edited" },
+      orderBy: { created_at: "desc" },
+    });
+    const meta = log!.metadata as { fields?: string[] };
+    expect(meta.fields).toContain("last_name");
+    expect(meta.fields).not.toContain("first_name");
   });
 
   it("logs before/after values for the approved safe subset - email/company/department/ticket_type (PO review)", async () => {
