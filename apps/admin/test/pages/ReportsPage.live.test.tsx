@@ -414,4 +414,59 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     expect(within(cards as HTMLElement).getByText("(No operator)")).toBeTruthy();
     expect(within(cards as HTMLElement).getAllByText("-")).toHaveLength(1);
   });
+
+  it("shows the empty admission-log state on desktop and mobile when the log has no rows", async () => {
+    // Page-level empty ("No check-ins yet") only when admitted === 0. AdmissionLog's own
+    // empty copy needs admitted > 0 with an empty log payload.
+    fetchEventReports.mockResolvedValue(
+      reportFixture(3, { admission_log: [], admission_log_total: 3 }),
+    );
+    renderPage();
+    expect(await screen.findByText("No admissions yet")).toBeTruthy();
+
+    cleanup();
+    mockMatchMedia(false);
+    fetchEventReports.mockResolvedValue(
+      reportFixture(3, { admission_log: [], admission_log_total: 3 }),
+    );
+    renderPage();
+    expect(await screen.findByText("No admissions yet")).toBeTruthy();
+    expect(document.querySelector(".reports-log-cards")).not.toBeNull();
+  });
+
+  it("shows No matches when ticket-type filters exclude every admission", async () => {
+    fetchEventReports.mockResolvedValue(
+      reportFixture(1, {
+        by_ticket_type: [
+          { key: "vip", type: "VIP", color: "purple", total: 1, admitted: 1, admission_pct: 100 },
+          { key: "standard", type: "Standard", color: "gray", total: 1, admitted: 0, admission_pct: 0 },
+        ],
+        admission_log: [
+          {
+            attendee_id: "att-vip",
+            name: "Vip Guest",
+            email: "vip@example.com",
+            ticket_type: "vip",
+            admitted_at: "2026-06-01T10:00:00.000Z",
+            operator_user_id: null,
+            operator_display_name: null,
+            operator_email: null,
+            device_id: null,
+            items: ["Badge"],
+          },
+        ],
+        admission_log_total: 1,
+      }),
+    );
+
+    renderPage();
+    await screen.findByText("Vip Guest");
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Standard" }));
+
+    expect(await screen.findByText("No matches")).toBeTruthy();
+    expect(screen.queryByText("Vip Guest")).toBeNull();
+  });
 });

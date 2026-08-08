@@ -373,12 +373,13 @@ function CheckInProgressCard({
       />
     );
   } else if (breakdown.length > 1) {
+    // breakdown only includes count > 0, so breakdownTotal is always > 0 here.
     ticketTypeBar = breakdown.map((t) => (
       <span
         key={t.key}
         className="overview-tt-bar__seg"
         style={{
-          width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
+          width: `${(t.count / breakdownTotal) * 100}%`,
           background: ticketTypeChartColor(t.color),
         }}
       />
