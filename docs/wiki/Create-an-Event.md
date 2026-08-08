@@ -28,7 +28,7 @@ Prepare the event title, calendar date, timezone, and optional location. Choose 
 
 ## Expected result
 
-Admitto creates an active event and opens its **Attendees** page directly.
+Admitto creates an active event and opens its **Overview** page directly.
 
 ## Important decisions
 

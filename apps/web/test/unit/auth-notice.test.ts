@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderNoticeHtml } from "../../src/auth-notice.js";
+import { AUTH_PAGE_CSS } from "../../src/shared-auth-styles.js";
 
 describe("renderNoticeHtml", () => {
   it("emits Notice-equivalent markup with escaped message and inline error SVG", () => {
@@ -27,5 +28,10 @@ describe("renderNoticeHtml", () => {
     expect(html).toContain("at-notice--warning");
     expect(html).toContain("<svg");
     expect(html).toContain("at-notice__icon");
+  });
+
+  it("uses a tighter SVG icon offset in shared auth CSS", () => {
+    expect(AUTH_PAGE_CSS).toContain(".at-notice__icon");
+    expect(AUTH_PAGE_CSS).toMatch(/\.at-notice__icon\s*\{[^}]*margin-top:\s*1px/);
   });
 });
