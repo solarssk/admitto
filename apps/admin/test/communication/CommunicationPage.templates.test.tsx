@@ -265,6 +265,17 @@ describe("CommunicationPage templates", () => {
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
+  it("still renders the page when the sender name/address lookup fails", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    fetchEventMailSettings.mockRejectedValueOnce(new Error("network unavailable"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+  });
+
   it("redirects to login when the initial template load returns 401", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
@@ -328,6 +339,26 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
     });
     expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-ticket");
+  });
+
+  it("switches templates from the Send tab's own picker", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
+    await screen.findByRole("tab", { name: /Send/i, selected: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Template, Ticket email" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
+
+    await waitFor(() => {
+      expect(fetchEventTemplateById).toHaveBeenCalledWith("evt-comm", "tpl-rem");
+    });
+    expect(screen.getByRole("button", { name: "Template, Reminder" })).toBeTruthy();
   });
 
   it("disables delete with an explanatory tooltip for the ticket template, enables it once a different template is active", async () => {
@@ -755,6 +786,105 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save *" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+    });
+  });
+
+  it("toasts a success message after saving a template", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    saveEventTemplateById.mockResolvedValueOnce({
+      ...ticketRow,
+      subject_template: "Updated ticket subject",
+      body_template: "<p>Body</p>",
+      compiled_html_template: "<p>Body</p>",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Template saved/);
+    });
+  });
+
+  it("renders inline validation errors returned by save", async () => {
+    const { TemplateValidationError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    saveEventTemplateById.mockRejectedValueOnce(
+      new TemplateValidationError(["Subject must include {{ticket_url}}"]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    expect(
+      await screen.findByText("Subject must include {{ticket_url}}", {}, { timeout: 2000 }),
+    ).toBeTruthy();
+  });
+
+  it("shows the shared-default banner on the Send tab", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
+    await screen.findByRole("tab", { name: /Send/i, selected: true });
+
+    expect(
+      await screen.findByText(/This event has no template of its own yet/),
+    ).toBeTruthy();
+  });
+
+  it("lets the operator cancel out of creating an override for the shared default template", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "New subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+
+    expect(
+      await screen.findByText(/This will create an event-specific template override/),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/This will create an event-specific template override/)).toBeNull();
+    });
+  });
+
+  it("creates an event override for the shared default template on confirm", async () => {
+    const { saveEventTemplate } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "New subject" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await screen.findByText(/This will create an event-specific template override/);
+
+    saveEventTemplate.mockResolvedValueOnce(undefined);
+    fetchEventTemplates.mockResolvedValueOnce([ticketRow]);
+    fetchEventTemplateById.mockResolvedValueOnce({
+      ...ticketRow,
+      body_template: "<p>Body</p>",
+      compiled_html_template: "<p>Body</p>",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(saveEventTemplate).toHaveBeenCalledWith("evt-comm", expect.objectContaining({ subject_template: "New subject" }));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Template saved/);
     });
   });
 

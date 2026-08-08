@@ -123,6 +123,34 @@ describe("CommunicationSendPanel", () => {
     expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1", expect.any(AbortSignal));
   });
 
+  it("keeps polling on a timer while emails are still queued", async () => {
+    vi.useFakeTimers();
+    try {
+      sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
+      fetchBulkSendStatus
+        .mockResolvedValueOnce({ queued: 2, sent: 0, failed: 0 })
+        .mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0 });
+
+      render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+      // Flush the initial sendEventBulk call and the first poll() it triggers.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(fetchBulkSendStatus).toHaveBeenCalledTimes(1);
+
+      // Advance past the 2s retry delay and flush the second poll.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(fetchBulkSendStatus).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Send complete: 2 sent, 0 failed.")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows an error and stops polling when the status check fails", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
@@ -179,6 +207,19 @@ describe("CommunicationSendPanel", () => {
 
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
     expect(screen.queryByText(/No recipients matched/i)).toBeNull();
+  });
+
+  it("shows the recipient count after a successful dry run", async () => {
+    sendEventBulk.mockResolvedValueOnce({ recipientCount: 5 });
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    expect(await screen.findByText(/recipients matched/)).toBeTruthy();
+    expect(screen.getByText("5")).toBeTruthy();
+    expect(sendEventBulk).toHaveBeenCalledWith("evt-1", {
+      templateId: "tpl-1",
+      filter: { type: "all" },
+      dryRun: true,
+    });
   });
 
   it("shows operator-safe dry run failure", async () => {
@@ -329,5 +370,33 @@ describe("CommunicationSendPanel", () => {
     expect(
       (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("shows a retry control when ticket types fail to load, and retries on click", async () => {
+    fetchTicketTypes.mockRejectedValueOnce(new Error("network down"));
+    fetchTicketTypes.mockResolvedValueOnce([
+      {
+        id: "tt-a",
+        key: "vip",
+        label: "VIP",
+        color: "purple",
+        sort_order: 0,
+        attendee_count: 0,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} eventId="evt-1" templateId="tpl-1" />);
+    fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
+
+    expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(fetchTicketTypes).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
+    expect(await screen.findByRole("button", { name: "VIP" })).toBeTruthy();
   });
 });
