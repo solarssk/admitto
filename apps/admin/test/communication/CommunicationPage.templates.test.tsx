@@ -2245,6 +2245,7 @@ describe("CommunicationPage Send tab preview reload", () => {
     // and remounting once the fetch resolves (the bug: "cały podgląd miga" on template switch).
     expect(screen.getByText("Reminder preview subject")).toBeTruthy();
     expect(screen.queryByText("Preview will appear here.")).toBeNull();
+    await waitFor(() => expect(screen.getByText(/Updating…/)).toBeTruthy());
 
     resolveAnnouncementPreview?.({ subject: "Announcement preview subject", html: "<p>Ann body</p>" });
     expect(await screen.findByText("Announcement preview subject")).toBeTruthy();

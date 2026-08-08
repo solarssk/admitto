@@ -771,6 +771,7 @@ function SendTab({
               toolbarLabel={
                 <>
                   <i className="ti ti-eye" aria-hidden="true" /> Preview
+                  {previewLoading && <span className="muted"> · Updating…</span>}
                 </>
               }
             />
