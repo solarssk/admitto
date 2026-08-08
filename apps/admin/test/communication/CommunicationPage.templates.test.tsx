@@ -163,6 +163,24 @@ function renderPageWithEventSwitch() {
   );
 }
 
+function renderSendPageWithEventSwitch() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-a/communication"]}>
+      <Routes>
+        <Route
+          path="/admin/events/:eventId/communication"
+          element={
+            <>
+              <Link to="/admin/events/evt-b/communication">Switch event</Link>
+              <CommunicationPage />
+            </>
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 /** Opens the Templates tab's picker dropdown and selects the option matching `label`. */
 async function selectTemplate(label: string) {
   fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
@@ -1875,6 +1893,71 @@ describe("CommunicationPage templates", () => {
     });
     expect(screen.queryByText("Preview failed.")).toBeNull();
     expect(screen.getByText("Reminder preview")).toBeTruthy();
+  });
+
+  it("reloads Send-tab preview after switching events with the same active template key", async () => {
+    fetchEventTemplates.mockImplementation(async (id: string) => {
+      if (id === "evt-a") return [ticketRow];
+      return [{ ...ticketRow, id: "tpl-ticket-b", label: "Ticket B" }];
+    });
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+      if (id === "tpl-ticket-b") {
+        return { ...ticketRow, id: "tpl-ticket-b", label: "Ticket B", body_template: "<mjml></mjml>" };
+      }
+      return { ...ticketRow, body_template: "<mjml></mjml>" };
+    });
+    previewEventTemplateById.mockImplementation(async (eventId: string) => {
+      if (eventId === "evt-a") return { subject: "Preview A", html: "<p>A</p>" };
+      return { subject: "Preview B", html: "<p>B</p>" };
+    });
+
+    renderSendPageWithEventSwitch();
+
+    expect(await screen.findByText("Preview A")).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Preview B")).toBeTruthy();
+    });
+    expect(screen.queryByText("Preview A")).toBeNull();
+  });
+
+  it("drops an in-flight preview that resolves after switching events", async () => {
+    let resolveA: ((value: unknown) => void) | undefined;
+    fetchEventTemplates.mockImplementation(async (id: string) => {
+      if (id === "evt-a") return [ticketRow];
+      return [{ ...ticketRow, id: "tpl-ticket-b", label: "Ticket B" }];
+    });
+    fetchEventTemplateById.mockImplementation(async (_eventId: string, id: string) => {
+      if (id === "tpl-ticket-b") {
+        return { ...ticketRow, id: "tpl-ticket-b", label: "Ticket B", body_template: "<mjml></mjml>" };
+      }
+      return { ...ticketRow, body_template: "<mjml></mjml>" };
+    });
+    previewEventTemplateById.mockImplementation((eventId: string) => {
+      if (eventId === "evt-a") {
+        return new Promise((resolve) => {
+          resolveA = resolve;
+        });
+      }
+      return Promise.resolve({ subject: "Preview B", html: "<p>B</p>" });
+    });
+
+    renderSendPageWithEventSwitch();
+    await waitFor(() => {
+      expect(previewEventTemplateById).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+    expect(await screen.findByText("Preview B")).toBeTruthy();
+
+    await act(async () => {
+      resolveA?.({ subject: "Stale Preview A", html: "<p>Stale A</p>" });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("Stale Preview A")).toBeNull();
+    expect(screen.getByText("Preview B")).toBeTruthy();
   });
 
   it("aborts in-flight overview and mail-settings fetches on unmount", async () => {

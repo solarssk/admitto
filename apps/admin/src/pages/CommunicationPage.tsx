@@ -667,10 +667,10 @@ function SendTab({
   useEffect(() => {
     void onPreview();
     // onPreview closes over live subject/body/format state and is a fresh function every
-    // render, so it's intentionally left out here - only an actual template switch should
-    // re-trigger this, not every render.
+    // render, so it's intentionally left out here - only an actual template or event switch
+    // should re-trigger this, not every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey]);
+  }, [activeKey, eventId]);
 
   return (
     <div className="communication-send-tab">
@@ -1773,6 +1773,7 @@ export function CommunicationPage() {
   useEffect(() => {
     currentEventIdRef.current = eventId;
     deleteTemplateSeqRef.current += 1;
+    previewSeqRef.current += 1;
     metadataSaveSeqRef.current += 1;
     setTemplateActionBusy(false);
     setEditModalOpen(false);
@@ -1966,19 +1967,20 @@ export function CommunicationPage() {
 
   const handlePreview = async () => {
     if (!eventId || editorSnapshotMissing) return;
+    const scopeEventId = eventId;
     const seq = ++previewSeqRef.current;
     setPreviewLoading(true);
     setValidationErrors([]);
     try {
       const data =
         activeKey === "virtual-ticket"
-          ? await previewEventTemplate(eventId, templatePayload())
-          : await previewEventTemplateById(eventId, activeKey, templatePayload());
-      if (seq !== previewSeqRef.current) return;
+          ? await previewEventTemplate(scopeEventId, templatePayload())
+          : await previewEventTemplateById(scopeEventId, activeKey, templatePayload());
+      if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
     } catch (err) {
-      if (seq !== previewSeqRef.current) return;
+      if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
       setPreviewSubject(null);
       setPreviewHtml(null);
       if (err instanceof TemplateValidationError) {

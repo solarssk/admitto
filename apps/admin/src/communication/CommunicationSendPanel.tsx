@@ -116,11 +116,30 @@ export function CommunicationSendPanel({
     setBatchStatus(null);
   }, []);
 
+  // Clears count/result/batch UI without touching the admin's chosen filter strategy (all /
+  // ticket type / RSVP). Ticket type *value* and options are cleared by the fetch effect below.
+  const resetSendOutcome = useCallback(() => {
+    runIdRef.current += 1;
+    setRecipientCount(null);
+    setPhase("form");
+    setBusy(false);
+    setError(null);
+    setResultMessage(null);
+    setBatchId(null);
+    setBatchStatus(null);
+  }, []);
+
   // Switching the selected template is the tab equivalent of the old dialog's reopen - stale
   // filter/count/result state from a previous template must not carry over.
   useEffect(() => {
     resetForm();
   }, [templateId, resetForm]);
+
+  // Event switch often keeps the same templateId (or undefined for inherited ticket). Count,
+  // dry-run, and batch polling from the previous event must not stay on screen.
+  useEffect(() => {
+    resetSendOutcome();
+  }, [eventId, resetSendOutcome]);
 
   useEffect(() => {
     if (snapshotMissing) return;
