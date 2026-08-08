@@ -39,6 +39,7 @@ vi.mock("../../src/api/client.js", () => ({
   saveEventTemplateById: vi.fn(),
   createEventTemplate: vi.fn(),
   deleteEventTemplate: vi.fn(),
+  updateEventTemplateMetadata: vi.fn(),
   testSendEventTemplate: vi.fn(),
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),

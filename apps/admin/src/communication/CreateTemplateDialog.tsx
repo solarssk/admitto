@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import "../attendees/add-attendee-modal.css";
 
 /** Props for {@link CreateTemplateDialog}. */
 export interface CreateTemplateDialogProps {
