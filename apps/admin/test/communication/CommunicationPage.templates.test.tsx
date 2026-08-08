@@ -553,6 +553,39 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("asks to discard unsaved subject/body edits before deleting from the edit modal", async () => {
+    deleteEventTemplate.mockResolvedValue(undefined);
+    fetchEventTemplates
+      .mockResolvedValueOnce([ticketRow, reminderRow])
+      .mockResolvedValueOnce([ticketRow]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    await selectTemplate("Reminder");
+    expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Unsaved reminder" } });
+    await deleteActiveTemplateViaModal();
+
+    expect(screen.getByText("Discard unsaved changes?")).toBeTruthy();
+    expect(deleteEventTemplate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(deleteEventTemplate).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("Unsaved reminder")).toBeTruthy();
+
+    await deleteActiveTemplateViaModal();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    await waitFor(() => {
+      expect(deleteEventTemplate).toHaveBeenCalledWith("evt-comm", "tpl-rem");
+      expect(screen.queryByRole("dialog", { name: "Edit template" })).toBeNull();
+    });
+  });
+
   it("shows each template's own icon in the picker, falling back to the default when unset", async () => {
     fetchEventTemplates.mockResolvedValue([{ ...reminderRow, icon: "bell" }, announcementRow]);
 

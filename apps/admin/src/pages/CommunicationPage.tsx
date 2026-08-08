@@ -306,7 +306,10 @@ function resolveMjmlInsertion(
   return { start: fallbackIdx, end: fallbackIdx, insertion };
 }
 
-type DirtyProtectedAction = { kind: "select"; key: string } | { kind: "create" };
+type DirtyProtectedAction =
+  | { kind: "select"; key: string }
+  | { kind: "create" }
+  | { kind: "delete"; templateId: string; name: string };
 
 type TemplateDetailSnapshot = {
   name: string;
@@ -1550,31 +1553,6 @@ export function CommunicationPage() {
     [activeKey, applyLoadedTemplateSelection, editorSnapshotMissing, eventId, loadTemplateSelection, reportApiError, addToast],
   );
 
-  const runDirtyProtectedAction = useCallback(
-    (action: DirtyProtectedAction) => {
-      if (action.kind === "select") {
-        void applySelectTemplate(action.key);
-        return;
-      }
-      setCreateDialogOpen(true);
-    },
-    [applySelectTemplate],
-  );
-
-  const requestDirtyProtectedAction = useCallback(
-    (action: DirtyProtectedAction) => {
-      if (!eventId) return;
-      if (action.kind === "select" && action.key === activeKey && !editorSnapshotMissing) return;
-      if (isDirty) {
-        setPendingDirtyAction(action);
-        setDirtyConfirmOpen(true);
-        return;
-      }
-      runDirtyProtectedAction(action);
-    },
-    [activeKey, editorSnapshotMissing, eventId, isDirty, runDirtyProtectedAction],
-  );
-
   const executeCreateTemplate = async (label: string) => {
     if (!eventId || createInFlightRef.current) return;
     createInFlightRef.current = true;
@@ -1671,6 +1649,36 @@ export function CommunicationPage() {
       }
     }
   }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError, addToast]);
+
+  const runDirtyProtectedAction = useCallback(
+    (action: DirtyProtectedAction) => {
+      if (action.kind === "select") {
+        void applySelectTemplate(action.key);
+        return;
+      }
+      if (action.kind === "delete") {
+        void executeDeleteTemplate(action.templateId);
+        return;
+      }
+      setCreateDialogOpen(true);
+    },
+    [applySelectTemplate, executeDeleteTemplate],
+  );
+
+  const requestDirtyProtectedAction = useCallback(
+    (action: DirtyProtectedAction) => {
+      if (!eventId) return;
+      if (action.kind === "select" && action.key === activeKey && !editorSnapshotMissing) return;
+      if (action.kind === "delete" && action.name === "ticket") return;
+      if (isDirty) {
+        setPendingDirtyAction(action);
+        setDirtyConfirmOpen(true);
+        return;
+      }
+      runDirtyProtectedAction(action);
+    },
+    [activeKey, editorSnapshotMissing, eventId, isDirty, runDirtyProtectedAction],
+  );
 
   const executeSaveTemplateMetadata = useCallback(
     async (templateId: string, draft: { label: string; icon: string | null; description: string | null }) => {
@@ -2291,7 +2299,10 @@ export function CommunicationPage() {
           setEditModalOpen(false);
         }}
         onSave={(templateId, draft) => void executeSaveTemplateMetadata(templateId, draft)}
-        onDelete={(templateId) => void executeDeleteTemplate(templateId)}
+        onDelete={(templateId) => {
+          const name = activeTemplateMeta?.name ?? "";
+          requestDirtyProtectedAction({ kind: "delete", templateId, name });
+        }}
       />
       <CreateTemplateDialog
         open={createDialogOpen}

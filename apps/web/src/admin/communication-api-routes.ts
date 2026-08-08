@@ -1058,7 +1058,7 @@ export async function handlePutEventTemplateById(
   return handleGetEventTemplateById(c, db);
 }
 
-/** PATCH /api/admin/events/:eventId/templates/:templateId — identity fields only
+/** PATCH /api/admin/events/:eventId/templates/:templateId - identity fields only
  * (label/icon/description); no MJML compilation, no placeholder validation, since none of
  * these fields ever appear in the rendered email. */
 export async function handlePatchEventTemplateMetadata(

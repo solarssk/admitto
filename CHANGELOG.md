@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Communication Templates: edit a template's label, icon, and description from the Edit template dialog**, and delete non-ticket templates from the same dialog. These identity fields help operators tell templates apart in the picker; they do not change the email subject or body.
+
 ### Changed
 - **Manual attendee add/edit now use separate First name and Last name fields instead of one combined Name field, and both are required.** The two fields are the source of truth going forward; existing attendees keep their current name until edited or re-imported. CSV/XLSX import already captured first_name/last_name separately in most cases but discarded the split before writing to the database — it now keeps both fields, matching what operators already provide today.
 - **CSV/XLSX import no longer accepts a single combined "name" column.** `first_name` and `last_name` are now the only supported columns for an attendee's name; a file with just a "name" column fails validation instead of being auto-split. The admin Import page's documented required columns were already first_name/last_name only, so this does not change what operators were told to provide.

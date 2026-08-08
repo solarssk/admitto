@@ -629,7 +629,7 @@ export interface SaveTemplateBody {
   template_format: "mjml" | "html";
 }
 
-/** Identity-only edit for PATCH .../templates/:id — label/icon/description, no content or
+/** Identity-only edit for PATCH .../templates/:id - label/icon/description, no content or
  * format. `null` (icon/description only) clears the field back to its picker-side default. */
 export interface UpdateTemplateMetadataBody {
   label?: string;

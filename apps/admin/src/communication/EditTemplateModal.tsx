@@ -47,7 +47,7 @@ export function EditTemplateModal({
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  useModalFocusTrap(panelRef, open, onClose);
+  useModalFocusTrap(panelRef, open && !deleteConfirmOpen, onClose);
 
   useEffect(() => {
     if (!open || !template) {
@@ -159,7 +159,10 @@ export function EditTemplateModal({
           if (busy) return;
           setDeleteConfirmOpen(false);
         }}
-        onConfirm={() => onDelete(template.id)}
+        onConfirm={() => {
+          setDeleteConfirmOpen(false);
+          onDelete(template.id);
+        }}
       />
     </dialog>
   );
