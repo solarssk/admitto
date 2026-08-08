@@ -139,7 +139,7 @@ async function runResetMfa(): Promise<void> {
 
   const { userId } = await verifyTargetUserPassword(email);
   await resetUserMfa(prisma, userId);
-  await logMfaBreakGlass(prisma, { action: "reset_mfa", email, userId });
+  await logMfaBreakGlass(prisma, { action: "reset_mfa", email, userId, quiet: true });
   console.log(`MFA reset for ${email} (sessions and trusted devices revoked).`);
 }
 
@@ -149,7 +149,7 @@ async function runGenerateEmergencyRecovery(): Promise<void> {
 
   const { userId } = await verifyTargetUserPassword(email);
   const { code } = await generateEmergencyRecoveryCode(prisma, userId);
-  await logMfaBreakGlass(prisma, { action: "generate_emergency_recovery", email, userId });
+  await logMfaBreakGlass(prisma, { action: "generate_emergency_recovery", email, userId, quiet: true });
   console.log(`Emergency one-time recovery code (shown once): ${code}`);
 }
 

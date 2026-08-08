@@ -78,6 +78,16 @@ describe("audit", () => {
     expect(payload.scope).toBe("login_ip");
   });
 
+  it("emitAuditEvent with quiet:true skips the stdout emit but still records into the System logs buffer", () => {
+    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+    emitAuditEvent("test.event", { foo: "bar" }, { quiet: true });
+    expect(spy).not.toHaveBeenCalled();
+    const entries = querySystemLogs({ source: "security" });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.message).toBe("test.event");
+    expect(entries[0]?.fields).toMatchObject({ foo: "bar" });
+  });
+
   it("logRateLimitExceeded records scope and ip", () => {
     const spy = vi.spyOn(console, "info").mockImplementation(() => {});
     logRateLimitExceeded({ scope: "login_ip", ip: "10.0.0.1" });
@@ -269,6 +279,36 @@ describe("audit", () => {
       expect(create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ user_id: null }) }),
       );
+    });
+
+    it("emits the JSON payload to stdout by default (server runtime / log collector callers)", async () => {
+      const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+      await logMfaBreakGlass(fakeDb(), { action: "reset_mfa", email: "admin@example.com", userId: "user-1" });
+      expect(spy).toHaveBeenCalledOnce();
+      const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
+      expect(payload.event).toBe("auth.mfa.break_glass");
+      expect(payload.action).toBe("reset_mfa");
+      expect(payload.email).toBe("admin@example.com");
+    });
+
+    it("quiet:true skips the stdout JSON (break-glass CLI commands print their own result line) but still persists the durable row", async () => {
+      const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logMfaBreakGlass(fakeDb(create), {
+        action: "generate_emergency_recovery",
+        email: "admin@example.com",
+        userId: "user-1",
+        quiet: true,
+      });
+      expect(spy).not.toHaveBeenCalled();
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.mfa.break_glass",
+          user_id: "user-1",
+          ip: null,
+          metadata: { action: "generate_emergency_recovery" },
+        },
+      });
     });
   });
 
