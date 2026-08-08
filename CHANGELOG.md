@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Manual attendee add/edit now use separate First name and Last name fields instead of one combined Name field.** The two fields are the source of truth going forward; existing attendees keep their current name until edited or re-imported. CSV/XLSX import already captured first_name/last_name separately in most cases but discarded the split before writing to the database — it now keeps both fields, matching what operators already provide today.
+
 ### Security
 - **Public `/uploads/*` serves branding assets only** (images and font files). CSV/XLSX/PDF and other non-branding objects return 404 on the public path; filtered export downloads stay on authenticated admin job routes.
 - **Async filtered export jobs scrub the raw search string (`q`) from `AdminJob.result_json` when the job finishes** (success, failure, or stale reclaim of running/pending jobs), storing `has_query` like the audit log. The working copy may still hold `q` while the job is pending/running so the worker can apply the filter; never-claimed pending jobs are failed and scrubbed after the same stale window.

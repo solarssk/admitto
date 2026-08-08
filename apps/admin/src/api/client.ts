@@ -851,7 +851,8 @@ export async function createAttendee(
   eventId: string,
   body: {
     email: string;
-    name: string;
+    first_name: string;
+    last_name: string;
     company?: string;
     department?: string;
     ticket_type?: string;

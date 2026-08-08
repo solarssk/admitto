@@ -462,7 +462,7 @@ describe("read-only guard on archived events", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Blocked",
+        first_name: "Blocked",
         expected_updated_at: before.updated_at.toISOString(),
       }),
     });
