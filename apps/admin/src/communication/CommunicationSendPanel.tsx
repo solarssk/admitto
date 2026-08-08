@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Notice } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import type { AttendeeRowDto, BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { AttendeePicker } from "./AttendeePicker.js";
 
 interface CommunicationSendPanelProps {
   event: ArchivedGuardEvent;
@@ -58,6 +59,12 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
     description: "Only attendees who've never received this template - catch up latecomers without re-emailing everyone.",
     icon: "ti-mail-off",
   },
+  {
+    value: "attendee_ids",
+    label: "Specific attendees",
+    description: "Pick individual attendees by name or email.",
+    icon: "ti-user-search",
+  },
 ];
 
 /** Notice tone for the send/queue result: "info" while still in flight, "warning" when nothing
@@ -89,6 +96,7 @@ export function CommunicationSendPanel({
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>("confirmed");
+  const [selectedAttendees, setSelectedAttendees] = useState<AttendeeRowDto[]>([]);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [phase, setPhase] = useState<SendPhase>("form");
   const [busy, setBusy] = useState(false);
@@ -107,6 +115,7 @@ export function CommunicationSendPanel({
     setTicketTypes([]);
     setTicketTypesError(null);
     setRsvpStatus("confirmed");
+    setSelectedAttendees([]);
     setRecipientCount(null);
     setPhase("form");
     setBusy(false);
@@ -215,10 +224,15 @@ export function CommunicationSendPanel({
     if (filterType === "ticket_type") return { type: "ticket_type", value: ticketType.trim() };
     if (filterType === "rsvp_status") return { type: "rsvp_status", value: rsvpStatus };
     if (filterType === "no_delivery") return { type: "no_delivery" };
+    if (filterType === "attendee_ids") {
+      return { type: "attendee_ids", ids: selectedAttendees.map((a) => a.id) };
+    }
     return { type: "all" };
   };
 
-  const filterReady = filterType !== "ticket_type" || ticketType.trim().length > 0;
+  const filterReady =
+    (filterType !== "ticket_type" || ticketType.trim().length > 0) &&
+    (filterType !== "attendee_ids" || selectedAttendees.length > 0);
   // Only lock the picker once a real send is in flight/done - a quick dry-run count is
   // non-destructive and re-enabling the cards a beat later just for that read as flicker.
   const pickerLocked = phase !== "form";
@@ -391,6 +405,18 @@ export function CommunicationSendPanel({
               Retry
             </button>
           </p>
+        )}
+        {filterType === "attendee_ids" && (
+          <AttendeePicker
+            eventId={eventId}
+            selected={selectedAttendees}
+            disabled={pickerLocked}
+            onChange={(attendees) => {
+              setSelectedAttendees(attendees);
+              setRecipientCount(null);
+              setError(null);
+            }}
+          />
         )}
         {error && (
           <Notice variant="error" role="alert">
