@@ -3946,8 +3946,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "manual@example.com",
-        first_name: "Manual Guest",
-        last_name: "",
+        first_name: "Manual",
+        last_name: "Guest",
         company: "Manual Co",
       }),
     });
@@ -4006,7 +4006,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       body: JSON.stringify({
         email: "bad-select@example.com",
         first_name: "Bad Select",
-        last_name: "",
+        last_name: "Test",
         custom_data: { shirt_size: "XL" },
       }),
     });
@@ -4033,7 +4033,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       body: JSON.stringify({
         email: "null-field@example.com",
         first_name: "Null Field",
-        last_name: "",
+        last_name: "Test",
         custom_data: { lunch: null },
       }),
     });
@@ -4057,7 +4057,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       body: JSON.stringify({
         email: "missing-size@example.com",
         first_name: "Missing Size",
-        last_name: "",
+        last_name: "Test",
       }),
     });
     expect(res.status).toBe(400);
@@ -4078,7 +4078,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       body: JSON.stringify({
         email: "long-field@example.com",
         first_name: "Long Field",
-        last_name: "",
+        last_name: "Test",
         custom_data: { shirt_size: "x".repeat(101) },
       }),
     });
@@ -4094,7 +4094,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       body: JSON.stringify({
         email: "unknown-type@example.com",
         first_name: "Unknown Type",
-        last_name: "",
+        last_name: "Test",
         ticket_type: "bogus-type",
       }),
     });
@@ -4110,7 +4110,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "anna@example.com", first_name: "Duplicate", last_name: "" }),
+      body: JSON.stringify({ email: "anna@example.com", first_name: "Duplicate", last_name: "Test" }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };
@@ -4121,7 +4121,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "op-blocked@example.com", first_name: "Blocked", last_name: "" }),
+      body: JSON.stringify({ email: "op-blocked@example.com", first_name: "Blocked", last_name: "Test" }),
     });
     expect(res.status).toBe(403);
   });
@@ -4151,7 +4151,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
         method: "POST",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "full@example.com", first_name: "Full Event", last_name: "" }),
+        body: JSON.stringify({ email: "full@example.com", first_name: "Full Event", last_name: "Test" }),
       });
       expect(res.status).toBe(409);
       const body = (await res.json()) as { code: string; capacity: number; current: number };
@@ -4204,7 +4204,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?force=1`, {
           method: "POST",
           headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "forced@example.com", first_name: "Forced Guest", last_name: "" }),
+          body: JSON.stringify({ email: "forced@example.com", first_name: "Forced Guest", last_name: "Test" }),
         });
         expect(res.status).toBe(201);
         const created = (await res.json()) as { id: string };
@@ -4250,7 +4250,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "after-cancel@example.com", first_name: "After Cancel", last_name: "" }),
+          body: JSON.stringify({ email: "after-cancel@example.com", first_name: "After Cancel", last_name: "Test" }),
         });
         expect(res.status).toBe(201);
         const created = (await res.json()) as { id: string };
@@ -4280,7 +4280,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "fills-cancel-slot@example.com", first_name: "Fills Cancel Slot", last_name: "" }),
+          body: JSON.stringify({ email: "fills-cancel-slot@example.com", first_name: "Fills Cancel Slot", last_name: "Test" }),
         });
         expect(fillRes.status).toBe(201);
         fillerId = ((await fillRes.json()) as { id: string }).id;
@@ -4502,7 +4502,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "fills-slot@example.com", first_name: "Fills Slot", last_name: "" }),
+          body: JSON.stringify({ email: "fills-slot@example.com", first_name: "Fills Slot", last_name: "Test" }),
         });
         expect(fillRes.status).toBe(201);
         fillerId = ((await fillRes.json()) as { id: string }).id;

@@ -104,8 +104,8 @@ const rsvpStatusSchema = z.enum(RSVP_STATUSES);
 
 const patchAttendeeFieldsSchema = z
   .object({
-    first_name: z.string().trim().max(100).optional(),
-    last_name: z.string().trim().max(100).optional(),
+    first_name: z.string().trim().min(1).max(100).optional(),
+    last_name: z.string().trim().min(1).max(100).optional(),
     email: z.string().trim().email().max(254).optional(),
     company: z.string().trim().max(200).optional().nullable(),
     department: z.string().trim().max(200).optional().nullable(),
@@ -183,7 +183,7 @@ const createAttendeeSchema = z
   .object({
     email: z.string().trim().email().max(254),
     first_name: z.string().trim().min(1).max(100),
-    last_name: z.string().trim().max(100),
+    last_name: z.string().trim().min(1).max(100),
     company: z.string().trim().max(200).optional(),
     department: z.string().trim().max(200).optional(),
     ticket_type: z.string().trim().max(100).optional(),

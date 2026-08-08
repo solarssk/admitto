@@ -1903,6 +1903,7 @@ export function AttendeeDetailPage() {
                   icon={<i className="ti ti-user" aria-hidden="true" />}
                   value={form.first_name}
                   onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                  required
                   {...NO_AUTOFILL_PROPS}
                 />
                 <Input
@@ -1910,6 +1911,7 @@ export function AttendeeDetailPage() {
                   icon={<i className="ti ti-user" aria-hidden="true" />}
                   value={form.last_name}
                   onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                  required
                   {...NO_AUTOFILL_PROPS}
                 />
                 <Input

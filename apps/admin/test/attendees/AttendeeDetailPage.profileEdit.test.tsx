@@ -61,7 +61,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
     id: "att-1",
     name: "Anna",
     first_name: "Anna",
-    last_name: "",
+    last_name: "Baseline",
     email: "anna@example.com",
     company: "Acme",
     department: "Eng",
@@ -378,6 +378,38 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
     expect(updateAttendee).not.toHaveBeenCalled();
+  });
+
+  it("blocks Save via native required-field validation when a pre-migration attendee has no first/last name yet", async () => {
+    // Attendees created before this feature only have `name` - first_name/last_name are null,
+    // which the form renders as blank required fields (attendeeDetailForm.ts's `?? ""`).
+    mockLoad(baseDetail({ first_name: null, last_name: null }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    // Change an unrelated field - even that can't be saved until First/Last name are filled in,
+    // since both are required and the Save button is a real <form onSubmit>.
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(updateAttendee).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("First name")).toBeTruthy();
+
+    updateAttendee.mockResolvedValueOnce(
+      baseDetail({ first_name: "Anna", last_name: "Smith", company: "Acme Corp" }),
+    );
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna" } });
+    fireEvent.change(screen.getByLabelText("Last name"), { target: { value: "Smith" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(updateAttendee).toHaveBeenCalledWith(
+        "evt-1",
+        "att-1",
+        expect.objectContaining({ first_name: "Anna", last_name: "Smith", company: "Acme Corp" }),
+      );
+    });
   });
 
   it("the header Back button warns before leaving with unsaved edits, distinct from in-form Cancel", async () => {

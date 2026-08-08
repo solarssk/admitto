@@ -133,6 +133,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   const canSubmit =
     email.trim() &&
     firstName.trim() &&
+    lastName.trim() &&
     isValidEmail(email.trim()) &&
     !submitting &&
     !attributeFieldsLoading &&
@@ -200,7 +201,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
         </h2>
         <p className="add-attendee-modal__subtitle">
-          Enter their email and first name. Everything else is optional.
+          Enter their email, first name, and last name. Everything else is optional.
         </p>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
@@ -251,7 +252,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             {...NO_AUTOFILL_PROPS}
           />
           <Input
-            label="Last name"
+            label="Last name *"
+            required
             icon={<i className="ti ti-user" aria-hidden="true" />}
             value={lastName}
             disabled={submitting}
