@@ -41,6 +41,7 @@ import {
   TemplateValidationError,
   testSendEventTemplate,
   testSendEventTemplateById,
+  updateEventTemplateMetadata,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
@@ -60,6 +61,8 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
+import { EditTemplateModal } from "../communication/EditTemplateModal.js";
+import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
@@ -563,8 +566,9 @@ function resolveSendTemplateId(
  * same way, icon included. The virtual "Ticket email" entry only appears when there's no
  * explicit "ticket" override yet (same condition TemplatePickerBar's own count/badge logic
  * uses) - it keeps the ticket icon (it IS the built-in ticket template); every real saved
- * template gets a different icon (mail) so the two read as visually distinct kinds of thing
- * without needing a text label to say so. Real per-template icons are tracked separately. */
+ * template uses its own chosen icon (set via the edit modal), falling back to the same default
+ * shown there when unset, so the two read as visually distinct kinds of thing by default without
+ * needing a text label to say so. */
 function templatePickerOptions(
   templates: MailTemplateListItem[],
 ): Array<{ id: string; label: string; icon: string }> {
@@ -572,18 +576,8 @@ function templatePickerOptions(
     ...(!templates.some((t) => t.name === "ticket")
       ? [{ id: "virtual-ticket", label: "Ticket email", icon: "ticket" }]
       : []),
-    ...templates.map((t) => ({ id: t.id, label: t.label, icon: "mail" })),
+    ...templates.map((t) => ({ id: t.id, label: t.label, icon: t.icon ?? DEFAULT_TEMPLATE_ICON })),
   ];
-}
-
-/** Confirmation message for the delete-template dialog. */
-function deleteConfirmMessage(
-  pendingDelete: { templateId: string; name: string } | null,
-  templates: MailTemplateListItem[],
-): string {
-  if (!pendingDelete) return "Delete this template?";
-  const label = templates.find((t) => t.id === pendingDelete.templateId)?.label ?? pendingDelete.name;
-  return `Delete "${label}"? This cannot be undone.`;
 }
 
 /** Bounced-email warning banner shown above the tabs; renders nothing when there are no bounces. */
@@ -673,10 +667,10 @@ function SendTab({
   useEffect(() => {
     void onPreview();
     // onPreview closes over live subject/body/format state and is a fresh function every
-    // render, so it's intentionally left out here - only an actual template switch should
-    // re-trigger this, not every render.
+    // render, so it's intentionally left out here - only an actual template or event switch
+    // should re-trigger this, not every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey]);
+  }, [activeKey, eventId]);
 
   return (
     <div className="communication-send-tab">
@@ -759,24 +753,28 @@ function SendTab({
 function TemplatePickerBar({
   event,
   templateActionBusy,
+  contentSaving,
   templates,
   activeKey,
   source,
-  canDelete,
-  onDelete,
+  canEdit,
+  onEdit,
   requestDirtyProtectedAction,
 }: Readonly<{
   event: EventDto;
   templateActionBusy: boolean;
+  /** Content Save in flight - blocks identity Edit so metadata PATCH cannot race the PUT. */
+  contentSaving: boolean;
   templates: MailTemplateListItem[];
   activeKey: string;
   source: EventTemplateDto["source"];
-  canDelete: boolean;
-  onDelete: () => void;
+  canEdit: boolean;
+  onEdit: () => void;
   requestDirtyProtectedAction: (action: DirtyProtectedAction) => void;
 }>) {
   const activeMeta = templates.find((t) => t.id === activeKey);
   const isDefault = activeKey === "virtual-ticket" && source !== "event";
+  const identityBusy = templateActionBusy || contentSaving;
   return (
     <Card>
       <div className="communication-template-picker">
@@ -807,19 +805,19 @@ function TemplatePickerBar({
         <span className="communication-template-picker__actions">
           <ArchivedGuard
             event={event}
-            reasonId="delete-template-reason"
-            disabled={!canDelete || templateActionBusy}
-            tooltip={!canDelete ? "The default ticket template can't be deleted." : undefined}
+            reasonId="edit-template-reason"
+            disabled={!canEdit || identityBusy}
+            tooltip={!canEdit ? "Save this template once to edit its details." : undefined}
           >
             {(guard) => (
               <button
                 type="button"
-                className="communication-template-picker__delete"
-                aria-label="Delete template"
-                onClick={onDelete}
+                className="communication-template-picker__edit"
+                aria-label="Edit template"
+                onClick={onEdit}
                 {...guard}
               >
-                <i className="ti ti-trash" aria-hidden="true" />
+                <i className="ti ti-pencil" aria-hidden="true" />
               </button>
             )}
           </ArchivedGuard>
@@ -962,6 +960,7 @@ function TemplateEditorCard({
   setBody,
   validationErrors,
   saving,
+  templateActionBusy,
   isDirty,
   saveButtonLabel,
   onSave,
@@ -984,6 +983,7 @@ function TemplateEditorCard({
   setBody: Dispatch<SetStateAction<string>>;
   validationErrors: string[];
   saving: boolean;
+  templateActionBusy: boolean;
   isDirty: boolean;
   saveButtonLabel: string;
   onSave: () => void;
@@ -1064,7 +1064,7 @@ function TemplateEditorCard({
         <ArchivedGuard
           event={event}
           reasonId="save-template-reason"
-          disabled={saving || !isDirty || editorSnapshotMissing}
+          disabled={saving || templateActionBusy || !isDirty || editorSnapshotMissing}
         >
           {(guard) => (
             <Button
@@ -1426,6 +1426,7 @@ export function CommunicationPage() {
   const previewSeqRef = useRef(0);
   const createTemplateSeqRef = useRef(0);
   const deleteTemplateSeqRef = useRef(0);
+  const metadataSaveSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
   const currentEventIdRef = useRef(eventId);
   /** Latest legacy ticket snapshot; refreshed on each virtual-ticket selection and after save. */
@@ -1434,10 +1435,7 @@ export function CommunicationPage() {
   const [dirtyConfirmOpen, setDirtyConfirmOpen] = useState(false);
   const [pendingDirtyAction, setPendingDirtyAction] = useState<DirtyProtectedAction | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{ templateId: string; name: string } | null>(
-    null,
-  );
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [pendingFormat, setPendingFormat] = useState<TemplateFormat | null>(null);
 
   const isDirty = isTemplateDirty(
@@ -1446,7 +1444,7 @@ export function CommunicationPage() {
   );
   const localConfirmOpen =
     dirtyConfirmOpen ||
-    deleteConfirmOpen ||
+    editModalOpen ||
     createDialogOpen ||
     overrideConfirmOpen ||
     pendingFormat !== null;
@@ -1562,37 +1560,6 @@ export function CommunicationPage() {
     [activeKey, applyLoadedTemplateSelection, editorSnapshotMissing, eventId, loadTemplateSelection, reportApiError, addToast],
   );
 
-  const runDirtyProtectedAction = useCallback(
-    (action: DirtyProtectedAction) => {
-      if (action.kind === "select") {
-        void applySelectTemplate(action.key);
-        return;
-      }
-      if (action.kind === "create") {
-        setCreateDialogOpen(true);
-        return;
-      }
-      setPendingDelete({ templateId: action.templateId, name: action.name });
-      setDeleteConfirmOpen(true);
-    },
-    [applySelectTemplate],
-  );
-
-  const requestDirtyProtectedAction = useCallback(
-    (action: DirtyProtectedAction) => {
-      if (!eventId) return;
-      if (action.kind === "select" && action.key === activeKey && !editorSnapshotMissing) return;
-      if (action.kind === "delete" && action.name === "ticket") return;
-      if (isDirty) {
-        setPendingDirtyAction(action);
-        setDirtyConfirmOpen(true);
-        return;
-      }
-      runDirtyProtectedAction(action);
-    },
-    [activeKey, editorSnapshotMissing, eventId, isDirty, runDirtyProtectedAction],
-  );
-
   const executeCreateTemplate = async (label: string) => {
     if (!eventId || createInFlightRef.current) return;
     createInFlightRef.current = true;
@@ -1638,8 +1605,7 @@ export function CommunicationPage() {
       if (isDeleteStale(seq, scopeEventId, deleteTemplateSeqRef.current, currentEventIdRef.current)) return;
 
       setTemplates(items);
-      setDeleteConfirmOpen(false);
-      setPendingDelete(null);
+      setEditModalOpen(false);
 
       if (!deletedWasActive) return;
 
@@ -1690,6 +1656,65 @@ export function CommunicationPage() {
       }
     }
   }, [activeKey, applyDetailTemplate, applyLegacyTemplate, eventId, reportApiError, addToast]);
+
+  const runDirtyProtectedAction = useCallback(
+    (action: DirtyProtectedAction) => {
+      if (action.kind === "select") {
+        void applySelectTemplate(action.key);
+        return;
+      }
+      if (action.kind === "delete") {
+        void executeDeleteTemplate(action.templateId);
+        return;
+      }
+      setCreateDialogOpen(true);
+    },
+    [applySelectTemplate, executeDeleteTemplate],
+  );
+
+  const requestDirtyProtectedAction = useCallback(
+    (action: DirtyProtectedAction) => {
+      if (!eventId) return;
+      if (action.kind === "select" && action.key === activeKey && !editorSnapshotMissing) return;
+      if (action.kind === "delete" && action.name === "ticket") return;
+      if (isDirty) {
+        setPendingDirtyAction(action);
+        setDirtyConfirmOpen(true);
+        return;
+      }
+      runDirtyProtectedAction(action);
+    },
+    [activeKey, editorSnapshotMissing, eventId, isDirty, runDirtyProtectedAction],
+  );
+
+  const executeSaveTemplateMetadata = useCallback(
+    async (templateId: string, draft: { label: string; icon: string | null; description: string | null }) => {
+      const scopeEventId = eventId;
+      if (!scopeEventId || saving) return;
+      const seq = ++metadataSaveSeqRef.current;
+      setTemplateActionBusy(true);
+      try {
+        const updated = await updateEventTemplateMetadata(scopeEventId, templateId, draft);
+        if (isDeleteStale(seq, scopeEventId, metadataSaveSeqRef.current, currentEventIdRef.current)) return;
+        setTemplates((prev) => sortTemplates(prev.map((t) => (t.id === templateId ? updated : t))));
+        setEditModalOpen(false);
+        addToast("Template updated.", "success");
+      } catch (err) {
+        if (isDeleteStale(seq, scopeEventId, metadataSaveSeqRef.current, currentEventIdRef.current)) return;
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          addToast(operatorApiErrorMessage(err, "Request failed."), "error");
+        } else {
+          addToast("Update failed.", "error");
+        }
+      } finally {
+        if (seq === metadataSaveSeqRef.current) {
+          setTemplateActionBusy(false);
+        }
+      }
+    },
+    [eventId, reportApiError, addToast, saving],
+  );
 
   const sendTemplateId = resolveSendTemplateId(editorSnapshotMissing, activeKey, templates);
 
@@ -1748,9 +1773,10 @@ export function CommunicationPage() {
   useEffect(() => {
     currentEventIdRef.current = eventId;
     deleteTemplateSeqRef.current += 1;
+    previewSeqRef.current += 1;
+    metadataSaveSeqRef.current += 1;
     setTemplateActionBusy(false);
-    setDeleteConfirmOpen(false);
-    setPendingDelete(null);
+    setEditModalOpen(false);
   }, [eventId]);
 
   useEffect(() => {
@@ -1941,19 +1967,20 @@ export function CommunicationPage() {
 
   const handlePreview = async () => {
     if (!eventId || editorSnapshotMissing) return;
+    const scopeEventId = eventId;
     const seq = ++previewSeqRef.current;
     setPreviewLoading(true);
     setValidationErrors([]);
     try {
       const data =
         activeKey === "virtual-ticket"
-          ? await previewEventTemplate(eventId, templatePayload())
-          : await previewEventTemplateById(eventId, activeKey, templatePayload());
-      if (seq !== previewSeqRef.current) return;
+          ? await previewEventTemplate(scopeEventId, templatePayload())
+          : await previewEventTemplateById(scopeEventId, activeKey, templatePayload());
+      if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
     } catch (err) {
-      if (seq !== previewSeqRef.current) return;
+      if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
       setPreviewSubject(null);
       setPreviewHtml(null);
       if (err instanceof TemplateValidationError) {
@@ -1986,7 +2013,7 @@ export function CommunicationPage() {
   }, [tab, subject, body, format, activeKey, editorSnapshotMissing]);
 
   const performSave = async () => {
-    if (!eventId) return;
+    if (!eventId || templateActionBusy) return;
     setValidationErrors([]);
     setSaving(true);
     try {
@@ -2115,6 +2142,8 @@ export function CommunicationPage() {
   // no MailTemplateListItem row of its own.
   const templateTabCount = templates.length + (templates.some((t) => t.name === "ticket") ? 0 : 1);
 
+  const activeTemplateMeta = templates.find((t) => t.id === activeKey) ?? null;
+
   return (
     <div className="screen">
       <PageHeader title="Communication" subtitle="Ticket email templates and delivery log" />
@@ -2174,17 +2203,12 @@ export function CommunicationPage() {
           <TemplatePickerBar
             event={event}
             templateActionBusy={templateActionBusy}
+            contentSaving={saving}
             templates={templates}
             activeKey={activeKey}
             source={source}
-            canDelete={activeTemplateName !== "ticket"}
-            onDelete={() =>
-              requestDirtyProtectedAction({
-                kind: "delete",
-                templateId: activeKey,
-                name: activeTemplateName,
-              })
-            }
+            canEdit={activeKey !== "virtual-ticket"}
+            onEdit={() => setEditModalOpen(true)}
             requestDirtyProtectedAction={requestDirtyProtectedAction}
           />
 
@@ -2208,6 +2232,7 @@ export function CommunicationPage() {
               setBody={setBody}
               validationErrors={validationErrors}
               saving={saving}
+              templateActionBusy={templateActionBusy}
               isDirty={isDirty}
               saveButtonLabel={saveButtonLabel}
               onSave={handleSave}
@@ -2283,20 +2308,18 @@ export function CommunicationPage() {
           setPendingDirtyAction(null);
         }}
       />
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        title="Delete template?"
-        message={deleteConfirmMessage(pendingDelete, templates)}
-        confirmLabel="Delete"
-        confirmVariant="danger"
-        loading={templateActionBusy}
-        onCancel={() => {
-          if (templateActionBusy) return;
-          setDeleteConfirmOpen(false);
-          setPendingDelete(null);
+      <EditTemplateModal
+        open={editModalOpen}
+        template={activeTemplateMeta}
+        busy={templateActionBusy || saving}
+        onClose={() => {
+          if (templateActionBusy || saving) return;
+          setEditModalOpen(false);
         }}
-        onConfirm={() => {
-          if (pendingDelete) void executeDeleteTemplate(pendingDelete.templateId);
+        onSave={(templateId, draft) => void executeSaveTemplateMetadata(templateId, draft)}
+        onDelete={(templateId) => {
+          const name = activeTemplateMeta?.name ?? "";
+          requestDirtyProtectedAction({ kind: "delete", templateId, name });
         }}
       />
       <CreateTemplateDialog

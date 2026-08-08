@@ -40,6 +40,7 @@ vi.mock("../../src/api/client.js", () => ({
   saveEventTemplateById: vi.fn(),
   createEventTemplate: vi.fn(),
   deleteEventTemplate: vi.fn(),
+  updateEventTemplateMetadata: vi.fn(),
   testSendEventTemplate: vi.fn(),
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
@@ -149,7 +150,7 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("CommunicationPage archived lockdown", () => {
-  it("disables send email, new/delete template, save, send test, and the editor fieldset", async () => {
+  it("disables send email, new/edit template, save, send test, and the editor fieldset", async () => {
     renderPage();
 
     await waitFor(() => {
@@ -158,14 +159,14 @@ describe("CommunicationPage archived lockdown", () => {
 
     expectArchivedLock(screen.getByRole("button", { name: "New template" }));
 
-    // Delete only ever targets the currently open template - the ticket template itself is
-    // never deletable at all, so switch to Reminder first to reach an actual delete button.
+    // Edit (rename/icon/description, with delete nested inside) only ever targets the currently
+    // open template, so switch to Reminder first to reach a real one.
     fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
     await waitFor(() => {
       expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
     });
-    expectArchivedLock(screen.getByRole("button", { name: "Delete template" }));
+    expectArchivedLock(screen.getByRole("button", { name: "Edit template" }));
 
     // Save is already disabled while the form isn't dirty (editing is impossible
     // anyway since the fieldset below is disabled) — confirm it stays blocked.

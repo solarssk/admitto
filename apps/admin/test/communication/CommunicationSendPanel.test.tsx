@@ -392,6 +392,39 @@ describe("CommunicationSendPanel", () => {
     ).toBe(true);
   });
 
+  it("resets dry-run/send result state when the event changes even if templateId stays the same", async () => {
+    sendEventBulk.mockResolvedValue({ recipientCount: 4 });
+
+    const { rerender } = render(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-a"
+        templateId={undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    expect(await screen.findByText(/recipients matched/)).toBeTruthy();
+
+    // Inherited ticket template often keeps templateId undefined across events - that used to
+    // skip outcome reset and leave the previous event's count/batch UI on screen.
+    rerender(
+      <CommunicationSendPanel
+        event={activeEvent}
+        snapshotMissing={false}
+        isDirty={false}
+        eventId="evt-b"
+        templateId={undefined}
+      />,
+    );
+
+    expect(screen.queryByText(/recipients matched/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Count recipients" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+  });
+
   it("shows a retry control when ticket types fail to load, and retries on click", async () => {
     fetchTicketTypes.mockRejectedValueOnce(new Error("network down"));
     fetchTicketTypes.mockResolvedValueOnce([

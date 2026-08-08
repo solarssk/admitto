@@ -59,7 +59,7 @@
 /* Matches --control-h - the same height as the picker's own SearchableSelect trigger and a
    default (non-sm) Button, so every control on this row shares one consistent height instead
    of mixing --control-h and --control-h-sm. */
-.communication-template-picker__delete {
+.communication-template-picker__edit {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -72,12 +72,12 @@
   cursor: pointer;
 }
 
-.communication-template-picker__delete:hover:not(:disabled) {
+.communication-template-picker__edit:hover:not(:disabled) {
   background: var(--surface-hover);
   color: var(--text-primary);
 }
 
-.communication-template-picker__delete:disabled {
+.communication-template-picker__edit:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }

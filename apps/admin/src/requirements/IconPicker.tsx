@@ -1,3 +1,5 @@
+import "./icon-picker.css";
+
 /** Tabler icon names used for event items — ordered by frequency of use. */
 export const ITEM_ICONS: ReadonlyArray<{ name: string; label: string }> = [
   { name: "gift", label: "Gift" },
@@ -52,10 +54,20 @@ export function normalizeEventItemIconForForm(icon: string | null | undefined): 
 export interface IconPickerProps {
   value: string | null;
   onChange: (icon: string | null) => void;
+  /** Curated icon list to offer; defaults to ITEM_ICONS (event items). */
+  icons?: ReadonlyArray<{ name: string; label: string }>;
+  /** Tabler icon shown for the "no selection" cell; defaults to DEFAULT_EVENT_ITEM_ICON. */
+  defaultIcon?: string;
 }
 
-/** Grid picker for Tabler item icons. */
-export function IconPicker({ value, onChange }: Readonly<IconPickerProps>) {
+/** Grid picker for Tabler icons, reused across features with different curated lists/defaults
+ * (event items, mail templates) - the grid/selection behavior is shared, the icon set isn't. */
+export function IconPicker({
+  value,
+  onChange,
+  icons = ITEM_ICONS,
+  defaultIcon = DEFAULT_EVENT_ITEM_ICON,
+}: Readonly<IconPickerProps>) {
   return (
     <div className="icon-picker">
       <div className="icon-picker__grid" aria-label="Choose icon">
@@ -64,12 +76,12 @@ export function IconPicker({ value, onChange }: Readonly<IconPickerProps>) {
           className={`icon-picker__item${!value ? " icon-picker__item--selected" : ""}`}
           onClick={() => onChange(null)}
           aria-pressed={!value}
-          aria-label="Default icon (package)"
-          title="Default (package)"
+          aria-label={`Default icon (${defaultIcon})`}
+          title={`Default (${defaultIcon})`}
         >
-          <i className={`ti ti-${DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
+          <i className={`ti ti-${defaultIcon}`} aria-hidden="true" />
         </button>
-        {ITEM_ICONS.map((ic) => (
+        {icons.map((ic) => (
           <button
             key={ic.name}
             type="button"

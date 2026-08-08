@@ -589,6 +589,10 @@ model MailTemplate {
   scope_id               String
   name                   String          @default("ticket")
   label                  String          @default("Ticket email")
+  // Same shape as EventItem.icon: a Tabler icon name, unvalidated against the real Tabler set
+  // (kebab-case shape only), null falls back to a fixed default in the picker UI.
+  icon                   String?         @db.VarChar(64)
+  description            String?         @db.VarChar(500)
   subject_template       String
   body_template          String          @db.Text
   template_format        String // "mjml" | "html"

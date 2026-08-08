@@ -3,17 +3,10 @@ import { Button, Card, Notice } from "@admitto/ui";
 import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-
-const RSVP_STATUS_OPTIONS: ReadonlyArray<{ id: RsvpStatus; label: string }> = [
-  { id: "none", label: "Registered" },
-  { id: "confirmed", label: "Confirmed" },
-  { id: "declined", label: "Declined" },
-  { id: "tentative", label: "Tentative" },
-  { id: "cancelled", label: "Cancelled" },
-];
 
 interface CommunicationSendPanelProps {
   event: ArchivedGuardEvent;
@@ -123,11 +116,30 @@ export function CommunicationSendPanel({
     setBatchStatus(null);
   }, []);
 
+  // Clears count/result/batch UI without touching the admin's chosen filter strategy (all /
+  // ticket type / RSVP). Ticket type *value* and options are cleared by the fetch effect below.
+  const resetSendOutcome = useCallback(() => {
+    runIdRef.current += 1;
+    setRecipientCount(null);
+    setPhase("form");
+    setBusy(false);
+    setError(null);
+    setResultMessage(null);
+    setBatchId(null);
+    setBatchStatus(null);
+  }, []);
+
   // Switching the selected template is the tab equivalent of the old dialog's reopen - stale
   // filter/count/result state from a previous template must not carry over.
   useEffect(() => {
     resetForm();
   }, [templateId, resetForm]);
+
+  // Event switch often keeps the same templateId (or undefined for inherited ticket). Count,
+  // dry-run, and batch polling from the previous event must not stay on screen.
+  useEffect(() => {
+    resetSendOutcome();
+  }, [eventId, resetSendOutcome]);
 
   useEffect(() => {
     if (snapshotMissing) return;

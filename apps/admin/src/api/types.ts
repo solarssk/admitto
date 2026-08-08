@@ -629,6 +629,14 @@ export interface SaveTemplateBody {
   template_format: "mjml" | "html";
 }
 
+/** Identity-only edit for PATCH .../templates/:id - label/icon/description, no content or
+ * format. `null` (icon/description only) clears the field back to its picker-side default. */
+export interface UpdateTemplateMetadataBody {
+  label?: string;
+  icon?: string | null;
+  description?: string | null;
+}
+
 export interface PreviewTemplateResponse {
   subject: string;
   html: string;
@@ -672,6 +680,8 @@ export interface MailTemplateListItem {
   id: string;
   name: string;
   label: string;
+  icon: string | null;
+  description: string | null;
   template_format: "mjml" | "html";
   subject_template: string;
   updated_at: string;
