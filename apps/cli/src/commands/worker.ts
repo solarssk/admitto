@@ -19,6 +19,7 @@ import {
   ingestBounces,
   nullifyDeliverySnapshots,
   parseBounceIngestTickSeconds,
+  workerHeartbeatStaleMs,
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
@@ -104,7 +105,11 @@ async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
     return;
   }
   try {
-    const result = await drainImportJobs(db, getDefaultStorage(), { limit: 1 });
+    const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
+    const result = await drainImportJobs(db, getDefaultStorage(), {
+      limit: 1,
+      heartbeatStaleMs,
+    });
     if (result.claimed === 0 && result.reclaimed === 0 && result.healed === 0) {
       log("import", "idle");
       return;
@@ -125,7 +130,11 @@ async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
     return;
   }
   try {
-    const result = await drainExportJobs(db, getDefaultStorage(), { limit: 1 });
+    const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
+    const result = await drainExportJobs(db, getDefaultStorage(), {
+      limit: 1,
+      heartbeatStaleMs,
+    });
     if (result.claimed === 0 && result.reclaimed === 0) {
       log("export", "idle");
       return;
@@ -195,18 +204,22 @@ async function runWorkerTick(
   await runJobSafely("export", () => runExportJob(db, locks));
   await runJobSafely("bounce", () => runBounceJob(db, locks));
 
-  if (!retentionIsDue(schedule, Date.now())) return;
-
-  try {
-    const completed = await runRetentionJob(db, locks);
-    // Lock held elsewhere: try again on the next tick (cheap skip).
-    if (!completed) return;
-    markRetentionSuccess(schedule, Date.now());
-  } catch (err) {
-    log("retention", `FAILED ${errMessage(err)}`);
-    markRetentionFailure(schedule, Date.now());
-    log("retention", "retry after failure backoff (15m)");
+  if (retentionIsDue(schedule, Date.now())) {
+    try {
+      const completed = await runRetentionJob(db, locks);
+      // Lock held elsewhere: try again on the next tick (cheap skip).
+      if (completed) markRetentionSuccess(schedule, Date.now());
+    } catch (err) {
+      log("retention", `FAILED ${errMessage(err)}`);
+      markRetentionFailure(schedule, Date.now());
+      log("retention", "retry after failure backoff (15m)");
+    }
   }
+
+  // Refresh after long drains so Health does not mark the worker stale mid-tick.
+  await runJobSafely("heartbeat", async () => {
+    await touchWorkerHeartbeat(db);
+  });
 }
 
 /**

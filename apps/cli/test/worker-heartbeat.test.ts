@@ -6,15 +6,15 @@ import {
 } from "../src/commands/worker-heartbeat.js";
 
 describe("workerHeartbeatStaleMs", () => {
-  it("uses 2× tick + 30s slack with a 90s floor", () => {
-    expect(workerHeartbeatStaleMs(60)).toBe(150_000);
-    expect(workerHeartbeatStaleMs(10)).toBe(90_000);
-    expect(workerHeartbeatStaleMs(120)).toBe(270_000);
+  it("uses 3× tick + 60s slack with a 5m floor", () => {
+    expect(workerHeartbeatStaleMs(60)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(10)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(120)).toBe(420_000);
   });
 
   it("falls back safely for non-positive ticks", () => {
-    expect(workerHeartbeatStaleMs(0)).toBe(150_000);
-    expect(workerHeartbeatStaleMs(Number.NaN)).toBe(150_000);
+    expect(workerHeartbeatStaleMs(0)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(Number.NaN)).toBe(300_000);
   });
 });
 

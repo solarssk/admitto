@@ -1487,7 +1487,13 @@ async function pollExportJobUntilReady(
   format: AttendeeExportFormat,
   signal?: AbortSignal,
 ): Promise<void> {
-  for (let attempt = 0; attempt < 180; attempt += 1) {
+  /** Keep aligned with `DEFAULT_EXPORT_JOB_STALE_RUNNING_MS` / reclaim (running only). */
+  const staleMs = 15 * 60 * 1000;
+  /** Safety cap so a long live backlog cannot loop forever (≈5h at 5s). */
+  const maxAttempts = 3600;
+  const intervalMs = 5000;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const statusRes = await fetch(
       `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(jobId)}`,
@@ -1497,6 +1503,7 @@ async function pollExportJobUntilReady(
       status: string;
       error: string | null;
       filename: string | null;
+      started_at?: string | null;
     }>(statusRes);
     if (status.status === "succeeded") {
       const downloadRes = await fetch(
@@ -1510,7 +1517,17 @@ async function pollExportJobUntilReady(
       // 422: application failure (not transport). Avoids the global "server unavailable" banner.
       throw new ApiError(422, status.error || "Export failed.");
     }
-    if (attempt < 179) await sleepExportPoll(5000, signal);
+    // Only apply the stale window once the worker has claimed the job. Pure `pending`
+    // can wait in a live backlog longer than the running threshold (matches import poll
+    // and server reclaim: pending fail only when heartbeat is stale).
+    const startedRaw = status.started_at;
+    if (startedRaw) {
+      const started = Date.parse(startedRaw);
+      if (Number.isFinite(started) && Date.now() - started >= staleMs) {
+        throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
+      }
+    }
+    if (attempt < maxAttempts - 1) await sleepExportPoll(intervalMs, signal);
   }
   throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
 }
