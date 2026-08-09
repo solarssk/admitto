@@ -73,10 +73,11 @@ describe("pickDailyForecast", () => {
 
 describe("OpenMeteoClient", () => {
   it("fetches a day and attaches the API key query param", async () => {
-    const fetchFn = vi.fn(async (input: string | URL) => {
+    const fetchFn = vi.fn(async (input: string | URL, init?: RequestInit) => {
       const url = String(input);
       expect(url).toContain("apikey=secret");
       expect(url).toContain("timezone=Europe%2FWarsaw");
+      expect(init?.redirect).toBe("error");
       return new Response(
         JSON.stringify({
           daily: {
@@ -98,6 +99,20 @@ describe("OpenMeteoClient", () => {
     ).resolves.toMatchObject({
       weather_code: 2,
       temp_max_c: 21.5,
+    });
+  });
+
+  it("refuses to follow redirects (SSRF)", async () => {
+    const err = new TypeError("fetch failed");
+    const client = new OpenMeteoClient({
+      config: defaultWeatherConfig(),
+      fetchFn: async (_input, init) => {
+        expect(init?.redirect).toBe("error");
+        throw err;
+      },
+    });
+    await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).rejects.toMatchObject({
+      kind: "unavailable",
     });
   });
 
@@ -130,6 +145,7 @@ describe("MetNoClient", () => {
   it("sends User-Agent and returns a daily aggregate", async () => {
     const fetchFn = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "User-Agent": "Admitto/test" });
+      expect(init?.redirect).toBe("error");
       return new Response(
         JSON.stringify({
           properties: {
