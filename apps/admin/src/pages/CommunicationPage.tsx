@@ -19,6 +19,7 @@ import {
   Input,
   Notice,
   PageHeader,
+  Spinner,
   Tabs,
   Tooltip,
   useToast,
@@ -177,6 +178,38 @@ function imagePlaceholderMarkup(name: string, format: TemplateFormat): string {
   return format === "mjml"
     ? `<mj-image src="{{${name}}}" alt="${alt}" width="200px" />`
     : `<img src="{{${name}}}" alt="${alt}" width="200" style="max-width:100%;" />`;
+}
+
+/** The real wallet badge SVGs (see PlaceholderChips' `samples`/apps/web/src/wallet-badges.ts),
+ * used as the *image* half of the ready-made button below - the placeholder itself is only ever
+ * the link half (`href`), never the image `src`. */
+const WALLET_BADGE_ASSET: Record<string, { src: string; alt: string }> = {
+  apple_wallet_url: { src: "/assets/apple-wallet-badge.svg", alt: "Add to Apple Wallet" },
+  google_wallet_url: { src: "/assets/google-wallet-badge.svg", alt: "Add to Google Wallet" },
+};
+
+/** Markup inserted for a wallet placeholder: a ready-to-use badge button (the real Apple/Google
+ * badge image, linked to `{{name}}`), not a bare token. Unlike imagePlaceholderMarkup, `{{name}}`
+ * itself goes in `href`, not `src` - a wallet placeholder is a link value, the badge graphic is a
+ * fixed asset, not something the placeholder resolves to. Relative `/assets/...` src values are
+ * absolutized at render/send time via `BASE_URL` (see absolutizeBundledTicketAssetUrls). */
+export function walletButtonMarkup(name: string, format: TemplateFormat): string {
+  const badge = WALLET_BADGE_ASSET[name];
+  if (!badge) return `{{${name}}}`;
+  return format === "mjml"
+    ? `<mj-image href="{{${name}}}" src="${badge.src}" alt="${badge.alt}" width="200px" />`
+    : `<a href="{{${name}}}"><img src="${badge.src}" alt="${badge.alt}" width="200" style="max-width:100%;" /></a>`;
+}
+
+/** Body insert for a placeholder chip: image markup, wallet badge button, or a bare token. */
+export function bodyPlaceholderInsert(
+  name: string,
+  format: TemplateFormat,
+  imagePlaceholders: readonly string[],
+): string {
+  if (imagePlaceholders.includes(name)) return imagePlaceholderMarkup(name, format);
+  if (WALLET_PLACEHOLDERS.has(name)) return walletButtonMarkup(name, format);
+  return `{{${name}}}`;
 }
 
 /** True when [start, end] falls inside the `<mjml>...</mjml>` root found in `value` — strictly
@@ -626,6 +659,10 @@ function SendTab({
   sendTemplateId,
   editorSnapshotMissing,
   isDirty,
+  isActive,
+  savedSubject,
+  savedBody,
+  savedFormat,
   previewHtml,
   previewSubject,
   previewLoading,
@@ -648,6 +685,12 @@ function SendTab({
   sendTemplateId: string | undefined;
   editorSnapshotMissing: boolean;
   isDirty: boolean;
+  /** False while the tab is kept mounted but hidden so bulk-send polling can finish. */
+  isActive: boolean;
+  /** Last-saved template content - Send preview must match what bulk/test send will deliver. */
+  savedSubject: string;
+  savedBody: string;
+  savedFormat: TemplateFormat;
   previewHtml: string | null;
   previewSubject: string | null;
   previewLoading: boolean;
@@ -661,69 +704,71 @@ function SendTab({
   onTestSend: () => Promise<void>;
   testStatus: TestSendStatus | null;
 }>) {
-  // Keeps the preview in sync with whichever template is picked, matching the mockup's
-  // always-rendered preview - unlike the Templates tab, there's no draft being actively typed
-  // into here, so there's no reason to make the admin click a separate Preview button first.
+  // Preview the *saved* template when this tab is shown (or when that saved snapshot changes).
+  // Skip while inactive so a Templates-tab draft preview is not overwritten in the background.
   useEffect(() => {
+    if (!isActive) return;
     void onPreview();
-    // onPreview closes over live subject/body/format state and is a fresh function every
-    // render, so it's intentionally left out here - only an actual template or event switch
-    // should re-trigger this, not every render.
+    // onPreview is a fresh function every render; only these primitives should re-trigger it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, eventId]);
+  }, [activeKey, eventId, isActive, savedSubject, savedBody, savedFormat]);
 
   return (
     <div className="communication-send-tab">
-      <Card
-        title={
-          <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
-            Message
-          </HintLabel>
-        }
-      >
-        <div className="settings-card-stack">
-          <p className="settings-card-intro">
-            Pick which saved template this event's ticket emails use, and preview exactly what
-            recipients will see before you send.
-          </p>
-          <div className="communication-half-field">
-            <SearchableSelect
-              id="communication-send-template"
-              label="Template"
-              placeholder="Choose a template…"
-              searchPlaceholder="Search templates…"
-              emptyLabel="No templates found"
-              value={activeKey}
-              options={templatePickerOptions(templates)}
-              onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
-            />
+      {/* Message + test-send unmount when leaving the tab (avoid duplicate a11y tree vs Templates).
+          The bulk-send panel stays mounted so an in-flight poll is not aborted. */}
+      {isActive && (
+        <Card
+          title={
+            <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
+              Message
+            </HintLabel>
+          }
+        >
+          <div className="settings-card-stack">
+            <p className="settings-card-intro">
+              Pick which saved template this event's ticket emails use, and preview exactly what
+              recipients will see before you send.
+            </p>
+            <div className="communication-half-field">
+              <SearchableSelect
+                id="communication-send-template"
+                label="Template"
+                placeholder="Choose a template…"
+                searchPlaceholder="Search templates…"
+                emptyLabel="No templates found"
+                value={activeKey}
+                options={templatePickerOptions(templates)}
+                onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
+              />
+            </div>
+            <DefaultTemplateBanner activeKey={activeKey} source={source} />
+            <div className="communication-preview-toolbar">
+              <span className="communication-preview-toolbar__label">
+                <i className="ti ti-eye" aria-hidden="true" /> Preview
+              </span>
+              <button
+                type="button"
+                className="communication-preview-toolbar__open"
+                onClick={onOpenTemplate}
+              >
+                <i className="ti ti-external-link" aria-hidden="true" /> Open template
+              </button>
+            </div>
+            {previewLoading ? (
+              <div className="communication-preview-empty">Loading preview…</div>
+            ) : (
+              <PreviewBody
+                previewHtml={previewHtml}
+                previewSubject={previewSubject}
+                eventTitle={event.title}
+                senderName={senderName}
+                senderAddress={senderAddress}
+              />
+            )}
           </div>
-          <DefaultTemplateBanner activeKey={activeKey} source={source} />
-          <div className="communication-preview-toolbar">
-            <span className="communication-preview-toolbar__label">
-              <i className="ti ti-eye" aria-hidden="true" /> Preview
-            </span>
-            <button
-              type="button"
-              className="communication-preview-toolbar__open"
-              onClick={onOpenTemplate}
-            >
-              <i className="ti ti-external-link" aria-hidden="true" /> Open template
-            </button>
-          </div>
-          {previewLoading ? (
-            <div className="communication-preview-empty">Loading preview…</div>
-          ) : (
-            <PreviewBody
-              previewHtml={previewHtml}
-              previewSubject={previewSubject}
-              eventTitle={event.title}
-              senderName={senderName}
-              senderAddress={senderAddress}
-            />
-          )}
-        </div>
-      </Card>
+        </Card>
+      )}
 
       <CommunicationSendPanel
         event={event}
@@ -733,15 +778,17 @@ function SendTab({
         isDirty={isDirty}
       />
 
-      <SendTestCard
-        event={event}
-        testEmail={testEmail}
-        setTestEmail={setTestEmail}
-        testSending={testSending}
-        editorSnapshotMissing={editorSnapshotMissing}
-        onTestSend={onTestSend}
-        testStatus={testStatus}
-      />
+      {isActive && (
+        <SendTestCard
+          event={event}
+          testEmail={testEmail}
+          setTestEmail={setTestEmail}
+          testSending={testSending}
+          editorSnapshotMissing={editorSnapshotMissing}
+          onTestSend={onTestSend}
+          testStatus={testStatus}
+        />
+      )}
     </div>
   );
 }
@@ -849,11 +896,18 @@ function PlaceholderChips({
   imagePlaceholders,
   requiredPlaceholders,
   onInsertPlaceholder,
+  eventId,
+  logoUrl,
 }: Readonly<{
   allowedPlaceholders: string[];
   imagePlaceholders: string[];
   requiredPlaceholders: string[];
   onInsertPlaceholder: (name: string) => void;
+  eventId: string;
+  /** Resolved real branding (event -> organization -> "") - shown as-is when configured; no
+   * preview at all (falls back to the generic photo icon) when neither scope has one set, since
+   * there's no further built-in default to show. */
+  logoUrl: string;
 }>) {
   const allowedSet = new Set(allowedPlaceholders);
   const grouped = new Set<string>();
@@ -864,6 +918,25 @@ function PlaceholderChips({
   groups.forEach((g) => g.names.forEach((n) => grouped.add(n)));
   const custom = allowedPlaceholders.filter((n) => !grouped.has(n));
   if (custom.length > 0) groups.push({ label: "Images", names: custom });
+
+  // Only for placeholders that actually render as <img src>, i.e. IMAGE_PLACEHOLDERS (see
+  // packages/mail-templates/src/placeholders.ts) - apple_wallet_url/google_wallet_url are link
+  // values (an <mj-button href>, same category as ticket_url), not images, so a picture-style
+  // preview would wrongly imply inserting the chip renders a picture. They keep the plain
+  // icon+tooltip treatment instead (WALLET_PLACEHOLDERS' ti-ticket icon, below).
+  //
+  // The real per-event/org values a send would actually use - not samples. qr_image_url has no
+  // real-until-sent equivalent (it's generated per attendee), so it keeps an illustrative sample
+  // instead (see CHIP_QR_SAMPLE_DATA_URI). event_map_url always points at the real static-map
+  // route; PlaceholderChip falls back to the generic icon itself if that 404s (no location set).
+  // header_image_url is in HIDDEN_PLACEHOLDERS (no insert chip), so no sample entry is needed.
+  const samples: Record<string, string> = {
+    qr_image_url: CHIP_QR_SAMPLE_DATA_URI,
+    event_map_url: `/m/${encodeURIComponent(eventId)}.png`,
+  };
+  if (logoUrl) samples.logo_url = logoUrl;
+
+  const showWalletNotice = groups.some((g) => g.label === "Wallet");
 
   return (
     <>
@@ -878,67 +951,87 @@ function PlaceholderChips({
                 isImage={imagePlaceholders.includes(p)}
                 isRequired={requiredPlaceholders.includes(p)}
                 onInsert={onInsertPlaceholder}
+                sample={samples[p]}
               />
             ))}
           </div>
         </div>
       ))}
+      {showWalletNotice && (
+        <Notice variant="info" className="communication-wallet-notice">
+          Wallet chips insert an Add to Wallet badge button. Apple and Google Wallet links are not
+          generated yet, so do not use these badges in messages you send to attendees.
+        </Notice>
+      )}
     </>
   );
 }
 
 /** One placeholder chip - required ones are outlined, wallet-add links get a ticket icon so
  * they read as "important" the same way an image chip does instead of blending into a bare-
- * token wall of text. Description shows in the app's own Tooltip (@admitto/ui), not a native
- * browser title tooltip. `qr_image_url` gets its actual sample image always visible as a small
+ * token wall of text. A chip with a `sample` image (see PlaceholderChips - the real configured
+ * logo/header, the real per-event map, or an illustrative QR graphic) shows that image instead
+ * of a text tooltip - a picture of what the placeholder looks like is more useful than a
+ * description once there are several image placeholders to tell apart, and required-ness still
+ * reads from the chip's own outline styling either way. It's always visible as a small
  * thumbnail (not hover-only - a hidden-until-hover preview is easy to miss entirely), plus a
- * larger version on hover/focus for anyone who wants a closer look. */
+ * larger version on hover/focus for anyone who wants a closer look. A sample that fails to load
+ * (event_map_url 404s when the event has no location set) falls back to the plain icon+tooltip
+ * presentation, same as a chip with no sample at all. Chips without a (working) sample - plain
+ * text/link placeholders, and per-event custom image tokens with no fixed sample - keep the
+ * app's own Tooltip (@admitto/ui), not a native browser title tooltip. */
 function PlaceholderChip({
   name,
   isImage,
   isRequired,
   onInsert,
+  sample,
 }: Readonly<{
   name: string;
   isImage: boolean;
   isRequired: boolean;
   onInsert: (name: string) => void;
+  sample?: string;
 }>) {
-  const isQr = name === "qr_image_url";
+  const [sampleFailed, setSampleFailed] = useState(false);
+  useEffect(() => {
+    setSampleFailed(false);
+  }, [sample]);
+  const showSample = !!sample && !sampleFailed;
   const titleParts = [
     isRequired && "Required placeholder",
     placeholderDescription(name, isImage),
   ].filter((part): part is string => Boolean(part));
-  return (
-    <Tooltip content={titleParts.join(" · ")}>
-      <button
-        type="button"
-        className={["communication-chip", isRequired && "communication-chip--required"]
-          .filter(Boolean)
-          .join(" ")}
-        onClick={() => onInsert(name)}
-      >
-        {isQr ? (
-          <img
-            className="communication-chip-thumb"
-            src={SAMPLE_QR_PLACEHOLDER_DATA_URI}
-            alt=""
-            width={16}
-            height={16}
-          />
-        ) : (
-          isImage && <i className="ti ti-photo" aria-hidden="true" />
-        )}
-        {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
-        {`{{${name}}}`}
-        {isQr && (
-          <span className="communication-chip-preview" aria-hidden="true">
-            <img src={SAMPLE_QR_PLACEHOLDER_DATA_URI} alt="" width={100} height={100} />
-          </span>
-        )}
-      </button>
-    </Tooltip>
+  const chip = (
+    <button
+      type="button"
+      className={["communication-chip", isRequired && "communication-chip--required"]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={() => onInsert(name)}
+    >
+      {showSample ? (
+        <img
+          className="communication-chip-thumb"
+          src={sample}
+          alt=""
+          width={16}
+          height={16}
+          onError={() => setSampleFailed(true)}
+        />
+      ) : (
+        isImage && <i className="ti ti-photo" aria-hidden="true" />
+      )}
+      {WALLET_PLACEHOLDERS.has(name) && <i className="ti ti-ticket" aria-hidden="true" />}
+      {`{{${name}}}`}
+      {showSample && (
+        <span className="communication-chip-preview" aria-hidden="true">
+          <img src={sample} alt="" width={100} height={100} />
+        </span>
+      )}
+    </button>
   );
+  return showSample ? chip : <Tooltip content={titleParts.join(" · ")}>{chip}</Tooltip>;
 }
 
 function TemplateEditorCard({
@@ -948,6 +1041,7 @@ function TemplateEditorCard({
   imagePlaceholders,
   requiredPlaceholders,
   onInsertPlaceholder,
+  brandingLogoUrl,
   subjectRef,
   subject,
   setSubject,
@@ -971,6 +1065,7 @@ function TemplateEditorCard({
   imagePlaceholders: string[];
   requiredPlaceholders: string[];
   onInsertPlaceholder: (name: string) => void;
+  brandingLogoUrl: string;
   subjectRef: RefObject<HTMLInputElement | null>;
   subject: string;
   setSubject: Dispatch<SetStateAction<string>>;
@@ -1011,6 +1106,8 @@ function TemplateEditorCard({
         imagePlaceholders={imagePlaceholders}
         requiredPlaceholders={requiredPlaceholders}
         onInsertPlaceholder={onInsertPlaceholder}
+        eventId={event.id}
+        logoUrl={brandingLogoUrl}
       />
 
       <Tooltip
@@ -1044,13 +1141,32 @@ function TemplateEditorCard({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onFocus={() => setActiveField("body")}
+              onKeyDown={(e) => {
+                // Plain Tab indents (code-editor habit). Shift+Tab keeps the browser default so
+                // keyboard users can still move focus back out of the textarea.
+                if (e.key !== "Tab" || e.shiftKey) return;
+                e.preventDefault();
+                const el = e.currentTarget;
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                const next = `${body.slice(0, start)}  ${body.slice(end)}`;
+                setBody(next);
+                requestAnimationFrame(() => {
+                  el.selectionStart = el.selectionEnd = start + 2;
+                });
+              }}
               disabled={editorSnapshotMissing}
             />
           </div>
         </fieldset>
       </Tooltip>
 
-      {validationErrors.length > 0 && (
+      {validationErrors.length === 1 && (
+        <Notice variant="error" role="alert" className="communication-errors">
+          {validationErrors[0]}
+        </Notice>
+      )}
+      {validationErrors.length > 1 && (
         <Notice variant="error" role="alert" className="communication-errors">
           <ul>
             {validationErrors.map((msg) => (
@@ -1097,16 +1213,64 @@ const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
 /** Matches `DEFAULT_SAMPLE_VARS.email` (packages/mail-templates/src/preview.ts) - the "to"
  * address every preview is rendered for, shown in the mail-client chrome below. */
 const SAMPLE_RECIPIENT_EMAIL = "alex@example.com";
-const SAMPLE_QR_PLACEHOLDER_DATA_URI =
-  "data:image/svg+xml;charset=UTF-8," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
-      '<rect width="200" height="200" fill="#f1f3f5"/>' +
-      '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
-      '<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">Sample QR</text>' +
-      '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>' +
-      "</svg>",
+function svgDataUri(inner: string): string {
+  return (
+    "data:image/svg+xml;charset=UTF-8," +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">${inner}</svg>`,
+    )
   );
+}
+
+/** A real-looking (but not scannable) QR pattern: the three corner finder squares every QR code
+ * has, plus a fixed, deterministic scatter of data modules elsewhere - recognizable as "this is
+ * a QR code" at a glance, unlike a text-labeled box. */
+function sampleQrDataUri(): string {
+  const modules = 20;
+  const m = 200 / modules;
+  const finder = (mx: number, my: number) =>
+    `<rect x="${mx * m}" y="${my * m}" width="${7 * m}" height="${7 * m}" fill="#1a1a1a"/>` +
+    `<rect x="${(mx + 1) * m}" y="${(my + 1) * m}" width="${5 * m}" height="${5 * m}" fill="#fff"/>` +
+    `<rect x="${(mx + 2) * m}" y="${(my + 2) * m}" width="${3 * m}" height="${3 * m}" fill="#1a1a1a"/>`;
+  const inFinderZone = (x: number, y: number) =>
+    (x < 8 && y < 8) || (x >= modules - 8 && y < 8) || (x < 8 && y >= modules - 8);
+  let cells = "";
+  for (let y = 0; y < modules; y++) {
+    for (let x = 0; x < modules; x++) {
+      if (inFinderZone(x, y)) continue;
+      if ((x * 7 + y * 13 + x * y) % 3 === 0) {
+        cells += `<rect x="${x * m}" y="${y * m}" width="${m}" height="${m}" fill="#1a1a1a"/>`;
+      }
+    }
+  }
+  return svgDataUri(
+    '<rect width="200" height="200" fill="#fff"/>' +
+      finder(0, 0) +
+      finder(modules - 7, 0) +
+      finder(0, modules - 7) +
+      cells,
+  );
+}
+
+/** Placeholder-chip hover preview for qr_image_url (see PlaceholderChips) - QR has no real
+ * until-sent equivalent (it's generated per attendee), so this stays an illustrative sample
+ * that looks like a QR code, for recognition in the picker. logo_url/header_image_url/
+ * event_map_url use the real configured/resolved values instead (built in PlaceholderChips) -
+ * deliberately NOT reused for the rendered *email* preview below (see
+ * SAMPLE_QR_PLACEHOLDER_DATA_URI) - a realistic-looking-but-fake QR code substituted into "what
+ * the recipient will actually see" reads as a real, scannable code with no indication it isn't;
+ * the honest, clearly-labeled placeholder there is the correct one. */
+const CHIP_QR_SAMPLE_DATA_URI = sampleQrDataUri();
+
+/** Swapped into the rendered *email* preview (not the chip picker above) in place of the
+ * backend's fixed sample QR URL, which nothing actually hosts - stays an honest, clearly-labeled
+ * "not a real code" placeholder on purpose, unlike the chip preview's realistic graphic. */
+const SAMPLE_QR_PLACEHOLDER_DATA_URI = svgDataUri(
+  '<rect width="200" height="200" fill="#f1f3f5"/>' +
+    '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
+    '<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">Sample QR</text>' +
+    '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">preview only</text>',
+);
 
 function sanitizeSamplePreviewHtml(html: string): string {
   return html.split(SAMPLE_QR_IMAGE_URL).join(SAMPLE_QR_PLACEHOLDER_DATA_URI).split(SAMPLE_TICKET_URL).join("#");
@@ -1123,6 +1287,7 @@ function PreviewBody({
   senderName,
   senderAddress,
   toolbarLabel,
+  loading = false,
 }: Readonly<{
   previewHtml: string | null;
   previewSubject: string | null;
@@ -1135,8 +1300,14 @@ function PreviewBody({
    * caller (Templates tab) fold its own "Preview"/"Updating…" caption into this same bar
    * instead of stacking a second one above it. Omit to keep the plain decorative arrow. */
   toolbarLabel?: ReactNode;
+  /** Shows the mail-client chrome immediately with a spinner in place of the rendered body,
+   * instead of the plain empty-state text, while a preview fetch is in flight - so the card
+   * itself never appears to load late, only its content does. Only the Templates tab (which
+   * auto-previews on every mount/switch) passes this; the Send tab keeps its own separate
+   * loading branch before ever reaching this component. */
+  loading?: boolean;
 }>) {
-  if (!previewHtml) {
+  if (!previewHtml && !loading) {
     return <div className="communication-preview-empty">Preview will appear here.</div>;
   }
   const displayName = senderName || eventTitle;
@@ -1177,12 +1348,18 @@ function PreviewBody({
           </span>
         </div>
       </div>
-      <iframe
-        className="communication-preview-frame"
-        title="Email preview"
-        sandbox=""
-        srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
-      />
+      {previewHtml ? (
+        <iframe
+          className="communication-preview-frame"
+          title="Email preview"
+          sandbox=""
+          srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
+        />
+      ) : (
+        <div className="communication-preview-frame communication-preview-frame--loading">
+          <Spinner label="Loading preview" />
+        </div>
+      )}
     </div>
   );
 }
@@ -1209,24 +1386,13 @@ function TemplatesPreviewPanel({
   const updatingStatus = previewLoading ? <span className="muted"> · Updating…</span> : null;
   return (
     <div className="communication-templates-preview">
-      {/* Once a preview exists, PreviewBody's own toolbar carries this same caption (see
-          toolbarLabel below) - a standalone row here too would just repeat it. Kept only for
-          the brief empty/loading window before any preview has rendered yet, so the column
-          isn't blank with no heading at all. */}
-      {!previewHtml && (
-        <div className="communication-preview-toolbar">
-          <span className="communication-preview-toolbar__label">
-            <i className="ti ti-eye" aria-hidden="true" /> Preview
-          </span>
-          {updatingStatus}
-        </div>
-      )}
       <PreviewBody
         previewHtml={previewHtml}
         previewSubject={previewSubject}
         eventTitle={eventTitle}
         senderName={senderName}
         senderAddress={senderAddress}
+        loading={previewLoading}
         toolbarLabel={
           <>
             <i className="ti ti-eye" aria-hidden="true" /> Preview
@@ -1383,6 +1549,10 @@ export function CommunicationPage() {
   const [allowedPlaceholders, setAllowedPlaceholders] = useState<string[]>([]);
   const [requiredPlaceholders, setRequiredPlaceholders] = useState<string[]>([]);
   const [imagePlaceholders, setImagePlaceholders] = useState<string[]>([]);
+  /** Resolved event/org branding (event -> organization -> ""), for the placeholder-chip hover
+   * preview - fetched once on load, same for every template since it's a property of the event,
+   * not of whichever template is currently open. */
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [format, setFormat] = useState<TemplateFormat>("mjml");
@@ -1476,6 +1646,16 @@ export function CommunicationPage() {
       template_format: format,
     }),
     [subject, body, format],
+  );
+
+  /** Payload for Send-tab preview / anything that must match bulk send (saved template only). */
+  const savedTemplatePayload = useCallback(
+    () => ({
+      subject_template: savedSubject,
+      body_template: savedBody,
+      template_format: savedFormat,
+    }),
+    [savedSubject, savedBody, savedFormat],
   );
 
   const applyLegacyTemplate = useCallback((data: EventTemplateDto) => {
@@ -1796,6 +1976,7 @@ export function CommunicationPage() {
         setAllowedPlaceholders(data.allowed_placeholders.filter((p) => !HIDDEN_PLACEHOLDERS.has(p)));
         setRequiredPlaceholders(data.required_url_placeholders);
         setImagePlaceholders(data.image_placeholders ?? []);
+        setBrandingLogoUrl(data.logo_url);
         const ticket = items.find((t) => t.name === "ticket");
         if (ticket) {
           setActiveKey(ticket.id);
@@ -1951,12 +2132,15 @@ export function CommunicationPage() {
 
   const insertPlaceholder = (name: string) => {
     // Subjects are plain text (no HTML rendering), so always insert the bare token there. In the
-    // body, an image placeholder gets a ready-to-use image element instead of a bare token —
-    // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src.
+    // body, an image placeholder gets a ready-to-use image element instead of a bare token:
+    // {{logo_url}} alone never displays a picture, it needs to be an <img>/<mj-image> src. A
+    // wallet placeholder similarly gets a ready-made badge button (the real Apple/Google badge
+    // image, linked to the placeholder) instead of a bare token nobody would otherwise turn into
+    // a clickable button by hand.
     const bareToken = `{{${name}}}`;
     const token =
-      activeField === "body" && imagePlaceholders.includes(name)
-        ? imagePlaceholderMarkup(name, format)
+      activeField === "body"
+        ? bodyPlaceholderInsert(name, format, imagePlaceholders)
         : bareToken;
     if (activeField === "subject") {
       insertTokenIntoField(subjectRef.current, token, bareToken, setSubject);
@@ -1965,7 +2149,11 @@ export function CommunicationPage() {
     insertTokenIntoField(bodyRef.current, token, bareToken, setBody);
   };
 
-  const handlePreview = async () => {
+  const runPreview = async (payload: {
+    subject_template: string;
+    body_template: string;
+    template_format: TemplateFormat;
+  }) => {
     if (!eventId || editorSnapshotMissing) return;
     const scopeEventId = eventId;
     const seq = ++previewSeqRef.current;
@@ -1974,15 +2162,18 @@ export function CommunicationPage() {
     try {
       const data =
         activeKey === "virtual-ticket"
-          ? await previewEventTemplate(scopeEventId, templatePayload())
-          : await previewEventTemplateById(scopeEventId, activeKey, templatePayload());
+          ? await previewEventTemplate(scopeEventId, payload)
+          : await previewEventTemplateById(scopeEventId, activeKey, payload);
       if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
       setPreviewSubject(data.subject);
       setPreviewHtml(data.html);
     } catch (err) {
       if (isDeleteStale(seq, scopeEventId, previewSeqRef.current, currentEventIdRef.current)) return;
-      setPreviewSubject(null);
-      setPreviewHtml(null);
+      // Deliberately NOT clearing previewSubject/previewHtml here - same reasoning as
+      // applySelectTemplate's own comment: the last successful preview stays on screen (stale
+      // but not wrong) instead of the whole mail-client box collapsing to empty text every time
+      // a keystroke makes the draft briefly invalid (PO report: the mail-client imitation must
+      // never disappear - the validation error below the editor is the right place for this).
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
       } else if (err instanceof ApiError) {
@@ -1994,6 +2185,16 @@ export function CommunicationPage() {
     } finally {
       if (seq === previewSeqRef.current) setPreviewLoading(false);
     }
+  };
+
+  /** Templates tab: live draft preview (what the editor currently holds). */
+  const handlePreview = async () => {
+    await runPreview(templatePayload());
+  };
+
+  /** Send tab: last-saved snapshot only - bulk/test send never use the unsaved draft. */
+  const handleSendPreview = async () => {
+    await runPreview(savedTemplatePayload());
   };
 
   // Templates tab: live preview instead of click-to-preview, debounced so rapid typing fires one
@@ -2172,7 +2373,9 @@ export function CommunicationPage() {
         }}
       />
 
-      {tab === "send" && (
+      {/* Keep Send mounted while other tabs are open so an in-flight bulk-send poll is not torn
+          down (and the form reset) when the operator briefly opens Templates or Delivery log. */}
+      <div hidden={tab !== "send"}>
         <SendTab
           event={event}
           templates={templates}
@@ -2183,12 +2386,16 @@ export function CommunicationPage() {
           sendTemplateId={sendTemplateId}
           editorSnapshotMissing={editorSnapshotMissing}
           isDirty={isDirty}
+          isActive={tab === "send"}
+          savedSubject={savedSubject}
+          savedBody={savedBody}
+          savedFormat={savedFormat}
           previewHtml={previewHtml}
           previewSubject={previewSubject}
           previewLoading={previewLoading}
           senderName={senderName}
           senderAddress={senderAddress}
-          onPreview={handlePreview}
+          onPreview={handleSendPreview}
           onOpenTemplate={() => setTab("templates")}
           testEmail={testEmail}
           setTestEmail={setTestEmail}
@@ -2196,7 +2403,7 @@ export function CommunicationPage() {
           onTestSend={handleTestSend}
           testStatus={testStatus}
         />
-      )}
+      </div>
 
       {tab === "templates" && (
         <div className="communication-templates-tab">
@@ -2220,6 +2427,7 @@ export function CommunicationPage() {
               imagePlaceholders={imagePlaceholders}
               requiredPlaceholders={requiredPlaceholders}
               onInsertPlaceholder={insertPlaceholder}
+              brandingLogoUrl={brandingLogoUrl}
               subjectRef={subjectRef}
               subject={subject}
               setSubject={setSubject}

@@ -621,6 +621,11 @@ export interface EventTemplateDto {
   /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
    * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
   image_placeholders: string[];
+  /** Resolved `{{logo_url}}` / `{{header_image_url}}` (event → organization → empty) - the same
+   * values a real send would use, for the placeholder-chip hover preview. Empty string means
+   * nothing is configured at either scope. */
+  logo_url: string;
+  header_image_url: string;
 }
 
 export interface SaveTemplateBody {

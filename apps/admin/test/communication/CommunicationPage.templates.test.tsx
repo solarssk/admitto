@@ -11,6 +11,7 @@ const fetchEventTemplateById = vi.fn();
 const fetchEventOverview = vi.fn();
 const fetchEventDeliveries = vi.fn();
 const sendEventBulk = vi.fn();
+const fetchBulkSendStatus = vi.fn();
 const createEventTemplate = vi.fn();
 const deleteEventTemplate = vi.fn();
 const previewEventTemplate = vi.fn();
@@ -60,7 +61,7 @@ vi.mock("../../src/api/client.js", () => ({
   testSendEventTemplate: (...args: unknown[]) => testSendEventTemplate(...args),
   testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
   sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
-  fetchBulkSendStatus: vi.fn(),
+  fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
 }));
@@ -254,6 +255,8 @@ afterEach(() => {
   saveEventTemplateById.mockReset();
   testSendEventTemplateById.mockReset();
   testSendEventTemplate.mockReset();
+  sendEventBulk.mockReset();
+  fetchBulkSendStatus.mockReset();
   vi.useRealTimers();
 });
 
@@ -1044,6 +1047,30 @@ describe("CommunicationPage templates", () => {
     expect(
       await screen.findByText("Subject must include {{ticket_url}}", {}, { timeout: 2000 }),
     ).toBeTruthy();
+  });
+
+  it("lists multiple preview validation errors as a bullet list", async () => {
+    const { TemplateValidationError } = await import("../../src/api/client.js");
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockRejectedValue(
+      new TemplateValidationError(["Missing {{ticket_url}}", "Missing {{first_name}}"]),
+    );
+
+    renderPage();
+
+    expect(await screen.findByText("Missing {{ticket_url}}", {}, { timeout: 2000 })).toBeTruthy();
+    expect(screen.getByText("Missing {{first_name}}")).toBeTruthy();
+  });
+
+  it("Send-tab preview uses the legacy endpoint for the virtual ticket template", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    previewEventTemplate.mockResolvedValue({ subject: "Inherited subject", html: "<p>Inherited</p>" });
+
+    renderSendPage();
+
+    expect(await screen.findByText("Inherited subject")).toBeTruthy();
+    expect(previewEventTemplate).toHaveBeenCalled();
+    expect(previewEventTemplateById).not.toHaveBeenCalled();
   });
 
   it("toasts a generic message when preview fails outside the API layer", async () => {
@@ -1958,6 +1985,84 @@ describe("CommunicationPage templates", () => {
 
     expect(screen.queryByText("Stale Preview A")).toBeNull();
     expect(screen.getByText("Preview B")).toBeTruthy();
+  });
+
+  it("keeps bulk-send polling alive when switching away from the Send tab", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
+    fetchBulkSendStatus
+      .mockResolvedValueOnce({ queued: 2, sent: 0, failed: 0 })
+      .mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0 });
+
+    renderSendPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(fetchBulkSendStatus).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole("tab", { name: /Templates/i }));
+      expect(screen.getByRole("tab", { name: /Templates/i, selected: true })).toBeTruthy();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(fetchBulkSendStatus).toHaveBeenCalledTimes(2);
+
+      fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
+      expect(screen.getByRole("tab", { name: /Send/i, selected: true })).toBeTruthy();
+      expect(screen.getByText("Send complete: 2 sent, 0 failed.")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("previews the saved template on the Send tab, not an unsaved Templates draft", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    previewEventTemplateById.mockImplementation(async (_eventId: string, _id: string, body: {
+      subject_template?: string;
+      body_template?: string;
+    }) => ({
+      subject: body.subject_template ?? "missing",
+      html: `<p>${body.body_template ?? ""}</p>`,
+    }));
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    // Templates-tab draft preview should see the dirty subject.
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Unsaved draft subject" } });
+    await waitFor(
+      () => {
+        expect(screen.getByText("Unsaved draft subject")).toBeTruthy();
+      },
+      { timeout: 2000 },
+    );
+
+    const callsBeforeSend = previewEventTemplateById.mock.calls.length;
+    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
+    await screen.findByRole("tab", { name: /Send/i, selected: true });
+
+    await waitFor(() => {
+      expect(previewEventTemplateById.mock.calls.length).toBeGreaterThan(callsBeforeSend);
+    });
+    const sendPreviewCall = previewEventTemplateById.mock.calls.at(-1);
+    expect(sendPreviewCall?.[2]).toEqual(
+      expect.objectContaining({
+        subject_template: "Ticket",
+        body_template: "<p>Ticket</p>",
+      }),
+    );
+    expect(await screen.findByText("Ticket", { exact: true })).toBeTruthy();
+    expect(screen.queryByText("Unsaved draft subject")).toBeNull();
   });
 
   it("aborts in-flight overview and mail-settings fetches on unmount", async () => {

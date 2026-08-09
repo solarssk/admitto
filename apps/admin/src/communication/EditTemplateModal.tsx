@@ -92,34 +92,36 @@ export function EditTemplateModal({
             Rename this template, give it an icon, and add a short description to tell it apart
             from the others in the picker. This does not change its subject or body.
           </p>
-          <Input
-            label="Template label"
-            value={label}
-            onChange={(e) => {
-              setLabel(e.target.value);
-              setError(null);
-            }}
-            disabled={busy}
-            autoFocus
-          />
-          <div className="at-field">
-            <span className="at-label">Icon</span>
-            <IconPicker
-              key={template.id}
-              value={icon}
-              onChange={setIcon}
-              icons={TEMPLATE_ICONS}
-              defaultIcon={DEFAULT_TEMPLATE_ICON}
+          <div className="add-attendee-modal__fields">
+            <Input
+              label="Template label"
+              value={label}
+              onChange={(e) => {
+                setLabel(e.target.value);
+                setError(null);
+              }}
+              disabled={busy}
+              autoFocus
             />
-            <span className="at-hint">Shown in the template picker.</span>
+            <div className="at-field">
+              <span className="at-label">Icon</span>
+              <IconPicker
+                key={template.id}
+                value={icon}
+                onChange={setIcon}
+                icons={TEMPLATE_ICONS}
+                defaultIcon={DEFAULT_TEMPLATE_ICON}
+              />
+              <span className="at-hint">Shown in the template picker.</span>
+            </div>
+            <Input
+              label="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              disabled={busy}
+              placeholder="Sent 24 hours before the event."
+            />
           </div>
-          <Input
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={busy}
-            placeholder="Sent 24 hours before the event."
-          />
           {error && (
             <p className="add-attendee-modal__error" role="alert">
               {error}

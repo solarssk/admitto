@@ -106,6 +106,11 @@ export type EventTemplateDto = {
   /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
    * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
   image_placeholders: string[];
+  /** Resolved `{{logo_url}}` / `{{header_image_url}}` (event → organization → empty) - the same
+   * values a real send would use, for the placeholder-chip hover preview. Empty string means
+   * nothing is configured at either scope. */
+  logo_url: string;
+  header_image_url: string;
 };
 
 /** Paginated delivery log response for GET /deliveries. */
@@ -270,6 +275,15 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
 
   const template = await resolveEventTemplateForEditor(db, eventId);
   const { names: customAssetNames } = await resolveEventImageAssetVars(eventId, db);
+  const brandingEvent = await db.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: {
+      logo_url: true,
+      header_image_url: true,
+      organization: { select: { logo_url: true, header_image_url: true } },
+    },
+  });
+  const branding = resolveBrandingFromEvent(brandingEvent);
 
   const dto: EventTemplateDto = {
     ...template,
@@ -280,6 +294,8 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
     image_placeholders: [...IMAGE_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
       a.localeCompare(b),
     ),
+    logo_url: branding.logo_url,
+    header_image_url: branding.header_image_url,
   };
 
   return c.json(dto);

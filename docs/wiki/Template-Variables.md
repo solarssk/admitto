@@ -14,7 +14,8 @@ Use the variable buttons shown in **Communication**. The editor is the source of
 | Maps and directions | `event_map_url`, `google_maps_url`, `apple_maps_url` | Add a static map image or links to Google Maps and Apple Maps. These values are empty until the event has a saved map pin. When an admin pastes corrected Maps URLs on the Location tab (**Pin wrong? Fix link**), `google_maps_url` / `apple_maps_url` use those links instead of building from coordinates. |
 | Ticket links | `ticket_url` | Link to the attendee's browser ticket. |
 | Images | `qr_image_url`, `logo_url` | Use through the image button so the editor inserts image markup. |
-| Wallet and download page | `apple_wallet_url`, `google_wallet_url`, `download_page_url` | Planned; these values currently render empty. |
+| Wallet | `apple_wallet_url`, `google_wallet_url` | In the body editor, these chips insert an Add to Wallet badge button (badge image linked to the placeholder). The wallet links themselves are not generated yet and resolve empty, so do not use these badges in messages you send to attendees. |
+| Download page | `download_page_url` | Planned; this value currently renders empty. |
 
 ## Required ticket variables
 
