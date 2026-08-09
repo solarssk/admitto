@@ -76,12 +76,14 @@
   min-height: var(--control-h);
 }
 
-/* Preview badge + attendee count + delete: the row's read-only "meta" - stays grouped together. */
+/* Preview badge + attendee count + delete: grouped and pinned to the trailing edge. Identity is
+   capped at ~50% (#804); without margin-left: auto the meta cluster sat mid-row next to the input. */
 .tt-row__meta {
   display: flex;
   align-items: center;
   gap: 14px;
   flex: none;
+  margin-left: auto;
 }
 
 .tt-row__count {
