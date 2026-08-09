@@ -1,0 +1,37 @@
+name: Documentation
+description: Missing, outdated, or incorrect documentation (Wiki, README, AGENTS.md, etc.)
+labels: ["type: docs"]
+body:
+  - type: dropdown
+    id: target
+    attributes:
+      label: Where
+      description: Which document is affected?
+      options:
+        - GitHub Wiki (docs/wiki/)
+        - README
+        - AGENTS.md / CLAUDE.md
+        - SECURITY.md / DATA-PROTECTION.md / VERSIONING.md
+        - Package-level README
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: page
+    attributes:
+      label: Page / section
+      description: Which specific page or section is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested content (optional)
+    validations:
+      required: false
