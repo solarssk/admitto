@@ -3,7 +3,7 @@
 > **Audience:** Organisation Admins
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto Unreleased
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 

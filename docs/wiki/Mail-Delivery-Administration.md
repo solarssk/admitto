@@ -3,7 +3,7 @@
 > **Audience:** Superadmins
 > **Required role:** Superadmin for organisation transport; Superadmin for event Mailing settings
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -59,7 +59,8 @@ Sending tickets and reading bounces are separate steps. The bounce mailbox can b
 5. Adjust **Folders to check** if needed (default `INBOX, Junk Email`).
 6. Turn the master switch **On**, Save, then **Test connection** (connection only; it does not process messages).
 7. Complete the one-time mail-app setup described on the panel (sub-address + forward rule so failure replies land in that mailbox).
-8. Optional: under **Send test email**, turn on **Also verify bounce**, enter an address that will hard-bounce (for example a nonexistent local part on a domain that returns NDR), and send. Admitto waits up to 90 seconds for a matching hard bounce to appear in the bounce mailbox. Like a plain Send test, this does not create an attendee or a delivery history row.
+8. Use **Run check now** when you want an immediate mailbox poll; **Last automatic check** and **Recent checks** show run history for this event.
+9. Optional: under **Send test email**, turn on **Also verify bounce**, enter an address that will hard-bounce (for example a nonexistent local part on a domain that returns NDR), and send. Admitto waits up to 90 seconds for a matching hard bounce to appear in the bounce mailbox. Like a plain Send test, this does not create an attendee or a delivery history row.
 
 ### Expected result
 
