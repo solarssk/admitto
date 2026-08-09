@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CSV/XLSX import no longer accepts a single combined "name" column.** `first_name` and `last_name` are now the only supported columns for an attendee's name; a file with just a "name" column fails validation instead of being auto-split. The admin Import page's documented required columns were already first_name/last_name only, so this does not change what operators were told to provide.
 
 ### Security
+- Weather (Open-Meteo / MET Norway) and Nominatim geocoding fetches now refuse HTTP redirects (`redirect: "error"`), so a public base URL cannot 30x the web process into loopback, private, or cloud-metadata addresses after the save-time host check. Open-Meteo also refuses to attach an API key to a non-HTTPS base URL, so the key is never sent in cleartext.
 - **Public `/uploads/*` serves branding assets only** (images and font files). CSV/XLSX/PDF and other non-branding objects return 404 on the public path; filtered export downloads stay on authenticated admin job routes.
 - **Async filtered export jobs scrub the raw search string (`q`) from `AdminJob.result_json` when the job finishes** (success, failure, or stale reclaim of running/pending jobs), storing `has_query` like the audit log. The working copy may still hold `q` while the job is pending/running so the worker can apply the filter; never-claimed pending jobs are failed and scrubbed after the same stale window.
 

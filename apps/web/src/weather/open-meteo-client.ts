@@ -1,6 +1,7 @@
 /**
  * Open-Meteo Forecast API client (daily variables for a single calendar day).
- * Trusted deploy/org base URL — same trust model as GEOCODING_BASE_URL (no SSRF pin).
+ * Base URL is validated at save/probe (`assertEditableServiceUrl`). Fetches use
+ * `redirect: "error"` so a public host cannot 30x into private/metadata space.
  */
 
 import { FORECAST_HORIZON_DAYS_OPENMETEO, type WeatherConfig } from "./config.js";
@@ -105,14 +106,21 @@ export class OpenMeteoClient {
     url.searchParams.set("forecast_days", String(FORECAST_HORIZON_DAYS_OPENMETEO));
     url.searchParams.set("temperature_unit", "celsius");
     if (this.config.apiKey) {
+      // Never attach apikey on cleartext HTTP (CWE-319); keyless http: remains allowed for lab proxies.
+      if (url.protocol !== "https:") {
+        throw new WeatherProviderError("unavailable");
+      }
       url.searchParams.set("apikey", this.config.apiKey);
     }
 
     let response: Response;
     try {
+      // Do not follow redirects: host was checked at config time; a 30x to
+      // loopback/private/metadata would bypass that check (same as Power Automate).
       response = await this.fetchFn(url, {
         method: "GET",
         headers: { Accept: "application/json" },
+        redirect: "error",
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
     } catch (err) {

@@ -1,0 +1,36 @@
+name: Chore
+description: Tooling, CI, dependency, or maintenance work with no user-facing behaviour change
+labels: ["type: chore"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What needs to change
+      description: What tooling, config, dependency, or maintenance work is needed?
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why now
+      description: >
+        What prompted this — security advisory, CI flakiness, tech debt blocking other
+        work, dependency EOL, etc.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - mailer
+        - db
+        - import
+        - checkin
+        - tickets
+        - passcreator
+        - ui
+        - infra
+        - other
+    validations:
+      required: true
