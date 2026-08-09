@@ -28,6 +28,24 @@
 > This repository contains only generic code and synthetic data (`@example.com`).
 > No secrets and no real personal data are ever committed here.
 
+## Documentation map
+
+Admitto is **self-hosted software**, not a subscription service you sign up for. Someone
+technical (an in-house developer or an IT contractor) needs to deploy and run it, using
+[Production deployment](#production-deployment) below. If you don't have that today, that's the
+first thing to plan for, before the rest of this README.
+
+| You are… | Start here |
+|----------|------------|
+| **Deciding whether to adopt Admitto** (no in-house IT yet) | [docs/security/CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md): what running it actually requires |
+| **Event Manager, check-in operator, or Superadmin** (using Admitto) | [User guide Wiki](https://github.com/solarssk/admitto/wiki) (source: [`docs/wiki/`](docs/wiki/)) |
+| **Developer** (local setup, tests) | This README · [infra/README.md](infra/README.md) · [AGENTS.md](AGENTS.md) |
+| **Operator** (production deploy) | [deploy/README.md](deploy/README.md) |
+| **Security / privacy reviewer** | [SECURITY.md](SECURITY.md) · [docs/security/SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md) · [docs/security/ARCHITECTURE-FOR-AUDITORS.md](docs/security/ARCHITECTURE-FOR-AUDITORS.md) |
+| **DPO / GDPR** | [DATA-PROTECTION.md](DATA-PROTECTION.md) · [docs/security/GDPR-ONE-PAGER.md](docs/security/GDPR-ONE-PAGER.md) · [docs/security/DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
+
+The rest of this README (features, stack, local setup) is written for the **Developer** row above.
+
 ## How it works
 
 ```mermaid
@@ -42,6 +60,8 @@ flowchart LR
 Solid path is supported today. Wallet passes are planned for **v0.5** (placeholders only in the UI until then).
 
 ## Features
+
+Unfamiliar term below (TOTP, OIDC, RBAC, …)? Check the [Glossary](docs/wiki/Glossary.md).
 
 | Area | What you get today (v0.4.13) |
 |------|------------------------------|
@@ -114,16 +134,6 @@ npm run worker
 
 More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web/README.md) · [apps/admin/README.md](apps/admin/README.md) · [deploy/README.md](deploy/README.md)
 
-## Documentation map
-
-| You are… | Start here |
-|----------|------------|
-| **Event Manager, check-in operator, or Superadmin** (using Admitto) | [User guide Wiki](https://github.com/solarssk/admitto/wiki) (source: [`docs/wiki/`](docs/wiki/)) |
-| **Developer** (local setup, tests) | This README · [infra/README.md](infra/README.md) · [AGENTS.md](AGENTS.md) |
-| **Operator** (production deploy) | [deploy/README.md](deploy/README.md) |
-| **Security / privacy reviewer** | [SECURITY.md](SECURITY.md) · [docs/security/SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md) · [docs/ARCHITECTURE-FOR-AUDITORS.md](docs/ARCHITECTURE-FOR-AUDITORS.md) |
-| **DPO / GDPR** | [DATA-PROTECTION.md](DATA-PROTECTION.md) · [docs/GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md) · [docs/DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
-
 ## Production deployment
 
 Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag.
@@ -174,4 +184,7 @@ Canonical roadmap: [VERSIONING.md](VERSIONING.md). Short view:
 
 ## Licence
 
-[Apache License 2.0](LICENSE). Copyright and Apache NOTICE: [NOTICE](NOTICE). Third-party attribution (OFL fonts, LGPL libvips): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+[Apache License 2.0](LICENSE): a permissive open-source licence. You can self-host, modify, and
+run Admitto internally at no cost; keep the copyright and NOTICE file with any distribution.
+This is not legal advice, review the licence text for your own compliance needs.
+Copyright and Apache NOTICE: [NOTICE](NOTICE). Third-party attribution (OFL fonts, LGPL libvips): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

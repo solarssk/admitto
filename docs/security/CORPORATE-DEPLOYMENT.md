@@ -1,8 +1,17 @@
 # Corporate Deployment Model
 
 Admitto is an **internal event access gateway** deployed **on infrastructure controlled by the
-customer**. There is **no multi-tenant SaaS** — each deployment is a dedicated instance with its
+customer**. There is **no multi-tenant SaaS**: each deployment is a dedicated instance with its
 own database, secrets, and operator access.
+
+> **You need a technical resource.** Admitto is not a click-to-install product. Deploying and
+> maintaining it (see "What the customer provides" below) requires a developer or an IT
+> contractor comfortable with Docker, a reverse proxy, and a mail relay. If you don't have that
+> in-house, budget for one before committing to a go-live date.
+
+> **Product maturity:** check [VERSIONING.md](../../VERSIONING.md) and the current release tag
+> before committing to a go-live date. Stability status is tracked there, not restated here, so
+> this document doesn't go stale between releases.
 
 ---
 
@@ -116,10 +125,10 @@ Details in `deploy/README.md`.
 
 | Topic | Document |
 |-------|----------|
-| CI / supply chain | [SECURITY.md](../SECURITY.md) |
-| Security capabilities | [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md) |
+| CI / supply chain | [SECURITY.md](../../SECURITY.md) |
+| Security capabilities | [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) |
 | Architecture | [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md) |
-| Privacy | [DATA-PROTECTION.md](../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) |
+| Privacy | [DATA-PROTECTION.md](../../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) |
 | Incidents | [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md) |
 
 ---
