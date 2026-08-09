@@ -74,9 +74,10 @@ describe("renderRevoked", () => {
         title: overrides?.title ?? "Launch Event",
         date: new Date("2026-09-01T09:00:00Z"),
         timezone: "UTC",
+        ...EMPTY_EVENT_LOCATION,
+        // After the empty-location spread so defaults/overrides are not wiped if EMPTY gains `location`.
         location: overrides?.location ?? "Main Hall",
         logoUrl: null,
-        ...EMPTY_EVENT_LOCATION,
       },
     };
   }

@@ -389,6 +389,68 @@ describe("Mode B public routes — public_ref", () => {
   });
 });
 
+describe("revoked and cancelled public ticket pages", () => {
+  afterEach(async () => {
+    await prisma.attendee.update({
+      where: { id: MODE_A_ATTENDEE_ID },
+      data: { status: "registered" },
+    });
+    await prisma.attendee.update({
+      where: { id: ATTENDEE_ID },
+      data: { status: "registered" },
+    });
+  });
+
+  it("GET /t/:token returns 410 branded revoked card for a revoked Mode A pass", async () => {
+    await prisma.attendee.update({
+      where: { id: MODE_A_ATTENDEE_ID },
+      data: { status: "revoked" },
+    });
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}`);
+    expect(res.status).toBe(410);
+    const html = await res.text();
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("Ticket revoked");
+    expect(html).toContain("ticket__status-notice");
+    expect(html).toContain("Mode A Guest");
+    expect(html).toContain("Summer Gala");
+    expect(html).not.toContain('class="ticket__qr"');
+    expect(html).not.toContain("Present this QR code");
+  });
+
+  it("GET /t/:slug/a/:ref returns 410 cancelled card when the agency pass is cancelled", async () => {
+    await prisma.attendee.update({
+      where: { id: ATTENDEE_ID },
+      data: { status: "cancelled" },
+    });
+
+    const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
+    expect(res.status).toBe(410);
+    const html = await res.text();
+    expect(html).toContain("Ticket cancelled");
+    expect(html).toContain("Agency Guest");
+    expect(html).toContain("no longer valid for entry");
+    expect(html).not.toContain("apple-wallet-badge.svg");
+  });
+
+  it("still renders the revoked card when branding theme lookup fails", async () => {
+    const auth = await import("@admitto/auth");
+    vi.spyOn(auth, "getBrandingTheme").mockRejectedValueOnce(new Error("theme unavailable"));
+
+    await prisma.attendee.update({
+      where: { id: MODE_A_ATTENDEE_ID },
+      data: { status: "revoked" },
+    });
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}`);
+    expect(res.status).toBe(410);
+    const html = await res.text();
+    expect(html).toContain("Ticket revoked");
+    expect(html).toContain("ticket__status-notice");
+  });
+});
+
 describe("backfill before deploy", () => {
   it("backfill assigns ref so routes work", async () => {
     const row = await prisma.attendee.create({
