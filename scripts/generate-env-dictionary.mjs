@@ -173,7 +173,11 @@ function loadCatalog() {
 }
 
 function escapeCell(s) {
-  return String(s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+  // Backslashes first so later `\|` escapes stay intact (CodeQL js/incomplete-sanitization).
+  return String(s ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, " ");
 }
 
 function renderMarkdown(catalog, scanned) {
