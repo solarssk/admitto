@@ -3,7 +3,7 @@
 > **Audience:** Event Managers and Superadmins
 > **Required role:** Organisation Admin or Superadmin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 The delivery log records the latest known state reported by Admitto and the configured mail transport.
 

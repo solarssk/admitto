@@ -3,7 +3,7 @@
 > **Audience:** Event Managers and Superadmins
 > **Required role:** Organisation Admin for reports; Superadmin for archiving
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -18,21 +18,25 @@ Open the correct event and confirm its time zone. Before archiving, finish check
 ### Review and export reports
 
 1. Open **Reports**.
-2. Review overall attendance, admissions over time, ticket-type and attendance confirmation summaries, check-in methods, admissions by operator, device information, and the admission log relevant to your question.
-3. Apply filters when you need a narrower result.
-4. Check displayed times against the event time zone.
-5. Use the available export control only for an approved event purpose.
+2. Review compact KPI tiles, the hourly admissions chart, **Attendance confirmation**, **Check-in method**, **By device**, ticket-type breakdowns, **By operator**, and the admission log.
+3. Treat **By operator** and the admission log as the authenticated operator who performed the check-in (staff account), not only a self-declared device label.
+4. Admission log and CSV/PDF exports also show which event-day items were issued to each admitted attendee.
+5. Apply filters when you need a narrower result.
+6. Check displayed times against the event time zone.
+7. Use the available export control only for an approved event purpose.
 
 ### Archive the event
 
 > [!CAUTION]
 > Archiving makes the whole event read-only, including attendee changes, communication, settings, and check-in.
 
-1. Ask a Superadmin to open **Event settings**.
+1. Ask a Superadmin to open **Event settings** → **Danger zone**.
 2. Review the status and make sure no operator is still using check-in.
-3. In the danger zone, select **Archive event**.
+3. Select **Archive event**.
 4. Read the confirmation message and confirm.
 5. Check that the event is shown as archived and read-only.
+
+Organisation settings → **Archiving** lists active and archived events (one toggle, paginated) and shows who created and who last archived each event, and when.
 
 ## Expected result
 
@@ -61,4 +65,5 @@ An export creates a separate file outside Admitto and must be handled accordingl
 - [Event Overview and Settings](Event-Overview-and-Settings)
 - [Managing Attendees](Managing-Attendees)
 - [Scanning Tickets and Results](Scanning-Tickets-and-Results)
+- [Organisation Settings](Organisation-Settings)
 - [Superadmin Quick Start](Superadmin-Quick-Start)

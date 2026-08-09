@@ -3,7 +3,7 @@
 > **Audience:** Organisation Admins
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto Unreleased
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -29,7 +29,7 @@ The Organisation Admin can manage organisation events and their staff access but
 
 - An **organisation** owns events. An **event** owns attendees, operator assignments, requirements, templates, and check-in history.
 - Organisation Admin access applies only to events in the assigned organisation.
-- Event mail and integration tabs can be restricted to Superadmins even when other event settings are available.
+- Event **Mailing** and **Integrations** tabs are Superadmin-only, even when other event settings are available to Organisation Admins.
 - Map thumbnails on the Events list show a **© OpenStreetMap** credit on the card. Ticket and mail maps still burn the credit into the PNG. CARTO appears in that burn-in only if you configure CARTO tiles under Organisation Settings → External services.
 
 ## What changes after this action
