@@ -64,11 +64,31 @@ describe("renderRevoked", () => {
   });
 });
 
-describe("renderServerError", () => {
-  it("renders a generic support-safe error page", () => {
+describe("renderPublicErrorPage (404 / 500)", () => {
+  it("renders a branded 500 with status code and generic copy", () => {
     const html = renderServerError();
-    expect(html).toContain("Server error");
-    expect(html).toContain("Unable to render this ticket right now");
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("at-public-notice");
+    expect(html).toContain('class="at-public-notice__code">500<');
+    expect(html).toContain("Something went wrong");
+    expect(html).toContain("Unable to load this page right now. Please try again later.");
+    expect(html).toContain(">Admitto<");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Server error");
+    expect(html).not.toContain("Unable to render this ticket");
+  });
+
+  it("renders a branded 404 with status code and generic copy", () => {
+    const html = renderNotFound();
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("at-public-notice");
+    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain("Not found");
+    expect(html).toContain("This link is invalid or the page no longer exists.");
+    expect(html).toContain(">Admitto<");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Ticket not found");
+    expect(html).not.toContain("This ticket link");
   });
 });
 
@@ -298,8 +318,8 @@ describe("renderTicket", () => {
     expect(html).not.toContain('<p class="ticket__address">');
   });
 
-  it("renders the not-found page", () => {
-    expect(renderNotFound()).toContain("Ticket not found");
+  it("renders the branded not-found page", () => {
+    expect(renderNotFound()).toContain("Not found");
   });
 
   it("omits Getting there when no attendee-facing location details exist", () => {

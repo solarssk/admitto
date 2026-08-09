@@ -589,6 +589,18 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   }
 
+  /** Branded public HTML 404/500 with instance theme when branding lookup succeeds. */
+  async function renderPublicTicketError(c: Context, status: 404 | 500) {
+    let theme;
+    try {
+      theme = await getBrandingTheme(db);
+    } catch {
+      theme = null;
+    }
+    const html = status === 404 ? renderNotFound(theme) : renderServerError(theme);
+    return htmlWithSecurityHeaders(c, html, status, theme);
+  }
+
   async function renderTicketPage(
     c: Context,
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
@@ -608,14 +620,14 @@ export function createApp(options: CreateAppOptions = {}) {
     if (resolved.mode === "internal") {
       if (!internalToken) {
         console.error(`Internal attendee ${attendee.id} missing token for ticket page QR`);
-        return htmlWithSecurityHeaders(c, renderServerError(), 500);
+        return renderPublicTicketError(c, 500);
       }
       qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
     } else {
       const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
       if (!agencyPayload) {
         console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-        return htmlWithSecurityHeaders(c, renderServerError(), 500);
+        return renderPublicTicketError(c, 500);
       }
       qrPayload = buildQrPayload("agency", { agencyPayload });
     }
@@ -632,7 +644,7 @@ export function createApp(options: CreateAppOptions = {}) {
         message: "qr_png_generation_failed",
         fields: { route },
       });
-      return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      return renderPublicTicketError(c, 500);
     }
 
     try {
@@ -1568,10 +1580,10 @@ export function createApp(options: CreateAppOptions = {}) {
         message: "ticket_agency_lookup_failed",
         fields: { route: "/t/:eventSlug/a/:ref" },
       });
-      return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      return renderPublicTicketError(c, 500);
     }
     if (resolved?.mode !== "agency") {
-      return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      return renderPublicTicketError(c, 404);
     }
     return renderTicketPage(c, resolved, undefined, "/t/:eventSlug/a/:ref", ref);
   });
@@ -1605,11 +1617,11 @@ export function createApp(options: CreateAppOptions = {}) {
           fields: { route: "/t/:token", errorKind: "unexpected" },
         });
       }
-      return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      return renderPublicTicketError(c, 500);
     }
 
     if (!resolved) {
-      return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      return renderPublicTicketError(c, 404);
     }
 
     return renderTicketPage(c, resolved, token);

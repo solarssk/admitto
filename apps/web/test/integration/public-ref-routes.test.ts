@@ -197,6 +197,10 @@ describe("Mode B public routes — public_ref", () => {
     const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
 
     expect(res.status).toBe(500);
+    const html = await res.text();
+    expect(html).toContain("Something went wrong");
+    expect(html).toContain('class="at-public-notice__code">500<');
+    expect(html).not.toContain("Event ticket");
     expect(querySystemLogs({ source: "api" })).toContainEqual(
       expect.objectContaining({
         level: "error",
@@ -333,12 +337,19 @@ describe("Mode B public routes — public_ref", () => {
     const res = await app.request(`/t/${EVENT_SLUG}/a/${ATTENDEE_ID}`);
     expect(res.status).toBe(404);
     const html = await res.text();
-    expect(html).toContain("not found");
+    expect(html).toContain("Not found");
+    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain("This link is invalid or the page no longer exists.");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Ticket not found");
   });
 
   it("unknown public_ref returns 404", async () => {
     const res = await app.request(`/t/${EVENT_SLUG}/a/${generateToken()}`);
     expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("Not found");
+    expect(html).toContain('class="at-public-notice__code">404<');
   });
 
   it("does not serve an internal attendee through Mode B ticket or QR routes", async () => {

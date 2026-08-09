@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Public ticket HTML 404 and 500 pages use one branded Admitto card** with the HTTP status code and short generic copy (no "ticket" wording), instead of a bare HTML error page.
 - **Ticket types row: preview badge, attendee count, and delete sit on the right again.** After the ~50% name-field width change, the meta cluster was stuck mid-row next to the input; it is pinned to the trailing edge again.
 - **Health check: Address lookup (Nominatim) stays available when Maps is off.** Only Map tiles report "Maps disabled"; geocoding for the Location tab is independent of the tile toggle.
 - **Health check: Wallet passes placeholder says Coming in v0.5** (not v0.6), matching the current roadmap.
