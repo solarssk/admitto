@@ -2861,6 +2861,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend with templateId",
   const TEMPLATE_RESEND = "tpl-admin-resend-templateid";
 
   beforeAll(async () => {
+    const token = generateToken();
     await prisma.attendee.upsert({
       where: { id: ATT_RESEND_TPL },
       create: {
@@ -2868,8 +2869,8 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend with templateId",
         event_id: EVENT_A,
         email: "resend-templateid-target@example.com",
         name: "Resend TemplateId Target",
-        token_hash: hashToken(generateToken()),
-        token_enc: encryptToString(generateToken()),
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
       },
       update: {},
     });
@@ -2924,6 +2925,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/dismiss-bounce", () => {
   const ATT_DISMISS = "att-admin-dismiss-bounce-target";
 
   beforeAll(async () => {
+    const token = generateToken();
     await prisma.attendee.upsert({
       where: { id: ATT_DISMISS },
       create: {
@@ -2931,8 +2933,8 @@ describe("POST /api/admin/events/:eventId/attendees/:id/dismiss-bounce", () => {
         event_id: EVENT_A,
         email: "dismiss-bounce-target@example.com",
         name: "Dismiss Bounce Target",
-        token_hash: hashToken(generateToken()),
-        token_enc: encryptToString(generateToken()),
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
       },
       update: { email_bounce_dismissed_at: null },
     });

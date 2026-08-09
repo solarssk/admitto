@@ -8,10 +8,10 @@ describe("dismissBounce / resendTicket (client)", () => {
   });
 
   it("POSTs dismiss-bounce to the encoded attendee endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => ({
       ok: true,
       json: async () => ({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" }),
-    });
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(dismissBounce("evt with space", "att with space")).resolves.toEqual({
@@ -25,10 +25,10 @@ describe("dismissBounce / resendTicket (client)", () => {
   });
 
   it("POSTs resend with an optional templateId body", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => ({
       ok: true,
       json: async () => ({ id: "dlv-2" }),
-    });
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
     await resendTicket("evt-1", "att-1", { templateId: "tpl-reminder" });

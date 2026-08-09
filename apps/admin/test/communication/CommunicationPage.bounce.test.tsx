@@ -315,6 +315,74 @@ describe("CommunicationPage bounce banner", () => {
     });
   });
 
+  it("ignores a stale mount overview once a later bounce refresh has completed", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    let resolveMountOverview: (value: unknown) => void;
+    const mountOverview = new Promise((resolve) => {
+      resolveMountOverview = resolve;
+    });
+    let overviewCalls = 0;
+    fetchEventOverview.mockImplementation(() => {
+      overviewCalls += 1;
+      if (overviewCalls === 1) return mountOverview;
+      return Promise.resolve({
+        email_bounced: 0,
+        email_failed: 0,
+        email_sent: 10,
+        email_queued: 0,
+      });
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
+
+    renderPage();
+    // Open the log via the tab bar - the banner CTA is unavailable while mount overview is pending.
+    fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+    await waitFor(() => {
+      expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByText(/emails bounced/i)).toBeNull();
+
+    // Late mount response must not restore the pre-dismiss bounce count.
+    resolveMountOverview!({
+      email_bounced: 4,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/emails bounced/i)).toBeNull();
+  });
+
   it("resends the bounced row's template and refreshes the bounce count", async () => {
     fetchEventTemplate.mockResolvedValue(templatePayload);
     fetchEventOverview.mockResolvedValue({

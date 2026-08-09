@@ -353,6 +353,9 @@ model EmailDelivery {
   @@index([organization_id])
   @@index([event_id, created_at(sort: Desc)])
   @@index([attendee_id, event_id, status])
+  // Latest-delivery lookup (overview bounce KPI, attendeeMailStatusSql): one row per attendee
+  // ordered by created_at DESC, id DESC.
+  @@index([attendee_id, created_at(sort: Desc), id(sort: Desc)])
 }
 
 model CheckIn {
