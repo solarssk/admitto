@@ -91,6 +91,10 @@ describe("NominatimProvider.search", () => {
     );
     const results = await makeProvider(fetchFn).search("Złote");
 
+    expect(fetchFn).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ redirect: "error" }),
+    );
     expect(results).toEqual([
       {
         name: "Złote Tarasy",
