@@ -474,11 +474,23 @@ describe("global public HTML 404", () => {
     expect(html).not.toContain("Event ticket");
   });
 
-  it("still renders the branded 404 when branding theme lookup fails", async () => {
+  it("does not query branding theme for global HTML 404", async () => {
+    const auth = await import("@admitto/auth");
+    const spy = vi.spyOn(auth, "getBrandingTheme");
+
+    const res = await app.request("/another-missing-path");
+    expect(res.status).toBe(404);
+    expect(spy).not.toHaveBeenCalled();
+    const html = await res.text();
+    expect(html).toContain("Not found");
+    expect(html).toContain('class="at-public-notice__code">404<');
+  });
+
+  it("still renders a ticket-route 404 when branding theme lookup fails", async () => {
     const auth = await import("@admitto/auth");
     vi.spyOn(auth, "getBrandingTheme").mockRejectedValueOnce(new Error("theme unavailable"));
 
-    const res = await app.request("/another-missing-path");
+    const res = await app.request(`/t/${generateToken()}`);
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).toContain("Not found");
@@ -503,6 +515,14 @@ describe("global public HTML 404", () => {
     const qrRes = await app.request(`/q/${generateToken()}.png`);
     expect(qrRes.status).toBe(404);
     expect(await qrRes.text()).toBe("");
+  });
+
+  it("keeps bare resource namespace paths as empty bodies", async () => {
+    for (const path of ["/m", "/q", "/uploads", "/assets", "/vendor"]) {
+      const res = await app.request(path);
+      expect(res.status, path).toBe(404);
+      expect(await res.text(), path).toBe("");
+    }
   });
 
   it("keeps upload and vendor asset misses as empty bodies", async () => {

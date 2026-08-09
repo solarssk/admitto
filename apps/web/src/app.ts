@@ -589,13 +589,19 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   }
 
-  /** Branded public HTML 404/500 with instance theme when branding lookup succeeds. */
-  async function renderPublicHtmlError(c: Context, status: 404 | 500) {
-    let theme;
-    try {
-      theme = await getBrandingTheme(db);
-    } catch {
-      theme = null;
+  /** Branded public HTML 404/500. Theme load is optional: skip on global misses (no DB flood). */
+  async function renderPublicHtmlError(
+    c: Context,
+    status: 404 | 500,
+    options: { loadTheme?: boolean } = {},
+  ) {
+    let theme = null;
+    if (options.loadTheme !== false) {
+      try {
+        theme = await getBrandingTheme(db);
+      } catch {
+        theme = null;
+      }
     }
     const html = status === 404 ? renderNotFound(theme) : renderServerError(theme);
     return htmlWithSecurityHeaders(c, html, status, theme);
@@ -1832,23 +1838,29 @@ export function createApp(options: CreateAppOptions = {}) {
   );
 
   // Global HTML 404 for unknown browser URLs. API stays JSON; map/QR/uploads/assets stay empty.
+  // Do not load branding theme here: unmatched paths are unauthenticated and not rate-limited.
   app.notFound(async (c) => {
     const path = c.req.path;
     if (path === "/api" || path.startsWith("/api/")) {
       return c.json({ error: "not_found" }, 404);
     }
     if (
+      path === "/m" ||
       path.startsWith("/m/") ||
+      path === "/q" ||
       path.startsWith("/q/") ||
+      path === "/uploads" ||
       path.startsWith("/uploads/") ||
+      path === "/assets" ||
       path.startsWith("/assets/") ||
+      path === "/vendor" ||
       path.startsWith("/vendor/") ||
       path === "/favicon.ico" ||
       path.startsWith("/favicon.")
     ) {
       return c.body(null, 404);
     }
-    return renderPublicHtmlError(c, 404);
+    return renderPublicHtmlError(c, 404, { loadTheme: false });
   });
 
   return app;
