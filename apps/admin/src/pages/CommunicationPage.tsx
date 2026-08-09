@@ -898,7 +898,6 @@ function PlaceholderChips({
   onInsertPlaceholder,
   eventId,
   logoUrl,
-  headerImageUrl,
 }: Readonly<{
   allowedPlaceholders: string[];
   imagePlaceholders: string[];
@@ -909,7 +908,6 @@ function PlaceholderChips({
    * preview at all (falls back to the generic photo icon) when neither scope has one set, since
    * there's no further built-in default to show. */
   logoUrl: string;
-  headerImageUrl: string;
 }>) {
   const allowedSet = new Set(allowedPlaceholders);
   const grouped = new Set<string>();
@@ -931,12 +929,12 @@ function PlaceholderChips({
   // real-until-sent equivalent (it's generated per attendee), so it keeps an illustrative sample
   // instead (see CHIP_QR_SAMPLE_DATA_URI). event_map_url always points at the real static-map
   // route; PlaceholderChip falls back to the generic icon itself if that 404s (no location set).
+  // header_image_url is in HIDDEN_PLACEHOLDERS (no insert chip), so no sample entry is needed.
   const samples: Record<string, string> = {
     qr_image_url: CHIP_QR_SAMPLE_DATA_URI,
     event_map_url: `/m/${encodeURIComponent(eventId)}.png`,
   };
   if (logoUrl) samples.logo_url = logoUrl;
-  if (headerImageUrl) samples.header_image_url = headerImageUrl;
 
   const showWalletNotice = groups.some((g) => g.label === "Wallet");
 
@@ -1044,7 +1042,6 @@ function TemplateEditorCard({
   requiredPlaceholders,
   onInsertPlaceholder,
   brandingLogoUrl,
-  brandingHeaderUrl,
   subjectRef,
   subject,
   setSubject,
@@ -1069,7 +1066,6 @@ function TemplateEditorCard({
   requiredPlaceholders: string[];
   onInsertPlaceholder: (name: string) => void;
   brandingLogoUrl: string;
-  brandingHeaderUrl: string;
   subjectRef: RefObject<HTMLInputElement | null>;
   subject: string;
   setSubject: Dispatch<SetStateAction<string>>;
@@ -1112,7 +1108,6 @@ function TemplateEditorCard({
         onInsertPlaceholder={onInsertPlaceholder}
         eventId={event.id}
         logoUrl={brandingLogoUrl}
-        headerImageUrl={brandingHeaderUrl}
       />
 
       <Tooltip
@@ -1558,7 +1553,6 @@ export function CommunicationPage() {
    * preview - fetched once on load, same for every template since it's a property of the event,
    * not of whichever template is currently open. */
   const [brandingLogoUrl, setBrandingLogoUrl] = useState("");
-  const [brandingHeaderUrl, setBrandingHeaderUrl] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [format, setFormat] = useState<TemplateFormat>("mjml");
@@ -1983,7 +1977,6 @@ export function CommunicationPage() {
         setRequiredPlaceholders(data.required_url_placeholders);
         setImagePlaceholders(data.image_placeholders ?? []);
         setBrandingLogoUrl(data.logo_url);
-        setBrandingHeaderUrl(data.header_image_url);
         const ticket = items.find((t) => t.name === "ticket");
         if (ticket) {
           setActiveKey(ticket.id);
@@ -2435,7 +2428,6 @@ export function CommunicationPage() {
               requiredPlaceholders={requiredPlaceholders}
               onInsertPlaceholder={insertPlaceholder}
               brandingLogoUrl={brandingLogoUrl}
-              brandingHeaderUrl={brandingHeaderUrl}
               subjectRef={subjectRef}
               subject={subject}
               setSubject={setSubject}

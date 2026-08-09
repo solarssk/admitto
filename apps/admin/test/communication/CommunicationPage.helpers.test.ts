@@ -5,6 +5,8 @@ describe("walletButtonMarkup", () => {
   it("builds MJML and HTML badge buttons for known wallet placeholders", () => {
     expect(walletButtonMarkup("apple_wallet_url", "mjml")).toContain('href="{{apple_wallet_url}}"');
     expect(walletButtonMarkup("apple_wallet_url", "mjml")).toContain("/assets/apple-wallet-badge.svg");
+    expect(walletButtonMarkup("apple_wallet_url", "html")).toContain("<a href=\"{{apple_wallet_url}}\">");
+    expect(walletButtonMarkup("google_wallet_url", "mjml")).toContain("mj-image");
     expect(walletButtonMarkup("google_wallet_url", "html")).toContain("<a href=\"{{google_wallet_url}}\">");
     expect(walletButtonMarkup("google_wallet_url", "html")).toContain("/assets/google-wallet-badge.svg");
   });
