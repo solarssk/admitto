@@ -11,7 +11,7 @@
   &nbsp;
   <img src="https://img.shields.io/badge/prisma-7-2D3748" alt="Prisma 7">
   &nbsp;
-  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
 </p>
 
 <p align="center">
@@ -174,4 +174,4 @@ Canonical roadmap: [VERSIONING.md](VERSIONING.md). Short view:
 
 ## Licence
 
-MIT
+[Apache License 2.0](LICENSE). Third-party notices for redistributed fonts (OFL) and libvips (LGPL): [NOTICE](NOTICE).

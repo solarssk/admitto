@@ -1,0 +1,31 @@
+Admitto
+Copyright 2025-2026 Filip Chochół
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file in the project root, or:
+http://www.apache.org/licenses/LICENSE-2.0
+
+---------------------------------------------------------------------------
+Third-party components redistributed with Admitto (production image / runtime)
+---------------------------------------------------------------------------
+
+Fonts (Open Font License 1.1)
+  Packages: @fontsource/ibm-plex-sans, @fontsource/inter,
+            @fontsource/manrope, @fontsource/space-grotesk
+  License: SIL Open Font License 1.1 (OFL-1.1)
+  Notes: Font software remains under OFL-1.1. Preserve copyright notices and
+         the OFL text when redistributing the font files. Full license text is
+         included with each package (e.g. node_modules/@fontsource/*/LICENSE).
+
+libvips (via sharp)
+  Packages: sharp and platform packages @img/sharp-libvips-*
+  License: LGPL-3.0-or-later (libvips / sharp-libvips native binaries);
+           sharp itself is Apache-2.0 (see the sharp package LICENSE).
+  Notes: Admitto links to prebuilt libvips binaries. LGPL obligations apply to
+         that library, not to Admitto application code under Apache-2.0. When
+         distributing binaries that include libvips, retain LGPL notices and
+         license text from the sharp / sharp-libvips packages.
+
+Other npm dependencies retain their own licenses (predominantly MIT, ISC, and
+Apache-2.0). This NOTICE lists only redistributed components that commonly
+require explicit attribution beyond a typical permissive npm stack.
