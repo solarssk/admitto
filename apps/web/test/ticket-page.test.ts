@@ -50,17 +50,76 @@ function ticketFor(logoUrl: string | null) {
 }
 
 describe("renderRevoked", () => {
-  it("renders cancelled tickets with cancelled wording", () => {
-    const html = renderRevoked("Alice Example", "Launch Event", "cancelled");
+  function revokedTicket(overrides?: {
+    name?: string;
+    title?: string;
+    location?: string | null;
+    ticket_type?: string | null;
+  }) {
+    return {
+      mode: "internal" as const,
+      attendee: {
+        id: "a1",
+        event_id: "e1",
+        email: "x@example.com",
+        name: overrides?.name ?? "Bob Example",
+        status: "revoked",
+        token_hash: null,
+        qr_payload: null,
+        external_uuid: null,
+        ticket_type: overrides?.ticket_type ?? "Standard",
+      },
+      event: {
+        id: "e1",
+        title: overrides?.title ?? "Launch Event",
+        date: new Date("2026-09-01T09:00:00Z"),
+        timezone: "UTC",
+        location: overrides?.location ?? "Main Hall",
+        logoUrl: null,
+        ...EMPTY_EVENT_LOCATION,
+      },
+    };
+  }
+
+  it("renders cancelled tickets with cancelled wording in the ticket card", () => {
+    const html = renderRevoked(revokedTicket({ name: "Alice Example" }), null, "cancelled");
     expect(html).toContain("Ticket cancelled");
-    expect(html).toContain("has been cancelled");
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("ticket__event-name");
+    expect(html).toContain("Alice Example");
+    expect(html).toContain("Launch Event");
+    expect(html).toContain("no longer valid for entry");
+    expect(html).toContain("contact the organisers");
     expect(html).not.toContain("Ticket revoked");
+    expect(html).not.toContain('class="ticket__qr"');
+    expect(html).not.toContain("Present this QR code");
+    expect(html).not.toContain("apple-wallet-badge");
+    expect(html).not.toContain("Getting there");
+    expect(html).toContain("ticket__status-notice");
   });
 
-  it("renders revoked tickets with revoked wording", () => {
-    const html = renderRevoked("Bob Example", "Launch Event", "revoked");
+  it("renders revoked tickets with revoked wording in the ticket card", () => {
+    const html = renderRevoked(revokedTicket(), null, "revoked");
     expect(html).toContain("Ticket revoked");
-    expect(html).toContain("has been revoked");
+    expect(html).toContain("ticket__status-notice");
+    expect(html).toContain("Bob Example");
+    expect(html).toContain("Main Hall");
+    expect(html).toContain("Standard");
+    expect(html).not.toContain("has been revoked");
+    expect(html).not.toContain('class="ticket__qr"');
+    expect(html).not.toContain('class="ticket__wallets"');
+    expect(html).not.toContain("apple-wallet-badge.svg");
+  });
+
+  it("escapes attendee and event names in the revoked card", () => {
+    const html = renderRevoked(
+      revokedTicket({ name: `<script>x</script>`, title: `A & B <Event>` }),
+      null,
+      "revoked",
+    );
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("A &amp; B &lt;Event&gt;");
   });
 });
 

@@ -266,13 +266,59 @@ function renderGettingThereSection(parts: {
   return "";
 }
 
+/** Shared brand header + event/attendee block (open `ticket__body`); caller closes the div. */
+function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
+  const { attendee, event } = resolved;
+  return `<header class="ticket__top">
+      <div class="ticket__brand">
+        ${
+          event.logoUrl
+            ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
+            : `<img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>`
+        }
+      </div>
+      <small>Event ticket</small>
+    </header>
+    <div class="ticket__body">
+      <h1 class="ticket__event-name">${esc(event.title)}</h1>
+      <div class="ticket__meta">
+        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
+        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
+      </div>
+      <div class="ticket__attendee">
+        <p class="ticket__attendee-name">${esc(attendee.name)}</p>
+        ${attendee.ticket_type ? `<span class="ticket__type">${esc(attendee.ticket_type)}</span>` : ""}
+      </div>`;
+}
+
+function ticketDocument(options: {
+  title: string;
+  styles: string;
+  articleInner: string;
+}): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${esc(options.title)}</title>
+  <style>${options.styles}</style>
+</head>
+<body class="ticket-page">
+  <article class="ticket">
+    ${options.articleInner}
+  </article>
+</body>
+</html>`;
+}
+
 export function renderTicket(
   resolved: ResolvedTicket,
   qrDataUrl: string,
   theme?: BrandingTheme | null,
   options: TicketPageOptions = {},
 ): string {
-  const { attendee, event } = resolved;
+  const { event } = resolved;
   const styles = buildTicketPageStyles(theme);
   const mapReady = isMapReady(event);
   const showStaticMap = mapReady && options.staticMapEnabled !== false;
@@ -324,36 +370,8 @@ export function renderTicket(
     accessibilityHtml,
   });
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Ticket - ${esc(event.title)}</title>
-  <style>${styles}</style>
-</head>
-<body class="ticket-page">
-  <article class="ticket">
-    <header class="ticket__top">
-      <div class="ticket__brand">
-        ${
-          event.logoUrl
-            ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
-            : `<img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>`
-        }
-      </div>
-      <small>Event ticket</small>
-    </header>
-    <div class="ticket__body">
-      <h1 class="ticket__event-name">${esc(event.title)}</h1>
-      <div class="ticket__meta">
-        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
-        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
-      </div>
-      <div class="ticket__attendee">
-        <p class="ticket__attendee-name">${esc(attendee.name)}</p>
-        ${attendee.ticket_type ? `<span class="ticket__type">${esc(attendee.ticket_type)}</span>` : ""}
-      </div>
+  const shellOpen = renderTicketCardShellOpen(resolved);
+  const articleInner = `${shellOpen}
       <div class="ticket__qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
       ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
     </div>
@@ -368,10 +386,13 @@ export function renderTicket(
       <p>When wallet passes ship, you will add this ticket from those badges and find it later in Apple Wallet or Google Wallet.</p>
     </details>
     ${gettingThereHtml}
-    <footer class="ticket__foot">Present this QR code at the entrance.</footer>
-  </article>
-</body>
-</html>`;
+    <footer class="ticket__foot">Present this QR code at the entrance.</footer>`;
+
+  return ticketDocument({
+    title: `Ticket - ${event.title}`,
+    styles,
+    articleInner,
+  });
 }
 
 export function renderNotFound(): string {
@@ -396,18 +417,26 @@ export function renderServerError(): string {
 </html>`;
 }
 
-export function renderRevoked(name: string, eventTitle: string, reason: "revoked" | "cancelled" = "revoked"): string {
+/** Revoked/cancelled pass: same ticket card shell, notice instead of QR / wallets / map. */
+export function renderRevoked(
+  resolved: ResolvedTicket,
+  theme?: BrandingTheme | null,
+  reason: "revoked" | "cancelled" = "revoked",
+): string {
   const heading = reason === "cancelled" ? "Ticket cancelled" : "Ticket revoked";
-  const message =
-    reason === "cancelled"
-      ? `${esc(name)}'s ticket for <strong>${esc(eventTitle)}</strong> has been cancelled.`
-      : `${esc(name)}'s ticket for <strong>${esc(eventTitle)}</strong> has been revoked.`;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>${heading}</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
-  <h1>${heading}</h1>
-  <p>${message}</p>
-</body>
-</html>`;
+  const notice =
+    "This ticket is no longer valid for entry. If you believe this is a mistake, please contact the organisers.";
+  const styles = buildTicketPageStyles(theme);
+  const articleInner = `${renderTicketCardShellOpen(resolved)}
+      <div class="ticket__status-notice" role="status">
+        <h2>${heading}</h2>
+        <p>${esc(notice)}</p>
+      </div>
+    </div>`;
+
+  return ticketDocument({
+    title: heading,
+    styles,
+    articleInner,
+  });
 }
