@@ -115,7 +115,7 @@ const TRANSPORT_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }>
   {
     pattern: /destination is a private, loopback, or link-local address/i,
     message:
-      "The SMTP host resolves to a private address. For a local lab set ALLOW_PRIVATE_MAIL_DESTINATIONS=true, otherwise use a public host.",
+      "The SMTP host resolves to a private address. Add it to MAIL_PRIVATE_DESTINATION_ALLOWLIST (app and worker), or use a public host. Local labs can set ALLOW_PRIVATE_MAIL_DESTINATIONS=true when NODE_ENV is not production.",
   },
   {
     pattern: /hostname could not be resolved/i,

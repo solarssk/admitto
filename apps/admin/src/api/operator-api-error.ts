@@ -70,7 +70,7 @@ const CODE_MESSAGES: Record<string, string> = {
   mail_not_configured:
     "Mail transport isn't configured for this event or organization. Set it up in Instance Settings → Mail (or this event's Mailing settings) before sending.",
   mail_destination_blocked:
-    "The mail server hostname resolves to a private address. For a local lab set ALLOW_PRIVATE_MAIL_DESTINATIONS=true, otherwise use a public SMTP host.",
+    "The mail server hostname resolves to a private address. Add it to MAIL_PRIVATE_DESTINATION_ALLOWLIST (app and worker), or use a public SMTP host. Local labs can set ALLOW_PRIVATE_MAIL_DESTINATIONS=true when NODE_ENV is not production.",
   mail_destination_unresolved:
     "Could not resolve the mail server hostname. Check Mail settings.",
   mappings_required: "Role mappings are required before enabling this provider.",
