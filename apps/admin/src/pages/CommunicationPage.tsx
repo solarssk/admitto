@@ -1598,6 +1598,8 @@ export function CommunicationPage() {
   const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
   const [deliveriesLive, setDeliveriesLive] = useState(true);
   const [emailBounced, setEmailBounced] = useState(0);
+  const [resolvedBounceRowIds, setResolvedBounceRowIds] = useState<Set<string>>(new Set());
+  const [pendingBounceRowIds, setPendingBounceRowIds] = useState<Set<string>>(new Set());
   const [senderName, setSenderName] = useState<string | null>(null);
   const [senderAddress, setSenderAddress] = useState<string | null>(null);
 
@@ -2017,6 +2019,8 @@ export function CommunicationPage() {
 
   useLayoutEffect(() => {
     setEmailBounced(0);
+    setResolvedBounceRowIds(new Set());
+    setPendingBounceRowIds(new Set());
   }, [eventId]);
 
   const loadEmailBounced = useCallback(() => {
@@ -2537,6 +2541,17 @@ export function CommunicationPage() {
           hasActiveFilters={hasActiveDeliveryFilters}
           onClearFilters={clearDeliveryFilters}
           onRetry={() => void loadDeliveries()}
+          resolvedBounceRowIds={resolvedBounceRowIds}
+          onBounceRowResolved={(rowId) => setResolvedBounceRowIds((prev) => new Set(prev).add(rowId))}
+          pendingBounceRowIds={pendingBounceRowIds}
+          onBounceRowPendingChange={(rowId, pending) =>
+            setPendingBounceRowIds((prev) => {
+              const next = new Set(prev);
+              if (pending) next.add(rowId);
+              else next.delete(rowId);
+              return next;
+            })
+          }
           onBounceHandled={loadEmailBounced}
         />
       )}
