@@ -58,31 +58,29 @@ Have a separate working Superadmin session, an approved test account, and the id
    | Issuer URL | Your identity provider's base URL | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
    | Client ID | The application/client ID your identity provider assigned when you registered Admitto there | `1a2b3c4d-...` |
    | Client secret | The client secret your identity provider generated for that same registration | *(paste once; never shown again)* |
-   | Authorization / Token / JWKS / UserInfo endpoints | Usually filled automatically by **Discover** (step 4) from the Issuer URL — fill by hand only if your provider doesn't support discovery | — |
-   | Email / Name / Given name / Family name / Phone / Groups claims | Which field in the token holds each piece of information — most providers use sensible defaults, adjust only if your provider names them differently | `email`, `name`, `groups` |
+   | Authorization / Token / JWKS / UserInfo endpoints | Usually filled automatically by **Discover** (step 5) from the Issuer URL. Fill by hand only if your provider doesn't support discovery | |
+   | Email / Name / Given name / Family name / Phone / Groups claims | Which field in the token holds each piece of information. Most providers use sensible defaults; adjust only if your provider names them differently | `email`, `name`, `groups` |
 
    Given name/family name are only used if the provider doesn't send one combined name field; the
    phone claim is optional and only takes effect if your provider actually sends one.
 
-4. **Before you save the first time**, your identity provider also needs to know where to send
-   the user back after login — the **redirect URI** (sometimes called "callback URL" or "reply
-   URL"). Admitto's pattern is:
+4. **Save once** so Admitto assigns a provider id. On the edit form, copy the read-only **Redirect URI**
+   from the Basics card and register that exact URL at your identity provider (Entra App registration,
+   Okta or Authentik Application). The URI is not shown until after the first save. Pattern:
 
    ```
    https://<your-instance-url>/api/auth/oidc/<provider-id>/callback
    ```
 
-   The `<provider-id>` part doesn't exist until you save the provider once (Admitto generates it).
-   A practical order that avoids back-and-forth: save the provider with a placeholder Client
-   ID/secret first, copy the `<provider-id>` from the browser's address bar
-   (`.../identity/providers/<provider-id>`), register that exact callback URL in your identity
-   provider, then come back and paste in the real Client ID/secret from there.
+   If Redirect URI is missing in the editor, set **Instance URL** under Organisation settings → General
+   first. You can save with a placeholder Client ID/secret, register the callback, then paste the real
+   credentials.
 5. Use **Discover** (fills the endpoint fields automatically from the Issuer URL) and **Test
-   connection** before saving for real.
-6. Configure group-to-role mappings only after confirming the provider's group claim — this is
+   connection** before finishing configuration.
+6. Configure group-to-role mappings only after confirming the provider's group claim. This is
    what turns "member of the `IT-Admins` group in Entra ID" into "Superadmin in Admitto."
 7. Save the provider and test sign-in with a non-critical account, in the separate Superadmin
-   session mentioned above — not the one you're using to configure this.
+   session mentioned above, not the one you're using to configure this.
 
 ### Setting up Cloudflare Access (ZTNA)
 
@@ -92,7 +90,7 @@ Do this in Cloudflare's own dashboard first, then in Admitto:
    URLs (for example `admin.example.com/*`) and set the policy for who's allowed through (by email
    domain, group, or identity provider).
 2. From that Access application, copy the **team domain** (looks like
-   `https://yourteam.cloudflareaccess.com`) and the **Application Audience (AUD) tag** — a long
+   `https://yourteam.cloudflareaccess.com`) and the **Application Audience (AUD) tag**, a long
    hex string Cloudflare shows on the application's Overview tab.
 3. In Admitto, open **Organisation settings → Identity → Cloudflare Access** and fill in:
 
@@ -127,9 +125,9 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
 
 ## Common problems
 
-- **Sign-in redirects to an error page at the identity provider ("redirect URI mismatch" or similar):** the callback URL registered at the identity provider doesn't exactly match `https://<your-instance-url>/api/auth/oidc/<provider-id>/callback` — check for a trailing slash, `http` vs `https`, or the wrong provider ID.
 - **Discovery fails:** verify the HTTPS issuer and provider availability.
 - **Sign-in works but the role is wrong:** check the groups claim and every mapping.
+- **Sign-in redirects to an error at the identity provider ("redirect URI mismatch" or similar):** the callback registered at the provider must exactly match the **Redirect URI** shown in the provider editor (Instance URL + `/api/auth/oidc/<provider-id>/callback`). Check for a trailing slash, `http` vs `https`, or the wrong provider id. If Redirect URI is missing in the editor, set Instance URL under Organisation settings → General first.
 - **Cloudflare test fails:** check the team URL and audience without copying tokens into support messages.
 - **The change risks lockout:** stop and use the separate Superadmin session to restore the last known working configuration.
 

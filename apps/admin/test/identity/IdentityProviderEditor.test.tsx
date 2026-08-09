@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, Link, Outlet } from "react-router";
 import { render } from "@testing-library/react";
@@ -14,6 +14,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchIdentityProvider: vi.fn(),
     createIdentityProvider: vi.fn(),
     updateIdentityProvider: vi.fn(),
+    fetchSecuritySettings: vi.fn(),
   };
 });
 
@@ -21,11 +22,27 @@ import {
   fetchIdentityProvider,
   createIdentityProvider,
   updateIdentityProvider,
+  fetchSecuritySettings,
 } from "../../src/api/client.js";
+import type { SystemSettingsDto } from "../../src/api/types.js";
 
 const mockFetch = vi.mocked(fetchIdentityProvider);
 const mockCreate = vi.mocked(createIdentityProvider);
 const mockUpdate = vi.mocked(updateIdentityProvider);
+const mockFetchSecurity = vi.mocked(fetchSecuritySettings);
+
+function securitySettingsWithInstanceUrl(url: string | null): SystemSettingsDto {
+  const num = (value: number) => ({ value, source: "default" as const });
+  return {
+    session_ttl_ms: num(86_400_000),
+    operator_session_ttl_ms: num(86_400_000),
+    session_idle_timeout_ms: num(1_800_000),
+    operator_session_idle_timeout_ms: num(1_800_000),
+    trusted_device_days: num(30),
+    mfa_required_roles: { value: ["superadmin", "admin"], source: "default" },
+    instance_url: { value: url, source: url ? "db" : "default" },
+  };
+}
 
 function renderEditorAt(path: string) {
   // createMemoryRouter + RouterProvider (not the component <MemoryRouter>) so the
@@ -89,6 +106,10 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+});
+
+beforeEach(() => {
+  mockFetchSecurity.mockResolvedValue(securitySettingsWithInstanceUrl("https://tickets.example.com"));
 });
 
 describe("IdentityProviderEditor — edit loading", () => {
@@ -508,5 +529,61 @@ describe("IdentityProviderEditor — coverage", () => {
     const preventDefault = vi.spyOn(event, "preventDefault");
     window.dispatchEvent(event);
     expect(preventDefault).toHaveBeenCalled();
+  });
+});
+
+describe("IdentityProviderEditor — Redirect URI", () => {
+  it("shows a create-mode hint that the Redirect URI appears after the first save", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    expect(
+      await screen.findByText(
+        /Redirect URI to register at your identity provider will appear here after the first save/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Redirect URI")).toBeNull();
+    expect(mockFetchSecurity).not.toHaveBeenCalled();
+  });
+
+  it("shows the Redirect URI with Copy in edit mode when Instance URL is configured", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    const field = await screen.findByLabelText("Redirect URI");
+    expect((field as HTMLInputElement).value).toBe(
+      "https://tickets.example.com/api/auth/oidc/p1/callback",
+    );
+    expect(screen.getByRole("button", { name: /Copy/i })).toBeTruthy();
+  });
+
+  it("warns when Instance URL is missing instead of inventing a host", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    mockFetchSecurity.mockResolvedValueOnce(securitySettingsWithInstanceUrl(null));
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await screen.findByDisplayValue("Google");
+    expect(
+      await screen.findByText(/Set the Instance URL in Settings → General/),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Redirect URI")).toBeNull();
+  });
+
+  it("copies the Redirect URI to the clipboard and toasts success", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await screen.findByLabelText("Redirect URI");
+    fireEvent.click(screen.getByRole("button", { name: /Copy/i }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        "https://tickets.example.com/api/auth/oidc/p1/callback",
+      );
+    });
+    expect(await screen.findByText("Redirect URI copied to clipboard")).toBeTruthy();
   });
 });

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
   discoverIdentityProvider,
   discoverIdentityProviderPreview,
   fetchIdentityProvider,
+  fetchSecuritySettings,
   testIdentityProviderDraft,
   updateIdentityProvider,
 } from "../api/client.js";
@@ -31,6 +32,7 @@ import {
   type MappingRowError,
   type ProviderDraft,
 } from "./identityProviderValidation.js";
+import { buildOidcRedirectUri } from "./oidcRedirectUri.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
 interface IdentityProviderEditorProps {
@@ -256,6 +258,63 @@ function resolveEditorView(mode: EditorMode, loadState: LoadState): EditorView {
   return loadState;
 }
 
+interface OidcRedirectUriCalloutProps {
+  providerId: string | undefined;
+  /** `undefined` = still loading settings; `null` = Instance URL not configured. */
+  instanceBaseUrl: string | null | undefined;
+  onCopySuccess: () => void;
+  onCopyError: () => void;
+}
+
+/** Edit-mode Redirect URI: copyable once Instance URL + provider id are known. */
+function OidcRedirectUriCallout({
+  providerId,
+  instanceBaseUrl,
+  onCopySuccess,
+  onCopyError,
+}: Readonly<OidcRedirectUriCalloutProps>) {
+  if (!providerId) return null;
+  if (instanceBaseUrl === undefined) {
+    return <p className="at-hint identity-editor__redirect-hint">Loading Redirect URI…</p>;
+  }
+  if (instanceBaseUrl === null) {
+    return (
+      <Notice variant="warning" role="status">
+        Set the Instance URL in Settings → General before you can copy the Redirect URI for this
+        provider.
+      </Notice>
+    );
+  }
+
+  const redirectUri = buildOidcRedirectUri(instanceBaseUrl, providerId);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(redirectUri);
+      onCopySuccess();
+    } catch {
+      onCopyError();
+    }
+  }
+
+  return (
+    <div className="identity-editor__redirect">
+      <Input
+        label="Redirect URI"
+        value={redirectUri}
+        disabled
+        readOnly
+        hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
+      />
+      <div className="identity-editor__redirect-actions">
+        <Button type="button" variant="secondary" size="sm" onClick={() => void handleCopy()}>
+          <i className="ti ti-copy" aria-hidden="true" /> Copy
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * OIDC identity provider editor (#266). Basics, Endpoints, Claims, and the SSO
  * login button label shipped in slice 3a; slice 3b adds the group→role mapping
@@ -288,6 +347,11 @@ export function IdentityProviderEditor({
   // and a Retry both re-fetch cleanly — no one-shot ref (which stranded #296 in
   // dev) and no ad-hoc AbortController on the Retry button (which leaked).
   const [loadTick, setLoadTick] = useState(0);
+  // Instance URL for the OIDC redirect URI callout (edit mode only). `undefined`
+  // means still loading; `null` means unset (env BASE_URL / Settings → General).
+  const [instanceBaseUrl, setInstanceBaseUrl] = useState<string | null | undefined>(
+    mode === "edit" ? undefined : null,
+  );
 
   // Latest resolvedProviderId for stale-response guards on button-triggered
   // async actions (Discover/Test). `load` is effect-driven and aborts on
@@ -322,6 +386,28 @@ export function IdentityProviderEditor({
     setDiscovering(false);
     setTesting(false);
   }, [resolvedProviderId]);
+
+  useEffect(() => {
+    if (mode !== "edit") return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const settings = await fetchSecuritySettings(controller.signal);
+        if (controller.signal.aborted) return;
+        const raw = settings.instance_url.value?.trim() ?? "";
+        setInstanceBaseUrl(raw.length > 0 ? raw : null);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof ApiError && err.status === 401) {
+          redirectToLogin();
+          return;
+        }
+        // Settings failure: treat as unset so we never invent a host for the IdP.
+        setInstanceBaseUrl(null);
+      }
+    })();
+    return () => controller.abort();
+  }, [mode]);
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -740,6 +826,19 @@ export function IdentityProviderEditor({
             required={mode === "create"}
           />
         </div>
+        {mode === "create" ? (
+          <p className="at-hint identity-editor__redirect-hint">
+            The Redirect URI to register at your identity provider will appear here after the first
+            save.
+          </p>
+        ) : (
+          <OidcRedirectUriCallout
+            providerId={resolvedProviderId}
+            instanceBaseUrl={instanceBaseUrl}
+            onCopySuccess={() => addToast("Redirect URI copied to clipboard", "success")}
+            onCopyError={() => addToast("Could not copy Redirect URI.", "error")}
+          />
+        )}
       </Card>
 
       <Card
