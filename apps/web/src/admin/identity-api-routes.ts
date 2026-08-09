@@ -22,8 +22,6 @@ import {
   resolveCfAccessTeamDomainForConnection,
   testCfAccessConnection,
   ensureCloudflareAccessProvider,
-  buildOidcRedirectUri,
-  InstanceUrlRequiredError,
   SETTING_CF_ACCESS_ENABLED,
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
@@ -36,7 +34,7 @@ import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
-import { resolveInstanceBaseUrl } from "../instance-base-url.js";
+import { resolveOidcRedirectUri } from "./oidc-redirect-uri.js";
 
 const MAPPING_ROLE = z.enum(["superadmin", "admin", "operator"]);
 const MAPPING_SCOPE = z.enum(["instance", "organization", "event"]);
@@ -206,21 +204,6 @@ function toProviderInput(body: z.infer<typeof providerBodySchema>): IdentityProv
         ? undefined
         : body.login_button_label?.trim() || null,
   };
-}
-
-/** Same public base OIDC start/callback use (env BASE_URL → DB instance_url → localhost in test/dev). */
-async function resolveOidcRedirectUri(
-  db: PrismaClient,
-  providerId: string,
-  injectedBaseUrl?: string,
-): Promise<string | null> {
-  try {
-    const base = await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
-    return buildOidcRedirectUri(base, providerId);
-  } catch (err) {
-    if (err instanceof InstanceUrlRequiredError) return null;
-    throw err;
-  }
 }
 
 async function providerDetailDto(
