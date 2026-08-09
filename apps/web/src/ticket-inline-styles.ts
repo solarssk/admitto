@@ -24,6 +24,9 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .at-public-notice__code { margin: 0 0 6px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; color: var(--text-muted, #64748b); }
 .at-public-notice__heading { margin: 0 0 8px; font-size: 1.0625rem; font-weight: 700; color: var(--text-primary, #1d273b); }
 .at-public-notice p { margin: 0; font-size: 0.875rem; line-height: 1.45; color: inherit; }
+.ticket__status-notice { margin: 4px 0 8px; padding: 16px 14px; text-align: center; border: 1px solid color-mix(in srgb, var(--status-error, #d63939) 35%, #e6e7e9); border-radius: 8px; background: var(--status-error-tint, #fcebea); color: var(--status-error-fg, #9b1c1c); }
+.ticket__status-notice h2 { margin: 0 0 8px; font-size: 1.0625rem; font-weight: 700; color: inherit; }
+.ticket__status-notice p { margin: 0; font-size: 0.875rem; line-height: 1.45; color: inherit; }
 .ticket__qr { display: inline-flex; padding: 12px; background: #fff; border: 1px solid color-mix(in srgb, var(--primary, #066fd1) 35%, #e6e7e9); border-radius: 8px; }
 .ticket__qr img { width: 220px; height: 220px; display: block; }
 .ticket__token { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--text-muted, #64748b); font-size: 0.75rem; margin: 10px 0 0; word-break: break-all; }

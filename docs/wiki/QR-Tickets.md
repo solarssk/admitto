@@ -48,7 +48,7 @@ An attendee ticket may be issued when the delivery is prepared. Sending or resen
 - **The QR image is missing:** insert `qr_image_url` with the image button and preview again.
 - **The ticket link is invalid:** the browser shows a branded Admitto page with **404** and **Not found** (not a bare HTML error). Use the latest delivery and ask an Event Manager to review the attendee and template.
 - **The code is invalid at check-in:** confirm the selected event and the on-screen result.
-- **The ticket is revoked or cancelled:** review [Pass Statuses](Pass-Statuses); do not create a replacement attendee.
+- **The ticket is revoked or cancelled:** opening the public ticket link shows the event card with a notice that the ticket is no longer valid (no QR code). Review [Pass Statuses](Pass-Statuses); do not create a replacement attendee.
 
 ## Related pages
 
