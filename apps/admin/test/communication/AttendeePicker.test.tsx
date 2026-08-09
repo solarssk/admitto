@@ -230,6 +230,36 @@ describe("AttendeePicker", () => {
     expect(screen.queryByRole("list", { name: "Attendee suggestions" })).toBeNull();
   });
 
+  it("ignores a stale failed search after a newer query supersedes it", async () => {
+    let rejectFirst: ((reason?: unknown) => void) | undefined;
+    fetchEventAttendees.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    fetchEventAttendees.mockResolvedValueOnce({
+      items: [attendee({ id: "att-2", name: "Sam Sample", email: "sam@example.com" })],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "al" } });
+    await waitFor(() => expect(fetchEventAttendees).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "sa" } });
+    await waitFor(() => expect(fetchEventAttendees).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      rejectFirst?.(new Error("network"));
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByRole("button", { name: /^Sam Sample/ })).toBeTruthy();
+  });
+
   it("hides the suggestion list when the search returns no matches", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
     render(<Harness />);
