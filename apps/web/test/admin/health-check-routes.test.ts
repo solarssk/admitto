@@ -443,6 +443,9 @@ describe("collectAdminHealth", () => {
     expect(external.find((c) => c.id === "wallet_passes")?.label).toBe(
       "Wallet passes, PassCreator",
     );
+    expect(external.find((c) => c.id === "wallet_passes")?.summary).toBe(
+      "Coming in v0.5 · Apple & Google Wallet",
+    );
     expect(external.find((c) => c.id === "address_lookup")?.label).toBe(
       "Address lookup, Nominatim",
     );
@@ -1168,7 +1171,7 @@ describe("collectAdminHealth", () => {
     vi.restoreAllMocks();
   });
 
-  it("marks address lookup not_configured when maps are disabled", async () => {
+  it("keeps address lookup available when maps (tiles) are disabled", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
@@ -1185,8 +1188,11 @@ describe("collectAdminHealth", () => {
     });
 
     const address = report.groups[1]!.checks.find((c) => c.id === "address_lookup");
-    expect(address?.status).toBe("not_configured");
-    expect(address?.summary).toBe("Maps disabled");
+    expect(address?.status).toBe("ok");
+    expect(address?.summary).toBe("Provider available");
+    expect(report.groups[1]!.checks.find((c) => c.id === "map_tiles")?.summary).toBe(
+      "Maps disabled",
+    );
   });
 
   it("covers core failure and warn branches for database, redis, encryption, and instance URL", async () => {
