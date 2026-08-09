@@ -2165,3 +2165,89 @@ describe("resolveTestSendTemplateLabel", () => {
     );
   });
 });
+
+function renderSendTab() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin/events/evt-comm/communication?tab=send"]}>
+      <Routes>
+        <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("CommunicationPage Send tab template description", () => {
+  it("shows the built-in default description for the virtual ticket template", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    renderSendTab();
+
+    expect(
+      await screen.findByText(
+        "The built-in ticket confirmation email. Used as the fallback when you send until this event saves its own override.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows a saved template's own description", async () => {
+    fetchEventTemplates.mockResolvedValue([
+      { ...reminderRow, description: "Sent 24h before the event to confirmed attendees." },
+    ]);
+    renderSendTab();
+
+    await screen.findByRole("button", { name: /^Template,/ });
+    await selectTemplate("Reminder");
+    expect(
+      await screen.findByText("Sent 24h before the event to confirmed attendees."),
+    ).toBeTruthy();
+  });
+
+  it("shows nothing when a saved template has no description", async () => {
+    fetchEventTemplates.mockResolvedValue([reminderRow]);
+    renderSendTab();
+
+    await screen.findByRole("button", { name: /^Template,/ });
+    await selectTemplate("Reminder");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Template, Reminder" })).toBeTruthy();
+    });
+    expect(screen.queryByText(/^Sent 24h before/)).toBeNull();
+    expect(
+      screen.queryByText(
+        "The built-in ticket confirmation email. Used as the fallback when you send until this event saves its own override.",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("CommunicationPage Send tab preview reload", () => {
+  it("keeps the mail-client chrome (last preview) mounted while a new one loads after switching templates, instead of flashing empty", async () => {
+    fetchEventTemplates.mockResolvedValue([reminderRow, announcementRow]);
+    let resolveAnnouncementPreview: ((value: unknown) => void) | undefined;
+    previewEventTemplateById.mockImplementation(async (_eventId: string, templateId: string) => {
+      if (templateId === "tpl-rem") {
+        return { subject: "Reminder preview subject", html: "<p>Reminder body</p>" };
+      }
+      return new Promise((resolve) => {
+        resolveAnnouncementPreview = resolve;
+      });
+    });
+
+    renderSendTab();
+    await screen.findByRole("button", { name: /^Template,/ });
+    await selectTemplate("Reminder");
+    await screen.findByText("Reminder preview subject");
+
+    await selectTemplate("Announcement");
+    await waitFor(() => expect(resolveAnnouncementPreview).toBeDefined());
+
+    // The new preview is still in flight - the last successful one stays on screen (stale but
+    // not wrong) instead of the whole mail-client card unmounting to an empty/loading placeholder
+    // and remounting once the fetch resolves (the bug: "cały podgląd miga" on template switch).
+    expect(screen.getByText("Reminder preview subject")).toBeTruthy();
+    expect(screen.queryByText("Preview will appear here.")).toBeNull();
+    expect(await screen.findByText(/Updating…/)).toBeTruthy();
+
+    resolveAnnouncementPreview?.({ subject: "Announcement preview subject", html: "<p>Ann body</p>" });
+    expect(await screen.findByText("Announcement preview subject")).toBeTruthy();
+  });
+});

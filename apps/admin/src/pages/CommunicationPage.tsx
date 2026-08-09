@@ -614,6 +614,22 @@ function templatePickerOptions(
   ];
 }
 
+/** The virtual "Ticket email" entry has no MailTemplateListItem row of its own to read a
+ * description from (see templatePickerOptions above) - it gets a fixed, built-in one instead, so
+ * the Send tab's picker never reads as blank for the one template every event actually starts
+ * with. */
+const VIRTUAL_TICKET_DESCRIPTION =
+  "The built-in ticket confirmation email. Used as the fallback when you send until this event saves its own override.";
+
+/** Selected template's own description, shown under the Send tab's picker so an admin can tell
+ * what a template is for without leaving this tab to open its edit modal. Null (real template,
+ * never given one) renders nothing here - unlike the virtual entry, there's no sensible default
+ * text to invent for someone else's saved template. */
+function activeTemplateDescription(activeKey: string, templates: MailTemplateListItem[]): string | null {
+  if (activeKey === "virtual-ticket") return VIRTUAL_TICKET_DESCRIPTION;
+  return templates.find((t) => t.id === activeKey)?.description ?? null;
+}
+
 /** Bounced-email warning banner shown above the tabs; renders nothing when there are no bounces. */
 function EmailBounceBanner({ count, onViewLog }: Readonly<{ count: number; onViewLog: () => void }>) {
   if (count <= 0) return null;
@@ -712,6 +728,8 @@ function SendTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, eventId, isActive, savedSubject, savedBody, savedFormat]);
 
+  const templateDescription = activeTemplateDescription(activeKey, templates);
+
   return (
     <div className="communication-send-tab">
       {/* Message + test-send unmount when leaving the tab (avoid duplicate a11y tree vs Templates).
@@ -738,26 +756,25 @@ function SendTab({
                 emptyLabel="No templates found"
                 value={activeKey}
                 options={templatePickerOptions(templates)}
+                hint={templateDescription ?? undefined}
                 onChange={(id) => requestDirtyProtectedAction({ kind: "select", key: id })}
               />
             </div>
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
-            {previewLoading ? (
-              <div className="communication-preview-empty">Loading preview…</div>
-            ) : (
-              <PreviewBody
-                previewHtml={previewHtml}
-                previewSubject={previewSubject}
-                eventTitle={event.title}
-                senderName={senderName}
-                senderAddress={senderAddress}
-                toolbarLabel={
-                  <>
-                    <i className="ti ti-eye" aria-hidden="true" /> Preview
-                  </>
-                }
-              />
-            )}
+            <PreviewBody
+              previewHtml={previewHtml}
+              previewSubject={previewSubject}
+              eventTitle={event.title}
+              senderName={senderName}
+              senderAddress={senderAddress}
+              loading={previewLoading}
+              toolbarLabel={
+                <>
+                  <i className="ti ti-eye" aria-hidden="true" /> Preview
+                  {previewLoading && <span className="muted"> · Updating…</span>}
+                </>
+              }
+            />
           </div>
         </Card>
       )}
@@ -1294,9 +1311,9 @@ function PreviewBody({
   toolbarLabel?: ReactNode;
   /** Shows the mail-client chrome immediately with a spinner in place of the rendered body,
    * instead of the plain empty-state text, while a preview fetch is in flight - so the card
-   * itself never appears to load late, only its content does. Only the Templates tab (which
-   * auto-previews on every mount/switch) passes this; the Send tab keeps its own separate
-   * loading branch before ever reaching this component. */
+   * itself never appears to load late, only its content does. Both tabs auto-preview on every
+   * mount/template switch, so both pass this instead of swapping the whole card for a bare
+   * "Loading preview…" line. */
   loading?: boolean;
 }>) {
   if (!previewHtml && !loading) {
