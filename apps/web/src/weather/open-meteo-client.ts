@@ -106,6 +106,10 @@ export class OpenMeteoClient {
     url.searchParams.set("forecast_days", String(FORECAST_HORIZON_DAYS_OPENMETEO));
     url.searchParams.set("temperature_unit", "celsius");
     if (this.config.apiKey) {
+      // Never attach apikey on cleartext HTTP (CWE-319); keyless http: remains allowed for lab proxies.
+      if (url.protocol !== "https:") {
+        throw new WeatherProviderError("unavailable");
+      }
       url.searchParams.set("apikey", this.config.apiKey);
     }
 

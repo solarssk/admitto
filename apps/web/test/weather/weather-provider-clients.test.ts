@@ -104,16 +104,64 @@ describe("OpenMeteoClient", () => {
 
   it("refuses to follow redirects (SSRF)", async () => {
     const err = new TypeError("fetch failed");
+    const fetchFn = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      expect(init?.redirect).toBe("error");
+      throw err;
+    });
     const client = new OpenMeteoClient({
       config: defaultWeatherConfig(),
-      fetchFn: async (_input, init) => {
-        expect(init?.redirect).toBe("error");
-        throw err;
-      },
+      fetchFn: fetchFn as unknown as typeof fetch,
     });
     await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).rejects.toMatchObject({
       kind: "unavailable",
     });
+  });
+
+  it("rejects http base URL when an API key is configured (before fetch)", async () => {
+    const fetchFn = vi.fn(async () => new Response("should not run", { status: 200 }));
+    const client = new OpenMeteoClient({
+      config: {
+        ...defaultWeatherConfig(),
+        provider: "openmeteo",
+        baseUrl: "http://api.open-meteo.com",
+        apiKey: "secret",
+      },
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).rejects.toMatchObject({
+      kind: "unavailable",
+    });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("allows keyless http base URL", async () => {
+    const fetchFn = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      expect(init?.redirect).toBe("error");
+      return new Response(
+        JSON.stringify({
+          daily: {
+            time: ["2026-08-10"],
+            weather_code: [1],
+            temperature_2m_max: [20],
+            temperature_2m_min: [10],
+          },
+        }),
+        { status: 200 },
+      );
+    });
+    const client = new OpenMeteoClient({
+      config: {
+        ...defaultWeatherConfig(),
+        provider: "openmeteo",
+        baseUrl: "http://api.open-meteo.com",
+        apiKey: null,
+      },
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).resolves.toMatchObject({
+      weather_code: 1,
+    });
+    expect(fetchFn).toHaveBeenCalledOnce();
   });
 
   it("maps HTTP failures to WeatherProviderError unavailable", async () => {
