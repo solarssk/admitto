@@ -18,6 +18,10 @@ export interface DeliveryRowMenuProps {
    * attendee's bounce is actually resolved one way or the other. Shown disabled rather than
    * hidden, so it stays visible that the row was already acted on. */
   bounceResolved?: boolean;
+  /** True while a Resend/Dismiss request for this row is in flight - same grey-out as
+   * `bounceResolved`, so the operator cannot reopen the menu and fire a second attempt before
+   * the first response lands. */
+  bouncePending?: boolean;
 }
 
 const MARGIN = 5;
@@ -46,11 +50,18 @@ export function DeliveryRowMenu({
   onResend,
   onDismiss,
   bounceResolved = false,
+  bouncePending = false,
 }: Readonly<DeliveryRowMenuProps>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
   // A name with no id is a historical snapshot of a template that was deleted. Passing
   // `undefined` to the resend endpoint would select the current default template instead.
   const canResend = row.template_id !== null || row.template_name === null;
+  const bounceActionsLocked = bounceResolved || bouncePending;
+  const bounceActionsTitle = bounceResolved
+    ? "Already handled"
+    : bouncePending
+      ? "Working…"
+      : undefined;
   // `position: fixed` from the very first mount (not just once useLayoutEffect below computes
   // real coordinates) - otherwise the panel briefly sits at its CSS default (static, in-flow
   // inside the "inline-flex" trigger wrapper) for the one frame before the effect repositions
@@ -136,8 +147,8 @@ export function DeliveryRowMenu({
               type="button"
               role="menuitem"
               className="delivery-row-menu__item"
-              disabled={bounceResolved}
-              title={bounceResolved ? "Already handled" : undefined}
+              disabled={bounceActionsLocked}
+              title={bounceActionsTitle}
               onClick={() => {
                 setOpen(false);
                 onResend(row);
@@ -152,8 +163,8 @@ export function DeliveryRowMenu({
               type="button"
               role="menuitem"
               className="delivery-row-menu__item"
-              disabled={bounceResolved}
-              title={bounceResolved ? "Already handled" : undefined}
+              disabled={bounceActionsLocked}
+              title={bounceActionsTitle}
               onClick={() => {
                 setOpen(false);
                 onDismiss(row);

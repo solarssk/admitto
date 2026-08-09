@@ -155,6 +155,9 @@ interface DeliveryListContentProps {
   /** Delivery ids whose Resend/Dismiss has already been used - see DeliveryRowMenu's own
    * bounceResolved prop for why this can't just be derived from row.status. */
   resolvedBounceRowIds: Set<string>;
+  /** Delivery ids with an in-flight Resend/Dismiss - greys out both actions until the request
+   * settles (then either resolvedBounceRowIds takes over, or this clears on failure). */
+  pendingBounceRowIds: Set<string>;
   onRetry: () => void;
 }
 
@@ -173,6 +176,7 @@ function DeliveryListContent({
   onResend,
   onDismiss,
   resolvedBounceRowIds,
+  pendingBounceRowIds,
   onRetry,
 }: Readonly<DeliveryListContentProps>) {
   if (loading && deliveries.length === 0) {
@@ -226,6 +230,7 @@ function DeliveryListContent({
                 onResend={onResend}
                 onDismiss={onDismiss}
                 bounceResolved={resolvedBounceRowIds.has(row.id)}
+                bouncePending={pendingBounceRowIds.has(row.id)}
               />
             </div>
             <div className="communication-card__meta">
@@ -303,6 +308,7 @@ function DeliveryListContent({
                 onResend={onResend}
                 onDismiss={onDismiss}
                 bounceResolved={resolvedBounceRowIds.has(row.id)}
+                bouncePending={pendingBounceRowIds.has(row.id)}
               />
               </td>
             </tr>
@@ -346,6 +352,10 @@ export interface DeliveryLogTabProps {
    * unmounts while the operator visits another tab. */
   resolvedBounceRowIds: Set<string>;
   onBounceRowResolved: (rowId: string) => void;
+  /** Same lift as `resolvedBounceRowIds`, for in-flight Resend/Dismiss so a tab switch mid-request
+   * cannot re-enable the actions before the response lands. */
+  pendingBounceRowIds: Set<string>;
+  onBounceRowPendingChange: (rowId: string, pending: boolean) => void;
   /** Fired after a row's Resend/Dismiss action succeeds - refreshes the Communication header's
    * bounce count. The deliveries list itself doesn't need an explicit refetch here; it already
    * polls on its own (Live toggle above). */
@@ -387,6 +397,8 @@ export function DeliveryLogTab({
   onRetry,
   resolvedBounceRowIds,
   onBounceRowResolved,
+  pendingBounceRowIds,
+  onBounceRowPendingChange,
   onBounceHandled,
 }: Readonly<DeliveryLogTabProps>) {
   const isDesktop = useIsDesktop();
@@ -417,6 +429,7 @@ export function DeliveryLogTab({
   }
 
   async function handleResend(row: DeliveryDto) {
+    onBounceRowPendingChange(row.id, true);
     try {
       await resendTicket(eventId, row.attendee_id, { templateId: row.template_id ?? undefined });
       addToast(`Resent to ${row.attendee_name}.`, "success");
@@ -424,10 +437,13 @@ export function DeliveryLogTab({
       onBounceHandled?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Resend failed."), "error");
+    } finally {
+      onBounceRowPendingChange(row.id, false);
     }
   }
 
   async function handleDismiss(row: DeliveryDto) {
+    onBounceRowPendingChange(row.id, true);
     try {
       await dismissBounce(eventId, row.attendee_id);
       addToast(`Dismissed the bounce notice for ${row.attendee_name}.`, "success");
@@ -435,6 +451,8 @@ export function DeliveryLogTab({
       onBounceHandled?.();
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to dismiss the bounce notice."), "error");
+    } finally {
+      onBounceRowPendingChange(row.id, false);
     }
   }
 
@@ -497,6 +515,7 @@ export function DeliveryLogTab({
         onResend={(row) => void handleResend(row)}
         onDismiss={(row) => void handleDismiss(row)}
         resolvedBounceRowIds={resolvedBounceRowIds}
+        pendingBounceRowIds={pendingBounceRowIds}
         onRetry={onRetry}
       />
       {deliveryTotal > 0 && (
