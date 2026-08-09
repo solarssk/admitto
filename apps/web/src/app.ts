@@ -589,6 +589,24 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   }
 
+  /** Branded public HTML 404/500. Theme load is optional: skip on global misses (no DB flood). */
+  async function renderPublicHtmlError(
+    c: Context,
+    status: 404 | 500,
+    options: { loadTheme?: boolean } = {},
+  ) {
+    let theme = null;
+    if (options.loadTheme !== false) {
+      try {
+        theme = await getBrandingTheme(db);
+      } catch {
+        theme = null;
+      }
+    }
+    const html = status === 404 ? renderNotFound(theme) : renderServerError(theme);
+    return htmlWithSecurityHeaders(c, html, status, theme);
+  }
+
   async function renderTicketPage(
     c: Context,
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
@@ -621,14 +639,14 @@ export function createApp(options: CreateAppOptions = {}) {
     if (resolved.mode === "internal") {
       if (!internalToken) {
         console.error(`Internal attendee ${attendee.id} missing token for ticket page QR`);
-        return htmlWithSecurityHeaders(c, renderServerError(), 500);
+        return renderPublicHtmlError(c, 500);
       }
       qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
     } else {
       const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
       if (!agencyPayload) {
         console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-        return htmlWithSecurityHeaders(c, renderServerError(), 500);
+        return renderPublicHtmlError(c, 500);
       }
       qrPayload = buildQrPayload("agency", { agencyPayload });
     }
@@ -645,7 +663,7 @@ export function createApp(options: CreateAppOptions = {}) {
         message: "qr_png_generation_failed",
         fields: { route },
       });
-      return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      return renderPublicHtmlError(c, 500);
     }
 
     try {
@@ -1581,10 +1599,10 @@ export function createApp(options: CreateAppOptions = {}) {
         message: "ticket_agency_lookup_failed",
         fields: { route: "/t/:eventSlug/a/:ref" },
       });
-      return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      return renderPublicHtmlError(c, 500);
     }
     if (resolved?.mode !== "agency") {
-      return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      return renderPublicHtmlError(c, 404);
     }
     return renderTicketPage(c, resolved, undefined, "/t/:eventSlug/a/:ref", ref);
   });
@@ -1618,11 +1636,11 @@ export function createApp(options: CreateAppOptions = {}) {
           fields: { route: "/t/:token", errorKind: "unexpected" },
         });
       }
-      return htmlWithSecurityHeaders(c, renderServerError(), 500);
+      return renderPublicHtmlError(c, 500);
     }
 
     if (!resolved) {
-      return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      return renderPublicHtmlError(c, 404);
     }
 
     return renderTicketPage(c, resolved, token);
@@ -1818,6 +1836,32 @@ export function createApp(options: CreateAppOptions = {}) {
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinHistory(c, db),
   );
+
+  // Global HTML 404 for unknown browser URLs. API stays JSON; map/QR/uploads/assets stay empty.
+  // Do not load branding theme here: unmatched paths are unauthenticated and not rate-limited.
+  app.notFound(async (c) => {
+    const path = c.req.path;
+    if (path === "/api" || path.startsWith("/api/")) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    if (
+      path === "/m" ||
+      path.startsWith("/m/") ||
+      path === "/q" ||
+      path.startsWith("/q/") ||
+      path === "/uploads" ||
+      path.startsWith("/uploads/") ||
+      path === "/assets" ||
+      path.startsWith("/assets/") ||
+      path === "/vendor" ||
+      path.startsWith("/vendor/") ||
+      path === "/favicon.ico" ||
+      path.startsWith("/favicon.")
+    ) {
+      return c.body(null, 404);
+    }
+    return renderPublicHtmlError(c, 404, { loadTheme: false });
+  });
 
   return app;
 }

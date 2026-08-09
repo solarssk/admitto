@@ -197,6 +197,10 @@ describe("Mode B public routes — public_ref", () => {
     const res = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}`);
 
     expect(res.status).toBe(500);
+    const html = await res.text();
+    expect(html).toContain("Something went wrong");
+    expect(html).toContain('class="at-public-notice__code">500<');
+    expect(html).not.toContain("Event ticket");
     expect(querySystemLogs({ source: "api" })).toContainEqual(
       expect.objectContaining({
         level: "error",
@@ -333,12 +337,19 @@ describe("Mode B public routes — public_ref", () => {
     const res = await app.request(`/t/${EVENT_SLUG}/a/${ATTENDEE_ID}`);
     expect(res.status).toBe(404);
     const html = await res.text();
-    expect(html).toContain("not found");
+    expect(html).toContain("Not found");
+    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain("This link is invalid or the page no longer exists.");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Ticket not found");
   });
 
   it("unknown public_ref returns 404", async () => {
     const res = await app.request(`/t/${EVENT_SLUG}/a/${generateToken()}`);
     expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("Not found");
+    expect(html).toContain('class="at-public-notice__code">404<');
   });
 
   it("does not serve an internal attendee through Mode B ticket or QR routes", async () => {
@@ -448,6 +459,84 @@ describe("revoked and cancelled public ticket pages", () => {
     const html = await res.text();
     expect(html).toContain("Ticket revoked");
     expect(html).toContain("ticket__status-notice");
+  });
+});
+
+describe("global public HTML 404", () => {
+  it("serves the branded Admitto card for an unknown browser path", async () => {
+    const res = await app.request("/this-path-does-not-exist");
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("ticket-page");
+    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain("Not found");
+    expect(html).toContain("This link is invalid or the page no longer exists.");
+    expect(html).not.toContain("Event ticket");
+  });
+
+  it("does not query branding theme for global HTML 404", async () => {
+    const auth = await import("@admitto/auth");
+    const spy = vi.spyOn(auth, "getBrandingTheme");
+
+    const res = await app.request("/another-missing-path");
+    expect(res.status).toBe(404);
+    expect(spy).not.toHaveBeenCalled();
+    const html = await res.text();
+    expect(html).toContain("Not found");
+    expect(html).toContain('class="at-public-notice__code">404<');
+  });
+
+  it("still renders a ticket-route 404 when branding theme lookup fails", async () => {
+    const auth = await import("@admitto/auth");
+    vi.spyOn(auth, "getBrandingTheme").mockRejectedValueOnce(new Error("theme unavailable"));
+
+    const res = await app.request(`/t/${generateToken()}`);
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("Not found");
+    expect(html).toContain('class="at-public-notice__code">404<');
+  });
+
+  it("keeps API misses as JSON", async () => {
+    const exact = await app.request("/api");
+    expect(exact.status).toBe(404);
+    expect(await exact.json()).toEqual({ error: "not_found" });
+
+    const nested = await app.request("/api/no-such-endpoint");
+    expect(nested.status).toBe(404);
+    expect(await nested.json()).toEqual({ error: "not_found" });
+  });
+
+  it("keeps static map and QR misses as empty bodies", async () => {
+    const mapRes = await app.request("/m/no-such-event.png");
+    expect(mapRes.status).toBe(404);
+    expect(await mapRes.text()).toBe("");
+
+    const qrRes = await app.request(`/q/${generateToken()}.png`);
+    expect(qrRes.status).toBe(404);
+    expect(await qrRes.text()).toBe("");
+  });
+
+  it("keeps bare resource namespace paths as empty bodies", async () => {
+    for (const path of ["/m", "/q", "/uploads", "/assets", "/vendor"]) {
+      const res = await app.request(path);
+      expect(res.status, path).toBe(404);
+      expect(await res.text(), path).toBe("");
+    }
+  });
+
+  it("keeps upload and vendor asset misses as empty bodies", async () => {
+    const uploadRes = await app.request("/uploads/org-missing/logo.png");
+    expect(uploadRes.status).toBe(404);
+    expect(await uploadRes.text()).toBe("");
+
+    const vendorRes = await app.request("/vendor/tabler-icons/no-such-icon.svg");
+    expect(vendorRes.status).toBe(404);
+    expect(await vendorRes.text()).toBe("");
+
+    const assetRes = await app.request("/assets/no-such-bundle.js");
+    expect(assetRes.status).toBe(404);
+    expect(await assetRes.text()).toBe("");
   });
 });
 

@@ -395,26 +395,57 @@ export function renderTicket(
   });
 }
 
-export function renderNotFound(): string {
+/** Shared branded shell for public HTML errors. Same card + muted notice for every status. */
+export function renderPublicErrorPage(options: {
+  statusCode: 404 | 500;
+  heading: string;
+  message: string;
+  theme?: BrandingTheme | null;
+}): string {
+  const styles = buildTicketPageStyles(options.theme);
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Ticket not found</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
-  <h1>Ticket not found</h1>
-  <p>This ticket link is invalid or has expired.</p>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${esc(options.heading)}</title>
+  <style>${styles}</style>
+</head>
+<body class="ticket-page">
+  <article class="ticket">
+    <header class="ticket__top">
+      <div class="ticket__brand">
+        <img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>
+      </div>
+    </header>
+    <div class="ticket__body">
+      <div class="at-public-notice" role="status">
+        <p class="at-public-notice__code">${options.statusCode}</p>
+        <h1 class="at-public-notice__heading">${esc(options.heading)}</h1>
+        <p>${esc(options.message)}</p>
+      </div>
+    </div>
+  </article>
 </body>
 </html>`;
 }
 
-export function renderServerError(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Server error</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
-  <h1>Server error</h1>
-  <p>Unable to render this ticket right now. Please contact support.</p>
-</body>
-</html>`;
+export function renderNotFound(theme?: BrandingTheme | null): string {
+  return renderPublicErrorPage({
+    statusCode: 404,
+    heading: "Not found",
+    message: "This link is invalid or the page no longer exists.",
+    theme,
+  });
+}
+
+export function renderServerError(theme?: BrandingTheme | null): string {
+  return renderPublicErrorPage({
+    statusCode: 500,
+    heading: "Something went wrong",
+    message: "Unable to load this page right now. Please try again later.",
+    theme,
+  });
 }
 
 /** Revoked/cancelled pass: same ticket card shell, notice instead of QR / wallets / map. */
