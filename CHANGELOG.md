@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Concurrent OIDC instance-superadmin revokes no longer thrash under Serializable isolation: retry backoff uses full jitter (and more attempts) so CI no longer flakes on `P2034` / write conflicts.
+
 ### Security
 - **Self-hosted LAN mail in production:** ops can allow specific SMTP/IMAP/Power Automate hosts (or IP literals) that resolve to private addresses via `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (app and worker). The lab-only `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` flag remains ignored when `NODE_ENV=production`.
 
