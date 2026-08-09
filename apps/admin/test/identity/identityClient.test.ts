@@ -117,6 +117,7 @@ describe("identity API client", () => {
         enabled: true,
         login_button_label: "Continue with Google",
         mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
+        redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
       }),
     );
     const controller = new AbortController();
@@ -127,6 +128,7 @@ describe("identity API client", () => {
     );
     expect(dto.id).toBe("p1");
     expect(dto.has_client_secret).toBe(true);
+    expect(dto.redirect_uri).toContain("/api/auth/oidc/p1/callback");
     expect(dto.mappings).toHaveLength(1);
   });
 
@@ -149,6 +151,7 @@ describe("identity API client", () => {
         enabled: false,
         login_button_label: null,
         mappings: [],
+        redirect_uri: "http://localhost:3000/api/auth/oidc/p1/callback",
       }),
     );
     const body = {
@@ -193,6 +196,7 @@ describe("identity API client", () => {
         enabled: true,
         login_button_label: null,
         mappings: [],
+        redirect_uri: "http://localhost:3000/api/auth/oidc/p1/callback",
       }),
     );
     const body = {

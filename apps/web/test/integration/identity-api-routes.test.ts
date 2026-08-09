@@ -171,6 +171,7 @@ interface ProviderDetail {
   enabled: boolean;
   login_button_label: string | null;
   mappings: { group: string; role: string; scope_type: string; scope_id: string }[];
+  redirect_uri: string | null;
 }
 interface ProviderListResponse {
   providers: ProviderListItem[];
@@ -261,6 +262,9 @@ describe("identity providers API — list & get", () => {
       expect(body.mappings).toEqual([
         { group: "admins", role: "superadmin", scope_type: "instance", scope_id: "" },
       ]);
+      expect(body.redirect_uri).toMatch(
+        new RegExp(`^https?://.+/api/auth/oidc/${PROVIDER_ID}/callback$`),
+      );
     } finally {
       await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
     }
