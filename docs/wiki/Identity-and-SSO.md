@@ -65,16 +65,17 @@ Have a separate working Superadmin session, an approved test account, and the id
    phone claim is optional and only takes effect if your provider actually sends one.
 
 4. **Save once** so Admitto assigns a provider id. On the edit form, copy the read-only **Redirect URI**
-   from the Basics card and register that exact URL at your identity provider (Entra App registration,
-   Okta or Authentik Application). The URI is not shown until after the first save. Pattern:
+   from the Basics card (the same URL Admitto sends to the identity provider) and register that exact
+   value at your identity provider (Entra App registration, Okta or Authentik Application). The URI is
+   not shown until after the first save. Pattern:
 
    ```
    https://<your-instance-url>/api/auth/oidc/<provider-id>/callback
    ```
 
    If Redirect URI is missing in the editor, set **Instance URL** under Organisation settings → General
-   first. You can save with a placeholder Client ID/secret, register the callback, then paste the real
-   credentials.
+   (or `BASE_URL` in the environment) first. You can save with a placeholder Client ID/secret, register
+   the callback, then paste the real credentials.
 5. Use **Discover** (fills the endpoint fields automatically from the Issuer URL) and **Test
    connection** before finishing configuration.
 6. Configure group-to-role mappings only after confirming the provider's group claim. This is

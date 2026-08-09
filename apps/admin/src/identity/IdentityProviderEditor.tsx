@@ -8,7 +8,6 @@ import {
   discoverIdentityProvider,
   discoverIdentityProviderPreview,
   fetchIdentityProvider,
-  fetchSecuritySettings,
   testIdentityProviderDraft,
   updateIdentityProvider,
 } from "../api/client.js";
@@ -32,7 +31,6 @@ import {
   type MappingRowError,
   type ProviderDraft,
 } from "./identityProviderValidation.js";
-import { buildOidcRedirectUri } from "./oidcRedirectUri.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
 interface IdentityProviderEditorProps {
@@ -259,25 +257,19 @@ function resolveEditorView(mode: EditorMode, loadState: LoadState): EditorView {
 }
 
 interface OidcRedirectUriCalloutProps {
-  providerId: string | undefined;
-  /** `undefined` = still loading settings; `null` = Instance URL not configured. */
-  instanceBaseUrl: string | null | undefined;
+  /** Exact callback from the provider API; `null` when no public base URL is resolvable. */
+  redirectUri: string | null;
   onCopySuccess: () => void;
   onCopyError: () => void;
 }
 
-/** Edit-mode Redirect URI: copyable once Instance URL + provider id are known. */
+/** Edit-mode Redirect URI: copyable once the server can resolve the public base URL. */
 function OidcRedirectUriCallout({
-  providerId,
-  instanceBaseUrl,
+  redirectUri,
   onCopySuccess,
   onCopyError,
 }: Readonly<OidcRedirectUriCalloutProps>) {
-  if (!providerId) return null;
-  if (instanceBaseUrl === undefined) {
-    return <p className="at-hint identity-editor__redirect-hint">Loading Redirect URI…</p>;
-  }
-  if (instanceBaseUrl === null) {
+  if (redirectUri === null) {
     return (
       <Notice variant="warning" role="status">
         Set the Instance URL in Settings → General before you can copy the Redirect URI for this
@@ -286,11 +278,11 @@ function OidcRedirectUriCallout({
     );
   }
 
-  const redirectUri = buildOidcRedirectUri(instanceBaseUrl, providerId);
+  const uri = redirectUri;
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(redirectUri);
+      await navigator.clipboard.writeText(uri);
       onCopySuccess();
     } catch {
       onCopyError();
@@ -301,7 +293,7 @@ function OidcRedirectUriCallout({
     <div className="identity-editor__redirect">
       <Input
         label="Redirect URI"
-        value={redirectUri}
+        value={uri}
         disabled
         readOnly
         hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
@@ -347,11 +339,8 @@ export function IdentityProviderEditor({
   // and a Retry both re-fetch cleanly — no one-shot ref (which stranded #296 in
   // dev) and no ad-hoc AbortController on the Retry button (which leaked).
   const [loadTick, setLoadTick] = useState(0);
-  // Instance URL for the OIDC redirect URI callout (edit mode only). `undefined`
-  // means still loading; `null` means unset (env BASE_URL / Settings → General).
-  const [instanceBaseUrl, setInstanceBaseUrl] = useState<string | null | undefined>(
-    mode === "edit" ? undefined : null,
-  );
+  // Server-built callback URL (same resolveInstanceBaseUrl path as OIDC start/callback).
+  const [redirectUri, setRedirectUri] = useState<string | null>(null);
 
   // Latest resolvedProviderId for stale-response guards on button-triggered
   // async actions (Discover/Test). `load` is effect-driven and aborts on
@@ -387,28 +376,6 @@ export function IdentityProviderEditor({
     setTesting(false);
   }, [resolvedProviderId]);
 
-  useEffect(() => {
-    if (mode !== "edit") return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const settings = await fetchSecuritySettings(controller.signal);
-        if (controller.signal.aborted) return;
-        const raw = settings.instance_url.value?.trim() ?? "";
-        setInstanceBaseUrl(raw.length > 0 ? raw : null);
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        if (err instanceof ApiError && err.status === 401) {
-          redirectToLogin();
-          return;
-        }
-        // Settings failure: treat as unset so we never invent a host for the IdP.
-        setInstanceBaseUrl(null);
-      }
-    })();
-    return () => controller.abort();
-  }, [mode]);
-
   const load = useCallback(
     async (signal: AbortSignal) => {
       if (mode !== "edit" || !resolvedProviderId) return;
@@ -426,6 +393,7 @@ export function IdentityProviderEditor({
         setBaselineMappings(nextMappings);
         setMappingErrors([]);
         setHasSecret(detail.has_client_secret);
+        setRedirectUri(detail.redirect_uri);
         setLoadState("ready");
       } catch (err) {
         if (signal.aborted) return;
@@ -659,6 +627,7 @@ export function IdentityProviderEditor({
         setBaseline(refreshedDraft);
         setBaselineMappings(mappingsFromDetail(result.provider));
         setHasSecret(result.provider.has_client_secret);
+        setRedirectUri(result.provider.redirect_uri);
       } else {
         setBaseline((b) => ({
           ...b,
@@ -833,8 +802,7 @@ export function IdentityProviderEditor({
           </p>
         ) : (
           <OidcRedirectUriCallout
-            providerId={resolvedProviderId}
-            instanceBaseUrl={instanceBaseUrl}
+            redirectUri={redirectUri}
             onCopySuccess={() => addToast("Redirect URI copied to clipboard", "success")}
             onCopyError={() => addToast("Could not copy Redirect URI.", "error")}
           />

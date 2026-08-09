@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, Link, Outlet } from "react-router";
 import { render } from "@testing-library/react";
@@ -14,7 +14,6 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchIdentityProvider: vi.fn(),
     createIdentityProvider: vi.fn(),
     updateIdentityProvider: vi.fn(),
-    fetchSecuritySettings: vi.fn(),
   };
 });
 
@@ -22,27 +21,11 @@ import {
   fetchIdentityProvider,
   createIdentityProvider,
   updateIdentityProvider,
-  fetchSecuritySettings,
 } from "../../src/api/client.js";
-import type { SystemSettingsDto } from "../../src/api/types.js";
 
 const mockFetch = vi.mocked(fetchIdentityProvider);
 const mockCreate = vi.mocked(createIdentityProvider);
 const mockUpdate = vi.mocked(updateIdentityProvider);
-const mockFetchSecurity = vi.mocked(fetchSecuritySettings);
-
-function securitySettingsWithInstanceUrl(url: string | null): SystemSettingsDto {
-  const num = (value: number) => ({ value, source: "default" as const });
-  return {
-    session_ttl_ms: num(86_400_000),
-    operator_session_ttl_ms: num(86_400_000),
-    session_idle_timeout_ms: num(1_800_000),
-    operator_session_idle_timeout_ms: num(1_800_000),
-    trusted_device_days: num(30),
-    mfa_required_roles: { value: ["superadmin", "admin"], source: "default" },
-    instance_url: { value: url, source: url ? "db" : "default" },
-  };
-}
 
 function renderEditorAt(path: string) {
   // createMemoryRouter + RouterProvider (not the component <MemoryRouter>) so the
@@ -100,16 +83,13 @@ const validDetail = {
   enabled: true,
   login_button_label: "Continue with Google",
   mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
+  redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
 };
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
-});
-
-beforeEach(() => {
-  mockFetchSecurity.mockResolvedValue(securitySettingsWithInstanceUrl("https://tickets.example.com"));
 });
 
 describe("IdentityProviderEditor — edit loading", () => {
@@ -541,10 +521,9 @@ describe("IdentityProviderEditor — Redirect URI", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByLabelText("Redirect URI")).toBeNull();
-    expect(mockFetchSecurity).not.toHaveBeenCalled();
   });
 
-  it("shows the Redirect URI with Copy in edit mode when Instance URL is configured", async () => {
+  it("shows the Redirect URI with Copy in edit mode from the provider API", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
@@ -555,9 +534,8 @@ describe("IdentityProviderEditor — Redirect URI", () => {
     expect(screen.getByRole("button", { name: /Copy/i })).toBeTruthy();
   });
 
-  it("warns when Instance URL is missing instead of inventing a host", async () => {
-    mockFetch.mockResolvedValueOnce(validDetail);
-    mockFetchSecurity.mockResolvedValueOnce(securitySettingsWithInstanceUrl(null));
+  it("warns when the API returns a null Redirect URI instead of inventing a host", async () => {
+    mockFetch.mockResolvedValueOnce({ ...validDetail, redirect_uri: null });
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("Google");
@@ -585,5 +563,19 @@ describe("IdentityProviderEditor — Redirect URI", () => {
       );
     });
     expect(await screen.findByText("Redirect URI copied to clipboard")).toBeTruthy();
+  });
+
+  it("toasts an error when clipboard write fails", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await screen.findByLabelText("Redirect URI");
+    fireEvent.click(screen.getByRole("button", { name: /Copy/i }));
+
+    expect(await screen.findByText("Could not copy Redirect URI.")).toBeTruthy();
   });
 });

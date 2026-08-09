@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, act } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter } from "react-router";
 import { render } from "@testing-library/react";
@@ -17,7 +17,6 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     discoverIdentityProvider: vi.fn(),
     discoverIdentityProviderPreview: vi.fn(),
     testIdentityProviderDraft: vi.fn(),
-    fetchSecuritySettings: vi.fn(),
   };
 });
 
@@ -28,7 +27,6 @@ import {
   discoverIdentityProvider,
   discoverIdentityProviderPreview,
   testIdentityProviderDraft,
-  fetchSecuritySettings,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchIdentityProvider);
@@ -37,7 +35,6 @@ const mockUpdate = vi.mocked(updateIdentityProvider);
 const mockDiscover = vi.mocked(discoverIdentityProvider);
 const mockDiscoverPreview = vi.mocked(discoverIdentityProviderPreview);
 const mockTestDraft = vi.mocked(testIdentityProviderDraft);
-const mockFetchSecurity = vi.mocked(fetchSecuritySettings);
 
 function renderEditorAt(path: string) {
   // createMemoryRouter + RouterProvider (not <MemoryRouter>) so the editor's
@@ -90,23 +87,12 @@ const validDetail = {
   enabled: true,
   login_button_label: "Continue with Google",
   mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
+  redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
 };
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-});
-
-beforeEach(() => {
-  mockFetchSecurity.mockResolvedValue({
-    session_ttl_ms: { value: 86_400_000, source: "default" },
-    operator_session_ttl_ms: { value: 86_400_000, source: "default" },
-    session_idle_timeout_ms: { value: 1_800_000, source: "default" },
-    operator_session_idle_timeout_ms: { value: 1_800_000, source: "default" },
-    trusted_device_days: { value: 30, source: "default" },
-    mfa_required_roles: { value: ["superadmin", "admin"], source: "default" },
-    instance_url: { value: "https://tickets.example.com", source: "db" },
-  });
 });
 
 describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {

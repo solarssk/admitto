@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **OIDC provider editor shows the Redirect URI to register at the identity provider** (with copy), once the provider has been saved and Instance URL is configured. Create mode explains that the URI appears after the first save.
+- **OIDC provider editor shows the Redirect URI to register at the identity provider** (with copy), once the provider has been saved. The URI comes from the provider API using the same public base URL resolution as live OIDC start/callback (`BASE_URL` → Instance URL → localhost in development). Create mode explains that the URI appears after the first save.
 - **Communication Templates: edit a template's label, icon, and description from the Edit template dialog**, and delete non-ticket templates from the same dialog. These identity fields help operators tell templates apart in the picker; they do not change the email subject or body.
 
 ### Changed

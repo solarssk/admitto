@@ -49,6 +49,7 @@ import {
   validateEncryptionKeyBootConfig,
   validateTrustedProxyCidrsBootConfig,
 } from "./config.js";
+import { resolveInstanceBaseUrl } from "./instance-base-url.js";
 import {
   handleGetAppleTouchIcon,
   handleGetAppleTouchIconPrecomposed,
@@ -1371,12 +1372,22 @@ export function createApp(options: CreateAppOptions = {}) {
     handleTotpBackupCodesComplete(c, db),
   );
 
-  app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, (c) => handleOidcStart(c, db, baseUrl));
-  app.get("/api/auth/oidc/:providerId/callback", oidcAuthRateLimit, (c) => handleOidcCallback(c, db, baseUrl));
+  // OIDC redirect_uri must match what the SPA shows (Instance URL / BASE_URL), not the
+  // boot-only resolveBaseUrl() that skips DB instance_url in development.
+  async function oidcPublicBaseUrl(): Promise<string> {
+    return resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl);
+  }
+
+  app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, async (c) =>
+    handleOidcStart(c, db, await oidcPublicBaseUrl()),
+  );
+  app.get("/api/auth/oidc/:providerId/callback", oidcAuthRateLimit, async (c) =>
+    handleOidcCallback(c, db, await oidcPublicBaseUrl()),
+  );
 
   app.get("/account/oidc/:providerId/link", requireSessionHtml, (c) => handleGetOidcLink(c, db));
-  app.post("/account/oidc/:providerId/link", htmlPostCsrf, loginRateLimitHtml, requireSessionHtml, (c) =>
-    handlePostOidcLink(c, db, baseUrl, rateLimitStore),
+  app.post("/account/oidc/:providerId/link", htmlPostCsrf, loginRateLimitHtml, requireSessionHtml, async (c) =>
+    handlePostOidcLink(c, db, await oidcPublicBaseUrl(), rateLimitStore),
   );
 
   app.get("/", requireSessionHtml, async (c) => {
@@ -1389,7 +1400,7 @@ export function createApp(options: CreateAppOptions = {}) {
   // Uses requireAdminAccess (superadmin via canManageInstance) to gate the editor.
   app.get("/api/admin/identity/providers", requireAdminAccess, (c) => handleApiListProviders(c, db));
   app.post("/api/admin/identity/providers", jsonPostCsrf, requireAdminAccess, (c) =>
-    handleApiCreateProvider(c, db),
+    handleApiCreateProvider(c, db, mailInjectedBaseUrl),
   );
   app.post(
     "/api/admin/identity/providers/test",
@@ -1406,10 +1417,10 @@ export function createApp(options: CreateAppOptions = {}) {
     (c) => handleApiDiscoverProviderPreview(c),
   );
   app.get("/api/admin/identity/providers/:id", requireAdminAccess, (c) =>
-    handleApiGetProvider(c, db),
+    handleApiGetProvider(c, db, mailInjectedBaseUrl),
   );
   app.put("/api/admin/identity/providers/:id", jsonPostCsrf, requireAdminAccess, (c) =>
-    handleApiUpdateProvider(c, db),
+    handleApiUpdateProvider(c, db, mailInjectedBaseUrl),
   );
   app.post("/api/admin/identity/providers/:id/toggle", jsonPostCsrf, requireAdminAccess, (c) =>
     handleApiToggleProvider(c, db),
@@ -1419,7 +1430,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     requireAdminAccess,
     adminAuthProviderOpsRateLimit,
-    (c) => handleApiDiscoverProvider(c, db),
+    (c) => handleApiDiscoverProvider(c, db, mailInjectedBaseUrl),
   );
   app.post(
     "/api/admin/identity/providers/:id/test",
