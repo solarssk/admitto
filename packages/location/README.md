@@ -1,8 +1,11 @@
 # @admitto/location
 
-Domain types, validation, and map-link builders for an event's location (address, coordinates,
+Domain types, validation, and map-link builders for an event's venue (address, coordinates,
 directions/accessibility notes). Pure logic - no HTTP, no Prisma - so it can be unit-tested in
-isolation and reused by both the admin API and (later) the public ticket/event-list surfaces.
+isolation and reused by the admin API and the public ticket / event-list surfaces.
+
+**HTTP geocoding, Nominatim, static map tiles, and timezone lookup live in `apps/web`**, not here.
+This package only owns the shared shapes and validators those routes and the SPA agree on.
 
 ## What lives here
 
