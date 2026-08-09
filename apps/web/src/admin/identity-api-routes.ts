@@ -34,6 +34,7 @@ import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { resolveOidcRedirectUri } from "./oidc-redirect-uri.js";
 
 const MAPPING_ROLE = z.enum(["superadmin", "admin", "operator"]);
 const MAPPING_SCOPE = z.enum(["instance", "organization", "event"]);
@@ -134,6 +135,8 @@ const cfAccessTestBodySchema = z.strictObject({
 
 interface ProviderDetailDto extends IdentityProviderFormView {
   mappings: { group: string; role: string; scope_type: string; scope_id: string }[];
+  /** Exact OIDC callback URL to register at the IdP; null when no public base URL is resolvable. */
+  redirect_uri: string | null;
 }
 
 function actorUserId(c: Context): string {
@@ -206,6 +209,7 @@ function toProviderInput(body: z.infer<typeof providerBodySchema>): IdentityProv
 async function providerDetailDto(
   db: PrismaClient,
   provider: NonNullable<Awaited<ReturnType<typeof findOidcProviderById>>>,
+  injectedBaseUrl?: string,
 ): Promise<ProviderDetailDto> {
   const rows = await listProviderGroupMappings(db, provider.id);
   return {
@@ -216,6 +220,7 @@ async function providerDetailDto(
       scope_type: r.scope_type,
       scope_id: r.scope_id ?? "",
     })),
+    redirect_uri: await resolveOidcRedirectUri(db, provider.id, injectedBaseUrl),
   };
 }
 
@@ -233,15 +238,23 @@ export async function handleApiListProviders(c: Context, db: PrismaClient): Prom
 }
 
 /** GET /api/admin/identity/providers/:id */
-export async function handleApiGetProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiGetProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   const id = c.req.param("id") ?? "";
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.json({ error: "not_found" }, 404);
-  return c.json(await providerDetailDto(db, provider));
+  return c.json(await providerDetailDto(db, provider, injectedBaseUrl));
 }
 
 /** POST /api/admin/identity/providers */
-export async function handleApiCreateProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiCreateProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   let body: z.infer<typeof providerBodySchema>;
   try {
     body = providerBodySchema.parse(await c.req.json());
@@ -279,11 +292,15 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
     actionType: "identity_provider_created",
     metadata: { providerId: provider.id, displayName: provider.display_name },
   });
-  return c.json(await providerDetailDto(db, provider), 201);
+  return c.json(await providerDetailDto(db, provider, injectedBaseUrl), 201);
 }
 
 /** PUT /api/admin/identity/providers/:id */
-export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiUpdateProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   const id = c.req.param("id") ?? "";
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.json({ error: "not_found" }, 404);
@@ -326,7 +343,7 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
     actionType: "identity_provider_updated",
     metadata: { providerId: id },
   });
-  return c.json(await providerDetailDto(db, updated));
+  return c.json(await providerDetailDto(db, updated, injectedBaseUrl));
 }
 
 /** POST /api/admin/identity/providers/:id/toggle */
@@ -367,7 +384,11 @@ export async function handleApiToggleProvider(c: Context, db: PrismaClient): Pro
 }
 
 /** POST /api/admin/identity/providers/:id/discover */
-export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiDiscoverProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   const id = c.req.param("id") ?? "";
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.json({ error: "not_found" }, 404);
@@ -427,7 +448,7 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? null,
     },
-    provider: refreshed ? await providerDetailDto(db, refreshed) : null,
+    provider: refreshed ? await providerDetailDto(db, refreshed, injectedBaseUrl) : null,
   });
 }
 
