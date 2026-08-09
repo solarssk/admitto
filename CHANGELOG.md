@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **MFA code entry no longer triggers Chrome accessibility warnings for an orphaned label.** The "Authentication code" / "Confirmation code" caption is a named digit group (`span` + `role="group"` + `aria-labelledby`), not a bare `<label>` without `for`.
 - **Location settings stay editable when map tiles are off or fail to load.** Venue search, directions, and accessibility notes no longer disappear behind a full-panel error when only `fetchMapTileConfig` fails; the interactive map is replaced with the existing "Map display is disabled" notice. Event list cards with a pin but no preview image now say **Preview unavailable** instead of **Maps unavailable**, so operators do not read that as "location is broken" (#808).
 
 ### Added
