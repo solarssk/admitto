@@ -17,11 +17,11 @@ Edit the source of an event email when the standard template needs a controlled 
 
 ## Steps
 
-1. Open **Communication** and select the template.
+1. Open **Communication**, then the **Templates** tab, and select the template.
 2. Keep **MJML** selected when the body contains tags such as `<mj-section>` or `<mj-text>`.
 3. Keep **HTML** selected when the body is a complete HTML fragment or document.
 4. Edit one section at a time.
-5. Insert placeholders with the buttons above the editor. Image buttons insert usable image markup. Wallet buttons insert an Add to Wallet badge button (not a bare link token).
+5. Insert placeholders with the chips above the editor. Image and Wallet chips insert ready-to-use markup (an image or an Add to Wallet badge button), not plain text.
 6. Select **Preview** and resolve every validation message.
 7. Save the template, then send a test to an approved test address.
 
@@ -31,7 +31,7 @@ The preview renders without validation errors, required ticket values are presen
 
 ## Important decisions
 
-- Changing **MJML** to **HTML**, or the reverse, does not convert the existing body.
+- Changing **MJML** to **HTML**, or the reverse, does not convert the existing body. Switching a non-empty body asks for confirmation first.
 - MJML is compiled before sending. Invalid nesting, such as an image inside `<mj-text>`, can fail validation.
 - `ticket_url` and `qr_image_url` are required for a usable ticket message.
 - Unknown or malformed `{{placeholders}}` are rejected. Do not invent variable names.

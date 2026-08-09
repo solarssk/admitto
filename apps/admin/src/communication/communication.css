@@ -363,38 +363,6 @@
   font-size: var(--fs-sm);
 }
 
-.communication-preview-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--fs-sm);
-}
-
-.communication-preview-toolbar__label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.communication-preview-toolbar__open {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--primary);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.communication-preview-toolbar__open:hover {
-  color: var(--primary-hover);
-}
-
 /* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
  * as a light surface, dark mode here would look like a broken/unstyled email, not a themed one. */
 .communication-mail-client {
@@ -718,4 +686,42 @@
   padding: var(--space-6);
   text-align: center;
   color: var(--text-muted);
+}
+
+/* Communication header: "Documentation" is a single short action, same shape as Reports'
+   "Export" - keep it beside the title on mobile too instead of the shared PageHeader's default
+   stack-below-full-width, and shrink it to match .reports-pageheader/.event-settings-pageheader/
+   .settings-pageheader verbatim (drifting from those reads as a mismatch - PO review, see
+   staff.css). */
+@media (max-width: 767px) {
+  .communication-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .communication-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .communication-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .communication-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+}
+
+/* Very narrow phones: shared content padding leaves ~272px at 320px. Restoring a column stack
+   here keeps the Documentation action reachable without horizontal scroll. */
+@media (max-width: 380px) {
+  .communication-pageheader .at-pageheader__row {
+    flex-direction: column;
+  }
+
+  .communication-pageheader .at-pageheader__actions {
+    justify-content: flex-start;
+  }
 }

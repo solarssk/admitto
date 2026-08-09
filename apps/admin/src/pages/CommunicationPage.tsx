@@ -60,6 +60,7 @@ import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../comp
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
+import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { EditTemplateModal } from "../communication/EditTemplateModal.js";
@@ -669,7 +670,6 @@ function SendTab({
   senderName,
   senderAddress,
   onPreview,
-  onOpenTemplate,
   testEmail,
   setTestEmail,
   testSending,
@@ -697,7 +697,6 @@ function SendTab({
   senderName: string | null;
   senderAddress: string | null;
   onPreview: () => Promise<void>;
-  onOpenTemplate: () => void;
   testEmail: string;
   setTestEmail: Dispatch<SetStateAction<string>>;
   testSending: boolean;
@@ -743,18 +742,6 @@ function SendTab({
               />
             </div>
             <DefaultTemplateBanner activeKey={activeKey} source={source} />
-            <div className="communication-preview-toolbar">
-              <span className="communication-preview-toolbar__label">
-                <i className="ti ti-eye" aria-hidden="true" /> Preview
-              </span>
-              <button
-                type="button"
-                className="communication-preview-toolbar__open"
-                onClick={onOpenTemplate}
-              >
-                <i className="ti ti-external-link" aria-hidden="true" /> Open template
-              </button>
-            </div>
             {previewLoading ? (
               <div className="communication-preview-empty">Loading preview…</div>
             ) : (
@@ -764,6 +751,11 @@ function SendTab({
                 eventTitle={event.title}
                 senderName={senderName}
                 senderAddress={senderAddress}
+                toolbarLabel={
+                  <>
+                    <i className="ti ti-eye" aria-hidden="true" /> Preview
+                  </>
+                }
               />
             )}
           </div>
@@ -1439,10 +1431,12 @@ function SendTestCard({
           <div className="mail-test-send__controls">
             <Input
               label="Recipient"
-              type="email"
+              type="text"
+              inputMode="email"
               value={testEmail}
               onChange={(e) => setTestEmail(e.target.value)}
               placeholder="you@example.com"
+              {...NO_AUTOFILL_PROPS}
             />
             <div className="mail-test-send__send-control">
               <ArchivedGuard
@@ -2347,7 +2341,24 @@ export function CommunicationPage() {
 
   return (
     <div className="screen">
-      <PageHeader title="Communication" subtitle="Ticket email templates and delivery log" />
+      <PageHeader
+        className="communication-pageheader"
+        title="Communication"
+        subtitle="Ticket email templates and delivery log"
+        actions={
+          <a
+            href="https://github.com/solarssk/admitto/wiki/Email-Templates"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="at-btn at-btn--secondary"
+          >
+            <span className="at-btn__icon" aria-hidden="true">
+              <i className="ti ti-book" aria-hidden="true" />
+            </span>
+            <span>Documentation</span>
+          </a>
+        }
+      />
 
       <Tabs
         value={tab}
@@ -2396,7 +2407,6 @@ export function CommunicationPage() {
           senderName={senderName}
           senderAddress={senderAddress}
           onPreview={handleSendPreview}
-          onOpenTemplate={() => setTab("templates")}
           testEmail={testEmail}
           setTestEmail={setTestEmail}
           testSending={testSending}
