@@ -56,6 +56,15 @@ const DIRECTIONS_HINT =
 const ACCESSIBILITY_HINT =
   "Step-free access, accessible restrooms, hearing loop, and similar notes for attendees.";
 
+/** Used when map-tile config cannot be loaded. Keeps venue/notes editable without a MapPicker. */
+const MAPS_UNAVAILABLE_FALLBACK: MapTileConfigDto = {
+  enabled: false,
+  tile_url: "",
+  attribution: "",
+  max_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
+  contact_configured: true,
+};
+
 /** Location tab: venue search, interactive map, structured address grid, and
  * directions/accessibility notes. */
 export function LocationSettingsPanel({
@@ -119,18 +128,28 @@ export function LocationSettingsPanel({
     setLoading(true);
     setLoadError(null);
     try {
-      const [location, tiles] = await Promise.all([
+      // Location is required for editing. Map tiles are optional: a tile-config
+      // failure must not hide venue search or Directions/Accessibility (#808).
+      // Fetch both concurrently; only the tile promise falls back when it fails.
+      const [locationResult, tilesResult] = await Promise.allSettled([
         fetchEventLocation(eventId, ac.signal),
         fetchMapTileConfig(ac.signal),
       ]);
       if (ac.signal.aborted) return;
-      applyResponse(location);
+
+      if (locationResult.status === "rejected") {
+        setLoadError("Failed to load location settings.");
+        setApiData(null);
+        setTileConfig(null);
+        return;
+      }
+
+      applyResponse(locationResult.value);
+
+      const tiles =
+        tilesResult.status === "fulfilled" ? tilesResult.value : MAPS_UNAVAILABLE_FALLBACK;
       setTileConfig(tiles);
       setContactConfigured(tiles.contact_configured);
-    } catch {
-      if (ac.signal.aborted) return;
-      setLoadError("Failed to load location settings.");
-      setApiData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }

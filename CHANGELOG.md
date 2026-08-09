@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Location settings stay editable when map tiles are off or fail to load.** Venue search, directions, and accessibility notes no longer disappear behind a full-panel error when only `fetchMapTileConfig` fails; the interactive map is replaced with the existing "Map display is disabled" notice. Event list cards with a pin but no preview image now say **Preview unavailable** instead of **Maps unavailable**, so operators do not read that as "location is broken" (#808).
+
 ### Added
 - **OIDC provider editor shows the Redirect URI to register at the identity provider** (with copy), once the provider has been saved. The URI comes from the provider API using the same public base URL resolution as live OIDC start/callback (`BASE_URL` → Instance URL → localhost in development). Create mode explains that the URI appears after the first save.
 - **Communication Templates: edit a template's label, icon, and description from the Edit template dialog**, and delete non-ticket templates from the same dialog. These identity fields help operators tell templates apart in the picker; they do not change the email subject or body.
