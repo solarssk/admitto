@@ -3074,6 +3074,22 @@
   gap: var(--space-3) var(--space-4);
 }
 
+.identity-editor__redirect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.identity-editor__redirect-hint {
+  margin-top: var(--space-3);
+}
+
+.identity-editor__redirect-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 /* Protocol picker (Add identity provider) — visual only today: OIDC is the only
    wired-up protocol, SAML is a disabled placeholder for the roadmap. */
 .identity-protocol-picker {

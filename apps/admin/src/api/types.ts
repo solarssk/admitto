@@ -1632,6 +1632,8 @@ export interface ProviderDetailDto {
   enabled: boolean;
   login_button_label: string | null;
   mappings: ProviderMappingDto[];
+  /** Exact callback to register at the IdP; null when Instance URL / BASE_URL is unresolved. */
+  redirect_uri: string | null;
 }
 
 /** Request body for POST/PUT /api/admin/identity/providers[/:id].
