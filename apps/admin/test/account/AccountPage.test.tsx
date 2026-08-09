@@ -1638,6 +1638,24 @@ describe("AccountPage profile: identity provider actions menu", () => {
     expect(screen.getByRole("menuitem", { name: /Connect Authentik/ })).toBeTruthy();
   });
 
+  it("positions the SSO menu with position:fixed so it does not inflate the Profile card header", async () => {
+    // Regression: without useDropdownMenu's panelStyle the panel stayed in document flow and
+    // stretched .at-card__header around Connect / Unlink (same fixed-panel pattern as
+    // UserMoreActionsMenu).
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      available_identity_providers: [{ id: "p1", display_name: "Authentik" }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "SSO" }));
+    const panel = screen.getByRole("menu");
+    expect(panel.style.position).toBe("fixed");
+    expect(panel.style.top).not.toBe("");
+    expect(panel.style.left).not.toBe("");
+  });
+
   it("hides Connect items for a JIT SSO-only account with no local password, even when providers are available", async () => {
     // /account/oidc/:id/link hard-requires a real local password to re-authenticate, so a JIT
     // account (has_local_password: false) can never finish that flow - only Unlink SSO shows.

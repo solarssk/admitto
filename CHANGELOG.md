@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **My account Profile: the SSO menu no longer stretches the card header.** Opening Connect / Unlink SSO used to expand the header around the menu; the panel now floats over the page like other staff menus.
 - **Public HTML 404 pages use one branded Admitto card** (HTTP status code + short generic copy) for unknown browser URLs and missing ticket links, instead of a bare HTML error page. Global unmatched paths skip the branding DB lookup (default theme only) so a flood of junk URLs cannot drive unbounded `SystemSettings` reads; ticket HTML 404/500 still load theme under the existing `/t` rate limit. API 404s stay JSON; map/QR/upload/asset misses (including bare `/m`, `/q`, …) stay empty bodies. Public HTML 500 on ticket render failures uses the same card shell.
 - **Revoked or cancelled public ticket links show the branded ticket card with a clear notice** instead of a bare HTML page. QR code, wallet badges, map, and "Present this QR code at the entrance" are omitted; the notice explains the pass is no longer valid and to contact the organisers if that looks wrong.
 - **Ticket types row: preview badge, attendee count, and delete sit on the right again.** After the ~50% name-field width change, the meta cluster was stuck mid-row next to the input; it is pinned to the trailing edge again.
