@@ -810,6 +810,26 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     expect(screen.queryByTestId("map-picker")).toBeNull();
   });
 
+  it("starts location and tile config requests concurrently", async () => {
+    const location = createDeferred<EventLocationDto>();
+    const tiles = createDeferred<MapTileConfigDto>();
+    mockFetchLocation.mockReturnValueOnce(location.promise);
+    mockFetchTiles.mockReturnValueOnce(tiles.promise);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(mockFetchLocation).toHaveBeenCalled();
+      expect(mockFetchTiles).toHaveBeenCalled();
+    });
+    expect(screen.queryByDisplayValue("Springfield Hall")).toBeNull();
+
+    location.resolve(SAVED_LOCATION);
+    tiles.resolve(TILE_CONFIG);
+
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
+    expect(screen.getByTestId("map-picker")).toBeTruthy();
+  });
+
   it("keeps a manually picked pin but clears its address when reverse geocoding has no match", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     mockReverse.mockResolvedValue({ result: null, contact_configured: true });

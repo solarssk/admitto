@@ -130,25 +130,26 @@ export function LocationSettingsPanel({
     try {
       // Location is required for editing. Map tiles are optional: a tile-config
       // failure must not hide venue search or Directions/Accessibility (#808).
-      const location = await fetchEventLocation(eventId, ac.signal);
+      // Fetch both concurrently; only the tile promise falls back when it fails.
+      const [locationResult, tilesResult] = await Promise.allSettled([
+        fetchEventLocation(eventId, ac.signal),
+        fetchMapTileConfig(ac.signal),
+      ]);
       if (ac.signal.aborted) return;
-      applyResponse(location);
 
-      try {
-        const tiles = await fetchMapTileConfig(ac.signal);
-        if (ac.signal.aborted) return;
-        setTileConfig(tiles);
-        setContactConfigured(tiles.contact_configured);
-      } catch {
-        if (ac.signal.aborted) return;
-        setTileConfig(MAPS_UNAVAILABLE_FALLBACK);
-        setContactConfigured(MAPS_UNAVAILABLE_FALLBACK.contact_configured);
+      if (locationResult.status === "rejected") {
+        setLoadError("Failed to load location settings.");
+        setApiData(null);
+        setTileConfig(null);
+        return;
       }
-    } catch {
-      if (ac.signal.aborted) return;
-      setLoadError("Failed to load location settings.");
-      setApiData(null);
-      setTileConfig(null);
+
+      applyResponse(locationResult.value);
+
+      const tiles =
+        tilesResult.status === "fulfilled" ? tilesResult.value : MAPS_UNAVAILABLE_FALLBACK;
+      setTileConfig(tiles);
+      setContactConfigured(tiles.contact_configured);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
