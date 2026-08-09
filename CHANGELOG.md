@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Backing up before an upgrade is now the operator's responsibility; the nightly `db-backup` service is unchanged and remains the automated baseline. See the updated upgrade and restore steps in `deploy/README.md`.
+
 ## [0.4.13] - 2026-08-09
 
 ### Added
@@ -110,6 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Staff admin content now fills the full width beside the sidebar on wide monitors; a few intentionally narrow surfaces (operator check-in, auth forms) keep their own width.
 - Settings → General gained an "Organisation branding" card so superadmins can update the organisation name and logo after setup without redoing the wizard.
 - Filter and picker dropdowns across Audit/System logs, External services, Attendees, and Reports are now searchable comboboxes, matching the rest of the admin SPA.
+- Creating an event opens Overview instead of the Attendees list, matching the rest of the staff app's landing for an event workspace.
 
 ### Fixed
 

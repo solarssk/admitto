@@ -46,18 +46,10 @@ RUN cp -rn /opt/node_modules-full/. node_modules/ && rm -rf /opt/node_modules-fu
 
 FROM node:24-bookworm-slim AS production
 
-# postgresql-client-16 for pre-migration pg_dump (ADR 0027; server is postgres:16).
 # Global npm is unused at runtime (Prisma/app invoked via node directly).
 # Removes bundled picomatch 4.0.3 flagged by Trivy (CVE-2026-33671).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl gnupg openssl wget \
-  && curl -fsSL --proto '=https' --proto-redir '=https' https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-    | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
-  && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
-    > /etc/apt/sources.list.d/pgdg.list \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-client-16 \
-  && apt-get purge -y curl gnupg \
+  && apt-get install -y --no-install-recommends ca-certificates openssl wget \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /usr/local/lib/node_modules/npm \
@@ -111,9 +103,7 @@ COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 RUN chmod +x ./deploy/docker-entrypoint.sh \
   && chown -R node:node /app
 
-# Non-root by default. The one compose service that genuinely needs root — writing pre-migration
-# backups into the root-only migration_backups volume — overrides this with `user: root` (see
-# deploy/docker-compose.yml's `migrate` service); the long-running web server never runs as root.
+# Non-root always — no compose service (app, migrate, or worker) runs as root (ADR 0043).
 USER node
 
 ENV NODE_ENV=production
