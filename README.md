@@ -174,4 +174,4 @@ Canonical roadmap: [VERSIONING.md](VERSIONING.md). Short view:
 
 ## Licence
 
-[Apache License 2.0](LICENSE). Third-party notices for redistributed fonts (OFL) and libvips (LGPL): [NOTICE](NOTICE).
+[Apache License 2.0](LICENSE). Copyright and Apache NOTICE: [NOTICE](NOTICE). Third-party attribution (OFL fonts, LGPL libvips): [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
