@@ -6,6 +6,7 @@ import { CommunicationSendPanel } from "../../src/communication/CommunicationSen
 const sendEventBulk = vi.fn();
 const fetchBulkSendStatus = vi.fn();
 const fetchTicketTypes = vi.fn();
+const fetchEventAttendees = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -14,10 +15,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
     fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
     fetchTicketTypes: (...args: [string]) => fetchTicketTypes(...args),
+    fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   };
 });
 
 fetchTicketTypes.mockResolvedValue([]);
+fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
 
 const activeEvent = { archived_at: null };
 const archivedEvent = { archived_at: "2026-01-01T00:00:00.000Z" };
@@ -824,5 +827,100 @@ describe("CommunicationSendPanel", () => {
       await Promise.resolve();
     });
     expect(fetchBulkSendStatus).not.toHaveBeenCalled();
+  });
+
+  it("disables send until at least one specific attendee is picked", () => {
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Specific attendees" }));
+
+    const sendBtn = screen.getByRole("button", { name: "Send" });
+    const countBtn = screen.getByRole("button", { name: "Count recipients" });
+    expect((sendBtn as HTMLButtonElement).disabled).toBe(true);
+    expect((countBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("searches, picks a specific attendee, then sends with their id", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [{ id: "att-1", name: "Alex Example", email: "alex@example.com" }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
+
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Specific attendees" }));
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-1", { q: "alex", pageSize: 10 });
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Alex Example/ }));
+
+    expect(screen.getByText("Alex Example")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenCalledWith("evt-1", {
+        templateId: "tpl-1",
+        filter: { type: "attendee_ids", ids: ["att-1"] },
+      });
+    });
+  });
+
+  it("removes a picked attendee via the chip's remove button", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [{ id: "att-1", name: "Alex Example", email: "alex@example.com" }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Specific attendees" }));
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Alex Example/ }));
+    expect(screen.getByText("Alex Example")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Alex Example" }));
+
+    expect(screen.queryByText("Alex Example")).toBeNull();
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("clears selected attendees when the event changes", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [{ id: "att-1", name: "Alex Example", email: "alex@example.com" }],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+
+    const { rerender } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-a" templateId="tpl-1" />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "Specific attendees" }));
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Alex Example/ }));
+    expect(screen.getByText("Alex Example")).toBeTruthy();
+
+    rerender(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-b" templateId="tpl-1" />,
+    );
+
+    expect(screen.queryByText("Alex Example")).toBeNull();
+    expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 });

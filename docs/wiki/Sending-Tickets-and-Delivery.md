@@ -35,6 +35,7 @@ The batch completes with a recorded status for every attempted delivery. The del
 | No delivery for this template | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, or rejected attempts do not count as successful delivery. |
 | By attendance status | Attendees whose current attendance status matches the selected status. |
 | By ticket type | Attendees whose stored ticket type matches the selected configured type. |
+| Specific attendees | Search by name or email and pick individual attendees one at a time. Use this for a small, named group instead of a broad filter. |
 
 Custom-template bulk sends are recorded as resends. A recipient count is a dry run and sends nothing.
 
