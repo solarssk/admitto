@@ -601,7 +601,20 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!isAdmittable(attendee.status as AttendeeStatus)) {
       const reason: "revoked" | "cancelled" =
         attendee.status === "cancelled" ? "cancelled" : "revoked";
-      return htmlWithSecurityHeaders(c, renderRevoked(attendee.name, event.title, reason), 410);
+      let theme;
+      try {
+        theme = await getBrandingTheme(db);
+      } catch {
+        theme = null;
+      }
+      const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
+      return htmlWithSecurityHeaders(
+        c,
+        renderRevoked(resolvedForDisplay, theme, reason),
+        410,
+        theme,
+        resolvedForDisplay.event.logoUrl,
+      );
     }
 
     let qrPayload: string;

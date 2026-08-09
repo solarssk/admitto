@@ -19,6 +19,9 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__attendee { margin: 16px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ticket__attendee-name { font-size: 1.125rem; font-weight: 600; margin: 0 0 8px; }
 .ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f1f5f9); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
+.ticket__status-notice { margin: 4px 0 8px; padding: 16px 14px; text-align: center; border: 1px solid color-mix(in srgb, var(--status-error, #d63939) 35%, #e6e7e9); border-radius: 8px; background: var(--status-error-tint, #fcebea); color: var(--status-error-fg, #9b1c1c); }
+.ticket__status-notice h2 { margin: 0 0 8px; font-size: 1.0625rem; font-weight: 700; color: inherit; }
+.ticket__status-notice p { margin: 0; font-size: 0.875rem; line-height: 1.45; color: inherit; }
 .ticket__qr { display: inline-flex; padding: 12px; background: #fff; border: 1px solid color-mix(in srgb, var(--primary, #066fd1) 35%, #e6e7e9); border-radius: 8px; }
 .ticket__qr img { width: 220px; height: 220px; display: block; }
 .ticket__token { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--text-muted, #64748b); font-size: 0.75rem; margin: 10px 0 0; word-break: break-all; }
