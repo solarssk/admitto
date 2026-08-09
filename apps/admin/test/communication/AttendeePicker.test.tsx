@@ -44,6 +44,7 @@ function Harness({ disabled = false }: { disabled?: boolean }) {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
@@ -176,5 +177,66 @@ describe("AttendeePicker", () => {
 
     expect((screen.getByLabelText("Search attendees") as HTMLInputElement).value).toBe("");
     expect(screen.queryByRole("button", { name: /^Alex Example/ })).toBeNull();
+  });
+
+  it("hides suggestions on blur and restores them on focus when results remain", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [attendee()],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+    expect(await screen.findByRole("button", { name: /^Alex Example/ })).toBeTruthy();
+
+    fireEvent.blur(screen.getByLabelText("Search attendees"));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /^Alex Example/ })).toBeNull();
+    });
+
+    fireEvent.focus(screen.getByLabelText("Search attendees"));
+    expect(await screen.findByRole("button", { name: /^Alex Example/ })).toBeTruthy();
+  });
+
+  it("clears a pending blur hide when focus returns before the delay elapses", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [attendee()],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+    });
+    const { unmount } = render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+    expect(await screen.findByRole("button", { name: /^Alex Example/ })).toBeTruthy();
+
+    fireEvent.blur(screen.getByLabelText("Search attendees"));
+    fireEvent.focus(screen.getByLabelText("Search attendees"));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(screen.getByRole("button", { name: /^Alex Example/ })).toBeTruthy();
+
+    // Unmount with a pending blur timer so cleanup clears blurTimerRef.
+    fireEvent.blur(screen.getByLabelText("Search attendees"));
+    unmount();
+  });
+
+  it("treats a failed search as an empty suggestion list", async () => {
+    fetchEventAttendees.mockRejectedValue(new Error("network"));
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "alex" } });
+
+    await waitFor(() => expect(fetchEventAttendees).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+    expect(screen.queryByRole("list", { name: "Attendee suggestions" })).toBeNull();
+  });
+
+  it("hides the suggestion list when the search returns no matches", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "zz" } });
+
+    await waitFor(() => expect(fetchEventAttendees).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
+    expect(screen.queryByRole("list", { name: "Attendee suggestions" })).toBeNull();
   });
 });
