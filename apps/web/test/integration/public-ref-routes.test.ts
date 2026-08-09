@@ -462,6 +462,35 @@ describe("revoked and cancelled public ticket pages", () => {
   });
 });
 
+describe("global public HTML 404", () => {
+  it("serves the branded Admitto card for an unknown browser path", async () => {
+    const res = await app.request("/this-path-does-not-exist");
+    expect(res.status).toBe(404);
+    const html = await res.text();
+    expect(html).toContain("ticket-page");
+    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain("Not found");
+    expect(html).toContain("This link is invalid or the page no longer exists.");
+    expect(html).not.toContain("Event ticket");
+  });
+
+  it("keeps API misses as JSON", async () => {
+    const res = await app.request("/api/no-such-endpoint");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_found" });
+  });
+
+  it("keeps static map and QR misses as empty bodies", async () => {
+    const mapRes = await app.request("/m/no-such-event.png");
+    expect(mapRes.status).toBe(404);
+    expect(await mapRes.text()).toBe("");
+
+    const qrRes = await app.request(`/q/${generateToken()}.png`);
+    expect(qrRes.status).toBe(404);
+    expect(await qrRes.text()).toBe("");
+  });
+});
+
 describe("backfill before deploy", () => {
   it("backfill assigns ref so routes work", async () => {
     const row = await prisma.attendee.create({

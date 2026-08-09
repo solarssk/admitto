@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Public ticket HTML 404 and 500 pages use one branded Admitto card** with the HTTP status code and short generic copy (no "ticket" wording), instead of a bare HTML error page.
+- **Public HTML 404 pages use one branded Admitto card** (HTTP status code + short generic copy) for unknown browser URLs and missing ticket links, instead of a bare HTML error page. API 404s stay JSON; map/QR/upload/asset misses stay empty bodies. Public HTML 500 on ticket render failures uses the same card shell.
 - **Revoked or cancelled public ticket links show the branded ticket card with a clear notice** instead of a bare HTML page. QR code, wallet badges, map, and "Present this QR code at the entrance" are omitted; the notice explains the pass is no longer valid and to contact the organisers if that looks wrong.
 - **Ticket types row: preview badge, attendee count, and delete sit on the right again.** After the ~50% name-field width change, the meta cluster was stuck mid-row next to the input; it is pinned to the trailing edge again.
 - **Health check: Address lookup (Nominatim) stays available when Maps is off.** Only Map tiles report "Maps disabled"; geocoding for the Location tab is independent of the tile toggle.

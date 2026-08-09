@@ -590,7 +590,7 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   /** Branded public HTML 404/500 with instance theme when branding lookup succeeds. */
-  async function renderPublicTicketError(c: Context, status: 404 | 500) {
+  async function renderPublicHtmlError(c: Context, status: 404 | 500) {
     let theme;
     try {
       theme = await getBrandingTheme(db);
@@ -633,14 +633,14 @@ export function createApp(options: CreateAppOptions = {}) {
     if (resolved.mode === "internal") {
       if (!internalToken) {
         console.error(`Internal attendee ${attendee.id} missing token for ticket page QR`);
-        return renderPublicTicketError(c, 500);
+        return renderPublicHtmlError(c, 500);
       }
       qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
     } else {
       const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
       if (!agencyPayload) {
         console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-        return renderPublicTicketError(c, 500);
+        return renderPublicHtmlError(c, 500);
       }
       qrPayload = buildQrPayload("agency", { agencyPayload });
     }
@@ -657,7 +657,7 @@ export function createApp(options: CreateAppOptions = {}) {
         message: "qr_png_generation_failed",
         fields: { route },
       });
-      return renderPublicTicketError(c, 500);
+      return renderPublicHtmlError(c, 500);
     }
 
     try {
@@ -1593,10 +1593,10 @@ export function createApp(options: CreateAppOptions = {}) {
         message: "ticket_agency_lookup_failed",
         fields: { route: "/t/:eventSlug/a/:ref" },
       });
-      return renderPublicTicketError(c, 500);
+      return renderPublicHtmlError(c, 500);
     }
     if (resolved?.mode !== "agency") {
-      return renderPublicTicketError(c, 404);
+      return renderPublicHtmlError(c, 404);
     }
     return renderTicketPage(c, resolved, undefined, "/t/:eventSlug/a/:ref", ref);
   });
@@ -1630,11 +1630,11 @@ export function createApp(options: CreateAppOptions = {}) {
           fields: { route: "/t/:token", errorKind: "unexpected" },
         });
       }
-      return renderPublicTicketError(c, 500);
+      return renderPublicHtmlError(c, 500);
     }
 
     if (!resolved) {
-      return renderPublicTicketError(c, 404);
+      return renderPublicHtmlError(c, 404);
     }
 
     return renderTicketPage(c, resolved, token);
@@ -1830,6 +1830,26 @@ export function createApp(options: CreateAppOptions = {}) {
     createCheckinEventScope(checkinAuthDeps, eventIdFromHistoryQuery),
     (c) => handleCheckinHistory(c, db),
   );
+
+  // Global HTML 404 for unknown browser URLs. API stays JSON; map/QR/uploads/assets stay empty.
+  app.notFound(async (c) => {
+    const path = c.req.path;
+    if (path === "/api" || path.startsWith("/api/")) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    if (
+      path.startsWith("/m/") ||
+      path.startsWith("/q/") ||
+      path.startsWith("/uploads/") ||
+      path.startsWith("/assets/") ||
+      path.startsWith("/vendor/") ||
+      path === "/favicon.ico" ||
+      path.startsWith("/favicon.")
+    ) {
+      return c.body(null, 404);
+    }
+    return renderPublicHtmlError(c, 404);
+  });
 
   return app;
 }
