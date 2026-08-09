@@ -273,7 +273,8 @@ describe("html-routes", () => {
     mockValidatePartial.mockResolvedValue({
       userId: "u1",
       sessionId: "s1",
-    } as Awaited<ReturnType<typeof validatePartialSession>>);
+      stage: "mfa_pending",
+    } as unknown as Awaited<ReturnType<typeof validatePartialSession>>);
     const res = await makeApp().request("/logout", {
       method: "POST",
       headers: { Cookie: "admitto_session=tok; admitto_trusted_device=td" },

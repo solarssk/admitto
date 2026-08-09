@@ -164,7 +164,7 @@ describe("auth API routes (routes.ts)", () => {
     mockLoginNext.mockResolvedValue(LOGIN_NEXT.COMPLETE);
     mockSetupComplete.mockResolvedValue(true);
     mockStashEnsure.mockResolvedValue(["AAAA-BBBB"]);
-    mockPromoteBackup.mockResolvedValue(SESSION_STAGE.BACKUP_CODES_REQUIRED);
+    mockPromoteBackup.mockResolvedValue(true);
     mockPromoteFull.mockResolvedValue(SESSION_STAGE.FULL);
     mockUpdateLabel.mockResolvedValue(true);
     mockRegen.mockResolvedValue({ codes: ["A", "B"] } as never);
@@ -347,7 +347,11 @@ describe("auth API routes (routes.ts)", () => {
       );
       const res = await app.request("/api/admin/me");
       expect(res.status).toBe(200);
-      const body = await res.json();
+      const body = (await res.json()) as {
+        mailer_status?: { configured: boolean; provider: string | null };
+        setup_complete?: boolean;
+        device_label: string | null;
+      };
       expect(body.mailer_status).toEqual({ configured: true, provider: "smtp" });
       expect(body.setup_complete).toBe(true);
       expect(body.device_label).toBe("Gate A");
@@ -638,7 +642,7 @@ describe("auth API routes (routes.ts)", () => {
       ).toBe(401);
 
       mockConfirm.mockResolvedValue(true);
-      mockPromoteBackup.mockResolvedValue(null);
+      mockPromoteBackup.mockResolvedValue(false);
       expect(
         (
           await h.request("/api/auth/mfa/totp/confirm", {
@@ -650,7 +654,7 @@ describe("auth API routes (routes.ts)", () => {
       ).toBe(401);
       expect(mockRegen).toHaveBeenCalled();
 
-      mockPromoteBackup.mockResolvedValue(SESSION_STAGE.BACKUP_CODES_REQUIRED);
+      mockPromoteBackup.mockResolvedValue(true);
       stashEnrollmentBackupCodes("s1", ["KEEP"]);
       const ok = await h.request("/api/auth/mfa/totp/confirm", {
         method: "POST",
@@ -665,7 +669,7 @@ describe("auth API routes (routes.ts)", () => {
     });
 
     it("handleTotpBackupCodesComplete covers missing stash, failure, and change-password", async () => {
-      const h = (stage = SESSION_STAGE.BACKUP_CODES_REQUIRED) => {
+      const h = (stage: string = SESSION_STAGE.BACKUP_CODES_REQUIRED) => {
         const app = new Hono<Vars>();
         app.use("*", async (c, next) => {
           c.set("partialAuth", { userId: "u1", sessionId: "s1", stage });

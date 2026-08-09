@@ -153,7 +153,7 @@ describe("mfa-html-routes", () => {
     mockResume.mockResolvedValue(null);
     mockStart.mockResolvedValue(enrollment as never);
     mockConfirm.mockResolvedValue(true);
-    mockPromoteBackup.mockResolvedValue(SESSION_STAGE.BACKUP_CODES_REQUIRED);
+    mockPromoteBackup.mockResolvedValue(true);
     mockPromoteFull.mockResolvedValue(SESSION_STAGE.FULL);
     mockRegen.mockResolvedValue({ codes: tenCodes() } as never);
     mockVerifySet.mockResolvedValue(true);
@@ -516,11 +516,10 @@ describe("mfa-html-routes", () => {
     expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes?next=%2Fadmin");
   });
 
-  it("shows error when promotion to backup-codes step fails", async () => {
+  it("shows QR error when promotion to backup-codes step fails", async () => {
     stashEnrollmentBackupCodes("s1", tenCodes());
-    mockPromoteBackup.mockResolvedValue(null);
-    mockResume.mockResolvedValueOnce(null).mockResolvedValueOnce(enrollment as never);
-    // confirm succeeds; promotion fails; resume for error page
+    mockPromoteBackup.mockResolvedValue(false);
+    // After confirm succeeds, promotion fails and resume is called once for the error page.
     mockResume.mockResolvedValue(enrollment as never);
     const { app } = makeApp({
       userId: "u1",
@@ -533,11 +532,14 @@ describe("mfa-html-routes", () => {
       body: "code=123456",
     });
     expect(res.status).toBe(401);
+    const html = await res.text();
+    expect(html).toMatch(/Invalid code\. Try again\./);
+    expect(html).toContain("otpauth://totp/");
   });
 
   it("shows start page when promotion fails and pending enrollment is gone", async () => {
     stashEnrollmentBackupCodes("s1", tenCodes());
-    mockPromoteBackup.mockResolvedValue(null);
+    mockPromoteBackup.mockResolvedValue(false);
     mockResume.mockResolvedValue(null);
     const { app } = makeApp({
       userId: "u1",
