@@ -619,7 +619,7 @@ function templatePickerOptions(
  * the Send tab's picker never reads as blank for the one template every event actually starts
  * with. */
 const VIRTUAL_TICKET_DESCRIPTION =
-  "The built-in ticket confirmation email, sent automatically until this event saves its own override.";
+  "The built-in ticket confirmation email. Used as the fallback when you send until this event saves its own override.";
 
 /** Selected template's own description, shown under the Send tab's picker so an admin can tell
  * what a template is for without leaving this tab to open its edit modal. Null (real template,

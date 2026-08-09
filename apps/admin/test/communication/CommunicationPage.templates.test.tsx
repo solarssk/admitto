@@ -2183,7 +2183,7 @@ describe("CommunicationPage Send tab template description", () => {
 
     expect(
       await screen.findByText(
-        "The built-in ticket confirmation email, sent automatically until this event saves its own override.",
+        "The built-in ticket confirmation email. Used as the fallback when you send until this event saves its own override.",
       ),
     ).toBeTruthy();
   });
@@ -2213,7 +2213,7 @@ describe("CommunicationPage Send tab template description", () => {
     expect(screen.queryByText(/^Sent 24h before/)).toBeNull();
     expect(
       screen.queryByText(
-        "The built-in ticket confirmation email, sent automatically until this event saves its own override.",
+        "The built-in ticket confirmation email. Used as the fallback when you send until this event saves its own override.",
       ),
     ).toBeNull();
   });
