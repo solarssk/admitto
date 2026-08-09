@@ -367,6 +367,54 @@ describe("CommunicationPage bounce banner", () => {
     });
   });
 
+  it("resends without a templateId when the bounced row used the built-in default", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-default",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    resendTicket.mockResolvedValue({ id: "dlv-3" });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+
+    await waitFor(() => {
+      expect(resendTicket).toHaveBeenCalledWith("evt-1", "att-1", { templateId: undefined });
+    });
+    expect(await screen.findByText("Resent to Guest One.")).toBeTruthy();
+  });
+
   it("ignores AbortError and aborted overview responses without clearing a successful bounce count", async () => {
     fetchEventTemplate.mockResolvedValue(templatePayload);
     let resolveOverview: (value: unknown) => void;
