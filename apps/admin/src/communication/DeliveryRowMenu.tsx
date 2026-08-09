@@ -57,11 +57,9 @@ export function DeliveryRowMenu({
   // `undefined` to the resend endpoint would select the current default template instead.
   const canResend = row.template_id !== null || row.template_name === null;
   const bounceActionsLocked = bounceResolved || bouncePending;
-  const bounceActionsTitle = bounceResolved
-    ? "Already handled"
-    : bouncePending
-      ? "Working…"
-      : undefined;
+  let bounceActionsTitle: string | undefined;
+  if (bounceResolved) bounceActionsTitle = "Already handled";
+  else if (bouncePending) bounceActionsTitle = "Working…";
   // `position: fixed` from the very first mount (not just once useLayoutEffect below computes
   // real coordinates) - otherwise the panel briefly sits at its CSS default (static, in-flow
   // inside the "inline-flex" trigger wrapper) for the one frame before the effect repositions
