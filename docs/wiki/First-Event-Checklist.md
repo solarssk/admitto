@@ -3,7 +3,7 @@
 > **Audience:** Event Manager
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 Use this checklist before an event. It is a practical starting point, not a replacement for your organisation's event policy.
 

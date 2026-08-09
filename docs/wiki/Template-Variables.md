@@ -3,14 +3,14 @@
 > **Audience:** Event Managers and Technical Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. Chips are grouped the same way in the editor.
 
 | Group | Variables | Use |
 |---|---|---|
 | Attendee | `first_name`, `last_name`, `full_name`, `email` | Personalise visible text. Avoid putting personal data in the subject unless it is necessary. |
-| Event | `event_name`, `event_date`, `event_location`, `event_address`, `event_map_url`, `google_maps_url`, `apple_maps_url`, `directions_text`, `accessibility_text` | Show event details from the current event. `event_location` is the venue name. `event_map_url` inserts a static map image through the image chip; `google_maps_url` and `apple_maps_url` are plain links. Map and link values are empty until the event has a saved location pin. When an admin pastes corrected Maps URLs on the Location tab (**Pin wrong? Fix link**), `google_maps_url` / `apple_maps_url` use those links instead of building from coordinates. |
+| Event | `event_name`, `event_date`, `event_location`, `event_address`, `event_map_url`, `google_maps_url`, `apple_maps_url`, `directions_text`, `accessibility_text` | Show event details from the current event. `event_location` is the venue name. `event_map_url` inserts a static map image through the image chip; `google_maps_url` and `apple_maps_url` are plain links. Map and link values are empty until the event has a saved location pin. When maps display is disabled for the instance, `event_map_url` stays empty (no broken image). When an admin pastes corrected Maps URLs on the Location tab (**Pin wrong? Fix link**), `google_maps_url` / `apple_maps_url` use those links instead of building from coordinates. |
 | Ticket & QR | `ticket_url`, `qr_image_url`, `download_page_url` | `ticket_url` links to the attendee's browser ticket. `qr_image_url` inserts the ticket QR through the image chip. `download_page_url` is planned and currently renders empty. |
 | Wallet | `apple_wallet_url`, `google_wallet_url` | In the body editor, these chips insert an Add to Wallet badge button (badge image linked to the placeholder). The wallet links themselves are not generated yet and resolve empty, so do not use these badges in messages you send to attendees. |
 | Branding | `logo_url` | Inserts the event's logo through the image chip, or the organisation's logo when the event has none. Empty when neither is set. |

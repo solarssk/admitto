@@ -3,7 +3,7 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ![Import preview showing only fictional attendees](assets/import-preview.png)
 
@@ -22,13 +22,13 @@ Validate and import many attendees from CSV or XLSX while controlling duplicates
 
 1. Open the event, then **Attendees**.
 2. Select **More**, then **Import**.
-3. Upload a CSV or XLSX file.
+3. Drop a CSV or XLSX file onto the dropzone, or browse to upload.
 4. Keep **Dry run (validate only, no writes)** enabled and select **Validate file**.
 5. Review valid, invalid, warning, skipped, create, and update counts plus the sample rows.
 6. If needed, change **Overwrite existing attendees**, then select **Re-validate**.
 7. Correct the source file and validate again until the summary is understood.
 8. Turn off **Dry run** only when you intend to write the displayed changes.
-9. Select **Commit**. Admitto queues the import for the background worker and shows progress until it finishes. Keep the worker running (`npm run worker` locally, or compose `worker` in deploy). When it finishes, review the final result and import history.
+9. Select **Commit**. Admitto queues the import for the background worker and shows progress until it finishes. Keep the worker running (`npm run worker` locally, or compose `worker` in deploy). When it finishes, review the success summary (created / updated / skipped) and **Import history**.
 
 ## Expected result
 
