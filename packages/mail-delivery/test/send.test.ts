@@ -595,6 +595,37 @@ describe("resendTicketEmail", () => {
     expect(resendRow?.actor_user_id).toBeNull();
     expect(resendRow?.session_id).toBeNull();
   });
+
+  it("resends a specific templateId when provided (Delivery log bounce Resend)", async () => {
+    exported.length = 0;
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: `resend-specific-${Date.now()}`,
+        label: "Resend specific",
+        subject_template: "Specific {{first_name}}",
+        body_template: "<p>Specific body {{ticket_url}}</p>",
+        template_format: "html",
+        compiled_html_template: "<p>Specific body {{ticket_url}}</p>",
+      },
+    });
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+      { deliverImmediately: true, templateId: template.id },
+    );
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend", template_id: template.id },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.template_id).toBe(template.id);
+    expect(exported[0]?.message.subject).toMatch(/^Specific /);
+  });
 });
 
 describe("retryDelivery", () => {

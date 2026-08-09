@@ -1593,6 +1593,9 @@ export function CommunicationPage() {
   const metadataSaveSeqRef = useRef(0);
   const createInFlightRef = useRef(false);
   const currentEventIdRef = useRef(eventId);
+  /** Aborts an in-flight bounce-overview fetch when a newer one starts (mount, event switch, or
+   * post-Resend/Dismiss refresh) so a late response cannot restore a stale banner. */
+  const bounceOverviewAcRef = useRef<AbortController | null>(null);
   /** Latest legacy ticket snapshot; refreshed on each virtual-ticket selection and after save. */
   const legacyTemplateRef = useRef<EventTemplateDto | null>(null);
 
@@ -1999,23 +2002,35 @@ export function CommunicationPage() {
     setEmailBounced(0);
   }, [eventId]);
 
-  useEffect(() => {
+  const loadEmailBounced = useCallback(() => {
     if (!eventId) return;
+    const requestedEventId = eventId;
+    bounceOverviewAcRef.current?.abort();
     const ac = new AbortController();
-    void fetchEventOverview(eventId, ac.signal)
+    bounceOverviewAcRef.current = ac;
+    void fetchEventOverview(requestedEventId, ac.signal)
       .then((data) => {
-        if (!ac.signal.aborted) setEmailBounced(data.email_bounced);
+        if (ac.signal.aborted) return;
+        if (currentEventIdRef.current !== requestedEventId) return;
+        setEmailBounced(data.email_bounced);
       })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (ac.signal.aborted) return;
+        if (currentEventIdRef.current !== requestedEventId) return;
         setEmailBounced(0);
         if (err instanceof ApiError) {
           reportApiError(err.status);
         }
       });
-    return () => ac.abort();
   }, [eventId, reportApiError]);
+
+  useEffect(() => {
+    loadEmailBounced();
+    return () => {
+      bounceOverviewAcRef.current?.abort();
+    };
+  }, [loadEmailBounced]);
 
   // Preview's sender row shows the real configured "From" - falls back to the event title
   // (previous behavior) if mail settings can't be read, e.g. an operator role without access
@@ -2505,6 +2520,7 @@ export function CommunicationPage() {
           hasActiveFilters={hasActiveDeliveryFilters}
           onClearFilters={clearDeliveryFilters}
           onRetry={() => void loadDeliveries()}
+          onBounceHandled={loadEmailBounced}
         />
       )}
 

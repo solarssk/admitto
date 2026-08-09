@@ -338,6 +338,13 @@ export interface EventFullErrorBody {
 
 export interface ResendTicketBody {
   to?: string;
+  /** Resend this specific template instead of the event's current default - the Delivery log
+   * row's "Resend" passes the row's own template_id so it resends what actually bounced/failed. */
+  templateId?: string;
+}
+
+export interface DismissBounceResponse {
+  email_bounce_dismissed_at: string;
 }
 
 export interface ImportInvalidRow {

@@ -109,4 +109,76 @@ describe("DeliveryRowMenu", () => {
     fireEvent.scroll(window);
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("shows Resend and Dismiss bounce for a bounced row when both callbacks are supplied", () => {
+    const bouncedRow = { ...row, status: "bounced" };
+    const onResend = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <DeliveryRowMenu
+        row={bouncedRow}
+        onViewSentMessage={vi.fn()}
+        onViewDetails={vi.fn()}
+        onResend={onResend}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+    expect(onResend).toHaveBeenCalledWith(bouncedRow);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+    expect(onDismiss).toHaveBeenCalledWith(bouncedRow);
+  });
+
+  it("does not show Resend/Dismiss for a non-bounced row even when both callbacks are supplied", () => {
+    render(
+      <DeliveryRowMenu
+        row={row}
+        onViewSentMessage={vi.fn()}
+        onViewDetails={vi.fn()}
+        onResend={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Dismiss bounce" })).toBeNull();
+  });
+
+  it("does not offer Resend when the delivery template was deleted", () => {
+    const bouncedDeletedTemplateRow = {
+      ...row,
+      status: "bounced" as const,
+      template_id: null,
+      template_name: "Deleted event template",
+    };
+    render(
+      <DeliveryRowMenu
+        row={bouncedDeletedTemplateRow}
+        onViewSentMessage={vi.fn()}
+        onViewDetails={vi.fn()}
+        onResend={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+
+    expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Dismiss bounce" })).toBeTruthy();
+  });
+
+  it("does not show Resend/Dismiss for a bounced row when the callbacks are omitted (Attendee Detail's own delivery card)", () => {
+    const bouncedRow = { ...row, status: "bounced" };
+    render(<DeliveryRowMenu row={bouncedRow} onViewSentMessage={vi.fn()} onViewDetails={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Dismiss bounce" })).toBeNull();
+  });
 });

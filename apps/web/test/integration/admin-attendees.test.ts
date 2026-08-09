@@ -2854,6 +2854,132 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/:id/resend with templateId", () => {
+  // Dedicated attendee/template so these don't share ATT_A1's per-attendee resend rate-limit
+  // bucket with the describe block above.
+  const ATT_RESEND_TPL = "att-admin-resend-templateid-target";
+  const TEMPLATE_RESEND = "tpl-admin-resend-templateid";
+
+  beforeAll(async () => {
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_RESEND_TPL },
+      create: {
+        id: ATT_RESEND_TPL,
+        event_id: EVENT_A,
+        email: "resend-templateid-target@example.com",
+        name: "Resend TemplateId Target",
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+      update: {},
+    });
+    await prisma.mailTemplate.upsert({
+      where: { id: TEMPLATE_RESEND },
+      create: {
+        id: TEMPLATE_RESEND,
+        scope_type: "event",
+        scope_id: EVENT_A,
+        name: "reminder",
+        label: "Reminder",
+        subject_template: "Reminder for {{event_name}}",
+        body_template: "<p>Reminder</p>",
+        template_format: "html",
+        compiled_html_template: "<p>Reminder</p>",
+      },
+      update: {},
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.emailDelivery.deleteMany({ where: { attendee_id: ATT_RESEND_TPL } });
+    await prisma.attendee.delete({ where: { id: ATT_RESEND_TPL } });
+    await prisma.mailTemplate.delete({ where: { id: TEMPLATE_RESEND } });
+  });
+
+  it("resends the specific template instead of the event's current default", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_RESEND_TPL}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: TEMPLATE_RESEND }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { template_id: string | null; template_name: string | null };
+    expect(body.template_id).toBe(TEMPLATE_RESEND);
+    expect(body.template_name).toBe("Reminder");
+  });
+
+  it("returns 404 template_not_found for a nonexistent templateId", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_RESEND_TPL}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: "tpl-does-not-exist" }),
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("template_not_found");
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/:id/dismiss-bounce", () => {
+  const ATT_DISMISS = "att-admin-dismiss-bounce-target";
+
+  beforeAll(async () => {
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_DISMISS },
+      create: {
+        id: ATT_DISMISS,
+        event_id: EVENT_A,
+        email: "dismiss-bounce-target@example.com",
+        name: "Dismiss Bounce Target",
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+      update: { email_bounce_dismissed_at: null },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.attendee.delete({ where: { id: ATT_DISMISS } });
+  });
+
+  it("sets email_bounce_dismissed_at and writes an audit log entry", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_DISMISS}/dismiss-bounce`,
+      { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { email_bounce_dismissed_at: string };
+    expect(body.email_bounce_dismissed_at).toBeTruthy();
+
+    const attendee = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_DISMISS } });
+    expect(attendee.email_bounce_dismissed_at?.toISOString()).toBe(body.email_bounce_dismissed_at);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_DISMISS, action_type: "bounce_dismissed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_DISMISS}/dismiss-bounce`,
+      { method: "POST", headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a cross-event attendee", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_B1}/dismiss-bounce`,
+      { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" } },
+    );
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/:id/revoke-checkin", () => {
   const ATT_REVOKE = "att-admin-revoke-target";
 

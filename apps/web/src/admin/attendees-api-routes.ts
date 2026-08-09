@@ -11,6 +11,7 @@ import {
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
+import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus } from "@admitto/db/status";
 import {
   loadEventCustomDataFields,
@@ -134,6 +135,10 @@ const patchAttendeeSchema = patchAttendeeFieldsSchema.extend({
 const resendBodySchema = z
   .object({
     to: z.string().trim().email().optional(),
+    // Resend this specific template instead of the event's current default - used by the
+    // Delivery log row's "Resend", which resends what actually bounced/failed, not whatever
+    // template is active today.
+    templateId: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -2571,12 +2576,16 @@ export async function handleResendEventAttendeeTicket(
   try {
     sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
       to,
+      templateId: parsed.data.templateId,
       baseUrl: baseUrlOrRes,
       timezone: resolveClientTimezone(c) ?? undefined,
       actorUserId: resendAudit.operator,
       sessionId: resendAudit.sessionId,
     });
   } catch (err) {
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: "template_not_found" }, 404);
+    }
     const mailErr = mailTransportSetupErrorResponse(c, err);
     if (mailErr) return mailErr;
     throw err;
@@ -2620,6 +2629,37 @@ export async function handleResendEventAttendeeTicket(
   });
 
   return c.json(toDeliveryDto(latest));
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/dismiss-bounce
+ * Acknowledges the Communication bounce notifier for this attendee (Delivery log row menu),
+ * without resending anything. No "is this attendee actually bounced" guard - the UI only ever
+ * shows this action for a bounced row, and the write is idempotent and harmless outside that
+ * case (nothing else reads it besides the bounced-count query, which already compares the
+ * timestamp against the attendee's latest delivery).
+ */
+export async function handleDismissAttendeeBounce(c: Context, db: PrismaClient): Promise<Response> {
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendeeId, eventId } = attendeeContextOrRes;
+
+  const dismissedAt = new Date();
+  await db.$transaction(async (tx) => {
+    await tx.attendee.update({
+      where: { id: attendeeId },
+      data: { email_bounce_dismissed_at: dismissedAt },
+    });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: "bounce_dismissed",
+      audit: adminAuditFromContext(c),
+      metadata: {},
+    });
+  });
+
+  return c.json({ email_bounce_dismissed_at: dismissedAt.toISOString() });
 }
 
 /**

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router";
 import { Button, Card, EmptyState, HintLabel, Input, StatusBadge, useToast } from "@admitto/ui";
-import { exportDeliveryLog } from "../api/client.js";
+import { dismissBounce, exportDeliveryLog, resendTicket } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, EventDeliveriesListParams, MailTemplateListItem } from "../api/types.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
@@ -150,6 +150,8 @@ interface DeliveryListContentProps {
   isDesktop: boolean;
   onViewSentMessage: (row: DeliveryDto) => void;
   onViewDetails: (row: DeliveryDto) => void;
+  onResend: (row: DeliveryDto) => void;
+  onDismiss: (row: DeliveryDto) => void;
   onRetry: () => void;
 }
 
@@ -165,6 +167,8 @@ function DeliveryListContent({
   isDesktop,
   onViewSentMessage,
   onViewDetails,
+  onResend,
+  onDismiss,
   onRetry,
 }: Readonly<DeliveryListContentProps>) {
   if (loading && deliveries.length === 0) {
@@ -211,7 +215,13 @@ function DeliveryListContent({
               >
                 {row.attendee_name}
               </Link>
-              <DeliveryRowMenu row={row} onViewSentMessage={onViewSentMessage} onViewDetails={onViewDetails} />
+              <DeliveryRowMenu
+                row={row}
+                onViewSentMessage={onViewSentMessage}
+                onViewDetails={onViewDetails}
+                onResend={onResend}
+                onDismiss={onDismiss}
+              />
             </div>
             <div className="communication-card__meta">
               <span className="communication-card__meta-item">
@@ -281,7 +291,13 @@ function DeliveryListContent({
                 )}
               </td>
               <td className="communication-row-menu-cell">
-                <DeliveryRowMenu row={row} onViewSentMessage={onViewSentMessage} onViewDetails={onViewDetails} />
+                <DeliveryRowMenu
+                row={row}
+                onViewSentMessage={onViewSentMessage}
+                onViewDetails={onViewDetails}
+                onResend={onResend}
+                onDismiss={onDismiss}
+              />
               </td>
             </tr>
           ))}
@@ -320,6 +336,10 @@ export interface DeliveryLogTabProps {
   hasActiveFilters: boolean;
   onClearFilters: () => void;
   onRetry: () => void;
+  /** Fired after a row's Resend/Dismiss action succeeds - refreshes the Communication header's
+   * bounce count. The deliveries list itself doesn't need an explicit refetch here; it already
+   * polls on its own (Live toggle above). */
+  onBounceHandled?: () => void;
 }
 
 const DELIVERY_LOG_HINT =
@@ -355,6 +375,7 @@ export function DeliveryLogTab({
   hasActiveFilters,
   onClearFilters,
   onRetry,
+  onBounceHandled,
 }: Readonly<DeliveryLogTabProps>) {
   const isDesktop = useIsDesktop();
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
@@ -376,6 +397,26 @@ export function DeliveryLogTab({
       addToast(operatorApiErrorMessage(err, "Failed to export the delivery log."), "error");
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function handleResend(row: DeliveryDto) {
+    try {
+      await resendTicket(eventId, row.attendee_id, { templateId: row.template_id ?? undefined });
+      addToast(`Resent to ${row.attendee_name}.`, "success");
+      onBounceHandled?.();
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Resend failed."), "error");
+    }
+  }
+
+  async function handleDismiss(row: DeliveryDto) {
+    try {
+      await dismissBounce(eventId, row.attendee_id);
+      addToast(`Dismissed the bounce notice for ${row.attendee_name}.`, "success");
+      onBounceHandled?.();
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to dismiss the bounce notice."), "error");
     }
   }
 
@@ -435,6 +476,8 @@ export function DeliveryLogTab({
         isDesktop={isDesktop}
         onViewSentMessage={setSentMessageRow}
         onViewDetails={setDetailsRow}
+        onResend={(row) => void handleResend(row)}
+        onDismiss={(row) => void handleDismiss(row)}
         onRetry={onRetry}
       />
       {deliveryTotal > 0 && (

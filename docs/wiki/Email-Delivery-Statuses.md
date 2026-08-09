@@ -30,7 +30,9 @@ Use a row's **…** menu in the delivery log to look deeper at a single delivery
 
 - **View sent message** shows the actual subject and body generated for that attendee. The QR code and ticket link are always replaced with a "hidden for privacy" placeholder, so this view is for confirming wording and layout, not for retrieving a working ticket.
 - **View delivery details** shows the mail provider, message id, and attempt count. A Failed, Bounced, or Rejected delivery gets a red notice with the SMTP or transport error code and a plain-English explanation; an Accepted, Sent, or Delivered one gets a matching green confirmation instead. Sibling sends and resends for the same attendee stay on Delivery history (attendee page) and the Communication delivery log, not inside this popup.
+- **Resend** and **Dismiss bounce** appear only on a Bounced row. Resend sends that same template again after you have corrected the cause; Dismiss bounce clears the row from the Communication header's bounce count without sending anything, for cases already resolved another way (for example the attendee confirmed the original message). Both actions grey out on that row once used, since a delivery row's recorded status does not change afterward.
 
+The Communication page header shows a running count of currently bounced attendees. It drops automatically once every bounced attendee has a newer non-bounced delivery, a dismissed bounce, or both.
 
 **Search** (recipient name or email) and the **Template** filter narrow the log alongside Status and Purpose; **Export log** downloads the current filtered view as CSV.
 

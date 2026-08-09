@@ -16,6 +16,7 @@ import type {
   LookupAttendeeResult,
   MeResponse,
   ResendTicketBody,
+  DismissBounceResponse,
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
@@ -1011,6 +1012,17 @@ export async function resendTicket(
     jsonPostInit(body),
   );
   return parseJson<DeliveryDto>(res);
+}
+
+export async function dismissBounce(
+  eventId: string,
+  attendeeId: string,
+): Promise<DismissBounceResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/dismiss-bounce`,
+    jsonPostInit({}),
+  );
+  return parseJson<DismissBounceResponse>(res);
 }
 
 /** Queue ticket emails for many attendees (undelivered or all). */
