@@ -48,8 +48,9 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
     </div>`
     : "";
 
+  // Span + aria-labelledby on the digit group (not a bare <label> without `for`).
   return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? " data-backup-fallback" : ""}${options.autofocusOtp === false ? ' data-autofocus-otp="false"' : ""}>
-    <label class="auth-label" id="${escapeHtml(options.labelId)}">${escapeHtml(options.label)}</label>
+    <span class="auth-label" id="${escapeHtml(options.labelId)}">${escapeHtml(options.label)}</span>
     <div class="auth-otp-digits" role="group" aria-labelledby="${escapeHtml(options.labelId)}">${digits}</div>
     <input type="hidden" name="code" id="code" required>
     ${backupSection}
