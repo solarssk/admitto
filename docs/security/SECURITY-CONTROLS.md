@@ -4,7 +4,7 @@ This document describes **security capabilities** that Admitto supports in typic
 self-hosted deployments. It is written for **privacy officers, security reviewers, and operators**
 at mid-size and enterprise organizations.
 
-For **repository CI** (SAST, secret scan, container scan, SBOM), see [SECURITY.md](../SECURITY.md).
+For **repository CI** (SAST, secret scan, container scan, SBOM), see [SECURITY.md](../../SECURITY.md).
 For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md).
 
 > **How to read this:** rows describe what organizations commonly require and how Admitto can be
@@ -32,8 +32,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
 | Transport | TLS to users | Terminated at customer **reverse proxy, load balancer, or CDN** | Operator |
-| Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines; a superadmin-only live tail of recent activity (see **System logs** in [DATA-PROTECTION.md](../DATA-PROTECTION.md)) | App |
-| Supply chain | Scans on code and container image | Documented in [SECURITY.md](../SECURITY.md) | App |
+| Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines; a superadmin-only live tail of recent activity (see **System logs** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) | App |
+| Supply chain | Scans on code and container image | Documented in [SECURITY.md](../../SECURITY.md) | App |
 
 ---
 
@@ -121,7 +121,7 @@ Organizations with stricter policies often add controls **outside** the applicat
 | Mail | Microsoft 365 / Graph, corporate SMTP relay |
 
 Admitto is designed to sit **behind** a trusted reverse proxy (`TRUST_PROXY` and forwarded headers
-documented in [`deploy/README.md`](../deploy/README.md)). The proxy must **overwrite**
+documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **overwrite**
 `X-Forwarded-For` with the real client IP — never append to a browser-supplied value.
 
 ---
@@ -253,7 +253,7 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
   import content) and secrets are never logged in full. A small, named set of staff/operator
   accountability events (login success, admin actions) does log the acting staff member's own
   email address — see **Logs** and **System logs (live tail)** in
-  [DATA-PROTECTION.md](../DATA-PROTECTION.md) for exactly which events and why.
+  [DATA-PROTECTION.md](../../DATA-PROTECTION.md) for exactly which events and why.
 - **Health endpoints:** `/healthz` — liveness + DB ping, rate-limited, no PII; `/readyz` —
   token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
   security headers; neither exposes secrets or attendee data.
@@ -265,11 +265,11 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
 Be explicit with auditors about what is **out of product scope** today:
 
 - No built-in SIEM or central log platform (forward container logs if required). The in-app
-  **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../DATA-PROTECTION.md)) is a
+  **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a
   short, in-memory live tail for day-to-day diagnostics — not a substitute for a SIEM: it holds
   only the last 1000 entries and is emptied on every restart. A narrower, durable exception exists
   for ten auth/security event types (login, MFA, logout, OIDC, access-denied) — see **Durable
-  security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../DATA-PROTECTION.md); this
+  security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md); this
   is a queryable incident-review trail, not a general-purpose log platform, and rate-limit/system
   log signals stay ephemeral and operator-shipped as above. That trail is also neither complete nor
   permanent: persistence is best-effort (a write failure is logged but never blocks the underlying
@@ -341,8 +341,8 @@ Source constants: `apps/web/src/**/*-rate-limit*.ts`, `packages/auth/src/oidc/sa
 
 ## Related documents
 
-- [SECURITY.md](../SECURITY.md) — vulnerability reporting, CI controls
-- [DATA-PROTECTION.md](../DATA-PROTECTION.md) — personal data handling
+- [SECURITY.md](../../SECURITY.md) — vulnerability reporting, CI controls
+- [DATA-PROTECTION.md](../../DATA-PROTECTION.md) — personal data handling
 - [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md) — deployment model
 - [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md) — scope and data flows
 - [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) — privacy summary for DPO review

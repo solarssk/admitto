@@ -3,7 +3,7 @@
 > **Legal basis:** to be confirmed by the **customer's** privacy officer or legal team. This
 > document captures **technical and operational design intent**, not legal advice.
 
-**Detail:** [DATA-PROTECTION.md](../DATA-PROTECTION.md) · **Subprocessors:** [SUBPROCESSORS.md](SUBPROCESSORS.md)
+**Detail:** [DATA-PROTECTION.md](../../DATA-PROTECTION.md) · **Subprocessors:** [SUBPROCESSORS.md](SUBPROCESSORS.md)
 
 ---
 
@@ -56,7 +56,7 @@ Two layers: **product-automated** (daily sidecar + container startup, best-effor
 | Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery — **daily automated sidecar + app startup**; delivery log metadata retained |
 | IP in admin audit / check-in logs | **30 days or operator corporate log retention policy** — not auto-purged by product |
 | Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via `DELETE` API per DSAR procedure (no SPA delete button yet) |
-| Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../DATA-PROTECTION.md)) |
+| Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
 | System logs live tail (in-memory only) | Not persisted by the product — last 1000 entries, emptied on every restart |
 
 Organizers can export attendee lists before erasure (spreadsheet / PDF export in admin UI).
@@ -121,9 +121,9 @@ See [SUBPROCESSORS.md](SUBPROCESSORS.md).
 
 ## Related documents
 
-- [DATA-PROTECTION.md](../DATA-PROTECTION.md)
+- [DATA-PROTECTION.md](../../DATA-PROTECTION.md)
 - [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md)
 - [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md)
-- [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md)
+- [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md)
 - [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md)
 - [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md)

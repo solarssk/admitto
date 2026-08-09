@@ -46,5 +46,5 @@ Replace generic rows with your actual vendor names in your internal compliance r
 ## Related documents
 
 - [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md)
-- [DATA-PROTECTION.md](../DATA-PROTECTION.md)
+- [DATA-PROTECTION.md](../../DATA-PROTECTION.md)
 - [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md)

@@ -1,5 +1,9 @@
 # Versioning
 
+> **Stability status:** see the table below for what `v0.x`, `v1.0`, and `v1.1+` mean, and check
+> the current release tag or the open GitHub milestone for exactly where the project is right
+> now. That status lives there, not restated here, so it can't go stale between releases.
+
 Admitto uses **one product version** for releases. Internal workspace packages are not versioned independently.
 
 ## Source of truth (product)
