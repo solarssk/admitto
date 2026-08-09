@@ -505,7 +505,6 @@ export function ExternalServicesPanel() {
             id="external-weather-enabled"
             label={weatherDraft.enabled ? "On" : "Off"}
             checked={weatherDraft.enabled}
-            disabled={saving}
             onChange={(e) =>
               patchDraft(setWeatherDraft, (d) => ({ ...d, enabled: e.target.checked }))
             }
@@ -533,7 +532,7 @@ export function ExternalServicesPanel() {
                       { id: "metno", label: "MET Norway" },
                       { id: "openmeteo", label: "Open-Meteo" },
                     ]}
-                    disabled={saving || weatherTesting}
+                    disabled={weatherTesting}
                     onChange={(id) =>
                       patchDraft(setWeatherDraft, (d) => ({
                         ...d,
@@ -544,7 +543,7 @@ export function ExternalServicesPanel() {
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={saving || weatherTesting}
+                    disabled={weatherTesting || saving}
                     onClick={() => void handleTestWeather()}
                     icon={<i className="ti ti-plug" aria-hidden="true" />}
                   >
@@ -583,7 +582,7 @@ export function ExternalServicesPanel() {
                     id="external-weather-base-url"
                     name="weather-base-url"
                     value={weatherDraft.baseUrl}
-                    disabled={saving || weatherTesting}
+                    disabled={weatherTesting}
                     placeholder="https://api.open-meteo.com"
                     {...NO_AUTOFILL_PROPS}
                     onChange={(e) =>
@@ -600,7 +599,7 @@ export function ExternalServicesPanel() {
                     id="external-weather-api-key"
                     name="weather-org-api-token"
                     value={weatherDraft.apiKey}
-                    disabled={saving || weatherDraft.clearApiKey}
+                    disabled={weatherDraft.clearApiKey}
                     invalid={apiKeyMissing}
                     error={apiKeyMissing ? WEATHER_API_KEY_REQUIRED_MSG : undefined}
                     placeholder={apiKeyPlaceholder(
@@ -623,7 +622,6 @@ export function ExternalServicesPanel() {
                         id="external-weather-clear-api-key"
                         name="weather-clear-api-key"
                         checked={weatherDraft.clearApiKey}
-                        disabled={saving}
                         onChange={(e) =>
                           patchDraft(setWeatherDraft, (d) => ({
                             ...d,
@@ -659,7 +657,6 @@ export function ExternalServicesPanel() {
             id="external-maps-enabled"
             label={mapsDraft.enabled ? "On" : "Off"}
             checked={mapsDraft.enabled}
-            disabled={saving}
             onChange={(e) =>
               patchDraft(setMapsDraft, (d) => ({ ...d, enabled: e.target.checked }))
             }
@@ -682,7 +679,7 @@ export function ExternalServicesPanel() {
                     showLabel={false}
                     value={normalizeMapsProvider(mapsDraft.geocodingProvider)}
                     options={[{ id: "nominatim", label: "OpenStreetMap (Nominatim)" }]}
-                    disabled={saving || mapsTesting}
+                    disabled={mapsTesting}
                     onChange={(id) =>
                       patchDraft(setMapsDraft, (d) => ({
                         ...d,
@@ -693,7 +690,7 @@ export function ExternalServicesPanel() {
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={saving || mapsTesting}
+                    disabled={mapsTesting || saving}
                     onClick={() => void handleTestMaps()}
                     icon={<i className="ti ti-plug" aria-hidden="true" />}
                   >
@@ -710,7 +707,6 @@ export function ExternalServicesPanel() {
                   id="external-maps-tile-url"
                   name="maps-tile-url"
                   value={mapsDraft.tileUrl}
-                  disabled={saving}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
                     patchDraft(setMapsDraft, (d) => ({ ...d, tileUrl: e.target.value }))
@@ -726,7 +722,6 @@ export function ExternalServicesPanel() {
                   id="external-maps-attribution"
                   name="maps-attribution"
                   value={mapsDraft.attribution}
-                  disabled={saving}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
                     patchDraft(setMapsDraft, (d) => ({ ...d, attribution: e.target.value }))
@@ -743,7 +738,6 @@ export function ExternalServicesPanel() {
                   name="maps-max-zoom"
                   inputMode="numeric"
                   value={mapsDraft.maxZoom}
-                  disabled={saving}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
                     patchDraft(setMapsDraft, (d) => ({ ...d, maxZoom: e.target.value }))
@@ -757,7 +751,7 @@ export function ExternalServicesPanel() {
                   id="external-maps-geocoding-base-url"
                   name="maps-geocoding-base-url"
                   value={mapsDraft.geocodingBaseUrl}
-                  disabled={saving || mapsTesting}
+                  disabled={mapsTesting}
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) =>
                     patchDraft(setMapsDraft, (d) => ({

@@ -894,21 +894,7 @@ async function addressLookupRow(
   const endpoint = safeEndpointDisplay(geo.baseUrl);
   const label = "Address lookup, Nominatim";
 
-  if (!resolveMapTileConfig(env).enabled) {
-    return {
-      id: "address_lookup",
-      label,
-      status: "not_configured",
-      summary: "Maps disabled",
-      details: detailsFromEntries([
-        ["status", "not_configured"],
-        ["provider", "nominatim"],
-        ["endpoint", endpoint],
-        ["last_checked", checkedAt],
-      ]),
-    };
-  }
-
+  // Geocoding stays available when Maps is toggled off — only tiles/static maps are gated.
   if (!live || !geocodingProvider) {
     return {
       id: "address_lookup",
@@ -1535,7 +1521,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     plannedRow(
       "wallet_passes",
       "Wallet passes, PassCreator",
-      "Coming in v0.6 · Apple & Google Wallet",
+      "Coming in v0.5 · Apple & Google Wallet",
     ),
     address,
     mapTilesRow(env, checkedAt),
