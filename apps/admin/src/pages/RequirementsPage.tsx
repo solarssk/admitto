@@ -88,7 +88,9 @@ function EventItemsTableBody({
               <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
               <div className="requirements-item-info">
                 <div className="requirements-item-name">{item.label}</div>
-                <div className="requirements-item-id">{item.key}</div>
+                <div className="requirements-item-id">
+                  <code>{item.key}</code>
+                </div>
               </div>
             </div>
           </td>

@@ -31,7 +31,8 @@
 }
 
 @media (max-width: 640px) {
-  .requirements-item-desc-col {
+  /* Narrow screens: keep Description, drop Active / Required (edit via row actions). */
+  .requirements-item-status-col {
     display: none;
   }
 
@@ -101,15 +102,26 @@
 }
 
 .requirements-item-id,
+.requirements-item-id code,
 .event-item-modal__id code,
 .add-item-label-row code.requirements-item-id {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--fs-mono);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .requirements-item-id {
   margin-top: 2px;
+}
+
+.requirements-item-id code {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: inherit;
+  color: inherit;
 }
 
 .event-item-modal__id {

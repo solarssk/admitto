@@ -238,7 +238,9 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                       <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
                       <div className="requirements-item-info">
                         <div className="requirements-item-name">{field.label}</div>
-                        <div className="requirements-item-id">{field.source_field}</div>
+                        <div className="requirements-item-id">
+                          <code>{field.source_field}</code>
+                        </div>
                       </div>
                     </label>
                   ))}

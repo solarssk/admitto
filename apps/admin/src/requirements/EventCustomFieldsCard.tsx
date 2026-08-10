@@ -44,7 +44,9 @@ function CustomFieldRow({
           </Tooltip>
           <div className="requirements-item-info">
             <div className="requirements-item-name">{field.label}</div>
-            <div className="requirements-item-id">{field.source_field}</div>
+            <div className="requirements-item-id">
+              <code>{field.source_field}</code>
+            </div>
           </div>
         </div>
       </td>
