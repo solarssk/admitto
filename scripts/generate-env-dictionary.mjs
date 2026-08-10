@@ -55,7 +55,7 @@ const TS_ENV_BRACKET_RE = new RegExp(String.raw`process\.env\[\s*['"]${ENV_KEY}[
 const ENV_LIKE_BRACKET_RE = new RegExp(String.raw`\benv\[\s*['"]${ENV_KEY}['"]\s*\]`, "g");
 // Capture only the variable name; ignore ${VAR:-default} / ${VAR:?err} suffixes.
 const SHELL_BRACE_RE = new RegExp(String.raw`\$\{${ENV_KEY}`, "g");
-const ENV_ASSIGN_RE = new RegExp(String.raw`^${ENV_KEY}=`, "gm");
+const ENV_ASSIGN_RE = new RegExp(`^${ENV_KEY}=`, "gm");
 const ENV_EXPORT_RE = new RegExp(String.raw`^export\s+${ENV_KEY}=`, "gm");
 const ENV_COMMENT_RE = new RegExp(String.raw`^#\s*${ENV_KEY}=`, "gm");
 const COMPOSE_ENV_KEY_RE = new RegExp(String.raw`^[ \t]+${ENV_KEY}:`, "gm");
@@ -226,8 +226,9 @@ function orderedGroups(vars) {
 }
 
 function renderGroupSection(lines, catalog, group) {
-  lines.push(`## ${GROUP_TITLES[group] ?? group}`, "");
   lines.push(
+    `## ${GROUP_TITLES[group] ?? group}`,
+    "",
     "| Variable | Boot | Consumers | UI | Secret | Summary |",
     "|----------|------|-----------|----|--------|---------|",
   );
