@@ -146,37 +146,10 @@
       "name": "MIGRATION_BACKUP_DIR",
       "group": "migrate",
       "boot": "recommended",
-      "consumers": ["migrate", "db-backup"],
+      "consumers": ["db-backup"],
       "secret": false,
       "ui": "none",
-      "summary": "Directory for pre-migration and nightly SQL dumps (compose: /backups). Migrate fails if missing unless MIGRATION_BACKUP_DISABLE=true."
-    },
-    {
-      "name": "MIGRATION_BACKUP_RETENTION",
-      "group": "migrate",
-      "boot": "optional",
-      "consumers": ["migrate", "db-backup"],
-      "secret": false,
-      "ui": "none",
-      "summary": "How many pre-migration dump files to keep (default 10)."
-    },
-    {
-      "name": "MIGRATION_BACKUP_MIN_FREE_MB",
-      "group": "migrate",
-      "boot": "optional",
-      "consumers": ["migrate"],
-      "secret": false,
-      "ui": "none",
-      "summary": "Minimum free space on the backup volume before pg_dump (default 512)."
-    },
-    {
-      "name": "MIGRATION_BACKUP_DISABLE",
-      "group": "migrate",
-      "boot": "optional",
-      "consumers": ["migrate"],
-      "secret": false,
-      "ui": "none",
-      "summary": "Dev/test only. Skip pre-migration dump when pending migrations exist. Do not use in production."
+      "summary": "Directory for nightly SQL dumps written by the db-backup sidecar (compose volume mounted at /backups)."
     },
     {
       "name": "UPLOAD_DIR",
