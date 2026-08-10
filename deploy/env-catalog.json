@@ -257,7 +257,7 @@
       "consumers": ["app", "worker"],
       "secret": false,
       "ui": "Organisation / Event mail settings",
-      "summary": "SMTP hostname. Production blocks private/link-local targets (lab: ALLOW_PRIVATE_MAIL_DESTINATIONS when NODE_ENV is not production)."
+      "summary": "SMTP hostname. Production blocks private/link-local targets unless listed in MAIL_PRIVATE_DESTINATION_ALLOWLIST (lab: ALLOW_PRIVATE_MAIL_DESTINATIONS when NODE_ENV is not production)."
     },
     {
       "name": "SMTP_PORT",
@@ -456,6 +456,15 @@
       "secret": false,
       "ui": "none",
       "summary": "Lab only. When true and NODE_ENV is not production, allow SMTP/IMAP/PA hosts on private addresses. Ignored in production."
+    },
+    {
+      "name": "MAIL_PRIVATE_DESTINATION_ALLOWLIST",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Comma-separated exact hostnames/IPs allowed to resolve to private addresses in production (self-hosted LAN MTA). Set on app and worker."
     },
     {
       "name": "BOUNCE_INGEST_TICK_SECONDS",

@@ -133,7 +133,7 @@ Find the right CIDR: from the app container, log or inspect the peer address of 
 5. Run **worker** with the same secrets as `app`.
 6. Prefer Variant A when you can; Variant B is for stacks that intentionally omit compose nginx.
 
-Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=production`. Use a LAN hostname that resolves to your MTA, or set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` only on non-production lab stacks. Opening SMTP on the public WAN is usually the wrong fix.
+Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=production` unless the hostname is listed in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` on **app** and **worker** (see [ENV.md](./ENV.md)). Lab stacks can set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` when NODE_ENV is not production. Opening SMTP on the public WAN is usually the wrong fix.
 
 ---
 
@@ -239,6 +239,26 @@ docker compose up -d
 ```
 
 `validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
+
+## Self-hosted SMTP on a private address
+
+Mail destinations (SMTP host, Power Automate URL host, bounce IMAP host) are blocked when they are
+or resolve to loopback / RFC1918 / link-local / cloud-metadata addresses. That protects production
+from SSRF via Settings UI.
+
+If your MTA is only reachable on the LAN (for example AdGuard rewrites `mail.example.lan` to
+`192.168.x.x`), set an explicit allowlist on **both** `app` and `worker`:
+
+```bash
+# deploy/.env — exact hostnames or IP literals, comma-separated
+MAIL_PRIVATE_DESTINATION_ALLOWLIST=mail.example.lan
+```
+
+Then configure that same hostname in Organisation / Event mail settings. Do **not** set
+`ALLOW_PRIVATE_MAIL_DESTINATIONS=true` in production (it is ignored when `NODE_ENV=production`).
+
+Connecting through your public WAN IP from inside Docker often fails (no hairpin / port closed);
+prefer the LAN hostname on the allowlist instead of opening SMTP on the internet.
 
 ## Container startup (entrypoint)
 
@@ -347,7 +367,7 @@ With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`cl
 
 Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` - do not widen to whole RFC1918 ranges.
 
-The app only honours `X-Forwarded-*` when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)). For Variant A that is the compose `internal` subnet in `.env.example`. For Variant B, widen carefully to the Docker path NPM uses.
+The app only honours `X-Forwarded-*` when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)). For Variant A that is the compose `internal` subnet in `.env.example`. For Variant B, set only NPM's source on `/32` (see Variant B checklist above), not broad Docker RFC1918 ranges.
 
 (`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so CSRF checks see HTTPS.)
 

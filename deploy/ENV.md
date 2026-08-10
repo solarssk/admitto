@@ -74,7 +74,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `MAIL_FROM_NAME` | optional | app, worker | Organisation / Event mail settings | no | Default From display name. |
 | `MAIL_REPLY_TO` | optional | app, worker | Organisation / Event mail settings | no | Optional Reply-To. |
 | `MAIL_ENVELOPE_FROM` | optional | app, worker | Organisation / Event mail settings | no | Optional envelope/MAIL FROM override. |
-| `SMTP_HOST` | optional | app, worker | Organisation / Event mail settings | no | SMTP hostname. Production blocks private/link-local targets (lab: ALLOW_PRIVATE_MAIL_DESTINATIONS when NODE_ENV is not production). |
+| `SMTP_HOST` | optional | app, worker | Organisation / Event mail settings | no | SMTP hostname. Production blocks private/link-local targets unless listed in MAIL_PRIVATE_DESTINATION_ALLOWLIST (lab: ALLOW_PRIVATE_MAIL_DESTINATIONS when NODE_ENV is not production). |
 | `SMTP_PORT` | optional | app, worker | Organisation / Event mail settings | no | SMTP port (587 STARTTLS or 465 implicit TLS). |
 | `SMTP_SECURE` | optional | app, worker | Organisation / Event mail settings | no | true for implicit TLS (typically 465). |
 | `SMTP_USER` | optional | app, worker | Organisation / Event mail settings | no | SMTP username. |
@@ -97,6 +97,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `GRAPH_MAILBOX` | optional | app, worker | Organisation / Event mail settings | no | Mailbox UPN used as Graph send-as identity. |
 | `GRAPH_SAVE_TO_SENT` | optional | app, worker | Organisation / Event mail settings | no | Whether Graph keeps messages in Sent Items. |
 | `ALLOW_PRIVATE_MAIL_DESTINATIONS` | optional | app, worker | none | no | Lab only. When true and NODE_ENV is not production, allow SMTP/IMAP/PA hosts on private addresses. Ignored in production. |
+| `MAIL_PRIVATE_DESTINATION_ALLOWLIST` | optional | app, worker | none | no | Comma-separated exact hostnames/IPs allowed to resolve to private addresses in production (self-hosted LAN MTA). Set on app and worker. |
 
 ## Background worker
 
@@ -185,4 +186,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 102 distinct keys seen in scan (tests excluded)._
+_Last generated from 103 distinct keys seen in scan (tests excluded)._
