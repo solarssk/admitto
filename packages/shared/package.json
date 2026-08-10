@@ -26,6 +26,10 @@
     "./pinned-dispatcher": {
       "types": "./dist/pinnedDispatcher.d.ts",
       "default": "./dist/pinnedDispatcher.js"
+    },
+    "./sse-events": {
+      "types": "./dist/sseEvents.d.ts",
+      "default": "./dist/sseEvents.js"
     }
   },
   "scripts": {

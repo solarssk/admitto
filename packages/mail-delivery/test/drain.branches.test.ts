@@ -128,7 +128,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
   });
@@ -176,7 +176,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
   it("counts rejected provider results as failed", async () => {
@@ -194,7 +194,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
   it("marks retryable false when the final attempt still fails", async () => {
@@ -218,7 +218,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.attempts).toBe(8);
     expect(after.retryable).toBe(false);
@@ -251,7 +251,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.attempts).toBe(8);
     expect(after.retryable).toBe(false);
@@ -279,7 +279,7 @@ describe("drainPendingDeliveries branch coverage", () => {
         { exportSink: () => undefined },
         { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
       );
-      expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1 });
+      expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     } finally {
       findMany.mockRestore();
     }
@@ -361,7 +361,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
     expect(row.error).toContain("mailer boom");

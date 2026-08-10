@@ -89,7 +89,7 @@ describe("drainPendingDeliveries", () => {
       {},
       { eventId: EVENT_ID },
     );
-    expect(drain).toEqual({ claimed: 0, sent: 0, failed: 0, skipped: 0 });
+    expect(drain).toEqual({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] });
   });
 
   it("sends EmailDelivery rows left queued by sendTicketEmails enqueue", async () => {
@@ -117,7 +117,7 @@ describe("drainPendingDeliveries", () => {
       { exportSink: (p) => exported.push(p) },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0, eventIds: [EVENT_ID] });
     expect(exported).toHaveLength(1);
 
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: queued[0]!.id } });
@@ -197,7 +197,7 @@ describe("drainPendingDeliveries", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
     );
-    expect(retried).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0 });
+    expect(retried).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: queued.id } });
     expect(after.status).toBe("accepted");
   });
@@ -297,7 +297,7 @@ describe("drainPendingDeliveries", () => {
       { exportSink: () => undefined },
       { eventId: EVENT_ID, limit: 1, baseUrl: "https://tickets.example.com", nowMs: now },
     );
-    expect(drain).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0 });
+    expect(drain).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0, eventIds: [EVENT_ID] });
     const sent = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: rows[1]!.id } });
     expect(sent.status).toBe("accepted");
     const stillFailed = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: rows[0]!.id } });
