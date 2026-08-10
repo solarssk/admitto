@@ -126,12 +126,12 @@ export function slugifyImageAssetToken(name: string): string {
     .replace(/[^a-z0-9]+/g, "_");
   let start = 0;
   while (start < slug.length) {
-    const code = slug.charCodeAt(start);
+    const code = slug.codePointAt(start)!;
     if (code >= 97 && code <= 122) break;
     start += 1;
   }
   let end = slug.length;
-  while (end > start && slug.charCodeAt(end - 1) === 95) end -= 1;
+  while (end > start && slug.codePointAt(end - 1) === 95) end -= 1;
   // Collapse runs of underscores without a backtracking regex (Sonar S8786).
   let out = "";
   let prevUnderscore = false;

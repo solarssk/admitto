@@ -310,6 +310,48 @@ describe("EventImageAssetLibrary", () => {
     expect(within(dialog).queryByText(/will stop working/)).toBeNull();
   });
 
+  it("shows a blocked-template notice when delete returns asset_in_use", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    mockDelete.mockRejectedValueOnce(new ApiError(409, "asset_in_use", "asset_in_use"));
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove sponsor.png" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    expect(
+      await within(dialog).findByText(/still used in this event's email template/),
+    ).toBeTruthy();
+    expect(screen.getByText("sponsor.png")).toBeTruthy();
+  });
+
+  it("rejects SVG uploads client-side", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "logo.svg", { type: "image/svg+xml" })] },
+    });
+    expect(await screen.findByText(/SVG is not supported/)).toBeTruthy();
+    expect(mockUploadPreview).not.toHaveBeenCalled();
+  });
+
+  it("autofills a clamped image name from a long filename", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const longBase = "n".repeat(90);
+    await pickImageAndApply(new File(["x"], `${longBase}.png`, { type: "image/png" }));
+    const nameInput = screen.getByLabelText("Image name") as HTMLInputElement;
+    expect(nameInput.value).toHaveLength(80);
+    fireEvent.blur(nameInput);
+    expect(screen.queryByText(/80 characters/)).toBeNull();
+  });
+
   it("deletes an asset after confirming in the dialog", async () => {
     mockFetch.mockResolvedValueOnce([asset]);
     mockDelete.mockResolvedValueOnce(undefined);

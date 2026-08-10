@@ -176,7 +176,8 @@ function storageWriteFailureCode(err: unknown): string {
   return "";
 }
 
-function rethrowStorageWriteError(err: unknown): never {
+/** Map storage write failures to BrandingUploadError (exported for unit tests). */
+export function rethrowStorageWriteError(err: unknown): never {
   if (err instanceof StoragePathError) {
     throw new BrandingUploadError("invalid_upload_url", 400);
   }

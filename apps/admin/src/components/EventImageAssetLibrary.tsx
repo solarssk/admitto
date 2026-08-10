@@ -36,14 +36,14 @@ function pluralSuffix(count: number): string {
 
 function trimTrailingUnderscores(value: string): string {
   let end = value.length;
-  while (end > 0 && value.charCodeAt(end - 1) === 95) end -= 1;
+  while (end > 0 && value.codePointAt(end - 1) === 95) end -= 1;
   return value.slice(0, end);
 }
 
 function trimLeadingNonLetters(value: string): string {
   let start = 0;
   while (start < value.length) {
-    const code = value.charCodeAt(start);
+    const code = value.codePointAt(start)!;
     if (code >= 97 && code <= 122) break;
     start += 1;
   }
@@ -124,6 +124,8 @@ export const eventImageAssetLibraryTestUtils = {
   extensionForMime,
   sniffImageMime,
   basenameWithoutExt,
+  clampDisplayName,
+  deleteNoticeForAsset,
   DISPLAY_NAME_MAX,
 };
 
