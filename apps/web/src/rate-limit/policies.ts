@@ -365,6 +365,7 @@ export const RATE_POLICIES = {
   "admin:resend-bulk": {
     checks: [
       {
+        when: (c) => c.get("bulkSendDryRun") !== true,
         keyOf: (c) => {
           const userId = authUserId(c);
           return userId
@@ -373,6 +374,14 @@ export const RATE_POLICIES = {
         },
         windowMs: 600_000,
         max: 3,
+        onExceeded: (c) =>
+          c.json(
+            {
+              error: "bulk_send_rate_limited",
+              detail: "Bulk sends are limited to 3 requests every 10 minutes. Try again later.",
+            },
+            429,
+          ),
         logOnExceeded: { scope: "admin_resend_bulk", keyHint: "user" },
       },
     ],
