@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import {
+  awaitWithAbortSignal,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
@@ -140,5 +141,33 @@ describe("resolveSafeHostname", () => {
       code: "hostname_unresolved",
       message: expect.stringMatching(/could not be resolved/),
     });
+  });
+});
+
+describe("awaitWithAbortSignal", () => {
+  it("resolves with the promise's value when the signal never aborts", async () => {
+    await expect(awaitWithAbortSignal(Promise.resolve("ok"), new AbortController().signal)).resolves.toBe(
+      "ok",
+    );
+  });
+
+  it("rejects immediately when the signal is already aborted", async () => {
+    await expect(
+      awaitWithAbortSignal(Promise.resolve("ok"), AbortSignal.abort()),
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+  });
+
+  it("rejects when the signal aborts after its listener is attached, even if the promise never settles", async () => {
+    const controller = new AbortController();
+    const pending = awaitWithAbortSignal(new Promise<string>(() => {}), controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+  });
+
+  it("propagates the wrapped promise's rejection when it rejects before the signal aborts", async () => {
+    const err = new Error("dns lookup failed");
+    await expect(
+      awaitWithAbortSignal(Promise.reject(err), new AbortController().signal),
+    ).rejects.toBe(err);
   });
 });

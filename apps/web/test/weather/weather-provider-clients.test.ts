@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
+import { fetch as undiciFetch } from "undici";
 import { MetNoClient, metNoSymbolToWeatherCode, pickMetNoDailyForecast } from "../../src/weather/met-no-client.js";
 import {
   OpenMeteoClient,
@@ -6,6 +8,23 @@ import {
   pickDailyForecast,
 } from "../../src/weather/open-meteo-client.js";
 import { defaultWeatherConfig } from "../../src/weather/config.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("undici", () => {
+  function MockAgent(this: { close: () => Promise<void> }) {
+    this.close = vi.fn().mockResolvedValue(undefined);
+  }
+  return {
+    Agent: vi.fn(MockAgent),
+    fetch: vi.fn(),
+  };
+});
+
+const mockedLookup = vi.mocked(lookup);
+const mockedUndiciFetch = vi.mocked(undiciFetch);
 
 describe("pickDailyForecast", () => {
   it("returns null when a daily cell is null", () => {
@@ -185,6 +204,88 @@ describe("OpenMeteoClient", () => {
     });
     await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).rejects.toMatchObject({
       kind: "timeout",
+    });
+  });
+
+  describe("without a fetchFn override (production DNS pinning)", () => {
+    beforeEach(() => {
+      mockedLookup.mockClear();
+      mockedUndiciFetch.mockClear();
+      mockedLookup.mockResolvedValue([{ address: "1.2.3.4", family: 4 }] as unknown as Awaited<ReturnType<typeof lookup>>);
+      mockedUndiciFetch.mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            daily: {
+              time: ["2026-08-10"],
+              weather_code: [1],
+              temperature_2m_max: [20],
+              temperature_2m_min: [10],
+            },
+          }),
+          { status: 200 },
+        ) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+      );
+    });
+
+    it("re-resolves the host and pins the connection instead of calling global fetch", async () => {
+      const globalFetch = vi.fn();
+      vi.stubGlobal("fetch", globalFetch);
+      try {
+        const client = new OpenMeteoClient({ config: defaultWeatherConfig() });
+        await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).resolves.toMatchObject({
+          weather_code: 1,
+        });
+        expect(mockedLookup).toHaveBeenCalledTimes(1);
+        expect(mockedUndiciFetch).toHaveBeenCalledOnce();
+        expect(globalFetch).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("maps a blocked/rebound host to unavailable", async () => {
+      mockedLookup.mockResolvedValue([{ address: "169.254.169.254", family: 4 }] as unknown as Awaited<ReturnType<typeof lookup>>);
+      const client = new OpenMeteoClient({ config: defaultWeatherConfig() });
+      await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).rejects.toMatchObject({
+        kind: "unavailable",
+      });
+      expect(mockedUndiciFetch).not.toHaveBeenCalled();
+    });
+
+    it("times out (instead of hanging) when DNS resolution stalls past the configured deadline", async () => {
+      mockedLookup.mockImplementation(() => new Promise(() => {})); // never resolves
+      const client = new OpenMeteoClient({ config: { ...defaultWeatherConfig(), timeoutMs: 20 } });
+      await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).rejects.toMatchObject({
+        kind: "timeout",
+      });
+      expect(mockedUndiciFetch).not.toHaveBeenCalled();
+    }, 1000);
+
+    it("retries the next validated record after a connect failure", async () => {
+      mockedLookup.mockResolvedValue([
+        { address: "2001:db8::1", family: 6 },
+        { address: "203.0.113.9", family: 4 },
+      ] as unknown as Awaited<ReturnType<typeof lookup>>);
+      mockedUndiciFetch
+        .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { code: "ENETUNREACH" }))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              daily: {
+                time: ["2026-08-10"],
+                weather_code: [3],
+                temperature_2m_max: [15],
+                temperature_2m_min: [5],
+              },
+            }),
+            { status: 200 },
+          ) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+        );
+      const client = new OpenMeteoClient({ config: defaultWeatherConfig() });
+      await expect(client.fetchDayForecast(52.5, 13.4, "2026-08-10")).resolves.toMatchObject({
+        weather_code: 3,
+      });
+      expect(mockedUndiciFetch).toHaveBeenCalledTimes(2);
     });
   });
 });

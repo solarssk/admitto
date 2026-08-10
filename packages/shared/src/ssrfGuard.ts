@@ -174,3 +174,31 @@ export async function resolveSafeHostname(hostname: string): Promise<LookupAddre
   }
   return records;
 }
+
+/**
+ * Reject `promise` when `signal` aborts. `dns.lookup` (used by {@link resolveSafeHostname})
+ * takes no AbortSignal of its own, so without this a stalled/unresponsive DNS server would
+ * hang past the caller's configured timeout — this races it against the same deadline the
+ * caller uses for the follow-up HTTP request, so DNS resolution stays inside that budget.
+ */
+export function awaitWithAbortSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}

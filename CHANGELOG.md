@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Delete event** is no longer blocked by leftover operational action-log history after attendees and event-specific content are cleared (demo/test events can be removed again). Danger zone now lists the concrete remaining blockers when delete is disabled. Permanent delete also best-effort removes managed event branding and named image-asset uploads from storage (same cleanup as deleting a single asset).
 
 ### Security
+- Weather (Open-Meteo) and geocoding (Nominatim) requests now pin the outbound connection to a freshly re-resolved, validated address instead of trusting the hostname check performed when the base URL was last saved, closing a DNS-rebinding gap that could let a superadmin-configured external service URL reach an internal/metadata address after passing that save-time check.
 - **Self-hosted LAN mail in production:** ops can allow specific SMTP/IMAP/Power Automate hosts (or IP literals) that resolve to private addresses via `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (app and worker). The lab-only `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` flag remains ignored when `NODE_ENV=production`.
 
 ## [0.4.13] - 2026-08-09
