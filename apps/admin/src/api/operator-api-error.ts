@@ -11,6 +11,8 @@ const CODE_MESSAGES: Record<string, string> = {
   url_host_blocked:
     "That URL must not point at a private or local network address.",
   url_host_unresolved: "Could not resolve that hostname. Check the URL and try again.",
+  "hostname must not resolve to a private or link-local address":
+    "That URL must not point at a private or local network address.",
   already_assigned: "This role assignment already exists.",
   already_enrolled: "Two-factor authentication is already enabled.",
   authentication_required: "Your session has expired. Sign in again.",
@@ -58,7 +60,10 @@ const CODE_MESSAGES: Record<string, string> = {
     "Issuer URL must use HTTPS (http://localhost or http://127.0.0.1 is allowed in development only).",
   invalid_json: "Invalid request.",
   invalid_team_domain: "Enter a valid HTTPS Cloudflare Access team URL.",
+  invalid_name: "Enter an image name with at least one letter (80 characters max).",
   invalid_token: "Name must start with a letter and contain only lowercase letters, numbers, and underscores.",
+  upload_storage_unavailable:
+    "File uploads are not available on this server. Ask a superadmin to check File storage under Settings → System health.",
   instance_url_required:
     "Set the Instance URL in Settings → General before sending ticket emails.",
   "invalid file content": "The file could not be read. Check that it is a valid CSV or XLSX.",

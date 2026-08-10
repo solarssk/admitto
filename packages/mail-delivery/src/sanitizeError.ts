@@ -118,6 +118,11 @@ const TRANSPORT_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }>
       "The mail destination host resolves to a private address. Add it to MAIL_PRIVATE_DESTINATION_ALLOWLIST (app and worker), or use a public destination. Local labs can set ALLOW_PRIVATE_MAIL_DESTINATIONS=true when NODE_ENV is not production.",
   },
   {
+    pattern: /hostname must not resolve to a private or link-local address/i,
+    message:
+      "The mail destination host resolves to a private address. Add it to MAIL_PRIVATE_DESTINATION_ALLOWLIST (app and worker), or use a public destination. Local labs can set ALLOW_PRIVATE_MAIL_DESTINATIONS=true when NODE_ENV is not production.",
+  },
+  {
     pattern: /hostname could not be resolved/i,
     message: "Mail server hostname could not be resolved. Check the SMTP host.",
   },
