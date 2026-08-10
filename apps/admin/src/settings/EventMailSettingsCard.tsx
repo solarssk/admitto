@@ -41,9 +41,9 @@ import {
 } from "./mailTransportFormParts.js";
 
 const EVENT_MAIL_TRANSPORT_HINT =
-  "Organization uses the instance default. Dedicated lets this event send from its own mailbox.";
+  "Choose the mailbox that sends this event's email.";
 const EVENT_MAIL_TRANSPORT_INTRO =
-  "Which mailbox and provider send this event's tickets and reminders.";
+  "Use the organisation default or a dedicated mailbox.";
 
 type Mode = "org" | "dedicated";
 

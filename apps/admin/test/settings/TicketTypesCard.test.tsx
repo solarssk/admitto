@@ -114,7 +114,7 @@ describe("TicketTypesCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove VIP" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
 
-    expect(await screen.findByText(/Can't remove "VIP" because attendees still have this type\./)).toBeTruthy();
+    expect(await screen.findByText(/This type is still assigned to attendees/)).toBeTruthy();
     // The dialog itself (not just a toast) is still open, with the same target and a Cancel path.
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
   });
@@ -272,10 +272,10 @@ describe("TicketTypesCard", () => {
     renderCard([vipType]);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove VIP" }));
-    expect(screen.getByText('Remove "VIP"? This cannot be undone.')).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: 'Remove "VIP"?' })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(deleteTicketType).not.toHaveBeenCalled();
-    expect(screen.queryByText('Remove "VIP"? This cannot be undone.')).toBeNull();
+    expect(screen.queryByText('Remove "VIP"? This type will no longer be available for new attendee assignments.')).toBeNull();
   });
 });

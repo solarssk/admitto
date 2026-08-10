@@ -18,7 +18,7 @@ import { logger } from "../logger.js";
 
 /** The only HTTP statuses BrandingUploadError ever carries - narrows its `number` field for
  * Hono's c.json overload, which needs a literal status rather than a plain number. */
-type BrandingUploadStatus = 400 | 413 | 415 | 403;
+type BrandingUploadStatus = 400 | 413 | 415 | 403 | 503;
 
 /** Parses the multipart body and extracts the uploaded file, shared by all three upload routes
  * below. Returns the file, or an error Response to return directly - same `T | Response` pattern

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Button, Card, EmptyState, HintLabel, Input, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 import { createEventImageAsset, deleteEventImageAsset, deleteUploadedFile, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
@@ -31,18 +31,47 @@ function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
 
+function tokenFromDisplayName(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^[^a-z]+/, "")
+    .replace(/_+$/g, "")
+    .slice(0, TOKEN_MAX_LENGTH);
+}
+
 function extensionForMime(mime: string): string {
   return extensionForBrandingImageMime(mime);
+}
+
+function sniffImageMime(file: File): string {
+  const declared = file.type.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (ALLOWED_IMAGE_TYPES.has(declared) || declared === "image/svg+xml") return declared;
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  return declared;
+}
+
+function basenameWithoutExt(filename: string): string {
+  return filename.replace(/\.[^.]+$/, "") || filename;
 }
 
 /** @internal Unit-test surface for small helpers. */
 export const eventImageAssetLibraryTestUtils = {
   pluralSuffix,
+  tokenFromDisplayName,
   extensionForMime,
+  sniffImageMime,
+  basenameWithoutExt,
 };
 
 const UPLOAD_IMAGES_HINT =
-  "Each asset is stored for this event only. Remove it from the mail template before deleting.";
+  "Event-only images for email templates.";
 
 type PendingCrop = {
   /** Same-origin `/uploads/…` preview (uploaded before crop - no File→blob:→img.src). */
@@ -63,9 +92,9 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [token, setToken] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [tokenTouched, setTokenTouched] = useState(false);
+  const [displayNameTouched, setDisplayNameTouched] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
@@ -78,6 +107,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBlockedByTemplate, setDeleteBlockedByTemplate] = useState(false);
 
   const loadAbortRef = useRef<AbortController | null>(null);
 
@@ -108,7 +138,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        setLoadError(operatorApiErrorMessage(err, "Could not load image assets."));
+        setLoadError(operatorApiErrorMessage(err, "Could not load images."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -120,18 +150,18 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     return () => loadAbortRef.current?.abort();
   }, [load]);
 
-  const tokenTrimmed = token.trim();
+  const tokenTrimmed = tokenFromDisplayName(displayName);
   const tokenValid =
     tokenTrimmed.length > 0 && tokenTrimmed.length <= TOKEN_MAX_LENGTH && TOKEN_PATTERN.test(tokenTrimmed);
   const tokenErrorText =
-    tokenTouched && tokenTrimmed && !tokenValid
-      ? "Must start with a letter, and use only lowercase letters, numbers, and underscores (max 40 characters)."
+    displayNameTouched && !tokenValid
+      ? "Enter a display name with at least one letter."
       : undefined;
   const canSubmit = Boolean(file) && tokenValid && !uploading && !disabled;
 
   const resetForm = () => {
-    setToken("");
-    setTokenTouched(false);
+    setDisplayName("");
+    setDisplayNameTouched(false);
     setFile(null);
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -152,7 +182,13 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
-    const declared = picked.type.split(";")[0]?.trim().toLowerCase() ?? "";
+    const declared = sniffImageMime(picked);
+    if (declared === "image/svg+xml") {
+      setFormError("SVG is not supported. Use PNG, JPG, or WebP.");
+      setFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
     if (!ALLOWED_IMAGE_TYPES.has(declared)) {
       setFormError("Use a PNG, JPG, or WebP image.");
       setFile(null);
@@ -175,6 +211,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
         sourceMime: declared,
         originalName: picked.name || `asset${extensionForMime(declared)}`,
       });
+      setDisplayName((prev) => prev.trim() || basenameWithoutExt(picked.name || "image"));
     } catch (err) {
       setFormError(operatorApiErrorMessage(err, "Could not prepare image for cropping."));
       setFile(null);
@@ -193,13 +230,13 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     setUploading(true);
     setFormError(null);
     try {
-      const created = await createEventImageAsset(eventId, file, tokenTrimmed);
+      const created = await createEventImageAsset(eventId, file, displayName.trim());
       setAssets((prev) => [...prev, created]);
       discardPreCropUpload();
       resetForm();
-      addToast(`Added {{${created.token}}}`, "success", 2500);
+      addToast(`Added "${created.filename}"`, "success", 2500);
     } catch (err) {
-      setFormError(operatorApiErrorMessage(err, "Could not add asset."));
+      setFormError(operatorApiErrorMessage(err, "Could not add image."));
     } finally {
       setUploading(false);
     }
@@ -209,12 +246,17 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     if (!confirmDeleteId) return;
     setDeleting(true);
     setDeleteError(null);
+    setDeleteBlockedByTemplate(false);
     try {
       await deleteEventImageAsset(eventId, confirmDeleteId);
       setAssets((prev) => prev.filter((a) => a.id !== confirmDeleteId));
       setConfirmDeleteId(null);
     } catch (err) {
-      setDeleteError(operatorApiErrorMessage(err, "Could not delete asset."));
+      if (hasApiErrorCode(err, "asset_in_use")) {
+        setDeleteBlockedByTemplate(true);
+      } else {
+        setDeleteError(operatorApiErrorMessage(err, "Could not delete image."));
+      }
     } finally {
       setDeleting(false);
     }
@@ -236,11 +278,11 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const showLoading = useDelayedLoading(loading);
 
   function renderAssetsList(): ReactNode {
-    if (loading) return showLoading ? <p className="field-hint">Loading assets…</p> : null;
+    if (loading) return showLoading ? <p className="field-hint">Loading images…</p> : null;
     if (loadError) {
       return (
         <EmptyState
-          title="Could not load image assets"
+          title="Could not load images"
           description={loadError}
           action={
             <Button type="button" variant="secondary" onClick={load}>
@@ -296,10 +338,11 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                       variant="secondary"
                       size="sm"
                       className="image-asset-library__delete-btn"
-                      aria-label={`Delete ${a.filename}`}
+                      aria-label={`Remove ${a.filename}`}
                       disabled={disabled}
                       onClick={() => {
                         setDeleteError(null);
+                        setDeleteBlockedByTemplate(false);
                         setConfirmDeleteId(a.id);
                       }}
                       icon={<i className="ti ti-trash" aria-hidden="true" />}
@@ -319,8 +362,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       <Card title={<HintLabel hint={UPLOAD_IMAGES_HINT}>Upload images</HintLabel>} className="event-settings-card">
         <div className="settings-card-stack">
           <p className="settings-card-intro">
-            Upload extra images such as sponsor logos. Give each one a short name to use as{" "}
-            {"{{name}}"} in email templates.
+            Upload extra images such as sponsor logos. Give each one a name; Admitto creates the template variable for you.
           </p>
           <button
             type="button"
@@ -362,12 +404,12 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
           <div className="mail-test-send__row">
             <div className="mail-test-send__controls">
               <Input
-                label="Name"
-                value={token}
+                label="Image name"
+                value={displayName}
                 disabled={disabled || uploading}
-                onChange={(e) => setToken(e.target.value)}
-                onBlur={() => setTokenTouched(true)}
-                placeholder="sponsor_logo"
+                onChange={(e) => setDisplayName(e.target.value)}
+                onBlur={() => setDisplayNameTouched(true)}
+                placeholder="Sponsor logo"
                 invalid={Boolean(tokenErrorText)}
               />
               <div className="mail-test-send__send-control">
@@ -378,7 +420,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                   icon={<i className="ti ti-plus" aria-hidden="true" />}
                   onClick={() => void handleSubmit()}
                 >
-                  {uploading ? "Adding…" : "Add asset"}
+                  {uploading ? "Adding…" : "Add image"}
                 </Button>
               </div>
             </div>
@@ -389,17 +431,17 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
             </p>
           ) : (
             <p className="at-hint image-asset-library__name-hint">
-              Lowercase letters, numbers, and underscores only. Used as {"{{name}}"} in email templates.
+              Template variable: {tokenValid ? `{{${tokenTrimmed}}}` : "{{name}}"}
             </p>
           )}
           {formError ? (
-            <p className="at-hint at-hint--error" role="alert">
+            <Notice variant="error" role="alert">
               {formError}
-            </p>
+            </Notice>
           ) : null}
           {disabled && (
             <p className="field-hint event-settings-archived-note">
-              This event is archived - the asset library cannot be changed.
+              This event is archived - the image library cannot be changed.
             </p>
           )}
         </div>
@@ -422,13 +464,9 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
 
       <ConfirmDialog
         open={confirmDeleteId !== null}
-        title="Delete image asset"
-        message={
-          deletingAsset
-            ? `Delete "${deletingAsset.filename}"? If its {{${deletingAsset.token}}} placeholder is still used in this event's email template, remove it from the template first.`
-            : "Delete this image asset?"
-        }
-        confirmLabel="Delete"
+        title={deletingAsset ? `Remove "${deletingAsset.filename}"?` : "Remove image?"}
+        message="Remove this image from the event?"
+        confirmLabel="Remove"
         confirmVariant="danger"
         loading={deleting}
         errorMessage={deleteError}
@@ -436,8 +474,17 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
         onCancel={() => {
           setConfirmDeleteId(null);
           setDeleteError(null);
+          setDeleteBlockedByTemplate(false);
         }}
-      />
+      >
+        {deletingAsset ? (
+          <Notice variant="warning" role="alert">
+            {deleteBlockedByTemplate
+              ? `This image is still used in this event's email template. Remove {{${deletingAsset.token}}} from the template first.`
+              : `If {{${deletingAsset.token}}} is still used in an email template, remove it from the template first.`}
+          </Notice>
+        ) : null}
+      </ConfirmDialog>
 
       {pendingCrop ? (
         <CropImageModal

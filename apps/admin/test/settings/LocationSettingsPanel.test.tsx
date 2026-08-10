@@ -218,7 +218,7 @@ describe("LocationSettingsPanel — loading", () => {
     renderPanel();
 
     expect(await screen.findByLabelText("Address details")).toBeTruthy();
-    expect(await screen.findByText("Find on map")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
     await waitFor(() => {
       expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
     });
@@ -689,16 +689,11 @@ describe("LocationSettingsPanel — venue search", () => {
     expect(screen.getByText("52.22970, 21.01220")).toBeTruthy();
   });
 
-  it("Find on map shows a no-match notice when OSM returns nothing", async () => {
+  it("hides Find on map on the event Location tab (search still works via suggestions)", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
-    mockSearch.mockResolvedValue({ results: [], contact_configured: true });
     renderPanel();
-
-    const input = await screen.findByLabelText("Venue name or address");
-    fireEvent.change(input, { target: { value: "Nowhere Hall" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
-
-    expect(await screen.findByText(/No match found on OpenStreetMap/)).toBeTruthy();
+    await screen.findByLabelText("Venue name or address");
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
   });
 
   it("warns about missing Support contact on load, before any search", async () => {
@@ -739,12 +734,12 @@ describe("LocationSettingsPanel — venue search", () => {
 });
 
 describe("LocationSettingsPanel — clearing and map availability", () => {
-  it("clears coordinates and address grid via Clear map, but keeps the venue name", async () => {
+  it("clears coordinates and address grid via Remove pin, but keeps the venue name", async () => {
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     renderPanel();
 
     await screen.findByDisplayValue("Springfield Hall");
-    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove pin" }));
 
     expect(screen.getByDisplayValue("Springfield Hall")).toBeTruthy();
     await waitFor(() => {
@@ -775,7 +770,7 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     renderPanel();
 
     await screen.findByDisplayValue("Springfield Hall");
-    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove pin" }));
     await waitFor(() => {
       expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
     });
@@ -883,14 +878,14 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     );
   });
 
-  it("does not restore an address when a slow reverse lookup resolves after Clear map", async () => {
+  it("does not restore an address when a slow reverse lookup resolves after Remove pin", async () => {
     const slowReverse = createDeferred<Awaited<ReturnType<typeof reverseGeocoding>>>();
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     mockReverse.mockReturnValueOnce(slowReverse.promise);
     renderPanel();
 
     fireEvent.click(await screen.findByTestId("map-picker"));
-    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove pin" }));
     slowReverse.resolve({
       result: searchResult({ formatted_address: "Late address, New York" }),
       contact_configured: true,
@@ -903,14 +898,14 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     expect(screen.getByLabelText("Address details").textContent).not.toContain("Late address");
   });
 
-  it("does not clear later state when a slow reverse lookup rejects after Clear map", async () => {
+  it("does not clear later state when a slow reverse lookup rejects after Remove pin", async () => {
     const slowReverse = createDeferred<Awaited<ReturnType<typeof reverseGeocoding>>>();
     mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
     mockReverse.mockReturnValueOnce(slowReverse.promise);
     renderPanel();
 
     fireEvent.click(await screen.findByTestId("map-picker"));
-    fireEvent.click(screen.getByRole("button", { name: "Clear map" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove pin" }));
     slowReverse.reject(new Error("late reverse failure"));
     await act(async () => {
       try {
@@ -1243,7 +1238,7 @@ describe("LocationSettingsPanel — archived event", () => {
 
     await screen.findByDisplayValue("Springfield Hall");
     expect(screen.queryByRole("button", { name: "Save" })).toBeFalsy();
-    expect(screen.queryByRole("button", { name: "Clear map" })).toBeFalsy();
+    expect(screen.queryByRole("button", { name: "Remove pin" })).toBeFalsy();
     expect(screen.getByText(/location settings cannot be changed/)).toBeTruthy();
   });
 

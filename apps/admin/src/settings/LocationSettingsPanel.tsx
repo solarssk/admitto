@@ -48,13 +48,13 @@ const EMPTY_DRAFT: LocationDraft = {
 };
 
 const ADDRESS_CARD_HINT =
-  "Also used for directions and to check the venue against the event timezone.";
+  "Venue, map pin, and attendee-facing address.";
 const ADDRESS_CARD_INTRO =
-  "Venue name, map pin, and structured address shown to attendees.";
+  "Search for a venue or set its pin on the map.";
 const DIRECTIONS_HINT =
-  "How attendees find the entrance, parking, or public transit. Shown with the event location.";
+  "Arrival details shown with the event location.";
 const ACCESSIBILITY_HINT =
-  "Step-free access, accessible restrooms, hearing loop, and similar notes for attendees.";
+  "Accessibility details shown with the event location.";
 
 /** Used when map-tile config cannot be loaded. Keeps venue/notes editable without a MapPicker. */
 const MAPS_UNAVAILABLE_FALLBACK: MapTileConfigDto = {
@@ -429,7 +429,7 @@ export function LocationSettingsPanel({
         actions={
           !isArchived && hasCoordinates ? (
             <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={handleClearLocation}>
-              Clear map
+              Remove pin
             </Button>
           ) : undefined
         }
@@ -477,11 +477,12 @@ export function LocationSettingsPanel({
               maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
               disabled={disabled}
               placeholder="e.g. Convention Center, or a full address"
-              hint="The venue name shown to attendees. Search OpenStreetMap by name or street address - pick a match to set the map. If the venue is missing from the map data, search a nearby street address or double-click the map below to drop a pin, then type the display name here (the pin stays)."
+              hint="Search by venue or address, then choose a match to set the pin. You can also set a pin on the map and enter the venue name here."
+              showFindButton={false}
               onChange={(text) => {
                 // Keep the map pin and address grid when renaming - OSM often lacks the
                 // building POI, so the intended workflow is pin (or street search) + manual
-                // venue display name. Clear map / a new suggestion still replace coordinates.
+                // venue display name. Remove pin / a new suggestion still replace coordinates.
                 // Verified badge clears because the free-text name is no longer an OSM pick.
                 // Sync object_name so Getting there / {{event_address}} do not keep a stale POI.
                 reverseSeqRef.current += 1;
@@ -517,9 +518,8 @@ export function LocationSettingsPanel({
                 }}
               />
               <p className="field-hint">
-                Double-click the map to drop or move the pin, or drag an existing pin to fine-tune
-                it. Pan and zoom freely without losing the pin. Editing the venue name above keeps
-                it - use Clear map to remove it.
+                Double-click to place or move the pin. Drag to adjust. Remove pin clears coordinates
+                and address fields; the venue name stays.
               </p>
             </div>
           ) : (

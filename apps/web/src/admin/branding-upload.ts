@@ -221,6 +221,13 @@ async function writeValidatedUpload(
     if (err instanceof StoragePathError) {
       throw new BrandingUploadError("invalid_upload_url", 400);
     }
+    const code =
+      err && typeof err === "object" && "code" in err && typeof (err as { code: unknown }).code === "string"
+        ? (err as { code: string }).code
+        : "";
+    if (code === "ENOENT" || code === "EACCES" || code === "ENOSPC" || code === "EROFS") {
+      throw new BrandingUploadError("upload_storage_unavailable", 503);
+    }
     throw err;
   }
 }
