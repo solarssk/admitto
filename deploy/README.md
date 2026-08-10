@@ -15,11 +15,127 @@ What you get in `deploy/`:
 | Piece | Role |
 |-------|------|
 | `Dockerfile` | Builds the `app` image (Node monorepo → production runtime) |
-| `docker-compose.yml` | Orchestrates `app`, Postgres, Redis, and an internal nginx proxy |
+| `docker-compose.yml` | Orchestrates `app`, `worker`, Postgres, Redis, migrate, backups, and an internal nginx proxy |
 | `.env` (from `.env.example`) | Secrets and config — never committed |
+| [`ENV.md`](./ENV.md) | Generated env dictionary (boot vs UI, who reads what) — regenerate with `npm run docs:env` |
+| [`env-catalog.json`](./env-catalog.json) | Human summaries for that dictionary (source of truth for descriptions) |
 | **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` — published automatically on each git tag `vX.Y.Z` |
 
-TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare) forwarding to `http://<docker-host>:8080` — see below.
+TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare). Prefer forwarding to the compose nginx on port **8080** (Variant A below). Portainer stacks that publish the app port directly are Variant B.
+
+## Minimum to boot (read this first)
+
+Without these, containers exit or Health stays red. **None of them are set from the admin UI.**
+
+| What | Where | Notes |
+|------|--------|--------|
+| `BASE_URL` | `.env` / stack env | Public `https://...` origin (no trailing slash). App refuses to start in production without it. |
+| `ENCRYPTION_KEY` | `.env` | `openssl rand -base64 32`. Losing it loses encrypted mail/OIDC secrets. |
+| `POSTGRES_*` + `DATABASE_URL` | `.env` | Passwords must match. |
+| `REDIS_PASSWORD` + `REDIS_URL` | `.env` | Password must appear in the URL. |
+| `/backups` on **migrate** | volume | Pre-migration dumps. Missing dir → migrate exits 1. Same host path as nightly backups is fine. |
+| `/app/uploads` writable by uid **1000** | volume | Branding storage. Health → file storage `not_writable` if wrong ownership. |
+| `worker` service | compose | Mail drain, import/export, bounce, retention. One replica. |
+
+Copy `.env.example` → `.env`, fill the table above, then:
+
+```bash
+cd deploy
+./validate-env.sh
+docker compose up -d
+curl -sf http://127.0.0.1:8080/healthz   # Variant A (with compose nginx)
+```
+
+Full dictionary (every known deploy var, generated from code + catalog): **[ENV.md](./ENV.md)**.
+
+### Boot vs Settings UI
+
+| Set in environment (boot) | Configure later in UI |
+|---------------------------|------------------------|
+| `BASE_URL`, encryption, DB, Redis | Organisation mail (SMTP/Graph/PA) |
+| Proxy trust (`TRUST_PROXY`, `TRUSTED_PROXY_CIDRS`) | Branding, theme, support contact |
+| Migration backup paths / disable flag | OIDC / Cloudflare Access (unless env-locked) |
+| Upload / emergency-export paths | Event location, weather, maps toggles |
+| `OPS_HEALTH_TOKEN` (optional) | Bounce IMAP per event |
+
+Mail can be seeded from `.env`, but most operators configure it under **Organisation settings → Mail** after `/setup`.
+
+## Edge proxy: two variants
+
+### Variant A — recommended (NPM → compose nginx `:8080`)
+
+Keep the compose `proxy` service. NPM (or any TLS terminator) forwards **only** to:
+
+```text
+http://<docker-host>:8080
+```
+
+Do **not** forward NPM to `app:3000` in this variant.
+
+In NPM **SSL**: request a certificate, enable **Force SSL**.  
+In NPM **Details**: scheme `http`, websockets on, block common exploits on.  
+In NPM **Advanced**:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+Do **not** use `$proxy_add_x_forwarded_for` (clients could pick the first hop).
+
+Set in `.env` (already aligned with compose in `.env.example`):
+
+```env
+TRUST_PROXY=true
+TRUSTED_PROXY_CIDRS=172.28.238.0/24
+BASE_URL=https://tickets.example.com
+```
+
+Optional check-in SSE (long-lived stream):
+
+```nginx
+location ~ ^/api/checkin/events/[^/]+/stream$ {
+  proxy_buffering off;
+  proxy_read_timeout 3600s;
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+  proxy_pass http://admitto_app;
+}
+```
+
+(When the location is on NPM facing the published `:8080` port, `proxy_pass` should target that upstream the same way your other locations do - often `http://127.0.0.1:8080` with the path preserved.)
+
+### Variant B — Portainer / NAS without compose nginx
+
+Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner: NPM talks straight to `app`, so `TRUSTED_PROXY_CIDRS` must list **only** the TCP source address NPM uses — not every private Docker network on the host.
+
+Checklist:
+
+1. Publish **hostPort:3000** (app listens on 3000 inside).
+2. NPM → `http://127.0.0.1:<hostPort>` with the same four `proxy_set_header` lines and Force SSL.
+3. Env:
+
+```env
+BASE_URL=https://your.public.hostname
+TRUST_PROXY=true
+# NPM's actual source as seen by the app container — often the Docker bridge gateway on /32
+# (e.g. 172.17.0.1/32) when NPM is in Docker, or 127.0.0.1/32 when NPM runs on the host and
+# forwards to localhost. Do NOT use 172.16.0.0/12: any other container on the host's Docker
+# networks could then spoof X-Forwarded-For / Host / Proto for rate limits and CSRF checks.
+TRUSTED_PROXY_CIDRS=172.17.0.1/32
+```
+
+Find the right CIDR: from the app container, log or inspect the peer address of a request that came through NPM (`docker inspect <npm-container> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`), or use your platform docs for host→published-port routing.
+
+4. Mount `/backups` on **migrate** (and db-backup), uploads + emergency-exports writable by uid 1000.
+5. Run **worker** with the same secrets as `app`.
+6. Prefer Variant A when you can; Variant B is for stacks that intentionally omit compose nginx.
+
+Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=production` unless the hostname is listed in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` on **app** and **worker** (see [ENV.md](./ENV.md)). Lab stacks can set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` when NODE_ENV is not production. Opening SMTP on the public WAN is usually the wrong fix.
+
+---
 
 ## GitHub Container Registry (ghcr.io)
 
@@ -239,48 +355,23 @@ docker compose run --rm app node apps/cli/dist/index.js retention run --operator
 
 Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log cleanup in one audited command for manual/on-demand use.
 
-## Nginx Proxy Manager (production edge)
+## Nginx Proxy Manager (deep notes)
 
-NPM is the **TLS termination layer in front of this compose stack**. Forward **only** to:
+Start with **[Edge proxy: two variants](#edge-proxy-two-variants)** above (headers, SSL, Portainer). This section is the trust-model detail for Variant A.
 
-```text
-http://<docker-host>:8080
-```
-
-Do **not** forward NPM directly to `app:3000` or host port 3000.
-
-NPM is the **trust boundary** for client IP and TLS. It must **overwrite** `X-Forwarded-For` with the real client IP — never append to a value the browser sent (`$proxy_add_x_forwarded_for` allows spoofing). Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
-
-In NPM **Advanced** (or custom snippet), use:
-
-```nginx
-proxy_set_header Host $host;
-proxy_set_header X-Forwarded-Host $host;
-proxy_set_header X-Forwarded-For $remote_addr;
-proxy_set_header X-Forwarded-Proto $scheme;
-```
+NPM must **overwrite** `X-Forwarded-For` with the real client IP - never `$proxy_add_x_forwarded_for`. Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
 
 Use `$http_host` instead of `$host` when the public URL uses a non-default port (e.g. local smoke on `:8080`) so the CSRF origin check matches the browser `Origin` header.
 
-Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
+With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
 
-Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` — do not widen to whole RFC1918 ranges.
+Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` - do not widen to whole RFC1918 ranges.
 
-That covers the first hop (NPM → compose nginx). The app has its **own**, second trust boundary: it only honours `X-Forwarded-For/Host/Proto` when the request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`rate-limit/trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)) — `TRUST_PROXY=true` alone is not enough, since anything that can reach the app container directly could otherwise set those headers itself. Compose nginx and `app` are separate containers on the `internal` network, not sharing loopback, so this is **not** `127.0.0.1` — it's the network's fixed subnet (`docker-compose.yml`'s `networks.internal.ipam`), already set to match in `.env.example`. Only widen it if you added another trusted hop between compose nginx and the app.
+The app only honours `X-Forwarded-*` when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)). For Variant A that is the compose `internal` subnet in `.env.example`. For Variant B, set only NPM's source on `/32` (see Variant B checklist above), not broad Docker RFC1918 ranges.
 
-(`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so `TRUST_PROXY` CSRF checks see HTTPS.)
+(`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so CSRF checks see HTTPS.)
 
-For long-lived check-in SSE, add a custom location in NPM (or here in `default.conf`):
-
-```nginx
-location ~ ^/api/checkin/events/[^/]+/stream$ {
-  proxy_buffering off;
-  proxy_read_timeout 3600s;
-  proxy_pass http://admitto_app;
-}
-```
-
-Set `TRUST_PROXY=true` and `TRUSTED_PROXY_CIDRS` in `deploy/.env` (both already in `.env.example`).
+Set `TRUST_PROXY=true` and `TRUSTED_PROXY_CIDRS` in `deploy/.env`.
 
 ## Cloudflare and WireGuard
 
