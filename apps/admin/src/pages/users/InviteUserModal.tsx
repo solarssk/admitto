@@ -206,6 +206,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             icon={<i className="ti ti-mail" aria-hidden="true" />}
             type="text"
             inputMode="email"
+            name="invite-email"
             value={email}
             required
             disabled={submitting}
@@ -235,12 +236,13 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
               />
               <Input
                 id="invite-phone-number"
+                name="invite-phone"
                 icon={<i className="ti ti-phone" aria-hidden="true" />}
                 type="tel"
+                autoComplete="tel-national"
                 value={phoneNumber}
                 disabled={submitting}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                {...NO_AUTOFILL_PROPS}
               />
             </div>
             <p className="at-hint">For internal contact only - not shown on tickets.</p>
@@ -296,9 +298,10 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
             hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
             value={password}
             required
+            name="invite-temporary-password"
             disabled={submitting}
             onChange={(e) => setPassword(e.target.value)}
-            {...NO_AUTOFILL_PROPS}
+            autoComplete="new-password"
           />
           <Switch
             label="Require password change on first login"

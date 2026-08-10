@@ -86,8 +86,8 @@ function roleSelectTitle(isSelf: boolean, hasPendingAdds: boolean): string | und
 }
 
 function unlinkSsoTooltip(hasSso: boolean, isSelf: boolean): string | undefined {
-  if (!hasSso) return "This account doesn't use SSO.";
-  if (isSelf) return "You cannot unlink SSO from your own account.";
+  if (!hasSso) return "This account doesn't use an identity provider.";
+  if (isSelf) return "You cannot unlink an identity provider from your own account.";
   return undefined;
 }
 
@@ -158,7 +158,7 @@ function UserMoreActionsMenu({
         >
           <MoreActionsMenuItem
             icon="refresh"
-            label="Reset MFA"
+            label="Reset two-factor"
             hint="Clear two-factor authentication"
             onClick={pick(onResetMfa)}
           />
@@ -170,7 +170,7 @@ function UserMoreActionsMenu({
           />
           <MoreActionsMenuItem
             icon="unlink"
-            label="Unlink SSO"
+            label="Unlink identity provider"
             hint="Require a local password to sign in"
             disabled={!user.has_sso || isSelf}
             tooltip={unlinkSsoTooltip(user.has_sso, isSelf)}
@@ -380,7 +380,7 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Sign-in method</strong>
-            <span>{user.has_sso ? "SSO" : "Local password"}</span>
+            <span>{user.has_sso ? "Identity provider" : "Local password"}</span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -390,8 +390,8 @@ function SignInSecuritySection({
             <i className={`ti ti-shield-${user.has_mfa ? "check" : "off"}`} aria-hidden="true" />
           </span>
           <span className="users-modal__status-chip-body">
-            <strong>MFA</strong>
-            <span>{user.has_mfa ? "TOTP enrolled" : "Not enrolled"}</span>
+            <strong>Two-factor</strong>
+            <span>{user.has_mfa ? "Authenticator app enrolled" : "Not set up"}</span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -849,10 +849,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     try {
       await resetUserMfa(user.id);
       setResetMfaOpen(false);
-      onUpdated(user, "MFA reset. User must sign in again.");
+      onUpdated(user, "Two-factor reset. User must sign in again.");
       onClose();
     } catch (err) {
-      setError(operatorApiErrorMessage(err, "Failed to reset MFA."));
+      setError(operatorApiErrorMessage(err, "Failed to reset two-factor."));
     } finally {
       setResetMfaBusy(false);
     }
@@ -904,13 +904,13 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       await unlinkUserExternalIdentity(user.id, { new_password: unlinkSsoPassword });
       setUnlinkSsoOpen(false);
       setUnlinkSsoPassword("");
-      onUpdated(user, "SSO unlinked. User must sign in with the new local password.");
+      onUpdated(user, "Identity provider unlinked. User must sign in with the new local password.");
       onClose();
     } catch (err) {
       if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
         setUnlinkSsoError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
       } else {
-        setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
+        setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink identity provider."));
       }
     } finally {
       setUnlinkSsoBusy(false);
@@ -1221,7 +1221,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={deleteConfirm}
         title="Delete account"
-        message={`Permanently delete ${displayTitle}? This removes their account, sessions, roles, and MFA. This cannot be undone.`}
+        message={`Permanently delete ${displayTitle}? This removes their account, sessions, roles, and two-factor authentication. This cannot be undone.`}
         errorMessage={deleteError}
         confirmLabel="Delete"
         confirmVariant="danger"
@@ -1252,8 +1252,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
 
       <ConfirmDialog
         open={resetMfaOpen}
-        title="Reset MFA"
-        message="This will remove all MFA methods and revoke all sessions for this user."
+        title="Reset two-factor"
+        message="This will remove all two-factor methods and revoke all sessions for this user."
         confirmLabel="Reset"
         confirmVariant="danger"
         loading={resetMfaBusy}
@@ -1278,8 +1278,8 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
 
       <ConfirmDialog
         open={unlinkSsoOpen}
-        title="Unlink SSO"
-        message={`Unlink SSO for ${displayTitle}? Set the new local password they'll sign in with below - their SSO sign-in stops working immediately.`}
+        title="Unlink identity provider"
+        message={`Unlink the identity provider for ${displayTitle}? Set the new local password they'll sign in with below - their identity-provider sign-in stops working immediately.`}
         errorMessage={unlinkSsoError}
         confirmLabel="Unlink"
         confirmVariant="danger"

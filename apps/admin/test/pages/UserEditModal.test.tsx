@@ -801,8 +801,8 @@ describe("UserEditModal sign-in security", () => {
   it("shows SSO and MFA-enrolled status together with the active session count", async () => {
     renderModal({ has_sso: true, has_mfa: true, active_sessions_count: 3 });
 
-    await screen.findByText("SSO");
-    expect(screen.getByText("TOTP enrolled")).toBeTruthy();
+    await screen.findByText("Identity provider");
+    expect(screen.getByText("Authenticator app enrolled")).toBeTruthy();
     expect(screen.getByText("Active sessions")).toBeTruthy();
     expect(screen.getByText("3 sessions")).toBeTruthy();
   });
@@ -836,7 +836,7 @@ describe("UserEditModal sign-in security", () => {
     });
     expect(onUpdated).toHaveBeenCalledWith(
       { ...user, has_sso: true },
-      "SSO unlinked. User must sign in with the new local password.",
+      "Identity provider unlinked. User must sign in with the new local password.",
     );
     expect(onClose).toHaveBeenCalled();
   });
@@ -871,7 +871,7 @@ describe("UserEditModal sign-in security", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
 
-    expect(await screen.findByText("Failed to unlink SSO.")).toBeTruthy();
+    expect(await screen.findByText("Failed to unlink identity provider.")).toBeTruthy();
   });
 
   it("cancels the unlink-SSO confirmation, clearing the typed password", async () => {
