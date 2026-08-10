@@ -1213,7 +1213,7 @@ export function EventSettingsPage() {
             <div className="settings-field-stack">
               <p className="settings-card-intro">
                 Lets attendees add their ticket to Apple Wallet or Google Wallet (PassCreator).
-                The API key is shared across the instance —{" "}
+                The API key is shared across the instance,{" "}
                 <button
                   type="button"
                   className="link-btn"
@@ -1228,7 +1228,7 @@ export function EventSettingsPage() {
                   value={form.walletTemplateId}
                   disabled={isArchived || saving}
                   placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-                  hint="From the PassCreator dashboard — which pass design this event's attendees get. Leave blank to keep wallet disabled for this event."
+                  hint="From the PassCreator dashboard: which pass design this event's attendees get. Leave blank to keep wallet disabled for this event."
                   {...NO_AUTOFILL_PROPS}
                   onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
                 />

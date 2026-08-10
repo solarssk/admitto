@@ -425,16 +425,18 @@ describe("On-demand wallet routes", () => {
     const app = makeApp(provider);
     await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: null } });
 
-    const res = await app.request(`/t/${MODE_A_TOKEN}`);
-    const html = await res.text();
-    // .wallet-badge-frame is also a CSS rule name in the unconditional stylesheet - check the
-    // actual link markup instead.
-    expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
-    expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
-
-    await prisma.event.update({
-      where: { id: EVENT_ID },
-      data: { wallet_template_id: "tmpl-wallet-gala" },
-    });
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}`);
+      const html = await res.text();
+      // .wallet-badge-frame is also a CSS rule name in the unconditional stylesheet - check the
+      // actual link markup instead.
+      expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
+      expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_ID },
+        data: { wallet_template_id: "tmpl-wallet-gala" },
+      });
+    }
   });
 });

@@ -3,6 +3,7 @@ import {
   resolveBaseUrl,
   resolveCheckinToken,
   resolveAllowCheckinBearer,
+  resolvePassCreatorBaseUrl,
   resolveTrustProxy,
   validateCheckinBootConfig,
   validateRedisBootConfig,
@@ -188,5 +189,21 @@ describe("validateEncryptionKeyBootConfig", () => {
     expect(() =>
       validateEncryptionKeyBootConfig({ NODE_ENV: "production", ENCRYPTION_KEY: validKey }),
     ).not.toThrow();
+  });
+});
+
+describe("resolvePassCreatorBaseUrl", () => {
+  it("returns undefined when unset", () => {
+    expect(resolvePassCreatorBaseUrl({})).toBeUndefined();
+  });
+
+  it("returns a trimmed https:// override", () => {
+    expect(resolvePassCreatorBaseUrl({ PASSCREATOR_BASE_URL: " https://pc.example.com " })).toBe(
+      "https://pc.example.com",
+    );
+  });
+
+  it("ignores a non-https override rather than sending the API key over plaintext", () => {
+    expect(resolvePassCreatorBaseUrl({ PASSCREATOR_BASE_URL: "http://pc.example.com" })).toBeUndefined();
   });
 });

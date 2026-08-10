@@ -194,6 +194,18 @@ export function resolvePassCreatorConfig(
   return { apiKey, templateId, ...(baseUrl ? { baseUrl } : {}) };
 }
 
+/**
+ * PASSCREATOR_BASE_URL read independently of resolvePassCreatorConfig() above - that helper also
+ * requires the legacy PASSCREATOR_TEMPLATE_ID, which a deployment using the per-event Template ID
+ * field (Event.wallet_template_id) instead may not have set, silently dropping a custom base URL.
+ * A non-HTTPS override is ignored (falls back to PassCreatorClient's own HTTPS default) rather than
+ * sending the wallet API key over plaintext.
+ */
+export function resolvePassCreatorBaseUrl(env: EnvLike = process.env): string | undefined {
+  const raw = env["PASSCREATOR_BASE_URL"]?.trim();
+  return raw?.startsWith("https://") ? raw : undefined;
+}
+
 /** Boot-time validation for Cloudflare Access config (resolved env → DB → defaults). */
 export async function validateCfAccessBootConfig(prisma: PrismaClient): Promise<void> {
   const config = await getCfAccessConfig(prisma);

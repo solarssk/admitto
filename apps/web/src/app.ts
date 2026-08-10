@@ -55,7 +55,7 @@ import {
   resolveBaseUrl,
   resolveCheckinToken,
   resolveAllowCheckinBearer,
-  resolvePassCreatorConfig,
+  resolvePassCreatorBaseUrl,
   validateCheckinBootConfig,
   resolveOpsHealthTokenOption,
   validateOpsHealthBootConfig,
@@ -632,12 +632,9 @@ export function createApp(options: CreateAppOptions = {}) {
   }): Promise<WalletPassProvider | null> {
     if (options.walletPassProvider) return options.walletPassProvider;
     const apiKey = await resolveWalletApiKey(db);
-    if (!apiKey || !event.walletTemplateId) return null;
-    return new PassCreatorClient({
-      apiKey,
-      templateId: event.walletTemplateId,
-      baseUrl: resolvePassCreatorConfig()?.baseUrl,
-    });
+    const templateId = event.walletTemplateId;
+    if (!apiKey || !templateId) return null;
+    return new PassCreatorClient({ apiKey, templateId, baseUrl: resolvePassCreatorBaseUrl() });
   }
 
   /** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
