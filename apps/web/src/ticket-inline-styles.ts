@@ -3,8 +3,8 @@ import { resolveThemeVars, sanitizeBrandingFontFamilyName, themeVarsToStyleBlock
 import { builtInFontFaceCss } from "./vendor-assets.js";
 
 const TICKET_LAYOUT_CSS = `
-body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; font-family: var(--font-sans, Inter, system-ui, sans-serif); color: var(--text-primary, #1d273b); }
-.ticket { width: 400px; max-width: 100%; background: var(--surface-card, #ffffff); border: 1px solid var(--border, #e6e7e9); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-md, 0 4px 12px rgba(15,23,42,.08)); overflow: hidden; border-top: 3px solid var(--primary, #066fd1); }
+body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: clip; background: var(--surface-page, #f1f5f9); min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; font-family: var(--font-sans, Inter, system-ui, sans-serif); color: var(--text-primary, #1d273b); }
+.ticket { width: min(400px, 100%); box-sizing: border-box; min-width: 0; background: var(--surface-card, #ffffff); border: 1px solid var(--border, #e6e7e9); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-md, 0 4px 12px rgba(15,23,42,.08)); overflow: hidden; border-top: 3px solid var(--primary, #066fd1); }
 .ticket__top { padding: 16px 22px; border-bottom: 1px solid var(--border, #e6e7e9); display: flex; align-items: center; gap: 10px; min-height: 60px; }
 .ticket__top small { margin-left: auto; color: var(--text-muted, #64748b); font-size: 12px; white-space: nowrap; }
 .ticket__brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
@@ -19,11 +19,14 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
 .ticket__attendee { margin: 16px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ticket__attendee-name { font-size: 1.125rem; font-weight: 600; margin: 0 0 8px; }
 .ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f1f5f9); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
-/* Shared public HTML 404/500 notice (same muted look for both status codes). */
-.at-public-notice { margin: 4px 0 8px; padding: 16px 14px; text-align: center; border: 1px solid var(--border, #e6e7e9); border-radius: 8px; background: var(--surface-sunken, #f8fafc); color: var(--text-secondary, #475569); }
-.at-public-notice__code { margin: 0 0 6px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; color: var(--text-muted, #64748b); }
-.at-public-notice__heading { margin: 0 0 8px; font-size: 1.0625rem; font-weight: 700; color: var(--text-primary, #1d273b); }
-.at-public-notice p { margin: 0; font-size: 0.875rem; line-height: 1.45; color: inherit; }
+/* Public HTML 404/500: large status code + icon, no inner bordered box. */
+.ticket__body--public-error { padding: 28px 24px 32px; }
+.at-public-error { margin: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.at-public-error__icon { display: flex; align-items: center; justify-content: center; width: 3.5rem; height: 3.5rem; margin-bottom: 0.75rem; color: var(--primary, #066fd1); opacity: 0.85; }
+.at-public-error__icon svg { width: 100%; height: 100%; display: block; }
+.at-public-error__code { margin: 0 0 0.35rem; font-size: 3rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--text-primary, #1d273b); }
+.at-public-error__heading { margin: 0 0 0.5rem; font-size: 1.125rem; font-weight: 700; color: var(--text-primary, #1d273b); }
+.at-public-error__message { margin: 0; max-width: 28ch; font-size: 0.875rem; line-height: 1.45; color: var(--text-secondary, #475569); }
 .ticket__status-notice { margin: 4px 0 8px; padding: 16px 14px; text-align: center; border: 1px solid color-mix(in srgb, var(--status-error, #d63939) 35%, #e6e7e9); border-radius: 8px; background: var(--status-error-tint, #fcebea); color: var(--status-error-fg, #9b1c1c); }
 .ticket__status-notice h2 { margin: 0 0 8px; font-size: 1.0625rem; font-weight: 700; color: inherit; }
 .ticket__status-notice p { margin: 0; font-size: 0.875rem; line-height: 1.45; color: inherit; }
@@ -127,6 +130,13 @@ body.ticket-page { margin: 0; background: var(--surface-page, #f1f5f9); min-heig
   .ticket__foot a::after {
     content: none;
   }
+}
+
+@media (max-width: 480px) {
+  body.ticket-page { padding: 20px 12px; }
+  .ticket__body { padding: 18px 16px 16px; }
+  .ticket__body--public-error { padding: 24px 16px 28px; }
+  .at-public-error__code { font-size: 2.5rem; }
 }
 `;
 
