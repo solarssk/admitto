@@ -22,8 +22,8 @@ Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** in
 
 | Line | Meaning |
 |------|---------|
-| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. **GitHub Releases for `v0.x.y` are marked pre-release** until `v1.0.0` — the product is not operator-ready for a real event. |
-| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. First **non–pre-release** GitHub Release. After this tag, the product can run a real event end-to-end. |
+| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. Tags before `v0.4.13` are marked **pre-release** on GitHub; from `v0.4.13` onward, releases are stable enough for day-to-day use and are marked as the **latest** GitHub Release, even though the product isn't yet operator-ready for a real event. |
+| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. After this tag, the product can run a real event end-to-end. |
 | **`v1.1+`** | **Post-first-event feature waves.** Capabilities that are useful but **not** required for the first go-live (see examples below). |
 
 ### Planned sequence (high level)
@@ -85,7 +85,7 @@ Do not bump per-package versions unless we start publishing libraries separately
 6. Commit on `main` — include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
 7. **Merge the release PR** — GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
    - verifies release artifacts (`sync-release-docs.py --check`, notes file, non-empty `.title` file, CHANGELOG section),
-   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y — …` from the `.title` file (pre-release when major is `0`),
+   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y — …` from the `.title` file, marked as the **latest** release,
    - triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload),
    - closes the open milestone titled `v0.x.y`.
 

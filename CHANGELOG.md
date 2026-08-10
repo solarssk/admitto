@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event Overview's Recent activity now also shows attendees added and items issued/returned, alongside check-ins, mail failures, and imports.
 
 ### Changed
+- **GitHub Releases from `v0.4.13` onward are marked as the latest release instead of pre-release** — the release pipeline no longer marks every `v0.x.y` tag as pre-release; see [VERSIONING.md](VERSIONING.md).
 - Living ops and security docs now match the current stack: generic **Upgrading** (manual backup first), no automatic pre-migration dump / root migrate, product retention and bounce on the **worker** (not app startup or a retention sidecar), and package README CLI notes aligned with workspace builds.
 - **OIDC providers are configured only in Organisation settings → Identity.** Removed the unused `OIDC_ENABLED` / `OIDC_ISSUER` / `OIDC_CLIENT_*` / `OIDC_DISPLAY_NAME` env-seed documentation (the runtime never read those variables). Cloudflare Access optional env locks are unchanged.
 - Identity provider editor shows the Redirect URI pattern on the Add form before the first save.
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Failed login attempts now show the full attempted email in the Security audit log (and are searchable there), matching how successful sign-ins and other providers attribute activity.** Operational stdout / System logs still redact (`a***@example.com`). Superadmin-only durable table; matches the retention policy already documented for this trail.
 
 ### Fixed
+- Event Settings → Images: the "file too large" messages on the event logo drop zone and the crop dialog now use the same bordered Notice style as the rest of the image library, instead of two different ad-hoc red-text treatments.
 - Check-in's Recent scans no longer shows a duplicate "Checked in" row for the same admission after a follow-up action (e.g. issuing a badge) refreshes the sidebar: the persisted check-in timestamp now matches the one already shown by the optimistic local echo instead of being read from the database's own clock.
 - Event Settings no longer crashes on load: the image library imports placeholder names from a browser-safe `@admitto/mail-templates` subpath instead of the package root (which pulled Prisma/Node APIs into the SPA).
 - Event Settings → Images: Image name hint/error sits close under the field (standard field spacing), and invalid focused inputs keep a single error focus ring instead of blue border plus red glow.

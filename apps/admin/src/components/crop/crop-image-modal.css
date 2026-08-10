@@ -158,14 +158,6 @@
   border: 2px solid var(--primary);
 }
 
-.crop-image-modal__error {
-  margin: 0;
-  width: 100%;
-  color: var(--status-danger-text, var(--danger-700, #b91c1c));
-  font-size: var(--fs-sm);
-  line-height: 1.4;
-}
-
 .crop-image-modal__actions {
   display: flex;
   justify-content: flex-end;

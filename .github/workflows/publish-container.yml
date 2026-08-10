@@ -177,22 +177,14 @@ jobs:
           TAG="${{ steps.release.outputs.tag }}"
           SBOM="sbom-${{ steps.release.outputs.artifact_slug }}.cdx.json"
           VERSION="${TAG#v}"
-          MAJOR="${VERSION%%.*}"
-          PRERELEASE_ARGS=()
-          if [ "$MAJOR" = "0" ]; then
-            PRERELEASE_ARGS=(--prerelease)
-          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$SBOM" --clobber
-            if [ "$MAJOR" = "0" ]; then
-              gh release edit "$TAG" --prerelease
-            fi
           else
             NOTES=".github/release-notes/v${VERSION}.md"
             if [ -f "$NOTES" ]; then
               DISPLAY_TITLE="$(bash scripts/release-display-title.sh "$VERSION")"
-              gh release create "$TAG" --title "$DISPLAY_TITLE" --notes-file "$NOTES" "${PRERELEASE_ARGS[@]}" "$SBOM"
+              gh release create "$TAG" --title "$DISPLAY_TITLE" --notes-file "$NOTES" --latest "$SBOM"
             else
-              gh release create "$TAG" --title "$TAG" --generate-notes "${PRERELEASE_ARGS[@]}" "$SBOM"
+              gh release create "$TAG" --title "$TAG" --generate-notes --latest "$SBOM"
             fi
           fi

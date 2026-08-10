@@ -18,7 +18,7 @@ import ReactCrop, {
   type PercentCrop,
   type PixelCrop,
 } from "react-image-crop";
-import { Button, ModalBackdrop, Spinner } from "@admitto/ui";
+import { Button, ModalBackdrop, Notice, Spinner } from "@admitto/ui";
 import { useModalFocusTrap } from "../useModalFocusTrap.js";
 import { brandingLogoImgSrc } from "../../utils/safeBrandingLogoHref.js";
 import { getCroppedImageBlob } from "./getCroppedImageBlob.js";
@@ -374,9 +374,9 @@ function CropImageModalView({
           />
         </div>
         {error ? (
-          <p className="crop-image-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {error}
-          </p>
+          </Notice>
         ) : null}
         <div className="crop-image-modal__actions">
           <Button type="button" variant="secondary" disabled={applying} onClick={onCancel}>
