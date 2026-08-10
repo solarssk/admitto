@@ -100,6 +100,16 @@
   box-shadow: var(--ring);
 }
 
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix (pointer: coarse, not a max-width - see its own comment) for
+   .at-input/.at-select/.at-textarea in packages/ui. */
+@media (pointer: coarse) {
+  .searchable-select__search {
+    font-size: 16px;
+  }
+}
+
 .searchable-select__list {
   list-style: none;
   margin: 0;
