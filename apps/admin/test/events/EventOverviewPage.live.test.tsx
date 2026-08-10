@@ -591,7 +591,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("View full checklist in Event settings")).toBeTruthy();
   });
 
-  it("shows an all-clear line in the checklist when nothing needs action", async () => {
+  it("shows completed checklist rows alongside the remaining setup checks", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(50));
 
     renderPage();
@@ -599,7 +599,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.getByText("Setup checklist")).toBeTruthy();
     });
-    expect(screen.getByText("All checks look good")).toBeTruthy();
+    expect(screen.getByText("Attendees imported")).toBeTruthy();
+    expect(screen.getByText("Tickets sent")).toBeTruthy();
+    expect(screen.getByText("Email delivery")).toBeTruthy();
+    expect(screen.getByText("Check-in staff")).toBeTruthy();
+    expect(screen.getByText("Event items")).toBeTruthy();
   });
 
   it("renders the Check-in progress card's ring percentage and glance stats", async () => {
@@ -1122,6 +1126,65 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
+  });
+
+  it("stores a key contact phone as one E.164 value from the country picker and national number", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockCreateEventContact.mockResolvedValueOnce({
+      id: "c-phone",
+      name: "Jane Doe",
+      role: null,
+      phone: "+48500100200",
+      email: null,
+      note: null,
+      sort_order: 0,
+    } satisfies EventContactDto);
+
+    renderPage();
+
+    const keyContactsSection = await screen
+      .findByText("Key contacts")
+      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    fireEvent.click(within(keyContactsSection).getByRole("button", { name: "Add a key contact" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add contact" });
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Phone country code, no code selected" }));
+    fireEvent.change(screen.getByLabelText("Search country or dial code"), { target: { value: "Poland" } });
+    fireEvent.click(screen.getByRole("button", { name: "Poland +48" }));
+
+    const phoneField = within(dialog).getByLabelText("Phone number") as HTMLInputElement;
+    fireEvent.change(phoneField, { target: { value: "500 100 200" } });
+    expect(phoneField.autocomplete).toBe("off");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockCreateEventContact).toHaveBeenCalledWith("evt-1", {
+        name: "Jane Doe",
+        role: null,
+        phone: "+48500100200",
+        email: null,
+      });
+    });
+  });
+
+  it("splits an existing key contact E.164 phone value when opening Edit", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        contacts: [
+          { id: "c-phone", name: "Jane Doe", role: null, phone: "+48500100200", email: null, note: null, sort_order: 0 },
+        ],
+      }),
+    );
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Jane Doe" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
+
+    expect(within(dialog).getByRole("button", { name: "Phone country code, Poland +48" })).toBeTruthy();
+    expect((within(dialog).getByLabelText("Phone number") as HTMLInputElement).value).toBe("500100200");
   });
 
   it("opens Links & files' add flow as a modal dialog and updates the list on save", async () => {
