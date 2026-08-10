@@ -58,6 +58,7 @@ if [[ -n "${CI:-}" ]]; then
   exit "$migrate_status"
 fi
 
-echo "migrate deploy failed locally — falling back to db push (ADR 0015 integration parity)…" >&2
-npx --no-install prisma db push --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts --accept-data-loss
-echo "db push OK (${DB_NAME})"
+echo "migrate deploy failed locally — resetting test DB and retrying migrate deploy…" >&2
+bash infra/scripts/reset-test-db.sh "$DB_NAME"
+run_migrate_deploy
+echo "migrate deploy OK after reset (${DB_NAME})"

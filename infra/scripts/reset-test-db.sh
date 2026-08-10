@@ -47,8 +47,8 @@ run_createdb() {
 }
 
 echo "Terminating connections to ${DB_NAME}…"
-run_psql -d postgres -v ON_ERROR_STOP=1 -v db_name="$DB_NAME" -c \
-  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :'db_name' AND pid <> pg_backend_pid();" \
+run_psql -d postgres -v ON_ERROR_STOP=1 -c \
+  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid();" \
   >/dev/null || true
 
 echo "Dropping ${DB_NAME}…"

@@ -113,6 +113,7 @@ const eventSettings = {
   archived_at: null as string | null,
   created_at: "2026-01-01T00:00:00.000Z",
   is_deletable: false,
+  deletion_blockers: ["attendees"] as string[],
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null as string | null,

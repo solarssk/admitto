@@ -232,6 +232,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       archived_at: string | null;
       created_at: string;
       is_deletable: boolean;
+      deletion_blockers: string[];
       organization_name: string;
       active_items: { id: string; name: string; enabled: boolean }[];
       logo_url: string | null;
@@ -252,6 +253,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.archived_at).toBeNull();
     expect(new Date(body.created_at).toString()).not.toBe("Invalid Date");
     expect(body.is_deletable).toBe(false);
+    expect(body.deletion_blockers.length).toBeGreaterThan(0);
     expect(body.organization_name).toBe("Settings Org");
     expect(body.active_items.some((i) => i.id === ITEM_SET && i.name === "Badge")).toBe(true);
     expect(body.logo_url).toBeNull();
@@ -418,9 +420,11 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     const body = (await res.json()) as {
       archived_at: string | null;
       is_deletable: boolean;
+      deletion_blockers: string[];
     };
     expect(body.archived_at).not.toBeNull();
     expect(body.is_deletable).toBe(true);
+    expect(body.deletion_blockers).toEqual([]);
   });
 
   it("returns is_deletable: true for an ACTIVE event with zero activity (archiving is not required)", async () => {
@@ -432,10 +436,12 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       status: string;
       archived_at: string | null;
       is_deletable: boolean;
+      deletion_blockers: string[];
     };
     expect(body.status).toBe("active");
     expect(body.archived_at).toBeNull();
     expect(body.is_deletable).toBe(true);
+    expect(body.deletion_blockers).toEqual([]);
   });
 
   it("returns 404 for non-existent event (superadmin)", async () => {
@@ -509,6 +515,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
         title: string;
         slug: string;
         is_deletable: boolean;
+        deletion_blockers: string[];
         admitted_count: number;
         issued_items_count: number;
       };
@@ -516,6 +523,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.event.title).toBe("Renamed Event");
     expect(body.event.slug).toBe("event-settings");
     expect(body.event.is_deletable).toBe(false);
+    expect(body.event.deletion_blockers.length).toBeGreaterThan(0);
     expect(body.event.admitted_count).toBe(0);
     expect(body.event.issued_items_count).toBe(0);
 
