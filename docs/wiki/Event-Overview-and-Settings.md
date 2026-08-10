@@ -19,7 +19,7 @@ Open the correct organisation and event. If another manager may be editing the s
 
 1. Open **Overview**.
 2. Review the compact **Setup checklist** for unfinished setup.
-3. Review KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** ring with ticket-type breakdown, and **Recent activity** (check-ins, mail failures, and imports).
+3. Review KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** ring with ticket-type breakdown, and **Recent activity** (check-ins, attendees added, item issue/return/revoke, mail failures, and imports).
 4. Use **Pinned note**, **Key contacts**, and **Important links & files** when your event keeps that operational context on Overview.
 5. Follow a readiness prompt when it points to unfinished setup.
 
