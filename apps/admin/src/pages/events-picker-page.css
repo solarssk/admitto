@@ -1,0 +1,16 @@
+@media (max-width: 767px) {
+  .events-picker-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .events-picker-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .events-picker-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+}

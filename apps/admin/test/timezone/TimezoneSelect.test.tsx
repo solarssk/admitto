@@ -373,4 +373,39 @@ describe("TimezoneSelect", () => {
       ).toBe(true);
     });
   });
+
+  it("closes and stays closed when clicking an external <label for> while open", () => {
+    render(
+      <div>
+        <label htmlFor="event-tz">Event timezone</label>
+        <TimezoneSelect id="event-tz" value="UTC" onChange={() => {}} />
+      </div>,
+    );
+    fireEvent.click(document.getElementById("event-tz")!);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    const externalLabel = screen.getByText("Event timezone");
+    fireEvent.pointerDown(externalLabel);
+    fireEvent.click(externalLabel);
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("stays closed after an outside pointerdown that would otherwise reopen via the trigger click", () => {
+    render(
+      <div>
+        <button type="button">Outside</button>
+        <TimezoneSelect id="tz-suppress" value="UTC" onChange={() => {}} />
+      </div>,
+    );
+    fireEvent.click(document.getElementById("tz-suppress")!);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("listbox")).toBeNull();
+
+    // Same gesture's click can land on the re-focused trigger; suppress that reopen.
+    fireEvent.click(document.getElementById("tz-suppress")!);
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
 });

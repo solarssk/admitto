@@ -342,6 +342,9 @@ export function TimezoneSelect({
   const listRef = useRef<HTMLUListElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // After an outside pointerdown closes the panel, the same gesture's click can land on the
+  // trigger (or a <label for> forwards one) and would reopen it - ignore that one click.
+  const suppressNextTriggerClickRef = useRef(false);
 
   const index = getTzIndex();
   const searching = Boolean(deferred.trim());
@@ -368,6 +371,9 @@ export function TimezoneSelect({
     setOpen(false);
     setQuery("");
     setPanelStyle(HIDDEN_FIXED_PANEL);
+    if (reason === "pointer") {
+      suppressNextTriggerClickRef.current = true;
+    }
     if (reason !== "focus" && reason !== "scroll") {
       window.setTimeout(() => triggerRef.current?.focus(), 0);
     }
@@ -506,6 +512,10 @@ export function TimezoneSelect({
         aria-describedby={hintId}
         onClick={() => {
           // `disabled` is enforced by the button attribute — no click handler when disabled.
+          if (suppressNextTriggerClickRef.current) {
+            suppressNextTriggerClickRef.current = false;
+            return;
+          }
           if (open) {
             setOpen(false);
             return;

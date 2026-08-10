@@ -45,14 +45,34 @@ describe("CreateEventModal", () => {
     vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((value) => value);
   });
 
-  it("auto-generates slug from title until slug is manually edited", () => {
+  it("hides Link name and still submits an auto-generated slug from the title", async () => {
+    mockCreateEvent.mockResolvedValueOnce({
+      id: "evt-1",
+      title: "Autumn Summit 2026",
+      slug: "autumn-summit-2026",
+      date: "2026-09-29",
+      timezone: "Europe/Warsaw",
+      location: null,
+      organization_id: "org-1",
+      archived_at: null,
+    });
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
 
     fireEvent.change(screen.getByLabelText(/Event title/), {
       target: { value: "Autumn Summit 2026" },
     });
+    expect(screen.queryByLabelText(/Link name/)).toBeNull();
+    pickEventDate("2026-09-29");
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    expect((screen.getByLabelText(/Link name/) as HTMLInputElement).value).toBe("autumn-summit-2026");
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Autumn Summit 2026",
+          slug: "autumn-summit-2026",
+        }),
+      );
+    });
   });
 
   it("keeps submit disabled until date is set", () => {
@@ -85,23 +105,26 @@ describe("CreateEventModal", () => {
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
-  it("shows a slug-specific error when creation returns 409", async () => {
+  it("shows a title-focused error when creation returns 409", async () => {
     mockCreateEvent.mockRejectedValueOnce(new ApiError(409, "slug_taken"));
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    expect(await screen.findByText("This link name is already in use. Choose another.")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "An event with a similar name already exists. Change the title slightly and try again.",
+      ),
+    ).toBeTruthy();
   });
 
-  it("keeps a manually edited slug when the title changes", () => {
+  it("mentions Optional only once on the location field", () => {
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
-    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
-    fireEvent.change(screen.getByLabelText(/Link name/), { target: { value: "custom-event" } });
-    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Renamed Event" } });
-
-    expect((screen.getByLabelText(/Link name/) as HTMLInputElement).value).toBe("custom-event");
+    expect(screen.getByText("Add a title and date.")).toBeTruthy();
+    expect(screen.getByLabelText("Location (optional)")).toBeTruthy();
+    expect(screen.queryByText(/Location is optional/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
   });
 
   it("ignores close while submission is pending", async () => {
@@ -181,10 +204,9 @@ describe("CreateEventModal", () => {
 
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
-    fireEvent.change(screen.getByLabelText("Location"), {
+    fireEvent.change(screen.getByLabelText("Location (optional)"), {
       target: { value: "Example Square" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /1 Example Square/ }));
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -223,9 +245,8 @@ describe("CreateEventModal", () => {
 
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
-    const venue = screen.getByLabelText("Location");
+    const venue = screen.getByLabelText("Location (optional)");
     fireEvent.change(venue, { target: { value: "Convention Center" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /Convention Center/ }));
 
     fireEvent.change(venue, { target: { value: "Convention Center Annex" } });
