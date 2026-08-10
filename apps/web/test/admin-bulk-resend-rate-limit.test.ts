@@ -38,7 +38,10 @@ describe("admin bulk resend rate limit", () => {
       method: "POST",
     });
     expect(limited.status).toBe(429);
-    expect(await limited.json()).toEqual({ error: "too many requests" });
+    expect(await limited.json()).toEqual({
+      error: "bulk_send_rate_limited",
+      detail: "Bulk sends are limited to 3 requests every 10 minutes. Try again later.",
+    });
   });
 
   it("does not share bulk bucket between admins", async () => {

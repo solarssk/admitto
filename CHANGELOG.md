@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Attendees now show "No ticket type" instead of a dash when no type is assigned. Bulk delete and revoke confirmations are immediately actionable, while their confirmation dialog remains in place.
 - Requirements now gives new and legacy Badge items the Name badge issued at check-in description and badge icon. Custom field types use clear labels and guidance, and the Requirements page links to its documentation.
+- Bulk ticket-send previews no longer use the three-send limit. Real bulk sends now explain the 10-minute limit when it is reached.
+- Check-in cards label their dismiss action "Close", and Recent activity no longer shows duplicate-scan warnings as check-ins.
 - Public HTML 404/500 pages no longer overflow on narrow phones, and show a clearer layout (large status code and icon instead of a small boxed notice).
 - MFA enrollment: downloading backup codes no longer leaves the button stuck on "Please wait…".
 - MFA setup on desktop no longer offers a misleading "Open in password manager" link (otpauth often does nothing on Windows Chrome); copy explains scanning the QR or pasting the setup key instead.
