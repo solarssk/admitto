@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
-import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates";
+// Subpath only: the package root re-exports Prisma/mjml server modules. Importing the
+// barrel into the SPA pulled Node APIs (fileURLToPath) into Event Settings and crashed.
+import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates/placeholders";
 import { createEventImageAsset, deleteEventImageAsset, deleteUploadedFile, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
@@ -480,32 +482,34 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
             </span>
             <span className="image-asset-library__dropzone-hint">PNG, JPG, WebP · max 2 MB</span>
           </button>
-          <div className="mail-test-send__row">
-            <div className="mail-test-send__controls">
-              <Input
-                label="Image name"
-                value={displayName}
-                disabled={disabled || uploading}
-                maxLength={DISPLAY_NAME_MAX}
-                onChange={(e) => setDisplayName(clampDisplayName(e.target.value))}
-                onBlur={() => setDisplayNameTouched(true)}
-                placeholder="Sponsor logo"
-                invalid={Boolean(tokenErrorText)}
-              />
-              <div className="mail-test-send__send-control">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={!canSubmit}
-                  icon={<i className="ti ti-plus" aria-hidden="true" />}
-                  onClick={() => void handleSubmit()}
-                >
-                  {uploading ? "Adding…" : "Add image"}
-                </Button>
+          <div className="image-asset-library__name-block">
+            <div className="mail-test-send__row">
+              <div className="mail-test-send__controls">
+                <Input
+                  label="Image name"
+                  value={displayName}
+                  disabled={disabled || uploading}
+                  maxLength={DISPLAY_NAME_MAX}
+                  onChange={(e) => setDisplayName(clampDisplayName(e.target.value))}
+                  onBlur={() => setDisplayNameTouched(true)}
+                  placeholder="Sponsor logo"
+                  invalid={Boolean(tokenErrorText)}
+                />
+                <div className="mail-test-send__send-control">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!canSubmit}
+                    icon={<i className="ti ti-plus" aria-hidden="true" />}
+                    onClick={() => void handleSubmit()}
+                  >
+                    {uploading ? "Adding…" : "Add image"}
+                  </Button>
+                </div>
               </div>
             </div>
+            <ImageNameHint errorText={tokenErrorText} previewToken={previewToken} />
           </div>
-          <ImageNameHint errorText={tokenErrorText} previewToken={previewToken} />
           {formError ? (
             <Notice variant="error" role="alert">
               {formError}

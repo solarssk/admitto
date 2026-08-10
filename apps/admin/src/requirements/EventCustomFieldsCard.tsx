@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Card, HintLabel, IconButton, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, IconButton, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, deleteEventCustomField } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventDto } from "../api/types.js";
@@ -7,9 +7,6 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
-
-const CUSTOM_FIELDS_INTRO =
-  "Define extra attendee data (dietary, shirt size, …). After saving a field, open an event item and tick which fields operators should see next to that item at check-in.";
 
 const CUSTOM_FIELDS_HINT =
   "Also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.";
@@ -34,19 +31,31 @@ function CustomFieldRow({
   readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
+  const description = field.description?.trim() ?? "";
+  const typeLabel = customFieldTypeLabel(field.type);
   return (
     <tr>
       <td>
         <div className="requirements-item-cell">
-          <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+          <Tooltip content={typeLabel}>
+            <span className="requirements-item-type-icon" aria-label={typeLabel}>
+              <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+            </span>
+          </Tooltip>
           <div className="requirements-item-info">
             <div className="requirements-item-name">{field.label}</div>
-            <div className="requirements-item-id">{field.source_field}</div>
+            <div className="requirements-item-id">
+              <code>{field.source_field}</code>
+            </div>
           </div>
         </div>
       </td>
-      <td className="requirements-type-col">{customFieldTypeLabel(field.type)}</td>
-      <td>{field.required ? "Yes" : "No"}</td>
+      <td className="requirements-item-desc-col">
+        {description !== "" ? (
+          <div className="requirements-item-desc">{description}</div>
+        ) : null}
+      </td>
+      <td className="requirements-item-status-col">{field.required ? "Yes" : "No"}</td>
       <td className="requirements-item-actions">
         <div className="requirements-item-actions__wrap">
           <ArchivedGuard event={event} reasonId={`edit-custom-field-reason-${field.id}`}>
@@ -87,6 +96,8 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
   const [deleteTarget, setDeleteTarget] = useState<EventCustomFieldDto | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const showTable = !loading && fields.length > 0;
+
   function closeModal() {
     setAddOpen(false);
     setEditField(null);
@@ -111,42 +122,51 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
     }
   }
 
-  function renderRows() {
+  function renderBody() {
     if (loading) {
-      if (!showLoading) return null;
-      return (
-        <tr>
-          <td colSpan={4} className="attendees-empty">
-            Loading…
-          </td>
-        </tr>
-      );
+      return showLoading ? <p className="field-hint">Loading…</p> : null;
     }
     if (fields.length === 0) {
       return (
-        <tr>
-          <td colSpan={4} className="attendees-empty">
-            No custom fields yet. Add one to collect extra attendee data, like dietary
-            requirements.
-          </td>
-        </tr>
+        <EmptyState
+          icon={<i className="ti ti-forms" aria-hidden="true" />}
+          title="No custom fields yet"
+          description="Add one to collect extra attendee data, like dietary requirements or shirt size."
+        />
       );
     }
-    return fields.map((field) => (
-      <CustomFieldRow
-        key={field.id}
-        field={field}
-        event={event}
-        onEdit={() => setEditField(field)}
-        onDelete={() => setDeleteTarget(field)}
-      />
-    ));
+    return (
+      <div className="attendees-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th className="requirements-item-desc-col">Description</th>
+              <th className="requirements-item-status-col">Required</th>
+              <th className="requirements-item-actions" aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {fields.map((field) => (
+              <CustomFieldRow
+                key={field.id}
+                field={field}
+                event={event}
+                onEdit={() => setEditField(field)}
+                onDelete={() => setDeleteTarget(field)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
   }
 
   return (
     <section className="requirements-section">
       <Card
-        padded={false}
+        /* Table bleeds edge-to-edge; empty/loading keep normal card padding (Import history). */
+        padded={!showTable}
         title={<HintLabel hint={CUSTOM_FIELDS_HINT}>Custom attendee fields</HintLabel>}
         actions={
           <ArchivedGuard event={event} reasonId="add-custom-field-reason">
@@ -164,20 +184,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
           </ArchivedGuard>
         }
       >
-        <p className="settings-card-intro">{CUSTOM_FIELDS_INTRO}</p>
-        <div className="attendees-table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Field</th>
-                <th className="requirements-type-col">Type</th>
-                <th>Required</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>{renderRows()}</tbody>
-          </table>
-        </div>
+        {renderBody()}
       </Card>
 
       {(addOpen || editField) && (

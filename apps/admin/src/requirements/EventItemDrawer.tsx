@@ -9,7 +9,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventCustomFieldDto, EventItemConfigDto, EventItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon } from "./customFieldType.js";
-import { IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
+import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./requirements.css";
 
@@ -73,6 +73,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
   // "badge" is auto-recreated by the server (ensureBadgeEventItem) — deleting it
   // would silently reappear, so deletion is blocked; disable it instead.
   const isDefaultItem = item.key === "badge";
+  const headerIcon = form.icon ?? item.icon ?? DEFAULT_EVENT_ITEM_ICON;
 
   useEffect(() => {
     setForm(toForm(item));
@@ -153,9 +154,12 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
           <div className="event-item-modal__header">
             <div>
               <h2 id="item-modal-title" className="event-item-modal__title">
+                <i className={`ti ti-${headerIcon}`} aria-hidden="true" />
                 {item.label}
               </h2>
-              <p className="requirements-item-id">Internal ID: {item.key}</p>
+              <p className="event-item-modal__id">
+                Internal ID: <code>{item.key}</code>
+              </p>
             </div>
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
@@ -234,7 +238,9 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                       <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
                       <div className="requirements-item-info">
                         <div className="requirements-item-name">{field.label}</div>
-                        <div className="requirements-item-id">{field.source_field}</div>
+                        <div className="requirements-item-id">
+                          <code>{field.source_field}</code>
+                        </div>
                       </div>
                     </label>
                   ))}
@@ -279,9 +285,6 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             </div>
           </form>
           <div className="event-item-modal__footer">
-            <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
-              Cancel
-            </Button>
             <Tooltip
               content={
                 isDefaultItem
@@ -304,9 +307,14 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                 Delete item
               </Button>
             </Tooltip>
-            <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
+            <div className="event-item-modal__footer-end">
+              <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting}>
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </div>
           </div>
         </div>
       </dialog>

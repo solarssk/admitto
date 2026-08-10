@@ -141,7 +141,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               </label>
               {form.source_field && (
                 <span className="at-hint">
-                  ID: <code>{form.source_field}</code>
+                  ID: <code className="requirements-item-id">{form.source_field}</code>
                 </span>
               )}
             </div>
@@ -196,7 +196,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               role="group"
               aria-labelledby="cf-type-label"
             >
-              {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel, hint }) => (
+              {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
                 <Tooltip key={value} content={btnLabel}>
                   <button
                     type="button"
@@ -213,34 +213,36 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                 </Tooltip>
               ))}
             </div>
-            <p className="requirements-section-hint">
+            <span className="at-hint">
               {CUSTOM_FIELD_TYPES.find((type) => type.value === form.type)?.hint}
-            </p>
+            </span>
+            {form.type === "select" && (
+              <>
+                <label className="at-label" htmlFor="cf-options">
+                  Options (one per line)
+                </label>
+                <textarea
+                  id="cf-options"
+                  className="at-textarea"
+                  rows={3}
+                  value={form.options}
+                  onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
+                  placeholder={"Vegetarian\nVegan\nGluten-free"}
+                  aria-label="Select options"
+                />
+              </>
+            )}
           </div>
-          {form.type === "select" && (
-            <div className="at-field">
-              <label className="at-label" htmlFor="cf-options">
-                Options (one per line)
-              </label>
-              <textarea
-                id="cf-options"
-                className="at-textarea"
-                rows={3}
-                value={form.options}
-                onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
-                placeholder={"Vegetarian\nVegan\nGluten-free"}
-                aria-label="Select options"
-              />
-            </div>
-          )}
         </form>
         <div className="event-item-modal__footer">
-          <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving}>
-            {submitLabel}
-          </Button>
+          <div className="event-item-modal__footer-end">
+            <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving}>
+              {submitLabel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
