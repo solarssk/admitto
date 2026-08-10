@@ -25,6 +25,15 @@ export function isValidIanaTimezone(tz: string): boolean {
   return !/^GMT/i.test(canonical);
 }
 
+/** Best-effort parse of a client-supplied IANA zone (form field / query `tz`). Null when
+ * missing or invalid - never blocks the request. */
+export function parseOptionalClientTimezone(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed || !isValidIanaTimezone(trimmed)) return null;
+  return trimmed;
+}
+
 export const timezoneField = z
   .string()
   .trim()

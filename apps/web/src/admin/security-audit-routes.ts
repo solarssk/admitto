@@ -169,6 +169,7 @@ export async function handleGetSecurityAuditLog(c: Context, db: PrismaClient): P
     user_display_name: resolveSecurityUserDisplayName(r, userMap),
     ip: r.ip,
     country: resolveIpLocation(r.ip),
+    actor_timezone: r.actor_timezone,
     metadata: r.metadata as Record<string, unknown> | null,
     created_at: r.created_at.toISOString(),
   }));

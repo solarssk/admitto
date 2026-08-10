@@ -115,6 +115,7 @@ describe("privileged-login-alert", () => {
           user_email: "admin@example.com",
           user_display_name: null,
           ip: "9.9.9.9",
+          actor_timezone: null,
           metadata: { streak: PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD },
         },
       });

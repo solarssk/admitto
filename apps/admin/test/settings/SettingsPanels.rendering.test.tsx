@@ -75,6 +75,7 @@ function makeSecurityEntry(overrides: Partial<SecurityAuditLogEntryDto> = {}): S
     user_display_name: "Alice Admin",
     ip: "192.0.2.10",
     country: { kind: "unknown" },
+    actor_timezone: null,
     metadata: { email: "alice@example.com", userAgent: "curl/8.0" },
     created_at: "2026-01-01T12:00:00.000Z",
     ...overrides,
@@ -1399,13 +1400,13 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).queryByText("Internal network")).toBeNull();
   });
 
-  it("shows the viewer's own local time as a secondary line under the UTC timestamp, not the actor's", async () => {
+  it("falls back to the viewer's local time when actor_timezone is missing", async () => {
     const resolvedOptionsSpy = vi
       .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
       .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
     try {
       vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
-        entries: [makeSecurityEntry()],
+        entries: [makeSecurityEntry({ actor_timezone: null })],
         total: 1,
         page: 1,
         pageSize: 25,
@@ -1420,6 +1421,21 @@ describe("AuditLogPanel Security view rendering", () => {
     } finally {
       resolvedOptionsSpy.mockRestore();
     }
+  });
+
+  it("shows the actor's stored timezone under Time when actor_timezone is set", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ actor_timezone: "Asia/Tokyo", created_at: "2026-01-01T12:00:00.000Z" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText(/Asia\/Tokyo/)).toBeTruthy();
+    expect(within(table).getByTitle("User's local time")).toBeTruthy();
   });
 
   it("shows the attempted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {
@@ -1606,6 +1622,37 @@ describe("AuditLogPanel Security view rendering", () => {
     } finally {
       Object.assign(navigator, { clipboard: originalClipboard });
       resolvedOptionsSpy.mockRestore();
+    }
+  });
+
+  it("copies User's local time in the row summary when actor_timezone is set", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          actor_timezone: "Asia/Tokyo",
+          created_at: "2026-01-01T12:00:00.000Z",
+          metadata: { userAgent: "curl/8.0" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderSecurityPanel();
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toMatch(/User's local time · .*Asia\/Tokyo/);
+      expect(summary).not.toMatch(/Your local time/);
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
     }
   });
 

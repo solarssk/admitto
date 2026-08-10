@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Failed login attempts now show the full attempted email in the Security audit log (and are searchable there), matching how successful sign-ins and other providers attribute activity.** Operational stdout / System logs still redact (`a***@example.com`). Superadmin-only durable table; matches the retention policy already documented for this trail.
 
 ### Fixed
+- Sessions and Security logs now show the actor's own timezone on the secondary time line (same pattern as Audit logs), capturing it at local login, initial `/setup`, and OIDC start. Older rows and non-browser clients still fall back to your browser timezone.
 - Event settings: clearer card hints, Location **Remove pin** (no Find on map), safer ticket-type delete confirm, and Organisation Admins can manage the mail image library. Image uploads use a plain image name (server builds `{{token}}`), with clearer upload/remove errors.
 - Attendees now show "No ticket type" instead of a dash when no type is assigned. Bulk delete and revoke confirmations are immediately actionable, while their confirmation dialog remains in place.
 - Requirements now gives new Badge items (and untouched legacy seed badges) the Name badge issued at check-in description and badge icon, without overwriting cleared descriptions or an intentional package/default icon. Custom field types use clear labels and guidance, and the Requirements page links to its documentation.

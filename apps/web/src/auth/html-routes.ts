@@ -26,6 +26,7 @@ import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { loadLoginSsoProviders } from "./login-sso.js";
+import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
 function mfaPathWithNext(path: string, next?: string): string {
   if (!next) return path;
@@ -112,6 +113,7 @@ export async function handlePostLogin(
     ip: resolveClientIp(c),
     userAgent: c.req.header("user-agent"),
     trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
+    timezone: parseOptionalClientTimezone(form["timezone"]),
   });
 
   if (!result.ok) {

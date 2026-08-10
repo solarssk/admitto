@@ -1109,6 +1109,8 @@ export interface SessionListDto {
   expiresAt: string;
   authMethod: string;
   stage: string;
+  /** Signer's IANA timezone at login — null for older sessions / non-browser captures. */
+  timezone: string | null;
   isCurrent: boolean;
 }
 
@@ -1332,6 +1334,8 @@ export interface SecurityAuditLogEntryDto {
   user_display_name: string | null;
   ip: string | null;
   country: IpLocationDto;
+  /** Actor's IANA timezone at the event — null for older rows, bots, or non-browser captures. */
+  actor_timezone: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }

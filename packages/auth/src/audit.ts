@@ -58,6 +58,8 @@ async function writeSecurityAuditLog(
     event_type: SecurityAuditEventType;
     user_id?: string | null;
     ip?: string | null;
+    /** Actor's IANA timezone at write time — null when unknown (bots, older clients, CLI). */
+    actor_timezone?: string | null;
     // Every one of this module's 10 callers always supplies a metadata object - non-optional
     // here rather than a defensive `?? undefined` fallback for a shape nothing ever passes.
     metadata: Record<string, unknown>;
@@ -72,6 +74,7 @@ async function writeSecurityAuditLog(
         user_email: snapshot?.email ?? null,
         user_display_name: snapshot?.display_name ?? null,
         ip: fields.ip ?? null,
+        actor_timezone: fields.actor_timezone ?? null,
         metadata: fields.metadata as Prisma.InputJsonValue,
       },
     });
@@ -124,6 +127,8 @@ export interface LoginAuditContext {
   email: string;
   ip?: string;
   userAgent?: string;
+  /** Browser IANA timezone when captured (HTML form / header); omit when unknown. */
+  timezone?: string | null;
 }
 
 /** Context for MFA completion audit events. */
@@ -183,6 +188,7 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
     event_type: "auth.login.success",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
+    actor_timezone: ctx.timezone ?? null,
     metadata: { userAgent: ctx.userAgent ?? null },
   });
 }
@@ -206,6 +212,7 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
     event_type: "auth.login.fail",
     user_id: null,
     ip: ctx.ip ?? null,
+    actor_timezone: ctx.timezone ?? null,
     metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
   });
 }
@@ -368,6 +375,8 @@ export async function logOidcLoginSuccess(
     userId: string;
     subject?: string;
     ip?: string;
+    /** Browser IANA timezone captured at OIDC /start (carried via OidcAuthState). */
+    timezone?: string | null;
   },
 ): Promise<void> {
   emitAuditEvent("auth.oidc.success", {
@@ -380,6 +389,7 @@ export async function logOidcLoginSuccess(
     event_type: "auth.oidc.success",
     user_id: input.userId,
     ip: input.ip ?? null,
+    actor_timezone: input.timezone ?? null,
     metadata: { providerId: input.providerId, subject: input.subject ?? null },
   });
 }
