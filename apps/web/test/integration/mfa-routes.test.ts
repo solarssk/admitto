@@ -1,7 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
@@ -12,16 +9,16 @@ import {
   parseTotpSecretFromOtpauthUri,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
-import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
-import { createApp } from "../src/app.js";
-import { clearEnrollmentBackupCacheForTests } from "../src/auth/enrollment-backup-cache.js";
-import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
+import { createApp } from "../../src/app.js";
+import { clearEnrollmentBackupCacheForTests } from "../../src/auth/enrollment-backup-cache.js";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_ROOT = path.resolve(__dirname, "..", "..", "..", "packages", "db");
 const CHECKIN_TOKEN = "test-checkin-mfa-token-32chars!!";
 const EVENT_ID = "event-mfa-web";
 const ORG_ID = "org_mfa_web";
+const adminEmail = "web-admin@example.com";
+const adminPassword = "web-admin-pass-123";
+const operatorEmail = "web-op@example.com";
 function extractBackupCodes(html: string): string[] {
   const section = html.match(/<div class="auth-backup">([\s\S]*?)<\/div>/);
   if (!section?.[1]) return [];
@@ -69,9 +66,29 @@ const sameOrigin = { Origin: "http://localhost" };
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let rateLimitStore: InMemoryRateLimitStore;
-let adminEmail = "web-admin@example.com";
-let adminPassword = "web-admin-pass-123";
-let operatorEmail = "web-op@example.com";
+
+async function seedMfaFixtures(client: PrismaClient): Promise<void> {
+  const emails = [adminEmail, operatorEmail];
+  const existingUsers = await client.user.findMany({
+    where: { email: { in: emails } },
+    select: { id: true },
+  });
+  const userIds = existingUsers.map((u) => u.id);
+  if (userIds.length > 0) {
+    await client.adminAuditLog.deleteMany({ where: { actor_user_id: { in: userIds } } });
+    await client.securityAuditLog.deleteMany({ where: { user_id: { in: userIds } } });
+  }
+  await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_ID } });
+  await client.session.deleteMany({ where: { user: { email: { in: emails } } } });
+  await client.trustedDevice.deleteMany({ where: { user: { email: { in: emails } } } });
+  await client.userMfaMethod.deleteMany({ where: { user: { email: { in: emails } } } });
+  await client.roleAssignment.deleteMany({
+    where: { OR: [{ scope_id: ORG_ID }, { scope_id: EVENT_ID }, { user: { email: { in: emails } } }] },
+  });
+  await client.user.deleteMany({ where: { email: { in: emails } } });
+  await client.event.deleteMany({ where: { id: EVENT_ID } });
+  await client.organization.deleteMany({ where: { id: ORG_ID } });
+}
 
 function sessionCookie(res: Response): string | undefined {
   const setCookie = res.headers.getSetCookie?.() ?? [];
@@ -99,21 +116,14 @@ async function resetAdminAuthLabState(userId: string): Promise<void> {
 }
 
 beforeAll(async () => {
-  assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
-  execSync("npx prisma db push --force-reset --accept-data-loss", {
-    cwd: DB_ROOT,
-    env: { ...process.env },
-    stdio: "pipe",
-  });
-
   prisma = createTestPrismaClient();
+  await seedMfaFixtures(prisma);
+
   const password_hash = await hashPassword(adminPassword);
   const op_hash = await hashPassword("web-op-pass-123");
 
-  await prisma.organization.upsert({
-    where: { id: ORG_ID },
-    create: { id: ORG_ID, name: "MFA Org", slug: "mfa-org" },
-    update: {},
+  await prisma.organization.create({
+    data: { id: ORG_ID, name: "MFA Org", slug: "mfa-org" },
   });
 
   await prisma.event.create({
@@ -152,6 +162,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await seedMfaFixtures(prisma);
   await prisma.$disconnect();
 });
 
