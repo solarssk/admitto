@@ -84,16 +84,10 @@ jobs:
             exit 0
           fi
 
-          PRERELEASE_ARGS=()
-          MAJOR="${VERSION%%.*}"
-          if [ "$MAJOR" = "0" ]; then
-            PRERELEASE_ARGS=(--prerelease)
-          fi
-
           gh release create "$TAG" \
             --title "$DISPLAY_TITLE" \
             --notes-file "$NOTES" \
-            "${PRERELEASE_ARGS[@]}"
+            --latest
           echo "Created $TAG ($DISPLAY_TITLE)."
 
       - name: Trigger container publish
