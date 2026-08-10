@@ -1,8 +1,8 @@
 /** Stable short base36 suffix from title text (for non-ASCII-only fallbacks). */
 function titleFingerprint(title: string): string {
   let hash = 2166136261;
-  for (let i = 0; i < title.length; i++) {
-    hash ^= title.charCodeAt(i);
+  for (const ch of title) {
+    hash ^= ch.codePointAt(0)!;
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(36);
