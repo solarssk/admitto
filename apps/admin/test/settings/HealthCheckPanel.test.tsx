@@ -321,6 +321,24 @@ describe("HealthCheckPanel", () => {
     expect(screen.queryByText("secret_live_fail")).toBeNull();
   });
 
+  it("runs live checks from the More actions menu (mobile mirror of the header button)", async () => {
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByRole("button", { name: /More actions/ });
+
+    mockLive.mockResolvedValueOnce(sampleReport({ overall: "ok" }));
+    fireEvent.click(screen.getByRole("button", { name: /More actions/ }));
+    fireEvent.click(
+      within(screen.getByRole("menu")).getByRole("menuitem", { name: /Run live checks/ }),
+    );
+
+    await waitFor(() => {
+      expect(mockLive).toHaveBeenCalled();
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Live checks finished/);
+    });
+    // Menu closes on selection, same as the other More actions items.
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
   it("copies a Markdown snapshot via More actions", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

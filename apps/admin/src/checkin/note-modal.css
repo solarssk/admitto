@@ -65,8 +65,9 @@
 }
 
 /* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
-   16px. Matches the same fix for .at-input/.at-select/.at-textarea in packages/ui. */
-@media (max-width: 640px) {
+   16px. Matches the same fix (pointer: coarse, not a max-width - see its own comment) for
+   .at-input/.at-select/.at-textarea in packages/ui. */
+@media (pointer: coarse) {
   .note-modal__textarea {
     font-size: 16px;
   }
