@@ -1,6 +1,6 @@
 #!/bin/sh
 # Nightly pg_dump sidecar — network auth via POSTGRES_* from .env (no node/DATABASE_URL parser).
-# Writes gzip SQL under MIGRATION_BACKUP_DIR (compose volume). Atomic tmp → rename; gzip -t before keep.
+# Dumps SQL to a temp file, then gzip -c into nightly-*.sql.gz; gzip -t before the file is kept.
 
 set -eu
 

@@ -13,9 +13,9 @@ Both modes can coexist in a single file.
 
 ## CLI
 
-Build workspace dependencies first (`npm run build -w @admitto/import` pulls them via TypeScript
-project references / prior package builds). Prefer the package script (tsx against source after
-deps are built):
+On a clean checkout, build workspace packages first (`npm run build` from the repo root, or an
+explicit sequence such as `npm run build -w @admitto/db -w @admitto/tickets -w @admitto/import`).
+`npm run build -w @admitto/import` alone does **not** build its dependencies. Then:
 
 ```bash
 # Dry-run (default — no writes)
@@ -28,8 +28,8 @@ npm run import -w @admitto/import -- --event <eventId> --file attendees.csv --co
 npm run import -w @admitto/import -- --event <eventId> --file attendees.csv --commit --overwrite
 ```
 
-On a clean checkout, run `npm run build` for `@admitto/db` and other import dependencies before the
-CLI if you see `ERR_MODULE_NOT_FOUND`.
+The `import` script runs `tsx` against source; if you see `ERR_MODULE_NOT_FOUND` or `TS2307`, the
+dependency `dist` trees are missing — run the build step above again.
 
 ## Canonical CSV columns
 
