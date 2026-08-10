@@ -40,7 +40,7 @@
     "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
     "geo-tz": "^8.1.8",
-    "hono": "^4.12.34",
+    "hono": "^4.13.0",
     "ip-location-api": "5.0.2",
     "pdfkit": "^0.19.1",
     "redis": "^6.1.0",
@@ -48,11 +48,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@testcontainers/redis": "^12.0.4",
+    "@testcontainers/redis": "^12.1.0",
     "@types/node": "^24.0.0",
     "@types/pdfkit": "^0.17.6",
     "jose": "^6.2.5",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.10",
     "typescript": "^7.0.2",
     "vitest": "4.1.10"
   }
