@@ -1,29 +1,28 @@
 /**
  * Superadmin permanent event deletion (#395).
  *
- * Delete does not require the event to be archived first — it is reachable for any
- * event (active or archived) that shows zero real activity across seven independent
- * signals plus no pinned note. Archiving is a separate, independently useful action
- * (marks an event read-only/done) but is no longer a delete prerequisite: an event
- * that never had any real activity is equally safe to delete whether or not it has
- * been archived, and requiring an extra archive step first only added friction, not
- * safety, once every activity signal already has to be zero. Both the Event Settings
- * DTO hint (`is_deletable`, shown to disable the button in the UI) and the actual
- * delete route re-run the exact same `isEventDeletable` check against the exact same
- * `EventActivitySignals`, so the UI hint and the enforced guard can never drift apart.
+ * Delete does not require the event to be archived first - it is reachable for any
+ * event (active or archived) that has no retained attendees or event-specific content
+ * across six independent signals plus no pinned note. Archiving is a separate,
+ * independently useful action (marks an event read-only/done) but is no longer a delete
+ * prerequisite: an otherwise-empty event is equally safe to delete whether or not it has
+ * been archived. Both the Event Settings DTO hint (`is_deletable` / `deletion_blockers`,
+ * shown to disable the button in the UI) and the actual delete route re-run the exact
+ * same `isEventDeletable` check against the exact same `EventActivitySignals`, so the UI
+ * hint and the enforced guard can never drift apart.
  *
  * FK graph note: Attendee.event_id has no cascade, so 0 attendees transitively means 0
  * CheckIn/EmailDelivery/WalletPass rows (those all require an Attendee row first, and the
- * existing attendee-delete route already cleans them up transactionally — see
+ * existing attendee-delete route already cleans them up transactionally - see
  * attendees-api-routes.ts). EventItem/EventContact/EventResource/TicketType cascade on event
  * delete. MailTemplate has no FK to Event (matched by scope_id string) so it can't block the
- * delete at the DB level — the guard checks it explicitly, and the transaction below
+ * delete at the DB level - the guard checks it explicitly, and the transaction below
  * defensively removes any event-scoped template so nothing is left orphaned.
- * AttendeeActionLog.event_id cascades on event delete too, but — unlike the other
- * cascaded models — its `attendee_id` is optional: bulk actions (report exports, item/
- * config changes, imports, sends) write event-scoped rows with no attendee at all, so
- * this audit trail can hold real history even on an event with 0 attendees. It is
- * checked explicitly below rather than assumed covered by `attendeeCount`.
+ * AttendeeActionLog.event_id cascades on event delete too. Operational history (exports,
+ * config changes, attendee_erased rows with null attendee_id) is deliberately NOT a
+ * deletability signal: demo/test events would otherwise become permanently undeletable after
+ * normal use, and lifecycle-sensitive trails (e.g. attendee_erased) are also written to
+ * org-level AdminAuditLog, which survives event deletion.
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
@@ -39,7 +38,17 @@ import {
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
-/** Zero-cost-to-compute signals of real event activity, used by the deletability guard. */
+/** Stable keys exposed on Event Settings so the Danger zone can name remaining blockers. */
+export type EventDeletionBlocker =
+  | "attendees"
+  | "custom_items"
+  | "custom_ticket_types"
+  | "contacts"
+  | "resources"
+  | "pinned_note"
+  | "event_mail_template";
+
+/** Zero-cost-to-compute signals of retained event content, used by the deletability guard. */
 export type EventActivitySignals = {
   attendeeCount: number;
   nonBadgeItemCount: number;
@@ -47,10 +56,9 @@ export type EventActivitySignals = {
   contactCount: number;
   resourceCount: number;
   eventMailTemplateCount: number;
-  actionLogCount: number;
 };
 
-/** Count the seven activity signals for one event. Cheap, indexed, single round-trip. */
+/** Count the six content signals for one event. Cheap, indexed, single round-trip. */
 export async function countEventActivitySignals(
   db: DbClient,
   eventId: string,
@@ -62,7 +70,6 @@ export async function countEventActivitySignals(
     contactCount,
     resourceCount,
     eventMailTemplateCount,
-    actionLogCount,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.eventItem.count({ where: { event_id: eventId, key: { not: BADGE_ITEM_KEY } } }),
@@ -70,7 +77,6 @@ export async function countEventActivitySignals(
     db.eventContact.count({ where: { event_id: eventId } }),
     db.eventResource.count({ where: { event_id: eventId } }),
     db.mailTemplate.count({ where: { scope_type: "event", scope_id: eventId } }),
-    db.attendeeActionLog.count({ where: { event_id: eventId } }),
   ]);
   return {
     attendeeCount,
@@ -79,30 +85,36 @@ export async function countEventActivitySignals(
     contactCount,
     resourceCount,
     eventMailTemplateCount,
-    actionLogCount,
   };
 }
 
 /**
- * All 8 conditions must hold: no pinned note, and all 7 activity signals at zero.
- * Deliberately does NOT require `archived_at` — see the file-level comment above.
+ * List remaining delete blockers for an event. Empty means permanently deletable.
+ * Deliberately does NOT require `archived_at` - see the file-level comment above.
  * Pure/sync so it is trivially unit-testable and can never diverge between the DTO
- * computation and the actual delete route — both call this against the same signals.
+ * computation and the actual delete route - both call this against the same signals.
  */
+export function listEventDeletionBlockers(
+  event: { pinned_note: string | null },
+  signals: EventActivitySignals,
+): EventDeletionBlocker[] {
+  const blockers: EventDeletionBlocker[] = [];
+  if (signals.attendeeCount > 0) blockers.push("attendees");
+  if (signals.nonBadgeItemCount > 0) blockers.push("custom_items");
+  if (signals.nonStandardTicketTypeCount > 0) blockers.push("custom_ticket_types");
+  if (signals.contactCount > 0) blockers.push("contacts");
+  if (signals.resourceCount > 0) blockers.push("resources");
+  if (event.pinned_note !== null) blockers.push("pinned_note");
+  if (signals.eventMailTemplateCount > 0) blockers.push("event_mail_template");
+  return blockers;
+}
+
+/** True when {@link listEventDeletionBlockers} is empty. */
 export function isEventDeletable(
   event: { archived_at: Date | null; pinned_note: string | null },
   signals: EventActivitySignals,
 ): boolean {
-  return (
-    event.pinned_note === null &&
-    signals.attendeeCount === 0 &&
-    signals.nonBadgeItemCount === 0 &&
-    signals.nonStandardTicketTypeCount === 0 &&
-    signals.contactCount === 0 &&
-    signals.resourceCount === 0 &&
-    signals.eventMailTemplateCount === 0 &&
-    signals.actionLogCount === 0
-  );
+  return listEventDeletionBlockers(event, signals).length === 0;
 }
 
 /** Result of attempting to delete an event (domain layer, no HTTP). */
@@ -132,7 +144,7 @@ export async function deleteEvent(
   try {
     const txResult = await db.$transaction(async (tx): Promise<DeleteTxResult> => {
       // Serializes with the event mail-settings PUT transaction on the same eventId (see
-      // that route) — without this, a concurrent PUT can validate the event exists, then
+      // that route) - without this, a concurrent PUT can validate the event exists, then
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
       // MailSettings row with no FK to catch it (CodeRabbit review).
       await lockEventForMailSettingsWrite(tx, eventId);
@@ -147,12 +159,12 @@ export async function deleteEvent(
       if (!isEventDeletable(event, signals)) return { kind: "not_deletable" };
 
       // Defensive cleanup: MailTemplate has no FK to Event, so this is a no-op given the
-      // guard above already requires eventMailTemplateCount === 0 — kept so a deleted
+      // guard above already requires eventMailTemplateCount === 0 - kept so a deleted
       // event can never leave an orphaned scope_id behind under any future race.
       await tx.mailTemplate.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
 
       // MailSettings (event-scoped mail transport override, #511) is the same polymorphic
-      // scope_type/scope_id pattern with no FK — but unlike MailTemplate it's config, not
+      // scope_type/scope_id pattern with no FK - but unlike MailTemplate it's config, not
       // content/activity, so it's deliberately NOT one of the deletability signals above (an
       // otherwise-empty event with a configured transport override should still be
       // deletable). Clean it up here so a delete never orphans its scope_id.
@@ -187,8 +199,8 @@ export async function deleteEvent(
     });
     return { ok: true };
   } catch (err) {
-    // A concurrent change adding real activity between the count-check and the delete
-    // (e.g. a new attendee) is caught here as a Postgres FK-restrict rejection — that is
+    // A concurrent change adding real content between the count-check and the delete
+    // (e.g. a new attendee) is caught here as a Postgres FK-restrict rejection - that is
     // the guard working as intended, not an audit-log bug, so it maps to the same
     // "not_deletable" the caller already handles rather than a generic 500.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
