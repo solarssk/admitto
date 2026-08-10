@@ -278,14 +278,14 @@ async function loadRecentAttendeeActionActivity(
     const key = (row.metadata as { event_item_key?: string } | null)?.event_item_key;
     if (key) itemKeys.add(key);
   }
-  const itemLabels = new Map(
+  const itemLabels: Map<string, string> = new Map(
     itemKeys.size > 0
       ? (
           await db.eventItem.findMany({
             where: { event_id: eventId, key: { in: [...itemKeys] } },
             select: { key: true, label: true },
           })
-        ).map((item) => [item.key, item.label])
+        ).map((item): [string, string] => [item.key, item.label])
       : [],
   );
 
