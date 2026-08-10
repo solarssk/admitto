@@ -383,6 +383,12 @@ body {
   text-align: center;
   box-sizing: border-box;
 }
+.auth-mfa-desktop-hint { margin-top: 0.25rem; margin-bottom: 0.75rem; }
+.auth-mfa-mobile-only { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .auth-mfa-mobile-only { display: contents; }
+  .auth-mfa-desktop-hint { display: none; }
+}
 .auth-otpauth-details { margin-bottom: 1rem; }
 .auth-otpauth-details summary {
   cursor: pointer;
@@ -405,6 +411,7 @@ export function authFormSubmitScript(scriptNonce: string): string {
   return `<script nonce="${scriptNonce}">
 (function () {
   document.querySelectorAll(".auth-page form").forEach(function (form) {
+    if (form.dataset.authNoSubmitLock === "true") return;
     form.addEventListener("submit", function () {
       var btn = form.querySelector('button[type="submit"]');
       if (!btn || btn.disabled) return;
