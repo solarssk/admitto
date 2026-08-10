@@ -10,6 +10,12 @@
   min-width: 0;
 }
 
+/* Match Event items / Custom fields row height: both use the same cell padding, so a
+   Switch in Active does not make item rows look taller than field rows with only text. */
+.requirements-section .table tbody td {
+  padding-block: var(--space-3);
+}
+
 @media (max-width: 640px) {
   .requirements-item-desc-col {
     display: none;
@@ -85,6 +91,7 @@
   align-items: center;
   gap: var(--space-1);
   justify-content: flex-end;
+  min-height: var(--control-h-sm);
 }
 
 .requirements-item-cell {
