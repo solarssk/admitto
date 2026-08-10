@@ -3,7 +3,7 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+> **Last verified:** Admitto 0.4.14
 
 ## What this page helps you do
 
