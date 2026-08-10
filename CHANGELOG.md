@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Failed login attempts now show the full attempted email in the Security audit log (and are searchable there), matching how successful sign-ins and other providers attribute activity.** Operational stdout / System logs still redact (`a***@example.com`). Superadmin-only durable table; matches the retention policy already documented for this trail.
 
 ### Fixed
+- Event Settings → Images: the "file too large" messages on the event logo drop zone and the crop dialog now use the same bordered Notice style as the rest of the image library, instead of two different ad-hoc red-text treatments.
 - Event Settings no longer crashes on load: the image library imports placeholder names from a browser-safe `@admitto/mail-templates` subpath instead of the package root (which pulled Prisma/Node APIs into the SPA).
 - Event Settings → Images: Image name hint/error sits close under the field (standard field spacing), and invalid focused inputs keep a single error focus ring instead of blue border plus red glow.
 - Requirements → Custom attendee fields: empty registry uses EmptyState (no empty table row), the table shows Description instead of Type, and the type icon has a hover tooltip. Field-type buttons share equal width; type hints describe attendee answers with examples. Event items and custom-fields tables share column layout and row height; IDs use monospace. Event item modal: header icon, slim scrollbar, Delete on the left with Cancel/Save on the right.
