@@ -17,6 +17,7 @@ const CODE_MESSAGES: Record<string, string> = {
   already_enrolled: "Two-factor authentication is already enabled.",
   authentication_required: "Your session has expired. Sign in again.",
   body_required: "Request body is required.",
+  bulk_send_rate_limited: "Bulk sends are limited to 3 requests every 10 minutes. Try again later.",
   cannot_change_own_role: "You cannot change your own role. Ask another superadmin.",
   cannot_deactivate_self: "You cannot deactivate your own account.",
   cannot_delete_self: "You cannot delete your own account.",
