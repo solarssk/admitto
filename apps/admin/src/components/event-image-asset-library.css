@@ -69,10 +69,16 @@
   display: none;
 }
 
-/* Hint sits under the Name+Add row so the button can align with the input (mail-test-send
- * uses flex-end; an Input hint inside .at-field would pull the button down to the hint). */
+/* Name+Add stay in one flex-end row (button aligns with the control, not a hint). Hint sits
+ * in this block with .at-field spacing so settings-card-stack gap does not push it away. */
+.image-asset-library__name-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 .image-asset-library__name-hint {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   max-width: calc((100% - var(--space-4)) / 2);
 }
 

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Event Settings no longer crashes on load: the image library imports placeholder names from a browser-safe `@admitto/mail-templates` subpath instead of the package root (which pulled Prisma/Node APIs into the SPA).
+- Event Settings → Images: Image name hint/error sits close under the field (standard field spacing), and invalid focused inputs keep a single error focus ring instead of blue border plus red glow.
 - Requirements → Custom attendee fields: empty registry uses EmptyState (no empty table row), the table shows Description instead of Type, and the type icon has a hover tooltip. Field-type buttons share equal width; type hints describe attendee answers with examples. Event items and custom-fields tables share column layout and row height; IDs use monospace. Event item modal: header icon, slim scrollbar, Delete on the left with Cancel/Save on the right.
 - Sessions and Security logs now show the actor's own timezone on the secondary time line (same pattern as Audit logs), capturing it at local login, initial `/setup`, and OIDC start. Older rows and non-browser clients still fall back to your browser timezone.
 - Event settings: clearer card hints, Location **Remove pin** (no Find on map), safer ticket-type delete confirm, and Organisation Admins can manage the mail image library. Image uploads use a plain image name (server builds `{{token}}`), with clearer upload/remove errors.
