@@ -337,8 +337,8 @@ describe("CheckInPage lookup card states (#379)", () => {
     // #379B: selecting a suggestion clears the scan bar and the dropdown.
     expect(input.value).toBe("");
     expect(screen.queryByText(/Acme · vip/)).toBeNull();
-    // No dismiss button existed for this state before — Clear resets the view.
-    expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    // No dismiss button existed for this state before. Close resets the view.
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
     // Operators (default mock: no admin assignment) don't get the
     // admin/superadmin-only revoke action.
     expect(screen.queryByRole("button", { name: "Revoke check-in" })).toBeNull();
@@ -363,8 +363,8 @@ describe("CheckInPage lookup card states (#379)", () => {
     expect(screen.queryByRole("button", { name: "Confirm check-in" })).toBeNull();
     const itemAction = screen.getByRole("button", { name: "Mark badge issued" }) as HTMLButtonElement;
     expect(itemAction.disabled).toBe(true);
-    // A revoked card has no Confirm/Cancel — Clear is the only way to dismiss it.
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    // A revoked card has no Confirm/Cancel. Close is the only way to dismiss it.
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByText("Revoked")).toBeNull();
   });
 
@@ -382,9 +382,9 @@ describe("CheckInPage lookup card states (#379)", () => {
       expect(screen.getByText("Ready to check in")).toBeTruthy();
     });
     expect(screen.getByRole("button", { name: "Confirm check-in" })).toBeTruthy();
-    // PREVIEW already has a block-width Clear button — no duplicate footer Clear.
-    const clearButtons = screen.getAllByRole("button", { name: "Clear" });
-    expect(clearButtons).toHaveLength(1);
+    // PREVIEW renders one Close button, without a duplicated footer action.
+    const closeButtons = screen.getAllByRole("button", { name: "Close" });
+    expect(closeButtons).toHaveLength(1);
   });
 
   it("does not resurrect a stale debounced fetch after a suggestion opens a card", async () => {

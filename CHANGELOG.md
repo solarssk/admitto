@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Events picker: **New event** stays on one row with the title on mobile and shows a calendar-plus icon.
 - New event modal: one Optional on location, auto-generated link ID (no Link name field), no Find on map button, clearer timezone hint, and timezone picker no longer flickers closed-then-open. Non-Latin titles still get a unique `event-…` link ID so Create stays enabled; closing the timezone picker by clicking elsewhere no longer requires a double-click to reopen it.
+- Bulk ticket-send previews no longer use the three-send limit. Real bulk sends now explain the 10-minute limit when it is reached.
+- Check-in cards label their dismiss action "Close", and Recent activity no longer shows duplicate-scan warnings as check-ins.
 - Public HTML 404/500 pages no longer overflow on narrow phones, and show a clearer layout (large status code and icon instead of a small boxed notice).
 - MFA enrollment: downloading backup codes no longer leaves the button stuck on "Please wait…".
 - MFA setup on desktop no longer offers a misleading "Open in password manager" link (otpauth often does nothing on Windows Chrome); copy explains scanning the QR or pasting the setup key instead.
