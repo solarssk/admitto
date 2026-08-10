@@ -309,17 +309,37 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(event).not.toBeNull();
   });
 
-  it("returns 409 when archived but has an event-scoped action log entry with no attendee", async () => {
+  it("allows delete when the only leftover is an event-scoped action log entry with no attendee", async () => {
     const eventId = await createEvent({ archived: true });
     await prisma.attendeeActionLog.create({
       data: { event_id: eventId, attendee_id: null, action_type: "reports_exported" },
     });
 
     const res = await deleteEventRequest(eventId, superCookie);
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
 
     const event = await prisma.event.findUnique({ where: { id: eventId } });
-    expect(event).not.toBeNull();
+    expect(event).toBeNull();
+  });
+
+  it("allows delete when the only leftover is a named image asset row", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.eventImageAsset.create({
+      data: {
+        event_id: eventId,
+        token: "hero",
+        filename: "hero.png",
+        url: `/uploads/default/event/${eventId}/hero.png`,
+        size_bytes: 128,
+        mime_type: "image/png",
+      },
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(200);
+
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(await prisma.eventImageAsset.count({ where: { event_id: eventId } })).toBe(0);
   });
 
   it("permanently deletes a truly-empty archived event and writes AdminAuditLog", async () => {

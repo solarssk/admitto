@@ -146,6 +146,7 @@ const activeEvent = {
   archived_at: null as string | null,
   created_at: "2026-01-15T00:00:00.000Z",
   is_deletable: false,
+  deletion_blockers: ["attendees"] as string[],
   admitted_count: 0,
   issued_items_count: 0,
   organization_name: "Org",
@@ -1017,6 +1018,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       is_deletable: false,
+      deletion_blockers: ["attendees", "pinned_note"],
     });
     renderSettings();
     await openDangerZone();
@@ -1027,19 +1029,19 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.disabled).toBe(true);
     const describedBy = button.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy!)?.textContent).toBe(
-      "This event has data and cannot be deleted",
+      "Still blocking delete: attendees, pinned note.",
     );
-    expect(
-      screen.getByText(
-        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
-      ),
-    ).toBeTruthy();
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(
+      "Still blocking delete: attendees, pinned note.",
+    );
   });
 
   it("renders Delete event enabled for a superadmin on an active, empty event", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       is_deletable: true,
+      deletion_blockers: [],
     });
     renderSettings();
     await openDangerZone();
@@ -1059,6 +1061,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...archivedEvent,
       is_deletable: false,
+      deletion_blockers: ["custom_items", "contacts"],
     });
     renderSettings("/admin/events/evt-2/settings");
     await openDangerZone();
@@ -1069,19 +1072,59 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.disabled).toBe(true);
     const describedBy = button.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy!)?.textContent).toBe(
-      "This event has data and cannot be deleted",
+      "Still blocking delete: custom items, contacts.",
     );
-    expect(
-      screen.getByText(
-        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
-      ),
-    ).toBeTruthy();
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(
+      "Still blocking delete: custom items, contacts.",
+    );
+  });
+
+  it("falls back to generic delete copy when not deletable without named blockers", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+      deletion_blockers: [],
+    });
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const fallback =
+      "This event still has content that must be cleared before it can be permanently deleted.";
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(fallback);
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(fallback);
+  });
+
+  it("labels unknown deletion blockers with spaced words", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+      deletion_blockers: ["future_blocker_type"],
+    });
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      "Still blocking delete: future blocker type.",
+    );
   });
 
   it("renders Delete event enabled for a superadmin on an archived, empty event", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...archivedEvent,
       is_deletable: true,
+      deletion_blockers: [],
     });
     renderSettings("/admin/events/evt-2/settings");
     await openDangerZone();

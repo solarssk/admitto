@@ -192,10 +192,34 @@ function describeRevokeItems(issuedItemsCount: number): string {
     : "No items have been issued yet.";
 }
 
-function describeDeleteEvent(isDeletable: boolean): string {
-  return isDeletable
-    ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
-    : "Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted.";
+const DELETION_BLOCKER_LABELS: Record<string, string> = {
+  attendees: "attendees",
+  custom_items: "custom items",
+  custom_ticket_types: "custom ticket types",
+  contacts: "contacts",
+  resources: "resources",
+  pinned_note: "pinned note",
+  event_mail_template: "event-specific mail template",
+};
+
+function formatDeletionBlockers(blockers: readonly string[]): string {
+  return blockers
+    .map((key) => DELETION_BLOCKER_LABELS[key] ?? key.replaceAll("_", " "))
+    .join(", ");
+}
+
+function describeDeleteEvent(
+  isDeletable: boolean,
+  deletionBlockers: readonly string[] | undefined,
+): string {
+  if (isDeletable) {
+    return "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.";
+  }
+  const blockers = deletionBlockers ?? [];
+  if (blockers.length > 0) {
+    return `Still blocking delete: ${formatDeletionBlockers(blockers)}.`;
+  }
+  return "This event still has content that must be cleared before it can be permanently deleted.";
 }
 
 interface ArchiveDialogCopy {
@@ -813,10 +837,11 @@ export function EventSettingsPage() {
     event.issued_items_count === 0,
     "No items to revoke",
   );
+  const deleteEventDescription = describeDeleteEvent(event.is_deletable, event.deletion_blockers);
   const deleteEventTooltip = computeSuperadminTooltip(
     isSa,
     !event.is_deletable,
-    "This event has data and cannot be deleted",
+    deleteEventDescription,
   );
   const archiveDialogCopy = getArchiveDialogCopy(archiveMode);
 
@@ -1303,7 +1328,7 @@ export function EventSettingsPage() {
           <div className="danger-zone__item">
             <div className="danger-zone__info">
               <div className="danger-zone__title">Delete event</div>
-              <p className="danger-zone__desc">{describeDeleteEvent(event.is_deletable)}</p>
+              <p className="danger-zone__desc">{deleteEventDescription}</p>
             </div>
             <ArchivedGuard
               event={null}
