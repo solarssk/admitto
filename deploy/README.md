@@ -124,6 +124,26 @@ docker compose up -d
 
 `validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
+## Self-hosted SMTP on a private address
+
+Mail destinations (SMTP host, Power Automate URL host, bounce IMAP host) are blocked when they are
+or resolve to loopback / RFC1918 / link-local / cloud-metadata addresses. That protects production
+from SSRF via Settings UI.
+
+If your MTA is only reachable on the LAN (for example AdGuard rewrites `mail.example.lan` to
+`192.168.x.x`), set an explicit allowlist on **both** `app` and `worker`:
+
+```bash
+# deploy/.env — exact hostnames or IP literals, comma-separated
+MAIL_PRIVATE_DESTINATION_ALLOWLIST=mail.example.lan
+```
+
+Then configure that same hostname in Organisation / Event mail settings. Do **not** set
+`ALLOW_PRIVATE_MAIL_DESTINATIONS=true` in production (it is ignored when `NODE_ENV=production`).
+
+Connecting through your public WAN IP from inside Docker often fails (no hairpin / port closed);
+prefer the LAN hostname on the allowlist instead of opening SMTP on the internet.
+
 ## Container startup (entrypoint)
 
 Migration/backup and serving are two separate one-shot-then-long-running compose services, both
