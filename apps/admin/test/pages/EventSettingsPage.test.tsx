@@ -863,11 +863,12 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByRole("tab", { name: "Integrations" });
     fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
     expect(
-      await screen.findByText("Inbound API tokens are on the roadmap"),
+      await screen.findByText("Event API connections are on the roadmap"),
     ).toBeTruthy();
     expect(
-      screen.getByText(/separate from Organisation Settings → External services/),
+      screen.getByText(/Connect external systems to push attendee data into this event automatically/),
     ).toBeTruthy();
+    expect(screen.queryByText(/Maps and weather/)).toBeNull();
   });
 
   it("hides the Integrations tab entirely for a non-superadmin org admin", async () => {
@@ -884,7 +885,7 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     renderSettings("/admin/events/evt-1/settings?tab=integrations");
     await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.queryByText("Inbound API tokens are on the roadmap")).toBeNull();
+    expect(screen.queryByText("Event API connections are on the roadmap")).toBeNull();
   });
 });
 

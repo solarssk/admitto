@@ -39,7 +39,7 @@ afterAll(async () => {
 });
 
 describe("sendTestEmail", () => {
-  it("sends one mail with sample data and does not create EmailDelivery", async () => {
+  it("sends one mail with sample data, placeholder QR/link (not a broken sample-token URL), and does not create EmailDelivery", async () => {
     exported.length = 0;
     const beforeCount = await prisma.emailDelivery.count({ where: { event_id: EVENT_ID } });
 
@@ -54,7 +54,10 @@ describe("sendTestEmail", () => {
     expect(result.provider).toBe("export_only");
     expect(exported).toHaveLength(1);
     expect(exported[0]?.message.to).toBe("operator@example.com");
-    expect(exported[0]?.message.html).toContain("sample-token");
+    // The sample ticket_url/qr_image_url point at a domain nothing hosts - sanitized to a
+    // same-origin-safe placeholder rather than left as a dead link/broken image in a real inbox.
+    expect(exported[0]?.message.html).not.toContain("tickets.example.com");
+    expect(exported[0]?.message.html).toContain("data:image/svg+xml");
     expect(exported[0]?.message.html).not.toMatch(/\/t\/[A-Za-z0-9_-]{40,}/);
 
     const afterCount = await prisma.emailDelivery.count({ where: { event_id: EVENT_ID } });

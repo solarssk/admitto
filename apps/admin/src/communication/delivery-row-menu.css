@@ -41,8 +41,13 @@
   text-decoration: none;
 }
 
-.delivery-row-menu__item:hover {
+.delivery-row-menu__item:hover:not(:disabled) {
   background: var(--surface-hover);
+}
+
+.delivery-row-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .delivery-row-menu__item i {

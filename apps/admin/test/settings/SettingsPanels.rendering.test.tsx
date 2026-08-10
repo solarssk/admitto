@@ -731,6 +731,51 @@ describe("AuditLogPanel rendering", () => {
     expect(within(table).queryByText("bounce_ingest_settings_tested")).toBeNull();
   });
 
+  it("shows friendly labels for user profile and role change audit actions", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({ id: "profile-updated", action_type: "user_profile_updated" }),
+        makeAuditEntry({ id: "role-changed", action_type: "role_changed" }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("User profile updated")).toBeTruthy();
+    expect(within(table).getByText("Role changed")).toBeTruthy();
+    expect(within(table).queryByText("user_profile_updated")).toBeNull();
+    expect(within(table).queryByText("role_changed")).toBeNull();
+    expect(within(table).getByText("Role changed").className).toContain("at-badge--info");
+  });
+
+  it("wraps long mobile audit action badges so the timestamp stays visible", async () => {
+    mockMatchMedia(false);
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          id: "long-label",
+          action_type: "bounce_ingest_manual_run",
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const label = await screen.findByText("Bounce detection check run manually");
+    const actionWrap = label.closest(".audit-log-card__action");
+    expect(actionWrap).toBeTruthy();
+    expect(actionWrap?.getAttribute("title")).toBe("Bounce detection check run manually");
+    const card = label.closest(".audit-log-card") as HTMLElement;
+    expect(within(card).getByText(/UTC/)).toBeTruthy();
+  });
+
   it("shows a friendly label for support_contact_updated", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry({ action_type: "support_contact_updated" })],

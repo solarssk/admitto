@@ -9,7 +9,7 @@ import {
   buildExportPdfBuffer,
   buildExportPdfColumnWidths,
   pdfCellTextOptions,
-} from "../src/admin/attendees-export-pdf.js";
+} from "@admitto/tickets";
 import type { SanitizedExportRow } from "@admitto/tickets/attendees-export";
 
 const LONG_EMAIL = "verylong.localpart@verylong-domain.example.com";

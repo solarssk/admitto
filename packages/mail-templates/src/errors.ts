@@ -30,10 +30,19 @@ export class UnquotedAttributePlaceholderError extends Error {
   }
 }
 
+export interface MjmlRawError {
+  message: string;
+  formattedMessage?: string;
+  /** The MJML element this error was raised on, e.g. "mj-text" - present at runtime from
+   * mjml-validator's own RuleError shape, used by friendlyMjmlErrorMessage to say roughly where
+   * the problem is without operators needing to read raw compiler jargon. */
+  tagName?: string;
+  /** Source line within the template body. */
+  line?: number;
+}
+
 export class MjmlCompileError extends Error {
-  constructor(
-    public readonly errors: Array<{ message: string; formattedMessage?: string }>,
-  ) {
+  constructor(public readonly errors: MjmlRawError[]) {
     const detail = errors.map((e) => e.formattedMessage ?? e.message).join("; ");
     super(`MJML compilation failed: ${detail}`);
     this.name = "MjmlCompileError";

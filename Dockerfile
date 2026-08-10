@@ -65,6 +65,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
+COPY LICENSE NOTICE THIRD-PARTY-NOTICES.md ./
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/crypto/package.json packages/crypto/

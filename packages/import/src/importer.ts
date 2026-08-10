@@ -11,7 +11,7 @@ import { resolveImportTicketType } from "./ticket-type-import.js";
 import { generateToken } from "@admitto/crypto";
 
 /** Fields updated on an existing attendee when overwrite=true. Never includes status, qr_payload, external_uuid, or token_hash. */
-const OVERWRITE_FIELDS = ["name", "ticket_type", "company", "department"] as const;
+const OVERWRITE_FIELDS = ["name", "first_name", "last_name", "ticket_type", "company", "department"] as const;
 
 /** Skip reason when insert hits a unique constraint at commit time (ADR 0028). */
 export const IMPORT_CONFLICT_SKIP_REASON = "Duplicate email (conflict on insert)";
@@ -21,6 +21,8 @@ type AttendeeCreateData = {
   event_id: string;
   email: string;
   name: string;
+  first_name: string;
+  last_name: string;
   ticket_type?: string;
   external_uuid?: string;
   qr_payload?: string;
@@ -35,6 +37,8 @@ type AttendeeUpdateArgs = {
   id: string;
   data: {
     name: string;
+    first_name: string;
+    last_name: string;
     ticket_type?: string;
     company?: string;
     department?: string;
@@ -273,6 +277,8 @@ function classifyExistingRow(
     data: {
       ...pendingUpdate?.data,
       name,
+      first_name: row.first_name,
+      last_name: row.last_name,
       ...(ticketTypeResult.value !== undefined && { ticket_type: ticketTypeResult.value }),
       ...(row.company !== undefined && { company: row.company }),
       ...(row.department !== undefined && { department: row.department }),
@@ -307,6 +313,8 @@ function classifyNewRow(
       event_id: eventId,
       email: row.email,
       name,
+      first_name: row.first_name,
+      last_name: row.last_name,
       ...(ticketTypeResult.value !== undefined && { ticket_type: ticketTypeResult.value }),
       ...(row.external_uuid !== undefined && { external_uuid: row.external_uuid }),
       ...(row.qr_payload !== undefined && { qr_payload: row.qr_payload }),

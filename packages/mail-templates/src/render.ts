@@ -89,6 +89,34 @@ export function stripEmptyUrlAttributes(html: string): string {
     .replace(/\s(src|href|action|background)=(?:""|'')/gi, "");
 }
 
+/** Bundled ticket/wallet badge paths served from the Admitto instance (`/assets/...`). Templates
+ * insert these as relative `src` values so the admin preview works same-origin; email clients need
+ * an absolute URL against the public instance base (`BASE_URL`). */
+const BUNDLED_TICKET_ASSET_PATHS = [
+  "/assets/apple-wallet-badge.svg",
+  "/assets/google-wallet-badge.svg",
+] as const;
+
+/** Rewrite known relative bundled ticket asset `src` values to absolute URLs using `baseUrl`. */
+export function absolutizeBundledTicketAssetUrls(html: string, baseUrl?: string): string {
+  const base = baseUrl?.replace(/\/$/, "");
+  if (!base) return html;
+  let out = html;
+  for (const path of BUNDLED_TICKET_ASSET_PATHS) {
+    const abs = `${base}${path}`;
+    out = out.split(`src="${path}"`).join(`src="${abs}"`);
+    out = out.split(`src='${path}'`).join(`src='${abs}'`);
+  }
+  return out;
+}
+
+function finalizeRenderedHtml(
+  html: string,
+  baseUrl?: string,
+): string {
+  return stripEmptyUrlAttributes(absolutizeBundledTicketAssetUrls(html, baseUrl));
+}
+
 function formatSubjectPlaceholderValue(
   name: string,
   value: string,
@@ -199,15 +227,16 @@ export function renderTemplate(
   }
 
   const subject = substituteSubjectPlaceholders(input.subject, vars, baseUrl, customAssetPlaceholders);
-  const html = stripEmptyUrlAttributes(
+  const html = finalizeRenderedHtml(
     substituteHtmlPlaceholders(input.compiledHtml, vars, baseUrl, customAssetPlaceholders),
+    baseUrl,
   );
 
   return { subject, html };
 }
 
 /**
- * Fast render path for batch ticket sends — skips placeholder whitelist re-validation
+ * Fast render path for batch ticket sends - skips placeholder whitelist re-validation
  * (template was validated at save time). Still applies context-aware escaping.
  */
 export function renderTemplateTrusted(
@@ -218,14 +247,15 @@ export function renderTemplateTrusted(
   const baseUrl = options?.baseUrl;
   const customAssetPlaceholders = options?.customAssetPlaceholders;
   const subject = substituteSubjectPlaceholders(input.subject, vars, baseUrl, customAssetPlaceholders);
-  const html = stripEmptyUrlAttributes(
+  const html = finalizeRenderedHtml(
     substituteHtmlPlaceholders(input.compiledHtml, vars, baseUrl, customAssetPlaceholders),
+    baseUrl,
   );
   return { subject, html };
 }
 
 /**
- * Render for EmailDelivery storage — leaves {{ticket_url}} / {{qr_image_url}} literal so
+ * Render for EmailDelivery storage - leaves {{ticket_url}} / {{qr_image_url}} literal so
  * plaintext tokens are not persisted. Apply links at send/retry via materializeStoredDeliveryMessage.
  */
 export function renderTemplateTrustedForStorage(
@@ -236,8 +266,9 @@ export function renderTemplateTrustedForStorage(
   const baseUrl = options?.baseUrl;
   const customAssetPlaceholders = options?.customAssetPlaceholders;
   const subject = substituteSubjectPlaceholdersDeferred(input.subject, vars, baseUrl, customAssetPlaceholders);
-  const html = stripEmptyUrlAttributes(
+  const html = finalizeRenderedHtml(
     substituteHtmlPlaceholdersDeferred(input.compiledHtml, vars, baseUrl, customAssetPlaceholders),
+    baseUrl,
   );
   return { subject, html };
 }
@@ -251,8 +282,9 @@ export function materializeStoredDeliveryMessage(
   const baseUrl = options?.baseUrl;
   return {
     subject: applyDeferredLinkPlaceholders(frozen.subject, links, "subject", baseUrl),
-    html: stripEmptyUrlAttributes(
+    html: finalizeRenderedHtml(
       applyDeferredLinkPlaceholders(frozen.html, links, "html", baseUrl),
+      baseUrl,
     ),
   };
 }

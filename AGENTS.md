@@ -155,6 +155,17 @@ Sonar's own marker only registers when NOSONAR leads it. Confirmed by re-checkin
 list after pushing, not by assumption — the same file's own `role="presentation"` suppression a
 few lines away (NOSONAR leading its own comment) did clear, this trailing form did not.
 
+**`apps/admin` pages are lazily code-split (`React.lazy`) — a component's CSS import must live in
+that component's own file, not just "somewhere already loaded on this page".** A modal/component
+that reuses another feature's CSS classes (e.g. the shared `add-attendee-modal.css` "standard
+modal" markup, or `IconPicker`'s `icon-picker.css`) needs its own `import "*.css"` line even if
+some other already-visited lazy chunk happens to load that stylesheet too — that only works by
+accident of navigation order within one browser session, and renders fully unstyled on a cold
+visit straight to the page that's missing the import. Found via `CreateTemplateDialog.tsx` (in the
+lazy `communication` chunk) using `.add-attendee-modal__*` classes with no import of that CSS file
+at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` — every consumer of
+a shared modal/component CSS file should show up importing it directly.
+
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
 `AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.

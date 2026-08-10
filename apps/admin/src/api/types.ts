@@ -268,20 +268,22 @@ export interface AttendeeNoteDto {
 export interface AttendeeDetailDto {
   id: string;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
   email: string;
   company: string | null;
   department: string | null;
   ticket_type: string | null;
   status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
-  admitted_at: string | null;
   created_at: string;
+  admitted_at: string | null;
   /** Acting admin's IANA timezone at attendee-creation time, when known (manual add / import). */
   client_timezone: string | null;
   updated_at: string;
   rsvp_status: RsvpStatus;
-  rsvp_updated_at: string | null;
   rsvp_source: string | null;
+  rsvp_updated_at: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
@@ -319,7 +321,8 @@ export interface AttendeesListParams {
 }
 
 export interface UpdateAttendeePatch {
-  name?: string;
+  first_name?: string;
+  last_name?: string;
   email?: string;
   company?: string | null;
   department?: string | null;
@@ -341,6 +344,13 @@ export interface EventFullErrorBody {
 
 export interface ResendTicketBody {
   to?: string;
+  /** Resend this specific template instead of the event's current default - the Delivery log
+   * row's "Resend" passes the row's own template_id so it resends what actually bounced/failed. */
+  templateId?: string;
+}
+
+export interface DismissBounceResponse {
+  email_bounce_dismissed_at: string;
 }
 
 export interface ImportInvalidRow {
@@ -624,12 +634,25 @@ export interface EventTemplateDto {
   /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
    * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
   image_placeholders: string[];
+  /** Resolved `{{logo_url}}` / `{{header_image_url}}` (event → organization → empty) - the same
+   * values a real send would use, for the placeholder-chip hover preview. Empty string means
+   * nothing is configured at either scope. */
+  logo_url: string;
+  header_image_url: string;
 }
 
 export interface SaveTemplateBody {
   subject_template: string;
   body_template: string;
   template_format: "mjml" | "html";
+}
+
+/** Identity-only edit for PATCH .../templates/:id - label/icon/description, no content or
+ * format. `null` (icon/description only) clears the field back to its picker-side default. */
+export interface UpdateTemplateMetadataBody {
+  label?: string;
+  icon?: string | null;
+  description?: string | null;
 }
 
 export interface PreviewTemplateResponse {
@@ -675,6 +698,8 @@ export interface MailTemplateListItem {
   id: string;
   name: string;
   label: string;
+  icon: string | null;
+  description: string | null;
   template_format: "mjml" | "html";
   subject_template: string;
   updated_at: string;
@@ -1613,6 +1638,8 @@ export interface ProviderDetailDto {
   enabled: boolean;
   login_button_label: string | null;
   mappings: ProviderMappingDto[];
+  /** Exact callback to register at the IdP; null when Instance URL / BASE_URL is unresolved. */
+  redirect_uri: string | null;
 }
 
 /** Request body for POST/PUT /api/admin/identity/providers[/:id].

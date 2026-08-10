@@ -3,7 +3,7 @@
 > **Audience:** All staff
 > **Required role:** Any staff role
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 Admitto helps event teams prepare attendees, send tickets, and run check-in.
 

@@ -195,51 +195,6 @@
   white-space: nowrap;
 }
 
-.icon-picker {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.icon-picker__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-  gap: var(--space-1);
-  padding: var(--space-2);
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.icon-picker__item {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: none;
-  cursor: pointer;
-  color: var(--text-secondary);
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.icon-picker__item:hover {
-  background: var(--surface-sunken);
-  border-color: var(--border);
-}
-
-.icon-picker__item--selected {
-  background: var(--surface-card);
-  border-color: var(--primary);
-  color: var(--text-primary);
-}
-
-.icon-picker__item i {
-  font-size: 1.1rem;
-}
-
 .contents-row__label-group {
   display: flex;
   flex-direction: column;
@@ -380,14 +335,30 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: var(--space-4);
+  /* No divider under the subtitle — same as add-attendee / FontFamily modals. */
+  padding-bottom: 0;
 }
 
 .event-item-modal__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: var(--fs-h3);
   font-weight: 600;
+}
+
+.event-item-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
 }
 
 .event-item-modal__subtitle {

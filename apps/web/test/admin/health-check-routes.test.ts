@@ -375,6 +375,13 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
     bounceIngestSettings: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // Fresh beat so Core stays ok unless a test overrides the heartbeat mock.
+    backgroundWorkerHeartbeat: {
+      findUnique: vi.fn().mockResolvedValue({
+        last_beat_at: new Date(),
+        hostname: "test-worker",
+      }),
+    },
     ...overrides,
   } as unknown as PrismaClient;
 }
@@ -418,6 +425,8 @@ describe("collectAdminHealth", () => {
     const core = report.groups[0]!.checks;
     expect(core.find((c) => c.id === "database")?.label).toBe("Database");
     expect(core.find((c) => c.id === "rate_limit_storage")?.label).toBe("Rate-limit storage");
+    expect(core.find((c) => c.id === "background_worker")?.label).toBe("Background worker");
+    expect(core.find((c) => c.id === "background_worker")?.status).toBe("ok");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.label).toBe("Mail delivery queue");
     expect(core.find((c) => c.id === "file_storage")?.label).toBe("File storage");
     expect(core.find((c) => c.id === "file_storage")?.status).toBe("ok");
@@ -433,6 +442,9 @@ describe("collectAdminHealth", () => {
     expect(external.find((c) => c.id === "wallet_passes")?.status).toBe("planned");
     expect(external.find((c) => c.id === "wallet_passes")?.label).toBe(
       "Wallet passes, PassCreator",
+    );
+    expect(external.find((c) => c.id === "wallet_passes")?.summary).toBe(
+      "Coming in v0.5 · Apple & Google Wallet",
     );
     expect(external.find((c) => c.id === "address_lookup")?.label).toBe(
       "Address lookup, Nominatim",
@@ -450,6 +462,184 @@ describe("collectAdminHealth", () => {
       core
         .find((c) => c.id === "database")
         ?.details.some((d) => d.key === "last_checked" && d.value === report.generated_at),
+    ).toBe(true);
+  });
+
+  it("marks background_worker degraded when no heartbeat row exists", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")).toMatchObject({
+      status: "degraded",
+      summary: expect.stringMatching(/never reported a heartbeat/i),
+    });
+    expect(report.overall).toBe("degraded");
+  });
+
+  it("marks background_worker degraded when the heartbeat is stale", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            last_beat_at: new Date("2026-08-03T11:00:00.000Z"),
+            hostname: null,
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({
+      status: "degraded",
+      summary: expect.stringMatching(/stale/i),
+    });
+    expect(report.overall).toBe("degraded");
+  });
+
+  it("uses the 5m floor when the tick-derived stale window is smaller", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            // 6 minutes old: stale under the 5m floor; tick=15 alone would only be ~105s.
+            last_beat_at: new Date("2026-08-03T11:54:00.000Z"),
+            hostname: "floor-worker",
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "15" }),
+      now: () => now,
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({ status: "degraded" });
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "300000")).toBe(true);
+  });
+
+  it("uses the tick-derived stale window when it exceeds the 5m floor", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            // 8 minutes old: stale when tick=120 → staleMs=420s
+            last_beat_at: new Date("2026-08-03T11:52:00.000Z"),
+            hostname: "tick-worker",
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "120" }),
+      now: () => now,
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({ status: "degraded" });
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "420000")).toBe(true);
+  });
+
+  it("includes an empty hostname coalesce path on a fresh beat with null hostname", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            last_beat_at: new Date("2026-08-03T11:59:50.000Z"),
+            hostname: null,
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => now,
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")?.status).toBe("ok");
+  });
+
+  it("falls back when background worker heartbeat lookup throws", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockRejectedValue(new Error("db down")),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")).toMatchObject({
+      status: "degraded",
+      summary: "Could not evaluate background worker",
+    });
+    expect(
+      report.groups[0]!.checks
+        .find((c) => c.id === "background_worker")
+        ?.details.some((d) => d.key === "reason" && d.value === "lookup_failed"),
     ).toBe(true);
   });
 
@@ -981,7 +1171,7 @@ describe("collectAdminHealth", () => {
     vi.restoreAllMocks();
   });
 
-  it("marks address lookup not_configured when maps are disabled", async () => {
+  it("keeps address lookup available when maps (tiles) are disabled", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
@@ -998,8 +1188,11 @@ describe("collectAdminHealth", () => {
     });
 
     const address = report.groups[1]!.checks.find((c) => c.id === "address_lookup");
-    expect(address?.status).toBe("not_configured");
-    expect(address?.summary).toBe("Maps disabled");
+    expect(address?.status).toBe("ok");
+    expect(address?.summary).toBe("Provider available");
+    expect(report.groups[1]!.checks.find((c) => c.id === "map_tiles")?.summary).toBe(
+      "Maps disabled",
+    );
   });
 
   it("covers core failure and warn branches for database, redis, encryption, and instance URL", async () => {

@@ -83,6 +83,54 @@ export {
   findFilteredAttendeesForList,
   findSelectedAttendeesForExport,
 } from "./attendees-list-filters.js";
+export {
+  EXPORT_BASE_COLUMNS,
+  AttendeeExportTooLargeError,
+  buildSanitizedExportRows,
+  buildExportColumns,
+  buildExportCsv,
+  exportAttendeesCsv,
+} from "./attendees-export.js";
+export type { SanitizedExportRow, ExportAttendeesCsvResult } from "./attendees-export.js";
+export {
+  EXPORT_BASE_PDF_WIDTHS,
+  EXPORT_ATTRIBUTE_PDF_WIDTH,
+  PDF_PRINTABLE_WIDTH,
+  PDF_CELL_HEIGHT,
+  pdfCellTextOptions,
+  buildExportPdfColumnWidths,
+  buildExportPdfBuffer,
+} from "./attendees-export-pdf.js";
+export { buildExportXlsxBuffer } from "./attendees-export-xlsx.js";
+export {
+  buildAttendeesExportArtifact,
+} from "./attendees-export-artifact.js";
+export type {
+  AttendeesExportArtifact,
+  AttendeesExportFormat,
+} from "./attendees-export-artifact.js";
+export { claimNextAdminJob } from "./claim-admin-job.js";
+export { drainExportJobs } from "./drain-export-jobs.js";
+export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
+export {
+  reclaimStaleExportJobs,
+  parseExportJobStaleRunningMs,
+  isWorkerHeartbeatStaleForPendingReclaim,
+  DEFAULT_EXPORT_JOB_STALE_RUNNING_MS,
+  DEFAULT_EXPORT_PENDING_HEARTBEAT_STALE_MS,
+  WORKER_HEARTBEAT_ID,
+  STALE_EXPORT_JOB_ERROR,
+  STALE_EXPORT_PENDING_ERROR,
+} from "./reclaim-stale-export-jobs.js";
+export type {
+  ReclaimStaleExportJobsResult,
+  ReclaimStaleExportJobsOptions,
+} from "./reclaim-stale-export-jobs.js";
+export {
+  redactAttendeeListFiltersForStorage,
+  scrubExportJobResultJson,
+} from "./export-job-privacy.js";
+export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
 export type {
   AttendeeExportRsvpStatus,
   AttendeeListFilterParams,

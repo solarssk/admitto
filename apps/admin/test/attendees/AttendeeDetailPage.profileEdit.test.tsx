@@ -60,6 +60,8 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "att-1",
     name: "Anna",
+    first_name: "Anna",
+    last_name: "Baseline",
     email: "anna@example.com",
     company: "Acme",
     department: "Eng",
@@ -117,7 +119,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "anna.b@example.com" } });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
     fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
     fireEvent.change(screen.getByLabelText("Department"), { target: { value: "Sales" } });
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
@@ -139,7 +141,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
         "att-1",
         expect.objectContaining({
           email: "anna.b@example.com",
-          name: "Anna B.",
+          first_name: "Anna B.",
           company: "Acme Corp",
           department: "Sales",
           ticket_type: "standard",
@@ -179,7 +181,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Could not save changes.")).toBeTruthy();
@@ -345,7 +347,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     const staleNotice = await screen.findByText(
@@ -378,13 +380,45 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     expect(updateAttendee).not.toHaveBeenCalled();
   });
 
+  it("blocks Save via native required-field validation when a pre-migration attendee has no first/last name yet", async () => {
+    // Attendees created before this feature only have `name` - first_name/last_name are null,
+    // which the form renders as blank required fields (attendeeDetailForm.ts's `?? ""`).
+    mockLoad(baseDetail({ first_name: null, last_name: null }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    // Change an unrelated field - even that can't be saved until First/Last name are filled in,
+    // since both are required and the Save button is a real <form onSubmit>.
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(updateAttendee).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("First name")).toBeTruthy();
+
+    updateAttendee.mockResolvedValueOnce(
+      baseDetail({ first_name: "Anna", last_name: "Smith", company: "Acme Corp" }),
+    );
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna" } });
+    fireEvent.change(screen.getByLabelText("Last name"), { target: { value: "Smith" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(updateAttendee).toHaveBeenCalledWith(
+        "evt-1",
+        "att-1",
+        expect.objectContaining({ first_name: "Anna", last_name: "Smith", company: "Acme Corp" }),
+      );
+    });
+  });
+
   it("the header Back button warns before leaving with unsaved edits, distinct from in-form Cancel", async () => {
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Someone Else" } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Someone Else" } });
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
     // Two dialogs are open at once here - the Edit modal underneath, and this confirm on top -
@@ -428,7 +462,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
@@ -443,13 +477,13 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
 
     // Field reverted back to its saved value -> no longer dirty -> Cancel takes the
     // immediate (no confirm dialog) path, which must still clear the stale error.
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna" } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
@@ -467,11 +501,11 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna" } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
@@ -486,7 +520,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Anna B." } });
+    fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna B." } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     const dialog = await screen.findByRole("dialog");

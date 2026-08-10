@@ -52,25 +52,105 @@ function ticketFor(logoUrl: string | null) {
 }
 
 describe("renderRevoked", () => {
-  it("renders cancelled tickets with cancelled wording", () => {
-    const html = renderRevoked("Alice Example", "Launch Event", "cancelled");
+  function revokedTicket(overrides?: {
+    name?: string;
+    title?: string;
+    location?: string | null;
+    ticket_type?: string | null;
+  }) {
+    return {
+      mode: "internal" as const,
+      attendee: {
+        id: "a1",
+        event_id: "e1",
+        email: "x@example.com",
+        name: overrides?.name ?? "Bob Example",
+        status: "revoked",
+        token_hash: null,
+        qr_payload: null,
+        external_uuid: null,
+        ticket_type: overrides?.ticket_type ?? "Standard",
+      },
+      event: {
+        id: "e1",
+        title: overrides?.title ?? "Launch Event",
+        date: new Date("2026-09-01T09:00:00Z"),
+        timezone: "UTC",
+        ...EMPTY_EVENT_LOCATION,
+        // After the empty-location spread so defaults/overrides are not wiped if EMPTY gains `location`.
+        location: overrides?.location ?? "Main Hall",
+        logoUrl: null,
+      },
+    };
+  }
+
+  it("renders cancelled tickets with cancelled wording in the ticket card", () => {
+    const html = renderRevoked(revokedTicket({ name: "Alice Example" }), null, "cancelled");
     expect(html).toContain("Ticket cancelled");
-    expect(html).toContain("has been cancelled");
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("ticket__event-name");
+    expect(html).toContain("Alice Example");
+    expect(html).toContain("Launch Event");
+    expect(html).toContain("no longer valid for entry");
+    expect(html).toContain("contact the organisers");
     expect(html).not.toContain("Ticket revoked");
+    expect(html).not.toContain('class="ticket__qr"');
+    expect(html).not.toContain("Present this QR code");
+    expect(html).not.toContain("apple-wallet-badge");
+    expect(html).not.toContain("Getting there");
+    expect(html).toContain("ticket__status-notice");
   });
 
-  it("renders revoked tickets with revoked wording", () => {
-    const html = renderRevoked("Bob Example", "Launch Event", "revoked");
+  it("renders revoked tickets with revoked wording in the ticket card", () => {
+    const html = renderRevoked(revokedTicket(), null, "revoked");
     expect(html).toContain("Ticket revoked");
-    expect(html).toContain("has been revoked");
+    expect(html).toContain("ticket__status-notice");
+    expect(html).toContain("Bob Example");
+    expect(html).toContain("Main Hall");
+    expect(html).toContain("Standard");
+    expect(html).not.toContain("has been revoked");
+    expect(html).not.toContain('class="ticket__qr"');
+    expect(html).not.toContain('class="ticket__wallets"');
+    expect(html).not.toContain("apple-wallet-badge.svg");
+  });
+
+  it("escapes attendee and event names in the revoked card", () => {
+    const html = renderRevoked(
+      revokedTicket({ name: `<script>x</script>`, title: `A & B <Event>` }),
+      null,
+      "revoked",
+    );
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("A &amp; B &lt;Event&gt;");
   });
 });
 
-describe("renderServerError", () => {
-  it("renders a generic support-safe error page", () => {
+describe("renderPublicErrorPage (404 / 500)", () => {
+  it("renders a branded 500 with status code and generic copy", () => {
     const html = renderServerError();
-    expect(html).toContain("Server error");
-    expect(html).toContain("Unable to render this ticket right now");
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("at-public-notice");
+    expect(html).toContain('class="at-public-notice__code">500<');
+    expect(html).toContain("Something went wrong");
+    expect(html).toContain("Unable to load this page right now. Please try again later.");
+    expect(html).toContain(">Admitto<");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Server error");
+    expect(html).not.toContain("Unable to render this ticket");
+  });
+
+  it("renders a branded 404 with status code and generic copy", () => {
+    const html = renderNotFound();
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("at-public-notice");
+    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain("Not found");
+    expect(html).toContain("This link is invalid or the page no longer exists.");
+    expect(html).toContain(">Admitto<");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Ticket not found");
+    expect(html).not.toContain("This ticket link");
   });
 });
 
@@ -330,8 +410,8 @@ describe("renderTicket", () => {
     expect(html).not.toContain('<p class="ticket__address">');
   });
 
-  it("renders the not-found page", () => {
-    expect(renderNotFound()).toContain("Ticket not found");
+  it("renders the branded not-found page", () => {
+    expect(renderNotFound()).toContain("Not found");
   });
 
   it("omits Getting there when no attendee-facing location details exist", () => {

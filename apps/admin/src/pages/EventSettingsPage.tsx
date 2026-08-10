@@ -1199,8 +1199,8 @@ export function EventSettingsPage() {
         >
           <EmptyState
             icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
-            title="Inbound API tokens are on the roadmap"
-            description="Each event will get its own API token for automatic attendee imports and attendance responses (Ingest/RSVP). This is separate from Organisation Settings → External services (maps, weather). Not built yet - superadmin-only."
+            title="Event API connections are on the roadmap"
+            description="Connect external systems to push attendee data into this event automatically."
           />
         </EventSettingsTabPanel>
       )}

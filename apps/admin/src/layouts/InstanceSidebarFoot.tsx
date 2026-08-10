@@ -36,7 +36,7 @@ export function InstanceSidebarFoot() {
           v{__APP_VERSION__} <span className="sidebar__build-commit">· {__APP_COMMIT__}</span>
         </span>
         <a
-          href="https://github.com/solarssk/admitto/issues/new"
+          href="https://github.com/solarssk/admitto/issues/new?template=bug.yml"
           target="_blank"
           rel="noopener noreferrer"
           className="sidebar__build-report"
