@@ -67,7 +67,6 @@ describe("WizardStep4Event", () => {
     fireEvent.blur(date);
     const location = screen.getByLabelText("Location (optional)");
     fireEvent.change(location, { target: { value: "Palace of Culture" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /Palace of Culture/ }));
 
     await expect(ref.current?.createAndContinue()).resolves.toBe(true);
@@ -97,7 +96,7 @@ describe("WizardStep4Event", () => {
     fireEvent.blur(date);
 
     await expect(ref.current?.createAndContinue()).resolves.toBe(false);
-    expect(await screen.findByText("Slug is already in use. Change the event name and try again.")).toBeTruthy();
+    expect(await screen.findByText("An event with a similar name already exists. Change the title slightly and try again.")).toBeTruthy();
   });
 
   it("shows a safe toast for a generic create failure", async () => {
@@ -318,7 +317,6 @@ describe("WizardStep4Event", () => {
     fireEvent.blur(date);
     const location = screen.getByLabelText("Location (optional)");
     fireEvent.change(location, { target: { value: "Palace of Culture" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /Palace of Culture/ }));
 
     fireEvent.change(location, { target: { value: "Palace of Culture Annex" } });
@@ -361,7 +359,6 @@ describe("WizardStep4Event", () => {
 
     const location = await screen.findByLabelText("Location (optional)");
     fireEvent.change(location, { target: { value: "Parade" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /1 Parade Square/ }));
 
     expect((location as HTMLInputElement).value).toBe("1 Parade Square, Warsaw");
