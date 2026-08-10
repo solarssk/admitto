@@ -53,6 +53,11 @@ Attendee-facing data — a ticket email's recipient address, import file content
 redacted or minimised in these logs, and database query logs never include the actual query values,
 only the query shape and how long it took.
 
+The per-request access log line (`http_request`, source of the System-logs live tail below) follows
+the same rule for IP address: it's included only when the request carries a verified staff/operator
+session, mirroring an identity provider's actor-attributed activity log. Anonymous, attendee-facing
+requests (ticket views, public check-in) never get their IP logged this way.
+
 This does **not** apply to the admin audit trail (`AttendeeActionLog`, `AdminAuditLog`), which is a
 first-class, access-controlled product feature, not an operational log line — see below.
 
