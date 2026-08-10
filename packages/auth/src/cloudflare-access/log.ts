@@ -2,8 +2,9 @@ import { emitAuditEvent, fingerprint } from "../audit.js";
 
 export type CfAccessLogOutcome = "success" | "failure";
 
-/** Structured CF Access auth log — never includes raw JWT or full claims. Full email (not
- * redacted): staff sign-in, matching logLoginSuccess/logLoginFailure's own convention. */
+/** Structured CF Access auth log - never includes raw JWT or full claims. Full email (not
+ * redacted): verified staff sign-in, matching logLoginSuccess's stdout convention (failed
+ * local logins still redact the operational emit). */
 export function logCfAccessAuth(input: {
   outcome: CfAccessLogOutcome;
   reason?: string;

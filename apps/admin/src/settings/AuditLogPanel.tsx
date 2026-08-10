@@ -342,7 +342,9 @@ function formatMetadataValue(key: string, value: unknown): string {
 // Already shown elsewhere in the row - repeating them in Details would just be noise.
 // eventId/event_id: shown by the Scope column.
 const AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id"]);
-// Security adds email/email_redacted: shown under the User column (snapshot or redacted login).
+// Security adds email/email_redacted: shown under the User column (resolved user, or the
+// attempted email on a failed login - email_redacted is the legacy key for rows written before
+// that was unredacted, see securityUnknownEmail).
 const SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE = new Set([
   ...AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE,
   "email",
@@ -816,20 +818,24 @@ function securityUserTitle(entry: SecurityAuditLogEntryDto): string | undefined 
   return entry.user_id;
 }
 
-/** Redacted email for the `user_id`-is-null / enumeration-safe case (e.g. a failed login
- * attempt) - `auth.login.fail` is the only event type that currently writes a redacted email
- * into metadata for these rows; everything else with a null user_id (e.g. access denied) has no
- * email at all, so this simply resolves to undefined for them. */
+/** The attempted email for the `user_id`-is-null case (e.g. a failed login attempt) -
+ * `auth.login.fail` is the only event type that currently writes an email into metadata for
+ * these rows; everything else with a null user_id (e.g. access denied) has no email at all, so
+ * this simply resolves to undefined for them. `user_id` stays null even though the email is now
+ * shown in full: the write path still never resolves/confirms the email against a real account
+ * (packages/auth/src/audit.ts). Checks `email` first (current field); `email_redacted` is the
+ * legacy key from before this was unredacted - still read here so rows written before that change
+ * keep displaying their (redacted) value instead of going blank. */
 function securityUnknownEmail(entry: SecurityAuditLogEntryDto): string | undefined {
   if (entry.user_id) return undefined;
-  const value = entry.metadata?.["email_redacted"];
+  const value = entry.metadata?.["email"] ?? entry.metadata?.["email_redacted"];
   return typeof value === "string" ? value : undefined;
 }
 
 /** Email subline shown under the User cell - mirrors Audit's actor_email subline (full email
  * only when a known user has both a display name and an email, so we don't duplicate the value
  * when securityUserDisplay already fell back to showing the email as the primary text), plus the
- * redacted email for enumeration-safe rows above. */
+ * attempted email for the null-user_id rows above. */
 function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined {
   if (entry.user_display_name && entry.user_email) return entry.user_email;
   return securityUnknownEmail(entry);

@@ -313,6 +313,41 @@ describe("GET /api/admin/security-audit-log", () => {
     }
   });
 
+  it("finds failed-login attempts by metadata.email via search", async () => {
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.login.fail",
+        user_id: null,
+        user_email: null,
+        user_display_name: null,
+        ip: "1.2.3.21",
+        metadata: { email: "attempted-fail@example.com", userAgent: null },
+        created_at: new Date("2026-07-03T09:00:00.000Z"),
+      },
+    });
+    try {
+      const res = await app.request(
+        `/api/admin/security-audit-log?event_type=auth.login.fail&search=${encodeURIComponent("Attempted-Fail@example.com")}`,
+        { headers: { Cookie: superCookie } },
+      );
+      const body = (await res.json()) as {
+        total: number;
+        entries: { event_type: string; metadata: Record<string, unknown> | null }[];
+      };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      expect(
+        body.entries.some((e) => e.metadata?.email === "attempted-fail@example.com"),
+      ).toBe(true);
+    } finally {
+      await prisma.securityAuditLog.deleteMany({
+        where: {
+          event_type: "auth.login.fail",
+          metadata: { path: ["email"], equals: "attempted-fail@example.com" },
+        },
+      });
+    }
+  });
+
   it("filters by event_type", async () => {
     const res = await app.request("/api/admin/security-audit-log?event_type=auth.mfa.fail", {
       headers: { Cookie: superCookie },

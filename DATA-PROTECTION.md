@@ -96,9 +96,12 @@ is the reliable source for reconstructing login/MFA/OIDC history during an incid
 - **Fields:** `event_type`, a resolved `user_id` when the subject is known (null for failed logins
   against a possibly-nonexistent account — an intentionally uniform, enumeration-safe shape), immutable
   `user_email` / `user_display_name` snapshot columns written at event time (survive hard delete of
-  the account), `ip`, a small `metadata` object, and `created_at`. Failed logins keep
-  `email_redacted` in metadata only; authenticated events store the accountable staff identity in the
-  snapshot columns, not in metadata.
+  the account), `ip`, a small `metadata` object, and `created_at`. Failed logins keep `user_id` and
+  the snapshot columns null (enumeration-safe) and store the full attempted address in
+  `metadata.email` so superadmins can investigate targeted attacks; older rows may still have
+  `email_redacted` instead. Authenticated events store the accountable staff identity in the
+  snapshot columns, not in metadata. Operational stdout / System-log still emit the redacted form
+  for failed logins (see **Logs** above).
 - **Not covered, by design:** rate-limit-exceeded events (span many unrelated features — throttling
   signal, not itself a discrete auth incident; better served by metrics/alerting) and admin settings
   changes (already durable via the central `AdminAuditLog` below — no need to duplicate into both
