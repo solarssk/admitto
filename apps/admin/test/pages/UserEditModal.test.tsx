@@ -811,7 +811,7 @@ describe("UserEditModal sign-in security", () => {
     renderModal({ has_sso: false });
     await screen.findByText("Local password");
     openMoreActions();
-    expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("menuitem", { name: /Unlink identity provider/ })).toHaveProperty("disabled", true);
   });
 
   it("unlinks SSO after confirmation, requiring a new password in the same step", async () => {
@@ -819,8 +819,8 @@ describe("UserEditModal sign-in security", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink identity provider/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink identity provider" });
     const confirmButton = within(dialog).getByRole("button", { name: "Unlink" });
     expect(confirmButton).toHaveProperty("disabled", true);
 
@@ -847,8 +847,8 @@ describe("UserEditModal sign-in security", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink identity provider/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink identity provider" });
     fireEvent.change(screen.getByLabelText("New temporary password"), {
       target: { value: "long-enough-password" },
     });
@@ -864,8 +864,8 @@ describe("UserEditModal sign-in security", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink identity provider/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink identity provider" });
     fireEvent.change(screen.getByLabelText("New temporary password"), {
       target: { value: "long-enough-password" },
     });
@@ -879,14 +879,14 @@ describe("UserEditModal sign-in security", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink identity provider/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink identity provider" });
     fireEvent.change(screen.getByLabelText("New temporary password"), {
       target: { value: "long-enough-password" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("dialog", { name: "Unlink SSO" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Unlink identity provider" })).toBeNull();
     expect(mockUnlinkUserExternalIdentity).not.toHaveBeenCalled();
   });
 
@@ -896,8 +896,8 @@ describe("UserEditModal sign-in security", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink SSO/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Unlink SSO" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Unlink identity provider/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink identity provider" });
     fireEvent.change(screen.getByLabelText("New temporary password"), {
       target: { value: "long-enough-password" },
     });
@@ -909,7 +909,7 @@ describe("UserEditModal sign-in security", () => {
 
     fireEvent.keyDown(document, { key: "Escape" });
 
-    expect(screen.getByRole("dialog", { name: "Unlink SSO" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Unlink identity provider" })).toBeTruthy();
     expect((screen.getByLabelText("New temporary password") as HTMLInputElement).value).toBe(
       "long-enough-password",
     );
@@ -921,7 +921,7 @@ describe("UserEditModal sign-in security", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("menuitem", { name: /Unlink identity provider/ })).toHaveProperty("disabled", true);
   });
 
   it("shows up to 3 recent successful logins with location", async () => {
@@ -1035,14 +1035,14 @@ describe("UserEditModal reset actions", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Reset MFA/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Reset MFA" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
     await waitFor(() => {
       expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1");
     });
-    expect(onUpdated).toHaveBeenCalledWith(user, "MFA reset. User must sign in again.");
+    expect(onUpdated).toHaveBeenCalledWith(user, "Two-factor reset. User must sign in again.");
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -1052,11 +1052,11 @@ describe("UserEditModal reset actions", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Reset MFA/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Reset MFA" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
-    expect(await screen.findByText("Failed to reset MFA.")).toBeTruthy();
+    expect(await screen.findByText("Failed to reset two-factor.")).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -1065,11 +1065,11 @@ describe("UserEditModal reset actions", () => {
     await screen.findByRole("button", { name: "Save changes" });
 
     openMoreActions();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Reset MFA/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Reset MFA" });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    expect(screen.queryByRole("dialog", { name: "Reset MFA" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Reset two-factor" })).toBeNull();
     expect(mockResetUserMfa).not.toHaveBeenCalled();
   });
 
