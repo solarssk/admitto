@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db";
-import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 
-export { redactEmail };
+export { redactEmail } from "@admitto/shared";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
