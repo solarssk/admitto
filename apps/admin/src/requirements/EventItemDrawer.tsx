@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Button, IconButton, Input, ModalBackdrop, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, IconButton, Input, ModalBackdrop, Notice, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   deleteEventItem,
@@ -160,6 +160,12 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
           <form id="item-edit-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+            {isDefaultItem && (
+              <Notice variant="info">
+                Badge is the default item used by "Issue badge at entry". It cannot be deleted, but you can turn it
+                off when automatic badge issuing is not needed.
+              </Notice>
+            )}
             <div>
               <h3 className="event-item-modal__section-title">Details</h3>
               <div className="requirements-field-stack">
@@ -208,9 +214,10 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                 themselves in the "Custom attendee fields" card above.
               </p>
               {customFields.length === 0 ? (
-                <p className="requirements-section-hint">
-                  No custom fields defined for this event yet.
-                </p>
+                <Notice variant="info">
+                  No custom fields defined for this event yet. Add fields in Custom attendee fields
+                  above, then link them here.
+                </Notice>
               ) : (
                 <div className="requirements-field-stack">
                   {customFields.map((field) => (
@@ -272,8 +279,8 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             </div>
           </form>
           <div className="event-item-modal__footer">
-            <Button type="submit" form="item-edit-form" variant="primary" disabled={saving}>
-              {saving ? "Saving…" : "Save"}
+            <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
+              Cancel
             </Button>
             <Tooltip
               content={
@@ -297,6 +304,9 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                 Delete item
               </Button>
             </Tooltip>
+            <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
           </div>
         </div>
       </dialog>

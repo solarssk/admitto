@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { customFieldTypeIcon } from "../../src/requirements/customFieldType.js";
+import {
+  CUSTOM_FIELD_TYPES,
+  customFieldTypeIcon,
+  customFieldTypeLabel,
+} from "../../src/requirements/customFieldType.js";
 
-describe("customFieldTypeIcon", () => {
-  it("returns the icon for each known type", () => {
-    expect(customFieldTypeIcon("text")).toBe("ti-letter-case");
-    expect(customFieldTypeIcon("select")).toBe("ti-list");
-    expect(customFieldTypeIcon("boolean")).toBe("ti-checkbox");
+describe("customFieldType helpers", () => {
+  it("maps each built-in type to its operator-facing label and icon", () => {
+    for (const entry of CUSTOM_FIELD_TYPES) {
+      expect(customFieldTypeLabel(entry.value)).toBe(entry.label);
+      expect(customFieldTypeIcon(entry.value)).toBe(entry.icon);
+    }
   });
 
-  it("falls back to the text icon for an unrecognized type", () => {
-    expect(customFieldTypeIcon("unknown")).toBe("ti-letter-case");
+  it("falls back to the raw type string for unknown values", () => {
+    expect(customFieldTypeLabel("mystery")).toBe("mystery");
+    expect(customFieldTypeIcon("mystery")).toBe("ti-letter-case");
   });
 });

@@ -26,7 +26,7 @@ export function TicketTypeBadge({
   catalog?: TicketTypeDto[];
 }>) {
   if (!ticketType) {
-    return <span className="attendee-readonly">-</span>;
+    return <span className="attendee-readonly">No ticket type</span>;
   }
   const found = catalog.find((t) => t.key === ticketType);
   return <UiTicketTypeBadge label={found?.label ?? ticketType} color={found?.color ?? "gray"} />;

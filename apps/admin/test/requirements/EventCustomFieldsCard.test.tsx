@@ -78,10 +78,10 @@ describe("EventCustomFieldsCard", () => {
     expect(shirtRow).not.toBeNull();
 
     expect(within(dietaryRow!).getByText("dietary")).toBeTruthy();
-    expect(within(dietaryRow!).getByText("text")).toBeTruthy();
+    expect(within(dietaryRow!).getByText("Text")).toBeTruthy();
     expect(within(dietaryRow!).getByText("No")).toBeTruthy();
 
-    expect(within(shirtRow!).getByText("select")).toBeTruthy();
+    expect(within(shirtRow!).getByText("Single choice")).toBeTruthy();
     expect(within(shirtRow!).getByText("Yes")).toBeTruthy();
   });
 

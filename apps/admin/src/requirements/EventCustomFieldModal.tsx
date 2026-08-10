@@ -196,7 +196,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               role="group"
               aria-labelledby="cf-type-label"
             >
-              {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
+              {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel, hint }) => (
                 <Tooltip key={value} content={btnLabel}>
                   <button
                     type="button"
@@ -208,10 +208,14 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                     aria-label={btnLabel}
                   >
                     <i className={`ti ${icon}`} />
+                    <span>{btnLabel}</span>
                   </button>
                 </Tooltip>
               ))}
             </div>
+            <p className="requirements-section-hint">
+              {CUSTOM_FIELD_TYPES.find((type) => type.value === form.type)?.hint}
+            </p>
           </div>
           {form.type === "select" && (
             <div className="at-field">
@@ -231,11 +235,11 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           )}
         </form>
         <div className="event-item-modal__footer">
+          <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
+            Cancel
+          </Button>
           <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving}>
             {submitLabel}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
           </Button>
         </div>
       </div>
