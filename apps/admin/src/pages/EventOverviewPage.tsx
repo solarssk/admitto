@@ -472,6 +472,10 @@ const ACTIVITY_ICONS: Record<EventRecentActivityEntry["type"], string> = {
   mail_failed: "ti-mail-x",
   mail_resent: "ti-mail-forward",
   import: "ti-upload",
+  attendee_added: "ti-user-plus",
+  item_issued: "ti-package",
+  item_returned: "ti-package",
+  item_revoked: "ti-arrow-back-up",
 };
 
 // Uniform icon+tone treatment across every activity type, checkin included — was previously an
@@ -565,7 +569,8 @@ const ACTIVITY_FILTER_OPTIONS: ReadonlyArray<SegmentedOption<ActivityFilter>> = 
 ];
 
 /** Recent activity card (replaces "Recent check-ins", #373 + Part B): a day-grouped timeline of
- * check-ins, mail failures/bounces, and imports, with an All/Issues filter. */
+ * check-ins, mail failures/bounces, imports, attendees added, and item issue/return, with an
+ * All/Issues filter. */
 function RecentActivityCard({
   eventId,
   activity,

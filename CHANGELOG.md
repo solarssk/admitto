@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Deploy docs:** clearer first-boot checklist (what must be env vs UI), Portainer/NPM without compose nginx (Variant B), and a generated environment dictionary ([`deploy/ENV.md`](deploy/ENV.md)) built from code scan + [`deploy/env-catalog.json`](deploy/env-catalog.json) (`npm run docs:env`; drift checked by `npm run docs:check`).
+- Event Overview's Recent activity now also shows attendees added and items issued/returned, alongside check-ins, mail failures, and imports.
 
 ### Changed
 - Living ops and security docs now match the current stack: generic **Upgrading** (manual backup first), no automatic pre-migration dump / root migrate, product retention and bounce on the **worker** (not app startup or a retention sidecar), and package README CLI notes aligned with workspace builds.

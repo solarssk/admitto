@@ -1473,7 +1473,16 @@ export interface EventResourceDto {
 
 export interface EventRecentActivityEntry {
   id: string;
-  type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
+  type:
+    | "checkin"
+    | "mail_bounced"
+    | "mail_failed"
+    | "mail_resent"
+    | "import"
+    | "attendee_added"
+    | "item_issued"
+    | "item_returned"
+    | "item_revoked";
   tone: "ok" | "warn" | "error" | "info" | "muted";
   attendee_name?: string | null;
   /** Links the entry to the attendee's detail view; null for entries with no single attendee
