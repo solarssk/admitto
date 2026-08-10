@@ -8,6 +8,7 @@ import {
   renderMfaEnrollStartPage,
   renderMfaVerifyForm,
 } from "../../src/mfa-page.js";
+import { authFormSubmitScript } from "../../src/shared-auth-styles.js";
 
 const NONCE = "unit-test-nonce";
 
@@ -97,5 +98,14 @@ describe("auth page inline script nonces (#253)", () => {
     });
 
     expect(html.split('name="next" value="/admin/events/evt-1/overview"').length - 1).toBe(2);
+  });
+
+  it("marks the backup-code download form so submit lock is skipped", () => {
+    const html = renderMfaEnrollBackupCodesPage({
+      scriptNonce: NONCE,
+      backupCodes: ["AAAA-BBBB"],
+    });
+    expect(html).toContain('action="/mfa/enroll/download-codes" data-auth-no-submit-lock="true"');
+    expect(authFormSubmitScript(NONCE)).toContain('form.dataset.authNoSubmitLock === "true"');
   });
 });

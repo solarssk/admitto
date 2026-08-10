@@ -444,7 +444,10 @@ describe("HTML MFA enroll", () => {
     expect(html).toContain("otpauth://totp/");
     expect(html).toContain('class="auth-qr"');
     expect(html).toContain("Copy setup key");
-    expect(html).toContain("Open in password manager");
+    expect(html).toContain("Try opening in your authenticator app");
+    expect(html).toContain("auth-mfa-mobile-only");
+    expect(html).toContain("auth-mfa-desktop-hint");
+    expect(html).not.toContain("Open in password manager");
     expect(html).toContain('id="enroll-secret"');
     expect(html).not.toContain("Save your backup codes");
     expect(extractBackupCodes(html)).toEqual([]);
