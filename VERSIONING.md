@@ -33,8 +33,8 @@ This is the current product roadmap — details live in milestone descriptions a
 ```mermaid
 flowchart LR
     v04["v0.4.x ✓\nStaff SPA · check-in\nidentity · SSE · mail"]
-    v05["v0.5\nIngest API\nUsers UX"]
-    v06["v0.6\nWallet passes\nPassCreator"]
+    v05["v0.5\nIngest API · Users UX\nWallet passes (PassCreator)"]
+    v06["v0.6\nTBD"]
     v07["v0.7\nRSVP · ICS\nWaitlist"]
     v10(["v1.0\nFirst event\ngo-live"])
     v04 --> v05 --> v06 --> v07 --> v10
@@ -43,8 +43,8 @@ flowchart LR
 | Version | Focus |
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches — see [CHANGELOG.md](CHANGELOG.md)). |
-| **v0.5** | External-ingest `/api/ingest` (Power Automate / MS Forms), users-table UX, template lifecycle triggers. |
-| **v0.6** | Wallet passes (Apple/Google via PassCreator). |
+| **v0.5** | External-ingest `/api/ingest` (Power Automate / MS Forms), users-table UX, template lifecycle triggers, wallet passes (Apple/Google via PassCreator). |
+| **v0.6** | TBD. |
 | **v0.7** | RSVP intake, calendar iMIP/ICS, waitlist. |
 | **v0.8–v0.9** | Hardening + dry run (Outlook/devices, batch tests, backup/restore, event-day readiness — ADR 0012). |
 | **v1.0** | First event **go-live ready** = MVP complete. |
