@@ -194,16 +194,17 @@ describe("audit", () => {
   });
 
   describe("logLoginFailure", () => {
-    it("emits the full attempted email in the stdout emit (same accountability basis as a successful login)", async () => {
+    it("emits a redacted email in stdout / System-log (operational logs stay redacted)", async () => {
       const spy = vi.spyOn(console, "info").mockImplementation(() => {});
       await logLoginFailure(fakeDb(), { email: "bob@example.com", ip: "1.2.3.4" });
       const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
       expect(payload.event).toBe("auth.login.fail");
-      expect(payload.email).toBe("bob@example.com");
+      expect(payload.email).toBe("b***@example.com");
+      expect(JSON.stringify(payload)).not.toContain("bob@example.com");
 
       const entries = querySystemLogs({ source: "security" });
       expect(
-        entries.some((e) => e.message === "auth.login.fail" && e.fields?.email === "bob@example.com"),
+        entries.some((e) => e.message === "auth.login.fail" && e.fields?.email === "b***@example.com"),
       ).toBe(true);
     });
 

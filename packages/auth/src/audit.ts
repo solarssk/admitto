@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db";
+import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 
-export { redactEmail } from "@admitto/shared";
+export { redactEmail };
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -189,17 +190,15 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
 /** Emit `auth.login.fail` as JSON to stdout and persist a durable `SecurityAuditLog` row.
  * `user_id: null` - the login attempt failed, so this never resolves against (or reveals whether
  * there is) a real account; the write path itself doesn't check account existence, avoiding a
- * behavioral side channel. Full email, not redacted: identifying who was targeted by a failed
- * login attempt is the same internal-accountability/security-monitoring basis as logLoginSuccess
- * above (matches how an identity provider attributes its own activity log to a known actor, and
- * standard security-logging guidance - OWASP's Logging Cheat Sheet recommends recording the
- * account identifier on both successful and failed authentication events, precisely to detect
- * brute-force/credential-stuffing against a specific account) - not something GDPR requires
- * redacting for a superadmin-only, retention-bounded log (PO decision, reversing PR #593's more
- * conservative call). */
+ * behavioral side channel. Split redaction: stdout / System-log still emit `redactEmail` (failed
+ * attempt is unauthenticated input; container logs may be forwarded under an operator-controlled
+ * retention policy - see DATA-PROTECTION.md). The durable superadmin-only `SecurityAuditLog` row
+ * stores the full attempted email in `metadata.email` so investigations can attribute
+ * brute-force/credential-stuffing to a specific address (OWASP Logging Cheat Sheet; PO decision
+ * reversing PR #593's more conservative durable-row call). */
 export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<void> {
   emitAuditEvent("auth.login.fail", {
-    email: ctx.email,
+    email: redactEmail(ctx.email),
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
