@@ -28,6 +28,8 @@ export {
   UnquotedAttributePlaceholderError,
   MjmlCompileError,
 } from "./errors.js";
+export type { MjmlRawError } from "./errors.js";
+export { friendlyMjmlErrorMessage } from "./mjmlErrorMessages.js";
 export { compileTemplate } from "./compile.js";
 export {
   renderTemplate,
@@ -36,6 +38,7 @@ export {
   materializeStoredDeliveryMessage,
   materializeStoredDeliveryMessageRedacted,
   stripEmptyUrlAttributes,
+  absolutizeBundledTicketAssetUrls,
   STORAGE_DEFERRED_LINK_PLACEHOLDERS,
 } from "./render.js";
 export {
@@ -55,9 +58,10 @@ export {
   resolveTemplateById,
   createMailTemplate,
   setMailTemplate,
+  updateMailTemplateMetadata,
   TemplateNotFoundError,
 } from "./mailTemplate.js";
-export type { CreatedMailTemplateRow } from "./mailTemplate.js";
+export type { CreatedMailTemplateRow, MailTemplateMetadataRow } from "./mailTemplate.js";
 export {
   resolveBranding,
   resolveBrandingFromEvent,
@@ -72,6 +76,7 @@ export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,
   buildBaseTemplateVars,
+  sanitizeSampleLinksForTestSend,
 } from "./preview.js";
 export type { PreviewTemplateOptions } from "./preview.js";
 export { buildEventLocationTemplateVars } from "./locationVars.js";
@@ -87,6 +92,7 @@ export type {
   RenderedTemplate,
   BrandingUrls,
   SetMailTemplateInput,
+  UpdateMailTemplateMetadataInput,
 } from "./types.js";
 export type { SetBrandingInput, BrandingUpdateData, EventImageAssetPlaceholders } from "./branding.js";
 export type { RenderTemplateInput, RenderOptions } from "./render.js";

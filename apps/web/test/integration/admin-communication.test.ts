@@ -1305,7 +1305,10 @@ describe("POST /api/admin/events/:eventId/templates", () => {
     [
       "MJML compilation errors",
       () => new MjmlCompileError([{ message: "Invalid MJML" }]),
-      { error: "template_validation_failed", errors: ["Invalid MJML"] },
+      {
+        error: "template_validation_failed",
+        errors: ["There's a formatting problem in the template body. Check that area and try again."],
+      },
     ],
     [
       "unknown placeholders",

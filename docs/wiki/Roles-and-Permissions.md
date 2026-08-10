@@ -3,7 +3,7 @@
 > **Audience:** Event Managers and Superadmins
 > **Required role:** Organisation Admin or Superadmin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 Your role decides which organisations, events, and actions are available. If a control is missing, ask a Superadmin to review your assignments rather than sharing an account.
 

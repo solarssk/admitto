@@ -3,8 +3,8 @@
 > **Legal basis:** to be confirmed by your organisation's privacy officer or legal team. This
 > document captures **design intent**, not legal advice.
 
-**Corp pack:** [GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md) ·
-[SUBPROCESSORS.md](docs/SUBPROCESSORS.md) · [SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md)
+**Corp pack:** [GDPR-ONE-PAGER.md](docs/security/GDPR-ONE-PAGER.md) ·
+[SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md) · [SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md)
 
 ## Data processed
 
@@ -190,11 +190,11 @@ periods for different categories are intentional — not an inconsistency.
 | Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge at container startup and daily thereafter; default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
 | IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
 | System logs live tail (in-memory only) | Product — automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
-| Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
+| Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
 Automated post-event attendee purge is planned for **v1.0**. Until then, use **Attendees → Export**,
 then erase records via the admin SPA (single or bulk) or `DELETE /api/admin/events/:eventId/attendees/:id`
-directly, as described in [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md).
+directly, as described in [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md).
 
 | Mechanism | Status |
 |-----------|--------|
@@ -207,18 +207,18 @@ directly, as described in [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md).
 
 Attendees may have rights of access, rectification, and erasure under applicable law.
 **Choose an operating model with legal** — both options are described in
-[GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md):
+[GDPR-ONE-PAGER.md](docs/security/GDPR-ONE-PAGER.md):
 
 | Model | Summary |
 |-------|---------|
 | **Self-service API** | Dedicated export/delete endpoints — build if legal requires |
-| **Organizer-mediated** | Staff export via admin UI; erasure per [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
+| **Organizer-mediated** | Staff export via admin UI; erasure per [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
 ## Subprocessors
 
 Depends on customer configuration — hosting, corporate email (e.g. Microsoft 365 / Graph or SMTP
 relay), optional CDN/WAF, optional future wallet provider. Template:
-[SUBPROCESSORS.md](docs/SUBPROCESSORS.md).
+[SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md).
 
 ## Hosting
 
@@ -226,7 +226,7 @@ relay), optional CDN/WAF, optional future wallet provider. Template:
 - Secrets outside the repository (environment variables / secret manager).
 - Database not exposed to the public internet.
 
-See [CORPORATE-DEPLOYMENT.md](docs/CORPORATE-DEPLOYMENT.md).
+See [CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md).
 
 ## Before production use with real personal data
 

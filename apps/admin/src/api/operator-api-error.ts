@@ -63,14 +63,16 @@ const CODE_MESSAGES: Record<string, string> = {
   "invalid file content": "The file could not be read. Check that it is a valid CSV or XLSX.",
   item_in_use: "This item is in use and cannot be changed.",
   last_superadmin: "Cannot remove or deactivate the last superadmin.",
+  legacy_name_requires_both_fields:
+    "This attendee doesn't have separate first and last names yet. Set both fields together.",
   managed_by_idp: "This role is managed by an identity provider and cannot be removed.",
   manual_lookup_disabled: "Manual lookup is disabled for this event. Use QR scan only.",
   mail_not_configured:
     "Mail transport isn't configured for this event or organization. Set it up in Instance Settings → Mail (or this event's Mailing settings) before sending.",
   mail_destination_blocked:
-    "The mail server hostname resolves to a private address. For a local lab set ALLOW_PRIVATE_MAIL_DESTINATIONS=true, otherwise use a public SMTP host.",
+    "The mail destination host resolves to a private address. Add it to MAIL_PRIVATE_DESTINATION_ALLOWLIST (app and worker), or use a public destination. Local labs can set ALLOW_PRIVATE_MAIL_DESTINATIONS=true when NODE_ENV is not production.",
   mail_destination_unresolved:
-    "Could not resolve the mail server hostname. Check Mail settings.",
+    "Could not resolve the mail destination hostname. Check Mail settings.",
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_admitted: "This attendee isn't currently checked in.",
@@ -98,6 +100,7 @@ const CODE_MESSAGES: Record<string, string> = {
   too_many_attendees: "Too many attendees selected.",
   too_many_rows: "File exceeds the 50 000 row limit. Split the file and import in parts.",
   too_many_streams: "Too many live connections. Try again shortly.",
+  "too many requests": "Too many requests. Wait a moment and try again.",
   totp_required: "Enter your authenticator app code to continue.",
   unauthorized: "Your session has expired. Sign in again.",
   unknown_content_field: "That field no longer exists. Reload and try again.",

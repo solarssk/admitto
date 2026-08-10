@@ -29,23 +29,20 @@ npx tsx src/cli.ts --event <eventId> --file attendees.csv --commit --overwrite
 | Column | Required | Notes |
 |--------|----------|-------|
 | `email` | Yes | Validated; used as match key (Mode A) |
-| `first_name` | Yes* | |
-| `last_name` | Yes* | |
-| `name` | Yes* | Alternative to `first_name`+`last_name` |
+| `first_name` | Yes | |
+| `last_name` | Yes | |
 | `external_uuid` | No | Match key for Mode B; never overwritten |
 | `qr_payload` | No | Agency QR payload; never overwritten |
 | `ticket_type` | No | |
 | `company` | No | |
 | `department` | No | |
 
-\* Provide either `first_name`+`last_name` or `name`.
-
 Headers are case-insensitive and trimmed.
 
 ## Overwrite semantics
 
 - `overwrite=false` (default) — existing attendees are always skipped.
-- `overwrite=true` — updates `name`, `ticket_type`, `company`, `department` only.
+- `overwrite=true` — updates `name`, `first_name`, `last_name`, `ticket_type`, `company`, `department` only.
 - Fields **never** overwritten regardless of mode: `status`, `qr_payload`, `external_uuid`, `token`.
 
 ## Programmatic API

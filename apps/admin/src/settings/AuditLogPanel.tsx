@@ -81,6 +81,7 @@ const ACTION_LABELS: Record<string, string> = {
   org_branding_logo_uploaded: "Organization branding logo uploaded",
   retention_run: "Retention job run",
   role_granted: "Role granted",
+  role_changed: "Role changed",
   role_revoked: "Role revoked",
   security_audit_log_exported: "Security log exported",
   session_device_label_updated: "Session device label updated",
@@ -93,6 +94,7 @@ const ACTION_LABELS: Record<string, string> = {
   user_email_changed: "User email changed",
   user_mfa_reset: "2FA reset",
   user_password_reset: "Password reset",
+  user_profile_updated: "User profile updated",
   user_reactivated: "User reactivated",
   user_sessions_revoked: "User sessions revoked",
   weather_settings_updated: "Weather settings updated",
@@ -123,6 +125,7 @@ const TONE_BY_ADMIN_ACTION: Record<string, BadgeVariant> = {
   user_deleted: "error",
   user_sessions_revoked: "error",
   role_granted: "info",
+  role_changed: "info",
   system_settings_updated: "info",
   identity_provider_toggled: "info",
   identity_cf_access_updated: "info",
@@ -719,9 +722,12 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
 /** Audit's LogCards top/meta slots - mirrors Security's own render*Card* functions below, plus
  * the Scope meta item Security has no equivalent of. */
 function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
+  const label = actionLabel(entry.action_type);
   return (
     <>
-      <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
+      <div className="audit-log-card__action" title={label}>
+        <Badge variant={actionTone(entry.action_type)}>{label}</Badge>
+      </div>
       <div className="audit-log-time audit-log-card__time">
         <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
         <UserLocalTimeLine entry={entry} />

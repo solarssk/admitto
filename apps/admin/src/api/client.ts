@@ -16,6 +16,7 @@ import type {
   LookupAttendeeResult,
   MeResponse,
   ResendTicketBody,
+  DismissBounceResponse,
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
@@ -34,6 +35,7 @@ import type {
   UpdateOpsConfigPatch,
   EventTemplateDto,
   SaveTemplateBody,
+  UpdateTemplateMetadataBody,
   PreviewTemplateResponse,
   MailTemplateListItem,
   MailTemplateDetail,
@@ -124,6 +126,7 @@ import type {
   CreateTicketTypeBody,
   UpdateTicketTypePatch,
 } from "./types.js";
+import { sleepWithAbort } from "../lib/sleep-with-abort.js";
 
 export type EventFullMeta = {
   /** Event capacity limit when a 409 `event_full` response includes structured metadata. */
@@ -850,7 +853,8 @@ export async function createAttendee(
   eventId: string,
   body: {
     email: string;
-    name: string;
+    first_name: string;
+    last_name: string;
     company?: string;
     department?: string;
     ticket_type?: string;
@@ -1008,6 +1012,17 @@ export async function resendTicket(
     jsonPostInit(body),
   );
   return parseJson<DeliveryDto>(res);
+}
+
+export async function dismissBounce(
+  eventId: string,
+  attendeeId: string,
+): Promise<DismissBounceResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/dismiss-bounce`,
+    jsonPostInit({}),
+  );
+  return parseJson<DismissBounceResponse>(res);
 }
 
 /** Queue ticket emails for many attendees (undelivered or all). */
@@ -1207,6 +1222,19 @@ export async function saveEventTemplateById(
     jsonPutInit(body),
   );
   return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Update an event-scoped mail template's identity fields (label/icon/description) only. */
+export async function updateEventTemplateMetadata(
+  eventId: string,
+  templateId: string,
+  body: UpdateTemplateMetadataBody,
+): Promise<MailTemplateListItem> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
+    jsonPatchInit(body),
+  );
+  return parseJson<MailTemplateListItem>(res);
 }
 
 /** Create a new event-scoped mail template. */
@@ -1455,7 +1483,82 @@ export async function downloadExportResponse(res: Response, fallbackFilename: st
   URL.revokeObjectURL(url);
 }
 
-/** Filtered export (header "Export" menu) — the current list filters as XLSX/CSV/PDF. */
+/** Filtered export (header "Export" menu) — enqueue + poll + download. */
+function buildAttendeesExportSearchParams(
+  format: AttendeeExportFormat,
+  params: {
+    q?: string;
+    status?: string;
+    ticket_type?: string;
+    rsvp_status?: RsvpStatus;
+    mail_status?: AttendeeMailStatusFilter;
+  },
+): URLSearchParams {
+  const urlParams = new URLSearchParams({ format });
+  if (params.q) urlParams.set("q", params.q);
+  if (params.status && params.status !== "all") urlParams.set("status", params.status);
+  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
+  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
+  if (params.mail_status) urlParams.set("mail_status", params.mail_status);
+  return urlParams;
+}
+
+async function sleepExportPoll(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal) await sleepWithAbort(ms, signal);
+  else await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollExportJobUntilReady(
+  eventId: string,
+  jobId: string,
+  format: AttendeeExportFormat,
+  signal?: AbortSignal,
+): Promise<void> {
+  /** Keep aligned with `DEFAULT_EXPORT_JOB_STALE_RUNNING_MS` / reclaim (running only). */
+  const staleMs = 15 * 60 * 1000;
+  /** Safety cap so a long live backlog cannot loop forever (≈5h at 5s). */
+  const maxAttempts = 3600;
+  const intervalMs = 5000;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const statusRes = await fetch(
+      `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(jobId)}`,
+      { credentials: "same-origin", signal },
+    );
+    const status = await parseJson<{
+      status: string;
+      error: string | null;
+      filename: string | null;
+      started_at?: string | null;
+    }>(statusRes);
+    if (status.status === "succeeded") {
+      const downloadRes = await fetch(
+        `/api/admin/events/${encodeURIComponent(eventId)}/export/jobs/${encodeURIComponent(jobId)}/download`,
+        { credentials: "same-origin", signal },
+      );
+      await downloadExportResponse(downloadRes, status.filename ?? `attendees.${format}`);
+      return;
+    }
+    if (status.status === "failed") {
+      // 422: application failure (not transport). Avoids the global "server unavailable" banner.
+      throw new ApiError(422, status.error || "Export failed.");
+    }
+    // Only apply the stale window once the worker has claimed the job. Pure `pending`
+    // can wait in a live backlog longer than the running threshold (matches import poll
+    // and server reclaim: pending fail only when heartbeat is stale).
+    const startedRaw = status.started_at;
+    if (startedRaw) {
+      const started = Date.parse(startedRaw);
+      if (Number.isFinite(started) && Date.now() - started >= staleMs) {
+        throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
+      }
+    }
+    if (attempt < maxAttempts - 1) await sleepExportPoll(intervalMs, signal);
+  }
+  throw new ApiError(408, "Export is still running. Keep the worker running and try again.");
+}
+
 export async function exportAttendees(
   eventId: string,
   params: {
@@ -1468,18 +1571,13 @@ export async function exportAttendees(
   format: AttendeeExportFormat,
   signal?: AbortSignal,
 ): Promise<void> {
-  const urlParams = new URLSearchParams({ format });
-  if (params.q) urlParams.set("q", params.q);
-  if (params.status && params.status !== "all") urlParams.set("status", params.status);
-  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
-  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
-  if (params.mail_status) urlParams.set("mail_status", params.mail_status);
-
-  const res = await fetch(
+  const urlParams = buildAttendeesExportSearchParams(format, params);
+  const enqueueRes = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/export?${urlParams.toString()}`,
     { credentials: "same-origin", signal },
   );
-  await downloadExportResponse(res, `attendees.${format}`);
+  const queued = await parseJson<{ jobId: string }>(enqueueRes);
+  await pollExportJobUntilReady(eventId, queued.jobId, format, signal);
 }
 
 /** Explicit-selection export (bulk bar's "Export selected") — a POST with the ids in the JSON

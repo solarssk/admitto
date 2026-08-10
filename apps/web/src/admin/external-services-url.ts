@@ -21,7 +21,9 @@ export type EditableServiceUrlError =
 /**
  * Validate an operator-editable http(s) URL used for server-side fetches.
  * Does not pin the later fetch (TOCTOU remains); closes obvious private-host
- * and DNS-rebinding-to-private cases at save/probe time.
+ * and DNS-rebinding-to-private cases at save/probe time. Callers must also
+ * fetch with `redirect: "error"` (or equivalent hop revalidation) so a public
+ * host cannot 30x into blocked address space.
  */
 export async function assertEditableServiceUrl(
   raw: string,

@@ -233,8 +233,11 @@ async function fetchJson(
 ): Promise<unknown> {
   let res: Response;
   try {
+    // Refuse redirects: editable base URL is host-checked at save/probe time;
+    // following a 30x would reintroduce SSRF to private/metadata targets.
     res = await fetchImpl(url, {
       headers: { "User-Agent": userAgent, Accept: "application/json" },
+      redirect: "error",
       signal,
     });
   } catch (err) {

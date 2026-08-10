@@ -288,7 +288,9 @@ function AddItemModal({
       <div ref={addPanelRef} className="event-item-modal__panel">
         <div className="event-item-modal__header">
           <div>
-            <h2 className="event-item-modal__title">Add item</h2>
+            <h2 className="event-item-modal__title">
+              <i className="ti ti-package" aria-hidden="true" /> Add item
+            </h2>
             <p className="event-item-modal__subtitle">
               A physical item or resource issued or tracked at check-in, for example a gift
               bag, badge, or headset. You can configure rules after creating it.

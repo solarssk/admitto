@@ -24,7 +24,7 @@ flowchart TD
 |-------|----------|------|
 | **P1** | Suspected data breach, leaked production secrets | Customer security + platform owner |
 | **P2** | Outage on event day, mail or database unavailable | Platform owner + event operator |
-| **P3** | Vulnerability in Admitto or dependencies | Follow [SECURITY.md](../SECURITY.md) disclosure |
+| **P3** | Vulnerability in Admitto or dependencies | Follow [SECURITY.md](../../SECURITY.md) disclosure |
 
 ---
 
@@ -60,7 +60,7 @@ Treat any secret exposed in logs, tickets, or version control as **compromised**
 | Monitoring token | Regenerate and update observability tools |
 | Session compromise | Invalidate active sessions; force staff re-authentication |
 
-See [SECURITY.md](../SECURITY.md) for the project secret policy.
+See [SECURITY.md](../../SECURITY.md) for the project secret policy.
 
 ---
 
@@ -97,7 +97,7 @@ Readiness output is intended for operators — no personal data in responses.
 
 ## Related documents
 
-- [SECURITY.md](../SECURITY.md)
-- [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md)
-- [DATA-PROTECTION.md](../DATA-PROTECTION.md)
+- [SECURITY.md](../../SECURITY.md)
+- [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md)
+- [DATA-PROTECTION.md](../../DATA-PROTECTION.md)
 - [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md)

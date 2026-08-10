@@ -408,20 +408,6 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(body.parse.warnings).toContain("Duplicate column(s) detected");
   });
 
-  it("sanitizes single-word name warnings without exposing the name", async () => {
-    const csv = ["name,email", "Madonna,solo@example.com"].join("\n");
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/preview`,
-      csvFormData(csv),
-      adminCookie,
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { parse: { warnings: string[] } };
-    expect(body.parse.warnings.length).toBeGreaterThan(0);
-    expect(body.parse.warnings[0]).toMatch(/single-word name/);
-    expect(body.parse.warnings[0]).not.toContain("Madonna");
-  });
-
   it("returns importId on successful preview", async () => {
     const res = await postImport(
       `/api/admin/events/${EVENT_A}/import/preview`,

@@ -160,6 +160,7 @@ export {
   logLoginSuccess,
   logLoginFailure,
   logMfaBreakGlass,
+  logMfaBreakGlassCli,
   logMfaSuccess,
   logMfaFailure,
   logMfaRecoveryConsumed,

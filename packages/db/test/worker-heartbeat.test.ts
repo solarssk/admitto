@@ -6,6 +6,7 @@ import {
   positiveMsOr,
   WORKER_HEARTBEAT_ID,
   staleAdminJobOrClauses,
+  workerHeartbeatStaleMs,
 } from "../src/worker-heartbeat.js";
 
 describe("positiveMsOr", () => {
@@ -17,6 +18,23 @@ describe("positiveMsOr", () => {
 
   it("floors a positive value", () => {
     expect(positiveMsOr(1500.9, 100)).toBe(1500);
+  });
+});
+
+describe("workerHeartbeatStaleMs", () => {
+  it("floors at 5 minutes for default and short ticks", () => {
+    expect(workerHeartbeatStaleMs(60)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(10)).toBe(300_000);
+    expect(DEFAULT_WORKER_HEARTBEAT_STALE_MS).toBe(300_000);
+  });
+
+  it("scales above the floor for long ticks", () => {
+    expect(workerHeartbeatStaleMs(120)).toBe(420_000);
+  });
+
+  it("falls back to the 60s tick when invalid", () => {
+    expect(workerHeartbeatStaleMs(0)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(Number.NaN)).toBe(300_000);
   });
 });
 

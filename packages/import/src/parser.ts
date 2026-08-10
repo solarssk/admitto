@@ -14,7 +14,13 @@ import type {
   ParseResult,
 } from "./types.js";
 
-const CANONICAL_COLUMNS = RESERVED_CUSTOM_DATA_SOURCE_FIELDS;
+/** Header names the parser still recognizes as canonical import columns, so they don't trigger
+ * the unknown-column warning below - deliberately excludes "name": that stays reserved for
+ * custom_data (RESERVED_CUSTOM_DATA_SOURCE_FIELDS, so an attribute field can't collide with the
+ * DB column), but the parser no longer reads a `name` column, so one in the file should surface
+ * the warning like any other unsupported column instead of being silently accepted (Codex
+ * review, PR792). */
+const CANONICAL_COLUMNS = RESERVED_CUSTOM_DATA_SOURCE_FIELDS.filter((column) => column !== "name");
 
 const emailSchema = z.string().email();
 
@@ -68,39 +74,10 @@ type IdentityResolution =
   | { ok: true; firstName: string; lastName: string }
   | { ok: false; reason: string };
 
-/** Resolve first/last name (separate columns or a single `name` column) and validate the email. */
-function resolveIdentity(
-  rawFirstName: string,
-  rawLastName: string,
-  rawName: string,
-  email: string,
-  rowIdx: number,
-  warnings: string[],
-): IdentityResolution {
-  let firstName: string;
-  let lastName: string;
-
-  if (rawFirstName || rawLastName) {
-    firstName = rawFirstName;
-    lastName = rawLastName;
-    if (!firstName || !lastName) {
-      return {
-        ok: false,
-        reason: "Both first_name and last_name are required when using separate name columns",
-      };
-    }
-  } else if (rawName) {
-    const spaceIdx = rawName.indexOf(" ");
-    if (spaceIdx === -1) {
-      warnings.push(`Row ${rowIdx}: single-word name "${rawName}", last_name stored as empty string`);
-      firstName = rawName;
-      lastName = "";
-    } else {
-      firstName = rawName.slice(0, spaceIdx);
-      lastName = rawName.slice(spaceIdx + 1).trim();
-    }
-  } else {
-    return { ok: false, reason: "Missing name: provide first_name + last_name or a name column" };
+/** Validate first_name/last_name are both present and the email is well-formed. */
+function resolveIdentity(rawFirstName: string, rawLastName: string, email: string): IdentityResolution {
+  if (!rawFirstName || !rawLastName) {
+    return { ok: false, reason: "Both first_name and last_name are required" };
   }
 
   if (!email) {
@@ -110,7 +87,7 @@ function resolveIdentity(
     return { ok: false, reason: `Invalid email: "${email}"` };
   }
 
-  return { ok: true, firstName, lastName };
+  return { ok: true, firstName: rawFirstName, lastName: rawLastName };
 }
 
 /** Cross-row duplicate/collision check for email, external_uuid and qr_payload. */
@@ -252,9 +229,8 @@ export function parseAttendees(csvString: string, options: ParseAttendeesOptions
 
     const rawFirstName = (raw["first_name"] ?? "").trim();
     const rawLastName = (raw["last_name"] ?? "").trim();
-    const rawName = (raw["name"] ?? "").trim();
 
-    const identity = resolveIdentity(rawFirstName, rawLastName, rawName, email, rowIdx, warnings);
+    const identity = resolveIdentity(rawFirstName, rawLastName, email);
     if (!identity.ok) {
       invalidRows.push({ rowIndex: rowIdx, raw, reason: identity.reason });
       continue;

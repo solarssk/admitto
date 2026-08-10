@@ -4,10 +4,18 @@ import type { PrismaClient } from "./generated/prisma/client.js";
 export const WORKER_HEARTBEAT_ID = "default";
 
 /**
- * Default heartbeat stale window for pending job reclaim (matches CLI
- * `workerHeartbeatStaleMs(60)` → 150s).
+ * Stale window for Health / HEALTHCHECK / pending-job reclaim.
+ * Floor 5 minutes so a long import/export drain inside one tick does not
+ * false-alarm; otherwise 3× tick + 60s slack (default tick 60s → 5m floor).
+ * Keep identical to Settings → Health worker check.
  */
-export const DEFAULT_WORKER_HEARTBEAT_STALE_MS = 150_000;
+export function workerHeartbeatStaleMs(tickSeconds: number): number {
+  const tick = Number.isFinite(tickSeconds) && tickSeconds > 0 ? tickSeconds : 60;
+  return Math.max(300_000, tick * 3 * 1000 + 60_000);
+}
+
+/** Default (= `workerHeartbeatStaleMs(60)`). Used when reclaim has no tick override. */
+export const DEFAULT_WORKER_HEARTBEAT_STALE_MS = workerHeartbeatStaleMs(60);
 
 /** Positive finite ms, else `fallback` (floored). */
 export function positiveMsOr(value: number | undefined, fallback: number): number {

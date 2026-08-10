@@ -181,9 +181,10 @@ function AccountIdentityActionsMenu({
       </Button>
       {moreActions.open && (
         <div
-          className={`more-actions-menu__panel${moreActions.openUpward ? " more-actions-menu__panel--up" : ""}`}
+          className="more-actions-menu__panel"
           role="menu"
           ref={moreActions.panelRef}
+          style={moreActions.panelStyle}
         >
           {isManaged && (
             <MoreActionsMenuItem
@@ -347,7 +348,7 @@ export function AccountPage() {
   const [unlinkStepUpOpen, setUnlinkStepUpOpen] = useState(false);
   const [unlinkCode, setUnlinkCode] = useState("");
   const [unlinkCodeError, setUnlinkCodeError] = useState<string | null>(null);
-  const identityActions = useDropdownMenu<HTMLButtonElement>();
+  const identityActions = useDropdownMenu<HTMLButtonElement>({ align: "end" });
 
   const loadAccount = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);

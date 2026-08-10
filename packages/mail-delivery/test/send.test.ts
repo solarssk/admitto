@@ -76,6 +76,128 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("sendTicketEmails name fields", () => {
+  // Own event, isolated from EVENT_ID's fixed 3-attendee count assertions elsewhere in this file.
+  const NAME_FIELDS_EVENT_ID = "evt-mail-send-name-fields";
+
+  beforeAll(async () => {
+    await prisma.event.create({
+      data: {
+        id: NAME_FIELDS_EVENT_ID,
+        organization_id: "org-mail",
+        title: "Mail Event (name fields)",
+        slug: "mail-event-name-fields",
+        date: new Date("2026-09-01"),
+      },
+    });
+  });
+
+  it("uses first_name/last_name directly when set, instead of splitting name", async () => {
+    // "Zhang Wei" naively splits to first_name="Zhang" (actually the family name) - explicit
+    // fields must win over that guess. If the send path fell back to splitDisplayName(name)
+    // here, the greeting would read "Hi Zhang," instead.
+    await prisma.attendee.create({
+      data: {
+        id: "att-explicit-name-fields",
+        event_id: NAME_FIELDS_EVENT_ID,
+        email: "wei@example.com",
+        name: "Zhang Wei",
+        first_name: "Wei",
+        last_name: "Zhang",
+      },
+    });
+    exported.length = 0;
+
+    await sendTicketEmails(
+      NAME_FIELDS_EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-explicit-name-fields"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const weiExport = exported.find((p) => p.message.to === "wei@example.com");
+    expect(weiExport?.message.html).toContain("Hi Wei,");
+    expect(weiExport?.message.html).not.toContain("Hi Zhang,");
+  });
+
+  it("uses the real field even when only last_name is set (first_name still null)", async () => {
+    // Reachable via a PATCH that only touches last_name on an attendee whose first_name was
+    // never migrated - computePatchChanges (attendees-api-routes.ts) allows that. Must still
+    // use the real last_name, not fall back to splitting name.
+    await prisma.attendee.create({
+      data: {
+        id: "att-last-name-only",
+        event_id: NAME_FIELDS_EVENT_ID,
+        email: "partial@example.com",
+        name: "Partial Example",
+        last_name: "RealLastName",
+      },
+    });
+    exported.length = 0;
+
+    await sendTicketEmails(
+      NAME_FIELDS_EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-last-name-only"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const partialExport = exported.find((p) => p.message.to === "partial@example.com");
+    expect(partialExport?.message.html).not.toContain("Hi Partial,");
+  });
+
+  it("uses the real field even when only first_name is set (last_name still null)", async () => {
+    // Mirror of the last_name-only case above: reachable via a PATCH that only touches
+    // first_name. last_name must fall back to "" here, not to a value split out of name.
+    await prisma.attendee.create({
+      data: {
+        id: "att-first-name-only",
+        event_id: NAME_FIELDS_EVENT_ID,
+        email: "onlyfirst@example.com",
+        name: "Only First",
+        first_name: "RealFirstName",
+      },
+    });
+    exported.length = 0;
+
+    await sendTicketEmails(
+      NAME_FIELDS_EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-first-name-only"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const onlyFirstExport = exported.find((p) => p.message.to === "onlyfirst@example.com");
+    expect(onlyFirstExport?.message.html).toContain("Hi RealFirstName,");
+  });
+
+  it("falls back to splitting name when first_name/last_name are still null (un-migrated attendee)", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-null-name-fields",
+        event_id: NAME_FIELDS_EVENT_ID,
+        email: "dana@example.com",
+        name: "Dana Example",
+      },
+    });
+    exported.length = 0;
+
+    await sendTicketEmails(
+      NAME_FIELDS_EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-null-name-fields"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    const danaExport = exported.find((p) => p.message.to === "dana@example.com");
+    expect(danaExport?.message.html).toContain("Hi Dana,");
+  });
+});
+
 describe("sendTicketEmails", () => {
   it("sends ticket emails and creates EmailDelivery rows", async () => {
     exported.length = 0;
@@ -472,6 +594,37 @@ describe("resendTicketEmail", () => {
     });
     expect(resendRow?.actor_user_id).toBeNull();
     expect(resendRow?.session_id).toBeNull();
+  });
+
+  it("resends a specific templateId when provided (Delivery log bounce Resend)", async () => {
+    exported.length = 0;
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: `resend-specific-${Date.now()}`,
+        label: "Resend specific",
+        subject_template: "Specific {{first_name}}",
+        body_template: "<p>Specific body {{ticket_url}}</p>",
+        template_format: "html",
+        compiled_html_template: "<p>Specific body {{ticket_url}}</p>",
+      },
+    });
+
+    await resendTicketEmail(
+      "att-mode-a",
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+      { deliverImmediately: true, templateId: template.id },
+    );
+
+    const resendRow = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: "att-mode-a", purpose: "resend", template_id: template.id },
+      orderBy: { created_at: "desc" },
+    });
+    expect(resendRow?.template_id).toBe(template.id);
+    expect(exported[0]?.message.subject).toMatch(/^Specific /);
   });
 });
 

@@ -12,6 +12,8 @@ import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
 import * as ticketOperations from "@admitto/tickets";
 import * as mailDelivery from "@admitto/mail-delivery";
 import type { ExportPayload } from "@admitto/mailer";
+import { getDefaultStorage } from "@admitto/storage";
+import { drainExportJobs } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
   handleBulkRevokeAttendeeItems,
@@ -199,6 +201,8 @@ async function seed(client: PrismaClient) {
         event_id: EVENT_A,
         email: "bob@example.com",
         name: "Bob Beta",
+        first_name: "Bob",
+        last_name: "Beta",
         company: "Beta Ltd",
         ticket_type: "standard",
         token_hash: hashToken(generateToken()),
@@ -2021,7 +2025,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "Must Not Update" }),
+      body: JSON.stringify({ first_name: "Must Not Update" }),
     });
 
     expect(res.status).toBe(403);
@@ -2036,13 +2040,14 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Bob Updated",
+        first_name: "Bob Updated",
         expected_updated_at: expectedUpdatedAt,
       }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { name: string };
-    expect(body.name).toBe("Bob Updated");
+    // last_name "Beta" is untouched by this first_name-only patch and stays in `name`.
+    expect(body.name).toBe("Bob Updated Beta");
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
@@ -2050,10 +2055,107 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     });
     expect(log).not.toBeNull();
     const meta = log!.metadata as { fields?: string[] };
-    expect(meta.fields).toEqual(expect.arrayContaining(["name"]));
-    // name is deliberately never one of LOGGED_VALUE_FIELDS - only the fixed business/contact
-    // fields below (email/company/department/ticket_type) get their value logged (PO review).
+    // Only first_name was patched - last_name must not appear, or the activity timeline
+    // (which renders every entry in metadata.fields) falsely implies it changed too (bot
+    // review).
+    expect(meta.fields).toContain("first_name");
+    expect(meta.fields).not.toContain("last_name");
+    // first_name/last_name are deliberately never in LOGGED_VALUE_FIELDS - only the fixed
+    // business/contact fields below (email/company/department/ticket_type) get their value
+    // logged (PO review).
     expect(JSON.stringify(meta)).not.toContain("Bob Updated");
+  });
+
+  it("updates attendee when only last_name is patched (first_name untouched)", async () => {
+    const created = await prisma.attendee.create({
+      data: {
+        id: "att-admin-last-name-only",
+        event_id: EVENT_A,
+        email: "last-name-only@example.com",
+        name: "Original Guest",
+        first_name: "Original",
+        last_name: "Guest",
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        last_name: "UpdatedGuest",
+        expected_updated_at: created.updated_at.toISOString(),
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { name: string; first_name: string; last_name: string };
+    expect(body.first_name).toBe("Original");
+    expect(body.last_name).toBe("UpdatedGuest");
+    expect(body.name).toBe("Original UpdatedGuest");
+
+    // Only last_name actually changed - the audit trail (and the activity timeline that
+    // renders it) must not claim first_name changed too (bot review).
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: created.id, action_type: "attendee_edited" },
+      orderBy: { created_at: "desc" },
+    });
+    const meta = log!.metadata as { fields?: string[] };
+    expect(meta.fields).toContain("last_name");
+    expect(meta.fields).not.toContain("first_name");
+  });
+
+  it("rejects a partial name patch on a legacy attendee (both split fields still null) - would silently drop half of `name` (Codex review, PR790)", async () => {
+    const legacy = await prisma.attendee.create({
+      data: {
+        id: "att-admin-legacy-name-partial",
+        event_id: EVENT_A,
+        email: "legacy-partial@example.com",
+        name: "Zhang Wei",
+        first_name: null,
+        last_name: null,
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${legacy.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        first_name: "Wei",
+        expected_updated_at: legacy.updated_at.toISOString(),
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("legacy_name_requires_both_fields");
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: legacy.id } });
+    expect(after.name).toBe("Zhang Wei");
+    expect(after.first_name).toBeNull();
+    expect(after.last_name).toBeNull();
+  });
+
+  it("migrates a legacy attendee when both first_name and last_name are patched together", async () => {
+    const legacy = await prisma.attendee.create({
+      data: {
+        id: "att-admin-legacy-name-full",
+        event_id: EVENT_A,
+        email: "legacy-full@example.com",
+        name: "Zhang Wei",
+        first_name: null,
+        last_name: null,
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${legacy.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        first_name: "Wei",
+        last_name: "Zhang",
+        expected_updated_at: legacy.updated_at.toISOString(),
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { name: string; first_name: string; last_name: string };
+    expect(body.first_name).toBe("Wei");
+    expect(body.last_name).toBe("Zhang");
+    expect(body.name).toBe("Wei Zhang");
   });
 
   it("logs before/after values for the approved safe subset - email/company/department/ticket_type (PO review)", async () => {
@@ -2355,7 +2457,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Bob Renamed",
+        first_name: "Bob Renamed",
         expected_updated_at: await currentUpdatedAt(ATT_A2),
       }),
     });
@@ -2403,7 +2505,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Bob With Legacy Size",
+        first_name: "Bob With Legacy Size",
         expected_updated_at: await currentUpdatedAt(ATT_A2),
       }),
     });
@@ -2510,7 +2612,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Stale Test First",
+        first_name: "Stale Test First",
         expected_updated_at: staleUpdatedAt,
       }),
     });
@@ -2520,7 +2622,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Stale Test Second",
+        first_name: "Stale Test Second",
         expected_updated_at: staleUpdatedAt,
       }),
     });
@@ -2529,11 +2631,11 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(body.error).toBe("stale_write");
 
     const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
-    expect(row.name).toBe("Stale Test First");
+    // last_name "Beta" is untouched by this first_name-only patch and stays in `name`.
+    expect(row.name).toBe("Stale Test First Beta");
   });
 
   it("allows no-op PATCH without expected_updated_at", async () => {
-    const row = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_A2 } });
     const beforeLogs = await prisma.attendeeActionLog.count({
       where: { attendee_id: ATT_A2, action_type: "attendee_edited" },
     });
@@ -2541,7 +2643,7 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ name: row.name }),
+      body: JSON.stringify({}),
     });
     expect(res.status).toBe(200);
 
@@ -2749,6 +2851,132 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
     expect(limited.status).toBe(429);
     const body = (await limited.json()) as { error: string };
     expect(body.error).toBe("too many requests");
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/:id/resend with templateId", () => {
+  // Dedicated attendee/template so these don't share ATT_A1's per-attendee resend rate-limit
+  // bucket with the describe block above.
+  const ATT_RESEND_TPL = "att-admin-resend-templateid-target";
+  const TEMPLATE_RESEND = "tpl-admin-resend-templateid";
+
+  beforeAll(async () => {
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_RESEND_TPL },
+      create: {
+        id: ATT_RESEND_TPL,
+        event_id: EVENT_A,
+        email: "resend-templateid-target@example.com",
+        name: "Resend TemplateId Target",
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+      update: {},
+    });
+    await prisma.mailTemplate.upsert({
+      where: { id: TEMPLATE_RESEND },
+      create: {
+        id: TEMPLATE_RESEND,
+        scope_type: "event",
+        scope_id: EVENT_A,
+        name: "reminder",
+        label: "Reminder",
+        subject_template: "Reminder for {{event_name}}",
+        body_template: "<p>Reminder</p>",
+        template_format: "html",
+        compiled_html_template: "<p>Reminder</p>",
+      },
+      update: {},
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.emailDelivery.deleteMany({ where: { attendee_id: ATT_RESEND_TPL } });
+    await prisma.attendee.delete({ where: { id: ATT_RESEND_TPL } });
+    await prisma.mailTemplate.delete({ where: { id: TEMPLATE_RESEND } });
+  });
+
+  it("resends the specific template instead of the event's current default", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_RESEND_TPL}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: TEMPLATE_RESEND }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { template_id: string | null; template_name: string | null };
+    expect(body.template_id).toBe(TEMPLATE_RESEND);
+    expect(body.template_name).toBe("Reminder");
+  });
+
+  it("returns 404 template_not_found for a nonexistent templateId", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_RESEND_TPL}/resend`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: "tpl-does-not-exist" }),
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("template_not_found");
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/:id/dismiss-bounce", () => {
+  const ATT_DISMISS = "att-admin-dismiss-bounce-target";
+
+  beforeAll(async () => {
+    const token = generateToken();
+    await prisma.attendee.upsert({
+      where: { id: ATT_DISMISS },
+      create: {
+        id: ATT_DISMISS,
+        event_id: EVENT_A,
+        email: "dismiss-bounce-target@example.com",
+        name: "Dismiss Bounce Target",
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+      update: { email_bounce_dismissed_at: null },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.attendee.delete({ where: { id: ATT_DISMISS } });
+  });
+
+  it("sets email_bounce_dismissed_at and writes an audit log entry", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_DISMISS}/dismiss-bounce`,
+      { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { email_bounce_dismissed_at: string };
+    expect(body.email_bounce_dismissed_at).toBeTruthy();
+
+    const attendee = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_DISMISS } });
+    expect(attendee.email_bounce_dismissed_at?.toISOString()).toBe(body.email_bounce_dismissed_at);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_DISMISS, action_type: "bounce_dismissed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_DISMISS}/dismiss-bounce`,
+      { method: "POST", headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a cross-event attendee", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/${ATT_B1}/dismiss-bounce`,
+      { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" } },
+    );
+    expect(res.status).toBe(403);
   });
 });
 
@@ -3944,7 +4172,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "manual@example.com",
-        name: "Manual Guest",
+        first_name: "Manual",
+        last_name: "Guest",
         company: "Manual Co",
       }),
     });
@@ -4002,7 +4231,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "bad-select@example.com",
-        name: "Bad Select",
+        first_name: "Bad Select",
+        last_name: "Test",
         custom_data: { shirt_size: "XL" },
       }),
     });
@@ -4028,7 +4258,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "null-field@example.com",
-        name: "Null Field",
+        first_name: "Null Field",
+        last_name: "Test",
         custom_data: { lunch: null },
       }),
     });
@@ -4051,7 +4282,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "missing-size@example.com",
-        name: "Missing Size",
+        first_name: "Missing Size",
+        last_name: "Test",
       }),
     });
     expect(res.status).toBe(400);
@@ -4071,7 +4303,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "long-field@example.com",
-        name: "Long Field",
+        first_name: "Long Field",
+        last_name: "Test",
         custom_data: { shirt_size: "x".repeat(101) },
       }),
     });
@@ -4086,7 +4319,8 @@ describe("Attendees v2 — RSVP and manual create", () => {
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({
         email: "unknown-type@example.com",
-        name: "Unknown Type",
+        first_name: "Unknown Type",
+        last_name: "Test",
         ticket_type: "bogus-type",
       }),
     });
@@ -4102,7 +4336,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "anna@example.com", name: "Duplicate" }),
+      body: JSON.stringify({ email: "anna@example.com", first_name: "Duplicate", last_name: "Test" }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };
@@ -4113,15 +4347,22 @@ describe("Attendees v2 — RSVP and manual create", () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
       headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "op-blocked@example.com", name: "Blocked" }),
+      body: JSON.stringify({ email: "op-blocked@example.com", first_name: "Blocked", last_name: "Test" }),
     });
     expect(res.status).toBe(403);
   });
 
   it("export CSV does not expose token fields in response body", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/export?format=csv`, {
+    const queued = await app.request(`/api/admin/events/${EVENT_A}/attendees/export?format=csv`, {
       headers: { Cookie: adminCookie },
     });
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/export/jobs/${jobId}/download`,
+      { headers: { Cookie: adminCookie } },
+    );
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).not.toContain("token_enc");
@@ -4136,7 +4377,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
       const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
         method: "POST",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "full@example.com", name: "Full Event" }),
+        body: JSON.stringify({ email: "full@example.com", first_name: "Full Event", last_name: "Test" }),
       });
       expect(res.status).toBe(409);
       const body = (await res.json()) as { code: string; capacity: number; current: number };
@@ -4189,7 +4430,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?force=1`, {
           method: "POST",
           headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "forced@example.com", name: "Forced Guest" }),
+          body: JSON.stringify({ email: "forced@example.com", first_name: "Forced Guest", last_name: "Test" }),
         });
         expect(res.status).toBe(201);
         const created = (await res.json()) as { id: string };
@@ -4235,7 +4476,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "after-cancel@example.com", name: "After Cancel" }),
+          body: JSON.stringify({ email: "after-cancel@example.com", first_name: "After Cancel", last_name: "Test" }),
         });
         expect(res.status).toBe(201);
         const created = (await res.json()) as { id: string };
@@ -4265,7 +4506,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "fills-cancel-slot@example.com", name: "Fills Cancel Slot" }),
+          body: JSON.stringify({ email: "fills-cancel-slot@example.com", first_name: "Fills Cancel Slot", last_name: "Test" }),
         });
         expect(fillRes.status).toBe(201);
         fillerId = ((await fillRes.json()) as { id: string }).id;
@@ -4397,7 +4638,11 @@ describe("Attendees v2 — RSVP and manual create", () => {
       const followUpRes = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_PASS_REVOKE}`, {
         method: "PATCH",
         headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Pass Revoke Admitted (edited)", expected_updated_at: patched.updated_at }),
+        body: JSON.stringify({
+          first_name: "Pass Revoke Admitted (edited)",
+          last_name: "Smith",
+          expected_updated_at: patched.updated_at,
+        }),
       });
       expect(followUpRes.status).toBe(200);
     } finally {
@@ -4487,7 +4732,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
         const fillRes = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
           method: "POST",
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "fills-slot@example.com", name: "Fills Slot" }),
+          body: JSON.stringify({ email: "fills-slot@example.com", first_name: "Fills Slot", last_name: "Test" }),
         });
         expect(fillRes.status).toBe(201);
         fillerId = ((await fillRes.json()) as { id: string }).id;

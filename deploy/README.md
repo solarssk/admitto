@@ -8,7 +8,7 @@ Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker
 
 Admitto is **self-hosted**: you run it on infrastructure you control (VPS, on-prem server, NAS with Docker, etc.). We do **not** ship a managed cloud service.
 
-The **only supported production path** in this repo is a **Docker Compose stack** — not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm, and **not Vercel** (root [`vercel.json`](../vercel.json) disables Git-linked Vercel deploys; delete or disconnect the project in the Vercel dashboard if it still appears on PRs). You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
+The **only supported production path** in this repo is a **Docker Compose stack** - not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm, and not serverless hosts like Vercel. You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
 
 What you get in `deploy/`:
 
@@ -124,6 +124,26 @@ docker compose up -d
 
 `validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
+## Self-hosted SMTP on a private address
+
+Mail destinations (SMTP host, Power Automate URL host, bounce IMAP host) are blocked when they are
+or resolve to loopback / RFC1918 / link-local / cloud-metadata addresses. That protects production
+from SSRF via Settings UI.
+
+If your MTA is only reachable on the LAN (for example AdGuard rewrites `mail.example.lan` to
+`192.168.x.x`), set an explicit allowlist on **both** `app` and `worker`:
+
+```bash
+# deploy/.env — exact hostnames or IP literals, comma-separated
+MAIL_PRIVATE_DESTINATION_ALLOWLIST=mail.example.lan
+```
+
+Then configure that same hostname in Organisation / Event mail settings. Do **not** set
+`ALLOW_PRIVATE_MAIL_DESTINATIONS=true` in production (it is ignored when `NODE_ENV=production`).
+
+Connecting through your public WAN IP from inside Docker often fails (no hairpin / port closed);
+prefer the LAN hostname on the allowlist instead of opening SMTP on the internet.
+
 ## Container startup (entrypoint)
 
 Migration/backup and serving are two separate one-shot-then-long-running compose services, both
@@ -139,7 +159,7 @@ never runs any of this itself and never runs as root (docker:S6471).
 3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand; drops to the `node` user for this and every step below)
 4. `backfill-public-ref.js` and other idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-**`app`** (always runs as `node`, never root) then runs its own startup step — best-effort retention cleanup (120s timeout each, non-fatal on failure): expired/revoked auth sessions and trusted devices (`purge-auth-retention`), stale email delivery HTML/subject snapshots (`nullify-delivery-snapshots`), then stale `SecurityAuditLog` rows (`purge-security-audit-log`, default 30 days, `SECURITY_AUDIT_LOG_RETENTION_DAYS`) — before execing `node apps/web/dist/src/index.js`. Retention lives here rather than in `migrate` because `migrate`'s `depends_on: condition: service_completed_successfully` is only evaluated on `docker compose up`; a bare `app` restart (crash loop, `docker compose restart app`, `restart: unless-stopped`) never re-runs `migrate`, so retention needs to run on every `app` start independently to keep its original on-every-boot cadence. No migration logic here, and no filesystem access to `/backups` at all (not mounted).
+**`app`** (always runs as `node`, never root) execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot, and no filesystem access to `/backups` (not mounted). Product retention (auth sessions, mail snapshots, security audit log), bounce ingest, mail drain, and import/export jobs run on the **`worker`** service (same image, `command: ["worker"]` → `admitto worker`). Keep exactly one worker replica; the process uses session advisory locks so a mistaken second replica skips overlapping jobs rather than double-running them.
 
 **Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
 
@@ -158,11 +178,10 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 | Container | What its logs show |
 |-----------|--------------------|
 | `migrate` | Entrypoint boot steps (migration status, backup, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
-| `app` | Retention cleanup lines on every start, then `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `worker` | `[worker] …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
 | `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
-| `retention` | `[retention] …` prefixed lines per nightly run |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
-| `bounce-ingest` | `[bounce-ingest] …` prefixed lines per IMAP bounce poll |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
 
 **Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes IPs, user agents, cookies, and query strings; ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so QR tokens never reach stdout. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log; client IPs stay at the proxy layer. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
@@ -218,7 +237,7 @@ docker compose run --rm app node apps/cli/dist/index.js retention run --operator
 
 **Pre-event drill:** on staging, admit at least three test attendees using only `checkin lookup` → `checkin admit` and verify `AttendeeActionLog` / admitted status in admin.
 
-Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention (and are what actually run automatically — see below); `admitto retention run` combines auth + mail snapshot + security audit log cleanup in one audited command for manual/on-demand use.
+Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log cleanup in one audited command for manual/on-demand use.
 
 ## Nginx Proxy Manager (production edge)
 
@@ -273,19 +292,26 @@ See [`../../_ops/design/deployment-cloudflare-access.md`](../../_ops/design/depl
 
 Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 
-## Retention (auth sessions, mail snapshots, security audit log)
+## Admitto worker (mail, import/export, bounce, retention)
 
-**On app startup:** `docker-entrypoint.sh` runs `purge-auth-retention`,
-`nullify-delivery-snapshots`, and `purge-security-audit-log` (best-effort, 120s timeout per CLI).
-
-**Daily sidecar (`retention`):** the same CLIs run every 24 hours so long-lived stacks
-do not skip retention between restarts. Logs:
+Compose runs a dedicated **`worker`** service (same image as `app`, `command: ["worker"]`).
+It records a `BackgroundWorkerHeartbeat` (Settings → Health → Background worker), drains the
+mail queue, runs async import/export `AdminJob`s, polls enabled bounce mailboxes, and runs
+product retention on boot plus about every 24 hours.
 
 ```bash
-docker compose logs -f retention
+docker compose logs -f worker
 ```
 
-Manual one-off (same commands as the sidecar):
+Local development (without compose worker): `npm run worker` from the repo root.
+
+Manual one-off retention (audited CLI; not required when the worker is healthy):
+
+```bash
+docker compose exec app node apps/cli/dist/index.js retention run --operator-email super@example.com
+```
+
+Or the per-package CLIs:
 
 ```bash
 docker compose exec app node packages/auth/dist/cli.js purge-auth-retention
@@ -296,7 +322,8 @@ docker compose exec app node packages/auth/dist/cli.js purge-security-audit-log
 `purge-security-audit-log` defaults to a 30-day window; override with
 `SECURITY_AUDIT_LOG_RETENTION_DAYS` (see `.env.example`).
 
-Failed runs log `FAILED` but do not stop the loop — check logs after deploy.
+Failed worker job ticks log `FAILED` but do not stop the loop — check `docker compose logs worker`
+after deploy. Without a running worker, bulk mail stays queued and bounce/retention do not run.
 
 ## PostgreSQL backups (ADR 0012, ADR 0027)
 
@@ -314,16 +341,15 @@ docker compose exec db-backup sh -c 'ls -la /backups/nightly-*.sql.gz'
 docker compose exec db-backup sh -c 'gzip -t /backups/nightly-*.sql.gz'
 ```
 
-**Bounce ingest:** the `bounce-ingest` service uses the same Admitto image as `app` and runs
-`node packages/mail-delivery/dist/cli.js ingest-bounces` on a short wake tick
-(`BOUNCE_INGEST_TICK_SECONDS`, default 60; legacy `BOUNCE_INGEST_INTERVAL_SECONDS` still
-accepted as the tick). Per-event **Check every** (`poll_interval_minutes`) decides when each
-enabled event is due. Soft Settings → Health treats a successful run as stale after the larger of
-2× Check every and 2× the deploy tick (floored at 15 minutes). Each run writes `last_run_*` for
-the Event settings card and that Health row. When `OPS_HEALTH_TOKEN` is set, compose also points
-`BOUNCE_INGEST_APP_URL=http://app:3000` so each run can append `mail_bounce_ingest_*` lines to
-Settings → Logs (mail). The bounce-ingest container has a Docker HEALTHCHECK on heartbeat file
-freshness; `/readyz` exposes soft `bounce_ingest_*` gauges (never alone a 503).
+**Bounce ingest:** runs inside the **`worker`** (not a separate sidecar). The worker wakes on a
+short tick; per-event **Check every** (`poll_interval_minutes`) decides when each enabled event is
+due. Soft Settings → Health treats a successful run as stale after the larger of 2× Check every and
+2× the worker tick (floored at 15 minutes). Each run writes `last_run_*` for the Event settings
+card and that Health row. When `OPS_HEALTH_TOKEN` is set, compose also points
+`BOUNCE_INGEST_APP_URL=http://app:3000` (or `ADMITTO_INTERNAL_URL`) so each run can append
+`mail_bounce_ingest_*` lines to Settings → Logs (mail). `/readyz` exposes soft `bounce_ingest_*`
+gauges (never alone a 503). Worker liveness for operators is the Settings → Health **Background
+worker** row (DB heartbeat), not a bounce-only container HEALTHCHECK.
 
 Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
 ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.

@@ -50,7 +50,7 @@ describe("drainImportJobs", () => {
   beforeEach(() => {
     vi.mocked(reclaimStaleImportJobs).mockReset().mockResolvedValue({ reclaimed: 0, healed: 0 });
     vi.mocked(executeImportCommit).mockReset();
-    storage.get.mockReset().mockResolvedValue(Buffer.from("name,email\nA,a@example.com"));
+    storage.get.mockReset().mockResolvedValue(Buffer.from("first_name,last_name,email\nA,B,a@example.com"));
     storage.delete.mockReset().mockResolvedValue(undefined);
     db = {
       adminJob: {

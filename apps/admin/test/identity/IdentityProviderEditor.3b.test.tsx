@@ -87,6 +87,7 @@ const validDetail = {
   enabled: true,
   login_button_label: "Continue with Google",
   mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
+  redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
 };
 
 afterEach(() => {

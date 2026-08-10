@@ -6,6 +6,10 @@ a mid-size company security or privacy reviewer typically needs.
 
 **Deployment model:** [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md)
 
+> **Product maturity:** check [VERSIONING.md](../../VERSIONING.md) and the current release tag
+> before assuming production readiness for a go-live timeline. Stability status is tracked
+> there, not restated here, so this document doesn't go stale between releases.
+
 ---
 
 ## 1. Product scope
@@ -99,9 +103,9 @@ coupling public docs to one customer's perimeter design.
 | Ticket secret | PostgreSQL (encrypted field) | Random identifier for QR |
 | Check-in state | PostgreSQL | Operational |
 | Mail credentials | PostgreSQL (encrypted) | Customer Graph / SMTP settings |
-| Audit events | PostgreSQL + operational logs | Attendee data minimised in log lines; a small, named set of staff-accountability events (login, admin actions) logs the acting staff member's own email — see [DATA-PROTECTION.md](../DATA-PROTECTION.md) |
+| Audit events | PostgreSQL + operational logs | Attendee data minimised in log lines; a small, named set of staff-accountability events (login, admin actions) logs the acting staff member's own email — see [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
 
-Privacy detail: [DATA-PROTECTION.md](../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md).
+Privacy detail: [DATA-PROTECTION.md](../../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md).
 
 ---
 
@@ -109,15 +113,35 @@ Privacy detail: [DATA-PROTECTION.md](../DATA-PROTECTION.md), [GDPR-ONE-PAGER.md]
 
 | Topic | Document |
 |-------|----------|
-| Configurable security capabilities | [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md) — includes rate-limit matrix, `TRUST_PROXY` trust model, SSRF controls, PEN retest checklist |
-| CI / image provenance | [SECURITY.md](../SECURITY.md) |
+| Configurable security capabilities | [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) — includes rate-limit matrix, `TRUST_PROXY` trust model, SSRF controls, PEN retest checklist |
+| CI / image provenance | [SECURITY.md](../../SECURITY.md) |
 | Hosting | [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md) |
 | Incidents | [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md) |
 | Subprocessors (template) | [SUBPROCESSORS.md](SUBPROCESSORS.md) |
 
 ---
 
-## 7. Conscious exclusions (MVP)
+## 7. If your reviewer uses a formal framework or questionnaire
+
+Admitto is **self-hosted, no formal certification** (no SOC 2 report, no ISO 27001 certificate) —
+that's normal for this size and stage of a vendor, not a red flag to hide. Being upfront about it,
+and giving a reviewer something concrete to check instead, is what actually gets a review through:
+
+- **A vendor security questionnaire (SIG Lite, CAIQ, or an internal equivalent):** the documents
+  in the map above already answer most of the categories those cover — subprocessors, data flows,
+  authentication/access controls, encryption, incident response, and supply-chain scanning. Point
+  the reviewer at this document map rather than filling in a separate form from memory; the
+  answers should match.
+- **A technical/code-level review (pentest scoping, secure-SDLC checklist):** use the
+  [OWASP Application Security Verification Standard (ASVS)](https://owasp.org/www-project-application-security-verification-standard/)
+  as the reference checklist — it's a testing standard, not a certification, and maps directly onto
+  what [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md) already documents (authentication,
+  session management, access control, input validation / SSRF handling, and so on).
+- **A formal audit (SOC 2, ISO 27001):** Admitto does not have either. If your organization's
+  policy requires one, that's a decision for whoever owns the vendor-risk process, not something
+  this documentation set can substitute for.
+
+## 8. Conscious exclusions (MVP)
 
 Useful answers when enterprise checklists ask for features not in scope:
 
@@ -128,7 +152,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 
 ---
 
-## 8. Evidence artefacts (repository)
+## 9. Evidence artefacts (repository)
 
 | Artefact | Location |
 |----------|----------|
@@ -136,7 +160,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Container SBOM | `.github/workflows/publish-container.yml` — Syft SBOM attached to release assets |
 | Container vulnerability scan | `.github/workflows/publish-container.yml` — Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` — `security-extended` on every PR |
-| Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` — `--error` on every merge to `main` + weekly; intentionally not on PRs (CodeQL is the PR SAST gate; see [SECURITY.md](../SECURITY.md)) |
-| Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
+| Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` — `--error` on every merge to `main` + weekly; intentionally not on PRs (CodeQL is the PR SAST gate; see [SECURITY.md](../../SECURITY.md)) |
+| Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo — see [SECURITY.md](../../SECURITY.md) || Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
 
-Release **v0.4.3** added the corporate documentation pack. **CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../SECURITY.md) — prefer that file over this table when answering audit questionnaires.
+Release **v0.4.3** added the corporate documentation pack. **CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../../SECURITY.md) — prefer that file over this table when answering audit questionnaires.

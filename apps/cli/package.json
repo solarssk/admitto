@@ -21,6 +21,7 @@
     "@admitto/db": "*",
     "@admitto/import": "*",
     "@admitto/mail-delivery": "*",
+    "@admitto/mail-templates": "*",
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "pg": "^8.16.0"

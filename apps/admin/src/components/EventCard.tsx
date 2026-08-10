@@ -106,7 +106,8 @@ export function EventCard({
   const hasPin = event.has_coordinates === true;
   const locationText = event.location?.trim() || null;
   const attendeeCount = event.attendee_count;
-  const mapPlaceholderLabel = hasPin && !mapSrc ? "Maps unavailable" : "No location";
+  // Pin without preview = maps off or PNG failed, not "location missing" (venue line below).
+  const mapPlaceholderLabel = hasPin && !mapSrc ? "Preview unavailable" : "No location";
   const mapAttribution = event.map_attribution?.trim() || "© OpenStreetMap";
   const weather = weatherChip(event);
 
