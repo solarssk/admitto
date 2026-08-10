@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Backing up before an upgrade is now the operator's responsibility; the nightly `db-backup` service is unchanged and remains the automated baseline. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user. See the updated upgrade and restore steps in `deploy/README.md`.
 
 ### Fixed
+- Bulk ticket-send previews no longer use the three-send limit. Real bulk sends now explain the 10-minute limit when it is reached.
+- Check-in cards label their dismiss action "Close", and Recent activity no longer shows duplicate-scan warnings as check-ins.
 - Public HTML 404/500 pages no longer overflow on narrow phones, and show a clearer layout (large status code and icon instead of a small boxed notice).
 - MFA enrollment: downloading backup codes no longer leaves the button stuck on "Please wait…".
 - MFA setup on desktop no longer offers a misleading "Open in password manager" link (otpauth often does nothing on Windows Chrome); copy explains scanning the QR or pasting the setup key instead.

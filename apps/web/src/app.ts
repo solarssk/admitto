@@ -76,6 +76,7 @@ import {
   createHealthzRateLimitMiddleware,
   rateLimit,
 } from "./rate-limit/policies.js";
+import { skipBulkSendRateLimitForDryRun } from "./rate-limit/skip-bulk-send-dry-run.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import {
@@ -1151,6 +1152,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/send",
     jsonPostCsrf,
     staffAdminGate,
+    skipBulkSendRateLimitForDryRun,
     adminBulkResendRateLimit,
     guardArchivedEvent((c) => handleBulkSend(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
   );
