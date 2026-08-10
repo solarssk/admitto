@@ -1,5 +1,6 @@
 import type { LookupAddress } from "node:dns";
 import {
+  canonicalizeAllowlistHost,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
@@ -14,14 +15,15 @@ import {
 
 export { unbracketHostname };
 
-/** Whether the hostname is loopback (localhost / 127.0.0.1 / ::1) — for dev mock IdP tests. */
+/** Whether the hostname is loopback (localhost / 127.0.0.1 / ::1) - for dev mock IdP tests. */
 export { isLoopbackHost as isLoopbackHostForTests };
 
 /**
  * Comma-separated exact hostnames or IP literals (case-insensitive) that may be private /
  * loopback for identity provider destinations (any protocol using this guard). Honored in
  * production. Ops-controlled only (env), not UI. Covers all configured providers that share
- * a hostname — list each distinct host once. Typically set on `app`.
+ * a hostname - list each distinct host once. Typically set on `app`. IP literals are
+ * WHATWG-canonicalized so equivalent IPv6 forms match.
  */
 function parseSsoPrivateDestinationAllowlist(): Set<string> {
   const raw = process.env["SSO_PRIVATE_DESTINATION_ALLOWLIST"]?.trim() ?? "";
@@ -29,13 +31,13 @@ function parseSsoPrivateDestinationAllowlist(): Set<string> {
   return new Set(
     raw
       .split(",")
-      .map((entry) => unbracketHostname(entry.trim().toLowerCase()))
+      .map((entry) => canonicalizeAllowlistHost(entry))
       .filter((entry) => entry.length > 0),
   );
 }
 
 function isAllowlistedSsoHost(hostname: string): boolean {
-  return parseSsoPrivateDestinationAllowlist().has(unbracketHostname(hostname).toLowerCase());
+  return parseSsoPrivateDestinationAllowlist().has(canonicalizeAllowlistHost(hostname));
 }
 
 /** Exact allowlist match (any NODE_ENV). Used when skipping private DNS filters for pinning. */
@@ -96,7 +98,7 @@ export async function resolveSafeOidcHostname(hostname: string): Promise<LookupA
 
 /**
  * Validation-only SSRF DNS check (does not pin or fetch).
- * For outbound requests use `safeOidcFetch` / `createPinnedRemoteJWKSet` instead —
+ * For outbound requests use `safeOidcFetch` / `createPinnedRemoteJWKSet` instead:
  * a separate fetch after this call can still rebind DNS (TOCTOU).
  */
 export async function assertSafeOidcFetchUrlResolved(urlString: string): Promise<void> {

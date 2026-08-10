@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import {
   awaitWithAbortSignal,
+  canonicalizeAllowlistHost,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
@@ -34,6 +35,19 @@ describe("unbracketHostname", () => {
     expect(unbracketHostname("fe80::1%eth0")).toBe("fe80::1");
     expect(unbracketHostname("::ffff:127.0.0.1%eth0")).toBe("::ffff:127.0.0.1");
     expect(unbracketHostname("[fe80::1%eth0]")).toBe("fe80::1");
+  });
+});
+
+describe("canonicalizeAllowlistHost", () => {
+  it("compresses equivalent IPv6 literals to the WHATWG form", () => {
+    expect(canonicalizeAllowlistHost("fd00:0:0:0:0:0:0:1")).toBe("fd00::1");
+    expect(canonicalizeAllowlistHost("[fd00::1]")).toBe("fd00::1");
+    expect(canonicalizeAllowlistHost("FD00::1")).toBe("fd00::1");
+  });
+
+  it("leaves hostnames and IPv4 literals stable", () => {
+    expect(canonicalizeAllowlistHost("Auth.Example.LAN")).toBe("auth.example.lan");
+    expect(canonicalizeAllowlistHost("192.168.1.50")).toBe("192.168.1.50");
   });
 });
 

@@ -10,6 +10,8 @@ vi.mock("node:dns/promises", () => ({
 const mockedLookup = vi.mocked(lookup);
 
 const allowlistKey = "SSO_PRIVATE_DESTINATION_ALLOWLIST";
+const initialNodeEnv = process.env["NODE_ENV"];
+const initialAllowlist = process.env[allowlistKey];
 
 beforeEach(() => {
   process.env["NODE_ENV"] = "test";
@@ -20,7 +22,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env[allowlistKey];
+  if (initialNodeEnv === undefined) delete process.env["NODE_ENV"];
+  else process.env["NODE_ENV"] = initialNodeEnv;
+
+  if (initialAllowlist === undefined) delete process.env[allowlistKey];
+  else process.env[allowlistKey] = initialAllowlist;
+
   vi.unstubAllGlobals();
 });
 
@@ -93,6 +100,13 @@ describe("assertSafeOidcFetchUrl", () => {
     process.env["NODE_ENV"] = "production";
     process.env[allowlistKey] = "auth.example.lan";
     expect(() => assertSafeOidcFetchUrl("http://auth.example.lan/")).toThrow(/HTTPS/);
+  });
+
+  it("matches equivalent IPv6 allowlist forms after WHATWG canonicalization", () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "fd00:0:0:0:0:0:0:1";
+    expect(() => assertSafeOidcFetchUrl("https://[fd00::1]/")).not.toThrow();
+    expect(() => assertSafeOidcFetchUrl("https://[fd00:0:0:0:0:0:0:1]/")).not.toThrow();
   });
 });
 

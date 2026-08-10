@@ -170,6 +170,9 @@ describe("operatorApiErrorMessage", () => {
   it("maps identity provider and Cloudflare Access validation codes", () => {
     expect(
       operatorApiErrorMessage(new ApiError(400, "invalid_issuer", "invalid_issuer"), "Connection test failed."),
+    ).toMatch(/HTTPS/);
+    expect(
+      operatorApiErrorMessage(new ApiError(400, "invalid_issuer", "invalid_issuer"), "Connection test failed."),
     ).toMatch(/SSO_PRIVATE_DESTINATION_ALLOWLIST/);
     expect(
       operatorApiErrorMessage(new ApiError(400, "discovery_failed", "discovery_failed"), "Discovery failed."),

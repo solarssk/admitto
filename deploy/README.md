@@ -269,7 +269,7 @@ the LAN (for example AdGuard rewrites `auth.example.lan` to `192.168.x.x`), allo
 distinct hostname used by Issuer and endpoints on **app**:
 
 ```bash
-# deploy/.env — exact hostnames or IP literals, comma-separated (all SSO providers share this list)
+# deploy/.env - exact hostnames or IP literals, comma-separated (all SSO providers share this list)
 SSO_PRIVATE_DESTINATION_ALLOWLIST=auth.example.lan
 ```
 
