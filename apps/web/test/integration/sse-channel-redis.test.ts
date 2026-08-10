@@ -5,6 +5,7 @@ import {
   resetSseChannelsForTests,
   shouldUseRedisSse,
   subscribe,
+  waitForSseRedisReadyForTests,
 } from "../../src/admin/sse-channel.js";
 import { sseChannelName } from "@admitto/shared/sse-events";
 
@@ -40,6 +41,12 @@ describe("shouldUseRedisSse", () => {
   it("is true outside test with REDIS_URL set", () => {
     expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "redis://localhost:6379" })).toBe(true);
   });
+
+  it("allows local Compose Redis but requires TLS for a remote Redis host", () => {
+    expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "redis://redis:6379" })).toBe(true);
+    expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "redis://redis.example.com:6379" })).toBe(false);
+    expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "rediss://redis.example.com:6379" })).toBe(true);
+  });
 });
 
 // Forces the module's own env gate open for these tests only - everything else in the suite runs
@@ -70,10 +77,7 @@ describe.skipIf(!redisUrl)("sse-channel Redis fan-out", () => {
     const received: unknown[] = [];
     subscribe(eventId, (event) => received.push(event));
 
-    // Give the module's lazy Redis subscriber time to connect and PSUBSCRIBE before the raw
-    // client publishes - subscribe() only kicks off the connection, it doesn't await it, and
-    // there's no readiness hook exposed to poll instead.
-    await sleep(300);
+    await expect(waitForSseRedisReadyForTests()).resolves.toBe(true);
 
     await rawClient.publish(sseChannelName(eventId), JSON.stringify({ type: "activity_changed" }));
 
@@ -88,13 +92,17 @@ describe.skipIf(!redisUrl)("sse-channel Redis fan-out", () => {
 
     const eventId = `evt-sse-redis-local-${Date.now()}`;
     const received: unknown[] = [];
+    const receivedByRedis: string[] = [];
     subscribe(eventId, (event) => received.push(event));
-    await sleep(300);
+    await expect(waitForSseRedisReadyForTests()).resolves.toBe(true);
+    await rawClient.pSubscribe(sseChannelName(eventId), (message) => receivedByRedis.push(message));
 
     publish(eventId, { type: "activity_changed" });
 
     await waitFor(() => {
       expect(received).toEqual([{ type: "activity_changed" }]);
+      expect(receivedByRedis).toEqual([JSON.stringify({ type: "activity_changed" })]);
     });
+    await rawClient.pUnsubscribe(sseChannelName(eventId));
   });
 });

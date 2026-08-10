@@ -23,7 +23,7 @@ import {
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
-import { publishActivityChanged } from "../lib/sse-publish.js";
+import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
@@ -265,6 +265,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     process.off("SIGTERM", onStop);
     process.off("SIGINT", onStop);
     await locks.close();
+    await closeSsePublishClient();
     log("heartbeat", "stopped");
   }
 }

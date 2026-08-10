@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createClient } from "redis";
 import { sseChannelName } from "@admitto/shared/sse-events";
-import { closeSsePublishClientForTests, publishActivityChanged } from "../src/lib/sse-publish.js";
+import { closeSsePublishClient, publishActivityChanged } from "../src/lib/sse-publish.js";
 
 const redisUrl = process.env.REDIS_URL;
 
@@ -34,6 +34,17 @@ describe("publishActivityChanged", () => {
     await expect(publishActivityChanged([])).resolves.toBeUndefined();
     vi.unstubAllEnvs();
   });
+
+  it("fails open within the Redis connection budget when Redis is unavailable", async () => {
+    vi.stubEnv("REDIS_URL", "redis://127.0.0.1:1");
+    const started = Date.now();
+
+    await expect(publishActivityChanged(["evt-1"])).resolves.toBeUndefined();
+
+    expect(Date.now() - started).toBeLessThanOrEqual(2_500);
+    await closeSsePublishClient();
+    vi.unstubAllEnvs();
+  });
 });
 
 describe.skipIf(!redisUrl)("publishActivityChanged (real Redis)", () => {
@@ -48,7 +59,7 @@ describe.skipIf(!redisUrl)("publishActivityChanged (real Redis)", () => {
   });
 
   afterEach(async () => {
-    await closeSsePublishClientForTests();
+    await closeSsePublishClient();
     vi.unstubAllEnvs();
   });
 

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deploy docs:** clearer first-boot checklist (what must be env vs UI), Portainer/NPM without compose nginx (Variant B), and a generated environment dictionary ([`deploy/ENV.md`](deploy/ENV.md)) built from code scan + [`deploy/env-catalog.json`](deploy/env-catalog.json) (`npm run docs:env`; drift checked by `npm run docs:check`).
 - Event Overview's Recent activity now also shows attendees added and items issued/returned/revoked, alongside check-ins, mail failures, and imports.
 - Event Overview now refreshes within ~3 seconds of a check-in, attendee add, or item issue/return/revoke (previously up to 30s), via a lightweight SSE signal that triggers an immediate refetch of the whole page.
-- Event Overview now also refreshes within ~3 seconds of a mail send/failure or a finished import — the worker announces these over Redis pub/sub so live updates aren't limited to actions taken in the admin app itself. Falls back to the existing 30s poll if Redis is unavailable.
+- Event Overview now also refreshes within ~3 seconds of a mail send/failure or a finished import. The worker announces these over Redis pub/sub so live updates aren't limited to actions taken in the admin app itself. Falls back to the existing 30s poll if Redis is unavailable.
 
 ### Changed
 - **GitHub Releases from `v0.4.13` onward are marked as the latest release instead of pre-release** — the release pipeline no longer marks every `v0.x.y` tag as pre-release; see [VERSIONING.md](VERSIONING.md).
