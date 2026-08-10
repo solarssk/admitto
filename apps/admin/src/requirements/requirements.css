@@ -10,10 +10,16 @@
   min-width: 0;
 }
 
-/* Match Event items / Custom fields row height: both use the same cell padding, so a
-   Switch in Active does not make item rows look taller than field rows with only text. */
+/* Match Event items / Custom fields row height. Items include a Switch (+ label) in
+   the actions cell; fields only have text + icon buttons - without a shared floor the
+   item rows look taller even with the same cell padding. */
 .requirements-section .table tbody td {
   padding-block: var(--space-3);
+  vertical-align: middle;
+}
+
+.requirements-section .table tbody tr {
+  height: 3.75rem;
 }
 
 @media (max-width: 640px) {
