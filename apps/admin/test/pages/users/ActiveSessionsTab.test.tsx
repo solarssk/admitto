@@ -316,8 +316,8 @@ describe("ActiveSessionsTab rendering", () => {
     renderWithToast(<ActiveSessionsTab />);
 
     await screen.findByRole("table");
-    expect(within(screen.getByText("local@example.com").closest("tr")!).getByText("Local")).toBeTruthy();
-    expect(within(screen.getByText("sso@example.com").closest("tr")!).getByText("SSO")).toBeTruthy();
+    expect(within(screen.getByText("local@example.com").closest("tr")!).getByText("Local password")).toBeTruthy();
+    expect(within(screen.getByText("sso@example.com").closest("tr")!).getByText("Identity provider")).toBeTruthy();
   });
 
   it("reports the loaded session count to the parent for the tab label", async () => {
@@ -876,7 +876,7 @@ describe("ActiveSessionsTab revoke success", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Sign-in method,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Identity provider (SSO)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Identity provider" }));
 
     expect(screen.queryByText("local@example.com")).toBeNull();
     expect(screen.getByText("sso@example.com")).toBeTruthy();

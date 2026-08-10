@@ -54,6 +54,8 @@ import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
+import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 const OVERVIEW_SUBTITLE =
@@ -230,22 +232,20 @@ function buildReadinessItems(overview: EventOverviewDto): ReadinessItem[] {
   ];
 }
 
-// Errors before warnings so the most urgent item is never bumped off the top-3 by an earlier,
-// less pressing warning (mirrors the old Needs attention card's own priority order).
-function topUnresolvedReadinessItems(items: ReadinessItem[]): ReadinessItem[] {
-  const urgency: Record<ReadinessItem["status"], number> = { error: 0, warn: 1, ok: 2, neutral: 3 };
-  return items
-    .filter((i) => i.status === "warn" || i.status === "error")
-    .sort((a, b) => urgency[a.status] - urgency[b.status])
-    .slice(0, 3);
-}
-
 /** Placeholder text for a card whose `overview` hasn't arrived yet: blank during the no-flash
  * grace window, "Loading…" once the fetch has genuinely taken a moment, "Unavailable" once it's
  * settled with nothing (shared by SetupChecklistCard and CheckInProgressCard). */
 function unavailablePlaceholderText(loading: boolean, showLoading: boolean): string {
   if (loading) return showLoading ? "Loading…" : "";
   return "Unavailable";
+}
+
+
+function checklistStatusIcon(status: ReadinessItem["status"]): string {
+  if (status === "error") return "ti-x";
+  if (status === "ok") return "ti-check";
+  if (status === "warn") return "ti-alert-triangle";
+  return "ti-minus";
 }
 
 function SetupChecklistCard({
@@ -272,7 +272,6 @@ function SetupChecklistCard({
   const items = buildReadinessItems(overview);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
-  const notOk = topUnresolvedReadinessItems(items);
 
   return (
     <Card
@@ -284,30 +283,19 @@ function SetupChecklistCard({
         </span>
       }
     >
-      {notOk.length === 0 ? (
-        <p className="overview-muted overview-all-clear">
-          <i className="ti ti-circle-check" aria-hidden="true" />{" "}
-          All checks look good
-        </p>
-      ) : (
-        <div className="overview-checklist">
-          {notOk.map((item) => (
-            <div key={item.label} className="overview-readiness-item">
-              <span className={`status-circle status-circle--${item.status}`} aria-hidden="true">
-                {item.status === "error" ? (
-                  <i className="ti ti-x" aria-hidden="true" />
-                ) : (
-                  <i className="ti ti-alert-triangle" aria-hidden="true" />
-                )}
-              </span>
-              <div className="overview-readiness-item__body">
-                <strong>{item.label}</strong>
-                <span className="overview-readiness-item__detail">{item.detail}</span>
-              </div>
+      <div className="overview-checklist">
+        {items.map((item) => (
+          <div key={item.label} className="overview-readiness-item">
+            <span className={`status-circle status-circle--${item.status}`} aria-hidden="true">
+              <i className={`ti ${checklistStatusIcon(item.status)}`} aria-hidden="true" />
+            </span>
+            <div className="overview-readiness-item__body">
+              <strong>{item.label}</strong>
+              <span className="overview-readiness-item__detail">{item.detail}</span>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
       <Link to={`/admin/events/${eventId}/settings?tab=general`} className="overview-checklist__link">
         View full checklist in Event settings <i className="ti ti-arrow-right" aria-hidden="true" />
       </Link>
@@ -608,7 +596,7 @@ function RecentActivityCard({
       <EmptyState
         icon={<i className="ti ti-history" aria-hidden="true" />}
         title="No activity yet"
-        description="Check-ins, mail, and imports will appear here."
+        description="Check-ins, emails, and imports will appear here."
       />
     );
 
@@ -831,12 +819,14 @@ function ContactModal({
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
 }>) {
   const titleId = useId();
+  const initialPhone = splitPhoneForPicker(contact?.phone ?? "");
   const [form, setForm] = useState({
     name: contact?.name ?? "",
     role: contact?.role ?? "",
-    phone: contact?.phone ?? "",
     email: contact?.email ?? "",
   });
+  const [phoneCountryCode, setPhoneCountryCode] = useState(initialPhone.dialCode);
+  const [phoneNumber, setPhoneNumber] = useState(initialPhone.nationalNumber);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
@@ -846,7 +836,7 @@ function ContactModal({
       const data = {
         name: form.name.trim(),
         role: form.role.trim() || null,
-        phone: form.phone.trim() || null,
+        phone: composePhoneE164(phoneCountryCode, phoneNumber) || null,
         email: form.email.trim() || null,
       };
       if (contact) {
@@ -907,12 +897,30 @@ function ContactModal({
         value={form.role}
         onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
       />
-      <Input
-        label="Phone"
-        icon={<i className="ti ti-phone" aria-hidden="true" />}
-        value={form.phone}
-        onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-      />
+      <div className="overview-contact-modal__field">
+        <label htmlFor="overview-contact-phone-number" className="at-label">
+          Phone number
+        </label>
+        <div className="overview-contact-modal__phone-row">
+          <PhoneCountrySelect
+            id="overview-contact-phone-country-code"
+            label="Phone country code"
+            value={phoneCountryCode}
+            disabled={saving}
+            onChange={setPhoneCountryCode}
+          />
+          <Input
+            id="overview-contact-phone-number"
+            icon={<i className="ti ti-phone" aria-hidden="true" />}
+            type="tel"
+            name="event-contact-phone"
+            value={phoneNumber}
+            disabled={saving}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
+          />
+        </div>
+      </div>
       <Input
         label="Email"
         // type="email" is what actually triggers Safari's iCloud "Hide My Email" suggestion chip

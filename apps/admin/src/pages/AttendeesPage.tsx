@@ -58,17 +58,10 @@ import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
-/** Matches EventSettingsPage's Danger Zone bulk actions — a brief "don't act on reflex" pause
- * before a bulk, irreversible action's confirm button becomes clickable. */
-const BULK_DELETE_CONFIRM_DELAY_SECONDS = 10;
-/** Same "don't act on reflex" pause as BULK_DELETE_CONFIRM_DELAY_SECONDS above, for the bulk
- * Revoke check-in/items/pass dialogs — was missing on all three (PO review). */
-const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
-/** Same "don't act on reflex" pause as the constants above, for the CardPickerDialog Apply
+/** Brief "don't act on reflex" pause for the CardPickerDialog Apply
  * button (bulk change ticket type / change attendance status) — a misclick on a large batch
  * would otherwise overwrite everyone's ticket type or RSVP status in one shot with no
  * confirmation at all (code review on #569). */
-const BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS = 10;
 
 function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
   return {
@@ -1681,7 +1674,6 @@ export function AttendeesPage() {
         onValueChange={setChangeTypeValue}
         radioGroupName="bulk-ticket-type"
         requireValue
-        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkChangeTicketTypeConfirm()}
         onClose={() => {
           if (!changeTypeBusy) setChangeTypeOpen(false);
@@ -1702,7 +1694,6 @@ export function AttendeesPage() {
         value={changeRsvpValue}
         onValueChange={(key) => setChangeRsvpValue(key as RsvpStatus)}
         radioGroupName="bulk-rsvp-status"
-        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkChangeRsvpConfirm()}
         onClose={() => {
           if (!changeRsvpBusy) setChangeRsvpOpen(false);
@@ -1768,7 +1759,6 @@ export function AttendeesPage() {
         confirmLabel="Delete"
         confirmVariant="danger"
         loading={bulkDeleteBusy}
-        confirmDelaySeconds={BULK_DELETE_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkDeleteSelected()}
         onCancel={() => {
           if (!bulkDeleteBusy) {
@@ -1792,7 +1782,6 @@ export function AttendeesPage() {
         errorMessage={bulkRevokeCheckInError}
         confirmLabel="Revoke"
         confirmVariant="warning"
-        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokeCheckInBusy}
         onConfirm={() => void handleBulkRevokeCheckInSelected()}
         onCancel={() => {
@@ -1810,7 +1799,6 @@ export function AttendeesPage() {
         errorMessage={bulkRevokeItemsError}
         confirmLabel="Revoke"
         confirmVariant="warning"
-        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokeItemsBusy}
         onConfirm={() => void handleBulkRevokeItemsSelected()}
         onCancel={() => {
@@ -1828,7 +1816,6 @@ export function AttendeesPage() {
         errorMessage={bulkRevokePassError}
         confirmLabel="Revoke"
         confirmVariant="danger"
-        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokePassBusy}
         onConfirm={() => void handleBulkRevokePassSelected()}
         onCancel={() => {

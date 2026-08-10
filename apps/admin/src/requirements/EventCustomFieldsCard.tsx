@@ -5,8 +5,11 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventCustomFieldDto, EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { customFieldTypeIcon } from "./customFieldType.js";
+import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
+
+const CUSTOM_FIELDS_INTRO =
+  "Define extra attendee data (dietary, shirt size, …). After saving a field, open an event item and tick which fields operators should see next to that item at check-in.";
 
 const CUSTOM_FIELDS_HINT =
   "Also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.";
@@ -42,7 +45,7 @@ function CustomFieldRow({
           </div>
         </div>
       </td>
-      <td className="requirements-type-col">{field.type}</td>
+      <td className="requirements-type-col">{customFieldTypeLabel(field.type)}</td>
       <td>{field.required ? "Yes" : "No"}</td>
       <td className="requirements-item-actions">
         <div className="requirements-item-actions__wrap">
@@ -161,6 +164,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
           </ArchivedGuard>
         }
       >
+        <p className="settings-card-intro">{CUSTOM_FIELDS_INTRO}</p>
         <div className="attendees-table-wrap">
           <table className="table">
             <thead>

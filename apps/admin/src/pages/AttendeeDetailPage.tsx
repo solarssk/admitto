@@ -476,7 +476,7 @@ function buildTicketTypeOptions(
   orphanedTicketType: string | null,
   ticketTypes: TicketTypeDto[],
 ): { id: string; label: string }[] {
-  const options = [{ id: "", label: "-" }];
+  const options = [{ id: "", label: "No ticket type" }];
   if (orphanedTicketType) {
     options.push({ id: orphanedTicketType, label: `${orphanedTicketType} (not in catalog)` });
   }
