@@ -27,7 +27,7 @@ const SKIP_DIR_NAMES = new Set([
   "emergency-exports",
 ]);
 
-/** Keys that appear as process.env in tests/fixtures but are not deploy operator config. */
+/** Keys seen in process.env in tests/fixtures that are not deploy operator config. */
 const DEFAULT_SCAN_IGNORE = new Set([
   "CI",
   "COUNT",
@@ -47,17 +47,35 @@ const DEFAULT_SCAN_IGNORE = new Set([
   "PGPORT",
   "PGUSER",
   "PGPASSWORD",
-  "DATABASE_URL", // still catalogued; keep for dual use — do NOT ignore DATABASE_URL
 ]);
 
-// Fix: remove DATABASE_URL from ignore - I accidentally thought to ignore it. Don't.
+const ENV_KEY = "([A-Z][A-Z0-9_]*)";
+const TS_ENV_DOT_RE = new RegExp(String.raw`process\.env\.${ENV_KEY}`, "g");
+const TS_ENV_BRACKET_RE = new RegExp(String.raw`process\.env\[\s*['"]${ENV_KEY}['"]\s*\]`, "g");
+const ENV_LIKE_BRACKET_RE = new RegExp(String.raw`\benv\[\s*['"]${ENV_KEY}['"]\s*\]`, "g");
+// Capture only the variable name; ignore ${VAR:-default} / ${VAR:?err} suffixes.
+const SHELL_BRACE_RE = new RegExp(String.raw`\$\{${ENV_KEY}`, "g");
+const ENV_ASSIGN_RE = new RegExp(String.raw`^${ENV_KEY}=`, "gm");
+const ENV_EXPORT_RE = new RegExp(String.raw`^export\s+${ENV_KEY}=`, "gm");
+const ENV_COMMENT_RE = new RegExp(String.raw`^#\s*${ENV_KEY}=`, "gm");
+const COMPOSE_ENV_KEY_RE = new RegExp(String.raw`^[ \t]+${ENV_KEY}:`, "gm");
 
-const TS_ENV_RE =
-  /process\.env(?:\.([A-Z][A-Z0-9_]+)|\[\s*['"]([A-Z][A-Z0-9_]+)['"]\s*\])/g;
-const ENV_BRACKET_RE = /\benv\[\s*['"]([A-Z][A-Z0-9_]+)['"]\s*\]/g;
-const SHELL_ENV_RE = /\$\{([A-Z][A-Z0-9_]+)(?::-[^}]*)?\}|\$\{([A-Z][A-Z0-9_]+)\?[^}]*\}/g;
-const ENV_EXAMPLE_LINE_RE = /^\s*(?:export\s+)?([A-Z][A-Z0-9_]+)\s*=/gm;
-const COMMENT_ENV_RE = /^\s*#\s*([A-Z][A-Z0-9_]+)=/gm;
+const GROUP_TITLES = {
+  boot: "Boot (set these first)",
+  compose: "Compose / image",
+  proxy: "Reverse proxy trust",
+  migrate: "Migrations and DB backups",
+  storage: "Uploads and emergency exports",
+  mail: "Mail transport (often UI later)",
+  worker: "Background worker",
+  ops: "Ops / health / logging",
+  sessions: "Sessions and MFA",
+  identity: "Identity (env lock / seed)",
+  maps: "Maps and geocoding",
+  weather: "Weather",
+  retention: "Retention",
+  other: "Other",
+};
 
 function isTestPath(rel) {
   return (
@@ -79,8 +97,11 @@ function walk(dir, files = []) {
     } catch {
       continue;
     }
-    if (st.isDirectory()) walk(full, files);
-    else files.push(full);
+    if (st.isDirectory()) {
+      walk(full, files);
+    } else {
+      files.push(full);
+    }
   }
   return files;
 }
@@ -90,6 +111,42 @@ function addKey(map, key, file) {
   if (!/^[A-Z][A-Z0-9_]*$/.test(key)) return;
   if (!map.has(key)) map.set(key, new Set());
   map.get(key).add(file);
+}
+
+function collectMatches(map, text, regex, file, groupIndex = 1) {
+  regex.lastIndex = 0;
+  let match = regex.exec(text);
+  while (match !== null) {
+    addKey(map, match[groupIndex], file);
+    match = regex.exec(text);
+  }
+}
+
+function scanTsJs(map, text, rel) {
+  collectMatches(map, text, TS_ENV_DOT_RE, rel);
+  collectMatches(map, text, TS_ENV_BRACKET_RE, rel);
+  collectMatches(map, text, ENV_LIKE_BRACKET_RE, rel);
+}
+
+function scanShellOrCompose(map, text, rel, base) {
+  if (/\.(yml|yaml)$/.test(base)) {
+    collectMatches(map, text, COMPOSE_ENV_KEY_RE, rel);
+  }
+  if (
+    /\.(sh|yml|yaml)$/.test(base) ||
+    base === "Dockerfile" ||
+    base === "docker-entrypoint.sh" ||
+    base.endsWith(".env.example")
+  ) {
+    collectMatches(map, text, SHELL_BRACE_RE, rel);
+  }
+}
+
+function scanEnvExample(map, text, rel, base) {
+  if (!base.endsWith(".env.example")) return;
+  collectMatches(map, text, ENV_ASSIGN_RE, rel);
+  collectMatches(map, text, ENV_EXPORT_RE, rel);
+  collectMatches(map, text, ENV_COMMENT_RE, rel);
 }
 
 function scanFile(map, absPath) {
@@ -104,65 +161,38 @@ function scanFile(map, absPath) {
   }
 
   const base = absPath.split("/").pop() ?? "";
-  const isTsJs = /\.(ts|tsx|mjs|js)$/.test(base);
-  const isShellYml =
-    /\.(sh|yml|yaml)$/.test(base) ||
-    base === "Dockerfile" ||
-    base === "docker-entrypoint.sh" ||
-    base.endsWith(".env.example");
-
-  if (isTsJs) {
-    TS_ENV_RE.lastIndex = 0;
-    let m;
-    while ((m = TS_ENV_RE.exec(text)) !== null) addKey(map, m[1] || m[2], rel);
-    // apps/web config helpers often take EnvLike and read env["KEY"]
-    ENV_BRACKET_RE.lastIndex = 0;
-    while ((m = ENV_BRACKET_RE.exec(text)) !== null) addKey(map, m[1], rel);
+  if (/\.(ts|tsx|mjs|js)$/.test(base)) {
+    scanTsJs(map, text, rel);
   }
-
-  // Compose `environment:` keys (KEY: value) without ${} interpolation
-  if (/\.(yml|yaml)$/.test(base)) {
-    const composeEnvKey = /^\s{2,}([A-Z][A-Z0-9_]+):\s*\S+/gm;
-    let m;
-    while ((m = composeEnvKey.exec(text)) !== null) addKey(map, m[1], rel);
-  }
-
-  if (isShellYml) {
-    SHELL_ENV_RE.lastIndex = 0;
-    let m;
-    while ((m = SHELL_ENV_RE.exec(text)) !== null) addKey(map, m[1] || m[2], rel);
-  }
-
-  if (base.endsWith(".env.example")) {
-    ENV_EXAMPLE_LINE_RE.lastIndex = 0;
-    let m;
-    while ((m = ENV_EXAMPLE_LINE_RE.exec(text)) !== null) addKey(map, m[1], rel);
-    COMMENT_ENV_RE.lastIndex = 0;
-    while ((m = COMMENT_ENV_RE.exec(text)) !== null) addKey(map, m[1], rel);
-  }
+  scanShellOrCompose(map, text, rel, base);
+  scanEnvExample(map, text, rel, base);
 }
 
 function scanKeys() {
   /** @type {Map<string, Set<string>>} */
   const found = new Map();
   for (const dir of SCAN_DIRS) {
-    for (const file of walk(join(root, dir))) scanFile(found, file);
+    for (const file of walk(join(root, dir))) {
+      scanFile(found, file);
+    }
   }
   const dockerfile = join(root, "Dockerfile");
-  if (existsSync(dockerfile)) scanFile(found, dockerfile);
+  if (existsSync(dockerfile)) {
+    scanFile(found, dockerfile);
+  }
   return found;
 }
 
 function loadCatalog() {
   const raw = JSON.parse(readFileSync(catalogPath, "utf8"));
   if (!Array.isArray(raw.vars)) {
-    throw new Error("deploy/env-catalog.json: missing vars[]");
+    throw new TypeError("deploy/env-catalog.json: missing vars[]");
   }
-  const ignore = new Set([...(raw.scanIgnore ?? []), ...[...DEFAULT_SCAN_IGNORE].filter((k) => k !== "DATABASE_URL")]);
+  const ignore = new Set([...(raw.scanIgnore ?? []), ...DEFAULT_SCAN_IGNORE]);
   const byName = new Map();
   for (const v of raw.vars) {
     if (!v.name || typeof v.name !== "string") {
-      throw new Error("deploy/env-catalog.json: each var needs name");
+      throw new TypeError("deploy/env-catalog.json: each var needs name");
     }
     if (byName.has(v.name)) {
       throw new Error(`deploy/env-catalog.json: duplicate var ${v.name}`);
@@ -173,144 +203,138 @@ function loadCatalog() {
 }
 
 function escapeCell(s) {
-  // Backslashes first so later `\|` escapes stay intact (CodeQL js/incomplete-sanitization).
+  // Backslashes first so later pipe escapes stay intact (CodeQL js/incomplete-sanitization).
+  const bs = "\u005c";
   return String(s ?? "")
-    .replace(/\\/g, "\\\\")
-    .replace(/\|/g, "\\|")
-    .replace(/\r?\n/g, " ");
+    .replaceAll(bs, bs + bs)
+    .replaceAll("|", bs + "|")
+    .replaceAll("\r\n", " ")
+    .replaceAll("\n", " ")
+    .replaceAll("\r", " ");
+}
+
+function orderedGroups(vars) {
+  const groups = [];
+  const seen = new Set();
+  for (const v of vars) {
+    const g = v.group || "other";
+    if (seen.has(g)) continue;
+    seen.add(g);
+    groups.push(g);
+  }
+  return groups;
+}
+
+function renderGroupSection(lines, catalog, group) {
+  lines.push(`## ${GROUP_TITLES[group] ?? group}`, "");
+  lines.push(
+    "| Variable | Boot | Consumers | UI | Secret | Summary |",
+    "|----------|------|-----------|----|--------|---------|",
+  );
+  for (const v of catalog.vars.filter((x) => (x.group || "other") === group)) {
+    const consumers = (v.consumers ?? []).join(", ") || "-";
+    const ui = v.ui ?? "none";
+    const secret = v.secret ? "yes" : "no";
+    const boot = v.boot ?? "optional";
+    lines.push(
+      `| \`${v.name}\` | ${escapeCell(boot)} | ${escapeCell(consumers)} | ${escapeCell(ui)} | ${secret} | ${escapeCell(v.summary)} |`,
+    );
+  }
+  lines.push("");
 }
 
 function renderMarkdown(catalog, scanned) {
-  const lines = [];
-  lines.push("# Admitto environment variable reference");
-  lines.push("");
-  lines.push("> Generated file. Do not edit by hand.");
-  lines.push(">");
-  lines.push("> Descriptions and boot/UI metadata: [`env-catalog.json`](./env-catalog.json).");
-  lines.push("> Keys are cross-checked against `process.env` / compose / `.env.example` by `scripts/generate-env-dictionary.mjs`.");
-  lines.push(">");
-  lines.push("> Regenerate: `npm run docs:env` &nbsp;|&nbsp; Drift check: `npm run docs:env -- --check`");
-  lines.push("");
+  const lines = [
+    "# Admitto environment variable reference",
+    "",
+    "> Generated file. Do not edit by hand.",
+    ">",
+    "> Descriptions and boot/UI metadata: [`env-catalog.json`](./env-catalog.json).",
+    "> Keys are cross-checked against `process.env` / compose / `.env.example` by `scripts/generate-env-dictionary.mjs`.",
+    ">",
+    "> Regenerate: `npm run docs:env` &nbsp;|&nbsp; Drift check: `npm run docs:env -- --check`",
+    "",
+  ];
   if (catalog.intro) {
-    lines.push(catalog.intro.trim());
-    lines.push("");
+    lines.push(catalog.intro.trim(), "");
+  }
+  lines.push(
+    "## How to read this table",
+    "",
+    "| Column | Meaning |",
+    "|--------|---------|",
+    "| Boot | `required` = production is broken without it; `recommended` = set on first deploy; `optional` = defaults exist |",
+    "| Consumers | Which roles read it (`app`, `worker`, `migrate`, ...) |",
+    "| UI | Whether the same setting can be managed in admin Settings |",
+    "| Secret | Treat as a credential; never commit real values |",
+    "",
+  );
+
+  for (const group of orderedGroups(catalog.vars)) {
+    renderGroupSection(lines, catalog, group);
   }
 
-  lines.push("## How to read this table");
-  lines.push("");
-  lines.push("| Column | Meaning |");
-  lines.push("|--------|---------|");
-  lines.push("| Boot | `required` = production is broken without it; `recommended` = set on first deploy; `optional` = defaults exist |");
-  lines.push("| Consumers | Which roles read it (`app`, `worker`, `migrate`, ...) |");
-  lines.push("| UI | Whether the same setting can be managed in admin Settings |");
-  lines.push("| Secret | Treat as a credential; never commit real values |");
-  lines.push("");
-
-  const groups = [];
-  const seenGroup = new Set();
-  for (const v of catalog.vars) {
-    const g = v.group || "other";
-    if (!seenGroup.has(g)) {
-      seenGroup.add(g);
-      groups.push(g);
-    }
-  }
-
-  const groupTitles = {
-    boot: "Boot (set these first)",
-    compose: "Compose / image",
-    proxy: "Reverse proxy trust",
-    migrate: "Migrations and DB backups",
-    storage: "Uploads and emergency exports",
-    mail: "Mail transport (often UI later)",
-    worker: "Background worker",
-    ops: "Ops / health / logging",
-    sessions: "Sessions and MFA",
-    identity: "Identity (env lock / seed)",
-    maps: "Maps and geocoding",
-    weather: "Weather",
-    retention: "Retention",
-    other: "Other",
-  };
-
-  for (const g of groups) {
-    lines.push(`## ${groupTitles[g] ?? g}`);
-    lines.push("");
-    lines.push("| Variable | Boot | Consumers | UI | Secret | Summary |");
-    lines.push("|----------|------|-----------|----|--------|---------|");
-    for (const v of catalog.vars.filter((x) => (x.group || "other") === g)) {
-      const consumers = (v.consumers ?? []).join(", ") || "-";
-      const ui = v.ui ?? "none";
-      const secret = v.secret ? "yes" : "no";
-      const boot = v.boot ?? "optional";
-      lines.push(
-        `| \`${v.name}\` | ${escapeCell(boot)} | ${escapeCell(consumers)} | ${escapeCell(ui)} | ${secret} | ${escapeCell(v.summary)} |`,
-      );
-    }
-    lines.push("");
-  }
-
-  lines.push("## Maintenance");
-  lines.push("");
-  lines.push("1. Add or change a deploy-facing variable in code, compose, or `.env.example`.");
-  lines.push("2. Update [`env-catalog.json`](./env-catalog.json) (summary, boot, consumers, ui).");
-  lines.push("3. Run `npm run docs:env` and commit `ENV.md`.");
-  lines.push("4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.");
-  lines.push("");
-  lines.push(`_Last generated from ${scanned.size} distinct keys seen in scan (tests excluded)._`);
-  lines.push("");
-  return `${lines.join("\n")}`;
+  lines.push(
+    "## Maintenance",
+    "",
+    "1. Add or change a deploy-facing variable in code, compose, or `.env.example`.",
+    "2. Update [`env-catalog.json`](./env-catalog.json) (summary, boot, consumers, ui).",
+    "3. Run `npm run docs:env` and commit `ENV.md`.",
+    "4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.",
+    "",
+    `_Last generated from ${scanned.size} distinct keys seen in scan (tests excluded)._`,
+    "",
+  );
+  return lines.join("\n");
 }
 
-function main() {
-  const catalog = loadCatalog();
-  const scanned = scanKeys();
+function collectCatalogErrors(catalog, scanned) {
   const errors = [];
-
   for (const [key, files] of scanned) {
-    if (catalog.ignore.has(key)) continue;
-    if (!catalog.byName.has(key)) {
-      const sample = [...files].slice(0, 5).join(", ");
-      errors.push(
-        `Scanned env key ${key} is not in deploy/env-catalog.json (e.g. ${sample}). Add it or list it under scanIgnore.`,
-      );
-    }
+    if (catalog.ignore.has(key) || catalog.byName.has(key)) continue;
+    const sample = [...files].slice(0, 5).join(", ");
+    errors.push(
+      `Scanned env key ${key} is not in deploy/env-catalog.json (e.g. ${sample}). Add it or list it under scanIgnore.`,
+    );
   }
-
   for (const v of catalog.vars) {
     if (v.catalogOnly) continue;
-    if (!scanned.has(v.name) && !catalog.ignore.has(v.name)) {
-      errors.push(
-        `Catalog var ${v.name} was not found in code/compose/.env.example scan. Mark catalogOnly: true if docs-only, or fix the name.`,
-      );
-    }
+    if (scanned.has(v.name) || catalog.ignore.has(v.name)) continue;
+    errors.push(
+      `Catalog var ${v.name} was not found in code/compose/.env.example scan. Mark catalogOnly: true if docs-only, or fix the name.`,
+    );
   }
+  return errors;
+}
 
-  const markdown = renderMarkdown(catalog, scanned);
-
-  if (errors.length > 0) {
-    for (const e of errors) console.error(`docs:env: ${e}`);
-    process.exit(1);
-  }
-
+function writeOrCheck(markdown, catalog, scanned) {
   if (checkOnly) {
     if (!existsSync(outPath)) {
-      console.error("docs:env: deploy/ENV.md missing — run npm run docs:env");
+      console.error("docs:env: deploy/ENV.md missing - run npm run docs:env");
       process.exit(1);
     }
-    const existing = readFileSync(outPath, "utf8");
-    if (existing !== markdown) {
-      console.error("docs:env: deploy/ENV.md is stale — run npm run docs:env and commit");
+    if (readFileSync(outPath, "utf8") !== markdown) {
+      console.error("docs:env: deploy/ENV.md is stale - run npm run docs:env and commit");
       process.exit(1);
     }
     console.log("docs:env: ok (catalog + ENV.md in sync)");
     return;
   }
-
   writeFileSync(outPath, markdown, "utf8");
   console.log(
     `docs:env: wrote ${relative(root, outPath)} (${catalog.vars.length} catalog vars, ${scanned.size} scanned)`,
   );
+}
+
+function main() {
+  const catalog = loadCatalog();
+  const scanned = scanKeys();
+  const errors = collectCatalogErrors(catalog, scanned);
+  if (errors.length > 0) {
+    console.error(errors.map((e) => `docs:env: ${e}`).join("\n"));
+    process.exit(1);
+  }
+  writeOrCheck(renderMarkdown(catalog, scanned), catalog, scanned);
 }
 
 main();
