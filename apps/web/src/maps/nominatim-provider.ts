@@ -3,7 +3,7 @@
  * `geocodingBaseUrl` is superadmin-editable at runtime (Organisation Settings → External
  * services, see `maps-org-settings.ts`), validated only at save/probe time
  * (`assertEditableServiceUrl`). Production requests pin the connection to a freshly
- * re-resolved address via `withPinnedFetch` (see `net/pinned-fetch.ts`) — same pattern as
+ * re-resolved address via `withPinnedFetch` (`@admitto/mailer`, shared with `PowerAutomateAdapter`) — same pattern as
  * `packages/auth/src/oidc/safe-oidc-fetch.ts` and `packages/mailer/src/adapters/powerAutomate.ts` —
  * closing the DNS-rebinding TOCTOU gap the save-time check alone leaves open.
  */
@@ -16,8 +16,8 @@ import {
   type GeocodingProvider,
   type GeocodingResult,
 } from "@admitto/location";
+import { withPinnedFetch } from "@admitto/mailer";
 import { resolveSafeHostname, unbracketHostname } from "@admitto/shared/ssrf-guard";
-import { withPinnedFetch } from "../net/pinned-fetch.js";
 
 /** Distinguishes a timed-out request (503, "try again shortly") from any other failure —
  * bad status, network error, malformed body — mapped to 502 by the route handler. */

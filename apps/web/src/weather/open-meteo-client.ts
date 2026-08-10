@@ -6,8 +6,8 @@
  * (test-only DI) bypasses pinning, same convention as `PowerAutomateAdapter`.
  */
 
+import { withPinnedFetch } from "@admitto/mailer";
 import { resolveSafeHostname, unbracketHostname } from "@admitto/shared/ssrf-guard";
-import { withPinnedFetch } from "../net/pinned-fetch.js";
 import { FORECAST_HORIZON_DAYS_OPENMETEO, type WeatherConfig } from "./config.js";
 import type { DayForecast } from "./types.js";
 
@@ -145,7 +145,7 @@ export class OpenMeteoClient {
         return await handleResponse(response);
       }
       // No test override: pin the connection to a freshly re-resolved, SSRF-validated
-      // address (see net/pinned-fetch.ts) so a DNS-rebound host can't be reached at connect
+      // address (see @admitto/mailer's withPinnedFetch) so a DNS-rebound host can't be reached at connect
       // time even though it passed the save-time check.
       const hostname = unbracketHostname(url.hostname);
       const records = await resolveSafeHostname(hostname);

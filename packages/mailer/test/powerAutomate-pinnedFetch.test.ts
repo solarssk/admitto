@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { withPinnedFetch } from "../src/adapters/powerAutomate.js";
+import { withPinnedFetch } from "../src/pinnedFetch.js";
 
 /**
  * Exercises withPinnedFetch against a real local HTTP server with real undici —
