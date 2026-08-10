@@ -8,7 +8,8 @@ import {
 } from "./customData.js";
 
 export type AttendeeFormState = {
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   company: string;
   department: string;
@@ -36,7 +37,8 @@ export function toAttendeeForm(
   attributeFields: CustomDataFieldDef[],
 ): AttendeeFormState {
   return {
-    name: detail.name,
+    first_name: detail.first_name ?? "",
+    last_name: detail.last_name ?? "",
     email: detail.email,
     company: detail.company ?? "",
     department: detail.department ?? "",
@@ -62,7 +64,12 @@ export function mergeFormAfterReload(
     }
   }
   return {
-    name: currentForm.name !== previousForm.name ? currentForm.name : nextForm.name,
+    first_name:
+      currentForm.first_name !== previousForm.first_name
+        ? currentForm.first_name
+        : nextForm.first_name,
+    last_name:
+      currentForm.last_name !== previousForm.last_name ? currentForm.last_name : nextForm.last_name,
     email: currentForm.email !== previousForm.email ? currentForm.email : nextForm.email,
     company:
       currentForm.company !== previousForm.company ? currentForm.company : nextForm.company,

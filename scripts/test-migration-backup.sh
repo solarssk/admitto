@@ -77,20 +77,25 @@ if [[ "$after" != "$before" ]]; then
 fi
 $COMPOSE restart app
 # A bare restart never re-runs migrate (depends_on: condition: service_completed_successfully is
-# only evaluated on `docker compose up`), so retention cleanup must show up in app's own logs on
-# every restart to actually happen at all (regression class caught by Codex review on PR #572).
-# Poll instead of a fixed sleep: restart-to-ready timing varies with CI load, and a slower
-# startup must not turn into a flaky failure here.
-retention_seen=0
+# only evaluated on `docker compose up`). Retention no longer runs on app boot (ADR 0042 — the
+# worker owns product retention). Assert the HTTP process comes back without the old retention
+# startup line, and that the web listen log appears.
+# Poll instead of a fixed sleep: restart-to-ready timing varies with CI load.
+app_ready=0
 for _ in $(seq 1 30); do
-  if $COMPOSE logs app --since 30s 2>&1 | grep -q "purging expired/revoked auth sessions"; then
-    retention_seen=1
+  if $COMPOSE logs app --since 30s 2>&1 | grep -q "Admitto web running"; then
+    app_ready=1
     break
   fi
   sleep 1
 done
-if [[ "$retention_seen" -ne 1 ]]; then
-  echo "expected retention cleanup log line after a bare app restart" >&2
+if [[ "$app_ready" -ne 1 ]]; then
+  echo "expected app listen log after a bare app restart" >&2
+  $COMPOSE logs app --since 30s
+  exit 1
+fi
+if $COMPOSE logs app --since 30s 2>&1 | grep -q "purging expired/revoked auth sessions"; then
+  echo "app boot must not run retention anymore (moved to worker)" >&2
   $COMPOSE logs app --since 30s
   exit 1
 fi

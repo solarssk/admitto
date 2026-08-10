@@ -182,4 +182,43 @@ describe("SearchableSelect", () => {
 
     expect(screen.queryByLabelText("Search fruit…")).toBeNull();
   });
+
+  it("shows a hint with the same .at-hint styling Input uses, wired to the trigger via aria-describedby", () => {
+    render(
+      <SearchableSelect
+        id="fruit"
+        label="Fruit"
+        placeholder="Pick a fruit…"
+        searchPlaceholder="Search fruit…"
+        emptyLabel="No fruit found"
+        value=""
+        options={OPTIONS}
+        hint="Pick the fruit this order ships with."
+        onChange={vi.fn()}
+      />,
+    );
+
+    const hint = screen.getByText("Pick the fruit this order ships with.");
+    expect(hint.className).toBe("at-hint");
+    expect(screen.getByRole("button", { name: "Fruit, none selected" }).getAttribute("aria-describedby")).toBe(
+      hint.id,
+    );
+  });
+
+  it("renders no hint element when the hint prop is omitted", () => {
+    render(
+      <SearchableSelect
+        id="fruit"
+        label="Fruit"
+        placeholder="Pick a fruit…"
+        searchPlaceholder="Search fruit…"
+        emptyLabel="No fruit found"
+        value=""
+        options={OPTIONS}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Fruit, none selected" }).getAttribute("aria-describedby")).toBeNull();
+  });
 });

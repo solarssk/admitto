@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -256,6 +256,57 @@ function resolveEditorView(mode: EditorMode, loadState: LoadState): EditorView {
   return loadState;
 }
 
+interface OidcRedirectUriCalloutProps {
+  /** Exact callback from the provider API; `null` when no public base URL is resolvable. */
+  redirectUri: string | null;
+  onCopySuccess: () => void;
+  onCopyError: () => void;
+}
+
+/** Edit-mode Redirect URI: copyable once the server can resolve the public base URL. */
+function OidcRedirectUriCallout({
+  redirectUri,
+  onCopySuccess,
+  onCopyError,
+}: Readonly<OidcRedirectUriCalloutProps>) {
+  if (redirectUri === null) {
+    return (
+      <Notice variant="warning" role="status">
+        Set the Instance URL in Settings → General before you can copy the Redirect URI for this
+        provider.
+      </Notice>
+    );
+  }
+
+  const uri = redirectUri;
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(uri);
+      onCopySuccess();
+    } catch {
+      onCopyError();
+    }
+  }
+
+  return (
+    <div className="identity-editor__redirect">
+      <Input
+        label="Redirect URI"
+        value={uri}
+        disabled
+        readOnly
+        hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
+      />
+      <div className="identity-editor__redirect-actions">
+        <Button type="button" variant="secondary" size="sm" onClick={() => void handleCopy()}>
+          <i className="ti ti-copy" aria-hidden="true" /> Copy
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * OIDC identity provider editor (#266). Basics, Endpoints, Claims, and the SSO
  * login button label shipped in slice 3a; slice 3b adds the group→role mapping
@@ -288,6 +339,8 @@ export function IdentityProviderEditor({
   // and a Retry both re-fetch cleanly — no one-shot ref (which stranded #296 in
   // dev) and no ad-hoc AbortController on the Retry button (which leaked).
   const [loadTick, setLoadTick] = useState(0);
+  // Server-built callback URL (same resolveInstanceBaseUrl path as OIDC start/callback).
+  const [redirectUri, setRedirectUri] = useState<string | null>(null);
 
   // Latest resolvedProviderId for stale-response guards on button-triggered
   // async actions (Discover/Test). `load` is effect-driven and aborts on
@@ -340,6 +393,7 @@ export function IdentityProviderEditor({
         setBaselineMappings(nextMappings);
         setMappingErrors([]);
         setHasSecret(detail.has_client_secret);
+        setRedirectUri(detail.redirect_uri);
         setLoadState("ready");
       } catch (err) {
         if (signal.aborted) return;
@@ -573,6 +627,7 @@ export function IdentityProviderEditor({
         setBaseline(refreshedDraft);
         setBaselineMappings(mappingsFromDetail(result.provider));
         setHasSecret(result.provider.has_client_secret);
+        setRedirectUri(result.provider.redirect_uri);
       } else {
         setBaseline((b) => ({
           ...b,
@@ -740,6 +795,18 @@ export function IdentityProviderEditor({
             required={mode === "create"}
           />
         </div>
+        {mode === "create" ? (
+          <p className="at-hint identity-editor__redirect-hint">
+            The Redirect URI to register at your identity provider will appear here after the first
+            save.
+          </p>
+        ) : (
+          <OidcRedirectUriCallout
+            redirectUri={redirectUri}
+            onCopySuccess={() => addToast("Redirect URI copied to clipboard", "success")}
+            onCopyError={() => addToast("Could not copy Redirect URI.", "error")}
+          />
+        )}
       </Card>
 
       <Card

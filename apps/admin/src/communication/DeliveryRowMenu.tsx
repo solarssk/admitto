@@ -7,6 +7,21 @@ export interface DeliveryRowMenuProps {
   row: DeliveryDto;
   onViewSentMessage: (row: DeliveryDto) => void;
   onViewDetails: (row: DeliveryDto) => void;
+  /** Only offered for a bounced row, and only when the caller supplies both - the Attendee
+   * Detail page's own "Delivery history" card reuses this same menu without them, since it
+   * already has its own page-level "Resend ticket" action. */
+  onResend?: (row: DeliveryDto) => void;
+  onDismiss?: (row: DeliveryDto) => void;
+  /** True once Resend or Dismiss has already been used for this row (the caller tracks this,
+   * keyed by row id) - greys out both actions instead of leaving them clickable forever, since
+   * the row's own `status` stays "bounced" permanently (it's a historical record) even after the
+   * attendee's bounce is actually resolved one way or the other. Shown disabled rather than
+   * hidden, so it stays visible that the row was already acted on. */
+  bounceResolved?: boolean;
+  /** True while a Resend/Dismiss request for this row is in flight - same grey-out as
+   * `bounceResolved`, so the operator cannot reopen the menu and fire a second attempt before
+   * the first response lands. */
+  bouncePending?: boolean;
 }
 
 const MARGIN = 5;
@@ -28,8 +43,23 @@ const VIEWPORT_PADDING = 8;
  * long as no ancestor sets transform/filter/contain/will-change, which none here does). Keeping
  * the panel a normal DOM child (instead of portaling) also means useDropdownMenu's own
  * outside-click detection (DOM-containment via rootRef) keeps working unmodified. */
-export function DeliveryRowMenu({ row, onViewSentMessage, onViewDetails }: Readonly<DeliveryRowMenuProps>) {
+export function DeliveryRowMenu({
+  row,
+  onViewSentMessage,
+  onViewDetails,
+  onResend,
+  onDismiss,
+  bounceResolved = false,
+  bouncePending = false,
+}: Readonly<DeliveryRowMenuProps>) {
   const { open, setOpen, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>();
+  // A name with no id is a historical snapshot of a template that was deleted. Passing
+  // `undefined` to the resend endpoint would select the current default template instead.
+  const canResend = row.template_id !== null || row.template_name === null;
+  const bounceActionsLocked = bounceResolved || bouncePending;
+  let bounceActionsTitle: string | undefined;
+  if (bounceResolved) bounceActionsTitle = "Already handled";
+  else if (bouncePending) bounceActionsTitle = "Working…";
   // `position: fixed` from the very first mount (not just once useLayoutEffect below computes
   // real coordinates) - otherwise the panel briefly sits at its CSS default (static, in-flow
   // inside the "inline-flex" trigger wrapper) for the one frame before the effect repositions
@@ -110,6 +140,38 @@ export function DeliveryRowMenu({ row, onViewSentMessage, onViewDetails }: Reado
             <i className="ti ti-list-details" aria-hidden="true" />{" "}
             View delivery details
           </button>
+          {row.status === "bounced" && canResend && onResend && (
+            <button
+              type="button"
+              role="menuitem"
+              className="delivery-row-menu__item"
+              disabled={bounceActionsLocked}
+              title={bounceActionsTitle}
+              onClick={() => {
+                setOpen(false);
+                onResend(row);
+              }}
+            >
+              <i className="ti ti-send" aria-hidden="true" />{" "}
+              Resend
+            </button>
+          )}
+          {row.status === "bounced" && onDismiss && (
+            <button
+              type="button"
+              role="menuitem"
+              className="delivery-row-menu__item"
+              disabled={bounceActionsLocked}
+              title={bounceActionsTitle}
+              onClick={() => {
+                setOpen(false);
+                onDismiss(row);
+              }}
+            >
+              <i className="ti ti-mail-off" aria-hidden="true" />{" "}
+              Dismiss bounce
+            </button>
+          )}
         </div>
       )}
     </div>

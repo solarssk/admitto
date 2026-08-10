@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBaseTemplateVars } from "../src/index.js";
+import { buildBaseTemplateVars, DEFAULT_SAMPLE_VARS, sanitizeSampleLinksForTestSend } from "../src/index.js";
 
 const branding = { logo_url: "", header_image_url: "" };
 
@@ -65,5 +65,31 @@ describe("buildBaseTemplateVars", () => {
       google_maps_url: "",
       apple_maps_url: "",
     });
+  });
+});
+
+describe("sanitizeSampleLinksForTestSend", () => {
+  it("replaces the sample QR image and ticket link with placeholders that always render", () => {
+    const rendered = {
+      subject: "Your ticket",
+      html: `<img src="${DEFAULT_SAMPLE_VARS.qr_image_url}"><a href="${DEFAULT_SAMPLE_VARS.ticket_url}">View ticket</a>`,
+    };
+
+    const sanitized = sanitizeSampleLinksForTestSend(rendered);
+
+    expect(sanitized.subject).toBe(rendered.subject);
+    expect(sanitized.html).toContain("data:image/svg+xml");
+    expect(sanitized.html).toContain('href="#"');
+    expect(sanitized.html).not.toContain(DEFAULT_SAMPLE_VARS.qr_image_url);
+    expect(sanitized.html).not.toContain(DEFAULT_SAMPLE_VARS.ticket_url);
+  });
+
+  it("leaves html untouched when no sample URLs are present", () => {
+    const rendered = {
+      subject: "Your ticket",
+      html: "<p>No sample links here.</p>",
+    };
+
+    expect(sanitizeSampleLinksForTestSend(rendered)).toEqual(rendered);
   });
 });

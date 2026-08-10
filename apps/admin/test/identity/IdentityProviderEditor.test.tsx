@@ -83,6 +83,7 @@ const validDetail = {
   enabled: true,
   login_button_label: "Continue with Google",
   mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
+  redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
 };
 
 afterEach(() => {
@@ -508,5 +509,73 @@ describe("IdentityProviderEditor — coverage", () => {
     const preventDefault = vi.spyOn(event, "preventDefault");
     window.dispatchEvent(event);
     expect(preventDefault).toHaveBeenCalled();
+  });
+});
+
+describe("IdentityProviderEditor — Redirect URI", () => {
+  it("shows a create-mode hint that the Redirect URI appears after the first save", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    expect(
+      await screen.findByText(
+        /Redirect URI to register at your identity provider will appear here after the first save/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Redirect URI")).toBeNull();
+  });
+
+  it("shows the Redirect URI with Copy in edit mode from the provider API", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    const field = await screen.findByLabelText("Redirect URI");
+    expect((field as HTMLInputElement).value).toBe(
+      "https://tickets.example.com/api/auth/oidc/p1/callback",
+    );
+    expect(screen.getByRole("button", { name: /Copy/i })).toBeTruthy();
+  });
+
+  it("warns when the API returns a null Redirect URI instead of inventing a host", async () => {
+    mockFetch.mockResolvedValueOnce({ ...validDetail, redirect_uri: null });
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await screen.findByDisplayValue("Google");
+    expect(
+      await screen.findByText(/Set the Instance URL in Settings → General/),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Redirect URI")).toBeNull();
+  });
+
+  it("copies the Redirect URI to the clipboard and toasts success", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await screen.findByLabelText("Redirect URI");
+    fireEvent.click(screen.getByRole("button", { name: /Copy/i }));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        "https://tickets.example.com/api/auth/oidc/p1/callback",
+      );
+    });
+    expect(await screen.findByText("Redirect URI copied to clipboard")).toBeTruthy();
+  });
+
+  it("toasts an error when clipboard write fails", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+
+    renderEditorAt("/admin/settings/identity/providers/p1");
+    await screen.findByLabelText("Redirect URI");
+    fireEvent.click(screen.getByRole("button", { name: /Copy/i }));
+
+    expect(await screen.findByText("Could not copy Redirect URI.")).toBeTruthy();
   });
 });

@@ -792,6 +792,42 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     renderPanel();
 
     expect(await screen.findByText(/Map display is disabled for this instance/)).toBeTruthy();
+    expect(screen.getByLabelText("Address details")).toBeTruthy();
+    expect(screen.getByLabelText("Directions")).toBeTruthy();
+    expect(screen.getByLabelText("Accessibility")).toBeTruthy();
+  });
+
+  it("keeps venue and notes editable when map tile config fails to load", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockFetchTiles.mockRejectedValue(new Error("tiles down"));
+    renderPanel();
+
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
+    expect(screen.getByDisplayValue("Enter via the north door.")).toBeTruthy();
+    expect(screen.getByDisplayValue("Step-free access at the north door.")).toBeTruthy();
+    expect(screen.getByText(/Map display is disabled for this instance/)).toBeTruthy();
+    expect(screen.queryByText("Could not load location settings")).toBeNull();
+    expect(screen.queryByTestId("map-picker")).toBeNull();
+  });
+
+  it("starts location and tile config requests concurrently", async () => {
+    const location = createDeferred<EventLocationDto>();
+    const tiles = createDeferred<MapTileConfigDto>();
+    mockFetchLocation.mockReturnValueOnce(location.promise);
+    mockFetchTiles.mockReturnValueOnce(tiles.promise);
+    renderPanel();
+
+    await waitFor(() => {
+      expect(mockFetchLocation).toHaveBeenCalled();
+      expect(mockFetchTiles).toHaveBeenCalled();
+    });
+    expect(screen.queryByDisplayValue("Springfield Hall")).toBeNull();
+
+    location.resolve(SAVED_LOCATION);
+    tiles.resolve(TILE_CONFIG);
+
+    expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
+    expect(screen.getByTestId("map-picker")).toBeTruthy();
   });
 
   it("keeps a manually picked pin but clears its address when reverse geocoding has no match", async () => {

@@ -54,7 +54,7 @@ flowchart TD
      `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below — they
      remove dependent delivery, wallet, and check-in rows in one transaction and write an audit
      log entry (per-attendee, plus a central admin-audit-log entry naming the erased attendee(s)
-     and event — see [DATA-PROTECTION.md](../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)
+     and event — see [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)
      for why that one retains identity, unlike the per-attendee trail). Not blocked by the event
      being archived. If the SPA is unavailable, call the endpoint directly with an authenticated
      staff session and CSRF token (same session model as other admin mutations).
@@ -69,7 +69,7 @@ with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email 
 
 **This bypasses both audit writers the API path uses** (the per-attendee `AttendeeActionLog` entry
 and the central `AdminAuditLog` entry — see
-[DATA-PROTECTION.md](../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)) — a manual
+[DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)) — a manual
 erasure with no central audit record is exactly the accountability gap that log exists to close.
 The `INSERT` below writes the same central record by hand; do not skip it. Capture the attendee's
 name/email and the event's title *before* the delete (the `SELECT` in the transaction does this),
@@ -140,5 +140,5 @@ ids before recording completion.
 ## Related documents
 
 - [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md)
-- [DATA-PROTECTION.md](../DATA-PROTECTION.md)
+- [DATA-PROTECTION.md](../../DATA-PROTECTION.md)
 - [INCIDENT-RESPONSE.md](INCIDENT-RESPONSE.md)

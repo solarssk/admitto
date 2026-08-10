@@ -224,6 +224,8 @@ model Attendee {
   event               Event               @relation(fields: [event_id], references: [id])
   email               String
   name                String
+  first_name          String?
+  last_name           String?
   // SHA-256(raw_token) for Mode A tickets; null for Mode B (agency) attendees.
   // Raw token never stored — exists only in the ticket URL / QR handed to the attendee.
   token_hash          String?             @unique
@@ -256,6 +258,10 @@ model Attendee {
   // Null = not yet admitted. Reset only by explicit admin revert action.
   admitted_at         DateTime?
   admitted_by         String?
+  // Set when an admin dismisses the Communication bounce notifier for this attendee (Delivery
+  // log row menu). Only covers bounces up to this timestamp - a later delivery that bounces
+  // again re-surfaces, since that is new information, not the same unresolved bounce.
+  email_bounce_dismissed_at DateTime?
   created_at          DateTime            @default(now())
   // Acting admin's IANA timezone at the moment this row was created (manual add / import
   // commit) — null for rows predating this column or created outside a browser request.
@@ -370,6 +376,9 @@ model EmailDelivery {
   @@index([organization_id])
   @@index([event_id, created_at(sort: Desc)])
   @@index([attendee_id, event_id, status])
+  // Latest-delivery lookup (overview bounce KPI, attendeeMailStatusSql): one row per attendee
+  // ordered by created_at DESC, id DESC.
+  @@index([attendee_id, created_at(sort: Desc), id(sort: Desc)])
 }
 
 model CheckIn {
@@ -610,6 +619,10 @@ model MailTemplate {
   scope_id               String
   name                   String          @default("ticket")
   label                  String          @default("Ticket email")
+  // Same shape as EventItem.icon: a Tabler icon name, unvalidated against the real Tabler set
+  // (kebab-case shape only), null falls back to a fixed default in the picker UI.
+  icon                   String?         @db.VarChar(64)
+  description            String?         @db.VarChar(500)
   subject_template       String
   body_template          String          @db.Text
   template_format        String // "mjml" | "html"

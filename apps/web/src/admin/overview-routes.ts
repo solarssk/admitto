@@ -76,6 +76,30 @@ export interface EventRecentActivityEntry {
 
 const RECENT_ACTIVITY_LIMIT = 30;
 
+/** Distinct attendees whose most recent EmailDelivery row for this event is currently bounced
+ * and not dismissed - not a raw count of bounced rows. Each resend creates a new row rather than
+ * mutating the old one, so a raw groupBy-by-status count over all rows never goes back down even
+ * after a later resend succeeds. The correlated subquery mirrors attendeeMailStatusSql
+ * (packages/tickets/attendees-list-filters.ts) - "latest" is the row with the newest created_at,
+ * id as a deterministic tiebreak. email_bounce_dismissed_at only covers bounces up to that
+ * timestamp, so a fresh bounce on a later delivery (new information) re-surfaces regardless of an
+ * earlier dismissal. */
+async function countCurrentlyBouncedAttendees(db: PrismaClient, eventId: string): Promise<number> {
+  const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
+    SELECT COUNT(*)::bigint AS count FROM "Attendee" a
+    WHERE a.event_id = ${eventId}
+      AND (
+        SELECT ed.status = 'bounced'
+          AND (a.email_bounce_dismissed_at IS NULL OR a.email_bounce_dismissed_at < ed.created_at)
+        FROM "EmailDelivery" ed
+        WHERE ed.attendee_id = a.id
+        ORDER BY ed.created_at DESC, ed.id DESC
+        LIMIT 1
+      )
+  `;
+  return Number(count);
+}
+
 /** Most recent check-in and the busiest hour-of-day among currently-admitted attendees, in the
  * event's timezone. Sourced from Attendee.admitted_at rather than CheckIn: undo.ts/bulk-revoke.ts
  * never delete or update a check-in's own row when an admission is undone/revoked, they only clear
@@ -257,6 +281,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     activeAttendeeCount,
     activeAdmittedCount,
     deliveryStats,
+    bouncedAttendeeCount,
     requirementsCount,
     checkinStaffCount,
     attendeesWithTicketRows,
@@ -273,6 +298,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       where: { event_id: eventId },
       _count: { id: true },
     }),
+    countCurrentlyBouncedAttendees(db, eventId),
     db.eventItem.count({ where: { event_id: eventId, enabled: true } }),
     // Count active users who can perform check-in: event-scope operators + org-scope admins.
     db.roleAssignment.count({
@@ -326,7 +352,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     (emailByStatus["accepted"] ?? 0) +
     (emailByStatus["sent"] ?? 0) +
     (emailByStatus["delivered"] ?? 0);
-  const emailBounced = emailByStatus["bounced"] ?? 0;
+  const emailBounced = bouncedAttendeeCount;
   const emailFailed =
     (emailByStatus["failed"] ?? 0) +
     (emailByStatus["rejected"] ?? 0);

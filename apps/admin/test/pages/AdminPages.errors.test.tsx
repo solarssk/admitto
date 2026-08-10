@@ -1169,7 +1169,7 @@ describe("ReportsPage admission log", () => {
       expect(screen.getByText("Mobile Guest")).toBeTruthy();
     });
     expect(container.querySelector(".reports-log-cards")).toBeTruthy();
-    expect(container.querySelector(".reports-log-table")).toBeNull();
+    expect(container.querySelector(".table")).toBeNull();
     const card = screen.getByText("Mobile Guest").closest("a");
     expect(card?.getAttribute("href")).toBe("/admin/events/evt-1/attendees/att-mobile");
   });

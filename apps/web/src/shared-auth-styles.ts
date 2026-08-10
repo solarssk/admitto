@@ -139,7 +139,7 @@ body {
   font-size: 0.8125rem;
 }
 .at-notice__icon {
-  margin-top: 3px;
+  margin-top: 1px;
   flex: none;
   display: block;
 }

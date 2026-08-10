@@ -139,18 +139,21 @@ function TicketTypeRow({
           disabled={disabled}
           onChange={(color) => onUpdate(type.id, { color })}
         />
-        <Input
-          ref={inputRef}
-          aria-label={`Ticket type label for ${type.label}`}
-          value={label}
-          disabled={disabled}
-          className="tt-row__label-input"
-          onChange={(e) => setLabel(e.target.value)}
-          onBlur={commitLabel}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          }}
-        />
+        <div className="tt-row__label-input">
+          <Input
+            ref={inputRef}
+            id={`ticket-type-label-${type.id}`}
+            name={`ticket-type-label-${type.id}`}
+            aria-label={`Ticket type label for ${type.label}`}
+            value={label}
+            disabled={disabled}
+            onChange={(e) => setLabel(e.target.value)}
+            onBlur={commitLabel}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+          />
+        </div>
       </div>
       <div className="tt-row__meta">
         <TicketTypeBadge label={type.label} color={type.color} />
@@ -160,6 +163,7 @@ function TicketTypeRow({
         <IconButton
           label={`Remove ${type.label}`}
           size="sm"
+          className="tt-row__delete"
           icon={<i className="ti ti-trash" aria-hidden="true" />}
           disabled={disabled}
           onClick={onRemove}

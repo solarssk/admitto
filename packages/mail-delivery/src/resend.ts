@@ -4,6 +4,9 @@ import { sendTicketEmails, type MailDeliveryDeps } from "./send.js";
 export interface ResendTicketEmailOptions {
   /** Override delivery recipient for a single-attendee resend (does not mutate Attendee.email). */
   to?: string;
+  /** Resend this specific template instead of the event's current default - e.g. the Delivery
+   * log's row-level "Resend" resends what actually bounced, not whatever is active today. */
+  templateId?: string;
   /** Resolved public instance URL (env BASE_URL or DB instance_url). */
   baseUrl?: string;
   /** Triggering admin's IANA timezone at send time, when known. */
@@ -33,6 +36,7 @@ export async function resendTicketEmail(
       attendeeIds: [attendeeId],
       purpose: "resend",
       ...(options.to ? { recipientEmail: options.to } : {}),
+      ...(options.templateId ? { templateId: options.templateId } : {}),
       ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
       ...(options.timezone ? { timezone: options.timezone } : {}),
       ...(options.actorUserId ? { actorUserId: options.actorUserId } : {}),

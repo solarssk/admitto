@@ -370,6 +370,20 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     fetchTicketTypes.mockResolvedValue([]);
   });
 
+  it("uses PageHeader title Overview with a page subtitle instead of duplicating the event name from the sidebar", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Overview", level: 1 })).toBeTruthy();
+    });
+    expect(
+      screen.getByText("Track attendance, check-in progress, and setup status for this event."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Demo Event" })).toBeNull();
+  });
+
   it("shows a loading placeholder for the Attendees KPI instead of the raw (revoked-inclusive) events-picker count (#374)", async () => {
     let resolveOverview!: (value: EventOverviewDto) => void;
     fetchEventOverview.mockReturnValue(
@@ -627,7 +641,40 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("13:00–14:00")).toBeNull();
   });
 
-  it("renders the ticket-type breakdown bar only when more than one type has attendees", async () => {
+  it("renders the ticket-type breakdown section whenever attendees exist, with a full-width bar for a single type and an empty track when no check-ins yet", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(0, {
+        attendee_count: 50,
+        ticket_type_breakdown: [{ key: "standard", label: "Standard", color: "gray", count: 0 }],
+      }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    });
+    expect(screen.getByText("By ticket type")).toBeTruthy();
+    expect(document.querySelector(".overview-tt-bar")).toBeTruthy();
+    expect(document.querySelector(".overview-tt-bar__seg")).toBeNull();
+    expect(document.querySelector(".overview-tt-legend")).toBeNull();
+
+    cleanup();
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        ticket_type_breakdown: [{ key: "standard", label: "Standard", color: "gray", count: 5 }],
+      }),
+    );
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Standard")).toBeTruthy();
+    });
+    const singleSeg = document.querySelector(".overview-tt-bar__seg") as HTMLElement;
+    expect(singleSeg?.style.width).toBe("100%");
+  });
+
+  it("renders the ticket-type breakdown bar with multiple segments when more than one type has attendees", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, {
         ticket_type_breakdown: [
@@ -733,11 +780,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     const issuesButton = within(header).getByRole("radio", { name: "Issues" });
     expect(allButton).toBeTruthy();
     expect(issuesButton).toBeTruthy();
-    // Live indicator reuses the app's dot-Badge pattern (Badge variant="ok" dot), not a bespoke
-    // dot+text pair.
-    const liveBadge = within(header).getByText("live").closest(".at-badge") as HTMLElement;
-    expect(liveBadge.className).toContain("at-badge--ok");
-    expect(liveBadge.className).toContain("overview-live-badge");
+    // Live indicator is a decorative chip (role=status) with a breathing dot — not a disabled button.
+    const liveIndicator = within(header).getByRole("status", { name: "Live" });
+    expect(liveIndicator.className).toContain("overview-live-indicator");
+    expect(liveIndicator.querySelector(".overview-live-indicator__dot")).toBeTruthy();
+    expect(liveIndicator.className).not.toContain("at-btn");
 
     // All/Issues render as the shared Segmented control (radiogroup/radio + aria-checked), the
     // same standard used for Instance Settings' toggles - not a bespoke button pair.
@@ -771,7 +818,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
     const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
     const header = activityCard.querySelector(".at-card__header") as HTMLElement;
-    expect(within(header).getByText("live")).toBeTruthy();
+    expect(within(header).getByRole("status", { name: "Live" })).toBeTruthy();
   });
 
   it("keeps the Recent activity scroll container mounted (stable card height) even when the Issues filter matches nothing, instead of swapping in a bare paragraph", async () => {
@@ -1009,6 +1056,8 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     // Renders as a modal dialog, not an inline-expanding form pushing the card content down.
     const dialog = await screen.findByRole("dialog", { name: "Add contact" });
+    expect(within(dialog).getByText("Add a key person staff can reach during the event.")).toBeTruthy();
+    expect(dialog.querySelector(".ti-address-book")).toBeTruthy();
     expect(within(dialog).getByLabelText("Name *")).toBeTruthy();
     expect(document.querySelector(".btn")).toBeNull();
 
@@ -1095,6 +1144,10 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
 
     const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
+    expect(
+      within(dialog).getByText("Share a useful link or file reference with staff on this overview."),
+    ).toBeTruthy();
+    expect(dialog.querySelector(".ti-link")).toBeTruthy();
     fireEvent.change(within(dialog).getByLabelText("Title *"), { target: { value: "Venue floor plan" } });
     fireEvent.change(within(dialog).getByLabelText("URL *"), {
       target: { value: "https://example.com/floor-plan" },
@@ -1196,6 +1249,10 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     fireEvent.click(addNote);
     const dialog = await screen.findByRole("dialog", { name: "Add pinned note" });
+    expect(
+      within(dialog).getByText("Shown to all staff on this overview. Use for day-of instructions."),
+    ).toBeTruthy();
+    expect(dialog.querySelector(".ti-pin")).toBeTruthy();
     fireEvent.change(within(dialog).getByPlaceholderText("Short operational note visible to all staff…"), {
       target: { value: "Gate B is closed today" },
     });

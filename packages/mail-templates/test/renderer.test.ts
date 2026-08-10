@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  absolutizeBundledTicketAssetUrls,
   escapeHtmlAttribute,
   escapeHtmlText,
   renderTemplate,
@@ -211,6 +212,34 @@ describe("renderTemplate", () => {
     );
     expect(result.html).not.toContain("{{");
     expect(result.html).not.toContain('href=""');
+  });
+
+  it("absolutizes bundled wallet badge asset paths when baseUrl is set", () => {
+    expect(
+      absolutizeBundledTicketAssetUrls(
+        '<img src="/assets/apple-wallet-badge.svg" /><img src="/assets/google-wallet-badge.svg" />',
+        "https://tickets.example.com/",
+      ),
+    ).toBe(
+      '<img src="https://tickets.example.com/assets/apple-wallet-badge.svg" /><img src="https://tickets.example.com/assets/google-wallet-badge.svg" />',
+    );
+    expect(
+      absolutizeBundledTicketAssetUrls('<img src="/assets/apple-wallet-badge.svg" />'),
+    ).toBe('<img src="/assets/apple-wallet-badge.svg" />');
+
+    const rendered = renderTemplate(
+      {
+        subject: "Ticket",
+        compiledHtml:
+          '<mj-image href="{{apple_wallet_url}}" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet" />',
+      },
+      { apple_wallet_url: "https://wallet.example.com/pass" },
+      { baseUrl: "https://tickets.example.com" },
+    );
+    expect(rendered.html).toContain(
+      'src="https://tickets.example.com/assets/apple-wallet-badge.svg"',
+    );
+    expect(rendered.html).toContain('href="https://wallet.example.com/pass"');
   });
 
   it("validates URL values at render time", () => {

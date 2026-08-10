@@ -80,7 +80,7 @@ export function EventsPickerPage() {
   const handleCreated = (event: EventDto) => {
     // Pass the event we already hold so EventLayout can render the shell
     // immediately instead of re-fetching the events list (#274).
-    navigate(`/admin/events/${event.id}/attendees`, { state: { event } });
+    navigate(`/admin/events/${event.id}/overview`, { state: { event } });
   };
 
   return (

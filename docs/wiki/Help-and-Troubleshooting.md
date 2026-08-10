@@ -3,7 +3,7 @@
 > **Audience:** All staff
 > **Required role:** Any staff role
 > **Feature status:** Available
-> **Last verified:** Admitto Unreleased
+> **Last verified:** Admitto 0.4.13
 
 Start with the page for the failed workflow:
 

@@ -446,8 +446,12 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 640px)" }}>
       <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
+          <i className="ti ti-typography" aria-hidden="true" />
           {initialFamily ? `Edit "${initialFamily.name}"` : "Create font family"}
         </h2>
+        <p className="add-attendee-modal__subtitle">
+          Upload one or more font files for this family. We guess weight and style from file names.
+        </p>
         <div className="fontfam-modal-body">
           <Input
             label="Family name"
@@ -566,13 +570,15 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
             <i className="ti ti-plus" aria-hidden="true" /> Add a variant manually
           </button>
         </div>
-        <div className="add-attendee-modal__actions">
-          <Button variant="secondary" onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" disabled={!canSave || anyUploading} onClick={save}>
-            Save font family
-          </Button>
+        <div className="add-attendee-modal__actions" style={{ justifyContent: "flex-end" }}>
+          <div className="add-attendee-modal__actions-buttons">
+            <Button variant="secondary" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button variant="primary" disabled={!canSave || anyUploading} onClick={save}>
+              Save font family
+            </Button>
+          </div>
         </div>
       </div>
       </div>

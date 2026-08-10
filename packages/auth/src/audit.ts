@@ -86,11 +86,15 @@ function systemLogLevelFor(event: string): "info" | "warn" {
  * and record the same event into the System logs live-tail buffer under the "security" source
  * — this is the single place every auth/security event in this module already flows through,
  * so hooking in here covers logins, MFA, rate-limit blocks, and OIDC events without a separate
- * call at each site.
+ * call at each site. `opts.quiet` skips the stdout JSON only, for callers whose "log collector"
+ * is a human at an interactive terminal rather than a container log aggregator (the break-glass
+ * CLI commands) — the System logs buffer entry still happens either way.
  */
-export function emitAuditEvent(event: string, fields: Record<string, unknown>): void {
+export function emitAuditEvent(event: string, fields: Record<string, unknown>, opts?: { quiet?: boolean }): void {
   const { event: _ignoredEvent, ts: _ignoredTs, ...safeFields } = fields;
-  console.info(JSON.stringify({ ...safeFields, ts: new Date().toISOString(), event }));
+  if (!opts?.quiet) {
+    console.info(JSON.stringify({ ...safeFields, ts: new Date().toISOString(), event }));
+  }
   recordSystemLog({ level: systemLogLevelFor(event), source: "security", message: event, fields: safeFields });
 }
 
@@ -189,22 +193,38 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
  * `logLoginSuccess`/`logOidcLoginSuccess` (where the email belongs to the person authenticating,
  * i.e. the accountable actor), `email` here identifies the *target* of an operator-run CLI
  * command - already resolvable via `user_id` in the admin panel's user join - so it's kept in the
- * ephemeral stdout emit only, not durably persisted (CodeRabbit PR #611). */
+ * ephemeral stdout emit only, not durably persisted (CodeRabbit PR #611). `ctx.quiet` (set by the
+ * break-glass CLI commands themselves) skips that stdout JSON, since those commands print their
+ * own human-readable result line right after and an operator's terminal isn't a log collector;
+ * the durable row below is unaffected either way. */
 export async function logMfaBreakGlass(
   db: Db,
-  ctx: { action: string; email: string; userId?: string; ip?: string },
+  ctx: { action: string; email: string; userId?: string; ip?: string; quiet?: boolean },
 ): Promise<void> {
-  emitAuditEvent("auth.mfa.break_glass", {
-    action: ctx.action,
-    email: ctx.email,
-    ip: ctx.ip ?? null,
-  });
+  emitAuditEvent(
+    "auth.mfa.break_glass",
+    { action: ctx.action, email: ctx.email, ip: ctx.ip ?? null },
+    { quiet: ctx.quiet },
+  );
   await writeSecurityAuditLog(db, {
     event_type: "auth.mfa.break_glass",
     user_id: ctx.userId ?? null,
     ip: ctx.ip ?? null,
     metadata: { action: ctx.action },
   });
+}
+
+/** `logMfaBreakGlass` for the break-glass CLI commands specifically (`reset-mfa`,
+ * `generate-emergency-recovery`, in both `packages/auth/src/cli.ts` and `apps/cli/src/commands/
+ * auth.ts`). Always quiet - unlike `logMfaBreakGlass` itself, this wrapper's `ctx` has no `quiet`
+ * field to set, so a future break-glass call site can't reintroduce the raw-JSON-on-terminal bug
+ * by simply forgetting to pass `quiet: true`; every CLI command gets the right behavior by
+ * construction instead of by convention. */
+export async function logMfaBreakGlassCli(
+  db: Db,
+  ctx: { action: string; email: string; userId?: string; ip?: string },
+): Promise<void> {
+  await logMfaBreakGlass(db, { ...ctx, quiet: true });
 }
 
 /** Emit `auth.mfa.success` after TOTP or recovery code verification and persist a durable

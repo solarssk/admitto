@@ -3,7 +3,7 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -28,7 +28,7 @@ Prepare the event title, calendar date, timezone, and optional location. Choose 
 
 ## Expected result
 
-Admitto creates an active event and opens its **Attendees** page directly.
+Admitto creates an active event and opens its **Overview** page directly.
 
 ## Important decisions
 
