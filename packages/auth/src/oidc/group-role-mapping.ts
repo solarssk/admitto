@@ -42,11 +42,14 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 /** Enough attempts for two concurrent Serializable revokes under CI load. */
-const SERIALIZATION_RETRY_ATTEMPTS = 8;
+const SERIALIZATION_RETRY_ATTEMPTS = 12;
 
+/**
+ * Exponential backoff with full jitter, capped at 750 ms (uniform 0..base inclusive).
+ */
 function serializationRetryDelayMs(attempt: number): number {
-  const base = Math.min(200, 25 * 2 ** attempt);
-  return base + randomInt(25);
+  const base = Math.min(750, 40 * 2 ** attempt);
+  return randomInt(base + 1);
 }
 
 function sleep(ms: number): Promise<void> {
