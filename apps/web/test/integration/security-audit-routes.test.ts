@@ -263,6 +263,32 @@ describe("GET /api/admin/security-audit-log", () => {
     }
   });
 
+  it("falls back to the live User row for legacy rows without snapshot columns", async () => {
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.trusted_device.created",
+        user_id: targetId,
+        user_email: null,
+        user_display_name: null,
+        ip: "1.2.3.21",
+        metadata: { sessionId: "sess-legacy" },
+      },
+    });
+    try {
+      const res = await app.request("/api/admin/security-audit-log?event_type=auth.trusted_device.created", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as {
+        entries: { user_email: string | null; user_display_name: string | null }[];
+      };
+      expect(body.entries).toHaveLength(1);
+      expect(body.entries[0]?.user_email).toBe(EMAIL_TARGET);
+      expect(body.entries[0]?.user_display_name).toBe("Target User");
+    } finally {
+      await prisma.securityAuditLog.deleteMany({ where: { event_type: "auth.trusted_device.created" } });
+    }
+  });
+
   it("finds deleted users by snapshot email via search", async () => {
     await prisma.securityAuditLog.create({
       data: {

@@ -92,6 +92,53 @@ describe("writeAdminAuditLog", () => {
     );
   });
 
+  it("falls back to a server-resolved actorEmail override when the User lookup throws", async () => {
+    const create = vi.fn().mockResolvedValue(undefined);
+    const findUnique = vi.fn().mockRejectedValue(new Error("db unavailable"));
+    const db = {
+      adminAuditLog: { create },
+      user: { findUnique },
+    } as unknown as PrismaClient;
+
+    await writeAdminAuditLog(db, {
+      actorUserId: "deleted-user",
+      actionType: "retention_run",
+      actorEmail: "cli@example.com",
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actor_email: "cli@example.com",
+          actor_display_name: null,
+        }),
+      }),
+    );
+  });
+
+  it("persists null actor snapshot columns when lookup fails and no override is provided", async () => {
+    const create = vi.fn().mockResolvedValue(undefined);
+    const findUnique = vi.fn().mockRejectedValue(new Error("db unavailable"));
+    const db = {
+      adminAuditLog: { create },
+      user: { findUnique },
+    } as unknown as PrismaClient;
+
+    await writeAdminAuditLog(db, {
+      actorUserId: "deleted-user",
+      actionType: "retention_run",
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actor_email: null,
+          actor_display_name: null,
+        }),
+      }),
+    );
+  });
+
   it("defaults actor_timezone to null when timezone is omitted (CLI-originated writes)", async () => {
     const { db, create } = makeMockDb();
 

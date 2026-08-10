@@ -147,6 +147,25 @@ describe("audit", () => {
       });
     });
 
+    it("persists null snapshot columns when the user lookup fails", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      const findUnique = vi.fn().mockRejectedValue(new Error("db unavailable"));
+      const db = {
+        securityAuditLog: { create },
+        user: { findUnique },
+      } as unknown as PrismaClient;
+      await logLoginSuccess(db, { email: "bob@example.com", userId: "user-1" });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            user_email: null,
+            user_display_name: null,
+          }),
+        }),
+      );
+    });
+
     it("logs an error and does not throw when persistence fails (login must not be blocked)", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

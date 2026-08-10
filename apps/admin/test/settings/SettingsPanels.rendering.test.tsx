@@ -285,6 +285,28 @@ describe("AuditLogPanel rendering", () => {
     expect(within(table).queryByText("View")).toBeNull();
   });
 
+  it("keeps target account email in Details for user lifecycle actions (distinct from the actor User column)", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          action_type: "user_deleted",
+          metadata: { userId: "target-user", email: "deleted-target@example.com" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    const trigger = within(table).getByText("View");
+    fireEvent.click(trigger);
+    expect(within(table).getByText("Email")).toBeTruthy();
+    expect(within(table).getByText("deleted-target@example.com")).toBeTruthy();
+  });
+
   it("closes the Details popover on an outside click", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue({
       entries: [makeAuditEntry({ metadata: { event_id: "evt-1", note: "hello" } })],
