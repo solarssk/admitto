@@ -24,7 +24,6 @@
 
 ---
 
-> **Status: v0.4.x (pre-1.0), internal.**
 > Treat personal data carefully until your organisation's data protection review is complete.
 > See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [SECURITY.md](SECURITY.md) before deploying.
 >
