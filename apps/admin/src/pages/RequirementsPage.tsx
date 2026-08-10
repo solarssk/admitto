@@ -64,7 +64,7 @@ function EventItemsTableBody({
     if (!showLoading) return null;
     return (
       <tr>
-        <td colSpan={3} className="attendees-empty">
+        <td colSpan={4} className="attendees-empty">
           Loading…
         </td>
       </tr>
@@ -73,7 +73,7 @@ function EventItemsTableBody({
   if (items.length === 0) {
     return (
       <tr>
-        <td colSpan={3} className="attendees-empty">
+        <td colSpan={4} className="attendees-empty">
           No items yet. Add one to configure what operators issue at check-in.
         </td>
       </tr>
@@ -97,24 +97,26 @@ function EventItemsTableBody({
               <span className="requirements-item-desc">{item.description}</span>
             )}
           </td>
+          <td className="requirements-item-status-col">
+            <ArchivedGuard
+              event={event}
+              reasonId={`toggle-item-reason-${item.id}`}
+              disabled={togglingIds.has(item.id)}
+            >
+              {(guard) => (
+                <Switch
+                  label={item.enabled ? "On" : "Off"}
+                  checked={item.enabled}
+                  aria-busy={togglingIds.has(item.id)}
+                  onChange={() => onToggle(item)}
+                  aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
+                  {...guard}
+                />
+              )}
+            </ArchivedGuard>
+          </td>
           <td className="requirements-item-actions">
             <div className="requirements-item-actions__wrap">
-              <ArchivedGuard
-                event={event}
-                reasonId={`toggle-item-reason-${item.id}`}
-                disabled={togglingIds.has(item.id)}
-              >
-                {(guard) => (
-                  <Switch
-                    label={item.enabled ? "On" : "Off"}
-                    checked={item.enabled}
-                    aria-busy={togglingIds.has(item.id)}
-                    onChange={() => onToggle(item)}
-                    aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
-                    {...guard}
-                  />
-                )}
-              </ArchivedGuard>
               <ArchivedGuard event={event} reasonId={`edit-item-reason-${item.id}`}>
                 {(guard) => (
                   <IconButton
@@ -622,7 +624,8 @@ export function RequirementsPage() {
                 <tr>
                   <th>Item</th>
                   <th className="requirements-item-desc-col">Description</th>
-                  <th className="requirements-item-actions">Active</th>
+                  <th className="requirements-item-status-col">Active</th>
+                  <th className="requirements-item-actions" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>

@@ -53,7 +53,7 @@ function CustomFieldRow({
           <div className="requirements-item-desc">{description}</div>
         ) : null}
       </td>
-      <td className="requirements-item-required-col">{field.required ? "Yes" : "No"}</td>
+      <td className="requirements-item-status-col">{field.required ? "Yes" : "No"}</td>
       <td className="requirements-item-actions">
         <div className="requirements-item-actions__wrap">
           <ArchivedGuard event={event} reasonId={`edit-custom-field-reason-${field.id}`}>
@@ -140,7 +140,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
             <tr>
               <th>Field</th>
               <th className="requirements-item-desc-col">Description</th>
-              <th className="requirements-item-required-col">Required</th>
+              <th className="requirements-item-status-col">Required</th>
               <th className="requirements-item-actions" aria-label="Actions" />
             </tr>
           </thead>

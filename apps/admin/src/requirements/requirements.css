@@ -78,13 +78,16 @@
 }
 
 .requirements-item-desc-col {
-  /* Flexible middle column - trailing Active / Required+Actions stay content-sized. */
+  /* Flexible middle column - status + actions stay content-sized on the right. */
   width: auto;
 }
 
-.requirements-item-required-col {
-  width: 5.5rem;
+/* Active (Switch) and Required (Yes/No) share the same column so they line up. */
+.requirements-item-status-col {
+  width: 8.5rem;
   white-space: nowrap;
+  text-align: left;
+  vertical-align: middle;
 }
 
 .requirements-item-desc {
@@ -121,7 +124,7 @@
 }
 
 .requirements-item-actions {
-  width: 10rem;
+  width: 5.5rem;
   white-space: nowrap;
   vertical-align: middle;
   text-align: right;
