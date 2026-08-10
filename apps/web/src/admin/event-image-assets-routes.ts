@@ -102,6 +102,7 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
     },
   });
 
+  c.header("Cache-Control", "no-store");
   return c.json({ items: rows.map(serializeImageAsset) });
 }
 

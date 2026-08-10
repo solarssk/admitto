@@ -17,10 +17,12 @@ describe("createEventImageAsset (client)", () => {
       mime_type: "image/png",
       created_at: "2026-01-15T00:00:00.000Z",
     };
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => created,
-    });
+    const fetchMock = vi
+      .fn(async (_input: string | URL, _init?: RequestInit) => ({
+        ok: true,
+        json: async () => created,
+      }))
+      .mockName("fetch");
     vi.stubGlobal("fetch", fetchMock);
 
     const file = new File(["x"], "sponsor.png", { type: "image/png" });

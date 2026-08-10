@@ -577,7 +577,7 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("Upload images")).toBeTruthy();
     expect(screen.queryByText("Superadmin only")).toBeNull();
     await waitFor(() => {
-      expect(fetchEventImageAssets).toHaveBeenCalled();
+      expect(fetchEventImageAssets).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
     });
   });
 

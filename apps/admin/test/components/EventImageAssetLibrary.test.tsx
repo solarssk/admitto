@@ -326,14 +326,14 @@ describe("EventImageAssetLibrary", () => {
     expect(screen.getByText("sponsor.png")).toBeTruthy();
   });
 
-  it("rejects SVG uploads client-side", async () => {
+  it("rejects SVG uploads client-side even when File.type claims PNG", async () => {
     mockFetch.mockResolvedValueOnce([]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(fileInput, {
-      target: { files: [new File(["x"], "logo.svg", { type: "image/svg+xml" })] },
+      target: { files: [new File(["x"], "logo.svg", { type: "image/png" })] },
     });
     expect(await screen.findByText(/SVG is not supported/)).toBeTruthy();
     expect(mockUploadPreview).not.toHaveBeenCalled();

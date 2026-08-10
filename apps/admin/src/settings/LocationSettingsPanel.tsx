@@ -106,6 +106,7 @@ export function LocationSettingsPanel({
   const [draftVerified, setDraftVerified] = useState(false);
   const [suggestedTimezone, setSuggestedTimezone] = useState<string | null>(null);
   const [fixLinksOpen, setFixLinksOpen] = useState(false);
+  const [lookupResetKey, setLookupResetKey] = useState(0);
 
   const loadAbortRef = useRef<AbortController | null>(null);
   const reverseSeqRef = useRef(0);
@@ -216,6 +217,7 @@ export function LocationSettingsPanel({
   const handleClearLocation = () => {
     reverseSeqRef.current += 1;
     pendingGeocodingProviderRef.current = null;
+    setLookupResetKey((key) => key + 1);
     setDraftVerified(false);
     setDraft((prev) => ({
       ...prev,
@@ -274,6 +276,7 @@ export function LocationSettingsPanel({
     const seq = ++reverseSeqRef.current;
     // Manual pin move invalidates prior geocode provenance until reverse succeeds.
     pendingGeocodingProviderRef.current = null;
+    setLookupResetKey((key) => key + 1);
     // Clear Maps overrides immediately so Copy / Notice cannot keep the previous place's links
     // while reverse geocode is still in flight.
     setDraft((prev) => ({
@@ -479,6 +482,7 @@ export function LocationSettingsPanel({
               placeholder="e.g. Convention Center, or a full address"
               hint="Search by venue or address, then choose a match to set the pin. You can also set a pin on the map and enter the venue name here."
               showFindButton={false}
+              lookupResetKey={lookupResetKey}
               onChange={(text) => {
                 // Keep the map pin and address grid when renaming - OSM often lacks the
                 // building POI, so the intended workflow is pin (or street search) + manual

@@ -508,6 +508,7 @@ export async function fetchEventImageAssets(
 ): Promise<EventImageAssetDto[]> {
   const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/image-assets`, {
     credentials: "same-origin",
+    cache: "no-store",
     signal,
   });
   const data = await parseJson<EventImageAssetsListResponse>(res);

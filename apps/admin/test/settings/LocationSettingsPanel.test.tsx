@@ -920,6 +920,57 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     expect(document.querySelector(".location-map-footer__coords")?.textContent?.trim()).toBe("-");
   });
 
+  it("does not reopen typeahead suggestions when a slow search resolves after a map pin", async () => {
+    const slowSearch = createDeferred<Awaited<ReturnType<typeof searchGeocoding>>>();
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSearch.mockReturnValueOnce(slowSearch.promise);
+    mockReverse.mockResolvedValue({
+      result: searchResult({
+        name: "Pinned Hall",
+        formatted_address: "Pinned address, New York",
+      }),
+      contact_configured: true,
+    });
+    renderPanel();
+
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing Street" } });
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith("Downing Street"));
+    fireEvent.click(screen.getByTestId("map-picker"));
+    slowSearch.resolve({
+      results: [searchResult({ name: "Stale Typeahead Venue" })],
+      contact_configured: true,
+    });
+    await act(async () => {
+      await slowSearch.promise;
+    });
+
+    expect(screen.queryByText("Stale Typeahead Venue")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Venue suggestions" })).toBeNull();
+  });
+
+  it("does not show stale typeahead failure after Remove pin cancels an in-flight search", async () => {
+    const slowSearch = createDeferred<Awaited<ReturnType<typeof searchGeocoding>>>();
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockSearch.mockReturnValueOnce(slowSearch.promise);
+    renderPanel();
+
+    const input = await screen.findByLabelText("Venue name or address");
+    fireEvent.change(input, { target: { value: "Downing Street" } });
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith("Downing Street"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove pin" }));
+    slowSearch.reject(new Error("late typeahead failure"));
+    await act(async () => {
+      try {
+        await slowSearch.promise;
+      } catch {
+        // Stale rejection after pin reset must be ignored.
+      }
+    });
+
+    expect(screen.queryByText("Address lookup failed. Try again shortly.")).toBeNull();
+  });
+
   it("uses formatted_address as venue name when reverse has no name", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockReverse.mockResolvedValue({

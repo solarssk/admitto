@@ -213,6 +213,7 @@ describe("GET /api/admin/events/:eventId/image-assets", () => {
       headers: { cookie: adminCookie },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("returns an empty list for a fresh event", async () => {

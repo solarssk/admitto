@@ -32,7 +32,13 @@ describe("EventImageAssetLibrary helpers", () => {
   });
 
   it("returns null when no valid preview token can be allocated", () => {
-    expect(eventImageAssetLibraryTestUtils.allocatePreviewToken("", new Set())).toBeNull();
+    const taken = new Set(["sponsor_logo"]);
+    for (let n = 2; n < 100; n += 1) {
+      taken.add(`sponsor_logo_${n}`);
+    }
+    expect(
+      eventImageAssetLibraryTestUtils.allocatePreviewToken("sponsor_logo", taken),
+    ).toBeNull();
   });
 
   it("rejects overlong image names with a length-specific message", () => {
@@ -55,6 +61,11 @@ describe("EventImageAssetLibrary helpers", () => {
     expect(
       eventImageAssetLibraryTestUtils.sniffImageMime(new File([], "logo.jpeg", { type: "" })),
     ).toBe("image/jpeg");
+    expect(
+      eventImageAssetLibraryTestUtils.sniffImageMime(
+        new File([], "logo.svg", { type: "image/png" }),
+      ),
+    ).toBe("image/svg+xml");
   });
 
   it("strips extension for basename and clamps display names", () => {

@@ -36,6 +36,8 @@ export interface VenueAutocompleteProps {
   hint?: string;
   /** When true (default), shows a "Find on map" button that runs search immediately. */
   showFindButton?: boolean;
+  /** When this value changes, cancel any in-flight lookup and clear suggestions/feedback. */
+  lookupResetKey?: number;
   /** Fired on every keystroke - this is a controlled input, the caller owns the value. */
   onChange: (value: string) => void;
   /** Fired when the admin picks a suggestion - the caller decides what to do with the name,
@@ -64,6 +66,7 @@ export function VenueAutocomplete({
   maxLength,
   hint,
   showFindButton = true,
+  lookupResetKey = 0,
   onChange,
   onSelectResult,
   onContactConfigured,
@@ -81,6 +84,32 @@ export function VenueAutocomplete({
   // Guards against a slow, stale search response overwriting the results of a newer one that
   // resolved first - same seq-counter pattern as CheckInPage's fetchSuggestions.
   const seqRef = useRef(0);
+
+  const hideSuggestions = () => {
+    setVisible(false);
+    setSuggestStyle(HIDDEN_FIXED);
+  };
+
+  /** Cancel in-flight lookup and clear Find/"Searching…" so a cancelled request cannot stick. */
+  const invalidateSearch = () => {
+    seqRef.current += 1;
+    setSearching(false);
+  };
+
+  useEffect(() => {
+    if (lookupResetKey === 0) return;
+    if (searchTimerRef.current != null) {
+      window.clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    seqRef.current += 1;
+    setSearching(false);
+    setResults([]);
+    setVisible(false);
+    setSuggestStyle(HIDDEN_FIXED);
+    setNoMatch(false);
+    setSearchError(null);
+  }, [lookupResetKey]);
 
   useEffect(() => {
     return () => {
@@ -152,11 +181,6 @@ export function VenueAutocomplete({
     }
   };
 
-  const hideSuggestions = () => {
-    setVisible(false);
-    setSuggestStyle(HIDDEN_FIXED);
-  };
-
   const handleChange = (text: string) => {
     onChange(text);
     setNoMatch(false);
@@ -164,7 +188,7 @@ export function VenueAutocomplete({
     if (searchTimerRef.current != null) window.clearTimeout(searchTimerRef.current);
     const trimmed = text.trim();
     if (trimmed.length < MIN_QUERY_LENGTH) {
-      seqRef.current += 1;
+      invalidateSearch();
       setResults([]);
       hideSuggestions();
       return;
@@ -180,6 +204,7 @@ export function VenueAutocomplete({
     if (trimmed.length < MIN_QUERY_LENGTH) {
       setNoMatch(false);
       setSearchError(null);
+      invalidateSearch();
       setResults([]);
       hideSuggestions();
       return;
@@ -188,7 +213,7 @@ export function VenueAutocomplete({
   };
 
   const handleSelect = (result: GeocodingResultDto) => {
-    seqRef.current += 1;
+    invalidateSearch();
     setResults([]);
     hideSuggestions();
     setNoMatch(false);

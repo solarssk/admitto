@@ -63,6 +63,16 @@ describe("transportTestErrorForAdmin", () => {
     );
   });
 
+  it("maps ssrfGuard private/link-local hostname errors without leaking transport detail", () => {
+    const raw = "hostname must not resolve to a private or link-local address (smtp.corp.local)";
+    const out = transportTestErrorForAdmin(raw);
+    expect(out).toBe(
+      "The mail destination host resolves to a private address. Add it to MAIL_PRIVATE_DESTINATION_ALLOWLIST (app and worker), or use a public destination. Local labs can set ALLOW_PRIVATE_MAIL_DESTINATIONS=true when NODE_ENV is not production.",
+    );
+    expect(out).not.toContain("smtp.corp.local");
+    expect(out).not.toContain("link-local");
+  });
+
   it("maps DNS failure", () => {
     expect(transportTestErrorForAdmin("getaddrinfo ENOTFOUND smtp.example.com")).toBe(
       "Mail server hostname could not be resolved. Check the SMTP host.",

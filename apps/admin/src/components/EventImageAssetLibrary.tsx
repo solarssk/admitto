@@ -90,10 +90,12 @@ function extensionForMime(mime: string): string {
 }
 
 function sniffImageMime(file: File): string {
+  const lower = file.name.toLowerCase();
+  // Filename wins for SVG so a mislabeled File.type (e.g. image/png) cannot bypass the SVG reject.
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+
   const declared = file.type.split(";")[0]?.trim().toLowerCase() ?? "";
   if (ALLOWED_IMAGE_TYPES.has(declared) || declared === "image/svg+xml") return declared;
-  const lower = file.name.toLowerCase();
-  if (lower.endsWith(".svg")) return "image/svg+xml";
   if (lower.endsWith(".webp")) return "image/webp";
   if (lower.endsWith(".png")) return "image/png";
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";

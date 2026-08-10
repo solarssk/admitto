@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../src/api/client.js";
 import type { EventSettingsDto, TicketTypeDto } from "../../src/api/types.js";
@@ -272,10 +272,14 @@ describe("TicketTypesCard", () => {
     renderCard([vipType]);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove VIP" }));
-    expect(screen.getByRole("dialog", { name: 'Remove "VIP"?' })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: 'Remove "VIP"?' });
+    expect(dialog).toBeTruthy();
+    expect(
+      within(dialog).getByText(/This type will no longer be available for new attendee assignments/),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(deleteTicketType).not.toHaveBeenCalled();
-    expect(screen.queryByText('Remove "VIP"? This type will no longer be available for new attendee assignments.')).toBeNull();
+    expect(screen.queryByRole("dialog", { name: 'Remove "VIP"?' })).toBeNull();
   });
 });
