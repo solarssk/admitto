@@ -1,48 +1,6 @@
 import type { LookupAddress } from "node:dns";
-import { Agent, fetch as undiciFetch } from "undici";
-
-/**
- * True for a genuine connect-level failure (refused, unreachable, timed out) as opposed to
- * an HTTP-level response (which never throws) or an application error thrown by `handler`.
- * Ported from packages/auth/src/oidc/safe-oidc-fetch.ts's identical check — only these count
- * as "try the next validated address", everything else propagates immediately.
- */
-function isConnectFailure(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as NodeJS.ErrnoException).code;
-  if (
-    code === "ECONNREFUSED" ||
-    code === "ETIMEDOUT" ||
-    code === "ENETUNREACH" ||
-    code === "EHOSTUNREACH" ||
-    code === "EPERM"
-  ) {
-    return true;
-  }
-  const cause = (err as Error & { cause?: unknown }).cause;
-  if (cause instanceof Error) {
-    return isConnectFailure(cause);
-  }
-  return err.message.toLowerCase().includes("fetch failed");
-}
-
-function createPinnedDispatcher(hostname: string, record: LookupAddress): Agent {
-  return new Agent({
-    connect: {
-      servername: hostname,
-      lookup: (_host, options, callback) => {
-        if (options.all) {
-          (callback as (err: null, addresses: { address: string; family: number }[]) => void)(
-            null,
-            [{ address: record.address, family: record.family }],
-          );
-        } else {
-          callback(null, record.address, record.family);
-        }
-      },
-    },
-  });
-}
+import { fetch as undiciFetch } from "undici";
+import { createPinnedDispatcher, isConnectFailure } from "@admitto/shared/pinned-dispatcher";
 
 /**
  * Fetch with the outbound TCP connection pinned to an already-validated address (see
