@@ -1156,6 +1156,13 @@ interface UseLogQueryOptions<TEntry, TFilters extends { search: string; start: s
   exportRows: (filters: TFilters) => Promise<void>;
   loadErrorMessage: string;
   exportErrorMessage: string;
+  /** Whether this view's tab (Audit/Security) is the one currently shown. LogsPanelViews keeps
+   * all three views mounted (see its own comment), so without this the live-poll interval below
+   * would keep hitting this view's endpoint every tick even while the operator is looking at a
+   * sibling tab - three times the request volume of what's actually on screen, indefinitely, per
+   * open browser tab (PO review). Only gates the recurring poll, not the initial/filter-change
+   * load, so switching back to this tab still shows its last-fetched (not stale-forever) rows. */
+  isVisible: boolean;
 }
 
 /** All state + fetch/pagination/live-poll/scroll-restore logic shared by the Audit and Security
@@ -1168,6 +1175,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   exportRows,
   loadErrorMessage,
   exportErrorMessage,
+  isVisible,
 }: Readonly<UseLogQueryOptions<TEntry, TFilters>>) {
   const [entries, setEntries] = useState<TEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -1324,16 +1332,17 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   // a live dashboard is worth having open at all. Independent of the effect above (its own deps
   // only touch page/filters) so pausing/resuming Live doesn't re-trigger a fetch, matching
   // SystemLogsPanel's own poll effect. AuditLogPanel mounts both Audit and Security hooks at
-  // once (LogsPanelViews toggles visibility, not mount) so this interval keeps firing even when
-  // the operator is on System or the sibling tab - deliberate; see LogsPanelViews.
+  // once (LogsPanelViews toggles visibility, not mount), so `isVisible` (this view's own tab
+  // being the shown one) also gates the interval - see isVisible's own comment on
+  // UseLogQueryOptions for why.
   useEffect(() => {
-    if (!live || !hasLoadedOnce) return;
+    if (!live || !hasLoadedOnce || !isVisible) return;
     // Resuming Live always starts the degraded-state tracking fresh.
     pollFailureCountRef.current = 0;
     setPollDegraded(false);
     const intervalId = window.setInterval(() => void load({ silent: true }), POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [live, hasLoadedOnce, load]);
+  }, [live, hasLoadedOnce, isVisible, load]);
 
   const clearFilters = useCallback(() => {
     setFilters(initialFilters);
@@ -1666,6 +1675,7 @@ export function AuditLogPanel() {
     exportRows: exportAuditLogRows,
     loadErrorMessage: "Failed to load audit log.",
     exportErrorMessage: "Failed to export audit log.",
+    isVisible: view === "audit",
   });
   const security = useLogQuery<SecurityAuditLogEntryDto, SecurityLogFilters>({
     initialFilters: SECURITY_INITIAL_FILTERS,
@@ -1674,6 +1684,7 @@ export function AuditLogPanel() {
     exportRows: exportSecurityLogRows,
     loadErrorMessage: "Failed to load security audit log.",
     exportErrorMessage: "Failed to export security audit log.",
+    isVisible: view === "security",
   });
 
   const [events, setEvents] = useState<EventDto[]>([]);
@@ -2001,6 +2012,7 @@ export function AuditLogPanel() {
           <SystemLogsPanel
             ref={systemLogsRef}
             isDesktop={isDesktop}
+            isVisible={view === "system"}
             liveButton={!isDesktop ? liveButton : undefined}
             downloadButton={!isDesktop ? downloadButton : undefined}
             onLiveChange={setSystemLive}
