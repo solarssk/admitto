@@ -13,16 +13,23 @@ Both modes can coexist in a single file.
 
 ## CLI
 
+Build workspace dependencies first (`npm run build -w @admitto/import` pulls them via TypeScript
+project references / prior package builds). Prefer the package script (tsx against source after
+deps are built):
+
 ```bash
 # Dry-run (default — no writes)
-npx tsx src/cli.ts --event <eventId> --file attendees.csv
+npm run import -w @admitto/import -- --event <eventId> --file attendees.csv
 
 # Commit to DB
-npx tsx src/cli.ts --event <eventId> --file attendees.csv --commit
+npm run import -w @admitto/import -- --event <eventId> --file attendees.csv --commit
 
 # Allow updating existing attendees (presentation fields only)
-npx tsx src/cli.ts --event <eventId> --file attendees.csv --commit --overwrite
+npm run import -w @admitto/import -- --event <eventId> --file attendees.csv --commit --overwrite
 ```
+
+On a clean checkout, run `npm run build` for `@admitto/db` and other import dependencies before the
+CLI if you see `ERR_MODULE_NOT_FOUND`.
 
 ## Canonical CSV columns
 

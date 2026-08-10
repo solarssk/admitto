@@ -180,15 +180,15 @@ This is a narrower, more deliberate exception than it looks:
 
 ## Retention
 
-Retention uses two responsibility layers: **product-automated** cleanup (best-effort at container
-startup) and **operator-controlled** data (export/delete per your policy). Different retention
-periods for different categories are intentional — not an inconsistency.
+Retention uses two responsibility layers: **product-automated** cleanup (best-effort on the Admitto
+**worker** at boot and about every 24 hours) and **operator-controlled** data (export/delete per your
+policy). Different retention periods for different categories are intentional — not an inconsistency.
 
 | Data | Who is responsible | How |
 |---|---|---|
-| Login sessions, trusted devices | Product — automatic | Best-effort purge at container startup when expired/revoked |
+| Login sessions, trusted devices | Product — automatic | Best-effort purge on the worker when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
-| Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge at container startup and daily thereafter; default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
+| Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge on the worker (boot + ~24h); default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
 | IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
 | System logs live tail (in-memory only) | Product — automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
 | Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
@@ -202,7 +202,7 @@ directly, as described in [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md).
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
 | Per-attendee erasure | Admin SPA (single and bulk) + `DELETE` API (v0.4.6+ API, SPA delete action added in this batch) |
-| Automated purge job | Partial — auth-state and email delivery snapshot cleanup at container startup; full attendee PII purge planned for v1.0 |
+| Automated purge job | Partial — auth-state and email delivery snapshot cleanup on the Admitto worker; full attendee PII purge planned for v1.0 |
 
 ## Data subject rights
 

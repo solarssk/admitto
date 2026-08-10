@@ -69,7 +69,7 @@ See [SECURITY.md](../../SECURITY.md) for the project secret policy.
 | Situation | Action |
 |-----------|--------|
 | Bad application release, schema unchanged | Deploy previous container image tag |
-| Failed database migration | Restore pre-migration backup; redeploy previous image |
+| Failed database migration | Restore pre-upgrade or nightly backup; redeploy previous image |
 
 Procedure detail: `deploy/README.md` (rollback runbook).
 

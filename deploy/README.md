@@ -33,7 +33,7 @@ Without these, containers exit or Health stays red. **None of them are set from 
 | `ENCRYPTION_KEY` | `.env` | `openssl rand -base64 32`. Losing it loses encrypted mail/OIDC secrets. |
 | `POSTGRES_*` + `DATABASE_URL` | `.env` | Passwords must match. |
 | `REDIS_PASSWORD` + `REDIS_URL` | `.env` | Password must appear in the URL. |
-| `/backups` on **migrate** | volume | Pre-migration dumps. Missing dir → migrate exits 1. Same host path as nightly backups is fine. |
+| `/backups` on **db-backup** | volume | Nightly SQL dumps (`migration_backups`). Not mounted on `migrate` / `app`. |
 | `/app/uploads` writable by uid **1000** | volume | Branding storage. Health → file storage `not_writable` if wrong ownership. |
 | `worker` service | compose | Mail drain, import/export, bounce, retention. One replica. |
 
@@ -54,7 +54,7 @@ Full dictionary (every known deploy var, generated from code + catalog): **[ENV.
 |---------------------------|------------------------|
 | `BASE_URL`, encryption, DB, Redis | Organisation mail (SMTP/Graph/PA) |
 | Proxy trust (`TRUST_PROXY`, `TRUSTED_PROXY_CIDRS`) | Branding, theme, support contact |
-| Migration backup paths / disable flag | OIDC / Cloudflare Access (unless env-locked) |
+| Nightly backup dir / retention (`MIGRATION_BACKUP_DIR`, `NIGHTLY_BACKUP_*`) | OIDC / Cloudflare Access (unless env-locked) |
 | Upload / emergency-export paths | Event location, weather, maps toggles |
 | `OPS_HEALTH_TOKEN` (optional) | Bounce IMAP per event |
 
@@ -129,7 +129,7 @@ TRUSTED_PROXY_CIDRS=172.17.0.1/32
 
 Find the right CIDR: from the app container, log or inspect the peer address of a request that came through NPM (`docker inspect <npm-container> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`), or use your platform docs for host→published-port routing.
 
-4. Mount `/backups` on **migrate** (and db-backup), uploads + emergency-exports writable by uid 1000.
+4. Keep the `db-backup` volume for nightly dumps; make uploads + emergency-exports writable by uid 1000 (`./scripts/init-host-dirs.sh`).
 5. Run **worker** with the same secrets as `app`.
 6. Prefer Variant A when you can; Variant B is for stacks that intentionally omit compose nginx.
 
@@ -223,23 +223,23 @@ curl -sf http://127.0.0.1:8080/healthz
 
 The app listens on port 3000 **inside** the compose network only. Use the proxy on `127.0.0.1:8080`.
 
-## Upgrading from v0.4.4 or earlier
+## Upgrading
 
-Releases before authenticated Redis require a one-time `deploy/.env` update:
+Before every upgrade, take a **manual database backup** (see [PostgreSQL backups](#postgresql-backups-adr-0012-adr-0027)). Then:
 
 ```bash
 cd deploy
-# Generate a strong Redis password (keep it secret):
-openssl rand -hex 32
-# Add or replace in .env:
-#   REDIS_PASSWORD=<generated>
-# Ensure DATABASE_URL password still matches POSTGRES_PASSWORD.
 ./validate-env.sh
-docker compose pull app   # or set ADMITTO_IMAGE to the new tag
+docker compose pull app worker migrate   # or set ADMITTO_IMAGE to the new tag
 docker compose up -d
+curl -sf http://127.0.0.1:8080/healthz
 ```
 
+Migrations apply in the one-shot `migrate` service. There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only.
+
 `validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
+
+**Coming from a release before authenticated Redis (roughly pre-v0.4.5):** add `REDIS_PASSWORD` to `deploy/.env` and put the same value in `REDIS_URL` (`redis://:PASSWORD@redis:6379`), then re-run `./validate-env.sh` once.
 
 ## Self-hosted SMTP on a private address
 
