@@ -51,4 +51,17 @@ describe("publishActivityChanged", () => {
     expect(publishSpy).toHaveBeenCalledWith("evt-1", { type: "activity_changed" });
     publishSpy.mockRestore();
   });
+
+  it("swallows a publish failure instead of throwing (non-fatal)", () => {
+    const publishSpy = vi.spyOn(sseChannel, "publish").mockImplementation(() => {
+      throw new Error("channel exploded");
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(() => publishActivityChanged("evt-1")).not.toThrow();
+    expect(errorSpy).toHaveBeenCalledWith("SSE publish failed (non-fatal):", expect.any(Error));
+
+    publishSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
 });
