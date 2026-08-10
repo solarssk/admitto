@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security and Audit logs now keep the staff member's email and display name on each row after their account is deleted, using immutable identity snapshot columns written at event time.
 - Concurrent OIDC instance-superadmin revokes use true full-jitter backoff (0..cap ms) so Serializable retries no longer thrash under a floor+jitter delay.
 - **Delete event** is no longer blocked by leftover operational action-log history after attendees and event-specific content are cleared (demo/test events can be removed again). Danger zone now lists the concrete remaining blockers when delete is disabled. Permanent delete also best-effort removes managed event branding and named image-asset uploads from storage (same cleanup as deleting a single asset).
+- Audit and Security logs (Organisation settings → Logs) now span the full width of their card, matching every other table in the app; the table and its horizontal scrollbar previously stopped short of the card edge.
 
 ### Security
 - **Self-hosted LAN identity providers (SSO):** ops can allow specific Issuer/endpoint hostnames (or IP literals) that resolve to private addresses via `SSO_PRIVATE_DESTINATION_ALLOWLIST` on `app`. One list covers every configured provider sharing those hosts (OIDC today; same guard for future SAML). HTTPS remains required. Separate from the mail allowlist.
