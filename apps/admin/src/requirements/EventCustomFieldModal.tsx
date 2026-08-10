@@ -141,7 +141,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               </label>
               {form.source_field && (
                 <span className="at-hint">
-                  ID: <code>{form.source_field}</code>
+                  ID: <code className="requirements-item-id">{form.source_field}</code>
                 </span>
               )}
             </div>
@@ -235,12 +235,14 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           </div>
         </form>
         <div className="event-item-modal__footer">
-          <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving}>
-            {submitLabel}
-          </Button>
+          <div className="event-item-modal__footer-end">
+            <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving}>
+              {submitLabel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
