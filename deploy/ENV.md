@@ -50,10 +50,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `MIGRATION_BACKUP_DIR` | recommended | migrate, db-backup | none | no | Directory for pre-migration and nightly SQL dumps (compose: /backups). Migrate fails if missing unless MIGRATION_BACKUP_DISABLE=true. |
-| `MIGRATION_BACKUP_RETENTION` | optional | migrate, db-backup | none | no | How many pre-migration dump files to keep (default 10). |
-| `MIGRATION_BACKUP_MIN_FREE_MB` | optional | migrate | none | no | Minimum free space on the backup volume before pg_dump (default 512). |
-| `MIGRATION_BACKUP_DISABLE` | optional | migrate | none | no | Dev/test only. Skip pre-migration dump when pending migrations exist. Do not use in production. |
+| `MIGRATION_BACKUP_DIR` | recommended | db-backup | none | no | Directory for nightly SQL dumps written by the db-backup sidecar (compose volume mounted at /backups). |
 | `NIGHTLY_BACKUP_RETENTION_DAYS` | optional | db-backup | none | no | How many days of nightly-*.sql.gz files the db-backup sidecar keeps (default 14). |
 | `NIGHTLY_BACKUP_INTERVAL_SECONDS` | optional | db-backup | none | no | Sleep between nightly dumps (default 86400). |
 
@@ -186,4 +183,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 103 distinct keys seen in scan (tests excluded)._
+_Last generated from 100 distinct keys seen in scan (tests excluded)._
