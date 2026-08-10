@@ -241,7 +241,7 @@ function unavailablePlaceholderText(loading: boolean, showLoading: boolean): str
 }
 
 
-function checklistStatusIcon(status: "ok" | "warn" | "error" | "pending" | string): string {
+function checklistStatusIcon(status: ReadinessItem["status"]): string {
   if (status === "error") return "ti-x";
   if (status === "ok") return "ti-check";
   if (status === "warn") return "ti-alert-triangle";
