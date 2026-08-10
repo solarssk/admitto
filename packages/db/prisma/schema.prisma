@@ -468,6 +468,9 @@ model AdminAuditLog {
   // Actor's IANA timezone at write time — null for rows predating this column or written
   // outside a browser request. Mirrors AttendeeActionLog.client_timezone.
   actor_timezone  String?
+  // Immutable staff identity at write time — survives hard delete of the User row.
+  actor_email         String?
+  actor_display_name  String?
 
   @@index([organization_id, created_at(sort: Desc)])
 }
@@ -487,6 +490,9 @@ model SecurityAuditLog {
   ip         String?
   metadata   Json?
   created_at DateTime @default(now())
+  // Immutable staff identity at write time — null when user_id is null (enumeration-safe).
+  user_email        String?
+  user_display_name String?
 
   @@index([event_type, created_at(sort: Desc)])
   @@index([user_id])

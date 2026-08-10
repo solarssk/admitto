@@ -11,11 +11,9 @@ import {
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 
-/** Free-text search over the resolved user (email/display name) - resolved to concrete ids up
- * front since it isn't directly queryable on SecurityAuditLog itself (requires a User join).
- * Mirrors resolveSearchMatch in audit-routes.ts but simpler: no event-title equivalent to also
- * match, since these rows aren't event-scoped. An empty match list is a valid "no rows" result
- * (a search matching zero users should show zero rows, not fall back to "no filter"). */
+/** Free-text search over snapshot columns and live User rows. Snapshot columns cover deleted
+ * accounts; the User lookup keeps matching current staff who have not yet triggered a new audit
+ * row since the migration. */
 async function resolveSecuritySearchMatch(
   db: PrismaClient,
   search: string,
@@ -29,7 +27,13 @@ async function resolveSecuritySearchMatch(
     },
     select: { id: true },
   });
-  return { user_id: { in: users.map((u) => u.id) } };
+  return {
+    OR: [
+      { user_id: { in: users.map((u) => u.id) } },
+      { user_email: { contains: search, mode: "insensitive" } },
+      { user_display_name: { contains: search, mode: "insensitive" } },
+    ],
+  };
 }
 
 /** Resolves the `user_id`/`search` query params to a where-clause fragment. Exact `user_id`
@@ -71,14 +75,23 @@ async function buildSecurityAuditLogWhere(c: Context, db: PrismaClient): Promise
 
 type UserRow = { id: string; email: string; display_name: string | null };
 
-/** Resolve each row's `user_id` (when set) to its current email/display_name. Rows with a null
- * `user_id` (failed logins, access-denied with no session — enumeration-safe by design, see
- * audit.ts) resolve to neither; deleted users likewise fall back to "Unknown" client-side. */
+type SecurityIdentityRow = {
+  user_id: string | null;
+  user_email: string | null;
+  user_display_name: string | null;
+};
+
+/** Legacy rows without snapshot columns still join to User; new rows use immutable columns. */
 async function resolveUserMap(
   db: PrismaClient,
-  rows: { user_id: string | null }[],
+  rows: SecurityIdentityRow[],
 ): Promise<Record<string, UserRow>> {
-  const userIds = [...new Set(rows.map((r) => r.user_id).filter((id): id is string => id !== null))];
+  const needsJoin = rows.some((r) => r.user_id && !r.user_email);
+  if (!needsJoin) return Object.create(null);
+
+  const userIds = [
+    ...new Set(rows.filter((r) => r.user_id && !r.user_email).map((r) => r.user_id as string)),
+  ];
   const users =
     userIds.length > 0
       ? await db.user.findMany({
@@ -89,6 +102,28 @@ async function resolveUserMap(
   const userMap: Record<string, UserRow> = Object.create(null);
   for (const u of users) userMap[u.id] = u;
   return userMap;
+}
+
+function resolveSecurityUserEmail(row: SecurityIdentityRow, userMap: Record<string, UserRow>): string | null {
+  if (!row.user_id) return null;
+  if (row.user_email) return row.user_email;
+  return userMap[row.user_id]?.email ?? null;
+}
+
+function resolveSecurityUserDisplayName(
+  row: SecurityIdentityRow,
+  userMap: Record<string, UserRow>,
+): string | null {
+  if (!row.user_id) return null;
+  if (row.user_email) return row.user_display_name;
+  return userMap[row.user_id]?.display_name ?? null;
+}
+
+function securityUserCsvLabel(row: SecurityIdentityRow, userMap: Record<string, UserRow>): string {
+  if (!row.user_id) return "Unknown";
+  const email = resolveSecurityUserEmail(row, userMap);
+  const name = resolveSecurityUserDisplayName(row, userMap);
+  return name || email || row.user_id;
 }
 
 /**
@@ -123,8 +158,8 @@ export async function handleGetSecurityAuditLog(c: Context, db: PrismaClient): P
     id: r.id,
     event_type: r.event_type,
     user_id: r.user_id,
-    user_email: r.user_id ? (userMap[r.user_id]?.email ?? null) : null,
-    user_display_name: r.user_id ? (userMap[r.user_id]?.display_name ?? null) : null,
+    user_email: resolveSecurityUserEmail(r, userMap),
+    user_display_name: resolveSecurityUserDisplayName(r, userMap),
     ip: r.ip,
     country: resolveIpLocation(r.ip),
     metadata: r.metadata as Record<string, unknown> | null,
@@ -144,6 +179,8 @@ function buildSecurityAuditLogCsv(
     created_at: Date;
     event_type: string;
     user_id: string | null;
+    user_email: string | null;
+    user_display_name: string | null;
     ip: string | null;
     metadata: unknown;
   }[],
@@ -151,12 +188,11 @@ function buildSecurityAuditLogCsv(
 ): string {
   const header = SECURITY_CSV_COLUMNS.map((col) => quoteCsvCell(col)).join(",");
   const csvRows = rows.map((r) => {
-    const user = r.user_id ? userMap[r.user_id] : undefined;
     const meta = r.metadata as Record<string, unknown> | null;
     return [
       r.created_at.toISOString(),
       sanitizeCsvCell(r.event_type),
-      sanitizeCsvCell(user?.email ?? r.user_id ?? "Unknown"),
+      sanitizeCsvCell(securityUserCsvLabel(r, userMap)),
       sanitizeCsvCell(r.ip),
       sanitizeCsvCell(meta ? JSON.stringify(meta) : ""),
     ]

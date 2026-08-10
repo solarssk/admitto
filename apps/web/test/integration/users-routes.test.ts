@@ -546,6 +546,16 @@ describe("DELETE /api/admin/users/:id", () => {
       },
     });
     await createSession(prisma, { userId: deleteUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.9" });
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.login.success",
+        user_id: deleteUserId,
+        user_email: "users-delete-target@example.com",
+        user_display_name: null,
+        ip: "127.0.0.9",
+        metadata: { userAgent: "vitest" },
+      },
+    });
   });
 
   it("returns 401 without auth", async () => {
@@ -591,7 +601,16 @@ describe("DELETE /api/admin/users/:id", () => {
         where: { organization_id: ORG_USERS, action_type: "user_deleted" },
         orderBy: { created_at: "desc" },
       }),
-    ).toMatchObject({ metadata: { userId: deleteUserId } });
+    ).toMatchObject({
+      metadata: { userId: deleteUserId },
+      actor_email: EMAIL_SUPER,
+    });
+
+    expect(
+      await prisma.securityAuditLog.findFirst({ where: { user_id: deleteUserId } }),
+    ).toMatchObject({
+      user_email: "users-delete-target@example.com",
+    });
   });
 
   it("returns 404 for an unknown user", async () => {

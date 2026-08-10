@@ -89,13 +89,11 @@ is the reliable source for reconstructing login/MFA/OIDC history during an incid
   closes that gap independently of container/log configuration (issue #473).
 - **Access:** superadmin-only, same gate as the central admin audit log below.
 - **Fields:** `event_type`, a resolved `user_id` when the subject is known (null for failed logins
-  against a possibly-nonexistent account — an intentionally uniform, enumeration-safe shape), `ip`,
-  a small `metadata` object, and `created_at`. Email in `metadata` follows the same rule as
-  **Logs** above (redacted for failed logins, full once authenticated) *when the email identifies
-  the person being held accountable* — e.g. the user who just logged in or completed OIDC. MFA
-  break-glass events are the exception: `email`/`userId` there identify the operator's *target*
-  account, not the accountable actor, and `user_id` already resolves that target via the admin
-  panel's user join, so `metadata` omits the raw email there.
+  against a possibly-nonexistent account — an intentionally uniform, enumeration-safe shape), immutable
+  `user_email` / `user_display_name` snapshot columns written at event time (survive hard delete of
+  the account), `ip`, a small `metadata` object, and `created_at`. Failed logins keep
+  `email_redacted` in metadata only; authenticated events store the accountable staff identity in the
+  snapshot columns, not in metadata.
 - **Not covered, by design:** rate-limit-exceeded events (span many unrelated features — throttling
   signal, not itself a discrete auth incident; better served by metrics/alerting) and admin settings
   changes (already durable via the central `AdminAuditLog` below — no need to duplicate into both
@@ -150,6 +148,9 @@ This is a narrower, more deliberate exception than it looks:
   still genuinely gone from every attendee-facing table and surface).
 - **Access:** superadmin-only (`GET /api/admin/organizations`-tier gate), stricter than the
   admin-level access the per-attendee log gets.
+- **Actor identity:** each row stores immutable `actor_email` / `actor_display_name` snapshot columns
+  at write time (alongside `actor_user_id`), so deleted staff accounts remain identifiable in the
+  audit trail for the table's retention window.
 - **Retention — operator-run, not automated (no scheduled purge job exists for this table):** the
   Retention table below already lists "IP addresses in admin audit log… operator, 30 days or your
   policy, product does not auto-purge" — the same applies to the name/email fields added here, and

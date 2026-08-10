@@ -340,14 +340,23 @@ function formatMetadataValue(key: string, value: unknown): string {
 }
 
 // Already shown elsewhere in the row - repeating them in Details would just be noise.
-// eventId/event_id: shown by the Scope column. email_redacted: shown under Security's User column.
-const METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id", "email_redacted"]);
+// eventId/event_id: shown by the Scope column.
+const AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id"]);
+// Security adds email/email_redacted: shown under the User column (snapshot or redacted login).
+const SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE = new Set([
+  ...AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE,
+  "email",
+  "email_redacted",
+]);
 
 /** True when metadata has at least one key worth rendering in the Details column, beyond what
- * the Scope column already covers. */
-function hasVisibleMetadata(metadata: Record<string, unknown> | null): boolean {
+ * the Scope/User column already covers. */
+function hasVisibleMetadata(
+  metadata: Record<string, unknown> | null,
+  hiddenKeys: ReadonlySet<string>,
+): boolean {
   if (!metadata) return false;
-  return Object.keys(metadata).some((key) => !METADATA_KEYS_SHOWN_ELSEWHERE.has(key));
+  return Object.keys(metadata).some((key) => !hiddenKeys.has(key));
 }
 
 /** Plain-text rendering of one full row - Time/Action/Scope/Actor/IP plus any visible Details,
@@ -366,10 +375,10 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
     `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
-  if (hasVisibleMetadata(entry.metadata)) {
+  if (hasVisibleMetadata(entry.metadata, AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE)) {
     lines.push("Details:");
     for (const [key, value] of Object.entries(entry.metadata!)) {
-      if (METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
+      if (AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
       lines.push(`  ${humanizeMetadataKey(key)}: ${formatMetadataValue(key, value)}`);
     }
   }
@@ -397,7 +406,10 @@ const DETAILS_PANEL_EDGE_MARGIN_PX = 8;
  * CSS spec. Flips above the trigger when there isn't room below, so a row near the bottom of the
  * viewport doesn't push the panel off-screen.
  */
-function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> | null }>) {
+function DetailsCell({
+  metadata,
+  hiddenKeys,
+}: Readonly<{ metadata: Record<string, unknown> | null; hiddenKeys: ReadonlySet<string> }>) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -429,8 +441,8 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
     };
   }, [open]);
 
-  if (!hasVisibleMetadata(metadata)) return <>-</>;
-  const rows = Object.entries(metadata!).filter(([key]) => !METADATA_KEYS_SHOWN_ELSEWHERE.has(key));
+  if (!hasVisibleMetadata(metadata, hiddenKeys)) return <>-</>;
+  const rows = Object.entries(metadata!).filter(([key]) => !hiddenKeys.has(key));
   return (
     <div ref={rootRef} className="audit-log-details">
       <button
@@ -471,11 +483,16 @@ interface LogColumn<T> {
  * (desktop table or mobile card, Audit or Security). */
 function LogDetailsAction({
   metadata,
+  hiddenKeys,
   onCopy,
-}: Readonly<{ metadata: Record<string, unknown> | null; onCopy: () => void }>) {
+}: Readonly<{
+  metadata: Record<string, unknown> | null;
+  hiddenKeys: ReadonlySet<string>;
+  onCopy: () => void;
+}>) {
   return (
     <div className="audit-log-details-cell">
-      <DetailsCell metadata={metadata} />
+      <DetailsCell metadata={metadata} hiddenKeys={hiddenKeys} />
       <button type="button" className="audit-log-row-copy" aria-label="Copy row" onClick={onCopy}>
         <i className="ti ti-copy" aria-hidden="true" />
       </button>
@@ -511,6 +528,7 @@ interface LogTableProps<T> {
   columns: LogColumn<T>[];
   rowKey: (entry: T) => string;
   metadataOf: (entry: T) => Record<string, unknown> | null;
+  metadataHiddenKeys: ReadonlySet<string>;
   onCopyRow: (entry: T) => Promise<void>;
 }
 
@@ -518,7 +536,15 @@ interface LogTableProps<T> {
  * differ enough (no Scope column on Security, a different Time/User cell) that each view still
  * supplies its own column list, but the table/row/details-cell scaffolding itself no longer
  * exists twice. */
-function LogTable<T>({ entries, loading, columns, rowKey, metadataOf, onCopyRow }: Readonly<LogTableProps<T>>) {
+function LogTable<T>({
+  entries,
+  loading,
+  columns,
+  rowKey,
+  metadataOf,
+  metadataHiddenKeys,
+  onCopyRow,
+}: Readonly<LogTableProps<T>>) {
   return (
     <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
       <table className="table audit-log-table">
@@ -541,7 +567,11 @@ function LogTable<T>({ entries, loading, columns, rowKey, metadataOf, onCopyRow 
                 </td>
               ))}
               <td>
-                <LogDetailsAction metadata={metadataOf(entry)} onCopy={() => void onCopyRow(entry)} />
+                <LogDetailsAction
+                  metadata={metadataOf(entry)}
+                  hiddenKeys={metadataHiddenKeys}
+                  onCopy={() => void onCopyRow(entry)}
+                />
               </td>
             </tr>
           ))}
@@ -559,6 +589,7 @@ interface LogCardsProps<T> {
   renderMeta: (entry: T) => ReactNode;
   renderFootLeft: (entry: T) => ReactNode;
   metadataOf: (entry: T) => Record<string, unknown> | null;
+  metadataHiddenKeys: ReadonlySet<string>;
   onCopyRow: (entry: T) => Promise<void>;
 }
 
@@ -575,6 +606,7 @@ function LogCards<T>({
   renderMeta,
   renderFootLeft,
   metadataOf,
+  metadataHiddenKeys,
   onCopyRow,
 }: Readonly<LogCardsProps<T>>) {
   return (
@@ -585,7 +617,11 @@ function LogCards<T>({
           <div className="audit-log-card__meta">{renderMeta(entry)}</div>
           <div className="audit-log-card__foot">
             <span>{renderFootLeft(entry)}</span>
-            <LogDetailsAction metadata={metadataOf(entry)} onCopy={() => void onCopyRow(entry)} />
+            <LogDetailsAction
+              metadata={metadataOf(entry)}
+              hiddenKeys={metadataHiddenKeys}
+              onCopy={() => void onCopyRow(entry)}
+            />
           </div>
         </div>
       ))}
@@ -769,7 +805,7 @@ function renderAuditCardMeta(entry: AuditLogEntryDto, eventTitleById: Map<string
  * display name nor an email (already deleted). */
 function securityUserDisplay(entry: SecurityAuditLogEntryDto): string {
   if (!entry.user_id) return "Unknown";
-  return entry.user_display_name || entry.user_email || "Unknown";
+  return entry.user_display_name || entry.user_email || "Deleted user";
 }
 
 /** Tooltip for the User cell when `user_id` names an account that's since been deleted - mirrors
@@ -812,10 +848,10 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
-  if (hasVisibleMetadata(entry.metadata)) {
+  if (hasVisibleMetadata(entry.metadata, SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE)) {
     lines.push("Details:");
     for (const [key, value] of Object.entries(entry.metadata!)) {
-      if (METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
+      if (SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
       lines.push(`  ${humanizeMetadataKey(key)}: ${formatMetadataValue(key, value)}`);
     }
   }
@@ -1822,6 +1858,7 @@ export function AuditLogPanel() {
           columns={auditColumns}
           rowKey={(entry) => entry.id}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopyRow}
         />
       )}
@@ -1834,6 +1871,7 @@ export function AuditLogPanel() {
           renderMeta={(entry) => renderAuditCardMeta(entry, eventTitleById)}
           renderFootLeft={(entry) => entry.ip ?? "-"}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopyRow}
         />
       )}
@@ -1872,6 +1910,7 @@ export function AuditLogPanel() {
           columns={SECURITY_COLUMNS}
           rowKey={(entry) => entry.id}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopySecurityRow}
         />
       )}
@@ -1884,6 +1923,7 @@ export function AuditLogPanel() {
           renderMeta={renderSecurityCardMeta}
           renderFootLeft={(entry) => entry.ip ?? "-"}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopySecurityRow}
         />
       )}

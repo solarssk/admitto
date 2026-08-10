@@ -89,13 +89,17 @@ async function seed(client: PrismaClient) {
       {
         event_type: "auth.login.success",
         user_id: targetId,
+        user_email: EMAIL_TARGET,
+        user_display_name: "Target User",
         ip: "1.2.3.4",
-        metadata: { email: EMAIL_TARGET, userAgent: "curl/8.0" },
+        metadata: { userAgent: "curl/8.0" },
         created_at: new Date("2026-06-15T12:00:00.000Z"),
       },
       {
         event_type: "auth.login.fail",
         user_id: null,
+        user_email: null,
+        user_display_name: null,
         ip: "1.2.3.5",
         metadata: { email_redacted: "t***@example.com", userAgent: null },
         created_at: new Date("2026-06-16T12:00:00.000Z"),
@@ -103,6 +107,8 @@ async function seed(client: PrismaClient) {
       {
         event_type: "auth.mfa.fail",
         user_id: targetId,
+        user_email: EMAIL_TARGET,
+        user_display_name: "Target User",
         ip: "1.2.3.6",
         metadata: { sessionId: "sess-1", userAgent: null },
         created_at: new Date("2026-06-17T12:00:00.000Z"),
@@ -229,11 +235,13 @@ describe("GET /api/admin/security-audit-log", () => {
     expect(body.entries[0]?.user_display_name).toBeNull();
   });
 
-  it("falls back to null email/display_name for a user_id whose User row is gone", async () => {
+  it("returns snapshot email/display_name when the User row is gone", async () => {
     await prisma.securityAuditLog.create({
       data: {
         event_type: "auth.oidc.success",
         user_id: "deleted-user-does-not-exist",
+        user_email: "gone@example.com",
+        user_display_name: "Gone User",
         ip: "1.2.3.8",
         metadata: { providerId: "provider-1" },
         created_at: new Date("2026-07-02T09:00:00.000Z"),
@@ -248,10 +256,60 @@ describe("GET /api/admin/security-audit-log", () => {
       };
       expect(body.entries).toHaveLength(1);
       expect(body.entries[0]?.user_id).toBe("deleted-user-does-not-exist");
-      expect(body.entries[0]?.user_email).toBeNull();
-      expect(body.entries[0]?.user_display_name).toBeNull();
+      expect(body.entries[0]?.user_email).toBe("gone@example.com");
+      expect(body.entries[0]?.user_display_name).toBe("Gone User");
     } finally {
       await prisma.securityAuditLog.deleteMany({ where: { event_type: "auth.oidc.success" } });
+    }
+  });
+
+  it("falls back to the live User row for legacy rows without snapshot columns", async () => {
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.trusted_device.created",
+        user_id: targetId,
+        user_email: null,
+        user_display_name: null,
+        ip: "1.2.3.21",
+        metadata: { sessionId: "sess-legacy" },
+      },
+    });
+    try {
+      const res = await app.request("/api/admin/security-audit-log?event_type=auth.trusted_device.created", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as {
+        entries: { user_email: string | null; user_display_name: string | null }[];
+      };
+      expect(body.entries).toHaveLength(1);
+      expect(body.entries[0]?.user_email).toBe(EMAIL_TARGET);
+      expect(body.entries[0]?.user_display_name).toBe("Target User");
+    } finally {
+      await prisma.securityAuditLog.deleteMany({ where: { event_type: "auth.trusted_device.created" } });
+    }
+  });
+
+  it("finds deleted users by snapshot email via search", async () => {
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.logout",
+        user_id: "deleted-search-user",
+        user_email: "deleted-search@example.com",
+        user_display_name: "Deleted Search",
+        ip: "1.2.3.20",
+        metadata: { sessionId: "sess-x" },
+      },
+    });
+    try {
+      const res = await app.request(
+        `/api/admin/security-audit-log?search=${encodeURIComponent("deleted-search@example.com")}`,
+        { headers: { Cookie: superCookie } },
+      );
+      const body = (await res.json()) as { total: number; entries: { user_id: string | null }[] };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      expect(body.entries.some((e) => e.user_id === "deleted-search-user")).toBe(true);
+    } finally {
+      await prisma.securityAuditLog.deleteMany({ where: { user_id: "deleted-search-user" } });
     }
   });
 
@@ -275,8 +333,10 @@ describe("GET /api/admin/security-audit-log", () => {
       data: {
         event_type: "auth.login.success",
         user_id: decoy.id,
+        user_email: decoyEmail,
+        user_display_name: null,
         ip: "9.9.9.9",
-        metadata: { email: decoyEmail, userAgent: "curl/8.0" },
+        metadata: { userAgent: "curl/8.0" },
         created_at: new Date("2026-06-20T12:00:00.000Z"),
       },
     });
@@ -440,7 +500,7 @@ describe("GET /api/admin/security-audit-log/export", () => {
     expect(lines[0]).toBe('"time","event","user","ip","details"');
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('"auth.mfa.fail"');
-    expect(lines[1]).toContain(`"${EMAIL_TARGET}"`);
+    expect(lines[1]).toContain('"Target User"');
     expect(lines[1]).toContain('"1.2.3.6"');
 
     const after = await app.request("/api/admin/audit-log?action_type=security_audit_log_exported", {
