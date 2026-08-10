@@ -17,7 +17,11 @@ import {
   type GeocodingResult,
 } from "@admitto/location";
 import { withPinnedFetch } from "@admitto/mailer";
-import { resolveSafeHostname, unbracketHostname } from "@admitto/shared/ssrf-guard";
+import {
+  awaitWithAbortSignal,
+  resolveSafeHostname,
+  unbracketHostname,
+} from "@admitto/shared/ssrf-guard";
 
 /** Distinguishes a timed-out request (503, "try again shortly") from any other failure —
  * bad status, network error, malformed body — mapped to 502 by the route handler. */
@@ -62,28 +66,9 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-/** Reject `promise` when `signal` aborts (shared deadline for UA construction + fetch). */
-export function awaitWithAbortSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
-  }
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => {
-      reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (err: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(err);
-      },
-    );
-  });
-}
+/** Re-exported for existing call sites/tests — moved to @admitto/shared so open-meteo-client.ts
+ * can share the same deadline-racing helper without importing across the weather/maps boundary. */
+export { awaitWithAbortSignal };
 
 /** One raw GeocodeJSON feature — only the fields this adapter reads. Nesting is
  * `properties.geocoding.*` (not directly under `properties` as in plain GeoJSON) per the
@@ -274,8 +259,8 @@ async function fetchJson(
       return await handleJsonResponse(res);
     }
     const hostname = unbracketHostname(url.hostname);
-    const records = await resolveSafeHostname(hostname);
-    return await withPinnedFetch(url, hostname, records[0]!, { headers, signal }, handleJsonResponse);
+    const records = await awaitWithAbortSignal(resolveSafeHostname(hostname), signal);
+    return await withPinnedFetch(url, hostname, records, { headers, signal }, handleJsonResponse);
   } catch (err) {
     if (err instanceof GeocodingProviderError) throw err;
     throw new GeocodingProviderError(isTimeoutError(err) ? "timeout" : "unavailable", {

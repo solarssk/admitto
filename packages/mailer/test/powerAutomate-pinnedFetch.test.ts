@@ -38,7 +38,7 @@ describe("withPinnedFetch (real undici, real socket)", () => {
     const result = await withPinnedFetch(
       url,
       "127.0.0.1",
-      { address: "127.0.0.1", family: 4 },
+      [{ address: "127.0.0.1", family: 4 }],
       { method: "POST", headers: {}, body: "{}" },
       async (res) => ({ ok: res.ok, length: (await res.text()).length }),
     );

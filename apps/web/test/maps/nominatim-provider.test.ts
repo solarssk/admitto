@@ -449,6 +449,38 @@ describe("NominatimProvider.search", () => {
     expect(mockedUndiciFetch).not.toHaveBeenCalled();
   });
 
+  it("times out (instead of hanging) when DNS resolution stalls past the configured deadline", async () => {
+    mockedLookup.mockImplementation(() => new Promise(() => {})); // never resolves
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 20,
+      buildUserAgent,
+    });
+
+    await expect(provider.search("Warsaw")).rejects.toMatchObject({ kind: "timeout" });
+    expect(mockedUndiciFetch).not.toHaveBeenCalled();
+  }, 1000);
+
+  it("retries the next validated record after a connect failure", async () => {
+    mockedLookup.mockResolvedValue([
+      { address: "2001:db8::1", family: 6 },
+      { address: "203.0.113.9", family: 4 },
+    ] as unknown as Awaited<ReturnType<typeof lookup>>);
+    mockedUndiciFetch
+      .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { code: "ENETUNREACH" }))
+      .mockResolvedValueOnce(
+        jsonResponse(geocodeJsonBody([])) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+      );
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 5_000,
+      buildUserAgent,
+    });
+
+    await expect(provider.search("Warsaw")).resolves.toEqual([]);
+    expect(mockedUndiciFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("maps User-Agent construction failures to unavailable", async () => {
     const fetchFn = vi.fn();
     const provider = makeProvider(fetchFn, {

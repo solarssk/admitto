@@ -7,7 +7,11 @@
  */
 
 import { withPinnedFetch } from "@admitto/mailer";
-import { resolveSafeHostname, unbracketHostname } from "@admitto/shared/ssrf-guard";
+import {
+  awaitWithAbortSignal,
+  resolveSafeHostname,
+  unbracketHostname,
+} from "@admitto/shared/ssrf-guard";
 import { FORECAST_HORIZON_DAYS_OPENMETEO, type WeatherConfig } from "./config.js";
 import type { DayForecast } from "./types.js";
 
@@ -132,6 +136,9 @@ export class OpenMeteoClient {
       return day;
     };
 
+    // One deadline for the whole call — DNS re-resolution included, not just the HTTP fetch,
+    // so a stalled DNS server can't hold this past the configured timeout.
+    const signal = AbortSignal.timeout(this.config.timeoutMs);
     try {
       // Do not follow redirects: host was checked at config time; a 30x to
       // loopback/private/metadata would bypass that check (same as Power Automate).
@@ -140,23 +147,25 @@ export class OpenMeteoClient {
           method: "GET",
           headers: { Accept: "application/json" },
           redirect: "error",
-          signal: AbortSignal.timeout(this.config.timeoutMs),
+          signal,
         });
         return await handleResponse(response);
       }
       // No test override: pin the connection to a freshly re-resolved, SSRF-validated
       // address (see @admitto/mailer's withPinnedFetch) so a DNS-rebound host can't be reached at connect
-      // time even though it passed the save-time check.
+      // time even though it passed the save-time check. Retries every validated address on
+      // connect failure, not just the first, so one unreachable record (e.g. IPv6 without
+      // working connectivity) doesn't fail the whole request when another would work.
       const hostname = unbracketHostname(url.hostname);
-      const records = await resolveSafeHostname(hostname);
+      const records = await awaitWithAbortSignal(resolveSafeHostname(hostname), signal);
       return await withPinnedFetch(
         url,
         hostname,
-        records[0]!,
+        records,
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(this.config.timeoutMs),
+          signal,
         },
         handleResponse,
       );

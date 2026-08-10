@@ -106,7 +106,7 @@ export class PowerAutomateAdapter implements MailerAdapter {
         : await withPinnedFetch(
             this.config.url,
             hostname,
-            records[0]!,
+            records,
             { method: "POST", headers, body },
             processResponse,
           );
