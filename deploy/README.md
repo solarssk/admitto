@@ -261,6 +261,22 @@ Then configure that same hostname in Organisation / Event mail settings. Do **no
 Connecting through your public WAN IP from inside Docker often fails (no hairpin / port closed);
 prefer the LAN hostname on the allowlist instead of opening SMTP on the internet.
 
+## Self-hosted identity provider (SSO) on a private address
+
+Outbound OIDC Discover / Test / login / JWKS (and later SAML metadata fetches that share the same
+guard) block private / loopback / link-local destinations in production. If your IdP is only on
+the LAN (for example AdGuard rewrites `auth.example.lan` to `192.168.x.x`), allowlist every
+distinct hostname used by Issuer and endpoints on **app**:
+
+```bash
+# deploy/.env — exact hostnames or IP literals, comma-separated (all SSO providers share this list)
+SSO_PRIVATE_DESTINATION_ALLOWLIST=auth.example.lan
+```
+
+HTTPS is still required. Register the Redirect URI after the first provider save
+(`https://<Instance URL>/api/auth/oidc/<provider-id>/callback`). See [ENV.md](./ENV.md) and the
+Wiki Identity and SSO page.
+
 ## Container startup (entrypoint)
 
 Migration and serving are two separate compose services, both running

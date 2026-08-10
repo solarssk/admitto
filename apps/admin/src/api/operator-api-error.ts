@@ -55,7 +55,7 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_code: "Invalid authenticator code.",
   invalid_totp: "Invalid authenticator or backup code.",
   invalid_issuer:
-    "Issuer URL must use HTTPS (http://localhost or http://127.0.0.1 is allowed in development only).",
+    "Issuer URL must use HTTPS and must not target a private address unless listed in SSO_PRIVATE_DESTINATION_ALLOWLIST. http://localhost or http://127.0.0.1 is allowed in development only.",
   invalid_json: "Invalid request.",
   invalid_team_domain: "Enter a valid HTTPS Cloudflare Access team URL.",
   invalid_token: "Name must start with a letter and contain only lowercase letters, numbers, and underscores.",

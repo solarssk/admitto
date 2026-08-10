@@ -9,14 +9,18 @@ vi.mock("node:dns/promises", () => ({
 
 const mockedLookup = vi.mocked(lookup);
 
+const allowlistKey = "SSO_PRIVATE_DESTINATION_ALLOWLIST";
+
 beforeEach(() => {
   process.env["NODE_ENV"] = "test";
+  delete process.env[allowlistKey];
   mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
     ReturnType<typeof lookup>
   >);
 });
 
 afterEach(() => {
+  delete process.env[allowlistKey];
   vi.unstubAllGlobals();
 });
 
@@ -75,6 +79,21 @@ describe("assertSafeOidcFetchUrl", () => {
     expect(() => assertSafeOidcFetchUrl("https://0.0.0.0/")).toThrow(/private or link-local/);
     expect(() => assertSafeOidcFetchUrl("https://[::]/")).toThrow(/private or link-local/);
   });
+
+  it("honors SSO_PRIVATE_DESTINATION_ALLOWLIST for private hostnames in production", () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "auth.example.lan,192.168.1.50";
+    expect(() => assertSafeOidcFetchUrl("https://auth.example.lan/")).not.toThrow();
+    expect(() => assertSafeOidcFetchUrl("https://192.168.1.50/")).not.toThrow();
+    // Sync check only sees IP/metadata literals; non-allowlisted private IPs stay blocked.
+    expect(() => assertSafeOidcFetchUrl("https://192.168.1.51/")).toThrow(/private or link-local/);
+  });
+
+  it("still requires HTTPS for allowlisted hosts in production", () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "auth.example.lan";
+    expect(() => assertSafeOidcFetchUrl("http://auth.example.lan/")).toThrow(/HTTPS/);
+  });
 });
 
 describe("fetchOidcDiscovery SSRF guard", () => {
@@ -125,5 +144,16 @@ describe("assertSafeOidcFetchUrlResolved", () => {
     mockedLookup.mockClear();
     await expect(assertSafeOidcFetchUrlResolved("http://localhost:9999/")).resolves.toBeUndefined();
     expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it("allows allowlisted hostnames that resolve privately in production", async () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "auth.example.lan";
+    mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    await expect(
+      assertSafeOidcFetchUrlResolved("https://auth.example.lan/"),
+    ).resolves.toBeUndefined();
   });
 });

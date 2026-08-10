@@ -516,10 +516,9 @@ describe("IdentityProviderEditor — Redirect URI", () => {
   it("shows a create-mode hint that the Redirect URI appears after the first save", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
     expect(
-      await screen.findByText(
-        /Redirect URI to register at your identity provider will appear here after the first save/,
-      ),
+      await screen.findByText(/After the first save, copy the Redirect URI/, { exact: false }),
     ).toBeTruthy();
+    expect(screen.getByText(/api\/auth\/oidc/, { exact: false })).toBeTruthy();
     expect(screen.queryByLabelText("Redirect URI")).toBeNull();
   });
 
