@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PassCreatorClient, WalletProviderError } from "../src/index.js";
+import { PASSCREATOR_DEFAULT_BASE_URL } from "../src/passcreator-config.js";
 import type { WalletPassInput } from "../src/index.js";
 
 const CONFIG = { apiKey: "test-key", templateId: "tmpl-1", baseUrl: "https://pc.test" };
@@ -137,6 +138,36 @@ describe("PassCreatorClient.createPass", () => {
       code: "wallet_provider_timeout",
     });
   });
+
+  it("wraps a non-Error network failure (e.g. a thrown string) as wallet_provider_timeout", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw "connection reset";
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toMatchObject({
+      code: "wallet_provider_timeout",
+      message: expect.stringContaining("connection reset"),
+    });
+  });
+});
+
+describe("PassCreatorClient config", () => {
+  it("defaults baseUrl to the live PassCreator host when not configured", async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      expect(String(url).startsWith(PASSCREATOR_DEFAULT_BASE_URL)).toBe(true);
+      return jsonResponse(200, {
+        success: true,
+        data: { identifier: "pass-1", iPhoneUri: "a", androidUri: "b" },
+      });
+    });
+    const client = new PassCreatorClient(
+      { apiKey: "test-key", templateId: "tmpl-1" },
+      fetchMock as unknown as typeof fetch,
+    );
+    await client.createPass(INPUT);
+    expect(fetchMock).toHaveBeenCalled();
+  });
 });
 
 describe("PassCreatorClient.updatePass", () => {
@@ -211,5 +242,17 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.findByUserProvidedId("admitto:event1:nobody");
     expect(result).toBeNull();
+  });
+
+  it("falls back to empty strings when the row has no iPhoneUri/androidUri yet", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [{ identifier: "pass-1", linkToPassPage: "https://pc.test/p/pass-1" }],
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.findByUserProvidedId("admitto:event1:attendee1");
+    expect(result).toMatchObject({ appleUrl: "", androidUrl: "" });
   });
 });
