@@ -40,7 +40,7 @@
     "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
     "geo-tz": "^8.1.8",
-    "hono": "^4.12.34",
+    "hono": "^4.13.0",
     "ip-location-api": "5.0.2",
     "pdfkit": "^0.19.1",
     "redis": "^6.1.0",
