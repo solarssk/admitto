@@ -4332,14 +4332,16 @@ output.mail-field-hint {
     padding-inline: var(--space-2);
   }
 
-  /* MFA switches need more horizontal room than a numeric field — span below the label. */
+  /* MFA switches need more horizontal room than a numeric field — span below the label.
+     Stacked one per row instead of wrapping: at this width the three switches
+     (Superadmin/Administrator/Operator) don't fit on one line, and flex-wrap left an
+     uneven 2-then-1 layout instead of a predictable list. */
   .security-settings-row__control.security-mfa-section__switches {
     grid-column: 1 / -1;
     justify-self: stretch;
+    flex-direction: column;
     align-items: flex-start;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-3);
+    gap: var(--space-2);
   }
 }
 
@@ -5145,6 +5147,10 @@ output.mail-field-hint {
 }
 
 .smtp-connection-tls-row {
+  /* Overrides the generic .settings-row mobile column-stack below (same specificity, this
+     rule comes later in the file) so the switch stays beside the label on narrow screens,
+     matching the desktop layout instead of dropping onto its own line. */
+  flex-direction: row;
   align-items: center;
   gap: var(--space-3);
   margin: 0;
@@ -7330,7 +7336,10 @@ output.mail-field-hint {
 .overview-modal__panel {
   position: relative;
   width: min(480px, 100%);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   background: var(--surface-card);
   border-radius: var(--radius-lg);
@@ -7762,6 +7771,16 @@ output.mail-field-hint {
 
 .date-picker__input::placeholder {
   color: var(--text-disabled);
+}
+
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix (pointer: coarse, not a max-width - see its own comment) for
+   .at-input/.at-select/.at-textarea in packages/ui. */
+@media (pointer: coarse) {
+  .date-picker__input {
+    font-size: 16px;
+  }
 }
 
 /* This is a native <dialog> (see DatePicker.tsx), not a plain <div> - the rules below

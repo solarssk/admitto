@@ -24,7 +24,11 @@
 .add-attendee-modal__panel {
   position: relative;
   width: min(100%, 480px);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. Without this, calc(100vh - 32px) can be taller than the real visible viewport,
+     pushing the panel's bottom (incl. Cancel/Save) out of reach with no way to scroll to it. */
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: 12px;
