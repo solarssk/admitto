@@ -372,8 +372,8 @@ jobs:
         run: bash scripts/check-migrations-destructive.sh
       - name: Migration guard unit tests
         run: bash scripts/check-migrations-destructive.test.sh
-      - name: Pre-migration backup entrypoint smoke (docker compose)
-        run: bash scripts/test-migration-backup.sh
+      - name: Migrate entrypoint smoke (docker compose)
+        run: bash scripts/test-migrate-entrypoint.sh
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

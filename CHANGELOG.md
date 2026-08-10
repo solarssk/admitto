@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Deploy docs:** clearer first-boot checklist (what must be env vs UI), Portainer/NPM without compose nginx (Variant B), and a generated environment dictionary ([`deploy/ENV.md`](deploy/ENV.md)) built from code scan + [`deploy/env-catalog.json`](deploy/env-catalog.json) (`npm run docs:env`; drift checked by `npm run docs:check`).
+
+### Changed
+- **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Backing up before an upgrade is now the operator's responsibility; the nightly `db-backup` service is unchanged and remains the automated baseline. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user. See the updated upgrade and restore steps in `deploy/README.md`.
+
 ### Fixed
 - Security and Audit logs now keep the staff member's email and display name on each row after their account is deleted, using immutable identity snapshot columns written at event time.
 - Concurrent OIDC instance-superadmin revokes use true full-jitter backoff (0..cap ms) so Serializable retries no longer thrash under a floor+jitter delay.
+- **Delete event** is no longer blocked by leftover operational action-log history after attendees and event-specific content are cleared (demo/test events can be removed again). Danger zone now lists the concrete remaining blockers when delete is disabled. Permanent delete also best-effort removes managed event branding and named image-asset uploads from storage (same cleanup as deleting a single asset).
 
 ### Security
+- Weather (Open-Meteo) and geocoding (Nominatim) requests now pin the outbound connection to a freshly re-resolved, validated address instead of trusting the hostname check performed when the base URL was last saved, closing a DNS-rebinding gap that could let a superadmin-configured external service URL reach an internal/metadata address after passing that save-time check.
 - **Self-hosted LAN mail in production:** ops can allow specific SMTP/IMAP/Power Automate hosts (or IP literals) that resolve to private addresses via `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (app and worker). The lab-only `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` flag remains ignored when `NODE_ENV=production`.
 
 ## [0.4.13] - 2026-08-09
@@ -117,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Staff admin content now fills the full width beside the sidebar on wide monitors; a few intentionally narrow surfaces (operator check-in, auth forms) keep their own width.
 - Settings → General gained an "Organisation branding" card so superadmins can update the organisation name and logo after setup without redoing the wizard.
 - Filter and picker dropdowns across Audit/System logs, External services, Attendees, and Reports are now searchable comboboxes, matching the rest of the admin SPA.
+- Creating an event opens Overview instead of the Attendees list, matching the rest of the staff app's landing for an event workspace.
 
 ### Fixed
 

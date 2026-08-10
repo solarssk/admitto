@@ -1,10 +1,11 @@
 /**
  * Nominatim `/search` + `/reverse` adapter (`implements GeocodingProvider` from `@admitto/location`).
- * No SSRF DNS-pinning here (contrast `packages/auth/src/oidc/safe-oidc-fetch.ts` and
- * `packages/mailer/src/adapters/powerAutomate.ts`): those guard admin-controlled URLs
- * entered per-organization through the UI. `GEOCODING_BASE_URL` is deployment-level env
- * config set only by the operator self-hosting the instance, same trust level as
- * BASE_URL/DATABASE_URL/REDIS_URL, none of which get SSRF protection either.
+ * `geocodingBaseUrl` is superadmin-editable at runtime (Organisation Settings → External
+ * services, see `maps-org-settings.ts`), validated only at save/probe time
+ * (`assertEditableServiceUrl`). Production requests pin the connection to a freshly
+ * re-resolved address via `withPinnedFetch` (`@admitto/mailer`, shared with `PowerAutomateAdapter`) — same pattern as
+ * `packages/auth/src/oidc/safe-oidc-fetch.ts` and `packages/mailer/src/adapters/powerAutomate.ts` —
+ * closing the DNS-rebinding TOCTOU gap the save-time check alone leaves open.
  */
 import {
   addressComponentsFromNominatimLabel,
@@ -15,6 +16,12 @@ import {
   type GeocodingProvider,
   type GeocodingResult,
 } from "@admitto/location";
+import { withPinnedFetch } from "@admitto/mailer";
+import {
+  awaitWithAbortSignal,
+  resolveSafeHostname,
+  unbracketHostname,
+} from "@admitto/shared/ssrf-guard";
 
 /** Distinguishes a timed-out request (503, "try again shortly") from any other failure —
  * bad status, network error, malformed body — mapped to 502 by the route handler. */
@@ -59,28 +66,9 @@ function isTimeoutError(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-/** Reject `promise` when `signal` aborts (shared deadline for UA construction + fetch). */
-export function awaitWithAbortSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
-  }
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => {
-      reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (err: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(err);
-      },
-    );
-  });
-}
+/** Re-exported for existing call sites/tests — moved to @admitto/shared so open-meteo-client.ts
+ * can share the same deadline-racing helper without importing across the weather/maps boundary. */
+export { awaitWithAbortSignal };
 
 /** One raw GeocodeJSON feature — only the fields this adapter reads. Nesting is
  * `properties.geocoding.*` (not directly under `properties` as in plain GeoJSON) per the
@@ -225,27 +213,7 @@ export async function readBodyCapped(
   return out;
 }
 
-async function fetchJson(
-  fetchImpl: typeof fetch,
-  url: URL,
-  userAgent: string,
-  signal: AbortSignal,
-): Promise<unknown> {
-  let res: Response;
-  try {
-    // Refuse redirects: editable base URL is host-checked at save/probe time;
-    // following a 30x would reintroduce SSRF to private/metadata targets.
-    res = await fetchImpl(url, {
-      headers: { "User-Agent": userAgent, Accept: "application/json" },
-      redirect: "error",
-      signal,
-    });
-  } catch (err) {
-    throw new GeocodingProviderError(isTimeoutError(err) ? "timeout" : "unavailable", {
-      cause: err,
-    });
-  }
-
+async function handleJsonResponse(res: Response): Promise<unknown> {
   if (!res.ok) {
     throw new GeocodingProviderError("unavailable");
   }
@@ -269,6 +237,35 @@ async function fetchJson(
       isTimeoutError(err) ? "timeout" : "unavailable",
       { cause: err },
     );
+  }
+}
+
+/**
+ * `fetchOverride` set (tests only) → call it directly, unpinned. Unset (production) → pin the
+ * connection to a freshly re-resolved, SSRF-validated address (see module doc comment above).
+ */
+async function fetchJson(
+  fetchOverride: typeof fetch | undefined,
+  url: URL,
+  userAgent: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const headers = { "User-Agent": userAgent, Accept: "application/json" };
+  try {
+    if (fetchOverride) {
+      // Refuse redirects: editable base URL is host-checked at save/probe time;
+      // following a 30x would reintroduce SSRF to private/metadata targets.
+      const res = await fetchOverride(url, { headers, redirect: "error", signal });
+      return await handleJsonResponse(res);
+    }
+    const hostname = unbracketHostname(url.hostname);
+    const records = await awaitWithAbortSignal(resolveSafeHostname(hostname), signal);
+    return await withPinnedFetch(url, hostname, records, { headers, signal }, handleJsonResponse);
+  } catch (err) {
+    if (err instanceof GeocodingProviderError) throw err;
+    throw new GeocodingProviderError(isTimeoutError(err) ? "timeout" : "unavailable", {
+      cause: err,
+    });
   }
 }
 
@@ -351,7 +348,7 @@ export class NominatimProvider implements GeocodingProvider {
 
   async search(query: string): Promise<GeocodingResult[]> {
     return this.withProviderSlot(async () => {
-      const fetchImpl = this.options.fetchFn ?? fetch;
+      const fetchOverride = this.options.fetchFn;
       const signal = AbortSignal.timeout(this.resolveTimeoutMs());
       try {
         const userAgent = await this.resolveUserAgent(signal);
@@ -364,7 +361,7 @@ export class NominatimProvider implements GeocodingProvider {
         // Prefer English labels for operator + attendee-facing copy (ticket/mail are EN).
         url.searchParams.set("accept-language", "en");
 
-        const data = await fetchJson(fetchImpl, url, userAgent, signal);
+        const data = await fetchJson(fetchOverride, url, userAgent, signal);
         const results: GeocodingResult[] = [];
         for (const raw of featuresFromBody(data)) {
           const parsed = parseFeature(raw, this.name);
@@ -380,7 +377,7 @@ export class NominatimProvider implements GeocodingProvider {
 
   async reverse(latitude: number, longitude: number): Promise<GeocodingResult | null> {
     return this.withProviderSlot(async () => {
-      const fetchImpl = this.options.fetchFn ?? fetch;
+      const fetchOverride = this.options.fetchFn;
       const signal = AbortSignal.timeout(this.resolveTimeoutMs());
       try {
         const userAgent = await this.resolveUserAgent(signal);
@@ -393,7 +390,7 @@ export class NominatimProvider implements GeocodingProvider {
         url.searchParams.set("zoom", String(REVERSE_ZOOM));
         url.searchParams.set("accept-language", "en");
 
-        const data = await fetchJson(fetchImpl, url, userAgent, signal);
+        const data = await fetchJson(fetchOverride, url, userAgent, signal);
         for (const raw of featuresFromBody(data)) {
           const parsed = parseFeature(raw, this.name);
           if (parsed) {

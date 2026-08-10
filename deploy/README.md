@@ -15,11 +15,127 @@ What you get in `deploy/`:
 | Piece | Role |
 |-------|------|
 | `Dockerfile` | Builds the `app` image (Node monorepo → production runtime) |
-| `docker-compose.yml` | Orchestrates `app`, Postgres, Redis, and an internal nginx proxy |
+| `docker-compose.yml` | Orchestrates `app`, `worker`, Postgres, Redis, migrate, backups, and an internal nginx proxy |
 | `.env` (from `.env.example`) | Secrets and config — never committed |
+| [`ENV.md`](./ENV.md) | Generated env dictionary (boot vs UI, who reads what) — regenerate with `npm run docs:env` |
+| [`env-catalog.json`](./env-catalog.json) | Human summaries for that dictionary (source of truth for descriptions) |
 | **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` — published automatically on each git tag `vX.Y.Z` |
 
-TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare) forwarding to `http://<docker-host>:8080` — see below.
+TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare). Prefer forwarding to the compose nginx on port **8080** (Variant A below). Portainer stacks that publish the app port directly are Variant B.
+
+## Minimum to boot (read this first)
+
+Without these, containers exit or Health stays red. **None of them are set from the admin UI.**
+
+| What | Where | Notes |
+|------|--------|--------|
+| `BASE_URL` | `.env` / stack env | Public `https://...` origin (no trailing slash). App refuses to start in production without it. |
+| `ENCRYPTION_KEY` | `.env` | `openssl rand -base64 32`. Losing it loses encrypted mail/OIDC secrets. |
+| `POSTGRES_*` + `DATABASE_URL` | `.env` | Passwords must match. |
+| `REDIS_PASSWORD` + `REDIS_URL` | `.env` | Password must appear in the URL. |
+| `/backups` on **migrate** | volume | Pre-migration dumps. Missing dir → migrate exits 1. Same host path as nightly backups is fine. |
+| `/app/uploads` writable by uid **1000** | volume | Branding storage. Health → file storage `not_writable` if wrong ownership. |
+| `worker` service | compose | Mail drain, import/export, bounce, retention. One replica. |
+
+Copy `.env.example` → `.env`, fill the table above, then:
+
+```bash
+cd deploy
+./validate-env.sh
+docker compose up -d
+curl -sf http://127.0.0.1:8080/healthz   # Variant A (with compose nginx)
+```
+
+Full dictionary (every known deploy var, generated from code + catalog): **[ENV.md](./ENV.md)**.
+
+### Boot vs Settings UI
+
+| Set in environment (boot) | Configure later in UI |
+|---------------------------|------------------------|
+| `BASE_URL`, encryption, DB, Redis | Organisation mail (SMTP/Graph/PA) |
+| Proxy trust (`TRUST_PROXY`, `TRUSTED_PROXY_CIDRS`) | Branding, theme, support contact |
+| Migration backup paths / disable flag | OIDC / Cloudflare Access (unless env-locked) |
+| Upload / emergency-export paths | Event location, weather, maps toggles |
+| `OPS_HEALTH_TOKEN` (optional) | Bounce IMAP per event |
+
+Mail can be seeded from `.env`, but most operators configure it under **Organisation settings → Mail** after `/setup`.
+
+## Edge proxy: two variants
+
+### Variant A — recommended (NPM → compose nginx `:8080`)
+
+Keep the compose `proxy` service. NPM (or any TLS terminator) forwards **only** to:
+
+```text
+http://<docker-host>:8080
+```
+
+Do **not** forward NPM to `app:3000` in this variant.
+
+In NPM **SSL**: request a certificate, enable **Force SSL**.  
+In NPM **Details**: scheme `http`, websockets on, block common exploits on.  
+In NPM **Advanced**:
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+Do **not** use `$proxy_add_x_forwarded_for` (clients could pick the first hop).
+
+Set in `.env` (already aligned with compose in `.env.example`):
+
+```env
+TRUST_PROXY=true
+TRUSTED_PROXY_CIDRS=172.28.238.0/24
+BASE_URL=https://tickets.example.com
+```
+
+Optional check-in SSE (long-lived stream):
+
+```nginx
+location ~ ^/api/checkin/events/[^/]+/stream$ {
+  proxy_buffering off;
+  proxy_read_timeout 3600s;
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+  proxy_pass http://admitto_app;
+}
+```
+
+(When the location is on NPM facing the published `:8080` port, `proxy_pass` should target that upstream the same way your other locations do - often `http://127.0.0.1:8080` with the path preserved.)
+
+### Variant B — Portainer / NAS without compose nginx
+
+Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner: NPM talks straight to `app`, so `TRUSTED_PROXY_CIDRS` must list **only** the TCP source address NPM uses — not every private Docker network on the host.
+
+Checklist:
+
+1. Publish **hostPort:3000** (app listens on 3000 inside).
+2. NPM → `http://127.0.0.1:<hostPort>` with the same four `proxy_set_header` lines and Force SSL.
+3. Env:
+
+```env
+BASE_URL=https://your.public.hostname
+TRUST_PROXY=true
+# NPM's actual source as seen by the app container — often the Docker bridge gateway on /32
+# (e.g. 172.17.0.1/32) when NPM is in Docker, or 127.0.0.1/32 when NPM runs on the host and
+# forwards to localhost. Do NOT use 172.16.0.0/12: any other container on the host's Docker
+# networks could then spoof X-Forwarded-For / Host / Proto for rate limits and CSRF checks.
+TRUSTED_PROXY_CIDRS=172.17.0.1/32
+```
+
+Find the right CIDR: from the app container, log or inspect the peer address of a request that came through NPM (`docker inspect <npm-container> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`), or use your platform docs for host→published-port routing.
+
+4. Mount `/backups` on **migrate** (and db-backup), uploads + emergency-exports writable by uid 1000.
+5. Run **worker** with the same secrets as `app`.
+6. Prefer Variant A when you can; Variant B is for stacks that intentionally omit compose nginx.
+
+Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=production` unless the hostname is listed in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` on **app** and **worker** (see [ENV.md](./ENV.md)). Lab stacks can set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` when NODE_ENV is not production. Opening SMTP on the public WAN is usually the wrong fix.
+
+---
 
 ## GitHub Container Registry (ghcr.io)
 
@@ -100,6 +216,7 @@ cp .env.example .env
 # Populate only the mail section for that provider
 
 ./validate-env.sh
+./scripts/init-host-dirs.sh
 docker compose up -d --build
 curl -sf http://127.0.0.1:8080/healthz
 ```
@@ -146,30 +263,39 @@ prefer the LAN hostname on the allowlist instead of opening SMTP on the internet
 
 ## Container startup (entrypoint)
 
-Migration/backup and serving are two separate one-shot-then-long-running compose services, both
-running `deploy/docker-entrypoint.sh` (same image, different `command:`). `app` only starts once
-`migrate` exits 0 (`depends_on: condition: service_completed_successfully`), so the web server
-never runs any of this itself and never runs as root (docker:S6471).
+Migration and serving are two separate compose services, both running
+`deploy/docker-entrypoint.sh` (same image, different `command:`). **`app` only starts once
+`migrate` exits 0** (`depends_on: condition: service_completed_successfully`), so the web server
+never runs migration logic itself. **Every service runs as the unprivileged `node` user** (UID 1000
+in the official Node image).
 
-**`migrate`** (`user: root` — the only service that is; needed to write into the root-only
-`migration_backups` volume) runs **fail-fast** (any step fails → exits nonzero, `app` never starts):
+**Before the first `docker compose up`**, prepare host bind mounts. Compose creates missing paths as
+**root-owned**, which breaks emergency CLI export and branding uploads until ownership is fixed:
+
+```bash
+cd deploy
+./scripts/init-host-dirs.sh
+# or manually: mkdir -p emergency-exports uploads && chown 1000:1000 emergency-exports uploads && chmod 700 emergency-exports
+```
+
+**`migrate`** runs **fail-fast** (any step fails → exits nonzero, `app` never starts):
 
 1. `prisma migrate status` — detect pending migrations (text parse; connection errors abort with a clear log)
-2. **If pending migrations** and backup not disabled: pre-migration `pg_dump` to the `migration_backups` volume (`/backups/pre-migration-<UTC>.sql.gz`, `gzip -t` integrity check, `install -m 600`). If `pg_dump` fails → **no migrate**. Routine restarts with no pending migrations skip the dump.
-3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand; drops to the `node` user for this and every step below)
-4. `backfill-public-ref.js` and other idempotent backfills (safe to re-run; throw if DB/schema incompatible)
+2. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand)
+3. Idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-**`app`** (always runs as `node`, never root) execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot, and no filesystem access to `/backups` (not mounted). Product retention (auth sessions, mail snapshots, security audit log), bounce ingest, mail drain, and import/export jobs run on the **`worker`** service (same image, `command: ["worker"]` → `admitto worker`). Keep exactly one worker replica; the process uses session advisory locks so a mistaken second replica skips overlapping jobs rather than double-running them.
+**`app`** execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot, and
+no filesystem access to backup dumps. Product retention (auth sessions, mail snapshots, security audit
+log), bounce ingest, mail drain, and import/export jobs run on the **`worker`** service (same image,
+`command: ["worker"]` → `admitto worker`). Keep exactly one worker replica; the process uses session
+advisory locks so a mistaken second replica skips overlapping jobs rather than double-running them.
 
-**Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
-
-Env (see `.env.example`): `MIGRATION_BACKUP_DIR`, `MIGRATION_BACKUP_RETENTION`, `MIGRATION_BACKUP_MIN_FREE_MB` (default 512 — tune per deployment), `MIGRATION_BACKUP_DISABLE` (dev/test only).
-
-Copy pre-migration backups offsite per ADR 0023 (backup and disaster recovery — internal archive) (nightly dumps are separate).
+**Operator upgrade:** take a **manual database backup first** (see [PostgreSQL backups](#postgresql-backups-adr-0012-adr-0027)), then pull the new image and `docker compose up -d`. Migrations apply automatically; there is **no** automatic pre-migration dump anymore.
 
 Schema change policy (expand-contract, CI guard): [packages/db/README.md](../packages/db/README.md#schema-change-policy).
 
-For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …` without starting the web server — see below. `npm`/`npx` are not available in the production image.
+For one-off CLI (bootstrap, MFA reset, emergency export), the entrypoint passes through `node …` after
+checking that `EMERGENCY_EXPORT_DIR` is writable — see below. `npm`/`npx` are not available in the production image.
 
 ## Container logs (what to expect where)
 
@@ -177,7 +303,7 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 
 | Container | What its logs show |
 |-----------|--------------------|
-| `migrate` | Entrypoint boot steps (migration status, backup, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
+| `migrate` | Entrypoint boot steps (migration status, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
 | `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
 | `worker` | `[worker] …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
 | `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
@@ -219,7 +345,8 @@ docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <
 docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
 
 # Paper backup list (CSV) — use EMERGENCY_EXPORT_DIR (node-writable bind mount), NOT /app/uploads or /backups
-# (/uploads/* is served without auth; /backups isn't even mounted on app — see migrate service)
+# Run ./scripts/init-host-dirs.sh on the host first if a fresh deploy created root-owned emergency-exports/
+# (/uploads/* is served without auth; /backups is only on the db-backup sidecar volume)
 docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
 # File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
 
@@ -239,48 +366,23 @@ docker compose run --rm app node apps/cli/dist/index.js retention run --operator
 
 Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/dist/cli.js`) remain for bootstrap and low-level retention; product-automated retention runs on the Admitto **worker**. `admitto retention run` combines auth + mail snapshot + security audit log cleanup in one audited command for manual/on-demand use.
 
-## Nginx Proxy Manager (production edge)
+## Nginx Proxy Manager (deep notes)
 
-NPM is the **TLS termination layer in front of this compose stack**. Forward **only** to:
+Start with **[Edge proxy: two variants](#edge-proxy-two-variants)** above (headers, SSL, Portainer). This section is the trust-model detail for Variant A.
 
-```text
-http://<docker-host>:8080
-```
-
-Do **not** forward NPM directly to `app:3000` or host port 3000.
-
-NPM is the **trust boundary** for client IP and TLS. It must **overwrite** `X-Forwarded-For` with the real client IP — never append to a value the browser sent (`$proxy_add_x_forwarded_for` allows spoofing). Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
-
-In NPM **Advanced** (or custom snippet), use:
-
-```nginx
-proxy_set_header Host $host;
-proxy_set_header X-Forwarded-Host $host;
-proxy_set_header X-Forwarded-For $remote_addr;
-proxy_set_header X-Forwarded-Proto $scheme;
-```
+NPM must **overwrite** `X-Forwarded-For` with the real client IP - never `$proxy_add_x_forwarded_for`. Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
 
 Use `$http_host` instead of `$host` when the public URL uses a non-default port (e.g. local smoke on `:8080`) so the CSRF origin check matches the browser `Origin` header.
 
-Do **not** use `$proxy_add_x_forwarded_for` on the NPM vhost that faces the public internet. With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket and pollute audit logs. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
+With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
 
-Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` — do not widen to whole RFC1918 ranges.
+Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` - do not widen to whole RFC1918 ranges.
 
-That covers the first hop (NPM → compose nginx). The app has its **own**, second trust boundary: it only honours `X-Forwarded-For/Host/Proto` when the request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`rate-limit/trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)) — `TRUST_PROXY=true` alone is not enough, since anything that can reach the app container directly could otherwise set those headers itself. Compose nginx and `app` are separate containers on the `internal` network, not sharing loopback, so this is **not** `127.0.0.1` — it's the network's fixed subnet (`docker-compose.yml`'s `networks.internal.ipam`), already set to match in `.env.example`. Only widen it if you added another trusted hop between compose nginx and the app.
+The app only honours `X-Forwarded-*` when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)). For Variant A that is the compose `internal` subnet in `.env.example`. For Variant B, set only NPM's source on `/32` (see Variant B checklist above), not broad Docker RFC1918 ranges.
 
-(`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so `TRUST_PROXY` CSRF checks see HTTPS.)
+(`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so CSRF checks see HTTPS.)
 
-For long-lived check-in SSE, add a custom location in NPM (or here in `default.conf`):
-
-```nginx
-location ~ ^/api/checkin/events/[^/]+/stream$ {
-  proxy_buffering off;
-  proxy_read_timeout 3600s;
-  proxy_pass http://admitto_app;
-}
-```
-
-Set `TRUST_PROXY=true` and `TRUSTED_PROXY_CIDRS` in `deploy/.env` (both already in `.env.example`).
+Set `TRUST_PROXY=true` and `TRUSTED_PROXY_CIDRS` in `deploy/.env`.
 
 ## Cloudflare and WireGuard
 
@@ -327,13 +429,20 @@ after deploy. Without a running worker, bulk mail stays queued and bounce/retent
 
 ## PostgreSQL backups (ADR 0012, ADR 0027)
 
-**Automatic (upgrades):** when pending migrations exist, the `migrate` service writes
-`pre-migration-<UTC>.sql.gz` to the `migration_backups` volume before `migrate deploy`. Copy these
-offsite when possible (ADR 0023).
+**Before every upgrade (required):** the stack no longer dumps the database before `migrate deploy`.
+Take your own restore point immediately before pulling a new image:
 
-**Automatic (nightly):** the `db-backup` sidecar writes `nightly-<UTC>.sql.gz` to the same
-`migration_backups` volume (14-day retention via `find -mtime`; pre-migration files use count-based
-`MIGRATION_BACKUP_RETENTION` instead). Verify after first deploy:
+```bash
+cd deploy
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  | gzip > "../backup-pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+```
+
+Copy upgrade backups offsite when possible (ADR 0023). Practice restore on a non-production database
+before the first large event.
+
+**Automatic (nightly):** the `db-backup` sidecar writes `nightly-<UTC>.sql.gz` to the
+`migration_backups` volume (14-day retention via `find -mtime`). Verify after first deploy:
 
 ```bash
 docker compose logs db-backup
@@ -396,18 +505,18 @@ This works for any number of skipped versions — all intermediate migrations ar
 
 ### Case B — a bad migration destroyed or corrupted data (disaster only)
 
-Stop the app, **empty the target database**, restore from the automatic pre-migration dump, redeploy the previous image.
+Stop the app and worker, **empty the target database**, restore from your **pre-upgrade backup** or a
+**nightly dump** on the `migration_backups` volume, then redeploy the previous image.
 
-Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replaying into a database that already ran the bad migration will hit existing tables/types and can leave a **partial** schema — not a true rollback. You must drop and recreate the application database first.
+Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replaying into a database
+that already ran the bad migration will hit existing tables/types and can leave a **partial** schema
+— not a true rollback. You must drop and recreate the application database first.
 
 ```bash
-docker compose stop app
+docker compose stop app worker
 
-# Pick the dump written immediately before the failed upgrade (migration_backups volume).
-# Use the migrate service, not app — app no longer mounts /backups at all (docker:S6471: the
-# running web server has zero filesystem access to backup dumps, even read-only).
-docker compose run --rm --no-deps --entrypoint sh migrate -c \
-  'ls -lt /backups/pre-migration-*.sql.gz'
+# List nightly dumps on the migration_backups volume (or use your host backup-pre-upgrade-*.sql.gz)
+docker compose exec db-backup sh -c 'ls -lt /backups/nightly-*.sql.gz'
 
 # Empty target DB (credentials from the db container env — same pattern as manual backups above)
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
@@ -415,16 +524,16 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERRO
   -c "DROP DATABASE IF EXISTS \"$POSTGRES_DB\"" \
   -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
 
-# Replay into the empty database (override entrypoint for restore — production image has no npm/npx)
-docker compose run --rm --no-deps --entrypoint sh migrate -c \
-  'gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"'
+# Replay a nightly dump (replace timestamp; or pipe backup-pre-upgrade-*.sql.gz from the host instead)
+docker compose exec -T db-backup sh -c 'gunzip -c /backups/nightly-<UTC>.sql.gz' \
+  | docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1'
 
 # in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1
-docker compose pull app && docker compose up -d app
+docker compose pull app && docker compose up -d app worker
 ```
 
-Backups are written to the `migration_backups` volume before every `migrate deploy` run.
-Restore point is always available; data loss is limited to changes between the dump and the incident.
+Without a pre-upgrade or nightly dump you cannot roll the database back — Case A (image-only rollback)
+still works when the schema change was additive and the old app tolerates the new schema.
 Practice this on a non-production database before the first large event.
 
 ### Case C — the schema needs fixing after a bad migration

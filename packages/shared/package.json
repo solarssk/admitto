@@ -2,7 +2,7 @@
   "name": "@admitto/shared",
   "version": "0.0.1",
   "private": true,
-  "description": "Admitto shared utilities — neutral, dependency-free helpers",
+  "description": "Admitto shared utilities — neutral helpers, dependency-free except the ./pinned-dispatcher subpath (undici)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,6 +22,10 @@
     "./load-env-file": {
       "types": "./dist/loadEnvFile.d.ts",
       "default": "./dist/loadEnvFile.js"
+    },
+    "./pinned-dispatcher": {
+      "types": "./dist/pinnedDispatcher.d.ts",
+      "default": "./dist/pinnedDispatcher.js"
     }
   },
   "scripts": {
@@ -30,6 +34,9 @@
     "prepare": "tsc -p tsconfig.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "undici": "^8.7.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

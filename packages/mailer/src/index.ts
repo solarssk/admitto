@@ -18,6 +18,7 @@ export {
   resolveSafeMailDestination,
   type MailDestinationErrorCode,
 } from "./ssrfGuard.js";
+export { withPinnedFetch } from "./pinnedFetch.js";
 export { createMailer, closeMailer, type CreateMailerDeps } from "./factory.js";
 export {
   probeMailTransport,
