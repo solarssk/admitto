@@ -239,8 +239,6 @@ Migrations apply in the one-shot `migrate` service. There is **no** automatic pr
 
 `validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
-**Coming from a release before authenticated Redis (roughly pre-v0.4.5):** add `REDIS_PASSWORD` to `deploy/.env` and put the same value in `REDIS_URL` (`redis://:PASSWORD@redis:6379`), then re-run `./validate-env.sh` once.
-
 ## Self-hosted SMTP on a private address
 
 Mail destinations (SMTP host, Power Automate URL host, bounce IMAP host) are blocked when they are
@@ -344,8 +342,7 @@ docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin 
   --email admin@example.com
 ```
 
-From **v0.4.10** onward (drops the single-instance-superadmin index on migrate), additional
-instance superadmins can be assigned in the admin UI (Users) or via OIDC group mappings.
+Additional instance superadmins can be assigned in the admin UI (Users) or via OIDC group mappings.
 Before demoting a superadmin in your IdP, ensure at least one other **active** instance superadmin
 remains — see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md).
 
