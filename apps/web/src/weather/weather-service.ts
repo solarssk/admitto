@@ -94,7 +94,11 @@ export class WeatherService {
     this.fetchFn = options.fetchFn ?? fetch;
     this.openMeteo = new OpenMeteoClient({
       config: this.config,
-      fetchFn: this.fetchFn,
+      // Forward the raw (possibly undefined) override, not the `?? fetch`-defaulted
+      // `this.fetchFn` below — OpenMeteoClient uses "no override" as its signal to pin the
+      // connection (see open-meteo-client.ts), which would never trigger if this always
+      // passed a concrete function.
+      fetchFn: options.fetchFn,
     });
     this.now = options.now ?? (() => new Date());
     this.userAgent = options.userAgent?.trim() || null;

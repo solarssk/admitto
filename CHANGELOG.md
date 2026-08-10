@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Weather (Open-Meteo) and geocoding (Nominatim) requests now pin the outbound connection to a freshly re-resolved, validated address instead of trusting the hostname check performed when the base URL was last saved, closing a DNS-rebinding gap that could let a superadmin-configured external service URL reach an internal/metadata address after passing that save-time check.
+
 ## [0.4.13] - 2026-08-09
 
 ### Added

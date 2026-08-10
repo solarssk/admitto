@@ -1,9 +1,13 @@
 /**
  * Open-Meteo Forecast API client (daily variables for a single calendar day).
- * Base URL is validated at save/probe (`assertEditableServiceUrl`). Fetches use
- * `redirect: "error"` so a public host cannot 30x into private/metadata space.
+ * Base URL is validated at save/probe (`assertEditableServiceUrl`), but that check is
+ * save-time only (TOCTOU) — production requests re-resolve the host and pin the connection
+ * to the validated address via `withPinnedFetch`, closing the DNS-rebinding gap. `fetchFn`
+ * (test-only DI) bypasses pinning, same convention as `PowerAutomateAdapter`.
  */
 
+import { resolveSafeHostname, unbracketHostname } from "@admitto/shared/ssrf-guard";
+import { withPinnedFetch } from "../net/pinned-fetch.js";
 import { FORECAST_HORIZON_DAYS_OPENMETEO, type WeatherConfig } from "./config.js";
 import type { DayForecast } from "./types.js";
 
@@ -77,11 +81,11 @@ export function pickDailyForecast(body: ForecastDailyJson, dateYmd: string): Day
 
 export class OpenMeteoClient {
   private readonly config: WeatherConfig;
-  private readonly fetchFn: typeof fetch;
+  private readonly fetchOverride?: typeof fetch;
 
   constructor(options: OpenMeteoClientOptions) {
     this.config = options.config;
-    this.fetchFn = options.fetchFn ?? fetch;
+    this.fetchOverride = options.fetchFn;
   }
 
   /**
@@ -113,35 +117,54 @@ export class OpenMeteoClient {
       url.searchParams.set("apikey", this.config.apiKey);
     }
 
-    let response: Response;
+    const handleResponse = async (response: Response): Promise<DayForecast> => {
+      if (!response.ok) {
+        throw new WeatherProviderError("unavailable");
+      }
+      let body: ForecastDailyJson;
+      try {
+        body = (await response.json()) as ForecastDailyJson;
+      } catch (err) {
+        throw new WeatherProviderError("unavailable", { cause: err });
+      }
+      const day = pickDailyForecast(body, dateYmd);
+      if (!day) throw new WeatherProviderError("unavailable");
+      return day;
+    };
+
     try {
       // Do not follow redirects: host was checked at config time; a 30x to
       // loopback/private/metadata would bypass that check (same as Power Automate).
-      response = await this.fetchFn(url, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        redirect: "error",
-        signal: AbortSignal.timeout(this.config.timeoutMs),
-      });
+      if (this.fetchOverride) {
+        const response = await this.fetchOverride(url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          redirect: "error",
+          signal: AbortSignal.timeout(this.config.timeoutMs),
+        });
+        return await handleResponse(response);
+      }
+      // No test override: pin the connection to a freshly re-resolved, SSRF-validated
+      // address (see net/pinned-fetch.ts) so a DNS-rebound host can't be reached at connect
+      // time even though it passed the save-time check.
+      const hostname = unbracketHostname(url.hostname);
+      const records = await resolveSafeHostname(hostname);
+      return await withPinnedFetch(
+        url,
+        hostname,
+        records[0]!,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(this.config.timeoutMs),
+        },
+        handleResponse,
+      );
     } catch (err) {
+      if (err instanceof WeatherProviderError) throw err;
       if (isTimeoutError(err)) throw new WeatherProviderError("timeout", { cause: err });
       throw new WeatherProviderError("unavailable", { cause: err });
     }
-
-    if (!response.ok) {
-      throw new WeatherProviderError("unavailable");
-    }
-
-    let body: ForecastDailyJson;
-    try {
-      body = (await response.json()) as ForecastDailyJson;
-    } catch (err) {
-      throw new WeatherProviderError("unavailable", { cause: err });
-    }
-
-    const day = pickDailyForecast(body, dateYmd);
-    if (!day) throw new WeatherProviderError("unavailable");
-    return day;
   }
 
   /** Lightweight health probe (today's forecast for a fixed pin). */
