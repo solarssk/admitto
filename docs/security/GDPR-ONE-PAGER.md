@@ -55,9 +55,8 @@ Two layers: **product-automated** (daily sidecar + container startup, best-effor
 | Security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Purged automatically after **30 days** default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) — **daily automated sidecar + app startup** |
 | Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery — **daily automated sidecar + app startup**; delivery log metadata retained |
 | IP in admin audit / check-in logs | **30 days or operator corporate log retention policy** — not auto-purged by product |
-| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via `DELETE` API per DSAR procedure (no SPA delete button yet) |
-| Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
-| System logs live tail (in-memory only) | Not persisted by the product — last 1000 entries, emptied on every restart |
+| Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (single or bulk) or the `DELETE` API directly, per DSAR procedure |
+| Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) || System logs live tail (in-memory only) | Not persisted by the product — last 1000 entries, emptied on every restart |
 
 Organizers can export attendee lists before erasure (spreadsheet / PDF export in admin UI).
 Per-attendee erasure uses `DELETE /api/admin/events/:eventId/attendees/:id` (v0.4.6+); follow
@@ -91,7 +90,7 @@ Authorized staff export attendee data through the admin UI; erasure follows a **
 | Works with existing organizer workflows | Manual steps; legal must approve process |
 | No extra public API surface | Less suited to high-volume self-service DSAR |
 
-**Status:** export available in admin UI (v0.4.2+); erasure via `DELETE` API per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md) (no SPA delete button yet).
+**Status:** export available in admin UI (v0.4.2+); erasure via the Attendees admin UI (single or bulk, v0.4.13+) or the `DELETE` API directly, per [DSAR-PROCEDURE.md](DSAR-PROCEDURE.md).
 
 ---
 

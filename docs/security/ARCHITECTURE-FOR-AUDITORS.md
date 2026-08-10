@@ -121,7 +121,27 @@ Privacy detail: [DATA-PROTECTION.md](../../DATA-PROTECTION.md), [GDPR-ONE-PAGER.
 
 ---
 
-## 7. Conscious exclusions (MVP)
+## 7. If your reviewer uses a formal framework or questionnaire
+
+Admitto is **self-hosted, no formal certification** (no SOC 2 report, no ISO 27001 certificate) —
+that's normal for this size and stage of a vendor, not a red flag to hide. Being upfront about it,
+and giving a reviewer something concrete to check instead, is what actually gets a review through:
+
+- **A vendor security questionnaire (SIG Lite, CAIQ, or an internal equivalent):** the documents
+  in the map above already answer most of the categories those cover — subprocessors, data flows,
+  authentication/access controls, encryption, incident response, and supply-chain scanning. Point
+  the reviewer at this document map rather than filling in a separate form from memory; the
+  answers should match.
+- **A technical/code-level review (pentest scoping, secure-SDLC checklist):** use the
+  [OWASP Application Security Verification Standard (ASVS)](https://owasp.org/www-project-application-security-verification-standard/)
+  as the reference checklist — it's a testing standard, not a certification, and maps directly onto
+  what [SECURITY-CONTROLS.md](security/SECURITY-CONTROLS.md) already documents (authentication,
+  session management, access control, input validation / SSRF handling, and so on).
+- **A formal audit (SOC 2, ISO 27001):** Admitto does not have either. If your organization's
+  policy requires one, that's a decision for whoever owns the vendor-risk process, not something
+  this documentation set can substitute for.
+
+## 8. Conscious exclusions (MVP)
 
 Useful answers when enterprise checklists ask for features not in scope:
 
@@ -132,7 +152,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 
 ---
 
-## 8. Evidence artefacts (repository)
+## 9. Evidence artefacts (repository)
 
 | Artefact | Location |
 |----------|----------|
@@ -141,6 +161,6 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Container vulnerability scan | `.github/workflows/publish-container.yml` — Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` — `security-extended` on every PR |
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` — `--error` on every merge to `main` + weekly; intentionally not on PRs (CodeQL is the PR SAST gate; see [SECURITY.md](../../SECURITY.md)) |
-| Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
+| Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo — see [SECURITY.md](../../SECURITY.md) || Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
 
 Release **v0.4.3** added the corporate documentation pack. **CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../../SECURITY.md) — prefer that file over this table when answering audit questionnaires.

@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/assets/admitto-logo.svg" alt="Admitto" height="40">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/admitto-logo-dark.svg">
+    <img src="docs/assets/admitto-logo.svg" alt="Admitto" height="64">
+  </picture>
 </p>
 
 <p align="center">
@@ -15,13 +18,13 @@
 </p>
 
 <p align="center">
-  Self-hosted registration-to-check-in for internal corporate events.<br>
+  <strong>Self-hosted registration-to-check-in for internal corporate events.</strong><br>
   One source of truth. No SaaS. No recurring fees.
 </p>
 
 ---
 
-> **Status: v0.4.x (pre-1.0), internal / early production.**
+> **Status: v0.4.x (pre-1.0), internal.**
 > Treat personal data carefully until your organisation's data protection review is complete.
 > See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [SECURITY.md](SECURITY.md) before deploying.
 >
@@ -39,7 +42,7 @@ first thing to plan for, before the rest of this README.
 |----------|------------|
 | **Deciding whether to adopt Admitto** (no in-house IT yet) | [docs/security/CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md): what running it actually requires |
 | **Event Manager, check-in operator, or Superadmin** (using Admitto) | [User guide Wiki](https://github.com/solarssk/admitto/wiki) (source: [`docs/wiki/`](docs/wiki/)) |
-| **Developer** (local setup, tests) | This README · [infra/README.md](infra/README.md) · [AGENTS.md](AGENTS.md) |
+| **Developer** (local setup, tests) | This README · [infra/README.md](infra/README.md) · [packages/README.md](packages/README.md) · [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) |
 | **Operator** (production deploy) | [deploy/README.md](deploy/README.md) |
 | **Security / privacy reviewer** | [SECURITY.md](SECURITY.md) · [docs/security/SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md) · [docs/security/ARCHITECTURE-FOR-AUDITORS.md](docs/security/ARCHITECTURE-FOR-AUDITORS.md) |
 | **DPO / GDPR** | [DATA-PROTECTION.md](DATA-PROTECTION.md) · [docs/security/GDPR-ONE-PAGER.md](docs/security/GDPR-ONE-PAGER.md) · [docs/security/DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
@@ -50,41 +53,41 @@ The rest of this README (features, stack, local setup) is written for the **Deve
 
 ```mermaid
 flowchart LR
-    A["Import\nCSV / XLSX"] --> B["Generate\nsecure QR token"]
-    B --> C["Deliver ticket\nM365 · SMTP · Power Automate"]
-    C --> E["Check-in\ntablet scan · no double-entry"]
-    E --> F["Reports &\nPDF / XLSX export"]
-    C -.-> D["Wallet pass\nApple & Google · v0.5"]
+    A["📥 Import\nCSV / XLSX"] --> B["🔐 Generate\nsecure QR token"]
+    B --> C["✉️ Deliver ticket\nM365 · SMTP · Power Automate"]
+    C --> E["✅ Check-in\ntablet scan · no double-entry"]
+    E --> F["📊 Reports &\nPDF / XLSX export"]
+    C -.-> D["📱 Wallet pass\nApple & Google · v0.5"]
 ```
 
 Solid path is supported today. Wallet passes are planned for **v0.5** (placeholders only in the UI until then).
 
 ## Features
 
-Unfamiliar term below (TOTP, OIDC, RBAC, …)? Check the [Glossary](docs/wiki/Glossary.md).
+Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary.md).
 
-| Area | What you get today (v0.4.13) |
-|------|------------------------------|
-| **Tickets** | Secure QR tokens, browser ticket page, location / map / weather when configured |
-| **Mail** | M365 Graph, SMTP, or Power Automate; per-event override; IMAP bounce detection; delivery diagnostics |
-| **Attendees** | Ticket-type catalog, custom fields, CSV/XLSX import, bulk actions, GDPR erase |
-| **Check-in** | Camera or hardware scanner, manual lookup, item hand-out, beep / vibration feedback |
-| **Staff admin** | Events overview, reports, users & roles (single role type + scopes), My account SSO unlink/connect |
-| **Ops** | Background worker (mail drain, import/export, bounce, retention), Health check, System / Audit / Security logs |
-| **Security** | TOTP MFA, OIDC, Cloudflare Access, AES-256-GCM at rest, offline IP country on sessions/logs |
-| **Hosting** | Self-hosted, multi-org RBAC (superadmin / admin / operator) |
+| | Area | What it does |
+|---|------|--------------|
+| 🎫 | **Tickets** | Each guest gets a unique QR and a browser ticket page. Venue map, directions, and weather when you configure them. |
+| ✉️ | **Mail** | Send tickets via Microsoft 365, SMTP, or Power Automate. Detect bounced mail and inspect why a send failed. |
+| 👥 | **Attendees** | Import from CSV/XLSX, ticket types, custom fields, bulk actions, and delete a guest when required (GDPR). |
+| ✅ | **Check-in** | Scan with a camera or USB scanner, or look someone up by name. Hand out badges and items. Beep / vibration on each scan. |
+| 🖥️ | **Staff admin** | Events, reports, and who can access what. Staff can connect or disconnect their own company SSO from My account. |
+| ⚙️ | **Ops** | A background worker sends mail and finishes long imports/exports. Health page plus audit and security logs. |
+| 🔒 | **Security** | Two-factor login (TOTP), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. Session and login logs show the country for each IP, looked up on your own server (no external geo API). |
+| 🏠 | **Hosting** | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
-**Not in this release:** Apple/Google Wallet generation (v0.5), public self-service registration, payments.
+**Coming later:** Apple/Google Wallet passes (v0.5). Public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest` (also v0.5).
 
 ## Stack
 
-| Layer | Technologies |
-|-------|-------------|
-| Runtime | Node.js 24, TypeScript, Docker |
-| Backend | Hono 4, PostgreSQL (Prisma 7), Redis |
-| Frontend | React 19, react-router 7, Vite, Tabler design tokens |
-| Mail | M365 Graph · SMTP · Power Automate · IMAP bounce ingest |
-| Auth | Local accounts · OIDC · Cloudflare Access (ZTNA) · 2FA (TOTP) |
+| | Layer | Technologies |
+|---|-------|-------------|
+| 🟢 | **Runtime** | Node.js 24, TypeScript, Docker |
+| 🔌 | **Backend** | Hono 4, PostgreSQL (Prisma 7), Redis |
+| 🎨 | **Frontend** | React 19, react-router 7, Vite, Tabler design tokens |
+| 📬 | **Mail** | M365 Graph · SMTP · Power Automate · IMAP bounce ingest |
+| 🔑 | **Auth** | Local accounts · OIDC · Cloudflare Access (ZTNA) · 2FA (TOTP) |
 
 ## Prerequisites
 
@@ -140,26 +143,17 @@ Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/a
 Compose runs **`app`**, **`migrate`**, and a single **`worker`** (mail drain, import/export, bounce, retention).
 See [deploy/README.md](deploy/README.md).
 
-## Packages
+## Repo layout
 
-| Package | Layer | Description |
-|---------|-------|-------------|
-| [`apps/web`](apps/web/README.md) | server | Hono HTTP server: routes, HTML, rate limits |
-| [`apps/admin`](apps/admin/README.md) | frontend | Staff React SPA: events, check-in, admin tooling |
-| [`apps/cli`](deploy/README.md#emergency-cli-event-day-failover) | ops | Unified CLI (`admitto worker`, check-in failover, auth recovery) |
-| [`packages/ui`](packages/ui/package.json) | shared | Shared React components, tokens, toast stack |
-| [`packages/auth`](packages/auth/README.md) | shared | Sessions, 2FA, OIDC, Cloudflare Access, RBAC |
-| [`packages/crypto`](packages/crypto/README.md) | shared | AES-256-GCM at-rest encryption |
-| [`packages/db`](packages/db/README.md) | shared | Prisma schema + PostgreSQL client |
-| [`packages/import`](packages/import/README.md) | shared | CSV / XLSX attendee import |
-| [`packages/location`](packages/location/package.json) | shared | Venue search, geocoding, static maps |
-| [`packages/storage`](packages/storage/package.json) | shared | Branding / asset uploads and garbage collection |
-| [`packages/mail-delivery`](packages/mail-delivery/README.md) | shared | Email orchestration, delivery tracking, bounce ingest |
-| [`packages/mail-templates`](packages/mail-templates/README.md) | shared | MJML/HTML email templates |
-| [`packages/mailer`](packages/mailer/README.md) | shared | Mail transports (Graph, SMTP, Power Automate) |
-| [`packages/mailer-config`](packages/mailer-config/README.md) | shared | Per-scope mail transport resolver |
-| [`packages/shared`](packages/shared/README.md) | shared | Shared helpers |
-| [`packages/tickets`](packages/tickets/README.md) | shared | Tokens, QR generation, check-in domain |
+| Path | Role |
+|------|------|
+| [`apps/web`](apps/web/README.md) | HTTP API, auth HTML, ticket page, rate limits |
+| [`apps/admin`](apps/admin/README.md) | Staff React SPA (events, check-in, settings) |
+| [`apps/cli`](apps/cli/README.md) | `admitto` CLI (worker, auth recovery, event-day failover) |
+| [`packages/`](packages/README.md) | Shared libraries (auth, tickets, mail, db, ui, …) |
+| [`infra/`](infra/README.md) | Local Docker Compose (Postgres / Redis) |
+| [`deploy/`](deploy/README.md) | Production Compose, image, env |
+| [`docs/wiki/`](docs/wiki/) | Operator Wiki source |
 
 ## Roadmap
 
@@ -167,20 +161,13 @@ Canonical roadmap: [VERSIONING.md](VERSIONING.md). Short view:
 
 | Milestone | What ships |
 |-----------|------------|
-| **v0.4.x** | Current line (import → ticket mail → check-in → reports; location, bounce, Health, worker, …) |
+| **v0.4.x** ✅ | Current line (import → ticket mail → check-in → reports; location, bounce, Health, worker, …) |
 | **v0.5** | External-ingest `/api/ingest` (MS Forms / Power Automate), users UX, wallet passes (PassCreator) |
 | **v0.6** | TBD |
 | **v0.7** | RSVP intake, calendar invites, waitlist |
 | **v0.8-0.9** | Hardening, stress testing, dry run |
 | **v1.0** | First event go-live |
 | **v1.1+** | Self-service registration, multi-language, multi-track |
-
-## Security & data
-
-- Report vulnerabilities: [SECURITY.md](SECURITY.md)
-- Data protection & GDPR: [DATA-PROTECTION.md](DATA-PROTECTION.md), [docs/](docs/)
-- Never commit `.env` files, real attendee lists, or credentials
-- **AI agents:** start from [AGENTS.md](AGENTS.md) (all tools) and [CLAUDE.md](CLAUDE.md) (Claude Code)
 
 ## Licence
 
