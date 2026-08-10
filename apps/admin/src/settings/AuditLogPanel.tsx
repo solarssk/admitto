@@ -340,8 +340,8 @@ function formatMetadataValue(key: string, value: unknown): string {
 }
 
 // Already shown elsewhere in the row - repeating them in Details would just be noise.
-// eventId/event_id: shown by the Scope column. email_redacted: shown under Security's User column.
-const METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id", "email_redacted"]);
+// eventId/event_id: shown by the Scope column. email/email_redacted: shown under User column.
+const METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id", "email", "email_redacted"]);
 
 /** True when metadata has at least one key worth rendering in the Details column, beyond what
  * the Scope column already covers. */
@@ -769,7 +769,7 @@ function renderAuditCardMeta(entry: AuditLogEntryDto, eventTitleById: Map<string
  * display name nor an email (already deleted). */
 function securityUserDisplay(entry: SecurityAuditLogEntryDto): string {
   if (!entry.user_id) return "Unknown";
-  return entry.user_display_name || entry.user_email || "Unknown";
+  return entry.user_display_name || entry.user_email || "Deleted user";
 }
 
 /** Tooltip for the User cell when `user_id` names an account that's since been deleted - mirrors

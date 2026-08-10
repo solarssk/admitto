@@ -1424,7 +1424,7 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).getByText("a***@example.com")).toBeTruthy();
   });
 
-  it("falls back to email when display name is unset, to Unknown for a null user_id, and Unknown for a since-deleted user", async () => {
+  it("falls back to email when display name is unset, to Unknown for a null user_id, and Deleted user for a since-deleted user without snapshot", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [
         makeSecurityEntry({ id: "sec-2", user_display_name: null, user_email: "bob@example.com" }),
@@ -1451,7 +1451,7 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(rows[1]!).getByText("Unknown")).toBeTruthy();
     expect(within(rows[1]!).getByText("Login failed")).toBeTruthy();
     expect(within(rows[1]!).getByText("-")).toBeTruthy();
-    const deletedCell = within(rows[2]!).getByText("Unknown").closest("td");
+    const deletedCell = within(rows[2]!).getByText("Deleted user").closest("td");
     expect(deletedCell?.getAttribute("title")).toBe("deleted-user");
   });
 
@@ -1472,6 +1472,7 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(within(table).getByText("User agent")).toBeTruthy();
     expect(within(table).getByText("curl/8.0")).toBeTruthy();
+    expect(within(table).queryByText("Email")).toBeNull();
   });
 
   it("does not render a View trigger when metadata is empty", async () => {

@@ -21,11 +21,17 @@ import {
 } from "../src/audit.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
-/** Fake `db` implementing only `securityAuditLog.create`, matching the DI pattern used by
- * writeAdminAuditLog's own tests (e.g. settings/resolver.test.ts) - audit.ts never needs the
- * rest of PrismaClient. */
-function fakeDb(create: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue({})): PrismaClient {
-  return { securityAuditLog: { create } } as unknown as PrismaClient;
+const STAFF_SNAPSHOT = { email: "staff@example.com", display_name: "Staff User" };
+
+/** Fake `db` implementing `securityAuditLog.create` and optional `user.findUnique`. */
+function fakeDb(
+  create: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue({}),
+  userSnapshot: { email: string; display_name: string | null } | null = STAFF_SNAPSHOT,
+): PrismaClient {
+  return {
+    securityAuditLog: { create },
+    user: { findUnique: vi.fn().mockResolvedValue(userSnapshot) },
+  } as unknown as PrismaClient;
 }
 
 describe("audit", () => {
@@ -120,18 +126,23 @@ describe("audit", () => {
     it("persists a durable SecurityAuditLog row with the resolved user id", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
-      await logLoginSuccess(fakeDb(create), {
-        email: "bob@example.com",
-        ip: "1.2.3.4",
-        userAgent: "curl/8.0",
-        userId: "user-1",
-      });
+      await logLoginSuccess(
+        fakeDb(create, { email: "bob@example.com", display_name: null }),
+        {
+          email: "bob@example.com",
+          ip: "1.2.3.4",
+          userAgent: "curl/8.0",
+          userId: "user-1",
+        },
+      );
       expect(create).toHaveBeenCalledWith({
         data: {
           event_type: "auth.login.success",
           user_id: "user-1",
+          user_email: "bob@example.com",
+          user_display_name: null,
           ip: "1.2.3.4",
-          metadata: { email: "bob@example.com", userAgent: "curl/8.0" },
+          metadata: { userAgent: "curl/8.0" },
         },
       });
     });
@@ -185,6 +196,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.login.fail",
           user_id: null,
+          user_email: null,
+          user_display_name: null,
           ip: "1.2.3.4",
           metadata: { email_redacted: "b***@example.com", userAgent: null },
         },
@@ -212,6 +225,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.mfa.success",
           user_id: userId,
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
           metadata: { sessionId: "sess-1", method: "totp", userAgent: null },
         },
@@ -237,6 +252,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.mfa.fail",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
           metadata: { sessionId: "sess-1", userAgent: null },
         },
@@ -267,6 +284,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.mfa.break_glass",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
           metadata: { action: "reset_mfa" },
         },
@@ -306,6 +325,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.mfa.break_glass",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
           metadata: { action: "generate_emergency_recovery" },
         },
@@ -333,6 +354,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.mfa.break_glass",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
           metadata: { action: "generate_emergency_recovery" },
         },
@@ -349,6 +372,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.mfa.recovery_consumed",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
           metadata: { method: "backup", sessionId: "sess-1" },
         },
@@ -374,6 +399,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.logout",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
           metadata: { sessionId: "sess-1" },
         },
@@ -402,6 +429,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.oidc.success",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
           metadata: { providerId: "prov-1", subject: "sub-1" },
         },
@@ -416,6 +445,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.oidc.success",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
           metadata: { providerId: "prov-1", subject: null },
         },
@@ -432,6 +463,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.oidc.superadmin_revoke_blocked",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
           metadata: { providerId: "prov-1" },
         },
@@ -454,6 +487,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.access.denied",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
           metadata: { path: "/api/admin/users", reason: "no_superadmin_role", authSource: "session" },
         },
@@ -489,6 +524,8 @@ describe("audit", () => {
         data: {
           event_type: "auth.trusted_device.created",
           user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
           metadata: { sessionId: "sess-1", userAgent: null },
         },
@@ -507,18 +544,23 @@ describe("audit", () => {
     it("persists the raw user id and streak in metadata (deliberate exception to enumeration-safety)", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
-      await logRepeatedFailedLogins(fakeDb(create), {
-        userId: "user-1",
-        email: "admin@example.com",
-        ip: "1.2.3.4",
-        streak: 5,
-      });
+      await logRepeatedFailedLogins(
+        fakeDb(create, { email: "admin@example.com", display_name: null }),
+        {
+          userId: "user-1",
+          email: "admin@example.com",
+          ip: "1.2.3.4",
+          streak: 5,
+        },
+      );
       expect(create).toHaveBeenCalledWith({
         data: {
           event_type: "auth.login.repeated_failures",
           user_id: "user-1",
+          user_email: "admin@example.com",
+          user_display_name: null,
           ip: "1.2.3.4",
-          metadata: { email: "admin@example.com", streak: 5 },
+          metadata: { streak: 5 },
         },
       });
     });

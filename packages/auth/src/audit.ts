@@ -7,6 +7,24 @@ export { redactEmail };
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+type UserIdentitySnapshot = { email: string; display_name: string | null };
+
+/** Resolve staff email/display_name at audit write time (immutable snapshot columns). */
+async function resolveUserIdentitySnapshot(
+  db: Db,
+  userId: string | null | undefined,
+): Promise<UserIdentitySnapshot | null> {
+  if (!userId) return null;
+  try {
+    return await db.user.findUnique({
+      where: { id: userId },
+      select: { email: true, display_name: true },
+    });
+  } catch {
+    return null;
+  }
+}
+
 /** The 12 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
  * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
  * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
@@ -46,10 +64,13 @@ async function writeSecurityAuditLog(
   },
 ): Promise<void> {
   try {
+    const snapshot = await resolveUserIdentitySnapshot(db, fields.user_id);
     await db.securityAuditLog.create({
       data: {
         event_type: fields.event_type,
         user_id: fields.user_id ?? null,
+        user_email: snapshot?.email ?? null,
+        user_display_name: snapshot?.display_name ?? null,
         ip: fields.ip ?? null,
         metadata: fields.metadata as Prisma.InputJsonValue,
       },
@@ -162,7 +183,7 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
     event_type: "auth.login.success",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
-    metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
+    metadata: { userAgent: ctx.userAgent ?? null },
   });
 }
 
@@ -428,7 +449,7 @@ export async function logRepeatedFailedLogins(
     event_type: "auth.login.repeated_failures",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
-    metadata: { email: ctx.email, streak: ctx.streak },
+    metadata: { streak: ctx.streak },
   });
 }
 

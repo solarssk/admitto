@@ -2,9 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { writeAdminAuditLog, writeAdminAuditLogBestEffort } from "../src/admin-audit.js";
 
+const ACTOR_SNAPSHOT = { email: "actor@example.com", display_name: "Actor User" };
+
 function makeMockDb() {
   const create = vi.fn().mockResolvedValue(undefined);
-  return { db: { adminAuditLog: { create } } as unknown as PrismaClient, create };
+  const findUnique = vi.fn().mockResolvedValue(ACTOR_SNAPSHOT);
+  return {
+    db: { adminAuditLog: { create }, user: { findUnique } } as unknown as PrismaClient,
+    create,
+    findUnique,
+  };
 }
 
 describe("writeAdminAuditLog", () => {
@@ -19,6 +26,69 @@ describe("writeAdminAuditLog", () => {
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ actor_timezone: "Europe/Warsaw" }) }),
+    );
+  });
+
+  it("persists immutable actor email/display_name snapshot columns", async () => {
+    const { db, create } = makeMockDb();
+
+    await writeAdminAuditLog(db, {
+      actorUserId: "user-1",
+      actionType: "event_created",
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actor_email: ACTOR_SNAPSHOT.email,
+          actor_display_name: ACTOR_SNAPSHOT.display_name,
+        }),
+      }),
+    );
+  });
+
+  it("prefers the live User row over an actorEmail override", async () => {
+    const { db, create } = makeMockDb();
+
+    await writeAdminAuditLog(db, {
+      actorUserId: "user-1",
+      actionType: "event_created",
+      actorEmail: "forged@example.com",
+      actorDisplayName: "Forged Name",
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actor_email: ACTOR_SNAPSHOT.email,
+          actor_display_name: ACTOR_SNAPSHOT.display_name,
+        }),
+      }),
+    );
+  });
+
+  it("uses a server-resolved actorEmail override when the User row is missing", async () => {
+    const create = vi.fn().mockResolvedValue(undefined);
+    const findUnique = vi.fn().mockResolvedValue(null);
+    const db = {
+      adminAuditLog: { create },
+      user: { findUnique },
+    } as unknown as PrismaClient;
+
+    await writeAdminAuditLog(db, {
+      actorUserId: "deleted-user",
+      actionType: "retention_run",
+      actorEmail: "cli@example.com",
+      actorDisplayName: "CLI Operator",
+    });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actor_email: "cli@example.com",
+          actor_display_name: "CLI Operator",
+        }),
+      }),
     );
   });
 
@@ -60,7 +130,10 @@ describe("writeAdminAuditLogBestEffort", () => {
   it("logs and resolves instead of throwing when the write fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const create = vi.fn().mockRejectedValue(new Error("connection lost"));
-    const db = { adminAuditLog: { create } } as unknown as PrismaClient;
+    const db = {
+      adminAuditLog: { create },
+      user: { findUnique: vi.fn().mockResolvedValue(ACTOR_SNAPSHOT) },
+    } as unknown as PrismaClient;
 
     await expect(
       writeAdminAuditLogBestEffort(db, { actorUserId: "user-1", actionType: "account_password_changed" }),
@@ -78,7 +151,10 @@ describe("writeAdminAuditLogBestEffort", () => {
   it("stringifies a non-Error rejection instead of reading .message off it", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const create = vi.fn().mockRejectedValue("timeout");
-    const db = { adminAuditLog: { create } } as unknown as PrismaClient;
+    const db = {
+      adminAuditLog: { create },
+      user: { findUnique: vi.fn().mockResolvedValue(ACTOR_SNAPSHOT) },
+    } as unknown as PrismaClient;
 
     await writeAdminAuditLogBestEffort(db, { actorUserId: "user-1", actionType: "instance_setup_completed" });
 
