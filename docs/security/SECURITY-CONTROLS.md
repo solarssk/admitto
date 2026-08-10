@@ -267,7 +267,15 @@ server connects, with the real connection pinned to the already-validated addres
 DNS-rebinding gap the OIDC guard closes). Event-level dedicated mail transport additionally now
 requires superadmin (matching the organization-wide Mail settings page) and can no longer silently
 send the organization's real SMTP password or Power Automate key to a connection target the event
-override changed — saving or sending now requires that override to also supply its own credential.
+override changed - saving or sending now requires that override to also supply its own credential.
+
+**Self-hosted private MTA allowlist.** `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
+hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
+listed destinations skip the private/loopback checks at save and connect. This is narrower than
+`ALLOW_PRIVATE_MAIL_DESTINATIONS=true`, which remains non-production only (global bypass). Residual
+risk: a compromised admin can still point mail settings at any allowlisted name; keep the list
+minimal and ensure DNS for those names is under operator control. Set the variable on both `app`
+and `worker`.
 
 ---
 

@@ -146,7 +146,7 @@ describe("operatorApiErrorMessage", () => {
         new ApiError(422, "mail_destination_unresolved", "mail_destination_unresolved"),
         "Resend failed.",
       ),
-    ).toMatch(/resolve the mail server/);
+    ).toMatch(/resolve the mail destination hostname/);
     expect(
       operatorApiErrorMessage(new ApiError(500, "internal_error", "internal_error"), "Resend failed."),
     ).toMatch(/System logs/);
