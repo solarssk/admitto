@@ -340,6 +340,9 @@ function AddItemModal({
           </div>
         </form>
         <div className="event-item-modal__footer">
+          <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             type="submit"
             form="add-item-form"
@@ -347,9 +350,6 @@ function AddItemModal({
             disabled={adding || !addLabel.trim()}
           >
             {adding ? "Creating…" : "Create"}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
           </Button>
         </div>
       </div>
@@ -567,6 +567,19 @@ export function RequirementsPage() {
       <PageHeader
         title="Requirements"
         subtitle="Configure what this event issues to attendees and operational behaviour."
+        actions={
+          <a
+            href="https://github.com/solarssk/admitto/wiki/Requirements-and-Fulfilment"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="at-btn at-btn--secondary"
+          >
+            <span className="at-btn__icon" aria-hidden="true">
+              <i className="ti ti-book" aria-hidden="true" />
+            </span>
+            <span>Documentation</span>
+          </a>
+        }
       />
       {loadError && !loading ? (
         <EmptyState
