@@ -125,6 +125,13 @@
 .at-input--invalid:focus, .at-textarea--invalid:focus, .at-select--invalid:focus { box-shadow: 0 0 0 var(--ring-width) var(--status-error-tint); }
 .at-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.6rem center; padding-right: 2rem; }
 
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px (--fs-body/--fs-mono are both smaller). Bump to 16px only on narrow/touch widths so
+   the desktop type scale is untouched. */
+@media (max-width: 640px) {
+  .at-input, .at-select, .at-textarea { font-size: 16px; }
+}
+
 .at-inputgroup { display: flex; align-items: center; position: relative; }
 .at-inputgroup .at-inputgroup__icon { position: absolute; left: 0.65rem; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
 .at-inputgroup .at-input { padding-left: 2.1rem; }

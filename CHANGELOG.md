@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security and Audit logs now keep the staff member's email and display name on each row after their account is deleted, using immutable identity snapshot columns written at event time.
 - Concurrent OIDC instance-superadmin revokes use true full-jitter backoff (0..cap ms) so Serializable retries no longer thrash under a floor+jitter delay.
 - **Delete event** is no longer blocked by leftover operational action-log history after attendees and event-specific content are cleared (demo/test events can be removed again). Danger zone now lists the concrete remaining blockers when delete is disabled. Permanent delete also best-effort removes managed event branding and named image-asset uploads from storage (same cleanup as deleting a single asset).
+- Modals on iOS Safari no longer trap scrolling: panel height now follows the dynamic toolbar (`dvh`) instead of a fixed `100vh` that could sit taller than the visible viewport, so Save/Cancel stay reachable. The check-in note popup gained the same height limit and scrolling it was missing entirely.
+- Text inputs, search boxes, and the date picker no longer trigger iOS Safari's auto-zoom on focus (their font size is now 16px on narrow screens, matching the platform's zoom threshold).
+- Organisation Settings → Health check: the version/build info no longer overflows off narrow screens, and "Run live checks" moves into the "More actions" menu on mobile so the header stays on one row.
+- Organisation Settings → Security: the per-role authenticator switches (Superadmin/Administrator/Operator) stack one per row on mobile instead of wrapping unevenly.
+- Organisation Settings → Mail: the "Use TLS" and "Require STARTTLS" switches stay next to their label on mobile instead of dropping to their own line.
 
 ### Security
 - Weather (Open-Meteo) and geocoding (Nominatim) requests now pin the outbound connection to a freshly re-resolved, validated address instead of trusting the hostname check performed when the base URL was last saved, closing a DNS-rebinding gap that could let a superadmin-configured external service URL reach an internal/metadata address after passing that save-time check.

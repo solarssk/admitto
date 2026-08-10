@@ -172,6 +172,15 @@
   box-shadow: var(--ring);
 }
 
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix for .at-input/.at-select/.at-textarea in packages/ui. */
+@media (max-width: 640px) {
+  .users-page__search input {
+    font-size: 16px;
+  }
+}
+
 .users-page__search-clear {
   position: absolute;
   top: 50%;
@@ -495,6 +504,16 @@
   font: inherit;
   color: var(--text-primary);
   background: var(--surface-card);
+}
+
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix for .at-input/.at-select/.at-textarea in packages/ui. */
+@media (max-width: 640px) {
+  .users-modal__input,
+  .users-modal__select {
+    font-size: 16px;
+  }
 }
 
 .users-modal__switch-row {

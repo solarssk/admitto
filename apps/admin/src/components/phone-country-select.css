@@ -79,6 +79,15 @@
   background: var(--surface-card);
 }
 
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix for .at-input/.at-select/.at-textarea in packages/ui. */
+@media (max-width: 640px) {
+  .phone-country-select__search {
+    font-size: 16px;
+  }
+}
+
 .phone-country-select__search:focus {
   outline: none;
   border-color: var(--border-focus);
