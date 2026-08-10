@@ -194,20 +194,20 @@ describe("audit", () => {
   });
 
   describe("logLoginFailure", () => {
-    it("redacts the email in the stdout emit (unauthenticated input, unlike a successful login)", async () => {
+    it("emits the full attempted email in the stdout emit (same accountability basis as a successful login)", async () => {
       const spy = vi.spyOn(console, "info").mockImplementation(() => {});
       await logLoginFailure(fakeDb(), { email: "bob@example.com", ip: "1.2.3.4" });
       const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
       expect(payload.event).toBe("auth.login.fail");
-      expect(payload.email).toBe("b***@example.com");
+      expect(payload.email).toBe("bob@example.com");
 
       const entries = querySystemLogs({ source: "security" });
       expect(
-        entries.some((e) => e.message === "auth.login.fail" && e.fields?.email === "b***@example.com"),
+        entries.some((e) => e.message === "auth.login.fail" && e.fields?.email === "bob@example.com"),
       ).toBe(true);
     });
 
-    it("persists a durable row with user_id null (enumeration-safe) and a redacted email in metadata", async () => {
+    it("persists a durable row with user_id null (never resolved against a real account) and the full attempted email in metadata", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
       await logLoginFailure(fakeDb(create), { email: "bob@example.com", ip: "1.2.3.4" });
@@ -218,7 +218,7 @@ describe("audit", () => {
           user_email: null,
           user_display_name: null,
           ip: "1.2.3.4",
-          metadata: { email_redacted: "b***@example.com", userAgent: null },
+          metadata: { email: "bob@example.com", userAgent: null },
         },
       });
     });

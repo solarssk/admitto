@@ -187,16 +187,20 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
   });
 }
 
-/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures) and
- * persist a durable `SecurityAuditLog` row (`user_id: null` - same enumeration-safety reasoning:
- * never reveals whether the email belongs to a real user). Redacted, unlike logLoginSuccess above:
- * `ctx.email` here is unauthenticated form input - the login attempt failed, so this could be any
- * real address someone typed in, not a verified staff identity (external review on PR #593). Full
- * email on success is fine precisely because it's post-authentication; that reasoning doesn't
- * extend to a failed attempt. */
+/** Emit `auth.login.fail` as JSON to stdout and persist a durable `SecurityAuditLog` row.
+ * `user_id: null` - the login attempt failed, so this never resolves against (or reveals whether
+ * there is) a real account; the write path itself doesn't check account existence, avoiding a
+ * behavioral side channel. Full email, not redacted: identifying who was targeted by a failed
+ * login attempt is the same internal-accountability/security-monitoring basis as logLoginSuccess
+ * above (matches how an identity provider attributes its own activity log to a known actor, and
+ * standard security-logging guidance - OWASP's Logging Cheat Sheet recommends recording the
+ * account identifier on both successful and failed authentication events, precisely to detect
+ * brute-force/credential-stuffing against a specific account) - not something GDPR requires
+ * redacting for a superadmin-only, retention-bounded log (PO decision, reversing PR #593's more
+ * conservative call). */
 export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<void> {
   emitAuditEvent("auth.login.fail", {
-    email: redactEmail(ctx.email),
+    email: ctx.email,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
@@ -204,7 +208,7 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
     event_type: "auth.login.fail",
     user_id: null,
     ip: ctx.ip ?? null,
-    metadata: { email_redacted: redactEmail(ctx.email), userAgent: ctx.userAgent ?? null },
+    metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
   });
 }
 
