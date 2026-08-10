@@ -5204,8 +5204,8 @@ output.mail-field-hint {
 
 .sessions-table-wrap {
   overflow-x: auto;
-  margin: 0 calc(-1 * var(--space-4));
-  padding: 0 var(--space-4);
+  margin: 0 calc(-1 * var(--pad-card));
+  padding: 0 var(--pad-card);
 }
 
 .table {

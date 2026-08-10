@@ -32,10 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Concurrent OIDC instance-superadmin revokes use true full-jitter backoff (0..cap ms) so Serializable retries no longer thrash under a floor+jitter delay.
 - **Delete event** is no longer blocked by leftover operational action-log history after attendees and event-specific content are cleared (demo/test events can be removed again). Danger zone now lists the concrete remaining blockers when delete is disabled. Permanent delete also best-effort removes managed event branding and named image-asset uploads from storage (same cleanup as deleting a single asset).
 - Modals on iOS Safari no longer trap scrolling: panel height now follows the dynamic toolbar (`dvh`) instead of a fixed `100vh` that could sit taller than the visible viewport, so Save/Cancel stay reachable. The check-in note popup gained the same height limit and scrolling it was missing entirely.
-- Text inputs, search boxes, and the date picker no longer trigger iOS Safari's auto-zoom on focus (their font size is now 16px on narrow screens, matching the platform's zoom threshold).
+- Text inputs, search boxes, and the date picker no longer trigger iOS Safari's auto-zoom on focus (their font size is now 16px on touch devices, matching the platform's zoom threshold, regardless of viewport width or orientation).
 - Organisation Settings → Health check: the version/build info no longer overflows off narrow screens, and "Run live checks" moves into the "More actions" menu on mobile so the header stays on one row.
 - Organisation Settings → Security: the per-role authenticator switches (Superadmin/Administrator/Operator) stack one per row on mobile instead of wrapping unevenly.
 - Organisation Settings → Mail: the "Use TLS" and "Require STARTTLS" switches stay next to their label on mobile instead of dropping to their own line.
+- Audit and Security logs (Organisation settings → Logs) now span the full width of their card, matching every other table in the app; the table and its horizontal scrollbar previously stopped short of the card edge.
 
 ### Security
 - **Self-hosted LAN identity providers (SSO):** ops can allow specific Issuer/endpoint hostnames (or IP literals) that resolve to private addresses via `SSO_PRIVATE_DESTINATION_ALLOWLIST` on `app`. One list covers every configured provider sharing those hosts (OIDC today; same guard for future SAML). HTTPS remains required. Separate from the mail allowlist.
