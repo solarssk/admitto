@@ -199,16 +199,16 @@ describe("config", () => {
     const previousNodeEnv = process.env["NODE_ENV"];
     process.env["NODE_ENV"] = "production";
     delete process.env[envKey];
-    process.env[allowlistKey] = "dc01.example.com, 192.168.1.10";
+    process.env[allowlistKey] = "LOCALHOST, 192.168.1.10";
     try {
-      expect(isBlockedMailHost("dc01.example.com")).toBe(false);
-      expect(isBlockedMailHost("DC01.Example.COM")).toBe(false);
+      expect(isBlockedMailHost("localhost")).toBe(false);
+      expect(isBlockedMailHost("LOCALHOST")).toBe(false);
       expect(isBlockedMailHost("192.168.1.10")).toBe(false);
       expect(isBlockedMailHost("10.0.0.5")).toBe(true);
 
       const okHost = safeParseMailerConfig({
         provider: "smtp",
-        host: "dc01.example.com",
+        host: "localhost",
         user: "u",
         password: "p",
         fromAddress: "a@example.com",
@@ -253,7 +253,7 @@ describe("config", () => {
     const previousNodeEnv = process.env["NODE_ENV"];
     process.env["NODE_ENV"] = "production";
     delete process.env[envKey];
-    process.env[allowlistKey] = "127.0.0.1";
+    process.env[allowlistKey] = "LOCALHOST, 127.0.0.1";
     try {
       await expect(resolveSafeMailDestination("192.168.1.10")).rejects.toMatchObject({
         name: "MailDestinationError",
@@ -263,6 +263,9 @@ describe("config", () => {
       const records = await resolveSafeMailDestination("127.0.0.1");
       expect(records.length).toBeGreaterThan(0);
       expect(records.every((r) => r.address === "127.0.0.1")).toBe(true);
+
+      const hostnameRecords = await resolveSafeMailDestination("localhost");
+      expect(hostnameRecords.length).toBeGreaterThan(0);
     } finally {
       if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
       else process.env["NODE_ENV"] = previousNodeEnv;

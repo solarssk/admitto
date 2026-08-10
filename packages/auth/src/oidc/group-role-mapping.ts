@@ -45,12 +45,11 @@ function isUniqueViolation(err: unknown): boolean {
 const SERIALIZATION_RETRY_ATTEMPTS = 12;
 
 /**
- * Exponential backoff with full jitter so two concurrent losers do not stay lock-stepped
- * (small fixed jitter kept both retries colliding under Serializable SSI in CI).
+ * Exponential backoff with full jitter, capped at 750 ms (uniform 0..base inclusive).
  */
 function serializationRetryDelayMs(attempt: number): number {
   const base = Math.min(750, 40 * 2 ** attempt);
-  return base + randomInt(base + 1);
+  return randomInt(base + 1);
 }
 
 function sleep(ms: number): Promise<void> {
