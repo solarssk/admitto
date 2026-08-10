@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Button, Card, EmptyState, HintLabel, IconButton, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, IconButton, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, deleteEventCustomField } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { customFieldTypeIcon } from "./customFieldType.js";
+import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
 
 const CUSTOM_FIELDS_HINT =
@@ -32,11 +32,16 @@ function CustomFieldRow({
   readonly onDelete: () => void;
 }) {
   const description = field.description?.trim() ?? "";
+  const typeLabel = customFieldTypeLabel(field.type);
   return (
     <tr>
       <td>
         <div className="requirements-item-cell">
-          <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+          <Tooltip content={typeLabel}>
+            <span className="requirements-item-type-icon" aria-label={typeLabel}>
+              <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+            </span>
+          </Tooltip>
           <div className="requirements-item-info">
             <div className="requirements-item-name">{field.label}</div>
             <div className="requirements-item-id">{field.source_field}</div>
