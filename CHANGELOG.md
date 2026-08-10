@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Attendees now show "No ticket type" instead of a dash when no type is assigned. Bulk delete and revoke confirmations are immediately actionable, while their confirmation dialog remains in place.
-- Requirements now gives new and legacy Badge items the Name badge issued at check-in description and badge icon. Custom field types use clear labels and guidance, and the Requirements page links to its documentation.
+- Requirements now gives new Badge items (and untouched legacy seed badges) the Name badge issued at check-in description and badge icon, without overwriting cleared descriptions or an intentional package/default icon. Custom field types use clear labels and guidance, and the Requirements page links to its documentation.
+- Users & roles: clearer labels (Identity provider / Local password; Two-factor / Authenticator app), Windows Chrome shows country flags in phone pickers via a bundled Twemoji font, and Invite user resists Chrome autofill into phone and temporary password.
+- Events picker: **New event** stays on one row with the title on mobile and shows a calendar-plus icon.
+- New event modal: location has a single Optional label, the link ID is generated from the title (no Link name field), Find on map is removed, the timezone hint is clearer, and the timezone list reopens with one click after closing it by clicking outside. Non-Latin titles still get a unique `event-<fingerprint>` link ID so Create stays enabled.
+- Event Overview now shows completed setup checks alongside outstanding work, describes email activity consistently, and lets staff save key contact phone numbers with a country-code picker.
 - Bulk ticket-send previews no longer use the three-send limit. Real bulk sends now explain the 10-minute limit when it is reached.
 - Check-in cards label their dismiss action "Close", and Recent activity no longer shows duplicate-scan warnings as check-ins.
 - Public HTML 404/500 pages no longer overflow on narrow phones, and show a clearer layout (large status code and icon instead of a small boxed notice).

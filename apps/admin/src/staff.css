@@ -5251,11 +5251,11 @@ output.mail-field-hint {
   gap: var(--space-1);
 }
 
-.geo-cell > [aria-hidden="true"]:first-child {
+.geo-cell__flag {
   display: inline-block;
   width: 1.25rem;
   text-align: center;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
 .sessions-action-col {
@@ -6591,7 +6591,7 @@ output.mail-field-hint {
  * of the old flat single-line "dot + label … value" table row (#G polish). */
 .overview-readiness-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
 }
 
@@ -6600,7 +6600,6 @@ output.mail-field-hint {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding-top: 2px;
 }
 
 .overview-readiness-item__body strong {
@@ -7375,6 +7374,26 @@ output.mail-field-hint {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.overview-contact-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.overview-contact-modal__phone-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.overview-contact-modal__phone-row .phone-country-select {
+  flex: 0 0 8.5rem;
+}
+
+.overview-contact-modal__phone-row > .at-field:not(.phone-country-select) {
+  flex: 1;
+  min-width: 0;
 }
 
 .overview-modal__footer {

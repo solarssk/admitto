@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findPhoneCountryByDialCode, PHONE_COUNTRIES } from "../../src/utils/phoneCountries.js";
+import {
+  composePhoneE164,
+  findPhoneCountryByDialCode,
+  PHONE_COUNTRIES,
+  splitPhoneForPicker,
+} from "../../src/utils/phoneCountries.js";
 
 describe("PHONE_COUNTRIES", () => {
   it("covers well over a hand-picked subset of countries", () => {
@@ -32,5 +37,25 @@ describe("findPhoneCountryByDialCode", () => {
 
   it("returns undefined for a dial code matching nobody", () => {
     expect(findPhoneCountryByDialCode("+999999")).toBeUndefined();
+  });
+});
+
+describe("contact phone picker helpers", () => {
+  it("splits an existing E.164 value into a country code and national number", () => {
+    expect(splitPhoneForPicker("+48500100200")).toEqual({
+      dialCode: "+48",
+      nationalNumber: "500100200",
+    });
+  });
+
+  it("keeps an unrecognized legacy phone value editable", () => {
+    expect(splitPhoneForPicker("office extension 42")).toEqual({
+      dialCode: "",
+      nationalNumber: "office extension 42",
+    });
+  });
+
+  it("composes a picker value into one E.164 phone string", () => {
+    expect(composePhoneE164("+48", "500 100 200")).toBe("+48500100200");
   });
 });

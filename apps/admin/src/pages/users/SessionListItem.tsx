@@ -16,11 +16,11 @@ export const LOGGED_IN_HINT =
 export function SessionSignIn({ authMethod }: Readonly<{ authMethod: string }>) {
   return authMethod === "oidc" ? (
     <span className="sessions-signin sessions-signin--sso">
-      <i className="ti ti-cloud" aria-hidden="true" /> SSO
+      <i className="ti ti-cloud" aria-hidden="true" /> Identity provider
     </span>
   ) : (
     <span className="sessions-signin sessions-signin--local">
-      <i className="ti ti-key" aria-hidden="true" /> Local
+      <i className="ti ti-key" aria-hidden="true" /> Local password
     </span>
   );
 }
