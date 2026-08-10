@@ -1,4 +1,4 @@
-import { Hono, type Context, type Next } from "hono";
+import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -76,6 +76,7 @@ import {
   createHealthzRateLimitMiddleware,
   rateLimit,
 } from "./rate-limit/policies.js";
+import { skipBulkSendRateLimitForDryRun } from "./rate-limit/skip-bulk-send-dry-run.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import {
@@ -517,15 +518,6 @@ export function createApp(options: CreateAppOptions = {}) {
     withEventArchiveGuard(db, handler);
   const adminResendRateLimit = rateLimit(rateLimitStore, "admin:resend");
   const adminBulkResendRateLimit = rateLimit(rateLimitStore, "admin:resend-bulk");
-  const skipBulkSendRateLimitForDryRun = async (c: Context, next: Next): Promise<void> => {
-    try {
-      const body = (await c.req.raw.clone().json()) as { dryRun?: unknown };
-      c.set("bulkSendDryRun", body.dryRun === true);
-    } catch {
-      c.set("bulkSendDryRun", false);
-    }
-    await next();
-  };
   const adminPiiExportRateLimit = rateLimit(rateLimitStore, "admin:export-pii");
   const adminExportRateLimit = rateLimit(rateLimitStore, "admin:export");
   const adminCommunicationRateLimit = rateLimit(rateLimitStore, "admin:test-send");
