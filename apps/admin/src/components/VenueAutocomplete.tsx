@@ -128,26 +128,27 @@ export function VenueAutocomplete({
 
   const runSearch = async (query: string, opts?: { fromFindButton?: boolean }) => {
     const seq = ++seqRef.current;
-    if (opts?.fromFindButton) setSearching(true);
+    const surfaceLookupFeedback = opts?.fromFindButton === true || !showFindButton;
+    if (surfaceLookupFeedback) setSearching(true);
     try {
       const res = await searchGeocoding(query);
       if (seq !== seqRef.current) return;
       setResults(res.results);
       setSuggestStyle(HIDDEN_FIXED);
       setVisible(res.results.length > 0);
-      setNoMatch(opts?.fromFindButton === true && res.results.length === 0);
+      setNoMatch(surfaceLookupFeedback && res.results.length === 0);
       setSearchError(null);
       onContactConfigured?.(res.contact_configured);
     } catch (err) {
       if (seq !== seqRef.current) return;
       setResults([]);
       setVisible(false);
-      if (opts?.fromFindButton) {
+      if (surfaceLookupFeedback) {
         setNoMatch(false);
         setSearchError(operatorApiErrorMessage(err, "Address lookup failed. Try again shortly."));
       }
     } finally {
-      if (opts?.fromFindButton && seq === seqRef.current) setSearching(false);
+      if (surfaceLookupFeedback && seq === seqRef.current) setSearching(false);
     }
   };
 

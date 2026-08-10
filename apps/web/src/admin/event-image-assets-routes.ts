@@ -119,15 +119,34 @@ const DISPLAY_NAME_MAX = 80;
 
 /** Same shape as admin item/ticket-type slugify, capped at the asset token max (40). */
 export function slugifyImageAssetToken(name: string): string {
-  return name
+  const slug = name
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^[^a-z]+/, "")
-    .replace(/_+$/g, "")
-    .replace(/_+/g, "_")
-    .slice(0, 40);
+    .replace(/[^a-z0-9]+/g, "_");
+  let start = 0;
+  while (start < slug.length) {
+    const code = slug.charCodeAt(start);
+    if (code >= 97 && code <= 122) break;
+    start += 1;
+  }
+  let end = slug.length;
+  while (end > start && slug.charCodeAt(end - 1) === 95) end -= 1;
+  // Collapse runs of underscores without a backtracking regex (Sonar S8786).
+  let out = "";
+  let prevUnderscore = false;
+  for (let i = start; i < end; i++) {
+    const ch = slug[i]!;
+    if (ch === "_") {
+      if (prevUnderscore) continue;
+      prevUnderscore = true;
+      out += ch;
+      continue;
+    }
+    prevUnderscore = false;
+    out += ch;
+  }
+  return out.slice(0, 40);
 }
 
 /** Prefer `base`, then `base_2`… while skipping taken and reserved placeholder names. */

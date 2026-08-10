@@ -169,6 +169,24 @@ export async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<
   });
 }
 
+function storageWriteFailureCode(err: unknown): string {
+  if (err && typeof err === "object" && "code" in err && typeof (err as { code: unknown }).code === "string") {
+    return (err as { code: string }).code;
+  }
+  return "";
+}
+
+function rethrowStorageWriteError(err: unknown): never {
+  if (err instanceof StoragePathError) {
+    throw new BrandingUploadError("invalid_upload_url", 400);
+  }
+  const code = storageWriteFailureCode(err);
+  if (code === "ENOENT" || code === "EACCES" || code === "ENOSPC" || code === "EROFS") {
+    throw new BrandingUploadError("upload_storage_unavailable", 503);
+  }
+  throw err;
+}
+
 /** Shared validate-then-write sequence for both branding image and font uploads: size limit,
  * magic-byte MIME detection (never the client-declared Content-Type alone), extension lookup, and
  * a UUID-named write via {@link StorageAdapter}. What differs between callers is passed in. */
@@ -218,17 +236,7 @@ async function writeValidatedUpload(
       url: stored.url,
     };
   } catch (err) {
-    if (err instanceof StoragePathError) {
-      throw new BrandingUploadError("invalid_upload_url", 400);
-    }
-    const code =
-      err && typeof err === "object" && "code" in err && typeof (err as { code: unknown }).code === "string"
-        ? (err as { code: string }).code
-        : "";
-    if (code === "ENOENT" || code === "EACCES" || code === "ENOSPC" || code === "EROFS") {
-      throw new BrandingUploadError("upload_storage_unavailable", 503);
-    }
-    throw err;
+    rethrowStorageWriteError(err);
   }
 }
 

@@ -351,7 +351,7 @@ describe("LocationSettingsPanel — venue search", () => {
     expect(screen.queryByRole("list", { name: "Venue suggestions" })).toBeFalsy();
   });
 
-  it("silently ignores a failed suggestion search - typing still works", async () => {
+  it("shows lookup failure feedback while keeping typed venue text", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockSearch.mockRejectedValue(new Error("rate limited"));
     renderPanel();
@@ -361,7 +361,9 @@ describe("LocationSettingsPanel — venue search", () => {
 
     await waitFor(() => expect(mockSearch).toHaveBeenCalledWith("Downing Street"));
     expect(screen.getByDisplayValue("Downing Street")).toBeTruthy();
-    expect(screen.queryByText(/failed/i)).toBeFalsy();
+    expect(
+      await screen.findByText("Address lookup failed. Try again shortly."),
+    ).toBeTruthy();
   });
 
   it("applies a selected result's name, address, and coordinates, and saves with its geocoding_provider", async () => {

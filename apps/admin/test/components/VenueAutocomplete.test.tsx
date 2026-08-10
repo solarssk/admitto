@@ -358,6 +358,24 @@ describe("VenueAutocomplete", () => {
     expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
   });
 
+  it("surfaces no-match feedback from typeahead when Find on map is hidden", async () => {
+    mockSearch.mockResolvedValue({ results: [], contact_configured: true });
+    renderWithToast(<Harness showFindButton={false} />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Nowhere Hall" },
+    });
+    expect(await screen.findByText(/No match found on OpenStreetMap/)).toBeTruthy();
+  });
+
+  it("surfaces lookup errors from typeahead when Find on map is hidden", async () => {
+    mockSearch.mockRejectedValue(new Error("upstream unavailable"));
+    renderWithToast(<Harness showFindButton={false} />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    expect(await screen.findByText("Address lookup failed. Try again shortly.")).toBeTruthy();
+  });
+
   it("shows the field hint below the row when Find on map is present", () => {
     renderWithToast(<Harness hint="Search a venue or street." />);
     expect(screen.getByText("Search a venue or street.")).toBeTruthy();

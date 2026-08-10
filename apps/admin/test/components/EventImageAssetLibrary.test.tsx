@@ -257,13 +257,29 @@ describe("EventImageAssetLibrary", () => {
     expect((screen.getByLabelText("Image name") as HTMLInputElement).value).toBe("");
   });
 
+  it("previews a suffixed template variable when the base token is already taken", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "Sponsor logo" } });
+    expect(screen.getByText(/\{\{sponsor_logo_2\}\}/)).toBeTruthy();
+  });
+
+  it("caps the image name field at the server display-name limit", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+    expect(screen.getByLabelText("Image name").getAttribute("maxLength")).toBe("80");
+  });
+
   it("shows the mapped server error when adding an asset fails (e.g. reserved token)", async () => {
     mockFetch.mockResolvedValueOnce([]);
     mockCreate.mockRejectedValueOnce(new ApiError(409, "reserved_token", "reserved_token"));
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
-    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "event_title" } });
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "weird_name" } });
     await pickImageAndApply(new File(["x"], "logo.png", { type: "image/png" }));
     fireEvent.click(screen.getByRole("button", { name: "Add image" }));
 

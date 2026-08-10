@@ -59,7 +59,7 @@ const CODE_MESSAGES: Record<string, string> = {
     "Issuer URL must use HTTPS (http://localhost or http://127.0.0.1 is allowed in development only).",
   invalid_json: "Invalid request.",
   invalid_team_domain: "Enter a valid HTTPS Cloudflare Access team URL.",
-  invalid_name: "Enter an image name with at least one letter.",
+  invalid_name: "Enter an image name with at least one letter (80 characters max).",
   invalid_token: "Name must start with a letter and contain only lowercase letters, numbers, and underscores.",
   upload_storage_unavailable:
     "File uploads are not available on this server. Ask a superadmin to check File storage under Settings → System health.",

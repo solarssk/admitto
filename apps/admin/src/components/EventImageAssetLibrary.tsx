@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
+import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates";
 import { createEventImageAsset, deleteEventImageAsset, deleteUploadedFile, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";
@@ -18,6 +19,8 @@ import "./event-image-asset-library.css";
 
 const MAX_UPLOAD_BYTES = MAX_BRANDING_IMAGE_UPLOAD_BYTES;
 const TOKEN_MAX_LENGTH = 40;
+/** Matches apps/web event-image-assets-routes DISPLAY_NAME_MAX. */
+const DISPLAY_NAME_MAX = 80;
 const TOKEN_PATTERN = /^[a-z][a-z0-9_]*$/;
 const ALLOWED_IMAGE_TYPES = ALLOWED_BRANDING_IMAGE_TYPES;
 
@@ -31,15 +34,55 @@ function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
 
+function trimTrailingUnderscores(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 95) end -= 1;
+  return value.slice(0, end);
+}
+
+function trimLeadingNonLetters(value: string): string {
+  let start = 0;
+  while (start < value.length) {
+    const code = value.charCodeAt(start);
+    if (code >= 97 && code <= 122) break;
+    start += 1;
+  }
+  return value.slice(start);
+}
+
 function tokenFromDisplayName(value: string): string {
-  return value
+  const slug = value
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^[^a-z]+/, "")
-    .replace(/_+$/g, "")
-    .slice(0, TOKEN_MAX_LENGTH);
+    .replace(/[^a-z0-9]+/g, "_");
+  return trimTrailingUnderscores(trimLeadingNonLetters(slug)).slice(0, TOKEN_MAX_LENGTH);
+}
+
+/** Mirrors server allocateImageAssetToken so the preview matches what create will store. */
+function allocatePreviewToken(base: string, taken: ReadonlySet<string>): string | null {
+  for (let n = 1; n < 100; n++) {
+    const suffix = n === 1 ? "" : `_${n}`;
+    const candidate =
+      n === 1 ? base : `${base.slice(0, Math.max(1, TOKEN_MAX_LENGTH - suffix.length))}${suffix}`;
+    if (ALLOWED_PLACEHOLDERS.has(candidate) || taken.has(candidate)) continue;
+    if (!TOKEN_PATTERN.test(candidate) || candidate.length > TOKEN_MAX_LENGTH) continue;
+    return candidate;
+  }
+  return null;
+}
+
+function imageNameValidationError(displayName: string, touched: boolean): string | undefined {
+  if (!touched) return undefined;
+  const trimmed = displayName.trim();
+  if (trimmed.length > DISPLAY_NAME_MAX) {
+    return `Keep the image name to ${DISPLAY_NAME_MAX} characters or fewer.`;
+  }
+  const token = tokenFromDisplayName(trimmed);
+  if (!token || !TOKEN_PATTERN.test(token)) {
+    return "Enter a display name with at least one letter.";
+  }
+  return undefined;
 }
 
 function extensionForMime(mime: string): string {
@@ -61,13 +104,27 @@ function basenameWithoutExt(filename: string): string {
   return filename.replace(/\.[^.]+$/, "") || filename;
 }
 
+function clampDisplayName(value: string): string {
+  return value.slice(0, DISPLAY_NAME_MAX);
+}
+
+function deleteNoticeForAsset(asset: EventImageAssetDto, blockedByTemplate: boolean): string {
+  if (blockedByTemplate) {
+    return `This image is still used in this event's email template. Remove {{${asset.token}}} from the template first.`;
+  }
+  return `If {{${asset.token}}} is still used in an email template, remove it from the template first.`;
+}
+
 /** @internal Unit-test surface for small helpers. */
 export const eventImageAssetLibraryTestUtils = {
   pluralSuffix,
   tokenFromDisplayName,
+  allocatePreviewToken,
+  imageNameValidationError,
   extensionForMime,
   sniffImageMime,
   basenameWithoutExt,
+  DISPLAY_NAME_MAX,
 };
 
 const UPLOAD_IMAGES_HINT =
@@ -79,6 +136,24 @@ type PendingCrop = {
   sourceMime: string;
   originalName: string;
 };
+
+function ImageNameHint({
+  errorText,
+  previewToken,
+}: Readonly<{ errorText?: string; previewToken: string | null }>) {
+  if (errorText) {
+    return (
+      <p className="at-hint at-hint--error image-asset-library__name-hint" role="alert">
+        {errorText}
+      </p>
+    );
+  }
+  return (
+    <p className="at-hint image-asset-library__name-hint">
+      Template variable: {previewToken ? `{{${previewToken}}}` : "{{name}}"}
+    </p>
+  );
+}
 
 /**
  * Named branding image library for an event: upload extra images (e.g. sponsor logos) and give
@@ -151,13 +226,11 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   }, [load]);
 
   const tokenTrimmed = tokenFromDisplayName(displayName);
-  const tokenValid =
-    tokenTrimmed.length > 0 && tokenTrimmed.length <= TOKEN_MAX_LENGTH && TOKEN_PATTERN.test(tokenTrimmed);
-  const tokenErrorText =
-    displayNameTouched && !tokenValid
-      ? "Enter a display name with at least one letter."
-      : undefined;
-  const canSubmit = Boolean(file) && tokenValid && !uploading && !disabled;
+  const takenTokens = new Set(assets.map((a) => a.token));
+  const previewToken = tokenTrimmed ? allocatePreviewToken(tokenTrimmed, takenTokens) : null;
+  const tokenErrorText = imageNameValidationError(displayName, displayNameTouched);
+  const canSubmit =
+    Boolean(file) && !tokenErrorText && Boolean(previewToken) && !uploading && !disabled;
 
   const resetForm = () => {
     setDisplayName("");
@@ -211,7 +284,9 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
         sourceMime: declared,
         originalName: picked.name || `asset${extensionForMime(declared)}`,
       });
-      setDisplayName((prev) => prev.trim() || basenameWithoutExt(picked.name || "image"));
+      setDisplayName((prev) =>
+        clampDisplayName(prev.trim() || basenameWithoutExt(picked.name || "image")),
+      );
     } catch (err) {
       setFormError(operatorApiErrorMessage(err, "Could not prepare image for cropping."));
       setFile(null);
@@ -226,7 +301,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   };
 
   const handleSubmit = async () => {
-    if (!file || !tokenValid) return;
+    if (!file || tokenErrorText || !previewToken) return;
     setUploading(true);
     setFormError(null);
     try {
@@ -407,7 +482,8 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                 label="Image name"
                 value={displayName}
                 disabled={disabled || uploading}
-                onChange={(e) => setDisplayName(e.target.value)}
+                maxLength={DISPLAY_NAME_MAX}
+                onChange={(e) => setDisplayName(clampDisplayName(e.target.value))}
                 onBlur={() => setDisplayNameTouched(true)}
                 placeholder="Sponsor logo"
                 invalid={Boolean(tokenErrorText)}
@@ -425,15 +501,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
               </div>
             </div>
           </div>
-          {tokenErrorText ? (
-            <p className="at-hint at-hint--error image-asset-library__name-hint" role="alert">
-              {tokenErrorText}
-            </p>
-          ) : (
-            <p className="at-hint image-asset-library__name-hint">
-              Template variable: {tokenValid ? `{{${tokenTrimmed}}}` : "{{name}}"}
-            </p>
-          )}
+          <ImageNameHint errorText={tokenErrorText} previewToken={previewToken} />
           {formError ? (
             <Notice variant="error" role="alert">
               {formError}
@@ -479,9 +547,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
       >
         {deletingAsset ? (
           <Notice variant="warning" role="alert">
-            {deleteBlockedByTemplate
-              ? `This image is still used in this event's email template. Remove {{${deletingAsset.token}}} from the template first.`
-              : `If {{${deletingAsset.token}}} is still used in an email template, remove it from the template first.`}
+            {deleteNoticeForAsset(deletingAsset, deleteBlockedByTemplate)}
           </Notice>
         ) : null}
       </ConfirmDialog>
