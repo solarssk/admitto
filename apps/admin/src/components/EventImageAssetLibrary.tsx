@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
-import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates";
+// Subpath only: the package root re-exports Prisma/mjml server modules. Importing the
+// barrel into the SPA pulled Node APIs (fileURLToPath) into Event Settings and crashed.
+import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates/placeholders";
 import { createEventImageAsset, deleteEventImageAsset, deleteUploadedFile, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventImageAssetDto } from "../api/types.js";

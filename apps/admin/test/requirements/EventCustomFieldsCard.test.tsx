@@ -49,6 +49,7 @@ function renderCard(fields: EventCustomFieldDto[], loading = false) {
       event={event}
       fields={fields}
       loading={loading}
+      showLoading={loading}
       onChanged={onChanged}
     />,
   );
@@ -56,9 +57,16 @@ function renderCard(fields: EventCustomFieldDto[], loading = false) {
 }
 
 describe("EventCustomFieldsCard", () => {
-  it("shows an empty-state row when there are no fields", () => {
+  it("shows an info Notice and EmptyState when there are no fields", () => {
     renderCard([]);
-    expect(screen.getByText(/No custom fields yet\./)).toBeTruthy();
+    expect(
+      screen.getByText(/Extra fields for the attendee form, CSV import, and exports/),
+    ).toBeTruthy();
+    expect(screen.getByText("No custom fields yet")).toBeTruthy();
+    expect(
+      screen.getByText(/Add one to collect extra attendee data, like dietary requirements/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("lists fields with their type and required status", () => {
@@ -71,6 +79,10 @@ describe("EventCustomFieldsCard", () => {
       required: true,
     };
     renderCard([dietaryField, shirtField]);
+
+    expect(
+      screen.getByText(/Extra fields for the attendee form, CSV import, and exports/),
+    ).toBeTruthy();
 
     const dietaryRow = screen.getByText("Dietary requirements").closest("tr");
     const shirtRow = screen.getByText("Shirt size").closest("tr");
