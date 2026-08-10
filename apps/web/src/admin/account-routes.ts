@@ -182,6 +182,7 @@ function serializeAccountSession(
     expires_at: Date;
     auth_method: string;
     stage: string;
+    timezone: string | null;
     user: {
       email: string;
       display_name: string | null;
@@ -205,6 +206,7 @@ function serializeAccountSession(
     expiresAt: row.expires_at.toISOString(),
     authMethod: row.auth_method,
     stage: row.stage,
+    timezone: row.timezone,
     isCurrent: !!currentSessionId && row.id === currentSessionId,
   };
 }

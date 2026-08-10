@@ -49,12 +49,25 @@ export function renderOidcLinkForm(options: RenderOidcLinkFormOptions): string {
       </div>`
     : "";
 
+  const timezoneScript = `<script nonce="${scriptNonce}">
+(function () {
+  document.querySelectorAll(".auth-page form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var input = form.querySelector('input[name="timezone"]');
+      if (!input) return;
+      try { input.value = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { input.value = ""; }
+    });
+  });
+})();
+</script>`;
+
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Link ${esc(providerName)}</h2>
     <p class="subtitle">Confirm your password${requiresTotp ? " and authenticator code" : ""} before linking this sign-in method to your account.</p>
     ${errorBlock}
     <form method="post" action="/account/oidc/${esc(providerId)}/link" aria-label="Link identity provider">
       ${nextField}
+      <input type="hidden" name="timezone" value="" autocomplete="off">
       <div class="auth-field">
         <label class="auth-label" for="oidc-link-password">Password</label>
         <input class="auth-input" id="oidc-link-password" type="password" name="password" required autocomplete="current-password">
@@ -68,6 +81,6 @@ export function renderOidcLinkForm(options: RenderOidcLinkFormOptions): string {
     step: `Link ${providerName}`,
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: authFormSubmitScript(scriptNonce),
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${timezoneScript}`,
   });
 }

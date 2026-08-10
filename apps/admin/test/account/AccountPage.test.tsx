@@ -120,6 +120,7 @@ function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionLis
     expiresAt: "2026-01-02T00:00:00.000Z",
     authMethod: "local",
     stage: "active",
+    timezone: null,
     isCurrent: true,
     ...overrides,
   };
@@ -1260,6 +1261,7 @@ describe("AccountPage toasts", () => {
       expiresAt: "2026-01-02T00:00:00.000Z",
       authMethod: "local",
       stage: "active",
+      timezone: null,
       isCurrent: false,
     };
     mockLoadedAccount();
@@ -1294,6 +1296,7 @@ describe("AccountPage toasts", () => {
       expiresAt: "2026-01-02T00:00:00.000Z",
       authMethod: "local",
       stage: "active",
+      timezone: null,
       isCurrent: true,
     };
     const otherSession = {

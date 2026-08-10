@@ -416,13 +416,15 @@ describe("UsersPage tab count", () => {
           id: "s1", userId: "u1", userEmail: "a@example.com", userDisplayName: null,
           role: "admin", deviceLabel: null, ip: null, country: { kind: "unknown" }, userAgent: null,
           loginAt: "2026-01-01T00:00:00.000Z", lastSeenAt: "2026-01-01T00:00:00.000Z",
-          expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active", isCurrent: false,
+          expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active",
+          timezone: null, isCurrent: false,
         },
         {
           id: "s2", userId: "u2", userEmail: "b@example.com", userDisplayName: null,
           role: "operator", deviceLabel: null, ip: null, country: { kind: "unknown" }, userAgent: null,
           loginAt: "2026-01-01T00:00:00.000Z", lastSeenAt: "2026-01-01T00:00:00.000Z",
-          expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active", isCurrent: false,
+          expiresAt: "2026-01-02T00:00:00.000Z", authMethod: "local", stage: "active",
+          timezone: null, isCurrent: false,
         },
       ],
     });

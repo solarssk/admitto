@@ -142,9 +142,28 @@ describe("audit", () => {
           user_email: "bob@example.com",
           user_display_name: null,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { userAgent: "curl/8.0" },
         },
       });
+    });
+
+    it("persists actor_timezone when the login context carries a browser zone", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logLoginSuccess(
+        fakeDb(create, { email: "bob@example.com", display_name: null }),
+        {
+          email: "bob@example.com",
+          userId: "user-1",
+          timezone: "Europe/Warsaw",
+        },
+      );
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ actor_timezone: "Europe/Warsaw" }),
+        }),
+      );
     });
 
     it("persists null snapshot columns when the user lookup fails", async () => {
@@ -218,6 +237,7 @@ describe("audit", () => {
           user_email: null,
           user_display_name: null,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { email_redacted: "b***@example.com", userAgent: null },
         },
       });
@@ -247,6 +267,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { sessionId: "sess-1", method: "totp", userAgent: null },
         },
       });
@@ -274,6 +295,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
+          actor_timezone: null,
           metadata: { sessionId: "sess-1", userAgent: null },
         },
       });
@@ -306,6 +328,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { action: "reset_mfa" },
         },
       });
@@ -347,6 +370,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
+          actor_timezone: null,
           metadata: { action: "generate_emergency_recovery" },
         },
       });
@@ -376,6 +400,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { action: "generate_emergency_recovery" },
         },
       });
@@ -394,6 +419,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
+          actor_timezone: null,
           metadata: { method: "backup", sessionId: "sess-1" },
         },
       });
@@ -421,6 +447,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { sessionId: "sess-1" },
         },
       });
@@ -451,6 +478,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { providerId: "prov-1", subject: "sub-1" },
         },
       });
@@ -467,6 +495,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
+          actor_timezone: null,
           metadata: { providerId: "prov-1", subject: null },
         },
       });
@@ -485,6 +514,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
+          actor_timezone: null,
           metadata: { providerId: "prov-1" },
         },
       });
@@ -509,6 +539,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { path: "/api/admin/users", reason: "no_superadmin_role", authSource: "session" },
         },
       });
@@ -546,6 +577,7 @@ describe("audit", () => {
           user_email: STAFF_SNAPSHOT.email,
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { sessionId: "sess-1", userAgent: null },
         },
       });
@@ -579,6 +611,7 @@ describe("audit", () => {
           user_email: "admin@example.com",
           user_display_name: null,
           ip: "1.2.3.4",
+          actor_timezone: null,
           metadata: { streak: 5 },
         },
       });

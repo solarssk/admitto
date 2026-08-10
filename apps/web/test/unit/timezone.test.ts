@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isValidIanaTimezone } from "../../src/admin/timezone.js";
+import { isValidIanaTimezone, parseOptionalClientTimezone } from "../../src/admin/timezone.js";
 
 describe("isValidIanaTimezone", () => {
   it("accepts UTC", () => {
@@ -20,5 +20,21 @@ describe("isValidIanaTimezone", () => {
 
   it("rejects offset-style strings", () => {
     expect(isValidIanaTimezone("+05:30")).toBe(false);
+  });
+});
+
+describe("parseOptionalClientTimezone", () => {
+  it("returns null for missing or blank input", () => {
+    expect(parseOptionalClientTimezone(undefined)).toBeNull();
+    expect(parseOptionalClientTimezone(null)).toBeNull();
+    expect(parseOptionalClientTimezone("  ")).toBeNull();
+  });
+
+  it("returns a valid IANA zone", () => {
+    expect(parseOptionalClientTimezone("Europe/Warsaw")).toBe("Europe/Warsaw");
+  });
+
+  it("rejects invalid zones", () => {
+    expect(parseOptionalClientTimezone("Mars/Olympus")).toBeNull();
   });
 });

@@ -48,6 +48,47 @@ function loginAutofillClearScript(scriptNonce: string): string {
 }
 
 /**
+ * Capture the browser's IANA timezone into the login form (hidden field) and onto SSO start
+ * links (`?tz=`). Login is a plain HTML POST / GET navigation, so there is no X-Client-Timezone
+ * header like the admin SPA. Missing JS (bots/curl) leaves timezone empty → null server-side.
+ */
+function loginTimezoneCaptureScript(scriptNonce: string): string {
+  return `<script nonce="${scriptNonce}">
+(function () {
+  function browserTimezone() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch (e) {
+      return "";
+    }
+  }
+  function appendTz(href) {
+    var tz = browserTimezone();
+    if (!tz) return href;
+    try {
+      var url = new URL(href, window.location.origin);
+      url.searchParams.set("tz", tz);
+      return url.pathname + url.search;
+    } catch (e) {
+      return href;
+    }
+  }
+  document.querySelectorAll(".auth-page form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var input = form.querySelector('input[name="timezone"]');
+      if (input) input.value = browserTimezone();
+    });
+  });
+  document.querySelectorAll("a.auth-btn-sso").forEach(function (a) {
+    a.addEventListener("click", function () {
+      a.setAttribute("href", appendTz(a.getAttribute("href") || a.href));
+    });
+  });
+})();
+</script>`;
+}
+
+/**
  * Security headers for server-rendered operator login pages (nonce-gated submit script).
  * Referrer-Policy same-origin is the primary CSRF signal for HTML form POSTs (Safari);
  * Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
@@ -117,6 +158,7 @@ export function renderLoginForm(
     ${ssoBlock}
     <form method="post" action="/login" aria-label="Admitto sign in">
       ${nextField}
+      <input type="hidden" name="timezone" value="" autocomplete="off">
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
         <input class="auth-input" id="email" type="email" name="email" placeholder="you@example.com" required autocomplete="username">
@@ -133,7 +175,7 @@ export function renderLoginForm(
     step: "Sign in",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${authFormSubmitScript(scriptNonce)}\n${loginAutofillClearScript(scriptNonce)}`,
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${loginTimezoneCaptureScript(scriptNonce)}\n${loginAutofillClearScript(scriptNonce)}`,
   });
 }
 

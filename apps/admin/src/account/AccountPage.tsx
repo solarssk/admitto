@@ -26,7 +26,7 @@ import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatRelativeTime, zonedTimeLabel } from "../utils/event-dates.js";
+import { formatRelativeTime, formatZonedClockTime, viewerLocalTime } from "../utils/event-dates.js";
 import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
@@ -59,24 +59,24 @@ function formatSessionPrimaryTime(iso: string): string {
   return `${iso.slice(0, 19).replace("T", " ")} UTC`;
 }
 
-const sessionHourMinuteCache = new Map<string, Intl.DateTimeFormat>();
-
-function sessionHourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
-  const locale = Intl.DateTimeFormat().resolvedOptions().locale;
-  const key = `${locale}\0${timeZone}`;
-  let format = sessionHourMinuteCache.get(key);
-  if (!format) {
-    format = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false, timeZone });
-    sessionHourMinuteCache.set(key, format);
+/** Secondary line under Logged in: actor zone when known, otherwise the viewer's browser zone. */
+function AccountSessionLocalTime({ session }: Readonly<{ session: SessionListDto }>): ReactNode {
+  if (session.timezone) {
+    return (
+      <div className="sessions-subdued audit-log-time__local">
+        <i className="ti ti-user" aria-hidden="true" title="Signer's local time" />
+        <span className="sr-only">Signer's local time: </span>
+        {formatZonedClockTime(session.loginAt, session.timezone)}
+      </div>
+    );
   }
-  return format;
-}
-
-/** Viewer-local secondary line under Logged in - matches Active sessions (no actor TZ on sessions). */
-function sessionViewerLocalTime(iso: string): string {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const hhmm = sessionHourMinuteFormat(timeZone).format(new Date(iso));
-  return `${hhmm} ${zonedTimeLabel(iso, timeZone)}`;
+  return (
+    <div className="sessions-subdued audit-log-time__local">
+      <i className="ti ti-device-desktop" aria-hidden="true" title="Your local time" />
+      <span className="sr-only">Your local time: </span>
+      {viewerLocalTime(session.loginAt)}
+    </div>
+  );
 }
 
 /** Same .txt format and filename as the server-rendered MFA enrollment download. */
@@ -904,7 +904,7 @@ export function AccountPage() {
                     </td>
                     <td>
                       {formatSessionPrimaryTime(s.loginAt)}
-                      <div className="sessions-subdued">{sessionViewerLocalTime(s.loginAt)}</div>
+                      <AccountSessionLocalTime session={s} />
                     </td>
                     <td>{formatRelativeTime(s.lastSeenAt)}</td>
                     <td>
