@@ -797,8 +797,10 @@ export function IdentityProviderEditor({
         </div>
         {mode === "create" ? (
           <p className="at-hint identity-editor__redirect-hint">
-            The Redirect URI to register at your identity provider will appear here after the first
-            save.
+            After the first save, reopen the provider and copy the Redirect URI from the edit form,
+            then register it at your identity provider. Pattern:{" "}
+            <code>https://&lt;Instance URL&gt;/api/auth/oidc/&lt;provider-id&gt;/callback</code>.
+            Set Instance URL under Organisation settings → General if it is missing.
           </p>
         ) : (
           <OidcRedirectUriCallout

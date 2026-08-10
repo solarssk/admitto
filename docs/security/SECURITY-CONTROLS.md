@@ -244,7 +244,8 @@ When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF or
 
 ## Outbound HTTP (SSRF mitigation)
 
-Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches use
+Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches
+(and Cloudflare Access JWKS) use
 [`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts) plus
 [`safeOidcFetch`](../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
@@ -259,6 +260,14 @@ Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC tok
 Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
 **public** URLs the instance can reach — perimeter egress filtering remains an operator control.
+
+**Self-hosted private SSO allowlist.** `SSO_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
+hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
+listed destinations skip the private/loopback checks for identity outbound fetches. One list
+covers every configured provider that shares those hosts (OIDC today; intended for future SAML
+metadata fetches on the same guard). Residual risk: a compromised admin can still point provider
+settings at any allowlisted name; keep the list minimal and ensure DNS for those names is under
+operator control. Set the variable on `app`. HTTPS remains required.
 
 **Mail transport destinations (v0.4.13+).** The same class of guard now also covers SMTP host,
 Power Automate webhook URL, and the bounce-detection IMAP host: each is checked against a
