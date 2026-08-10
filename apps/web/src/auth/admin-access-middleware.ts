@@ -105,6 +105,12 @@ async function handleCfAccessToken(
     // Reconcile grants against current mapping rules (revocation when rules or groups change).
     await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
 
+    // Set as soon as the identity is resolved, before the admin-role check below - a denied
+    // request here is still a known, verified actor, and request-log's IP attribution
+    // (apps/web/src/request-log.ts) reads this regardless of how the request is ultimately
+    // handled. Re-set (unchanged) on the success path below for clarity.
+    c.set("auth", { userId, authSource: "cloudflare-access" });
+
     if (!(await canManageInstance(prisma, userId))) {
       logCfAccessAuth({
         outcome: "failure",
@@ -166,6 +172,15 @@ async function sessionSuperadminGate(
   if (!validated) {
     return loginBoundaryResponse(c, prisma);
   }
+  // Set as soon as the session is validated, before the superadmin-role check below - a denied
+  // request here is still a known staff identity, and request-log's IP attribution
+  // (apps/web/src/request-log.ts) reads this regardless of how the request is ultimately
+  // handled. Re-set (unchanged) on the success path below for clarity.
+  c.set("auth", {
+    userId: validated.userId,
+    sessionId: validated.session.id,
+    authSource: "session",
+  });
   if (!(await canManageInstance(prisma, validated.userId))) {
     await logAccessDenied(prisma, {
       path: c.req.path,
