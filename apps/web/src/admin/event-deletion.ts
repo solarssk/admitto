@@ -208,7 +208,7 @@ export async function deleteEvent(
     if (txResult.kind === "not_found") return { code: "not_found" };
     if (txResult.kind === "not_deletable") return { code: "not_deletable" };
 
-    // TODO(multi-org): same single-tenant assumption as event-image-assets-routes.
+    // Single-tenant: managed uploads use org "default" (same as event-image-assets-routes).
     await bestEffortDeleteReplacedUploadUrls(
       txResult.managedUploadUrls,
       [],
