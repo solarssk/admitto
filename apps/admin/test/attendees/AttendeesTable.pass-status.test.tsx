@@ -109,9 +109,9 @@ describe("AttendeesTable pass status actions", () => {
       />,
     );
 
-    expect(
-      (screen.getByRole("button", { name: "Revoke pass" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    const revoke = screen.getByRole("button", { name: "Revoke pass" }) as HTMLButtonElement;
+    expect(revoke.disabled).toBe(true);
+    expect(getTooltipText(revoke)).not.toMatch(/cannot check in until the pass is restored/);
   });
 
   it("disables Restore pass without the restore hover hint when the event is archived", () => {
