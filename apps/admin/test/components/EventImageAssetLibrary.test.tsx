@@ -104,7 +104,7 @@ describe("EventImageAssetLibrary", () => {
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(screen.getByText("Loading assets…")).toBeTruthy();
+    expect(screen.getByText("Loading images…")).toBeTruthy();
     vi.useRealTimers();
     expect(await screen.findByText("No images yet")).toBeTruthy();
     expect(mockFetch).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
@@ -121,11 +121,11 @@ describe("EventImageAssetLibrary", () => {
     mockFetch.mockResolvedValueOnce([asset]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
 
-    expect(await screen.findByText("Could not load image assets")).toBeTruthy();
+    expect(await screen.findByText("Could not load images")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText("sponsor.png")).toBeTruthy();
-    expect(screen.queryByText("Could not load image assets")).toBeNull();
+    expect(screen.queryByText("Could not load images")).toBeNull();
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -154,20 +154,20 @@ describe("EventImageAssetLibrary", () => {
     }
   });
 
-  it("shows an inline error when the token doesn't match the required format", async () => {
+  it("shows an inline error when the name cannot form a template variable", async () => {
     mockFetch.mockResolvedValueOnce([]);
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
-    const tokenInput = screen.getByLabelText("Name");
-    fireEvent.change(tokenInput, { target: { value: "1bad" } });
+    const tokenInput = screen.getByLabelText("Image name");
+    fireEvent.change(tokenInput, { target: { value: "!!!" } });
     fireEvent.blur(tokenInput);
     expect(
-      await screen.findByText(/Must start with a letter/),
+      await screen.findByText("Enter a display name with at least one letter."),
     ).toBeTruthy();
   });
 
-  it("keeps Add asset disabled until both a file and a valid token are present", async () => {
+  it("keeps Add image disabled until both a file and a valid name are present", async () => {
     mockFetch.mockResolvedValueOnce([]);
     mockUploadPreview.mockResolvedValueOnce({
       url: "/uploads/default/events/evt-1/preview.png",
@@ -175,10 +175,10 @@ describe("EventImageAssetLibrary", () => {
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
-    const addButton = screen.getByRole("button", { name: "Add asset" });
+    const addButton = screen.getByRole("button", { name: "Add image" });
     expect(addButton.hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sponsor_logo" } });
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "sponsor_logo" } });
     expect(addButton.hasAttribute("disabled")).toBe(true);
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -222,7 +222,7 @@ describe("EventImageAssetLibrary", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
     expect(screen.queryByText("sponsor.png")).toBeNull();
-    expect(screen.getByRole("button", { name: "Add asset" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Add image" }).hasAttribute("disabled")).toBe(true);
     expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/events/evt-1/preview.png");
   });
 
@@ -245,16 +245,32 @@ describe("EventImageAssetLibrary", () => {
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "sponsor_logo" } });
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "sponsor_logo" } });
     await pickImageAndApply(new File(["x"], "sponsor.png", { type: "image/png" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add asset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add image" }));
 
     await waitFor(() => {
       expect(mockCreate).toHaveBeenCalledWith("evt-1", expect.any(File), "sponsor_logo");
     });
     expect(await screen.findByText("sponsor.png")).toBeTruthy();
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Image name") as HTMLInputElement).value).toBe("");
+  });
+
+  it("previews a suffixed template variable when the base token is already taken", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "Sponsor logo" } });
+    expect(screen.getByText(/\{\{sponsor_logo_2\}\}/)).toBeTruthy();
+  });
+
+  it("caps the image name field at the server display-name limit", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+    expect(screen.getByLabelText("Image name").getAttribute("maxLength")).toBe("80");
   });
 
   it("shows the mapped server error when adding an asset fails (e.g. reserved token)", async () => {
@@ -263,9 +279,9 @@ describe("EventImageAssetLibrary", () => {
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("No images yet");
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "event_title" } });
+    fireEvent.change(screen.getByLabelText("Image name"), { target: { value: "weird_name" } });
     await pickImageAndApply(new File(["x"], "logo.png", { type: "image/png" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add asset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add image" }));
 
     expect(
       await screen.findByText(
@@ -284,14 +300,56 @@ describe("EventImageAssetLibrary", () => {
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("sponsor.png");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete sponsor.png" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove sponsor.png" }));
     const dialog = await screen.findByRole("dialog");
     expect(
       within(dialog).getByText(
-        'Delete "sponsor.png"? If its {{sponsor_logo}} placeholder is still used in this event\'s email template, remove it from the template first.',
+        /Remove "sponsor\.png"\?/,
       ),
     ).toBeTruthy();
     expect(within(dialog).queryByText(/will stop working/)).toBeNull();
+  });
+
+  it("shows a blocked-template notice when delete returns asset_in_use", async () => {
+    mockFetch.mockResolvedValueOnce([asset]);
+    mockDelete.mockRejectedValueOnce(new ApiError(409, "asset_in_use", "asset_in_use"));
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("sponsor.png");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove sponsor.png" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    expect(
+      await within(dialog).findByText(/still used in this event's email template/),
+    ).toBeTruthy();
+    expect(screen.getByText("sponsor.png")).toBeTruthy();
+  });
+
+  it("rejects SVG uploads client-side even when File.type claims PNG", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["x"], "logo.svg", { type: "image/png" })] },
+    });
+    expect(await screen.findByText(/SVG is not supported/)).toBeTruthy();
+    expect(mockUploadPreview).not.toHaveBeenCalled();
+  });
+
+  it("autofills a clamped image name from a long filename", async () => {
+    mockFetch.mockResolvedValueOnce([]);
+    renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+    await screen.findByText("No images yet");
+
+    const longBase = "n".repeat(90);
+    await pickImageAndApply(new File(["x"], `${longBase}.png`, { type: "image/png" }));
+    const nameInput = screen.getByLabelText("Image name") as HTMLInputElement;
+    expect(nameInput.value).toHaveLength(80);
+    fireEvent.blur(nameInput);
+    expect(screen.queryByText(/80 characters/)).toBeNull();
   });
 
   it("deletes an asset after confirming in the dialog", async () => {
@@ -300,10 +358,10 @@ describe("EventImageAssetLibrary", () => {
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("sponsor.png");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete sponsor.png" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove sponsor.png" }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/Delete "sponsor.png"/)).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(within(dialog).getByRole("button", { name: "Remove" })).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     await waitFor(() => {
       expect(mockDelete).toHaveBeenCalledWith("evt-1", "asset-1");
@@ -319,9 +377,9 @@ describe("EventImageAssetLibrary", () => {
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("sponsor.png");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete sponsor.png" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove sponsor.png" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
 
     expect(await within(dialog).findByText("Something went wrong. Try again.")).toBeTruthy();
     expect(screen.getByText("sponsor.png")).toBeTruthy();
@@ -334,10 +392,10 @@ describe("EventImageAssetLibrary", () => {
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     expect(fileInput.disabled).toBe(true);
-    expect((screen.getByLabelText("Name") as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByRole("button", { name: "Add asset" }).hasAttribute("disabled")).toBe(true);
+    expect((screen.getByLabelText("Image name") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Add image" }).hasAttribute("disabled")).toBe(true);
     expect(
-      screen.getByRole("button", { name: "Delete sponsor.png" }).hasAttribute("disabled"),
+      screen.getByRole("button", { name: "Remove sponsor.png" }).hasAttribute("disabled"),
     ).toBe(true);
     expect(screen.getByText(/This event is archived/)).toBeTruthy();
   });
@@ -347,7 +405,7 @@ describe("EventImageAssetLibrary", () => {
     renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
     await screen.findByText("sponsor.png");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete sponsor.png" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove sponsor.png" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
