@@ -20,9 +20,7 @@ const ORG_A = "org-multi-tpl-a";
 const EVENT_A = "evt-multi-tpl-a";
 const EVENT_B = "evt-multi-tpl-b";
 const EMAIL_ADMIN = "multi-tpl-admin@example.com";
-// A second admin user, used only by the ticket_type filter tests below - the shared adminCookie
-// user already spends 2 of its 3 allotted admin:resend-bulk requests (600s window) on the
-// pre-existing dryRun tests in this file, and a 4th call for the same user would 429.
+// A second admin user, used only by the ticket_type filter tests below.
 const EMAIL_ADMIN_2 = "multi-tpl-admin-2@example.com";
 const PASSWORD = "multi-tpl-pass-123";
 
@@ -488,7 +486,7 @@ describe("multi-template API", () => {
     expect(defaultBody.items.some((r) => r.id === delivery.id)).toBe(false);
   });
 
-  it("POST /send dryRun returns recipientCount", async () => {
+  it("POST /send dryRun returns recipientCount without consuming the bulk-send limit", async () => {
     await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({
       where: {
@@ -504,22 +502,24 @@ describe("multi-template API", () => {
       },
     });
 
-    const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
-      method: "POST",
-      headers: {
-        Cookie: adminCookie,
-        "Content-Type": "application/json",
-        ...sameOrigin,
-      },
-      body: JSON.stringify({
-        templateId: ticket.id,
-        filter: { type: "attendee_ids", ids: ["att-multi-1"] },
-        dryRun: true,
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { recipientCount: number };
-    expect(body.recipientCount).toBe(1);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/send`, {
+        method: "POST",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({
+          templateId: ticket.id,
+          filter: { type: "attendee_ids", ids: ["att-multi-1"] },
+          dryRun: true,
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { recipientCount: number };
+      expect(body.recipientCount).toBe(1);
+    }
   });
 
   it("POST /send with no templateId (and no persisted 'ticket' template anywhere) still dry-runs, via the built-in default template", async () => {
