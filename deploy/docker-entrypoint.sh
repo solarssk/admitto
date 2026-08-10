@@ -12,13 +12,11 @@ log() {
 # paths as root-owned; validate (or create when the parent allows) before emergency CLI export runs.
 ensure_emergency_export_dir_writable() {
   export_dir="${EMERGENCY_EXPORT_DIR:-/app/emergency-exports}"
-  if [ ! -d "$export_dir" ]; then
-    if ! mkdir -p "$export_dir" 2>/dev/null; then
-      log "error: emergency export directory does not exist and could not be created: $export_dir"
-      log "hint: on the Docker host run: cd deploy && ./scripts/init-host-dirs.sh"
-      log "hint: or: mkdir -p emergency-exports uploads && chown 1000:1000 emergency-exports uploads && chmod 700 emergency-exports"
-      exit 1
-    fi
+  if [ ! -d "$export_dir" ] && ! mkdir -p "$export_dir" 2>/dev/null; then
+    log "error: emergency export directory does not exist and could not be created: $export_dir"
+    log "hint: on the Docker host run: cd deploy && ./scripts/init-host-dirs.sh"
+    log "hint: or: mkdir -p emergency-exports uploads && chown 1000:1000 emergency-exports uploads && chmod 700 emergency-exports"
+    exit 1
   fi
   if [ ! -w "$export_dir" ]; then
     log "error: emergency export directory is not writable by the app user: $export_dir"
