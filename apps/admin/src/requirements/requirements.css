@@ -78,7 +78,13 @@
 }
 
 .requirements-item-desc-col {
-  width: 44%;
+  /* Flexible middle column - trailing Active / Required+Actions stay content-sized. */
+  width: auto;
+}
+
+.requirements-item-required-col {
+  width: 5.5rem;
+  white-space: nowrap;
 }
 
 .requirements-item-desc {
@@ -115,9 +121,14 @@
 }
 
 .requirements-item-actions {
-  width: 1%;
+  width: 10rem;
   white-space: nowrap;
   vertical-align: middle;
+  text-align: right;
+}
+
+.requirements-section .table th.requirements-item-actions {
+  text-align: right;
 }
 
 .requirements-item-actions__wrap {

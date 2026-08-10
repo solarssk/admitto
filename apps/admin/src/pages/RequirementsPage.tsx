@@ -622,7 +622,7 @@ export function RequirementsPage() {
                 <tr>
                   <th>Item</th>
                   <th className="requirements-item-desc-col">Description</th>
-                  <th>Active</th>
+                  <th className="requirements-item-actions">Active</th>
                 </tr>
               </thead>
               <tbody>
