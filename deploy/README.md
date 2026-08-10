@@ -100,6 +100,7 @@ cp .env.example .env
 # Populate only the mail section for that provider
 
 ./validate-env.sh
+./scripts/init-host-dirs.sh
 docker compose up -d --build
 curl -sf http://127.0.0.1:8080/healthz
 ```
@@ -126,30 +127,39 @@ docker compose up -d
 
 ## Container startup (entrypoint)
 
-Migration/backup and serving are two separate one-shot-then-long-running compose services, both
-running `deploy/docker-entrypoint.sh` (same image, different `command:`). `app` only starts once
-`migrate` exits 0 (`depends_on: condition: service_completed_successfully`), so the web server
-never runs any of this itself and never runs as root (docker:S6471).
+Migration and serving are two separate compose services, both running
+`deploy/docker-entrypoint.sh` (same image, different `command:`). **`app` only starts once
+`migrate` exits 0** (`depends_on: condition: service_completed_successfully`), so the web server
+never runs migration logic itself. **Every service runs as the unprivileged `node` user** (UID 1000
+in the official Node image).
 
-**`migrate`** (`user: root` — the only service that is; needed to write into the root-only
-`migration_backups` volume) runs **fail-fast** (any step fails → exits nonzero, `app` never starts):
+**Before the first `docker compose up`**, prepare host bind mounts. Compose creates missing paths as
+**root-owned**, which breaks emergency CLI export and branding uploads until ownership is fixed:
+
+```bash
+cd deploy
+./scripts/init-host-dirs.sh
+# or manually: mkdir -p emergency-exports uploads && chown 1000:1000 emergency-exports uploads && chmod 700 emergency-exports
+```
+
+**`migrate`** runs **fail-fast** (any step fails → exits nonzero, `app` never starts):
 
 1. `prisma migrate status` — detect pending migrations (text parse; connection errors abort with a clear log)
-2. **If pending migrations** and backup not disabled: pre-migration `pg_dump` to the `migration_backups` volume (`/backups/pre-migration-<UTC>.sql.gz`, `gzip -t` integrity check, `install -m 600`). If `pg_dump` fails → **no migrate**. Routine restarts with no pending migrations skip the dump.
-3. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand; drops to the `node` user for this and every step below)
-4. `backfill-public-ref.js` and other idempotent backfills (safe to re-run; throw if DB/schema incompatible)
+2. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand)
+3. Idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-**`app`** (always runs as `node`, never root) execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot, and no filesystem access to `/backups` (not mounted). Product retention (auth sessions, mail snapshots, security audit log), bounce ingest, mail drain, and import/export jobs run on the **`worker`** service (same image, `command: ["worker"]` → `admitto worker`). Keep exactly one worker replica; the process uses session advisory locks so a mistaken second replica skips overlapping jobs rather than double-running them.
+**`app`** execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot, and
+no filesystem access to backup dumps. Product retention (auth sessions, mail snapshots, security audit
+log), bounce ingest, mail drain, and import/export jobs run on the **`worker`** service (same image,
+`command: ["worker"]` → `admitto worker`). Keep exactly one worker replica; the process uses session
+advisory locks so a mistaken second replica skips overlapping jobs rather than double-running them.
 
-**Operator upgrade:** pull the new image and `docker compose up -d` — migrations apply automatically with a restore point when needed. No manual migration step.
-
-Env (see `.env.example`): `MIGRATION_BACKUP_DIR`, `MIGRATION_BACKUP_RETENTION`, `MIGRATION_BACKUP_MIN_FREE_MB` (default 512 — tune per deployment), `MIGRATION_BACKUP_DISABLE` (dev/test only).
-
-Copy pre-migration backups offsite per ADR 0023 (backup and disaster recovery — internal archive) (nightly dumps are separate).
+**Operator upgrade:** take a **manual database backup first** (see [PostgreSQL backups](#postgresql-backups-adr-0012-adr-0027)), then pull the new image and `docker compose up -d`. Migrations apply automatically; there is **no** automatic pre-migration dump anymore.
 
 Schema change policy (expand-contract, CI guard): [packages/db/README.md](../packages/db/README.md#schema-change-policy).
 
-For one-off CLI (bootstrap, MFA reset), the entrypoint passes through `node …` without starting the web server — see below. `npm`/`npx` are not available in the production image.
+For one-off CLI (bootstrap, MFA reset, emergency export), the entrypoint passes through `node …` after
+checking that `EMERGENCY_EXPORT_DIR` is writable — see below. `npm`/`npx` are not available in the production image.
 
 ## Container logs (what to expect where)
 
@@ -157,7 +167,7 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 
 | Container | What its logs show |
 |-----------|--------------------|
-| `migrate` | Entrypoint boot steps (migration status, backup, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
+| `migrate` | Entrypoint boot steps (migration status, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
 | `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
 | `worker` | `[worker] …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
 | `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
@@ -199,7 +209,8 @@ docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <
 docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
 
 # Paper backup list (CSV) — use EMERGENCY_EXPORT_DIR (node-writable bind mount), NOT /app/uploads or /backups
-# (/uploads/* is served without auth; /backups isn't even mounted on app — see migrate service)
+# Run ./scripts/init-host-dirs.sh on the host first if a fresh deploy created root-owned emergency-exports/
+# (/uploads/* is served without auth; /backups is only on the db-backup sidecar volume)
 docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
 # File lands on the host at deploy/emergency-exports/ (bind mount, not web-accessible). CLI writes mode 0600.
 
@@ -307,13 +318,20 @@ after deploy. Without a running worker, bulk mail stays queued and bounce/retent
 
 ## PostgreSQL backups (ADR 0012, ADR 0027)
 
-**Automatic (upgrades):** when pending migrations exist, the `migrate` service writes
-`pre-migration-<UTC>.sql.gz` to the `migration_backups` volume before `migrate deploy`. Copy these
-offsite when possible (ADR 0023).
+**Before every upgrade (required):** the stack no longer dumps the database before `migrate deploy`.
+Take your own restore point immediately before pulling a new image:
 
-**Automatic (nightly):** the `db-backup` sidecar writes `nightly-<UTC>.sql.gz` to the same
-`migration_backups` volume (14-day retention via `find -mtime`; pre-migration files use count-based
-`MIGRATION_BACKUP_RETENTION` instead). Verify after first deploy:
+```bash
+cd deploy
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  | gzip > "../backup-pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+```
+
+Copy upgrade backups offsite when possible (ADR 0023). Practice restore on a non-production database
+before the first large event.
+
+**Automatic (nightly):** the `db-backup` sidecar writes `nightly-<UTC>.sql.gz` to the
+`migration_backups` volume (14-day retention via `find -mtime`). Verify after first deploy:
 
 ```bash
 docker compose logs db-backup
@@ -376,18 +394,18 @@ This works for any number of skipped versions — all intermediate migrations ar
 
 ### Case B — a bad migration destroyed or corrupted data (disaster only)
 
-Stop the app, **empty the target database**, restore from the automatic pre-migration dump, redeploy the previous image.
+Stop the app and worker, **empty the target database**, restore from your **pre-upgrade backup** or a
+**nightly dump** on the `migration_backups` volume, then redeploy the previous image.
 
-Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replaying into a database that already ran the bad migration will hit existing tables/types and can leave a **partial** schema — not a true rollback. You must drop and recreate the application database first.
+Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replaying into a database
+that already ran the bad migration will hit existing tables/types and can leave a **partial** schema
+— not a true rollback. You must drop and recreate the application database first.
 
 ```bash
-docker compose stop app
+docker compose stop app worker
 
-# Pick the dump written immediately before the failed upgrade (migration_backups volume).
-# Use the migrate service, not app — app no longer mounts /backups at all (docker:S6471: the
-# running web server has zero filesystem access to backup dumps, even read-only).
-docker compose run --rm --no-deps --entrypoint sh migrate -c \
-  'ls -lt /backups/pre-migration-*.sql.gz'
+# List nightly dumps on the migration_backups volume (or use your host backup-pre-upgrade-*.sql.gz)
+docker compose exec db-backup sh -c 'ls -lt /backups/nightly-*.sql.gz'
 
 # Empty target DB (credentials from the db container env — same pattern as manual backups above)
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
@@ -395,16 +413,16 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERRO
   -c "DROP DATABASE IF EXISTS \"$POSTGRES_DB\"" \
   -c "CREATE DATABASE \"$POSTGRES_DB\" OWNER \"$POSTGRES_USER\""'
 
-# Replay into the empty database (override entrypoint for restore — production image has no npm/npx)
-docker compose run --rm --no-deps --entrypoint sh migrate -c \
-  'gunzip -c /backups/pre-migration-<UTC-timestamp>.sql.gz | psql "$DATABASE_URL"'
+# Replay a nightly dump (replace timestamp; or pipe backup-pre-upgrade-*.sql.gz from the host instead)
+docker compose exec -T db-backup sh -c 'gunzip -c /backups/nightly-<UTC>.sql.gz' \
+  | docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1'
 
 # in deploy/.env: set ADMITTO_IMAGE to the previous tag, e.g. ghcr.io/solarssk/admitto:0.4.1
-docker compose pull app && docker compose up -d app
+docker compose pull app && docker compose up -d app worker
 ```
 
-Backups are written to the `migration_backups` volume before every `migrate deploy` run.
-Restore point is always available; data loss is limited to changes between the dump and the incident.
+Without a pre-upgrade or nightly dump you cannot roll the database back — Case A (image-only rollback)
+still works when the schema change was additive and the old app tolerates the new schema.
 Practice this on a non-production database before the first large event.
 
 ### Case C — the schema needs fixing after a bad migration

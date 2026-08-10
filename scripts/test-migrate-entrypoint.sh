@@ -37,6 +37,8 @@ prepare_env() {
     rm -f "${SMOKE_ENV}.bak"
   fi
   node validate-env.mjs "$SMOKE_ENV"
+  chmod +x scripts/init-host-dirs.sh 2>/dev/null || true
+  ./scripts/init-host-dirs.sh 2>/dev/null || mkdir -p emergency-exports uploads
 }
 
 on_fail() {

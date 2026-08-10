@@ -8,17 +8,24 @@ log() {
   printf '%s\n' "$*" >&2
 }
 
-# A no-op unless run as root — chown needs root; both `app` and `migrate` run as `node`, so this
-# only matters if a filesystem was created by a different container (e.g. a fresh bind mount) with
-# root ownership before the app user could write to it.
-ensure_emergency_export_dir_permissions() {
+# Every service runs as the unprivileged `node` user (UID 1000). Compose creates missing bind-mount
+# paths as root-owned; validate (or create when the parent allows) before emergency CLI export runs.
+ensure_emergency_export_dir_writable() {
   export_dir="${EMERGENCY_EXPORT_DIR:-/app/emergency-exports}"
-  if [ "$(id -u)" != "0" ]; then
-    return 0
+  if [ ! -d "$export_dir" ]; then
+    if ! mkdir -p "$export_dir" 2>/dev/null; then
+      log "error: emergency export directory does not exist and could not be created: $export_dir"
+      log "hint: on the Docker host run: cd deploy && ./scripts/init-host-dirs.sh"
+      log "hint: or: mkdir -p emergency-exports uploads && chown 1000:1000 emergency-exports uploads && chmod 700 emergency-exports"
+      exit 1
+    fi
   fi
-  mkdir -p "$export_dir"
-  chown node:node "$export_dir"
-  chmod 700 "$export_dir"
+  if [ ! -w "$export_dir" ]; then
+    log "error: emergency export directory is not writable by the app user: $export_dir"
+    log "hint: on the Docker host run: cd deploy && ./scripts/init-host-dirs.sh"
+    log "hint: or: chown 1000:1000 emergency-exports && chmod 700 emergency-exports"
+    exit 1
+  fi
 }
 
 quote_cmd_args() {
@@ -75,7 +82,7 @@ if [ "${1:-}" = "npm" ] || [ "${1:-}" = "npx" ]; then
 fi
 
 if [ "${1:-}" = "node" ]; then
-  ensure_emergency_export_dir_permissions
+  ensure_emergency_export_dir_writable
   run_as_node "$@"
 fi
 
@@ -95,8 +102,6 @@ if [ "${1:-}" != "migrate" ]; then
   log "usage: docker-entrypoint.sh migrate|serve|worker|node <script> ..."
   exit 64
 fi
-
-ensure_emergency_export_dir_permissions
 
 set +e
 status_out="$(migration_status_output)"
