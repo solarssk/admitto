@@ -46,6 +46,8 @@ describe("shouldUseRedisSse", () => {
     expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "redis://redis:6379" })).toBe(true);
     expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "redis://redis.example.com:6379" })).toBe(false);
     expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "rediss://redis.example.com:6379" })).toBe(true);
+    expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "https://redis.example.com" })).toBe(false);
+    expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "not a URL" })).toBe(false);
   });
 });
 
