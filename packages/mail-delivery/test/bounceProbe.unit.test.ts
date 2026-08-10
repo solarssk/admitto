@@ -191,7 +191,9 @@ describe("runEventBounceProbe (unit)", () => {
     );
 
     expect(result.status).toBe("failed");
-    expect(result.message).toMatch(/ALLOW_PRIVATE_MAIL_DESTINATIONS|private address/i);
+    expect(result.message).toMatch(
+      /ALLOW_PRIVATE_MAIL_DESTINATIONS|MAIL_PRIVATE_DESTINATION_ALLOWLIST|private address/i,
+    );
     expect(result.message).not.toMatch(/getaddrinfo|ECONNREFUSED/i);
     expect(result.sendResult.status).toBe("rejected");
     expect(result.sendResult.provider).toBe("smtp");
