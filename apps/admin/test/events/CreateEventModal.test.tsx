@@ -75,6 +75,39 @@ describe("CreateEventModal", () => {
     });
   });
 
+  it("keeps Create enabled for a non-ASCII title via a stable event-* slug fallback", async () => {
+    mockCreateEvent.mockResolvedValueOnce({
+      id: "evt-cyr",
+      title: "Осенний саммит",
+      slug: "event-placeholder",
+      date: "2026-09-29",
+      timezone: "Europe/Warsaw",
+      location: null,
+      organization_id: "org-1",
+      archived_at: null,
+    });
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText(/Event title/), {
+      target: { value: "Осенний саммит" },
+    });
+    pickEventDate("2026-09-29");
+
+    expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Осенний саммит",
+          slug: expect.stringMatching(/^event-[a-z0-9]+$/),
+        }),
+      );
+    });
+  });
+
   it("keeps submit disabled until date is set", () => {
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
 

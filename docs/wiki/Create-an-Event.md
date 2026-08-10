@@ -14,7 +14,7 @@ Create the event workspace before adding attendees, messages, requirements, or o
 Prepare the event title, calendar date, timezone, and optional location.
 
 > [!NOTE]
-> Admitto creates a short permanent ID from the title automatically (used in agency ticket links such as `/t/summer-summit/a/…`). Ordinary tickets use a private token only (`/t/…`). You do not choose that ID in the New event form.
+> Admitto creates a short permanent ID from the title automatically (used in agency ticket links such as `/t/summer-summit/a/…`). Ordinary tickets use a private token only (`/t/…`). You do not choose that ID in the New event form. Titles without Latin letters or digits (for example Cyrillic-only) still get a unique `event-…` ID so Create stays available.
 
 ## Steps
 

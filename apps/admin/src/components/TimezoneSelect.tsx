@@ -372,7 +372,13 @@ export function TimezoneSelect({
     setQuery("");
     setPanelStyle(HIDDEN_FIXED_PANEL);
     if (reason === "pointer") {
+      // Suppress only the same gesture's click (which can land on the re-focused trigger).
+      // Clear on the next macrotask so an ordinary outside click that never hits the trigger
+      // does not leave the flag stuck and force a double-click to reopen later.
       suppressNextTriggerClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextTriggerClickRef.current = false;
+      }, 0);
     }
     if (reason !== "focus" && reason !== "scroll") {
       window.setTimeout(() => triggerRef.current?.focus(), 0);
