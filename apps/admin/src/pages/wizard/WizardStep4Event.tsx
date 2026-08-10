@@ -94,7 +94,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
         return true;
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
-          addToast("Slug is already in use. Change the event name and try again.", "error");
+          addToast("An event with a similar name already exists. Change the title slightly and try again.", "error");
         } else {
           addToast(operatorApiErrorMessage(err, "Failed to create event."), "error");
         }
@@ -162,6 +162,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
             }}
             disabled={submitting}
             required
+            hint="Search by city (for example Warsaw). Admitto saves the official region clock for that place (shown as Europe/Warsaw)."
           />
         </div>
 
@@ -172,6 +173,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
             value={location}
             maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
             disabled={submitting}
+            showFindButton={false}
             placeholder="e.g. Warsaw, Poland"
             onChange={(text) => {
               setLocation(text);
@@ -185,10 +187,6 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
             }}
           />
         </div>
-
-        {slug && (
-          <p className="setup-wizard__hint">Your event will be available at /t/{slug}</p>
-        )}
       </>
     );
   },

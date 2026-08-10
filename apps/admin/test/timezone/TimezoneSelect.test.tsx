@@ -373,4 +373,74 @@ describe("TimezoneSelect", () => {
       ).toBe(true);
     });
   });
+
+  it("closes and stays closed when clicking an external <label for> while open", () => {
+    render(
+      <div>
+        <label htmlFor="event-tz">Event timezone</label>
+        <TimezoneSelect id="event-tz" value="UTC" onChange={() => {}} />
+      </div>,
+    );
+    fireEvent.click(document.getElementById("event-tz")!);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    const externalLabel = screen.getByText("Event timezone");
+    fireEvent.pointerDown(externalLabel);
+    fireEvent.click(externalLabel);
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("stays closed after an outside pointerdown that would otherwise reopen via the trigger click", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <div>
+          <button type="button">Outside</button>
+          <TimezoneSelect id="tz-suppress" value="UTC" onChange={() => {}} />
+        </div>,
+      );
+      fireEvent.click(document.getElementById("tz-suppress")!);
+      expect(screen.getByRole("listbox")).toBeTruthy();
+
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+      expect(screen.queryByRole("listbox")).toBeNull();
+
+      // Same gesture's click can land on the re-focused trigger; suppress that reopen.
+      fireEvent.click(document.getElementById("tz-suppress")!);
+      expect(screen.queryByRole("listbox")).toBeNull();
+      act(() => {
+        vi.runAllTimers();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows reopening after an ordinary outside close once the closing gesture finishes", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <div>
+          <button type="button">Outside</button>
+          <TimezoneSelect id="tz-reopen" value="UTC" onChange={() => {}} />
+        </div>,
+      );
+      fireEvent.click(document.getElementById("tz-reopen")!);
+      expect(screen.getByRole("listbox")).toBeTruthy();
+
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+      expect(screen.queryByRole("listbox")).toBeNull();
+      // Click landed on Outside, not the trigger - flush the gesture so suppression clears.
+      fireEvent.click(screen.getByRole("button", { name: "Outside" }));
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      fireEvent.click(document.getElementById("tz-reopen")!);
+      expect(screen.getByRole("listbox")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
