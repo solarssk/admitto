@@ -11,6 +11,10 @@ export type SseEvent =
       operatorId: string | null;
       deviceLabel: string | null;
     }
+  // Lightweight signal for activity types with no optimistic-render payload (attendee added,
+  // item issued/returned/revoked) - the client just refetches the overview on receipt, same as
+  // the reconcile it already does after a live "checkin".
+  | { type: "activity_changed" }
   | { type: "ping" };
 
 type SseListener = (event: SseEvent) => void;

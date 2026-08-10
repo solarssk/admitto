@@ -1542,7 +1542,7 @@ export function EventOverviewPage() {
     [scheduleReconcile],
   );
 
-  useEventStream(event.id, handleLiveCheckin);
+  useEventStream(event.id, handleLiveCheckin, scheduleReconcile);
 
   const handleSaveNote = useCallback(async (note: string | null) => {
     const capturedEventId = event.id;
