@@ -8,31 +8,38 @@
 --
 -- Untouched seed rows (from 20260617120000) use the deterministic id
 -- ei_||md5(event_id||':badge') and still have updated_at = created_at.
-UPDATE "EventItem"
-SET
-  "description" = CASE
-    WHEN "description" IS NULL THEN 'Name badge issued at check-in.'
-    ELSE "description"
-  END,
-  "icon" = CASE
-    WHEN "icon" IS NULL OR "icon" = 'package' THEN 'id-badge-2'
-    ELSE "icon"
-  END,
-  "updated_at" = CURRENT_TIMESTAMP
-WHERE "key" = 'badge'
-  AND "id" = ('ei_' || substr(md5("event_id" || ':badge'), 1, 24))
-  AND "updated_at" = "created_at"
-  AND (
-    "description" IS NULL
-    OR "icon" IS NULL
-    OR "icon" = 'package'
-  );
-
 -- Literal icon 'package' is never the intentional post-normalize stored value
--- (package collapses to NULL on save), so rewriting only the icon is always safe.
-UPDATE "EventItem"
-SET
-  "icon" = 'id-badge-2',
-  "updated_at" = CURRENT_TIMESTAMP
-WHERE "key" = 'badge'
-  AND "icon" = 'package';
+-- (package collapses to NULL on save), so rewriting only that icon is always safe.
+DO $$
+DECLARE
+  package_icon text := 'package';
+  badge_icon text := 'id-badge-2';
+  badge_description text := 'Name badge issued at check-in.';
+BEGIN
+  UPDATE "EventItem"
+  SET
+    "description" = CASE
+      WHEN "description" IS NULL THEN badge_description
+      ELSE "description"
+    END,
+    "icon" = CASE
+      WHEN "icon" IS NULL OR "icon" = package_icon THEN badge_icon
+      ELSE "icon"
+    END,
+    "updated_at" = CURRENT_TIMESTAMP
+  WHERE "key" = 'badge'
+    AND "id" = ('ei_' || substr(md5("event_id" || ':badge'), 1, 24))
+    AND "updated_at" = "created_at"
+    AND (
+      "description" IS NULL
+      OR "icon" IS NULL
+      OR "icon" = package_icon
+    );
+
+  UPDATE "EventItem"
+  SET
+    "icon" = badge_icon,
+    "updated_at" = CURRENT_TIMESTAMP
+  WHERE "key" = 'badge'
+    AND "icon" = package_icon;
+END $$;
