@@ -36,8 +36,7 @@ The email opens a valid browser ticket, the QR image renders clearly, and the co
 - A ticket is event-specific and belongs to one attendee.
 - Active and Confirmed passes can be admitted. Cancelled and Revoked passes cannot.
 - A repeated valid scan returns an already-checked-in result instead of recording a second admission.
-- Wallet passes are planned and are not part of the current supported workflow.
-- Wallet badges on the browser ticket are visual placeholders only and do not create a wallet pass.
+- The browser ticket's **Add to Apple Wallet** / **Add to Google Wallet** badges create a wallet pass on demand the first time an attendee taps one, then reopen the same pass on later taps. If the wallet provider cannot be reached, the ticket reloads with a message asking the attendee to try again; the QR code stays the source of truth for check-in either way.
 
 ## What changes after this action
 
