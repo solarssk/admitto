@@ -140,7 +140,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "CIDR list of TCP peers allowed to set forwarded headers. Default compose nginx subnet in .env.example; widen carefully for Portainer-without-nginx (often Docker bridge)."
+      "summary": "CIDR list of TCP peers allowed to set forwarded headers. Variant A: compose internal subnet in .env.example. Variant B (Portainer/NPM direct to app): use NPM's source on /32 only, not broad RFC1918 ranges."
     },
     {
       "name": "MIGRATION_BACKUP_DIR",
@@ -257,7 +257,7 @@
       "consumers": ["app", "worker"],
       "secret": false,
       "ui": "Organisation / Event mail settings",
-      "summary": "SMTP hostname. Production blocks private/link-local targets unless allowlisted (see MAIL_PRIVATE_DESTINATION_ALLOWLIST when available in your image)."
+      "summary": "SMTP hostname. Production blocks private/link-local targets (lab: ALLOW_PRIVATE_MAIL_DESTINATIONS when NODE_ENV is not production)."
     },
     {
       "name": "SMTP_PORT",
@@ -390,9 +390,9 @@
       "group": "mail",
       "boot": "optional",
       "consumers": ["app", "worker"],
-      "secret": false,
+      "secret": true,
       "ui": "Organisation / Event mail settings",
-      "summary": "Power Automate HTTP trigger URL (same SSRF rules as SMTP host)."
+      "summary": "Power Automate HTTP trigger URL (treat as a credential; may embed a signed token). Same SSRF rules as SMTP host."
     },
     {
       "name": "POWER_AUTOMATE_KEY",
@@ -456,16 +456,6 @@
       "secret": false,
       "ui": "none",
       "summary": "Lab only. When true and NODE_ENV is not production, allow SMTP/IMAP/PA hosts on private addresses. Ignored in production."
-    },
-    {
-      "name": "MAIL_PRIVATE_DESTINATION_ALLOWLIST",
-      "group": "mail",
-      "boot": "optional",
-      "consumers": ["app", "worker"],
-      "secret": false,
-      "ui": "none",
-      "catalogOnly": true,
-      "summary": "Comma-separated exact hostnames/IPs allowed to be private in production (self-hosted LAN MTA). Set on app and worker. Shipping via feature/mail-private-destination-allowlist; remove catalogOnly after that lands on main."
     },
     {
       "name": "BOUNCE_INGEST_TICK_SECONDS",

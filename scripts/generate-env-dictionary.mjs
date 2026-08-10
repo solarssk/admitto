@@ -53,6 +53,7 @@ const ENV_KEY = "([A-Z][A-Z0-9_]*)";
 const TS_ENV_DOT_RE = new RegExp(String.raw`process\.env\.${ENV_KEY}`, "g");
 const TS_ENV_BRACKET_RE = new RegExp(String.raw`process\.env\[\s*['"]${ENV_KEY}['"]\s*\]`, "g");
 const ENV_LIKE_BRACKET_RE = new RegExp(String.raw`\benv\[\s*['"]${ENV_KEY}['"]\s*\]`, "g");
+const ENV_DOT_RE = new RegExp(String.raw`(?<![.\w])env\.${ENV_KEY}`, "g");
 // Capture only the variable name; ignore ${VAR:-default} / ${VAR:?err} suffixes.
 const SHELL_BRACE_RE = new RegExp(String.raw`\$\{${ENV_KEY}`, "g");
 const ENV_ASSIGN_RE = new RegExp(`^${ENV_KEY}=`, "gm");
@@ -126,6 +127,7 @@ function scanTsJs(map, text, rel) {
   collectMatches(map, text, TS_ENV_DOT_RE, rel);
   collectMatches(map, text, TS_ENV_BRACKET_RE, rel);
   collectMatches(map, text, ENV_LIKE_BRACKET_RE, rel);
+  collectMatches(map, text, ENV_DOT_RE, rel);
 }
 
 function scanShellOrCompose(map, text, rel, base) {

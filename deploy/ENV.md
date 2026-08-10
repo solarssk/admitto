@@ -44,7 +44,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
 | `TRUST_PROXY` | recommended | app | none | no | When true, honour X-Forwarded-* from peers allowed by TRUSTED_PROXY_CIDRS (required behind NPM/nginx). |
-| `TRUSTED_PROXY_CIDRS` | recommended | app | none | no | CIDR list of TCP peers allowed to set forwarded headers. Default compose nginx subnet in .env.example; widen carefully for Portainer-without-nginx (often Docker bridge). |
+| `TRUSTED_PROXY_CIDRS` | recommended | app | none | no | CIDR list of TCP peers allowed to set forwarded headers. Variant A: compose internal subnet in .env.example. Variant B (Portainer/NPM direct to app): use NPM's source on /32 only, not broad RFC1918 ranges. |
 
 ## Migrations and DB backups
 
@@ -74,7 +74,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `MAIL_FROM_NAME` | optional | app, worker | Organisation / Event mail settings | no | Default From display name. |
 | `MAIL_REPLY_TO` | optional | app, worker | Organisation / Event mail settings | no | Optional Reply-To. |
 | `MAIL_ENVELOPE_FROM` | optional | app, worker | Organisation / Event mail settings | no | Optional envelope/MAIL FROM override. |
-| `SMTP_HOST` | optional | app, worker | Organisation / Event mail settings | no | SMTP hostname. Production blocks private/link-local targets unless allowlisted (see MAIL_PRIVATE_DESTINATION_ALLOWLIST when available in your image). |
+| `SMTP_HOST` | optional | app, worker | Organisation / Event mail settings | no | SMTP hostname. Production blocks private/link-local targets (lab: ALLOW_PRIVATE_MAIL_DESTINATIONS when NODE_ENV is not production). |
 | `SMTP_PORT` | optional | app, worker | Organisation / Event mail settings | no | SMTP port (587 STARTTLS or 465 implicit TLS). |
 | `SMTP_SECURE` | optional | app, worker | Organisation / Event mail settings | no | true for implicit TLS (typically 465). |
 | `SMTP_USER` | optional | app, worker | Organisation / Event mail settings | no | SMTP username. |
@@ -89,7 +89,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `SMTP_CONNECTION_TIMEOUT` | optional | app, worker | none | no | SMTP connect timeout (ms). |
 | `SMTP_GREETING_TIMEOUT` | optional | app, worker | none | no | SMTP greeting timeout (ms). |
 | `SMTP_SOCKET_TIMEOUT` | optional | app, worker | none | no | SMTP socket timeout (ms). |
-| `POWER_AUTOMATE_URL` | optional | app, worker | Organisation / Event mail settings | no | Power Automate HTTP trigger URL (same SSRF rules as SMTP host). |
+| `POWER_AUTOMATE_URL` | optional | app, worker | Organisation / Event mail settings | yes | Power Automate HTTP trigger URL (treat as a credential; may embed a signed token). Same SSRF rules as SMTP host. |
 | `POWER_AUTOMATE_KEY` | optional | app, worker | Organisation / Event mail settings | yes | Power Automate shared key / secret header value. |
 | `GRAPH_TENANT_ID` | optional | app, worker | Organisation / Event mail settings | no | Microsoft Graph tenant ID. |
 | `GRAPH_CLIENT_ID` | optional | app, worker | Organisation / Event mail settings | no | Microsoft Graph app (client) ID. |
@@ -97,7 +97,6 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `GRAPH_MAILBOX` | optional | app, worker | Organisation / Event mail settings | no | Mailbox UPN used as Graph send-as identity. |
 | `GRAPH_SAVE_TO_SENT` | optional | app, worker | Organisation / Event mail settings | no | Whether Graph keeps messages in Sent Items. |
 | `ALLOW_PRIVATE_MAIL_DESTINATIONS` | optional | app, worker | none | no | Lab only. When true and NODE_ENV is not production, allow SMTP/IMAP/PA hosts on private addresses. Ignored in production. |
-| `MAIL_PRIVATE_DESTINATION_ALLOWLIST` | optional | app, worker | none | no | Comma-separated exact hostnames/IPs allowed to be private in production (self-hosted LAN MTA). Set on app and worker. Shipping via feature/mail-private-destination-allowlist; remove catalogOnly after that lands on main. |
 
 ## Background worker
 
@@ -186,4 +185,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 101 distinct keys seen in scan (tests excluded)._
+_Last generated from 102 distinct keys seen in scan (tests excluded)._

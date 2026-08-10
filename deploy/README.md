@@ -109,7 +109,7 @@ location ~ ^/api/checkin/events/[^/]+/stream$ {
 
 ### Variant B — Portainer / NAS without compose nginx
 
-Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner: NPM talks straight to `app`, so `TRUSTED_PROXY_CIDRS` must include the Docker/host path NPM uses (often something in `172.16.0.0/12`, not the compose `internal` nginx subnet).
+Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner: NPM talks straight to `app`, so `TRUSTED_PROXY_CIDRS` must list **only** the TCP source address NPM uses — not every private Docker network on the host.
 
 Checklist:
 
@@ -120,14 +120,20 @@ Checklist:
 ```env
 BASE_URL=https://your.public.hostname
 TRUST_PROXY=true
-TRUSTED_PROXY_CIDRS=172.16.0.0/12
+# NPM's actual source as seen by the app container — often the Docker bridge gateway on /32
+# (e.g. 172.17.0.1/32) when NPM is in Docker, or 127.0.0.1/32 when NPM runs on the host and
+# forwards to localhost. Do NOT use 172.16.0.0/12: any other container on the host's Docker
+# networks could then spoof X-Forwarded-For / Host / Proto for rate limits and CSRF checks.
+TRUSTED_PROXY_CIDRS=172.17.0.1/32
 ```
+
+Find the right CIDR: from the app container, log or inspect the peer address of a request that came through NPM (`docker inspect <npm-container> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`), or use your platform docs for host→published-port routing.
 
 4. Mount `/backups` on **migrate** (and db-backup), uploads + emergency-exports writable by uid 1000.
 5. Run **worker** with the same secrets as `app`.
 6. Prefer Variant A when you can; Variant B is for stacks that intentionally omit compose nginx.
 
-Self-hosted LAN SMTP that resolves to RFC1918 needs a production allowlist in supported images (`MAIL_PRIVATE_DESTINATION_ALLOWLIST` — see [ENV.md](./ENV.md) / changelog). Opening SMTP on the public WAN is usually the wrong fix.
+Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=production`. Use a LAN hostname that resolves to your MTA, or set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` only on non-production lab stacks. Opening SMTP on the public WAN is usually the wrong fix.
 
 ---
 
