@@ -665,49 +665,13 @@
       "summary": "JSON array of path prefixes protected by Access."
     },
     {
-      "name": "OIDC_ENABLED",
+      "name": "SSO_PRIVATE_DESTINATION_ALLOWLIST",
       "group": "identity",
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "Settings → Identity (preferred)",
-      "summary": "Optional env seed for OIDC; production config is normally UI."
-    },
-    {
-      "name": "OIDC_ISSUER",
-      "group": "identity",
-      "boot": "optional",
-      "consumers": ["app"],
-      "secret": false,
-      "ui": "Settings → Identity",
-      "summary": "OIDC issuer URL seed."
-    },
-    {
-      "name": "OIDC_CLIENT_ID",
-      "group": "identity",
-      "boot": "optional",
-      "consumers": ["app"],
-      "secret": false,
-      "ui": "Settings → Identity",
-      "summary": "OIDC client id seed."
-    },
-    {
-      "name": "OIDC_CLIENT_SECRET",
-      "group": "identity",
-      "boot": "optional",
-      "consumers": ["app"],
-      "secret": true,
-      "ui": "Settings → Identity",
-      "summary": "OIDC client secret seed."
-    },
-    {
-      "name": "OIDC_DISPLAY_NAME",
-      "group": "identity",
-      "boot": "optional",
-      "consumers": ["app"],
-      "secret": false,
-      "ui": "Settings → Identity",
-      "summary": "SSO button label seed."
+      "ui": "none",
+      "summary": "Comma-separated exact hostnames/IPs allowed to resolve privately for identity SSO (OIDC Issuer/endpoints today; same list for future SAML). One list covers every provider sharing those hosts. Set on app. Providers themselves are configured only in Settings → Identity."
     },
     {
       "name": "LOCATION_MAPS_ENABLED",

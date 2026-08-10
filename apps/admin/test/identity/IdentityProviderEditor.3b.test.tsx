@@ -416,6 +416,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Issuer URL must use HTTPS/);
+    await screen.findByText(/SSO_PRIVATE_DESTINATION_ALLOWLIST/);
     expect(screen.queryByText("Connection test failed.")).toBeNull();
   });
 
