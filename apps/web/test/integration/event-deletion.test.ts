@@ -322,6 +322,26 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(event).toBeNull();
   });
 
+  it("allows delete when the only leftover is a named image asset row", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.eventImageAsset.create({
+      data: {
+        event_id: eventId,
+        token: "hero",
+        filename: "hero.png",
+        url: `/uploads/default/event/${eventId}/hero.png`,
+        size_bytes: 128,
+        mime_type: "image/png",
+      },
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(200);
+
+    expect(await prisma.event.findUnique({ where: { id: eventId } })).toBeNull();
+    expect(await prisma.eventImageAsset.count({ where: { event_id: eventId } })).toBe(0);
+  });
+
   it("permanently deletes a truly-empty archived event and writes AdminAuditLog", async () => {
     const eventId = await createEvent({ archived: true });
 

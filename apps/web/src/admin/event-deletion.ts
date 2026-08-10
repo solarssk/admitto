@@ -22,12 +22,14 @@
  * config changes, attendee_erased rows with null attendee_id) is deliberately NOT a
  * deletability signal: demo/test events would otherwise become permanently undeletable after
  * normal use, and lifecycle-sensitive trails (e.g. attendee_erased) are also written to
- * org-level AdminAuditLog, which survives event deletion.
+ * org-level AdminAuditLog, which survives event deletion. EventImageAsset rows cascade too,
+ * but managed `/uploads/…` files are deleted post-commit (same as handleDeleteEventImageAsset).
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import {
   lockEventForMailSettingsWrite,
   requireAuditActor,
@@ -131,7 +133,7 @@ type DeleteActor = { userId: string };
 type DeleteTxResult =
   | { kind: "not_found" }
   | { kind: "not_deletable" }
-  | { kind: "ok"; eventTitle: string };
+  | { kind: "ok"; eventTitle: string; managedUploadUrls: Array<string | null> };
 
 export async function deleteEvent(
   db: PrismaClient,
@@ -151,12 +153,31 @@ export async function deleteEvent(
 
       const event = await tx.event.findUnique({
         where: { id: eventId },
-        select: { archived_at: true, pinned_note: true, organization_id: true, title: true },
+        select: {
+          archived_at: true,
+          pinned_note: true,
+          organization_id: true,
+          title: true,
+          logo_url: true,
+          logo_original_url: true,
+          header_image_url: true,
+        },
       });
       if (!event) return { kind: "not_found" };
 
       const signals = await countEventActivitySignals(tx, eventId);
       if (!isEventDeletable(event, signals)) return { kind: "not_deletable" };
+
+      const imageAssets = await tx.eventImageAsset.findMany({
+        where: { event_id: eventId },
+        select: { url: true },
+      });
+      const managedUploadUrls = [
+        event.logo_url,
+        event.logo_original_url,
+        event.header_image_url,
+        ...imageAssets.map((asset) => asset.url),
+      ];
 
       // Defensive cleanup: MailTemplate has no FK to Event, so this is a no-op given the
       // guard above already requires eventMailTemplateCount === 0 - kept so a deleted
@@ -181,11 +202,18 @@ export async function deleteEvent(
         actionType: "event_deleted",
         metadata: { eventId },
       });
-      return { kind: "ok", eventTitle: event.title };
+      return { kind: "ok", eventTitle: event.title, managedUploadUrls };
     });
 
     if (txResult.kind === "not_found") return { code: "not_found" };
     if (txResult.kind === "not_deletable") return { code: "not_deletable" };
+
+    // TODO(multi-org): same single-tenant assumption as event-image-assets-routes.
+    await bestEffortDeleteReplacedUploadUrls(
+      txResult.managedUploadUrls,
+      [],
+      { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
+    );
 
     // Emitted after the transaction has committed (CodeRabbit review) - emitSystemLog is
     // not transactional, so logging it from inside the callback above would record a
