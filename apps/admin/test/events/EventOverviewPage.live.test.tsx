@@ -145,6 +145,16 @@ function statsRow(): HTMLElement {
   return document.querySelector(".overview-stats") as HTMLElement;
 }
 
+/** Setup checklist card - labels like "Tickets sent" also appear on the KPI row. */
+function checklistCard(): HTMLElement {
+  const title = Array.from(document.querySelectorAll(".at-card__title")).find(
+    (el) => el.textContent === "Setup checklist",
+  );
+  const card = title?.closest(".at-card");
+  if (!card) throw new Error("Setup checklist card not found");
+  return card as HTMLElement;
+}
+
 /** The Check-in progress card's admission ring legend now owns the admitted count display (the
  * top KPI row's old "Checked in" tile was removed in favor of a Days-to-event tile, #E1) — this
  * still carries the optimistic SSE delta instantly, same as the removed tile used to. */
@@ -599,11 +609,12 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.getByText("Setup checklist")).toBeTruthy();
     });
-    expect(screen.getByText("Attendees imported")).toBeTruthy();
-    expect(screen.getByText("Tickets sent")).toBeTruthy();
-    expect(screen.getByText("Email delivery")).toBeTruthy();
-    expect(screen.getByText("Check-in staff")).toBeTruthy();
-    expect(screen.getByText("Event items")).toBeTruthy();
+    const checklist = within(checklistCard());
+    expect(checklist.getByText("Attendees imported")).toBeTruthy();
+    expect(checklist.getByText("Tickets sent")).toBeTruthy();
+    expect(checklist.getByText("Email delivery")).toBeTruthy();
+    expect(checklist.getByText("Check-in staff")).toBeTruthy();
+    expect(checklist.getByText("Event items")).toBeTruthy();
   });
 
   it("renders the Check-in progress card's ring percentage and glance stats", async () => {

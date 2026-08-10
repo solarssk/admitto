@@ -240,6 +240,14 @@ function unavailablePlaceholderText(loading: boolean, showLoading: boolean): str
   return "Unavailable";
 }
 
+
+function checklistStatusIcon(status: "ok" | "warn" | "error" | "pending" | string): string {
+  if (status === "error") return "ti-x";
+  if (status === "ok") return "ti-check";
+  if (status === "warn") return "ti-alert-triangle";
+  return "ti-minus";
+}
+
 function SetupChecklistCard({
   overview,
   loading,
@@ -279,18 +287,7 @@ function SetupChecklistCard({
         {items.map((item) => (
           <div key={item.label} className="overview-readiness-item">
             <span className={`status-circle status-circle--${item.status}`} aria-hidden="true">
-              <i
-                className={`ti ${
-                  item.status === "error"
-                    ? "ti-x"
-                    : item.status === "ok"
-                      ? "ti-check"
-                      : item.status === "warn"
-                        ? "ti-alert-triangle"
-                        : "ti-minus"
-                }`}
-                aria-hidden="true"
-              />
+              <i className={`ti ${checklistStatusIcon(item.status)}`} aria-hidden="true" />
             </span>
             <div className="overview-readiness-item__body">
               <strong>{item.label}</strong>
