@@ -1,15 +1,12 @@
 import { useState } from "react";
-import { Button, Card, EmptyState, HintLabel, IconButton, Notice, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, IconButton, useToast } from "@admitto/ui";
 import { ApiError, deleteEventCustomField } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
+import { customFieldTypeIcon } from "./customFieldType.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
-
-const CUSTOM_FIELDS_NOTICE =
-  "Extra fields for the attendee form, CSV import, and exports. After you add a field, open an Event item and tick which ones operators should see at check-in.";
 
 const CUSTOM_FIELDS_HINT =
   "Also used in the attendee form, CSV import, and exports. Fields used as item hints can't be deleted until removed from the item.";
@@ -34,6 +31,7 @@ function CustomFieldRow({
   readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
+  const description = field.description?.trim() ?? "";
   return (
     <tr>
       <td>
@@ -45,7 +43,11 @@ function CustomFieldRow({
           </div>
         </div>
       </td>
-      <td className="requirements-type-col">{customFieldTypeLabel(field.type)}</td>
+      <td className="requirements-item-desc-col">
+        {description !== "" ? (
+          <div className="requirements-item-desc">{description}</div>
+        ) : null}
+      </td>
       <td>{field.required ? "Yes" : "No"}</td>
       <td className="requirements-item-actions">
         <div className="requirements-item-actions__wrap">
@@ -132,7 +134,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
           <thead>
             <tr>
               <th>Field</th>
-              <th className="requirements-type-col">Type</th>
+              <th className="requirements-item-desc-col">Description</th>
               <th>Required</th>
               <th aria-label="Actions" />
             </tr>
@@ -156,7 +158,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
   return (
     <section className="requirements-section">
       <Card
-        /* Table bleeds edge-to-edge; text/empty states keep normal card padding (Import history). */
+        /* Table bleeds edge-to-edge; empty/loading keep normal card padding (Import history). */
         padded={!showTable}
         title={<HintLabel hint={CUSTOM_FIELDS_HINT}>Custom attendee fields</HintLabel>}
         actions={
@@ -175,19 +177,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
           </ArchivedGuard>
         }
       >
-        {showTable ? (
-          <>
-            <div className="requirements-custom-fields-notice">
-              <Notice variant="info">{CUSTOM_FIELDS_NOTICE}</Notice>
-            </div>
-            {renderBody()}
-          </>
-        ) : (
-          <div className="settings-card-stack">
-            {!loading && <Notice variant="info">{CUSTOM_FIELDS_NOTICE}</Notice>}
-            {renderBody()}
-          </div>
-        )}
+        {renderBody()}
       </Card>
 
       {(addOpen || editField) && (

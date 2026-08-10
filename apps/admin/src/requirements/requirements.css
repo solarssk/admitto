@@ -2,11 +2,6 @@
   margin-bottom: var(--space-5);
 }
 
-/* Notice above the flush custom-fields table (Card is padded={false} when rows exist). */
-.requirements-custom-fields-notice {
-  padding: var(--pad-card) var(--pad-card) var(--space-3);
-}
-
 /* These two tables are short on columns and short on content per cell —
    opt out of the wide-table min-width meant for the (much denser) attendees
    table, so they can shrink to fit tablet/mobile widths instead of forcing
