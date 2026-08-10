@@ -487,8 +487,14 @@
      clipped flush against a focused input's edges. Bleed out by the ring width and pad back
      in by the same amount so field content still lines up with the header/footer above/below. */
   margin: 0 calc(-1 * var(--ring-width));
-  padding: 0 var(--ring-width);
-  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll. */
+  padding-left: var(--ring-width);
+  /* Extra 8px on the right so the slim thumb sits beside controls (Active switch, icon grid)
+   * instead of painting over them - same lane as .overview-timeline. */
+  padding-right: calc(var(--ring-width) + 8px);
+  /* Item/Badge bodies almost always overflow; reserve the track like .main-scroll /
+   * .overview-timeline / .attendee-deliveries-scroll. (Short add-attendee modals skip this on
+   * purpose - they rarely scroll and would keep a permanent dead gutter.) */
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
