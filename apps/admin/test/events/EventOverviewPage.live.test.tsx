@@ -18,13 +18,19 @@ const fetchTicketTypes = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
+let activityChangedHandler: (() => void) | null = null;
 // Lets a test simulate the SSE handshake not having completed yet (#C) — defaults to true so
 // every other test keeps its original "always connected" behavior.
 let mockStreamConnected = true;
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: (_eventId: string, onCheckin: (event: StreamCheckinEvent) => void) => {
+  useEventStream: (
+    _eventId: string,
+    onCheckin: (event: StreamCheckinEvent) => void,
+    onActivityChanged?: () => void,
+  ) => {
     streamHandler = onCheckin;
+    activityChangedHandler = onActivityChanged ?? null;
     return { connected: mockStreamConnected, status: mockStreamConnected ? "connected" : "connecting" };
   },
 }));
@@ -166,6 +172,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   streamHandler = null;
+  activityChangedHandler = null;
   mockStreamConnected = true;
 });
 
@@ -959,6 +966,42 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       const staleIndex = items.findIndex((el) => el.textContent?.includes("Stale Guest"));
       expect(freshIndex).toBeGreaterThanOrEqual(0);
       expect(staleIndex).toBeGreaterThan(freshIndex);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds the reconcile delay when activity_changed signals arrive continuously, instead of restarting the timer on every signal", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventOverview.mockResolvedValueOnce(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(admittedLegendValue()).toBe("5");
+      });
+      expect(activityChangedHandler).not.toBeNull();
+
+      fetchEventOverview.mockResolvedValue(overviewFixture(6));
+
+      // First signal starts the bounded reconcile timer.
+      act(() => { activityChangedHandler?.(); });
+      // Two more signals land well inside the 3s window - a busy handout desk issuing items
+      // back-to-back. A naive clear-and-restart debounce would push the reconcile further out
+      // each time and never catch up; the bound must let the original timer fire regardless.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      act(() => { activityChangedHandler?.(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      act(() => { activityChangedHandler?.(); });
+
+      // Only 1s left to reach 3s from the *first* signal - a reset-on-every-call debounce would
+      // still have ~2s left at this point (3s from the last signal at t=2000) and not have fired.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+
+      await waitFor(() => {
+        expect(admittedLegendValue()).toBe("6");
+      });
     } finally {
       vi.useRealTimers();
     }

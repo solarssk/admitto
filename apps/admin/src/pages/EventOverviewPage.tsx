@@ -1519,10 +1519,12 @@ export function EventOverviewPage() {
     setPinnedNote(data.event.pinned_note);
   }, []);
 
+  // Bounded, not a plain reset-on-every-call debounce: a pending timer is left alone rather than
+  // restarted, so a steady stream of signals (busy handout desk issuing items back-to-back) still
+  // reconciles within ~3s of the *first* one instead of only after a quiet gap - important since
+  // activity_changed (unlike checkin) has no optimistic local render to fall back on in between.
   const scheduleReconcile = useCallback(() => {
-    if (reconcileTimerRef.current != null) {
-      window.clearTimeout(reconcileTimerRef.current);
-    }
+    if (reconcileTimerRef.current != null) return;
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
       void fetchEventOverview(event.id)
@@ -1542,7 +1544,7 @@ export function EventOverviewPage() {
     [scheduleReconcile],
   );
 
-  useEventStream(event.id, handleLiveCheckin);
+  useEventStream(event.id, handleLiveCheckin, scheduleReconcile);
 
   const handleSaveNote = useCallback(async (note: string | null) => {
     const capturedEventId = event.id;

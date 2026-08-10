@@ -27,3 +27,13 @@ export function publishCheckinIfValid(
     console.error("SSE publish failed (non-fatal):", err);
   }
 }
+
+/** Publish a lightweight "something changed" SSE signal after an attendee-add or item
+ * issue/return/revoke write. No payload: the client just refetches the overview. */
+export function publishActivityChanged(eventId: string): void {
+  try {
+    publish(eventId, { type: "activity_changed" });
+  } catch (err) {
+    console.error("SSE publish failed (non-fatal):", err);
+  }
+}

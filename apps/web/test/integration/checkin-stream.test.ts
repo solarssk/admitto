@@ -203,4 +203,33 @@ describe("GET /api/checkin/events/:eventId/stream", () => {
     }
     expect(subscriberCount(EVENT_A)).toBe(0);
   });
+
+  it("delivers published activity_changed events", async () => {
+    const app = buildStreamApp();
+    const res = await app.request(`/api/checkin/events/${EVENT_A}/stream`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const readChunk = async () => {
+      const { value, done } = await reader.read();
+      if (done) return false;
+      buffer += decoder.decode(value, { stream: true });
+      return true;
+    };
+
+    await readChunk();
+    buffer = "";
+
+    publish(EVENT_A, { type: "activity_changed" });
+
+    await readChunk();
+    expect(buffer).toContain('"type":"activity_changed"');
+
+    await reader.cancel();
+  });
 });
