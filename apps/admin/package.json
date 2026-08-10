@@ -24,6 +24,7 @@
     "@tabler/icons-webfont": "3.46.0",
     "@zxing/browser": "^0.2.0",
     "countries-list": "^3.4.1",
+    "country-flag-emoji-polyfill": "^0.1.10",
     "leaflet": "^1.9.4",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",

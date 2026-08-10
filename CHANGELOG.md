@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Backing up before an upgrade is now the operator's responsibility; the nightly `db-backup` service is unchanged and remains the automated baseline. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user. See the updated upgrade and restore steps in `deploy/README.md`.
 
 ### Fixed
+- Users & roles: clearer labels (Identity provider / Local password; Two-factor / Authenticator app), Windows Chrome shows country flags in phone pickers via a bundled Twemoji font, and Invite user resists Chrome autofill into phone and temporary password.
 - Events picker: **New event** stays on one row with the title on mobile and shows a calendar-plus icon.
 - New event modal: location has a single Optional label, the link ID is generated from the title (no Link name field), Find on map is removed, the timezone hint is clearer, and the timezone list reopens with one click after closing it by clicking outside. Non-Latin titles still get a unique `event-<fingerprint>` link ID so Create stays enabled.
 - Event Overview now shows completed setup checks alongside outstanding work, describes email activity consistently, and lets staff save key contact phone numbers with a country-code picker.

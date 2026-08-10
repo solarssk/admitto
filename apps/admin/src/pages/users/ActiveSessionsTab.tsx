@@ -217,7 +217,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                   options={[
                     { id: "all", label: "All sign-in methods" },
                     { id: "local", label: "Local password", icon: "key" },
-                    { id: "oidc", label: "Identity provider (SSO)", icon: "cloud-lock" },
+                    { id: "oidc", label: "Identity provider", icon: "cloud-lock" },
                   ]}
                   onChange={(id) => {
                     setSignInFilter(id as SignInFilterValue);

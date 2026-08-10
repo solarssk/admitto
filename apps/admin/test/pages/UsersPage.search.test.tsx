@@ -115,7 +115,7 @@ describe("UsersPage header", () => {
     expect(await screen.findByRole("heading", { name: /Invite a new team member/ })).toBeTruthy();
   });
 
-  it("shows the MFA coverage tile in its ok (green) state at full coverage", async () => {
+  it("shows the Two-factor coverage tile in its ok (green) state at full coverage", async () => {
     vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
     vi.mocked(fetchUserStats).mockResolvedValue({
       total: 4,

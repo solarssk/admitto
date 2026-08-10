@@ -57,7 +57,7 @@ function StaffUsersSkeleton() {
               <th>User</th>
               <th>Roles</th>
               <th>Sign-in</th>
-              <th>MFA</th>
+              <th>Two-factor</th>
               <th>Last login</th>
               <th>Sessions</th>
               <th>Status</th>
@@ -242,7 +242,7 @@ export function UsersPage() {
               </div>
               <div className="users-page__stat-body">
                 <span className="users-page__stat-value">{stats.sso}</span>
-                <span className="users-page__stat-label">Via SSO</span>
+                <span className="users-page__stat-label">Via identity provider</span>
                 <span className="users-page__stat-sub">of {stats.total} total</span>
               </div>
             </div>
@@ -256,7 +256,7 @@ export function UsersPage() {
               </div>
               <div className="users-page__stat-body">
                 <span className="users-page__stat-value">{mfaPct}%</span>
-                <span className="users-page__stat-label">MFA coverage</span>
+                <span className="users-page__stat-label">Two-factor coverage</span>
                 <span className="users-page__stat-sub">{stats.mfa} of {stats.total} enrolled</span>
               </div>
             </div>
@@ -417,7 +417,7 @@ export function UsersPage() {
                       <th>User</th>
                       <th>Roles</th>
                       <th>Sign-in</th>
-                      <th>MFA</th>
+                      <th>Two-factor</th>
                       <th>Last login</th>
                       <th>Sessions</th>
                       <th>Status</th>
