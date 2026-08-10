@@ -425,6 +425,53 @@ export function authFormSubmitScript(scriptNonce: string): string {
 </script>`;
 }
 
+/**
+ * Capture the browser's IANA timezone into a hidden `timezone` form field on submit.
+ * When `ssoLinks` is true, also rewrite `.auth-btn-sso` hrefs with `?tz=` (login page).
+ * HTML form POSTs have no X-Client-Timezone header; missing JS leaves the field empty → null.
+ */
+export function authTimezoneCaptureScript(
+  scriptNonce: string,
+  options: { ssoLinks?: boolean } = {},
+): string {
+  const ssoBlock = options.ssoLinks
+    ? `
+  function appendTz(href) {
+    var tz = browserTimezone();
+    if (!tz) return href;
+    try {
+      var url = new URL(href, window.location.origin);
+      url.searchParams.set("tz", tz);
+      return url.pathname + url.search;
+    } catch (e) {
+      return href;
+    }
+  }
+  document.querySelectorAll("a.auth-btn-sso").forEach(function (a) {
+    a.addEventListener("click", function () {
+      a.setAttribute("href", appendTz(a.getAttribute("href") || a.href));
+    });
+  });`
+    : "";
+  return `<script nonce="${scriptNonce}">
+(function () {
+  function browserTimezone() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch (e) {
+      return "";
+    }
+  }
+  document.querySelectorAll(".auth-page form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var input = form.querySelector('input[name="timezone"]');
+      if (input) input.value = browserTimezone();
+    });
+  });${ssoBlock}
+})();
+</script>`;
+}
+
 export function renderAuthDocument(options: AuthDocumentOptions): string {
   const { step, body, css = AUTH_PAGE_CSS, scripts } = options;
   const esc = (s: string) =>

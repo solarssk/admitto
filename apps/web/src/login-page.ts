@@ -1,5 +1,6 @@
 import {
   authFormSubmitScript,
+  authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   AUTH_SSO_BUTTON_ICON_SVG,
   renderAuthBrand,
@@ -43,47 +44,6 @@ function loginAutofillClearScript(scriptNonce: string): string {
   } else {
     setTimeout(clearBrowserPrefill, 0);
   }
-})();
-</script>`;
-}
-
-/**
- * Capture the browser's IANA timezone into the login form (hidden field) and onto SSO start
- * links (`?tz=`). Login is a plain HTML POST / GET navigation, so there is no X-Client-Timezone
- * header like the admin SPA. Missing JS (bots/curl) leaves timezone empty → null server-side.
- */
-function loginTimezoneCaptureScript(scriptNonce: string): string {
-  return `<script nonce="${scriptNonce}">
-(function () {
-  function browserTimezone() {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-    } catch (e) {
-      return "";
-    }
-  }
-  function appendTz(href) {
-    var tz = browserTimezone();
-    if (!tz) return href;
-    try {
-      var url = new URL(href, window.location.origin);
-      url.searchParams.set("tz", tz);
-      return url.pathname + url.search;
-    } catch (e) {
-      return href;
-    }
-  }
-  document.querySelectorAll(".auth-page form").forEach(function (form) {
-    form.addEventListener("submit", function () {
-      var input = form.querySelector('input[name="timezone"]');
-      if (input) input.value = browserTimezone();
-    });
-  });
-  document.querySelectorAll("a.auth-btn-sso").forEach(function (a) {
-    a.addEventListener("click", function () {
-      a.setAttribute("href", appendTz(a.getAttribute("href") || a.href));
-    });
-  });
 })();
 </script>`;
 }
@@ -175,7 +135,7 @@ export function renderLoginForm(
     step: "Sign in",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${authFormSubmitScript(scriptNonce)}\n${loginTimezoneCaptureScript(scriptNonce)}\n${loginAutofillClearScript(scriptNonce)}`,
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce, { ssoLinks: true })}\n${loginAutofillClearScript(scriptNonce)}`,
   });
 }
 

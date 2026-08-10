@@ -5,6 +5,7 @@ import {
 import { renderNoticeHtml } from "../auth-notice.js";
 import {
   authFormSubmitScript,
+  authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -49,18 +50,6 @@ export function renderOidcLinkForm(options: RenderOidcLinkFormOptions): string {
       </div>`
     : "";
 
-  const timezoneScript = `<script nonce="${scriptNonce}">
-(function () {
-  document.querySelectorAll(".auth-page form").forEach(function (form) {
-    form.addEventListener("submit", function () {
-      var input = form.querySelector('input[name="timezone"]');
-      if (!input) return;
-      try { input.value = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { input.value = ""; }
-    });
-  });
-})();
-</script>`;
-
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Link ${esc(providerName)}</h2>
     <p class="subtitle">Confirm your password${requiresTotp ? " and authenticator code" : ""} before linking this sign-in method to your account.</p>
@@ -81,6 +70,6 @@ export function renderOidcLinkForm(options: RenderOidcLinkFormOptions): string {
     step: `Link ${providerName}`,
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${authFormSubmitScript(scriptNonce)}\n${timezoneScript}`,
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce)}`,
   });
 }
