@@ -358,7 +358,7 @@ describe("EventSettingsPage save label", () => {
 });
 
 describe("EventSettingsPage subtitle", () => {
-  const SUBTITLE = "Manage this event's details, images, and access controls.";
+  const SUBTITLE = "Manage event details, images, and access.";
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
@@ -450,14 +450,14 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByRole("tab", { name: "Location" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(await screen.findByText("Find on map")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     await screen.findByText("Basic information");
     const basicInformationHint = screen.getByText("Basic information").closest(".at-tooltip-trigger");
     fireEvent.mouseEnter(basicInformationHint!);
     expect(screen.getByRole("tooltip").textContent).toBe(
-      "Title and date appear on tickets and emails. Set the venue in the Location tab.",
+      "Title, date, capacity, and timezone.",
     );
   });
 
@@ -564,7 +564,7 @@ describe("EventSettingsPage tabs", () => {
     ).toBeNull();
   });
 
-  it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {
+  it("shows the image asset library for a non-superadmin org admin", async () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
@@ -573,13 +573,12 @@ describe("EventSettingsPage tabs", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "Images" }));
     expect(await screen.findByText("Event logo")).toBeTruthy();
-    // Event logo stays available to any event admin...
     expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
-    // ...but the image asset library (upload/list/delete routes require superadmin) does not
-    // mount at all for a non-superadmin, so it never fires the 403 fetch it otherwise would.
-    expect(screen.queryByText("Upload images")).toBeNull();
-    expect(screen.getByText("Superadmin only")).toBeTruthy();
-    expect(fetchEventImageAssets).not.toHaveBeenCalled();
+    expect(screen.getByText("Upload images")).toBeTruthy();
+    expect(screen.queryByText("Superadmin only")).toBeNull();
+    await waitFor(() => {
+      expect(fetchEventImageAssets).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
+    });
   });
 
   it("uploads a branding file through the event-scoped upload endpoint", async () => {
@@ -703,7 +702,7 @@ describe("EventSettingsPage tabs", () => {
     ) as HTMLInputElement;
     expect(assetFileInput.disabled).toBe(true);
     expect(
-      screen.getByText("This event is archived - the asset library cannot be changed."),
+      screen.getByText("This event is archived - the image library cannot be changed."),
     ).toBeTruthy();
   });
 

@@ -45,12 +45,14 @@ function Harness({
   onSelectResult = () => {},
   onContactConfigured,
   showFindButton = true,
+  lookupResetKey = 0,
   hint,
 }: {
   disabled?: boolean;
   onSelectResult?: (result: GeocodingResultDto) => void;
   onContactConfigured?: (configured: boolean) => void;
   showFindButton?: boolean;
+  lookupResetKey?: number;
   hint?: string;
 }) {
   const [value, setValue] = useState("");
@@ -64,6 +66,7 @@ function Harness({
       onSelectResult={onSelectResult}
       onContactConfigured={onContactConfigured}
       showFindButton={showFindButton}
+      lookupResetKey={lookupResetKey}
       hint={hint}
     />
   );
@@ -353,9 +356,88 @@ describe("VenueAutocomplete", () => {
     expect(await screen.findByText("Address lookup failed. Try again shortly.")).toBeTruthy();
   });
 
+  it("clears Searching… when the query is shortened below the minimum during an in-flight Find", async () => {
+    const slow = createDeferred<GeocodingSearchResponse>();
+    mockSearch.mockReturnValueOnce(slow.promise);
+    renderWithToast(<Harness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
+    expect(screen.getByRole("button", { name: "Searching…" })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "D" },
+    });
+    expect(screen.getByRole("button", { name: "Find on map" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Searching…" })).toBeNull();
+
+    slow.resolve({ results: [makeResult()], contact_configured: true });
+    await act(async () => {
+      await slow.promise;
+    });
+    expect(screen.queryByText("10 Downing Street")).toBeNull();
+  });
+
+  it("clears suggestions when lookupResetKey bumps while a search is in flight", async () => {
+    const slow = createDeferred<GeocodingSearchResponse>();
+    mockSearch.mockReturnValueOnce(slow.promise);
+    function ResetHarness() {
+      const [value, setValue] = useState("");
+      const [resetKey, setResetKey] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setResetKey((k) => k + 1)}>
+            Reset lookup
+          </button>
+          <VenueAutocomplete
+            id="venue"
+            label="Venue name or address"
+            value={value}
+            onChange={setValue}
+            onSelectResult={() => {}}
+            showFindButton={false}
+            lookupResetKey={resetKey}
+          />
+        </>
+      );
+    }
+    renderWithToast(<ResetHarness />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    await waitFor(() => expect(mockSearch).toHaveBeenCalledWith("Downing St"));
+    fireEvent.click(screen.getByRole("button", { name: "Reset lookup" }));
+
+    slow.resolve({ results: [makeResult()], contact_configured: true });
+    await act(async () => {
+      await slow.promise;
+    });
+    expect(screen.queryByText("10 Downing Street")).toBeNull();
+    expect(screen.queryByText(/No match found on OpenStreetMap/)).toBeNull();
+  });
+
   it("can omit the Find on map button", () => {
     renderWithToast(<Harness showFindButton={false} />);
     expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
+  });
+
+  it("surfaces no-match feedback from typeahead when Find on map is hidden", async () => {
+    mockSearch.mockResolvedValue({ results: [], contact_configured: true });
+    renderWithToast(<Harness showFindButton={false} />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Nowhere Hall" },
+    });
+    expect(await screen.findByText(/No match found on OpenStreetMap/)).toBeTruthy();
+  });
+
+  it("surfaces lookup errors from typeahead when Find on map is hidden", async () => {
+    mockSearch.mockRejectedValue(new Error("upstream unavailable"));
+    renderWithToast(<Harness showFindButton={false} />);
+    fireEvent.change(screen.getByLabelText("Venue name or address"), {
+      target: { value: "Downing St" },
+    });
+    expect(await screen.findByText("Address lookup failed. Try again shortly.")).toBeTruthy();
   });
 
   it("shows the field hint below the row when Find on map is present", () => {

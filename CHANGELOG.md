@@ -11,9 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deploy docs:** clearer first-boot checklist (what must be env vs UI), Portainer/NPM without compose nginx (Variant B), and a generated environment dictionary ([`deploy/ENV.md`](deploy/ENV.md)) built from code scan + [`deploy/env-catalog.json`](deploy/env-catalog.json) (`npm run docs:env`; drift checked by `npm run docs:check`).
 
 ### Changed
+- **OIDC providers are configured only in Organisation settings → Identity.** Removed the unused `OIDC_ENABLED` / `OIDC_ISSUER` / `OIDC_CLIENT_*` / `OIDC_DISPLAY_NAME` env-seed documentation (the runtime never read those variables). Cloudflare Access optional env locks are unchanged.
+- Identity provider editor shows the Redirect URI pattern on the Add form before the first save.
 - **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Backing up before an upgrade is now the operator's responsibility; the nightly `db-backup` service is unchanged and remains the automated baseline. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user. See the updated upgrade and restore steps in `deploy/README.md`.
 
 ### Fixed
+- Event settings: clearer card hints, Location **Remove pin** (no Find on map), safer ticket-type delete confirm, and Organisation Admins can manage the mail image library. Image uploads use a plain image name (server builds `{{token}}`), with clearer upload/remove errors.
+- Attendees now show "No ticket type" instead of a dash when no type is assigned. Bulk delete and revoke confirmations are immediately actionable, while their confirmation dialog remains in place.
+- Requirements now gives new Badge items (and untouched legacy seed badges) the Name badge issued at check-in description and badge icon, without overwriting cleared descriptions or an intentional package/default icon. Custom field types use clear labels and guidance, and the Requirements page links to its documentation.
 - Users & roles: clearer labels (Identity provider / Local password; Two-factor / Authenticator app), Windows Chrome shows country flags in phone pickers via a bundled Twemoji font, and Invite user resists Chrome autofill into phone and temporary password.
 - Events picker: **New event** stays on one row with the title on mobile and shows a calendar-plus icon.
 - New event modal: location has a single Optional label, the link ID is generated from the title (no Link name field), Find on map is removed, the timezone hint is clearer, and the timezone list reopens with one click after closing it by clicking outside. Non-Latin titles still get a unique `event-<fingerprint>` link ID so Create stays enabled.
@@ -33,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Organisation Settings → Mail: the "Use TLS" and "Require STARTTLS" switches stay next to their label on mobile instead of dropping to their own line.
 
 ### Security
+- **Self-hosted LAN identity providers (SSO):** ops can allow specific Issuer/endpoint hostnames (or IP literals) that resolve to private addresses via `SSO_PRIVATE_DESTINATION_ALLOWLIST` on `app`. One list covers every configured provider sharing those hosts (OIDC today; same guard for future SAML). HTTPS remains required. Separate from the mail allowlist.
 - Weather (Open-Meteo) and geocoding (Nominatim) requests now pin the outbound connection to a freshly re-resolved, validated address instead of trusting the hostname check performed when the base URL was last saved, closing a DNS-rebinding gap that could let a superadmin-configured external service URL reach an internal/metadata address after passing that save-time check.
 - **Self-hosted LAN mail in production:** ops can allow specific SMTP/IMAP/Power Automate hosts (or IP literals) that resolve to private addresses via `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (app and worker). The lab-only `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` flag remains ignored when `NODE_ENV=production`.
 

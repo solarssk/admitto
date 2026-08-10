@@ -505,7 +505,7 @@ describe("DELETE /api/admin/uploads", () => {
       body: (() => {
         const fd = new FormData();
         fd.append("file", new Blob([VALID_PNG], { type: "image/png" }), "asset.png");
-        fd.append("token", "cleanup_guard");
+        fd.append("name", "Cleanup guard");
         return fd;
       })(),
     });

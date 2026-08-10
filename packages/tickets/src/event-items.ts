@@ -15,6 +15,8 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 const DEFAULT_BADGE_ITEM = {
   key: "badge",
   label: "Badge",
+  description: "Name badge issued at check-in.",
+  icon: "id-badge-2",
   config: { issue_on_checkin: true, requires_return: false },
 } as const;
 
@@ -59,6 +61,8 @@ export async function ensureBadgeEventItem(eventId: string, db: DbClient): Promi
         event_id: eventId,
         key: DEFAULT_BADGE_ITEM.key,
         label: DEFAULT_BADGE_ITEM.label,
+        description: DEFAULT_BADGE_ITEM.description,
+        icon: DEFAULT_BADGE_ITEM.icon,
         type: "item",
         enabled: true,
         config: DEFAULT_BADGE_ITEM.config,

@@ -154,34 +154,21 @@ function bulkBar() {
   return within(bar as HTMLElement);
 }
 
-/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first.
- * The bulk-delete dialog's confirm button then stays disabled for 10s after opening
- * (ConfirmDialog's confirmDelaySeconds - an "arm before confirming" pause). Fake-timers just
- * the open+arm step, matching EventSettingsPage's own bulk-danger-action tests. */
+/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first. */
 function openAndArmDeleteDialog() {
   return openMenuItemAndArmDialog(/^Delete/);
 }
 
-/** Opens the "More actions" menu, then clicks the given menu item and arms the resulting confirm
- * dialog - see clickMenuItemAndArmDialog below. */
+/** Opens the "More actions" menu, then clicks the given menu item and returns the confirm dialog. */
 function openMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
   fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
   return clickMenuItemAndArmDialog(menuItemName, dialogName);
 }
 
-/** Same "arm before confirming" cooldown as openAndArmDeleteDialog above, generalized for the
- * bulk Revoke check-in/items/pass dialogs and the CardPickerDialog-based Change ticket
- * type/attendance status dialogs (all five also carry confirmDelaySeconds) - for tests where the
- * "More actions" menu is already open (e.g. via a per-describe-block helper). */
+/** Opens a bulk confirm / card-picker dialog (no arming delay). */
 function clickMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
-  vi.useFakeTimers();
   fireEvent.click(bulkBar().getByRole("menuitem", { name: menuItemName }));
-  const dialog = dialogName ? screen.getByRole("dialog", { name: dialogName }) : screen.getByRole("dialog");
-  act(() => {
-    vi.advanceTimersByTime(10_000);
-  });
-  vi.useRealTimers();
-  return dialog;
+  return dialogName ? screen.getByRole("dialog", { name: dialogName }) : screen.getByRole("dialog");
 }
 
 beforeEach(() => {
@@ -1624,23 +1611,6 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(screen.queryByRole("dialog", { name: "Change ticket type" })).toBeNull();
     expect(bulkChangeTicketType).not.toHaveBeenCalled();
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
-  });
-
-  // Regression: the disabled Apply button's wait message must go through the shared Tooltip
-  // (portal + role="tooltip"), not a native `title` attribute.
-  it("shows the wait message via the shared Tooltip, not a native title attribute, while unarmed", async () => {
-    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    fetchTicketTypes.mockResolvedValue(catalog);
-
-    await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
-    const applyButton = within(dialog).getByRole("button", { name: "Apply" });
-    expect(applyButton.getAttribute("title")).toBeNull();
-    expect(screen.queryByRole("tooltip")).toBeNull();
-
-    fireEvent.mouseEnter(applyButton.closest(".at-tooltip-trigger")!);
-    expect(screen.getByRole("tooltip").textContent).toBe("Please wait 10s before confirming");
   });
 
   it("notes attendees that already had the type in the success toast", async () => {

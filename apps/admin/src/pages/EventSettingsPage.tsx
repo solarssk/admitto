@@ -76,16 +76,16 @@ type SettingsPatch = Partial<{
   logo_crop: LogoCropMeta | null;
 }>;
 
-const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
+const EVENT_SETTINGS_SUBTITLE = "Manage event details, images, and access.";
 
 const BASIC_INFORMATION_HINT =
-  "Title and date appear on tickets and emails. Set the venue in the Location tab.";
+  "Title, date, capacity, and timezone.";
 const BASIC_INFORMATION_INTRO =
-  "Title, date, capacity, and timezone for this event.";
-const STATUS_HINT = "Read-only overview of this event's current state. Archive or delete it from the Danger zone tab.";
+  "Set the event details used across admin and tickets.";
+const STATUS_HINT = "Current event status and ownership.";
 const EVENT_LOGO_HINT =
-  "Replaces the organisation logo on tickets and emails for this event.";
-const DANGER_ZONE_HINT = "Irreversible actions affecting this event's data or availability. Most require superadmin.";
+  "Overrides the organisation logo for this event.";
+const DANGER_ZONE_HINT = "Actions that change event data or availability.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -1092,17 +1092,7 @@ export function EventSettingsPage() {
           )}
         </Card>
 
-        {isSa ? (
-          <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
-        ) : (
-          <Card title="Image assets" className="event-settings-card">
-            <EmptyState
-              icon={<i className="ti ti-photo" aria-hidden="true" />}
-              title="Superadmin only"
-              description="Uploading and managing named branding images for this event's email templates is restricted to superadmins."
-            />
-          </Card>
-        )}
+        <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
 
         {!isArchived && (
           <SettingsFooter

@@ -1,5 +1,6 @@
 import type { LookupAddress } from "node:dns";
 import {
+  canonicalizeAllowlistHost,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
@@ -55,13 +56,13 @@ function parseMailPrivateDestinationAllowlist(): Set<string> {
   return new Set(
     raw
       .split(",")
-      .map((entry) => unbracketHostname(entry.trim().toLowerCase()))
+      .map((entry) => canonicalizeAllowlistHost(entry))
       .filter((entry) => entry.length > 0),
   );
 }
 
 function isAllowlistedMailHost(hostname: string): boolean {
-  return parseMailPrivateDestinationAllowlist().has(unbracketHostname(hostname).toLowerCase());
+  return parseMailPrivateDestinationAllowlist().has(canonicalizeAllowlistHost(hostname));
 }
 
 /** Lab global bypass (non-production) or exact allowlist match (any NODE_ENV). */
