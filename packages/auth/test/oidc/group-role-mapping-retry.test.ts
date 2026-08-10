@@ -96,7 +96,7 @@ describe("applyOidcGroupRoleMappings serialization retry", () => {
     const assertion = expect(done).rejects.toMatchObject({ code: "P2034" });
     await vi.runAllTimersAsync();
     await assertion;
-    expect($transaction).toHaveBeenCalledTimes(8);
+    expect($transaction).toHaveBeenCalledTimes(12);
   });
 
   it("does not retry a non-serialization revoke failure", async () => {
