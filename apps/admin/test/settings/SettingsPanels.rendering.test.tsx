@@ -1438,11 +1438,35 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).getByTitle("User's local time")).toBeTruthy();
   });
 
-  it("shows the redacted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {
+  it("shows the attempted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [
         makeSecurityEntry({
           id: "sec-5",
+          event_type: "auth.login.fail",
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          metadata: { email: "alice@example.com" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Unknown")).toBeTruthy();
+    expect(within(table).getByText("alice@example.com")).toBeTruthy();
+  });
+
+  it("falls back to the legacy redacted email for a failed login logged before it was unredacted", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          id: "sec-5b",
           event_type: "auth.login.fail",
           user_id: null,
           user_email: null,
@@ -1601,14 +1625,13 @@ describe("AuditLogPanel Security view rendering", () => {
     }
   });
 
-  it("row-copy summary excludes email_redacted from Details, already shown in the User line", async () => {
+  it("copies User's local time in the row summary when actor_timezone is set", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [
         makeSecurityEntry({
-          user_id: null,
-          user_email: null,
-          user_display_name: null,
-          metadata: { email_redacted: "a***@example.com", note: "hello" },
+          actor_timezone: "Asia/Tokyo",
+          created_at: "2026-01-01T12:00:00.000Z",
+          metadata: { userAgent: "curl/8.0" },
         }),
       ],
       total: 1,
@@ -1626,12 +1649,44 @@ describe("AuditLogPanel Security view rendering", () => {
 
       expect(writeText).toHaveBeenCalledTimes(1);
       const [summary] = writeText.mock.calls[0]!;
-      expect(summary).toContain("User: Unknown (a***@example.com)");
+      expect(summary).toMatch(/User's local time · .*Asia\/Tokyo/);
+      expect(summary).not.toMatch(/Your local time/);
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("row-copy summary excludes email from Details, already shown in the User line", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          metadata: { email: "alice@example.com", note: "hello" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderSecurityPanel();
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toContain("User: Unknown (alice@example.com)");
       expect(summary).toContain("Details:");
       expect(summary).toContain("Note: hello");
-      // email_redacted already shown on the User line above - the Details section (mirroring
-      // Audit's own buildRowSummary and the Details popover) must not repeat it.
-      expect(summary).not.toMatch(/Email redacted/i);
+      // email already shown on the User line above - the Details section (mirroring Audit's own
+      // buildRowSummary and the Details popover) must not repeat it.
+      expect(summary).not.toMatch(/^Email:/im);
     } finally {
       Object.assign(navigator, { clipboard: originalClipboard });
     }

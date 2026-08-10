@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OIDC providers are configured only in Organisation settings → Identity.** Removed the unused `OIDC_ENABLED` / `OIDC_ISSUER` / `OIDC_CLIENT_*` / `OIDC_DISPLAY_NAME` env-seed documentation (the runtime never read those variables). Cloudflare Access optional env locks are unchanged.
 - Identity provider editor shows the Redirect URI pattern on the Add form before the first save.
 - **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Backing up before an upgrade is now the operator's responsibility; the nightly `db-backup` service is unchanged and remains the automated baseline. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user. See the updated upgrade and restore steps in `deploy/README.md`.
+- **Failed login attempts now show the full attempted email in the Security audit log (and are searchable there), matching how successful sign-ins and other providers attribute activity.** Operational stdout / System logs still redact (`a***@example.com`). Superadmin-only durable table; matches the retention policy already documented for this trail.
 
 ### Fixed
 - Sessions and Security logs now show the actor's own timezone on the secondary time line (same pattern as Audit logs), capturing it at local login and OIDC start. Older rows and non-browser clients still fall back to your browser timezone.

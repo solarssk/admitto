@@ -193,13 +193,15 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
   });
 }
 
-/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures) and
- * persist a durable `SecurityAuditLog` row (`user_id: null` - same enumeration-safety reasoning:
- * never reveals whether the email belongs to a real user). Redacted, unlike logLoginSuccess above:
- * `ctx.email` here is unauthenticated form input - the login attempt failed, so this could be any
- * real address someone typed in, not a verified staff identity (external review on PR #593). Full
- * email on success is fine precisely because it's post-authentication; that reasoning doesn't
- * extend to a failed attempt. */
+/** Emit `auth.login.fail` as JSON to stdout and persist a durable `SecurityAuditLog` row.
+ * `user_id: null` - the login attempt failed, so this never resolves against (or reveals whether
+ * there is) a real account; the write path itself doesn't check account existence, avoiding a
+ * behavioral side channel. Split redaction: stdout / System-log still emit `redactEmail` (failed
+ * attempt is unauthenticated input; container logs may be forwarded under an operator-controlled
+ * retention policy - see DATA-PROTECTION.md). The durable superadmin-only `SecurityAuditLog` row
+ * stores the full attempted email in `metadata.email` so investigations can attribute
+ * brute-force/credential-stuffing to a specific address (OWASP Logging Cheat Sheet; PO decision
+ * reversing PR #593's more conservative durable-row call). */
 export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<void> {
   emitAuditEvent("auth.login.fail", {
     email: redactEmail(ctx.email),
@@ -211,7 +213,7 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
     user_id: null,
     ip: ctx.ip ?? null,
     actor_timezone: ctx.timezone ?? null,
-    metadata: { email_redacted: redactEmail(ctx.email), userAgent: ctx.userAgent ?? null },
+    metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
   });
 }
 

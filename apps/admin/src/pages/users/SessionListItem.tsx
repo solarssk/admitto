@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
 import { Avatar, Badge, IconButton, Tooltip } from "@admitto/ui";
 import type { SessionListDto } from "../../api/types.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
-import { formatRelativeTime, formatZonedClockTime, viewerLocalTime } from "../../utils/event-dates.js";
+import { ActorOrViewerLocalTimeLine } from "../../components/ActorOrViewerLocalTimeLine.js";
+import { formatRelativeTime } from "../../utils/event-dates.js";
 import { parseUserAgent } from "../../utils/parseUserAgent.js";
 import { GeoCell } from "../../components/GeoCell.js";
 
@@ -13,26 +13,6 @@ function formatPrimaryTime(iso: string): string {
 
 export const LOGGED_IN_HINT =
   "UTC on top. Below (user icon): the signer's local time at login. Missing for older sessions - then your browser timezone (desktop icon).";
-
-/** Secondary line under Logged in: actor zone when known, otherwise the viewer's browser zone. */
-function SessionLocalTimeLine({ session }: Readonly<{ session: SessionListDto }>): ReactNode {
-  if (session.timezone) {
-    return (
-      <div className="sessions-subdued audit-log-time__local">
-        <i className="ti ti-user" aria-hidden="true" title="Signer's local time" />
-        <span className="sr-only">Signer's local time: </span>
-        {formatZonedClockTime(session.loginAt, session.timezone)}
-      </div>
-    );
-  }
-  return (
-    <div className="sessions-subdued audit-log-time__local">
-      <i className="ti ti-device-desktop" aria-hidden="true" title="Your local time" />
-      <span className="sr-only">Your local time: </span>
-      {viewerLocalTime(session.loginAt)}
-    </div>
-  );
-}
 
 export function SessionSignIn({ authMethod }: Readonly<{ authMethod: string }>) {
   return authMethod === "oidc" ? (
@@ -95,7 +75,11 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
       </td>
       <td>
         {formatPrimaryTime(s.loginAt)} UTC
-        <SessionLocalTimeLine session={s} />
+        <ActorOrViewerLocalTimeLine
+          iso={s.loginAt}
+          actorTimezone={s.timezone}
+          actorTitle="Signer's local time"
+        />
       </td>
       <td>{formatRelativeTime(s.lastSeenAt)}</td>
       <td className="sessions-col-tablet-hide">
@@ -158,7 +142,11 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
           <dt>Logged in</dt>
           <dd>
             {formatPrimaryTime(s.loginAt)} UTC
-            <SessionLocalTimeLine session={s} />
+            <ActorOrViewerLocalTimeLine
+              iso={s.loginAt}
+              actorTimezone={s.timezone}
+              actorTitle="Signer's local time"
+            />
           </dd>
         </div>
         <div>

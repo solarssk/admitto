@@ -15,6 +15,7 @@ import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { GeoCell, geoLocationText } from "../components/GeoCell.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
@@ -243,27 +244,6 @@ function UserLocalTimeLine({ entry }: Readonly<{ entry: AuditLogEntryDto }>): Re
   );
 }
 
-/** Security secondary line: actor zone when known (same as Audit), otherwise the viewer's browser zone. */
-function SecurityLocalTimeLine({ entry }: Readonly<{ entry: SecurityAuditLogEntryDto }>): ReactNode {
-  const text = userLocalTimeText(entry);
-  if (text) {
-    return (
-      <div className="sessions-subdued audit-log-time__local">
-        <i className="ti ti-user" aria-hidden="true" title="User's local time" />
-        <span className="sr-only">User's local time: </span>
-        {text}
-      </div>
-    );
-  }
-  return (
-    <div className="sessions-subdued audit-log-time__local">
-      <i className="ti ti-device-desktop" aria-hidden="true" title="Your local time" />
-      <span className="sr-only">Your local time: </span>
-      {viewerLocalTimeText(entry.created_at)}
-    </div>
-  );
-}
-
 /** Primary actor label; deleted users show a readable fallback (id in cell title). */
 function actorDisplay(entry: AuditLogEntryDto): string {
   if (entry.actor_display_name) return entry.actor_display_name;
@@ -352,7 +332,9 @@ function formatMetadataValue(key: string, value: unknown): string {
 // Already shown elsewhere in the row - repeating them in Details would just be noise.
 // eventId/event_id: shown by the Scope column.
 const AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id"]);
-// Security adds email/email_redacted: shown under the User column (snapshot or redacted login).
+// Security adds email/email_redacted: shown under the User column (resolved user, or the
+// attempted email on a failed login - email_redacted is the legacy key for rows written before
+// that was unredacted, see securityUnknownEmail).
 const SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE = new Set([
   ...AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE,
   "email",
@@ -826,20 +808,24 @@ function securityUserTitle(entry: SecurityAuditLogEntryDto): string | undefined 
   return entry.user_id;
 }
 
-/** Redacted email for the `user_id`-is-null / enumeration-safe case (e.g. a failed login
- * attempt) - `auth.login.fail` is the only event type that currently writes a redacted email
- * into metadata for these rows; everything else with a null user_id (e.g. access denied) has no
- * email at all, so this simply resolves to undefined for them. */
+/** The attempted email for the `user_id`-is-null case (e.g. a failed login attempt) -
+ * `auth.login.fail` is the only event type that currently writes an email into metadata for
+ * these rows; everything else with a null user_id (e.g. access denied) has no email at all, so
+ * this simply resolves to undefined for them. `user_id` stays null even though the email is now
+ * shown in full: the write path still never resolves/confirms the email against a real account
+ * (packages/auth/src/audit.ts). Checks `email` first (current field); `email_redacted` is the
+ * legacy key from before this was unredacted - still read here so rows written before that change
+ * keep displaying their (redacted) value instead of going blank. */
 function securityUnknownEmail(entry: SecurityAuditLogEntryDto): string | undefined {
   if (entry.user_id) return undefined;
-  const value = entry.metadata?.["email_redacted"];
+  const value = entry.metadata?.["email"] ?? entry.metadata?.["email_redacted"];
   return typeof value === "string" ? value : undefined;
 }
 
 /** Email subline shown under the User cell - mirrors Audit's actor_email subline (full email
  * only when a known user has both a display name and an email, so we don't duplicate the value
  * when securityUserDisplay already fell back to showing the email as the primary text), plus the
- * redacted email for enumeration-safe rows above. */
+ * attempted email for the null-user_id rows above. */
 function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined {
   if (entry.user_display_name && entry.user_email) return entry.user_email;
   return securityUnknownEmail(entry);
@@ -883,7 +869,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     cell: (entry) => (
       <>
         <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
-        <SecurityLocalTimeLine entry={entry} />
+        <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
       </>
     ),
   },
@@ -924,7 +910,7 @@ function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
       <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
         <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
-        <SecurityLocalTimeLine entry={entry} />
+        <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
       </div>
     </>
   );

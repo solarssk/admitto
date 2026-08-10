@@ -11,9 +11,13 @@ import {
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 
-/** Free-text search over snapshot columns and live User rows. Snapshot columns cover deleted
- * accounts; the User lookup keeps matching current staff who have not yet triggered a new audit
- * row since the migration. */
+/** Free-text search over snapshot columns, live User rows, and failed-login metadata emails.
+ * Snapshot columns cover deleted accounts; the User lookup keeps matching current staff who have
+ * not yet triggered a new audit row since the migration. Failed logins keep `user_id` /
+ * `user_email` null and store the attempted address only in `metadata.email` (legacy rows:
+ * `metadata.email_redacted`), so those keys must be searched explicitly or investigations cannot
+ * find attempts against a specific address. JSON path filters are case-sensitive; emails are
+ * stored normalized lowercase, so the metadata predicates use a lowercased needle. */
 async function resolveSecuritySearchMatch(
   db: PrismaClient,
   search: string,
@@ -27,11 +31,14 @@ async function resolveSecuritySearchMatch(
     },
     select: { id: true },
   });
+  const metadataEmailNeedle = search.toLowerCase();
   return {
     OR: [
       { user_id: { in: users.map((u) => u.id) } },
       { user_email: { contains: search, mode: "insensitive" } },
       { user_display_name: { contains: search, mode: "insensitive" } },
+      { metadata: { path: ["email"], string_contains: metadataEmailNeedle } },
+      { metadata: { path: ["email_redacted"], string_contains: metadataEmailNeedle } },
     ],
   };
 }
