@@ -584,6 +584,24 @@ describe("PUT /api/admin/events/:eventId/template", () => {
       transaction.mockRestore();
     }
   });
+
+  it("does not turn an unexpected ticket-template write failure into a validation response", async () => {
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(validTemplate),
+      });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "internal_error" });
+    } finally {
+      consoleError.mockRestore();
+      transaction.mockRestore();
+    }
+  });
 });
 
 describe("POST /api/admin/events/:eventId/template/preview", () => {
