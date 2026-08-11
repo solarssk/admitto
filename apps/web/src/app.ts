@@ -666,38 +666,63 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     const client = passCreatorClient;
 
-    const existing = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
+    let existing: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
+    try {
+      existing = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
+    } catch (err) {
+      console.error("walletPass lookup failed:", err);
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "wallet_pass_lookup_failed",
+        fields: { eventId: event.id, attendeeId: attendee.id },
+      });
+      return c.redirect(`${backHref}?walletError=1`, 302);
+    }
     let providerUrls: { apple_url: string | null; android_url: string | null };
 
+    /** Returns null (after logging) instead of throwing - a database error here must still land
+     * on the retry redirect below, not escape to app.onError as a bare JSON 500. */
     async function markActive(
       userProvidedId: string,
       result: WalletPassResult,
-    ): Promise<{ apple_url: string | null; android_url: string | null }> {
-      await db.walletPass.upsert({
-        where: { attendee_id: attendee.id },
-        create: {
-          attendee_id: attendee.id,
-          provider: "passcreator",
-          provider_pass_id: result.providerPassId,
-          user_provided_id: userProvidedId,
-          download_url: result.downloadUrl,
-          apple_url: result.appleUrl,
-          android_url: result.androidUrl,
-          status: "active",
-          issued_at: new Date(),
-        },
-        update: {
-          provider: "passcreator",
-          provider_pass_id: result.providerPassId,
-          user_provided_id: userProvidedId,
-          download_url: result.downloadUrl,
-          apple_url: result.appleUrl,
-          android_url: result.androidUrl,
-          status: "active",
-          last_error_code: null,
-          issued_at: new Date(),
-        },
-      });
+    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      try {
+        await db.walletPass.upsert({
+          where: { attendee_id: attendee.id },
+          create: {
+            attendee_id: attendee.id,
+            provider: "passcreator",
+            provider_pass_id: result.providerPassId,
+            user_provided_id: userProvidedId,
+            download_url: result.downloadUrl,
+            apple_url: result.appleUrl,
+            android_url: result.androidUrl,
+            status: "active",
+            issued_at: new Date(),
+          },
+          update: {
+            provider: "passcreator",
+            provider_pass_id: result.providerPassId,
+            user_provided_id: userProvidedId,
+            download_url: result.downloadUrl,
+            apple_url: result.appleUrl,
+            android_url: result.androidUrl,
+            status: "active",
+            last_error_code: null,
+            issued_at: new Date(),
+          },
+        });
+      } catch (err) {
+        console.error("walletPass upsert (active) failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_upsert_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return null;
+      }
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
     }
 
@@ -729,11 +754,21 @@ export function createApp(options: CreateAppOptions = {}) {
           message: "wallet_pass_create_failed",
           fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
         });
-        await db.walletPass.upsert({
-          where: { attendee_id: attendee.id },
-          create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
-          update: { status: "failed", last_error_code: code },
-        });
+        try {
+          await db.walletPass.upsert({
+            where: { attendee_id: attendee.id },
+            create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
+            update: { status: "failed", last_error_code: code },
+          });
+        } catch (upsertErr) {
+          console.error("walletPass upsert (failed) failed:", upsertErr);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_pass_upsert_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+        }
         return null;
       }
     }

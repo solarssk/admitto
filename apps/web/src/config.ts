@@ -189,7 +189,8 @@ export function resolvePassCreatorConfig(
   const apiKey = env["PASSCREATOR_API_KEY"]?.trim();
   const templateId = env["PASSCREATOR_TEMPLATE_ID"]?.trim();
   if (!apiKey || !templateId) return null;
-  const baseUrl = env["PASSCREATOR_BASE_URL"]?.trim();
+  const rawBaseUrl = env["PASSCREATOR_BASE_URL"]?.trim();
+  const baseUrl = rawBaseUrl?.startsWith("https://") ? rawBaseUrl : undefined;
   return { apiKey, templateId, ...(baseUrl ? { baseUrl } : {}) };
 }
 

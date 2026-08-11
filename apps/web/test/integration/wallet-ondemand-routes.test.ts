@@ -3,7 +3,7 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
-import type { WalletPassProvider } from "@admitto/wallet";
+import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
 import { WalletProviderError } from "@admitto/wallet";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
@@ -27,7 +27,7 @@ function stubProvider(): WalletPassProvider & {
 } {
   return {
     provider: "stub",
-    createPass: vi.fn(async (input) => ({
+    createPass: vi.fn(async (input: WalletPassInput) => ({
       providerPassId: `pc-${input.userProvidedId}`,
       downloadUrl: "https://pc.test/p/x",
       appleUrl: "https://pc.test/apple/x",

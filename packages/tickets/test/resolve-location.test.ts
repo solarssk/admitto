@@ -50,6 +50,7 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "UTC",
           event_hours_start: null,
@@ -95,6 +96,7 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "",
           event_hours_start: null,
@@ -117,6 +119,7 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "UTC",
           event_hours_start: null,
@@ -151,6 +154,7 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "UTC",
           event_hours_start: "18:00",
@@ -174,6 +178,7 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "UTC",
           event_hours_start: null,
