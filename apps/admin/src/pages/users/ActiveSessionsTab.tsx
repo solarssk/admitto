@@ -325,6 +325,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
                     searchPlaceholder="Search…"
                     emptyLabel="No options found"
                     showLabel={false}
+                    minWidth={72}
                     value={String(pageSize)}
                     options={PAGE_SIZE_OPTIONS.map((size) => ({
                       id: String(size),
