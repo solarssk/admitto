@@ -74,6 +74,7 @@ const baseAccount: AccountDto = {
   email: "admin@example.com",
   display_name: "Admin",
   preferred_locale: "en-GB",
+  preferred_time_format: null,
   is_active: true,
   must_change_password: false,
   has_local_password: true,
@@ -263,6 +264,40 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: /^System default \(browser\):/ }));
 
     expect(screen.getByRole("button", { name: /^Regional format, System default \(browser\)/ })).toBeTruthy();
+  });
+
+  it("saves a time format independently from the regional date format", async () => {
+    mockLoadedAccount();
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: "12h" });
+
+    renderWithToast(<AccountPage />);
+    await screen.findByRole("button", { name: /^Time format,/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Time format,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "12-hour time (1:30 PM)" }));
+    expect(screen.getByRole("button", { name: /^Time format, 12-hour time/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ preferred_time_format: "12h" });
+    });
+    expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
+  });
+
+  it("clears the time-format preference without changing the regional date format", async () => {
+    mockFetchAccount.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: "24h" });
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: null });
+
+    renderWithToast(<AccountPage />);
+    await screen.findByRole("button", { name: /^Time format, 24-hour time/ });
+    fireEvent.click(screen.getByRole("button", { name: /^Time format, 24-hour time/ }));
+    fireEvent.click(screen.getByRole("button", { name: "System default (browser)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ preferred_time_format: null });
+    });
+    expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
   });
 
   it("toasts profile save errors", async () => {
@@ -1467,6 +1502,7 @@ describe("AccountPage profile: phone number", () => {
     mockPatchProfile.mockResolvedValueOnce({
       display_name: baseAccount.display_name,
       preferred_locale: baseAccount.preferred_locale,
+      preferred_time_format: baseAccount.preferred_time_format,
       phone_country_code: "+1",
       phone_number: "5551234",
     });
@@ -1498,6 +1534,7 @@ describe("AccountPage profile: phone number", () => {
     mockPatchProfile.mockResolvedValueOnce({
       display_name: baseAccount.display_name,
       preferred_locale: baseAccount.preferred_locale,
+      preferred_time_format: baseAccount.preferred_time_format,
       phone_country_code: "+48",
       phone_number: null,
     });
@@ -1599,6 +1636,16 @@ describe("AccountPage profile: account type", () => {
     renderWithToast(<AccountPage />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /^Regional format,/ })).toBeTruthy();
+    });
+  });
+
+  it("shows a separate Time format select", async () => {
+    mockFetchAccount.mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^Time format,/ })).toBeTruthy();
     });
   });
 });

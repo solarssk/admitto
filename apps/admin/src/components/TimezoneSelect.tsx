@@ -291,7 +291,10 @@ export function TimezoneSelect({
     return () => window.clearTimeout(t);
   }, [open, selectedIana, options]);
 
-  useClickOutside(containerRef, open, closePanel);
+  // The panel is fixed so it can escape an overflowing modal. Keep it explicitly in the
+  // inside boundary as well: this remains correct if its positioning/rendering changes and
+  // prevents an interaction with the results from being mistaken for a click-away.
+  useClickOutside(containerRef, open, closePanel, [panelRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -361,6 +364,12 @@ export function TimezoneSelect({
   const selectOption = (entry: TzEntry) => {
     onChange(entry.iana);
     closePanel();
+  };
+
+  const onOptionKeyDown = (event: KeyboardEvent<HTMLLIElement>, entry: TzEntry) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectOption(entry);
   };
 
   const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -491,10 +500,11 @@ export function TimezoneSelect({
                       {item.label}
                     </li>
                   ) : (
-                    <li // NOSONAR — mouse-only click convenience; keyboard selection already works via the search input's onKeyDown (Enter selects the highlighted option, see onSearchKeyDown above)
+                    <li
                       key={item.id}
                       id={`${listboxId}-option-${item.optionIndex}`}
                       role="option"
+                      tabIndex={-1}
                       data-option-index={item.optionIndex}
                       aria-selected={item.entry.iana === selectedIana}
                       className={[
@@ -504,6 +514,10 @@ export function TimezoneSelect({
                       ]
                         .filter(Boolean)
                         .join(" ")}
+                      onKeyDown={(event) => onOptionKeyDown(event, item.entry)}
+                      // Pointer movement is deliberately used in addition to mouse enter:
+                      // fixed panels can be entered while the pointer is already held down.
+                      onPointerMove={() => setHighlightIndex(item.optionIndex)}
                       onMouseEnter={() => setHighlightIndex(item.optionIndex)}
                       onClick={() => selectOption(item.entry)}
                     >

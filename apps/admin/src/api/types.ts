@@ -8,6 +8,7 @@ export type { DeliveryDetailDto, DeliveryDto, HealthOverallStatus, HealthRowStat
 export type { EventSettingsDto, LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
+export type PreferredTimeFormat = "12h" | "24h";
 
 export interface MailerStatus {
   configured: boolean;
@@ -19,6 +20,7 @@ export interface AuthUser {
   email: string;
   display_name: string | null;
   preferred_locale?: string | null;
+  preferred_time_format?: PreferredTimeFormat | null;
   is_active: boolean;
   created_at: string;
   mailer_status?: MailerStatus | null;
@@ -45,6 +47,9 @@ export interface EventDto {
   slug: string;
   date: string;
   timezone: string;
+  /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   location: string | null;
   /** True when EventLocation has both latitude and longitude. */
   has_coordinates?: boolean;
@@ -90,6 +95,9 @@ export interface CreateEventBody {
   slug: string;
   date: string;
   timezone: string;
+  /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
+  event_hours_start?: string;
+  event_hours_end?: string;
   /** Short display name, e.g. "National Stadium" - free text, or picked from a geocoding
    * suggestion alongside the fields below. */
   venue_name?: string;
@@ -1399,6 +1407,7 @@ export interface AccountDto {
   email: string;
   display_name: string | null;
   preferred_locale: string | null;
+  preferred_time_format: PreferredTimeFormat | null;
   is_active: boolean;
   must_change_password: boolean;
   has_local_password: boolean;
@@ -1413,6 +1422,7 @@ export interface AccountDto {
 export interface PatchAccountProfileBody {
   display_name?: string;
   preferred_locale?: string | null;
+  preferred_time_format?: PreferredTimeFormat | null;
   phone_country_code?: string | null;
   phone_number?: string | null;
 }

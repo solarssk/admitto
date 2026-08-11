@@ -28,12 +28,21 @@ import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListIt
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { formatRelativeTime } from "../utils/event-dates.js";
-import { LOCALE_OPTIONS, setPreferredLocale as setPreferredLocaleStore } from "../utils/locale-store.js";
+import {
+  LOCALE_OPTIONS,
+  setPreferredLocale as setPreferredLocaleStore,
+  setPreferredTimeFormat as setPreferredTimeFormatStore,
+} from "../utils/locale-store.js";
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 
 const PASSWORD_HINT = "Changing your password ends your other active sessions. Your current session stays signed in.";
+const TIME_FORMAT_OPTIONS = [
+  { id: "system-default", label: "System default (browser)" },
+  { id: "24h", label: "24-hour time (13:30)" },
+  { id: "12h", label: "12-hour time (1:30 PM)" },
+] as const;
 
 /** Whether an assignment grants a real admin/operator surface - mirrors resolvePostAuthPath's
  * own notion of "usable" (packages/auth/src/post-auth.ts), duplicated locally rather than
@@ -114,7 +123,7 @@ function AccountTypeField({ account }: Readonly<{ account: AccountDto }>) {
         title="Account type is determined automatically and can't be changed here."
         onChange={() => {}}
       />
-      <p className="at-hint">{hint}</p>
+      <p className="sr-only">{hint}</p>
     </div>
   );
 }
@@ -229,7 +238,7 @@ function AccountRoleDisplay({ account }: Readonly<{ account: AccountDto }>) {
         title="Roles are read-only. Contact an administrator to change access."
         onChange={() => {}}
       />
-      <p className="at-hint">Only an administrator can change this. {ROLE_ACCESS_DESCRIPTION[primary.role]}</p>
+      <p className="sr-only">Only an administrator can change this. {ROLE_ACCESS_DESCRIPTION[primary.role]}</p>
       {primary.role !== "superadmin" && account.roles.length > 0 && (
         <div className="account-scope-chips">
           {account.roles.map((r) => (
@@ -287,6 +296,7 @@ export function AccountPage() {
   const [error, setError] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [preferredLocale, setPreferredLocale] = useState<string | null>(null);
+  const [preferredTimeFormat, setPreferredTimeFormat] = useState<"12h" | "24h" | null>(null);
   const [phoneCountryCode, setPhoneCountryCode] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -339,9 +349,11 @@ export function AccountPage() {
       setAccount(data);
       setDisplayName(data.display_name ?? "");
       setPreferredLocale(data.preferred_locale);
+      setPreferredTimeFormat(data.preferred_time_format);
       setPhoneCountryCode(data.phone_country_code ?? "");
       setPhoneNumber(data.phone_number ?? "");
       setPreferredLocaleStore(data.preferred_locale ?? undefined);
+      setPreferredTimeFormatStore(data.preferred_time_format);
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
@@ -419,6 +431,7 @@ export function AccountPage() {
   const profileDirty =
     displayName !== (account.display_name ?? "") ||
     preferredLocale !== account.preferred_locale ||
+    preferredTimeFormat !== account.preferred_time_format ||
     phoneCountryCode !== (account.phone_country_code ?? "") ||
     phoneNumber !== (account.phone_number ?? "");
   const passwordMismatch =
@@ -936,20 +949,24 @@ export function AccountPage() {
         footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
         setProfileSaving(true);
         const localeChanged = preferredLocale !== account.preferred_locale;
+        const timeFormatChanged = preferredTimeFormat !== account.preferred_time_format;
         try {
           const phoneCountryCodeChanged = phoneCountryCode !== (account.phone_country_code ?? "");
           const phoneNumberChanged = phoneNumber !== (account.phone_number ?? "");
           const result = await patchAccountProfile({
             ...(displayName !== (account.display_name ?? "") && { display_name: displayName }),
             ...(localeChanged && { preferred_locale: preferredLocale }),
+            ...(timeFormatChanged && { preferred_time_format: preferredTimeFormat }),
             ...(phoneCountryCodeChanged && { phone_country_code: phoneCountryCode }),
             ...(phoneNumberChanged && { phone_number: phoneNumber || null }),
           });
           setDisplayName(result.display_name ?? "");
           setPreferredLocale(result.preferred_locale);
+          setPreferredTimeFormat(result.preferred_time_format);
           setPhoneCountryCode(result.phone_country_code ?? "");
           setPhoneNumber(result.phone_number ?? "");
           setPreferredLocaleStore(result.preferred_locale ?? undefined);
+          setPreferredTimeFormatStore(result.preferred_time_format);
           addToast(
             localeChanged
               ? "Profile saved. Reload this page to refresh session timestamps below."
@@ -973,27 +990,45 @@ export function AccountPage() {
           />
           <Input id="account-email" label="Email" value={account.email} disabled hint="Email cannot be changed here." />
           <div className="at-field">
-            <label className="at-label" htmlFor="account-locale">
-              Regional format
+              <label className="at-label" htmlFor="account-locale">
+                Regional format
+              </label>
+              <SearchableSelect
+                id="account-locale"
+                label="Regional format"
+                placeholder={`${LOCALE_OPTIONS[0]!.label}: ${LOCALE_OPTIONS[0]!.example}`}
+                searchPlaceholder="Search regional formats…"
+                emptyLabel="No regional formats found"
+                showLabel={false}
+                value={preferredLocale ?? "system-default"}
+                options={LOCALE_OPTIONS.map((opt) => ({
+                  id: opt.value ?? "system-default",
+                  label: `${opt.label}: ${opt.example}`,
+                }))}
+                disabled={profileSaving}
+                onChange={(id) => setPreferredLocale(id === "system-default" ? null : id)}
+              />
+              <span className="at-hint">
+                {`Dates only. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}.`}
+              </span>
+          </div>
+          <div className="at-field">
+            <label className="at-label" htmlFor="account-time-format">
+              Time format
             </label>
             <SearchableSelect
-              id="account-locale"
-              label="Regional format"
-              placeholder={`${LOCALE_OPTIONS[0]!.label}: ${LOCALE_OPTIONS[0]!.example}`}
-              searchPlaceholder="Search regional formats…"
-              emptyLabel="No regional formats found"
+              id="account-time-format"
+              label="Time format"
+              placeholder="System default (browser)"
+              searchPlaceholder="Search time formats…"
+              emptyLabel="No time formats found"
               showLabel={false}
-              value={preferredLocale ?? "system-default"}
-              options={LOCALE_OPTIONS.map((opt) => ({
-                id: opt.value ?? "system-default",
-                label: `${opt.label}: ${opt.example}`,
-              }))}
+              value={preferredTimeFormat ?? "system-default"}
+              options={TIME_FORMAT_OPTIONS.map((option) => ({ ...option }))}
               disabled={profileSaving}
-              onChange={(id) => setPreferredLocale(id === "system-default" ? null : id)}
+              onChange={(id) => setPreferredTimeFormat(id === "12h" || id === "24h" ? id : null)}
             />
-            <span className="at-hint">
-              {`Affects how dates are displayed. Example: ${new Date("2026-06-28T12:00:00Z").toLocaleDateString(preferredLocale ?? undefined, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}. Interface language stays English.`}
-            </span>
+            <span className="at-hint">Choose 12-hour AM/PM or 24-hour time.</span>
           </div>
           <div className="at-field">
             <label className="at-label" htmlFor="account-phone-number">Phone number</label>
@@ -1017,8 +1052,10 @@ export function AccountPage() {
             </div>
             <span className="at-hint">For internal contact only - not shown on tickets.</span>
           </div>
-          <AccountRoleDisplay account={account} />
-          <AccountTypeField account={account} />
+          <div className="account-access-preferences">
+            <AccountRoleDisplay account={account} />
+            <AccountTypeField account={account} />
+          </div>
         </div>
       </Card>
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- My account: staff can choose 12-hour (AM/PM), 24-hour, or browser-default time input independently from their regional date format.
+- **Event hours (start/end).** New Event and Event settings → Basic information now have an optional "Event hours" start/end time field, shown as a range on tickets and (later) wallet passes. Leave blank to omit.
+
 ### Fixed
 - Communication → Templates: on phones, the selected template name is no longer covered by its status badge; the last-edited date is available from the Edit template control. **Delete event** now permits an otherwise-empty event whose only saved mail template is its non-deletable default Ticket email override; additional custom templates still block deletion.
 - Organisation Settings → Health check: the mobile **More actions** menu now stays compact instead of expanding to fit its longest description.

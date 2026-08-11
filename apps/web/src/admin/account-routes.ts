@@ -25,6 +25,7 @@ import type { RateLimitStore } from "../rate-limit/types.js";
 import {
   isSupportedLocale,
   sanitizePreferredLocale,
+  sanitizePreferredTimeFormat,
 } from "@admitto/shared";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
@@ -222,6 +223,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       email: true,
       display_name: true,
       preferred_locale: true,
+      preferred_time_format: true,
       is_active: true,
       must_change_password: true,
       password_hash: true,
@@ -283,6 +285,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     email: user.email,
     display_name: user.display_name,
     preferred_locale: sanitizePreferredLocale(user.preferred_locale),
+    preferred_time_format: sanitizePreferredTimeFormat(user.preferred_time_format),
     is_active: user.is_active,
     must_change_password: user.must_change_password,
     has_local_password: hasLocalPassword(user.password_hash),
@@ -320,6 +323,7 @@ const profileSchema = z
       .refine((v) => isSupportedLocale(v), { message: "Unsupported locale" })
       .nullable()
       .optional(),
+    preferred_time_format: z.enum(["12h", "24h"]).nullable().optional(),
     // Both nullable (not just optional) - the account page always sends one or the other for
     // both phone fields, using null to mean "clear it", same convention as the admin-side
     // PATCH /api/admin/users/:id (buildPatchUserData in users-routes.ts).
@@ -331,12 +335,13 @@ const profileSchema = z
     (d) =>
       d.display_name !== undefined ||
       d.preferred_locale !== undefined ||
+      d.preferred_time_format !== undefined ||
       d.phone_country_code !== undefined ||
       d.phone_number !== undefined,
     { message: "Nothing to update" },
   );
 
-/** PATCH /api/account/profile — update display name, preferred locale, and/or phone (no re-auth). */
+/** PATCH /api/account/profile — update display name, date/time display preferences, and/or phone (no re-auth). */
 export async function handlePatchAccountProfile(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -353,6 +358,7 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   const data: {
     display_name?: string | null;
     preferred_locale?: string | null;
+    preferred_time_format?: "12h" | "24h" | null;
     phone_country_code?: string | null;
     phone_number?: string | null;
   } = {};
@@ -361,6 +367,9 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   }
   if (parsed.data.preferred_locale !== undefined) {
     data.preferred_locale = parsed.data.preferred_locale;
+  }
+  if (parsed.data.preferred_time_format !== undefined) {
+    data.preferred_time_format = parsed.data.preferred_time_format;
   }
   if (parsed.data.phone_country_code !== undefined) {
     data.phone_country_code = parsed.data.phone_country_code?.trim() || null;
@@ -372,12 +381,13 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
   const updated = await db.user.update({
     where: { id: userId },
     data,
-    select: { display_name: true, preferred_locale: true, phone_country_code: true, phone_number: true },
+    select: { display_name: true, preferred_locale: true, preferred_time_format: true, phone_country_code: true, phone_number: true },
   });
 
   return c.json({
     display_name: updated.display_name,
     preferred_locale: sanitizePreferredLocale(updated.preferred_locale),
+    preferred_time_format: sanitizePreferredTimeFormat(updated.preferred_time_format),
     phone_country_code: updated.phone_country_code,
     phone_number: updated.phone_number,
   });

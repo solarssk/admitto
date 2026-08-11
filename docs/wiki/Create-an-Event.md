@@ -22,8 +22,9 @@ Prepare the event title, calendar date, timezone, and optional location.
 2. Select **New event**. On an empty list, the button can read **Create event**.
 3. Enter the **Event title**.
 4. Select the **Event date** and **Event timezone** (shown with a **UTC±N** offset). Search by city (for example Warsaw); Admitto saves the official region clock for that place (shown as `Europe/Warsaw`) so event times and reports stay correct.
-5. Optionally add **Location**. Start typing a venue name or address and pick a match, or type free text. If search finds nothing useful, you can still create the event and set the map pin and coordinates later under **Event settings**, **Location** tab.
-6. Select **Create event**.
+5. Optionally set **Event hours (start)** and **Event hours (end)** in your account's selected 12-hour (AM/PM) or 24-hour format. Set either value independently, or set both for a range. Leave both blank to omit event hours. The configured value appears on tickets and, when configured, wallet passes; it does not change the calendar date itself.
+6. Optionally add **Location**. Start typing a venue name or address and pick a match, or type free text. If search finds nothing useful, you can still create the event and set the map pin and coordinates later under **Event settings**, **Location** tab.
+7. Select **Create event**.
 
 ## Expected result
 
@@ -31,7 +32,7 @@ Admitto creates an active event and opens its **Overview** page directly.
 
 ## Important decisions
 
-- The creation form has a calendar date, not an event start time.
+- The **Event date** is a calendar date. **Event hours (start/end)** is a separate, optional time-of-day range shown on tickets (and later wallet passes): set it if attendees need a specific start/end time, not just the day.
 - Capacity is not part of this modal. New events remain unlimited until capacity is set in **Event settings**.
 - The timezone controls event-day timestamps and reports; do not use the browser default without checking it.
 - Location is optional at create time. Agency ticket links use the auto-generated event ID; ordinary `/t/{token}` tickets do not.

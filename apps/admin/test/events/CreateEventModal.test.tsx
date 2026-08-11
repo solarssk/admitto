@@ -160,6 +160,88 @@ describe("CreateEventModal", () => {
     expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
   });
 
+  it("submits the event hours range when both fields are set", async () => {
+    mockCreateEvent.mockResolvedValueOnce({ id: "evt-1" } as never);
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), {
+      target: { value: "18:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), {
+      target: { value: "22:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+      );
+    });
+  });
+
+  it("does not create an event while a manually entered time is invalid", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const startTime = screen.getByLabelText("Event hours (start)");
+    fireEvent.change(startTime, { target: { value: "6" } });
+    fireEvent.blur(startTime);
+
+    const createButton = screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement;
+    expect(createButton.disabled).toBe(true);
+    fireEvent.click(createButton);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not create an event while the end time is invalid", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const endTime = screen.getByLabelText("Event hours (end)");
+    fireEvent.change(endTime, { target: { value: "6" } });
+    fireEvent.blur(endTime);
+
+    expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the event-hours hint with its paired controls", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+
+    expect(
+      screen.getByText("Optional. Shown on tickets and wallet passes as a time range.").closest(".add-attendee-modal__time-range"),
+    ).not.toBeNull();
+  });
+
+  it("submits the timezone chosen from the picker rather than the browser default", async () => {
+    mockCreateEvent.mockResolvedValueOnce({ id: "evt-1" } as never);
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Tokyo Event" } });
+    // Do not use pickEventDate here: it deliberately restores focus asynchronously, which is
+    // irrelevant to this picker-flow assertion and would close a just-opened listbox in jsdom.
+    const dateInput = screen.getByLabelText(/Event date/);
+    fireEvent.change(dateInput, { target: { value: "2026-09-29" } });
+    fireEvent.blur(dateInput);
+
+    fireEvent.click(screen.getByLabelText("Event timezone *"));
+    fireEvent.change(screen.getByLabelText("Search timezones"), { target: { value: "tokyo" } });
+    const tokyo = await screen.findByRole("option", { name: /Asia\/Tokyo/ });
+    fireEvent.click(tokyo);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Event timezone *").textContent).toContain("Asia/Tokyo");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ timezone: "Asia/Tokyo" }),
+      );
+    });
+  });
+
   it("ignores close while submission is pending", async () => {
     let resolveCreate!: () => void;
     mockCreateEvent.mockReturnValueOnce(

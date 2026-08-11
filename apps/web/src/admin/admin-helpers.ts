@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { z } from "zod";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageEvent, canManageInstance } from "@admitto/auth";
 import { IllegalItemTransitionError, writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
@@ -215,6 +216,13 @@ export function isValidCalendarDate(value: string): boolean {
 export function parseEventDateInput(date: string): Date {
   return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
 }
+
+/** Display-only 24h "HH:MM" for Event.event_hours_start/end - shared by create and patch. */
+export const eventHoursField = z
+  .string()
+  .trim()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Event hours: use 24h HH:MM")
+  .nullish();
 
 /**
  * Parse a query date bound. Date-only values (`YYYY-MM-DD`) use UTC day bounds:

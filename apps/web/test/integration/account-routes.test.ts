@@ -1007,6 +1007,63 @@ describe("PATCH /api/account/profile — preferred_locale", () => {
   });
 });
 
+describe("PATCH /api/account/profile — preferred_time_format", () => {
+  afterEach(async () => {
+    await prisma.user.update({ where: { id: userId }, data: { preferred_time_format: null } });
+  });
+
+  it("stores an explicit 12-hour preference and returns it from the profile", async () => {
+    const patch = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: "12h" }),
+    });
+    expect(patch.status).toBe(200);
+    expect((await patch.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: "12h" }),
+    );
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.preferred_time_format).toBe("12h");
+
+    const get = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    expect((await get.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: "12h" }),
+    );
+  });
+
+  it("clears the time preference with null", async () => {
+    const set = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: "24h" }),
+    });
+    expect(set.status).toBe(200);
+    expect((await set.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: "24h" }),
+    );
+
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: null }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: null }),
+    );
+  });
+
+  it("rejects unsupported time formats", async () => {
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: "13h" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("PATCH /api/account/profile — phone", () => {
   afterEach(async () => {
     await prisma.user.update({ where: { id: userId }, data: { phone_country_code: null, phone_number: null } });

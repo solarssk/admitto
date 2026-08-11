@@ -112,6 +112,28 @@
   gap: var(--space-4);
 }
 
+.add-attendee-modal__time-range {
+  display: flex;
+  flex-direction: column;
+  /* Keep the explanatory copy at the same label-to-hint distance as a regular field,
+     rather than a full field-row gap below the two time controls. */
+  gap: var(--space-1);
+}
+
+/* Two short fields (e.g. Event hours start/end) side by side on wider screens instead of each
+   taking a full-width line of mostly empty space. */
+.add-attendee-modal__field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .add-attendee-modal__field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* .at-notice carries no margin of its own (packages/ui) - it normally relies on a flex/grid
  * parent's `gap`, but here it sits directly in the scroll wrapper between the title and the
  * fields block below, neither of which is a gap container, so it would otherwise touch the

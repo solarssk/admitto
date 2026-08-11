@@ -177,6 +177,29 @@
   gap: var(--space-4);
 }
 
+/* Event hours are related to the event's clock, so keep their two compact controls and the
+   timezone chooser together on one row whenever the settings card has room. The range hint
+   stays with its controls at the standard field-to-hint spacing instead of becoming a separate
+   stack item with a full row gap. */
+.settings-event-schedule {
+  display: grid;
+  grid-template-columns: minmax(20rem, 1fr) minmax(18rem, 1.4fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.settings-event-schedule__hours {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+@media (max-width: 760px) {
+  .settings-event-schedule {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
   .settings-field-row {
     grid-template-columns: 1fr;

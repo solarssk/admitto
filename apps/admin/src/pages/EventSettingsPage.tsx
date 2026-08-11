@@ -40,6 +40,7 @@ import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { TimeInput } from "../components/TimeInput.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import {
@@ -59,6 +60,8 @@ function formatActorStamp(iso: string, timezone: string | null | undefined): str
 type SettingsForm = {
   title: string;
   date: string;
+  eventHoursStart: string;
+  eventHoursEnd: string;
   timezone: string;
   capacity: string;
   logoUrl: string;
@@ -69,6 +72,8 @@ type SettingsForm = {
 type SettingsPatch = Partial<{
   title: string;
   date: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   timezone: string;
   capacity: number | null;
   logo_url: string | null;
@@ -109,6 +114,8 @@ function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
     date: data.date.split("T")[0] ?? "",
+    eventHoursStart: data.event_hours_start ?? "",
+    eventHoursEnd: data.event_hours_end ?? "",
     timezone: data.timezone,
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
@@ -133,6 +140,12 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   const title = form.title.trim();
   if (title !== original.title.trim()) patch.title = title;
   if (form.date !== original.date) patch.date = form.date;
+  if (form.eventHoursStart !== original.eventHoursStart) {
+    patch.event_hours_start = form.eventHoursStart.trim() || null;
+  }
+  if (form.eventHoursEnd !== original.eventHoursEnd) {
+    patch.event_hours_end = form.eventHoursEnd.trim() || null;
+  }
   if (form.timezone !== original.timezone) patch.timezone = form.timezone;
   if (form.capacity.trim() !== original.capacity.trim()) {
     patch.capacity = parseCapacityInput(form.capacity);
@@ -978,18 +991,43 @@ export function EventSettingsPage() {
               </div>
             </div>
 
-            <div className="settings-field-group event-settings-timezone">
-              <label className="at-label" htmlFor="event-timezone">
-                Event timezone
-              </label>
-              <TimezoneSelect
-                id="event-timezone"
-                compact
-                value={form.timezone}
-                onChange={(tz) => setForm({ ...form, timezone: tz })}
-                disabled={isArchived || saving}
-              />
-              <span className="at-hint">All check-in times and reports use this timezone.</span>
+            <div className="settings-event-schedule">
+              <div className="settings-event-schedule__hours">
+                <div className="settings-field-row">
+                  <div className="settings-field-group">
+                    <TimeInput
+                      label="Event hours (start)"
+                      value={form.eventHoursStart}
+                      disabled={isArchived || saving}
+                      onChange={(value) => setForm({ ...form, eventHoursStart: value })}
+                    />
+                  </div>
+                  <div className="settings-field-group">
+                    <TimeInput
+                      label="Event hours (end)"
+                      value={form.eventHoursEnd}
+                      disabled={isArchived || saving}
+                      onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
+                      pickerAlign="end"
+                    />
+                  </div>
+                </div>
+                <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
+              </div>
+
+              <div className="settings-field-group event-settings-timezone">
+                <label className="at-label" htmlFor="event-timezone">
+                  Event timezone
+                </label>
+                <TimezoneSelect
+                  id="event-timezone"
+                  compact
+                  value={form.timezone}
+                  onChange={(tz) => setForm({ ...form, timezone: tz })}
+                  disabled={isArchived || saving}
+                />
+                <span className="at-hint">All check-in times and reports use this timezone.</span>
+              </div>
             </div>
 
             <div className="settings-field-group slug-field">

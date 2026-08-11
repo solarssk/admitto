@@ -7625,10 +7625,21 @@ output.mail-field-hint {
 }
 
 .timezone-select__option {
+  display: block;
+  width: 100%;
   padding: 0.45rem 0.55rem;
+  border: 0;
   border-radius: var(--radius-sm, 0.375rem);
+  background: transparent;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   overflow: hidden;
+}
+
+.timezone-select__option:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .timezone-select__option-row {
@@ -7676,6 +7687,14 @@ output.mail-field-hint {
 
 .timezone-select__option--selected.timezone-select__option--highlighted {
   background: var(--brand-100, #dbeafe);
+}
+
+/* A selected timezone keeps its blue fill; every other item gets a clearly visible pointer
+   state. The inset accent is deliberately independent of background variables/themes. */
+.timezone-select__option:not(.timezone-select__option--selected):hover,
+.timezone-select__option:not(.timezone-select__option--selected).timezone-select__option--highlighted {
+  background-color: #e7f0fc;
+  box-shadow: inset 3px 0 0 var(--brand-500, #3b82f6);
 }
 
 .timezone-select__empty {
@@ -7768,6 +7787,195 @@ output.mail-field-hint {
    .at-input/.at-select/.at-textarea in packages/ui. */
 @media (pointer: coarse) {
   .date-picker__input {
+    font-size: 16px;
+  }
+}
+
+/* TimeInput is a custom picker rather than <input type="time"> so its behaviour and appearance
+   stay consistent across browsers while still respecting the operator's 12/24-hour preference. */
+.time-input {
+  position: relative;
+}
+
+.time-input__control {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: var(--control-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--surface-card, #fff);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.time-input__control:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.time-input__control--invalid {
+  border-color: var(--status-error);
+}
+
+.time-input__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--control-h);
+  background: var(--surface-page, #f8fafc);
+  color: var(--text-muted);
+  border: 0;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.time-input__icon:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.time-input__icon:disabled {
+  cursor: not-allowed;
+  color: var(--text-disabled);
+}
+
+.time-input__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  padding: 0 0.75rem;
+}
+
+.time-input__input:focus {
+  outline: none;
+}
+
+.time-input__input:disabled {
+  background: var(--at-gray-100, #f3f4f6);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.time-input__input::placeholder {
+  color: var(--text-disabled);
+}
+
+.time-input__picker {
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 1fr) minmax(4.5rem, 1fr);
+  gap: 0.65rem;
+  width: max-content;
+  max-width: min(13rem, calc(100vw - 32px));
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--surface-card, #fff);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+}
+
+/* The paired end-time control opens toward the available edge, keeping the AM/PM column
+   inside a narrow modal instead of letting the picker be clipped on the right. */
+.time-input--picker-end .time-input__picker {
+  right: 0;
+  left: auto;
+}
+
+.time-input__picker--twelve-hour {
+  grid-template-columns: minmax(4.5rem, 1fr) minmax(4.5rem, 1fr) minmax(4rem, 1fr);
+  max-width: min(17rem, calc(100vw - 32px));
+}
+
+.time-input__picker-column {
+  min-width: 0;
+}
+
+.time-input__picker-label {
+  display: block;
+  margin: 0 0 0.35rem;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+  font-size: var(--fs-xs, 0.75rem);
+  font-weight: var(--fw-medium, 500);
+}
+
+.time-input__picker-scroll {
+  position: relative;
+  display: grid;
+  grid-auto-rows: 2rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  border-radius: var(--radius-sm, 0.375rem);
+  background: linear-gradient(to bottom, var(--surface-page, #f8fafc), transparent 16%, transparent 84%, var(--surface-page, #f8fafc));
+}
+
+.time-input__picker-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.time-input__picker-column--meridiem .time-input__picker-scroll {
+  grid-auto-rows: 2.5rem;
+  max-height: 5rem;
+}
+
+.time-input__picker-option {
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-sm, 0.375rem);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  scroll-snap-align: center;
+}
+
+.time-input__picker-option:hover,
+.time-input__picker-option:focus-visible {
+  outline: none;
+  background: var(--surface-page, #f8fafc);
+}
+
+.time-input__picker-option:focus-visible {
+  box-shadow: var(--ring);
+}
+
+.time-input__picker-option--selected {
+  background: var(--at-blue-100, #dbeafe);
+  color: var(--at-blue-700, #1d4ed8);
+  font-weight: var(--fw-medium, 500);
+}
+
+@media (max-width: 420px) {
+  .time-input__picker {
+    width: min(100%, 13rem);
+  }
+
+  .time-input__picker--twelve-hour {
+    grid-template-columns: 1fr 1fr 0.85fr;
+    width: min(100%, 17rem);
+  }
+
+  .time-input__picker-scroll { max-height: 8rem; }
+}
+
+@media (pointer: coarse) {
+  .time-input__input {
     font-size: 16px;
   }
 }

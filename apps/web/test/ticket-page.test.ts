@@ -11,6 +11,8 @@ import {
 } from "../src/ticket-page.js";
 
 const EMPTY_EVENT_LOCATION = {
+  eventHoursStart: null,
+  eventHoursEnd: null,
   formattedAddress: null,
   addressComponents: null,
   latitude: null,
@@ -195,6 +197,36 @@ describe("renderTicket", () => {
     expect(html).toContain('aria-disabled="true"');
     expect(html).not.toContain("badge-\"><style>boom</style>");
     expect(html).not.toContain("<style>boom</style>");
+  });
+
+  it("renders the event hours range in the meta row when both are set", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: { ...ticketFor(null).event, eventHoursStart: "18:00", eventHoursEnd: "22:00" },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("18:00–22:00");
+  });
+
+  it("renders an open-ended hours label when only one side of the range is set", () => {
+    const startOnly = renderTicket(
+      { ...ticketFor(null), event: { ...ticketFor(null).event, eventHoursStart: "18:00" } },
+      "data:image/png;base64,abc",
+    );
+    expect(startOnly).toContain("from 18:00");
+
+    const endOnly = renderTicket(
+      { ...ticketFor(null), event: { ...ticketFor(null).event, eventHoursEnd: "22:00" } },
+      "data:image/png;base64,abc",
+    );
+    expect(endOnly).toContain("until 22:00");
+  });
+
+  it("omits the hours meta span when neither start nor end is set", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
+    expect(html).not.toContain("M12 7v5l3 3");
   });
 
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {

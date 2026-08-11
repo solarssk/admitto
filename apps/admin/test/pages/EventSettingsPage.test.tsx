@@ -436,10 +436,68 @@ describe("EventSettingsPage tabs", () => {
     expect(
       screen.getByText("When the event takes place. Times and reports use the timezone below."),
     ).toBeTruthy();
+    const schedule = screen.getByText("Event hours (start)").closest(".settings-event-schedule");
+    expect(schedule).not.toBeNull();
+    expect(screen.getByText("Event timezone").closest(".settings-event-schedule")).toBe(schedule);
+    expect(screen.getByLabelText("Event hours (end)").closest(".time-input")?.classList).toContain(
+      "time-input--picker-end",
+    );
     const titleInput = screen.getByLabelText("Event title") as HTMLInputElement;
     expect(titleInput.getAttribute("data-bwignore")).toBe("true");
     expect(titleInput.getAttribute("data-1p-ignore")).toBe("true");
     expect(titleInput.getAttribute("autocomplete")).toBe("off");
+  });
+
+  it("saves the event hours range through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_hours_start: "18:00", event_hours_end: "22:00" },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), {
+      target: { value: "18:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), {
+      target: { value: "22:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        event_hours_start: "18:00",
+        event_hours_end: "22:00",
+      });
+    });
+  });
+
+  it("clears a previously-set event hours range to null", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      event_hours_start: "18:00",
+      event_hours_end: "22:00",
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_hours_start: null, event_hours_end: null },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), { target: { value: "" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), { target: { value: "" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        event_hours_start: null,
+        event_hours_end: null,
+      });
+    });
   });
 
   it("deep links to Location and keeps venue guidance out of Basic information", async () => {

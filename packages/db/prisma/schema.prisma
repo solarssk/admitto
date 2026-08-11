@@ -39,6 +39,10 @@ model Event {
   title                String
   slug                 String              @unique
   date                 DateTime
+  // Display-only "HH:MM" 24h range shown on tickets/wallet passes; Event.date has no time-range
+  // field of its own. Independently optional - the admin UI pairs them but neither is required.
+  event_hours_start    String?
+  event_hours_end      String?
   timezone             String              @default("UTC")
   capacity             Int?
   logo_url             String?
@@ -650,6 +654,7 @@ model User {
   password_hash        String?
   display_name         String?
   preferred_locale     String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
+  preferred_time_format String? // "12h" | "24h"; null = browser default
   // Internal contact use only (not shown on tickets/public pages). Dial code includes the "+",
   // e.g. "+48"; phone_number is the local number with no formatting/validation beyond digits.
   phone_country_code   String?

@@ -61,6 +61,20 @@ describe("TimezoneSelect", () => {
     });
   });
 
+  it("restores the full browse list when a search is cleared", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const search = screen.getByLabelText("Search timezones");
+    fireEvent.change(search, { target: { value: "tokyo" } });
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(1));
+
+    fireEvent.change(search, { target: { value: "" } });
+    await waitFor(() => {
+      expect(screen.getAllByRole("option").length).toBeGreaterThan(200);
+      expect(screen.getByText("Sorted west to east by UTC offset · type to filter")).toBeTruthy();
+    });
+  });
+
   it("matches city names with spaces in the query", async () => {
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
     openPicker();
@@ -105,6 +119,38 @@ describe("TimezoneSelect", () => {
     expect(tokyoOption).toBeDefined();
     fireEvent.click(tokyoOption!);
     expect(onChange).toHaveBeenCalledWith("Asia/Tokyo");
+  });
+
+  it("selects an option focused in the list with Enter", async () => {
+    const onChange = vi.fn();
+    render(<TimezoneSelect value="UTC" onChange={onChange} compact />);
+    expect(document.querySelector(".timezone-select--compact")).toBeTruthy();
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), { target: { value: "tokyo" } });
+    const [tokyo] = await screen.findAllByRole("option");
+
+    fireEvent.keyDown(tokyo!, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith("Asia/Tokyo");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("keeps the panel open while the pointer moves into its fixed results layer", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const option = (await screen.findAllByRole("option"))[0]!;
+    fireEvent.pointerDown(option);
+    fireEvent.mouseEnter(option);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+
+  it("highlights the option currently under the pointer", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const option = (await screen.findAllByRole("option")).find((entry) =>
+      entry.textContent?.includes("Anchorage"),
+    )!;
+    fireEvent.pointerMove(option);
+    expect(option.classList.contains("timezone-select__option--highlighted")).toBe(true);
   });
 
   it("keeps an unrecognized stored value visible when not in the catalogue", async () => {

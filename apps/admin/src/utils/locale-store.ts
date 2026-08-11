@@ -1,15 +1,16 @@
 import { isSupportedLocale, SUPPORTED_LOCALE_TAGS } from "@admitto/shared";
 
 /**
- * Module-level locale preference for date formatting.
+ * Module-level regional-format preference for date formatting.
  *
- * Set on auth bootstrap and AccountPage load/save. Components using formatEventDate /
- * formatEventDateTime / formatUtcDateTime pick it up without prop-drilling.
+ * Set on auth bootstrap and AccountPage load/save. Date formatting components pick it up without
+ * prop-drilling. Time format is deliberately separate: a user may want US dates with 24h time.
  *
  * null / undefined → browser default (toLocaleDateString(undefined, …))
  */
 
 let _locale: string | undefined = undefined;
+let _timeFormat: "12h" | "24h" | undefined = undefined;
 
 export function setPreferredLocale(locale: string | null | undefined): void {
   if (locale == null || locale === "") {
@@ -21,6 +22,14 @@ export function setPreferredLocale(locale: string | null | undefined): void {
 
 export function getPreferredLocale(): string | undefined {
   return _locale;
+}
+
+export function setPreferredTimeFormat(format: "12h" | "24h" | null | undefined): void {
+  _timeFormat = format ?? undefined;
+}
+
+export function getPreferredTimeFormat(): "12h" | "24h" | undefined {
+  return _timeFormat;
 }
 
 export interface LocaleOption {

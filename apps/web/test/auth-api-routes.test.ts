@@ -136,6 +136,7 @@ function makeDb(user?: Record<string, unknown> | null): PrismaClient {
               email: "ops@example.com",
               display_name: null,
               preferred_locale: "en",
+              preferred_time_format: null,
               is_active: true,
               created_at: new Date("2026-01-01T00:00:00Z"),
             }
