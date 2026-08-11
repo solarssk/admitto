@@ -292,6 +292,30 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.archived_by_timezone).toBe("UTC");
   });
 
+  it("preserves unrecognized stored timezone identifiers in the settings response", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: {
+        timezone: "Legacy/Event",
+        created_by_timezone: "Legacy/Created",
+        archived_by_timezone: "Legacy/Archived",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      timezone: string;
+      created_by_timezone: string | null;
+      archived_by_timezone: string | null;
+    };
+    expect(body.timezone).toBe("Legacy/Event");
+    expect(body.created_by_timezone).toBe("Legacy/Created");
+    expect(body.archived_by_timezone).toBe("Legacy/Archived");
+  });
+
   it("returns admitted_count and issued_items_count reflecting real activity", async () => {
     const admittedAttendee = await prisma.attendee.create({
       data: {

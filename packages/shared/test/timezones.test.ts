@@ -23,4 +23,9 @@ describe("timezones", () => {
     expect(normalizeTimeZone("America/Fort_Nelson")).toBe("America/Fort_Nelson");
     expect(getTimeZone("America/Dawson_Creek")?.iana).toBe("America/Dawson_Creek");
   });
+
+  it("does not rewrite an identifier absent from the bundled IANA catalogue", () => {
+    expect(normalizeTimeZone("Legacy/Removed")).toBeNull();
+    expect(getTimeZone("Legacy/Removed")).toBeNull();
+  });
 });

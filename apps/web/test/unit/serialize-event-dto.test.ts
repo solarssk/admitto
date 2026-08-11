@@ -46,6 +46,18 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     expect(dto.archived_by_timezone).toBe("UTC");
   });
 
+  it("preserves unrecognized stored timezone identifiers", () => {
+    const dto = serializeEventDto({
+      ...baseRow,
+      timezone: "Legacy/Event",
+      created_by_timezone: "Legacy/Created",
+      archived_by_timezone: "Legacy/Archived",
+    });
+    expect(dto.timezone).toBe("Legacy/Event");
+    expect(dto.created_by_timezone).toBe("Legacy/Created");
+    expect(dto.archived_by_timezone).toBe("Legacy/Archived");
+  });
+
   it("passes through has_coordinates when true", () => {
     const dto = serializeEventDto({ ...baseRow, has_coordinates: true }, 3);
     expect(dto.has_coordinates).toBe(true);

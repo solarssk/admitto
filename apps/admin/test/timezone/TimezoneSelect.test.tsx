@@ -107,15 +107,11 @@ describe("TimezoneSelect", () => {
     expect(onChange).toHaveBeenCalledWith("Asia/Tokyo");
   });
 
-  it("keeps custom IANA value visible when not in filtered list", async () => {
-    render(<TimezoneSelect value="Pacific/Kiritimati" onChange={() => {}} />);
+  it("keeps an unrecognized stored value visible when not in the catalogue", async () => {
+    render(<TimezoneSelect value="Legacy/Removed" onChange={() => {}} />);
     openPicker();
-    fireEvent.change(screen.getByLabelText("Search timezones"), {
-      target: { value: "zzznomatch" },
-    });
     await waitFor(() => {
-      expect(screen.queryAllByRole("option")).toHaveLength(0);
-      expect(screen.getByText("No matching timezones")).toBeTruthy();
+      expect(screen.getByRole("option", { name: /Legacy\/Removed/ })).toBeTruthy();
     });
   });
 
