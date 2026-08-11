@@ -135,6 +135,7 @@ export function toResolved(
     event: {
       id: string; title: string; slug: string; date: Date; timezone: string;
       event_hours_start: string | null; event_hours_end: string | null;
+      wallet_template_id: string | null;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
       organization: { logo_url: string | null; header_image_url: string | null };

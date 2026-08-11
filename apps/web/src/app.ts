@@ -678,6 +678,7 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!walletProvider) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
+    const provider: WalletPassProvider = walletProvider;
 
     let existing: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
     try {
@@ -750,13 +751,13 @@ export function createApp(options: CreateAppOptions = {}) {
       input: WalletPassInput,
     ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
       try {
-        const result = await walletProvider.createPass(input);
+        const result = await provider.createPass(input);
         return await markActive(input.userProvidedId, result);
       } catch (err) {
         const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
         const recovered =
           code === "wallet_provider_duplicate"
-            ? await walletProvider.findByUserProvidedId(input.userProvidedId).catch(() => null)
+            ? await provider.findByUserProvidedId(input.userProvidedId).catch(() => null)
             : null;
         if (recovered) return markActive(input.userProvidedId, recovered);
 
@@ -892,7 +893,7 @@ export function createApp(options: CreateAppOptions = {}) {
         : `/t/${internalToken}`;
     // No template configured for this event (Event settings -> Wallet, left blank) - the
     // /wallet/:platform routes would only redirect back with walletError=1, so don't offer them.
-    const walletConfigured = resolvedForDisplay.event.wallet_template_id !== null;
+    const walletConfigured = resolvedForDisplay.event.walletTemplateId !== null;
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
