@@ -34,6 +34,10 @@ describe("parseOptionalClientTimezone", () => {
     expect(parseOptionalClientTimezone("Europe/Warsaw")).toBe("Europe/Warsaw");
   });
 
+  it("normalizes a valid legacy IANA alias", () => {
+    expect(parseOptionalClientTimezone("Asia/Calcutta")).toBe("Asia/Kolkata");
+  });
+
   it("rejects invalid zones", () => {
     expect(parseOptionalClientTimezone("Mars/Olympus")).toBeNull();
   });

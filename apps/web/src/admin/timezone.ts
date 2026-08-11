@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeTimeZone } from "@admitto/shared/timezones";
 
 function resolveCanonicalTimeZone(tz: string): string | null {
   try {
@@ -31,7 +32,7 @@ export function parseOptionalClientTimezone(raw: string | undefined | null): str
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed || !isValidIanaTimezone(trimmed)) return null;
-  return trimmed;
+  return normalizeTimeZone(trimmed) ?? trimmed;
 }
 
 export const timezoneField = z
@@ -39,4 +40,5 @@ export const timezoneField = z
   .trim()
   .min(1)
   .max(64)
-  .refine(isValidIanaTimezone, { message: "Invalid IANA timezone" });
+  .refine(isValidIanaTimezone, { message: "Invalid IANA timezone" })
+  .transform((timeZone) => normalizeTimeZone(timeZone) ?? timeZone);

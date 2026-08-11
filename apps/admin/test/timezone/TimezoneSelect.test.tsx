@@ -138,6 +138,24 @@ describe("TimezoneSelect", () => {
     });
   });
 
+  it("shows one Kolkata option for the current and legacy IANA identifiers", async () => {
+    render(<TimezoneSelect value="Asia/Calcutta" onChange={() => {}} />);
+    expect(screen.getByRole("button").textContent).toContain("Asia/Kolkata");
+
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), {
+      target: { value: "calcutta" },
+    });
+
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(options).toHaveLength(1);
+      expect(options[0]?.textContent).toContain("Kolkata");
+      expect(options[0]?.textContent).toContain("Asia/Kolkata");
+      expect(options[0]?.textContent).toContain("UTC+");
+    });
+  });
+
   it("shows the full IANA list sorted by offset when browsing", async () => {
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
     openPicker();

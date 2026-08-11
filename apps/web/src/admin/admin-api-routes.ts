@@ -5,6 +5,7 @@ import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { normalizeTimeZone } from "@admitto/shared/timezones";
 import { assertCoordinatePairing, buildEventStaticMapPath, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
 import { createWeatherServiceFromDb } from "../weather/weather-org-settings.js";
 import { summarizeMany } from "../weather/weather-service.js";
@@ -111,7 +112,7 @@ export function serializeEventDto(
     title: event.title,
     slug: event.slug,
     date: event.date.toISOString(),
-    timezone: event.timezone,
+    timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
     location: event.location,
     has_coordinates: event.has_coordinates === true,
     map_preview_path: mapPreviewPath,

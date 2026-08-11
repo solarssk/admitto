@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Communication → Templates: on phones, the selected template name is no longer covered by its status badge; the last-edited date is available from the Edit template control. **Delete event** now permits an otherwise-empty event whose only saved mail template is its non-deletable default Ticket email override; additional custom templates still block deletion.
 - Organisation Settings → Health check: the mobile **More actions** menu now stays compact instead of expanding to fit its longest description.
 - Organisation Settings → Logs: on iPhone browsers, opening Filters or typing a date no longer leaves the page or the calendar clipped behind the software keyboard. Filter and option panels now stay within the visible screen and scroll when necessary.
+- Timezone selection now uses one global IANA timezone catalogue with legacy aliases folded into their preferred current names. Map suggestions, event saves, and the picker consistently use one entry, for example, `Asia/Calcutta` is accepted but shown and saved as `Asia/Kolkata`.
 
 ## [0.4.14] - 2026-08-11
 
