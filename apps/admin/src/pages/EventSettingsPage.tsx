@@ -40,6 +40,7 @@ import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { TimeInput } from "../components/TimeInput.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import {
@@ -992,22 +993,20 @@ export function EventSettingsPage() {
 
             <div className="settings-field-row">
               <div className="settings-field-group">
-                <Input
-                  type="time"
+                <TimeInput
                   label="Event hours — start"
                   hint="Optional. Shown on tickets and wallet passes as a time range."
                   value={form.eventHoursStart}
                   disabled={isArchived || saving}
-                  onChange={(e) => setForm({ ...form, eventHoursStart: e.target.value })}
+                  onChange={(value) => setForm({ ...form, eventHoursStart: value })}
                 />
               </div>
               <div className="settings-field-group">
-                <Input
-                  type="time"
+                <TimeInput
                   label="Event hours — end"
                   value={form.eventHoursEnd}
                   disabled={isArchived || saving}
-                  onChange={(e) => setForm({ ...form, eventHoursEnd: e.target.value })}
+                  onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
                 />
               </div>
             </div>

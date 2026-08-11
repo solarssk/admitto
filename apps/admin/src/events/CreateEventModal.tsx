@@ -6,6 +6,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, GeocodingResultDto } from "../api/types.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -139,22 +140,20 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             onChange={setDate}
           />
           <div className="add-attendee-modal__field-row">
-            <Input
+            <TimeInput
               id="ce-hours-start"
-              type="time"
               label="Event hours — start"
               hint="Optional. Shown on tickets and wallet passes as a time range."
               value={eventHoursStart}
               disabled={submitting}
-              onChange={(e) => setEventHoursStart(e.target.value)}
+              onChange={setEventHoursStart}
             />
-            <Input
+            <TimeInput
               id="ce-hours-end"
-              type="time"
               label="Event hours — end"
               value={eventHoursEnd}
               disabled={submitting}
-              onChange={(e) => setEventHoursEnd(e.target.value)}
+              onChange={setEventHoursEnd}
             />
           </div>
           <div className="at-field">

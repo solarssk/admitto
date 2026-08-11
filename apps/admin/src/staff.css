@@ -7772,6 +7772,70 @@ output.mail-field-hint {
   }
 }
 
+/* TimeInput - same control shape as .date-picker__* above (icon in a grey box, plain input),
+   minus the popup panel; kept as its own class pair since there's no calendar dialog to share. */
+.time-input__control {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: var(--control-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--surface-card, #fff);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.time-input__control:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.time-input__control--invalid {
+  border-color: var(--status-error);
+}
+
+.time-input__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--control-h);
+  border-right: 1px solid var(--border);
+  background: var(--surface-page, #f8fafc);
+  color: var(--text-muted);
+}
+
+.time-input__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  padding: 0 0.75rem;
+}
+
+.time-input__input:focus {
+  outline: none;
+}
+
+.time-input__input:disabled {
+  background: var(--at-gray-100, #f3f4f6);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.time-input__input::placeholder {
+  color: var(--text-disabled);
+}
+
+@media (pointer: coarse) {
+  .time-input__input {
+    font-size: 16px;
+  }
+}
+
 /* This is a native <dialog> (see DatePicker.tsx), not a plain <div> - the rules below
    reset the UA default dialog styling (inset on all sides, auto margin, fit-content
    sizing, Canvas colors) back to what the plain <div> it replaced would have had.
