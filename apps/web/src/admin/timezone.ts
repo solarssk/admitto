@@ -11,7 +11,8 @@ function resolveCanonicalTimeZone(tz: string): string | null {
 
 /** Validate IANA timezone — accepts Intl-valid aliases; rejects offset strings like +05:30. */
 export function isValidIanaTimezone(tz: string): boolean {
-  if (tz === "UTC") return true;
+  const preferred = normalizeTimeZone(tz);
+  if (preferred === "UTC") return true;
 
   const canonical = resolveCanonicalTimeZone(tz);
   if (!canonical) return false;
@@ -20,7 +21,7 @@ export function isValidIanaTimezone(tz: string): boolean {
   if (/^[+-]/.test(canonical)) return false;
 
   if (typeof Intl.supportedValuesOf === "function") {
-    return Intl.supportedValuesOf("timeZone").includes(canonical);
+    return Intl.supportedValuesOf("timeZone").includes(canonical) || preferred !== null;
   }
 
   return !/^GMT/i.test(canonical);

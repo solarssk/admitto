@@ -6,6 +6,11 @@ describe("isValidIanaTimezone", () => {
     expect(isValidIanaTimezone("UTC")).toBe(true);
   });
 
+  it.each(["Etc/UTC", "UCT", "Zulu"])("accepts and normalizes the UTC alias %s", (alias) => {
+    expect(isValidIanaTimezone(alias)).toBe(true);
+    expect(parseOptionalClientTimezone(alias)).toBe("UTC");
+  });
+
   it("accepts canonical IANA zones", () => {
     expect(isValidIanaTimezone("Europe/Warsaw")).toBe(true);
   });

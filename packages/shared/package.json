@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@vvo/tzdb": "^6.198.0",
+    "tzdata": "^1.0.50",
     "undici": "^8.7.0"
   },
   "devDependencies": {

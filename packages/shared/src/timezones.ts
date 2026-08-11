@@ -1,4 +1,5 @@
 import { rawTimeZones } from "@vvo/tzdb";
+import tzdata from "tzdata" with { type: "json" };
 
 export type TimeZoneDefinition = {
   /** Preferred IANA identifier used for new values and UI display. */
@@ -11,26 +12,53 @@ export type TimeZoneDefinition = {
   mainCities: readonly string[];
 };
 
-const UTC: TimeZoneDefinition = {
-  iana: "UTC",
-  aliases: ["UTC", "Etc/UTC", "Etc/UCT", "UCT", "Universal", "Zulu"],
-  countryName: "",
-  continentName: "",
-  alternativeName: "Coordinated Universal Time",
-  mainCities: [],
-};
+const metadataByIana = new Map(
+  rawTimeZones.flatMap((zone) => zone.group.map((iana) => [iana, zone] as const)),
+);
 
-const TIME_ZONES: readonly TimeZoneDefinition[] = [
-  UTC,
-  ...rawTimeZones.map((zone) => ({
-    iana: zone.name,
-    aliases: zone.group,
-    countryName: zone.countryName,
-    continentName: zone.continentName,
-    alternativeName: zone.alternativeName,
-    mainCities: zone.mainCities.filter(Boolean),
-  })),
-];
+function getIanaZoneData(iana: string): readonly unknown[] | string | undefined {
+  // `iana` comes from the immutable bundled tzdata keys, not a request or form value.
+  // eslint-disable-next-line security/detect-object-injection
+  return tzdata.zones[iana];
+}
+
+function resolveIanaLink(iana: string): string {
+  const visited = new Set<string>();
+  let target = iana;
+
+  let linked = getIanaZoneData(target);
+  while (typeof linked === "string" && !visited.has(target)) {
+    visited.add(target);
+    target = linked;
+    linked = getIanaZoneData(target);
+  }
+
+  return target;
+}
+
+const aliasesByPrimaryIana = new Map<string, string[]>();
+for (const [iana, rules] of Object.entries(tzdata.zones)) {
+  if (Array.isArray(rules) && iana !== "Factory") aliasesByPrimaryIana.set(iana, [iana]);
+}
+for (const iana of Object.keys(tzdata.zones)) {
+  const primary = resolveIanaLink(iana);
+  if (primary !== iana) aliasesByPrimaryIana.get(primary)?.push(iana);
+}
+
+const TIME_ZONES: readonly TimeZoneDefinition[] = [...aliasesByPrimaryIana].map(
+  ([primaryIana, aliases]) => {
+    const metadata = metadataByIana.get(primaryIana);
+    const iana = primaryIana === "Etc/UTC" ? "UTC" : primaryIana;
+    return {
+      iana,
+      aliases: primaryIana === "Etc/UTC" ? ["UTC", ...aliases] : aliases,
+      countryName: metadata?.countryName ?? "",
+      continentName: metadata?.continentName ?? "",
+      alternativeName: metadata?.alternativeName ?? "",
+      mainCities: metadata?.mainCities.filter(Boolean) ?? [],
+    };
+  },
+);
 
 const timeZoneByAlias = new Map<string, TimeZoneDefinition>();
 for (const zone of TIME_ZONES) {
@@ -39,7 +67,7 @@ for (const zone of TIME_ZONES) {
   }
 }
 
-/** One option per real-world time zone, with legacy IANA links folded into its aliases. */
+/** One option per IANA Zone, with IANA Link aliases folded into its aliases. */
 export function getTimeZones(): readonly TimeZoneDefinition[] {
   return TIME_ZONES;
 }

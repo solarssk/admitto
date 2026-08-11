@@ -34,6 +34,18 @@ afterEach(() => {
 });
 
 describe("serializeEventDto — has_coordinates / map_preview_path", () => {
+  it("normalizes legacy event and audit timezones", () => {
+    const dto = serializeEventDto({
+      ...baseRow,
+      timezone: "Asia/Calcutta",
+      created_by_timezone: "Europe/Kiev",
+      archived_by_timezone: "Etc/UTC",
+    });
+    expect(dto.timezone).toBe("Asia/Kolkata");
+    expect(dto.created_by_timezone).toBe("Europe/Kyiv");
+    expect(dto.archived_by_timezone).toBe("UTC");
+  });
+
   it("passes through has_coordinates when true", () => {
     const dto = serializeEventDto({ ...baseRow, has_coordinates: true }, 3);
     expect(dto.has_coordinates).toBe(true);

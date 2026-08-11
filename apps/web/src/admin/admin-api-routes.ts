@@ -101,6 +101,8 @@ export function serializeEventDto(
   count?: number,
   userDisplayMap?: Record<string, UserDisplayRow>,
 ) {
+  const normalizeNullableTimeZone = (value: string | null) =>
+    value === null ? null : normalizeTimeZone(value) ?? value;
   const createdBy = event.created_by_user_id ? userDisplayMap?.[event.created_by_user_id] : undefined;
   const archivedBy = event.archived_by_user_id ? userDisplayMap?.[event.archived_by_user_id] : undefined;
   const mapPreviewPath = eventListMapPreviewPath(event);
@@ -122,10 +124,10 @@ export function serializeEventDto(
     created_at: event.created_at.toISOString(),
     created_by_display_name: createdBy?.display_name ?? null,
     created_by_email: createdBy?.email ?? null,
-    created_by_timezone: event.created_by_timezone,
+    created_by_timezone: normalizeNullableTimeZone(event.created_by_timezone),
     archived_by_display_name: archivedBy?.display_name ?? null,
     archived_by_email: archivedBy?.email ?? null,
-    archived_by_timezone: event.archived_by_timezone,
+    archived_by_timezone: normalizeNullableTimeZone(event.archived_by_timezone),
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }

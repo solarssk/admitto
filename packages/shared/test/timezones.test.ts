@@ -15,5 +15,12 @@ describe("timezones", () => {
   it("keeps UTC as the preferred zero-offset identifier", () => {
     expect(normalizeTimeZone("Etc/UTC")).toBe("UTC");
     expect(getTimeZones().some((zone) => zone.iana === "UTC")).toBe(true);
+    expect(getTimeZones().some((zone) => zone.iana === "Factory")).toBe(false);
+  });
+
+  it("keeps distinct IANA zones distinct when their display metadata is grouped", () => {
+    expect(normalizeTimeZone("America/Dawson_Creek")).toBe("America/Dawson_Creek");
+    expect(normalizeTimeZone("America/Fort_Nelson")).toBe("America/Fort_Nelson");
+    expect(getTimeZone("America/Dawson_Creek")?.iana).toBe("America/Dawson_Creek");
   });
 });
