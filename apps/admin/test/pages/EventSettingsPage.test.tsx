@@ -453,9 +453,11 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.change(screen.getByLabelText("Event hours (start)"), {
       target: { value: "18:00" },
     });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
     fireEvent.change(screen.getByLabelText("Event hours (end)"), {
       target: { value: "22:00" },
     });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -479,7 +481,9 @@ describe("EventSettingsPage tabs", () => {
     await screen.findByLabelText("Event title");
 
     fireEvent.change(screen.getByLabelText("Event hours (start)"), { target: { value: "" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
     fireEvent.change(screen.getByLabelText("Event hours (end)"), { target: { value: "" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() => {

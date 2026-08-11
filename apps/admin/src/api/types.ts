@@ -19,6 +19,7 @@ export interface AuthUser {
   email: string;
   display_name: string | null;
   preferred_locale?: string | null;
+  preferred_time_format?: "12h" | "24h" | null;
   is_active: boolean;
   created_at: string;
   mailer_status?: MailerStatus | null;
@@ -1405,6 +1406,7 @@ export interface AccountDto {
   email: string;
   display_name: string | null;
   preferred_locale: string | null;
+  preferred_time_format: "12h" | "24h" | null;
   is_active: boolean;
   must_change_password: boolean;
   has_local_password: boolean;
@@ -1419,6 +1421,7 @@ export interface AccountDto {
 export interface PatchAccountProfileBody {
   display_name?: string;
   preferred_locale?: string | null;
+  preferred_time_format?: "12h" | "24h" | null;
   phone_country_code?: string | null;
   phone_number?: string | null;
 }

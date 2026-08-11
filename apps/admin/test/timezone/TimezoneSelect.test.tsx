@@ -107,6 +107,25 @@ describe("TimezoneSelect", () => {
     expect(onChange).toHaveBeenCalledWith("Asia/Tokyo");
   });
 
+  it("keeps the panel open while the pointer moves into its fixed results layer", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const option = (await screen.findAllByRole("option"))[0]!;
+    fireEvent.pointerDown(option);
+    fireEvent.mouseEnter(option);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+
+  it("highlights the option currently under the pointer", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const option = (await screen.findAllByRole("option")).find((entry) =>
+      entry.textContent?.includes("Anchorage"),
+    )!;
+    fireEvent.pointerMove(option);
+    expect(option.classList.contains("timezone-select__option--highlighted")).toBe(true);
+  });
+
   it("keeps an unrecognized stored value visible when not in the catalogue", async () => {
     render(<TimezoneSelect value="Legacy/Removed" onChange={() => {}} />);
     openPicker();

@@ -654,6 +654,7 @@ model User {
   password_hash        String?
   display_name         String?
   preferred_locale     String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
+  preferred_time_format String? // "12h" | "24h"; null = browser default
   // Internal contact use only (not shown on tickets/public pages). Dial code includes the "+",
   // e.g. "+48"; phone_number is the local number with no formatting/validation beyond digits.
   phone_country_code   String?

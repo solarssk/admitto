@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- My account: staff can choose 12-hour (AM/PM), 24-hour, or browser-default time input independently from their regional date format.
 - **Event hours (start/end).** New Event and Event settings → Basic information now have an optional "Event hours" start/end time field, shown as a range on tickets and (later) wallet passes. Leave blank to omit.
 
 ### Fixed

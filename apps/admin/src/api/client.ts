@@ -2221,6 +2221,7 @@ export async function fetchAccount(signal?: AbortSignal): Promise<AccountDto> {
 export async function patchAccountProfile(body: PatchAccountProfileBody): Promise<{
   display_name: string | null;
   preferred_locale: string | null;
+  preferred_time_format: "12h" | "24h" | null;
   phone_country_code: string | null;
   phone_number: string | null;
 }> {
@@ -2228,6 +2229,7 @@ export async function patchAccountProfile(body: PatchAccountProfileBody): Promis
   return parseJson<{
     display_name: string | null;
     preferred_locale: string | null;
+    preferred_time_format: "12h" | "24h" | null;
     phone_country_code: string | null;
     phone_number: string | null;
   }>(res);

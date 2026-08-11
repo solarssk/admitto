@@ -291,7 +291,10 @@ export function TimezoneSelect({
     return () => window.clearTimeout(t);
   }, [open, selectedIana, options]);
 
-  useClickOutside(containerRef, open, closePanel);
+  // The panel is fixed so it can escape an overflowing modal. Keep it explicitly in the
+  // inside boundary as well: this remains correct if its positioning/rendering changes and
+  // prevents an interaction with the results from being mistaken for a click-away.
+  useClickOutside(containerRef, open, closePanel, [panelRef]);
 
   useEffect(() => {
     if (!open) return;
@@ -491,29 +494,34 @@ export function TimezoneSelect({
                       {item.label}
                     </li>
                   ) : (
-                    <li // NOSONAR — mouse-only click convenience; keyboard selection already works via the search input's onKeyDown (Enter selects the highlighted option, see onSearchKeyDown above)
-                      key={item.id}
-                      id={`${listboxId}-option-${item.optionIndex}`}
-                      role="option"
-                      data-option-index={item.optionIndex}
-                      aria-selected={item.entry.iana === selectedIana}
-                      className={[
-                        "timezone-select__option",
-                        item.entry.iana === selectedIana && "timezone-select__option--selected",
-                        item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onMouseEnter={() => setHighlightIndex(item.optionIndex)}
-                      onClick={() => selectOption(item.entry)}
-                    >
-                      <span className="timezone-select__option-row">
-                        <span className="timezone-select__option-city">{item.entry.city}</span>
-                        <span className="timezone-select__option-iana">{item.entry.iana}</span>
-                        {searching && item.entry.offsetLabel ? (
-                          <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
-                        ) : null}
-                      </span>
+                    <li key={item.id} role="presentation">
+                      <button
+                        type="button"
+                        id={`${listboxId}-option-${item.optionIndex}`}
+                        role="option"
+                        data-option-index={item.optionIndex}
+                        aria-selected={item.entry.iana === selectedIana}
+                        className={[
+                          "timezone-select__option",
+                          item.entry.iana === selectedIana && "timezone-select__option--selected",
+                          item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        // Pointer movement is deliberately used in addition to mouse enter:
+                        // fixed panels can be entered while the pointer is already held down.
+                        onPointerMove={() => setHighlightIndex(item.optionIndex)}
+                        onMouseEnter={() => setHighlightIndex(item.optionIndex)}
+                        onClick={() => selectOption(item.entry)}
+                      >
+                        <span className="timezone-select__option-row">
+                          <span className="timezone-select__option-city">{item.entry.city}</span>
+                          <span className="timezone-select__option-iana">{item.entry.iana}</span>
+                          {searching && item.entry.offsetLabel ? (
+                            <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
+                          ) : null}
+                        </span>
+                      </button>
                     </li>
                   ),
                 )

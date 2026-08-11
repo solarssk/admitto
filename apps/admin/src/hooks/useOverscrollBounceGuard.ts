@@ -23,6 +23,16 @@ export function useOverscrollBounceGuard(ref: RefObject<HTMLElement | null>, ope
     if (!el) return;
 
     const onWheel = (event: WheelEvent) => {
+      // A menu/list rendered inside a modal is still a DOM descendant even when it is
+      // position: fixed. Do not cancel its wheel gesture merely because the modal itself is
+      // at an edge: that would prevent its own scroll container from ever receiving it.
+      // Nested controls use overscroll-behavior: contain, so skipping the guard here does not
+      // let their end-of-list gesture chain into the page behind the modal.
+      let nested = event.target instanceof Element ? event.target : null;
+      while (nested && nested !== el) {
+        if (nested.scrollHeight > nested.clientHeight) return;
+        nested = nested.parentElement;
+      }
       // 2px tolerance for sub-pixel scroll positions (same as useScrollFade) —
       // an exact >= comparison can miss either edge by a fraction of a pixel.
       const atTop = el.scrollTop <= 2;

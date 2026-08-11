@@ -13,6 +13,7 @@ describe("account API client", () => {
       json: async () => ({
         display_name: "New Name",
         preferred_locale: "en-GB",
+        preferred_time_format: "24h",
         phone_country_code: "+48",
         phone_number: "600123456",
       }),
@@ -32,6 +33,7 @@ describe("account API client", () => {
     expect(result).toEqual({
       display_name: "New Name",
       preferred_locale: "en-GB",
+      preferred_time_format: "24h",
       phone_country_code: "+48",
       phone_number: "600123456",
     });
