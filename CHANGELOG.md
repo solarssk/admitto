@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-08-11
+
 ### Added
 - **Deploy docs:** clearer first-boot checklist (what must be env vs UI), Portainer/NPM without compose nginx (Variant B), and a generated environment dictionary ([`deploy/ENV.md`](deploy/ENV.md)) built from code scan + [`deploy/env-catalog.json`](deploy/env-catalog.json) (`npm run docs:env`; drift checked by `npm run docs:check`).
 - Event Overview's Recent activity now also shows attendees added and items issued/returned/revoked, alongside check-ins, mail failures, and imports.
@@ -18,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Living ops and security docs now match the current stack: generic **Upgrading** (manual backup first), no automatic pre-migration dump / root migrate, product retention and bounce on the **worker** (not app startup or a retention sidecar), and package README CLI notes aligned with workspace builds.
 - **OIDC providers are configured only in Organisation settings → Identity.** Removed the unused `OIDC_ENABLED` / `OIDC_ISSUER` / `OIDC_CLIENT_*` / `OIDC_DISPLAY_NAME` env-seed documentation (the runtime never read those variables). Cloudflare Access optional env locks are unchanged.
 - Identity provider editor shows the Redirect URI pattern on the Add form before the first save.
-- **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Backing up before an upgrade is now the operator's responsibility; the nightly `db-backup` service is unchanged and remains the automated baseline. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user. See the updated upgrade and restore steps in `deploy/README.md`.
+- **The deploy stack no longer takes an automatic database backup before applying a schema migration, and no container in the stack runs as root anymore.** Every upgrade previously got a guaranteed snapshot immediately before the migration; that guarantee is gone, so **take a manual database backup before every upgrade** (see `deploy/README.md` → Upgrading) — without it, your recovery point is whatever the nightly `db-backup` service last captured, which can be up to 24 hours old. Run `deploy/scripts/init-host-dirs.sh` before the first compose up so bind mounts are writable by the app user.
 - **Failed login attempts now show the full attempted email in the Security audit log (and are searchable there), matching how successful sign-ins and other providers attribute activity.** Operational stdout / System logs still redact (`a***@example.com`). Superadmin-only durable table; matches the retention policy already documented for this trail.
 
 ### Fixed
@@ -905,7 +907,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.13...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.14...HEAD
+[0.4.14]: https://github.com/solarssk/admitto/compare/v0.4.13...v0.4.14
 [0.4.13]: https://github.com/solarssk/admitto/compare/v0.4.12...v0.4.13
 [0.4.12]: https://github.com/solarssk/admitto/compare/v0.4.11...v0.4.12
 [0.4.11]: https://github.com/solarssk/admitto/compare/v0.4.10...v0.4.11

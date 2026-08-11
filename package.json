@@ -1,6 +1,6 @@
 {
   "name": "admitto",
-  "version": "0.4.13",
+  "version": "0.4.14",
   "private": true,
   "license": "Apache-2.0",
   "description": "Admitto — event access gateway (attendee import, QR tickets, wallet passes, M365 mail, check-in)",
