@@ -60,6 +60,14 @@ describe("TimeInput", () => {
     fireEvent.blur(input);
 
     expect(onValidityChange).toHaveBeenLastCalledWith(false);
+
+    fireEvent.change(input, { target: { value: "18:00" } });
+    fireEvent.blur(input);
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
   });
 
   it("accepts AM/PM text and stores the equivalent 24-hour value", () => {
@@ -84,7 +92,16 @@ describe("TimeInput", () => {
 
   it("opens a custom picker and selects an hour, minute, and PM", () => {
     const onChange = vi.fn();
-    render(<TimeInput hourCycle="12h" label="Event hours start" value="" onChange={onChange} />);
+    const onValidityChange = vi.fn();
+    render(
+      <TimeInput
+        hourCycle="12h"
+        label="Event hours start"
+        value=""
+        onChange={onChange}
+        onValidityChange={onValidityChange}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
     expect(screen.getByRole("dialog", { name: "Choose time" })).toBeTruthy();
 
@@ -93,6 +110,7 @@ describe("TimeInput", () => {
     fireEvent.click(screen.getByRole("button", { name: "PM" }));
 
     expect(onChange).toHaveBeenLastCalledWith("18:30");
+    expect(onValidityChange).toHaveBeenLastCalledWith(true);
     expect((screen.getByLabelText("Event hours start") as HTMLInputElement).value).toBe("6:30 PM");
   });
 

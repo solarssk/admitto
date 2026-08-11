@@ -439,6 +439,9 @@ describe("EventSettingsPage tabs", () => {
     const schedule = screen.getByText("Event hours (start)").closest(".settings-event-schedule");
     expect(schedule).not.toBeNull();
     expect(screen.getByText("Event timezone").closest(".settings-event-schedule")).toBe(schedule);
+    expect(screen.getByLabelText("Event hours (end)").closest(".time-input")?.classList).toContain(
+      "time-input--picker-end",
+    );
     const titleInput = screen.getByLabelText("Event title") as HTMLInputElement;
     expect(titleInput.getAttribute("data-bwignore")).toBe("true");
     expect(titleInput.getAttribute("data-1p-ignore")).toBe("true");

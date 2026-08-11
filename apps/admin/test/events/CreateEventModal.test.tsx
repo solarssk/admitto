@@ -196,6 +196,18 @@ describe("CreateEventModal", () => {
     expect(mockCreateEvent).not.toHaveBeenCalled();
   });
 
+  it("does not create an event while the end time is invalid", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const endTime = screen.getByLabelText("Event hours (end)");
+    fireEvent.change(endTime, { target: { value: "6" } });
+    fireEvent.blur(endTime);
+
+    expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
   it("keeps the event-hours hint with its paired controls", () => {
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
 

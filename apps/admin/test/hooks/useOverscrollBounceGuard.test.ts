@@ -78,6 +78,20 @@ describe("useOverscrollBounceGuard", () => {
     expect(dispatchWheel(option, 100)).toBe(true);
   });
 
+  it("does not cancel a wheel gesture for a nested picker with forced scrolling", () => {
+    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    const picker = document.createElement("div");
+    picker.style.overflowY = "scroll";
+    Object.defineProperty(picker, "clientHeight", { value: 100, configurable: true });
+    Object.defineProperty(picker, "scrollHeight", { value: 300, configurable: true });
+    const option = document.createElement("button");
+    picker.appendChild(option);
+    el.appendChild(picker);
+    renderHook(() => useOverscrollBounceGuard({ current: el }));
+
+    expect(dispatchWheel(option, 100)).toBe(true);
+  });
+
   it("still cancels a wheel gesture for a clipped nested picker", () => {
     const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
     const picker = document.createElement("div");

@@ -284,6 +284,22 @@ describe("AccountPage toasts", () => {
     expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
   });
 
+  it("clears the time-format preference without changing the regional date format", async () => {
+    mockFetchAccount.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: "24h" });
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: null });
+
+    renderWithToast(<AccountPage />);
+    await screen.findByRole("button", { name: /^Time format, 24-hour time/ });
+    fireEvent.click(screen.getByRole("button", { name: /^Time format, 24-hour time/ }));
+    fireEvent.click(screen.getByRole("button", { name: "System default (browser)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ preferred_time_format: null });
+    });
+    expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
+  });
+
   it("toasts profile save errors", async () => {
     mockLoadedAccount();
     const { ApiError } = await import("../../src/api/client.js");
