@@ -100,8 +100,8 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `PASSCREATOR_API_KEY` | optional | app | none | yes | PassCreator API key for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_TEMPLATE_ID; a later settings screen will replace this temporary environment configuration. |
-| `PASSCREATOR_TEMPLATE_ID` | optional | app | none | no | PassCreator template ID for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_API_KEY; a later settings screen will replace this temporary environment configuration. |
+| `PASSCREATOR_API_KEY` | optional | app | none | yes | Not read by the app - PassCreator API key is per-event now (Event Settings -> Wallet). Kept reserved, not currently consumed. |
+| `PASSCREATOR_TEMPLATE_ID` | optional | app | none | no | Not read by the app - PassCreator template ID is per-event now (Event Settings -> Wallet). Kept reserved, not currently consumed. |
 | `PASSCREATOR_BASE_URL` | optional | app | none | no | Optional PassCreator API base URL. Defaults to the provider's production URL; use only for a compatible PassCreator endpoint. |
 
 ## Background worker

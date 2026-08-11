@@ -446,7 +446,7 @@
       "consumers": ["app"],
       "secret": true,
       "ui": "none",
-      "summary": "PassCreator API key for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_TEMPLATE_ID; a later settings screen will replace this temporary environment configuration."
+      "summary": "Not read by the app - PassCreator API key is per-event now (Event Settings -> Wallet). Kept reserved, not currently consumed."
     },
     {
       "name": "PASSCREATOR_TEMPLATE_ID",
@@ -455,7 +455,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "PassCreator template ID for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_API_KEY; a later settings screen will replace this temporary environment configuration."
+      "summary": "Not read by the app - PassCreator template ID is per-event now (Event Settings -> Wallet). Kept reserved, not currently consumed."
     },
     {
       "name": "PASSCREATOR_BASE_URL",

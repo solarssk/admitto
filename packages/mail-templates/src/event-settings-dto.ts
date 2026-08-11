@@ -15,6 +15,10 @@ export type EventSettingsDto = {
   event_hours_end: string | null;
   /** PassCreator template for this event's wallet passes (ADR 0041); null = wallet not configured. */
   wallet_template_id: string | null;
+  /** Per-event PassCreator API key - never returned in clear text. */
+  wallet_api_key: { configured: boolean };
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
   capacity: number | null;
   status: "active" | "archived";
   /** Null unless status is "archived". */

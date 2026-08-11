@@ -1055,24 +1055,15 @@ export interface ExternalServicesMapsDto {
   geocoding_base_url: string;
 }
 
-export interface ExternalServicesWalletDto {
-  api_key: { configured: boolean; source: "organization" | "env" | "none" };
-}
-
 export interface ExternalServicesResponse {
   weather: ExternalServicesWeatherDto;
   maps: ExternalServicesMapsDto;
-  wallet: ExternalServicesWalletDto;
 }
 
 export interface SaveWeatherSettingsBody {
   enabled?: boolean;
   provider?: WeatherProviderId;
   baseUrl?: string | null;
-  apiKey?: string | null;
-}
-
-export interface SaveWalletSettingsBody {
   apiKey?: string | null;
 }
 

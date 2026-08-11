@@ -18,6 +18,7 @@ import {
 } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
+import { encryptToString } from "@admitto/crypto";
 import { z } from "zod";
 import {
   adminAuditFromContext,
@@ -72,6 +73,9 @@ const patchEventSchema = z
     event_hours_start: eventHoursField,
     event_hours_end: eventHoursField,
     wallet_template_id: z.string().trim().max(200).nullish(),
+    wallet_api_key: z.string().trim().max(512).nullish(),
+    wallet_apple_enabled: z.boolean().optional(),
+    wallet_google_enabled: z.boolean().optional(),
     logo_url: z.string().trim().max(2000).nullish(),
     logo_original_url: z.string().trim().max(2000).nullish(),
     logo_crop: logoCropSchema,
@@ -90,6 +94,9 @@ type EventSettingsRow = {
   event_hours_start: string | null;
   event_hours_end: string | null;
   wallet_template_id: string | null;
+  wallet_api_key_enc: string | null;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
   capacity: number | null;
   archived_at: Date | null;
   archived_by_timezone: string | null;
@@ -121,6 +128,9 @@ function serializeEventSettings(
     event_hours_start: event.event_hours_start,
     event_hours_end: event.event_hours_end,
     wallet_template_id: event.wallet_template_id,
+    wallet_api_key: { configured: event.wallet_api_key_enc != null },
+    wallet_apple_enabled: event.wallet_apple_enabled,
+    wallet_google_enabled: event.wallet_google_enabled,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
@@ -155,6 +165,9 @@ const EVENT_SETTINGS_SELECT = {
   event_hours_start: true,
   event_hours_end: true,
   wallet_template_id: true,
+  wallet_api_key_enc: true,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
   capacity: true,
   archived_at: true,
   archived_by_timezone: true,
@@ -253,6 +266,9 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   event_hours_start?: string | null;
   event_hours_end?: string | null;
   wallet_template_id?: string | null;
+  wallet_api_key_enc?: string | null;
+  wallet_apple_enabled?: boolean;
+  wallet_google_enabled?: boolean;
   capacity?: number | null;
 } {
   const data: ReturnType<typeof buildBasicFieldsPatch> = {};
@@ -262,6 +278,16 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
   if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
   if (patch.wallet_template_id !== undefined) data.wallet_template_id = patch.wallet_template_id;
+  // Empty string clears the key; omit to keep the previous one.
+  if (patch.wallet_api_key !== undefined) {
+    data.wallet_api_key_enc = patch.wallet_api_key ? encryptToString(patch.wallet_api_key) : null;
+  }
+  if (patch.wallet_apple_enabled !== undefined) {
+    data.wallet_apple_enabled = patch.wallet_apple_enabled;
+  }
+  if (patch.wallet_google_enabled !== undefined) {
+    data.wallet_google_enabled = patch.wallet_google_enabled;
+  }
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
 }
@@ -355,13 +381,15 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  // Wallet template is a superadmin-only field in the UI (Event settings -> Wallet tab is
+  // Wallet fields are superadmin-only in the UI (Event settings -> Wallet tab is
   // superadmin-gated); assertEventManageAccess above also permits organisation admins, so it
-  // does not by itself enforce that boundary for this specific field.
-  if (
-    patch.wallet_template_id !== undefined &&
-    !(await canManageInstance(db, c.get("auth").userId))
-  ) {
+  // does not by itself enforce that boundary for these fields.
+  const patchesWallet =
+    patch.wallet_template_id !== undefined ||
+    patch.wallet_api_key !== undefined ||
+    patch.wallet_apple_enabled !== undefined ||
+    patch.wallet_google_enabled !== undefined;
+  if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
   }
 
@@ -378,6 +406,9 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     event_hours_start?: string | null;
     event_hours_end?: string | null;
     wallet_template_id?: string | null;
+    wallet_api_key_enc?: string | null;
+    wallet_apple_enabled?: boolean;
+    wallet_google_enabled?: boolean;
     capacity?: number | null;
     logo_url?: string | null;
     logo_original_url?: string | null;

@@ -959,6 +959,71 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(row.wallet_template_id).toBeNull();
   });
 
+  it("sets and clears the per-event wallet API key (superadmin)", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: "secret-key" }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { event: { wallet_api_key: { configured: boolean } } };
+    expect(setBody.event.wallet_api_key.configured).toBe(true);
+    const stored = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(stored.wallet_api_key_enc).not.toBeNull();
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as {
+      event: { wallet_api_key: { configured: boolean } };
+    };
+    expect(clearBody.event.wallet_api_key.configured).toBe(false);
+  });
+
+  it("returns 403 when an organisation admin tries to patch the wallet API key", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: "secret-key" }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_api_key_enc).toBeNull();
+  });
+
+  it("toggles wallet_apple_enabled and wallet_google_enabled independently (superadmin)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_apple_enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      event: { wallet_apple_enabled: boolean; wallet_google_enabled: boolean };
+    };
+    expect(body.event.wallet_apple_enabled).toBe(false);
+    expect(body.event.wallet_google_enabled).toBe(true);
+
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: { wallet_apple_enabled: true },
+    });
+  });
+
+  it("returns 403 when an organisation admin tries to toggle wallet_google_enabled", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_google_enabled: false }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_google_enabled).toBe(true);
+  });
+
   it("returns 400 when slug is sent (strict schema)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",

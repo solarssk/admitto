@@ -13,7 +13,7 @@ import {
   type WalletPassProvider,
   type WalletPassResult,
 } from "@admitto/wallet";
-import { resolveWalletApiKey } from "./wallet/wallet-org-settings.js";
+import { decryptFromString } from "@admitto/crypto";
 import type { GeocodingProvider } from "@admitto/location";
 import {
   getBrandingTheme,
@@ -626,14 +626,21 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, html, status, theme);
   }
 
-  /** The API key belongs to the instance while the pass template belongs to the event. */
-  async function resolveWalletProvider(event: {
+  /** Both the API key and the pass template belong to the event (ADR 0041). */
+  function resolveWalletProvider(event: {
     walletTemplateId: string | null;
-  }): Promise<WalletPassProvider | null> {
+    walletApiKeyEnc: string | null;
+  }): WalletPassProvider | null {
     if (options.walletPassProvider) return options.walletPassProvider;
-    const apiKey = await resolveWalletApiKey(db);
     const templateId = event.walletTemplateId;
-    if (!apiKey || !templateId) return null;
+    if (!templateId || !event.walletApiKeyEnc) return null;
+    let apiKey: string;
+    try {
+      apiKey = decryptFromString(event.walletApiKeyEnc);
+    } catch (err) {
+      console.error("wallet API key decrypt failed:", err);
+      return null;
+    }
     return new PassCreatorClient({ apiKey, templateId, baseUrl: resolvePassCreatorBaseUrl() });
   }
 
@@ -674,7 +681,11 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!isAdmittable(attendee.status as AttendeeStatus)) {
       return c.redirect(backHref, 302);
     }
-    const walletProvider = await resolveWalletProvider(event);
+    const platformEnabled = platform === "apple" ? event.walletAppleEnabled : event.walletGoogleEnabled;
+    if (!platformEnabled) {
+      return c.redirect(backHref, 302);
+    }
+    const walletProvider = resolveWalletProvider(event);
     if (!walletProvider) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
@@ -893,19 +904,18 @@ export function createApp(options: CreateAppOptions = {}) {
         : `/t/${internalToken}`;
     // No template configured for this event (Event settings -> Wallet, left blank) - the
     // /wallet/:platform routes would only redirect back with walletError=1, so don't offer them.
+    // Each platform is independently gated by its own Event settings -> Wallet toggle too.
     const walletConfigured = resolvedForDisplay.event.walletTemplateId !== null;
+    const appleWalletVisible = walletConfigured && resolvedForDisplay.event.walletAppleEnabled;
+    const googleWalletVisible = walletConfigured && resolvedForDisplay.event.walletGoogleEnabled;
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
         staticMapEnabled: mapTiles.enabled,
         weather,
-        ...(walletConfigured
-          ? {
-              walletAppleHref: `${walletBase}/wallet/apple`,
-              walletGoogleHref: `${walletBase}/wallet/google`,
-            }
-          : {}),
+        ...(appleWalletVisible ? { walletAppleHref: `${walletBase}/wallet/apple` } : {}),
+        ...(googleWalletVisible ? { walletGoogleHref: `${walletBase}/wallet/google` } : {}),
         walletError: c.req.query("walletError") === "1",
       }),
       200,

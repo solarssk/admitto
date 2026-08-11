@@ -184,6 +184,11 @@ export type ResolvedTicket = {
     eventHoursEnd: string | null;
     /** PassCreator template for this event's wallet passes; null disables wallet passes. */
     walletTemplateId: string | null;
+    /** Encrypted PassCreator API key for this event; null disables wallet passes. Never sent to
+     * the client - only used server-side to build the provider client. */
+    walletApiKeyEnc: string | null;
+    walletAppleEnabled: boolean;
+    walletGoogleEnabled: boolean;
     /** Short venue display name (`EventLocation.venue_name`). */
     location: string | null;
     logoUrl: string | null;

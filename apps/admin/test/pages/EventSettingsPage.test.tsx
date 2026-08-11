@@ -807,24 +807,38 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
-  it("navigates to Organisation settings External services from the Wallet tab link", async () => {
+  it("shows the provider selector and Apple/Google toggles on the Wallet tab", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    const router = createMemoryRouter(
-      [
-        { path: "/admin/settings", element: <div>organisation settings</div> },
-        { path: "/admin/events/:eventId/settings", element: <EventSettingsPage /> },
-      ],
-      { initialEntries: ["/admin/events/evt-1/settings?tab=wallet"] },
-    );
-    renderWithToast(<RouterProvider router={router} />);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await screen.findByLabelText("Template ID");
 
-    fireEvent.click(screen.getByRole("button", { name: /set it in Organisation Settings/ }));
+    expect(screen.getByText("PassCreator")).toBeTruthy();
+    expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
+    expect(screen.getByLabelText("Google Wallet")).toBeTruthy();
+  });
+
+  it("saves the wallet API key and platform toggles through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_apple_enabled: true,
+      wallet_google_enabled: true,
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_api_key: { configured: true }, wallet_apple_enabled: false },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByLabelText("Template ID");
+
+    const apiKeyInput = document.getElementById("event-wallet-api-key") as HTMLInputElement;
+    fireEvent.change(apiKeyInput, { target: { value: "pc-secret" } });
+    fireEvent.click(screen.getByLabelText("Apple Wallet"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(router.state.location.pathname + router.state.location.search).toBe(
-        "/admin/settings?tab=external",
-      );
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        wallet_api_key: "pc-secret",
+        wallet_apple_enabled: false,
+      });
     });
   });
 

@@ -136,6 +136,9 @@ export function toResolved(
       id: string; title: string; slug: string; date: Date; timezone: string;
       event_hours_start: string | null; event_hours_end: string | null;
       wallet_template_id: string | null;
+      wallet_api_key_enc: string | null;
+      wallet_apple_enabled: boolean;
+      wallet_google_enabled: boolean;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
       organization: { logo_url: string | null; header_image_url: string | null };
@@ -166,6 +169,9 @@ export function toResolved(
       eventHoursStart: row.event.event_hours_start,
       eventHoursEnd: row.event.event_hours_end,
       walletTemplateId: row.event.wallet_template_id,
+      walletApiKeyEnc: row.event.wallet_api_key_enc,
+      walletAppleEnabled: row.event.wallet_apple_enabled,
+      walletGoogleEnabled: row.event.wallet_google_enabled,
       location: loc?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
       formattedAddress: loc?.formatted_address ?? null,

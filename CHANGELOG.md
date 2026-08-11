@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - My account: staff can choose 12-hour (AM/PM), 24-hour, or browser-default time input independently from their regional date format.
 - **Add to Apple Wallet / Google Wallet.** The wallet badges on the public ticket page are now live — tapping one creates (or reuses) the attendee's wallet pass and opens it directly, without ever landing on a PassCreator-hosted page. If creation fails, the ticket page shows a retry notice instead of a broken redirect.
-- **Wallet settings in the admin UI.** Organisation Settings → External services gets a Wallet card for the instance-wide PassCreator API key (masked once saved, same pattern as Weather/Maps). Event settings → Wallet (superadmin-only) now has a real Template ID field instead of the roadmap placeholder — leave it blank to keep wallet passes disabled for that event. No env var restart needed to change either.
+- **Wallet settings in the admin UI.** Event settings → Wallet (superadmin-only) now has a real PassCreator API key and Template ID field, both specific to that event, instead of the roadmap placeholder — a leaked or rotated key only ever affects one event, not the whole instance. Independent Apple Wallet / Google Wallet switches let you disable one platform without clearing the other's configuration. No env var restart needed to change any of it.
 - **Event hours (start/end).** New Event and Event settings → Basic information now have an optional "Event hours" start/end time field, shown as a range on tickets and (later) wallet passes. Leave blank to omit.
 
 ### Fixed

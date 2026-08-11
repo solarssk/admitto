@@ -31,7 +31,6 @@ import {
   isGeocodingContactConfigured,
 } from "../maps/user-agent.js";
 import { NominatimProvider } from "../maps/nominatim-provider.js";
-import { describeWalletSettings, patchWalletSettings } from "../wallet/wallet-org-settings.js";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import {
   assertEditableServiceUrl,
@@ -42,10 +41,6 @@ const weatherPatchSchema = z.object({
   enabled: z.boolean().optional(),
   provider: z.enum(["openmeteo", "metno"]).optional(),
   baseUrl: z.string().max(2048).nullable().optional(),
-  apiKey: z.string().max(512).nullable().optional(),
-});
-
-const walletPatchSchema = z.object({
   apiKey: z.string().max(512).nullable().optional(),
 });
 
@@ -152,12 +147,6 @@ function serializeWeather(weather: Awaited<ReturnType<typeof describeWeatherSett
   };
 }
 
-function serializeWallet(wallet: Awaited<ReturnType<typeof describeWalletSettings>>) {
-  return {
-    api_key: wallet.apiKey,
-  };
-}
-
 function serializeMaps(maps: Awaited<ReturnType<typeof describeMapsSettings>>) {
   return {
     enabled: maps.enabled,
@@ -216,53 +205,15 @@ export async function handleGetExternalServices(
   }
 
   await refreshMapsConfigCache(db);
-  const [weather, maps, wallet] = await Promise.all([
+  const [weather, maps] = await Promise.all([
     describeWeatherSettings(db),
     describeMapsSettings(db),
-    describeWalletSettings(db),
   ]);
 
   return c.json({
     weather: serializeWeather(weather),
     maps: serializeMaps(maps),
-    wallet: serializeWallet(wallet),
   });
-}
-
-/** PUT /api/admin/external-services/wallet */
-export async function handlePutWalletSettings(
-  c: Context,
-  db: PrismaClient,
-): Promise<Response> {
-  const auth = c.get("auth");
-  if (!(await canManageInstance(db, auth.userId))) {
-    return c.json({ error: "forbidden" }, 403);
-  }
-
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "invalid_json" }, 400);
-  }
-  const parsed = walletPatchSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "validation_failed", details: parsed.error.flatten() }, 400);
-  }
-
-  const described = await patchWalletSettings(db, { apiKey: parsed.data.apiKey });
-
-  const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
-    actorUserId: audit.operator!,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    timezone: audit.timezone,
-    actionType: "wallet_settings_updated",
-    metadata: { api_key_configured: described.apiKey.configured },
-  });
-
-  return c.json({ wallet: serializeWallet(described) });
 }
 
 /** PUT /api/admin/external-services/weather */

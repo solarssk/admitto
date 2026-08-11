@@ -8,8 +8,6 @@ const {
   patchWeatherSettings,
   describeMapsSettings,
   patchMapsSettings,
-  describeWalletSettings,
-  patchWalletSettings,
   refreshMapsConfigCache,
   writeAdminAuditLog,
   adminAuditFromContext,
@@ -19,8 +17,6 @@ const {
   patchWeatherSettings: vi.fn(),
   describeMapsSettings: vi.fn(),
   patchMapsSettings: vi.fn(),
-  describeWalletSettings: vi.fn(),
-  patchWalletSettings: vi.fn(),
   refreshMapsConfigCache: vi.fn(async () => undefined),
   writeAdminAuditLog: vi.fn(async () => undefined),
   adminAuditFromContext: vi.fn(() => ({
@@ -79,20 +75,10 @@ vi.mock("../../src/maps/maps-org-settings.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../src/wallet/wallet-org-settings.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/wallet/wallet-org-settings.js")>();
-  return {
-    ...actual,
-    describeWalletSettings,
-    patchWalletSettings,
-  };
-});
-
 import {
   handleGetExternalServices,
   handlePutMapsSettings,
   handlePutWeatherSettings,
-  handlePutWalletSettings,
 } from "../../src/admin/external-services-routes.js";
 
 function mockContext(body?: unknown): Context {
@@ -132,20 +118,14 @@ const mapsPublic = {
   geocodingBaseUrl: "https://nominatim.openstreetmap.org",
 };
 
-const walletPublic = {
-  apiKey: { configured: false, source: "none" as const },
-};
-
 describe("external-services GET/PUT routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     canManageInstance.mockResolvedValue(true);
     describeWeatherSettings.mockResolvedValue(weatherPublic);
     describeMapsSettings.mockResolvedValue(mapsPublic);
-    describeWalletSettings.mockResolvedValue(walletPublic);
     patchWeatherSettings.mockResolvedValue(weatherPublic);
     patchMapsSettings.mockResolvedValue(mapsPublic);
-    patchWalletSettings.mockResolvedValue(walletPublic);
   });
 
   it("forbids GET for non-superadmins", async () => {
@@ -154,18 +134,16 @@ describe("external-services GET/PUT routes", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns serialized weather + maps + wallet on GET", async () => {
+  it("returns serialized weather + maps on GET", async () => {
     const res = await handleGetExternalServices(mockContext({}), db);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       weather: { provider: string; api_key: { configured: boolean } };
       maps: { max_zoom: number };
-      wallet: { api_key: { configured: boolean } };
     };
     expect(body.weather.provider).toBe("metno");
     expect(body.weather.api_key.configured).toBe(false);
     expect(body.maps.max_zoom).toBe(19);
-    expect(body.wallet.api_key.configured).toBe(false);
     expect(refreshMapsConfigCache).toHaveBeenCalled();
   });
 
@@ -350,52 +328,5 @@ describe("external-services GET/PUT routes", () => {
       db,
       expect.objectContaining({ apiKey: "" }),
     );
-  });
-
-  it("forbids wallet PUT for non-superadmins", async () => {
-    canManageInstance.mockResolvedValueOnce(false);
-    const res = await handlePutWalletSettings(mockContext({ apiKey: "secret" }), db);
-    expect(res.status).toBe(403);
-    expect(patchWalletSettings).not.toHaveBeenCalled();
-  });
-
-  it("rejects invalid JSON on wallet PUT", async () => {
-    const res = await handlePutWalletSettings(mockContext(undefined), db);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "invalid_json" });
-  });
-
-  it("rejects wallet PUT validation_failed", async () => {
-    const res = await handlePutWalletSettings(mockContext({ apiKey: 12345 }), db);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ error: "validation_failed" });
-    expect(patchWalletSettings).not.toHaveBeenCalled();
-  });
-
-  it("persists wallet settings and writes an audit log", async () => {
-    patchWalletSettings.mockResolvedValue({
-      apiKey: { configured: true, source: "organization" },
-    });
-    const res = await handlePutWalletSettings(mockContext({ apiKey: "secret-key" }), db);
-    expect(res.status).toBe(200);
-    expect(patchWalletSettings).toHaveBeenCalledWith(db, { apiKey: "secret-key" });
-    expect(writeAdminAuditLog).toHaveBeenCalledWith(
-      db,
-      expect.objectContaining({
-        actionType: "wallet_settings_updated",
-        metadata: { api_key_configured: true },
-      }),
-    );
-    const body = (await res.json()) as { wallet: { api_key: { configured: boolean } } };
-    expect(body.wallet.api_key.configured).toBe(true);
-  });
-
-  it("accepts wallet PUT clearing apiKey with null", async () => {
-    patchWalletSettings.mockResolvedValue({
-      apiKey: { configured: false, source: "none" },
-    });
-    const res = await handlePutWalletSettings(mockContext({ apiKey: null }), db);
-    expect(res.status).toBe(200);
-    expect(patchWalletSettings).toHaveBeenCalledWith(db, { apiKey: null });
   });
 });

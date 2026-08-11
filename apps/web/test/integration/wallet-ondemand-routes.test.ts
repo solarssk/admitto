@@ -439,4 +439,70 @@ describe("On-demand wallet routes", () => {
       });
     }
   });
+
+  it("hides only the Apple badge when wallet_apple_enabled is off", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_apple_enabled: false } });
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}`);
+      const html = await res.text();
+      expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
+      expect(html).toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_apple_enabled: true } });
+    }
+  });
+
+  it("hides only the Google badge when wallet_google_enabled is off", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_google_enabled: false } });
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}`);
+      const html = await res.text();
+      expect(html).toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
+      expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_google_enabled: true } });
+    }
+  });
+
+  it("redirects without walletError when the requested platform is disabled", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_apple_enabled: false } });
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}`);
+      expect(provider.createPass).not.toHaveBeenCalled();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_apple_enabled: true } });
+    }
+  });
+
+  it("resolves the event's own encrypted API key without a live provider stub", async () => {
+    const app = createApp({
+      prisma,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: { wallet_api_key_enc: "not-valid-ciphertext" },
+    });
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_api_key_enc: null } });
+    }
+  });
 });
