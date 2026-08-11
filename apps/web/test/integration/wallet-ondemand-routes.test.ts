@@ -245,6 +245,96 @@ describe("On-demand wallet routes", () => {
     errSpy.mockRestore();
   });
 
+  it("marks failed when the duplicate-recovery lookup itself throws", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(
+      new WalletProviderError("wallet_provider_duplicate", "userProvidedId already exists"),
+    );
+    provider.findByUserProvidedId.mockRejectedValueOnce(new Error("provider timeout"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("failed");
+    expect(saved?.last_error_code).toBe("wallet_provider_duplicate");
+    errSpy.mockRestore();
+  });
+
+  it("redirects with walletError=1 and logs when the walletPass lookup itself throws", async () => {
+    const provider = stubProvider();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(prisma.walletPass, "findUnique").mockRejectedValueOnce(new Error("db down"));
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(provider.createPass).not.toHaveBeenCalled();
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "wallet_pass_lookup_failed",
+        fields: { eventId: EVENT_ID, attendeeId: ATTENDEE_MODE_A_ID },
+      }),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("redirects with walletError=1 and logs when saving the newly-active pass throws", async () => {
+    const provider = stubProvider();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(prisma.walletPass, "upsert").mockRejectedValueOnce(new Error("db down"));
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "wallet_pass_upsert_failed",
+        fields: { eventId: EVENT_ID, attendeeId: ATTENDEE_MODE_A_ID },
+      }),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("still redirects with walletError=1 when the failure-path save also throws", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(
+      new WalletProviderError("wallet_provider_rejected", "boom"),
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(prisma.walletPass, "upsert").mockRejectedValueOnce(new Error("db down"));
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "wallet_pass_create_failed",
+        fields: { eventId: EVENT_ID, attendeeId: ATTENDEE_MODE_A_ID, errorCode: "wallet_provider_rejected" },
+      }),
+    );
+    expect(querySystemLogs({ source: "api" })).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "wallet_pass_upsert_failed",
+        fields: { eventId: EVENT_ID, attendeeId: ATTENDEE_MODE_A_ID },
+      }),
+    );
+    errSpy.mockRestore();
+  });
+
   it("returns 500 (not the not-found page) when the Mode A ticket lookup fails", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
