@@ -1817,7 +1817,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const token = c.req.param("token");
       const resolved = await resolveTicketOrError(c, token, "/t/:token/wallet/:platform");
       if (resolved instanceof Response) return resolved;
-      if (!resolved) return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      if (!resolved) return renderPublicHtmlError(c, 404);
       return handleWalletRedirect(c, resolved, platform, `/t/${token}`);
     });
   }
@@ -1837,9 +1837,9 @@ export function createApp(options: CreateAppOptions = {}) {
           message: "ticket_agency_lookup_failed",
           fields: { route: "/t/:eventSlug/a/:ref/wallet/:platform" },
         });
-        return htmlWithSecurityHeaders(c, renderServerError(), 500);
+        return renderPublicHtmlError(c, 500);
       }
-      if (resolved?.mode !== "agency") return htmlWithSecurityHeaders(c, renderNotFound(), 404);
+      if (resolved?.mode !== "agency") return renderPublicHtmlError(c, 404);
       return handleWalletRedirect(c, resolved, platform, `/t/${eventSlug}/a/${ref}`);
     });
   }
