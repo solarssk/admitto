@@ -69,7 +69,11 @@ export function TimeInput({ value, onChange, label, ariaLabel, id, disabled, hin
         </label>
       ) : null}
       <div className={["time-input__control", isInvalid && "time-input__control--invalid"].filter(Boolean).join(" ")}>
-        <span className="time-input__icon" aria-hidden="true">
+        <span
+          className="time-input__icon"
+          aria-hidden="true"
+          onClick={() => inputRef.current?.focus()}
+        >
           <i className="ti ti-clock" aria-hidden="true" />
         </span>
         <input

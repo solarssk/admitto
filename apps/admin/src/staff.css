@@ -7804,6 +7804,7 @@ output.mail-field-hint {
   border-right: 1px solid var(--border);
   background: var(--surface-page, #f8fafc);
   color: var(--text-muted);
+  cursor: pointer;
 }
 
 .time-input__input {

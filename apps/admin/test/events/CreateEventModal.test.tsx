@@ -165,10 +165,10 @@ describe("CreateEventModal", () => {
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
-    fireEvent.change(screen.getByLabelText("Event hours — start"), {
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), {
       target: { value: "18:00" },
     });
-    fireEvent.change(screen.getByLabelText("Event hours — end"), {
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), {
       target: { value: "22:00" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));

@@ -28,7 +28,7 @@ Open the correct organisation and event. If another manager may be editing the s
 Event settings are organised into tabs. Each card that needs saving (Basic information, Location, Images, Mail transport) has its own **Save** / **Reset**. There is no single page-level Save.
 
 1. Open **Event settings**, then **General**.
-2. Review the title, event date, time zone, and capacity. Optionally set **Event hours — start/end** (24-hour time) between the date and time zone fields — a time-of-day range shown on tickets, separate from the calendar date. Leave both blank to omit it.
+2. Review the title, event date, time zone, and capacity. Optionally set **Event hours (start/end)** (24-hour time) between the date and time zone fields: a time-of-day range shown on tickets, separate from the calendar date. Leave both blank to omit it.
 3. Leave capacity empty for an unlimited event, or enter the maximum number of attendees that may be added.
 4. Save the General card.
 5. Open **Location** to set the venue's name and address. Start typing a venue name or an address into the single search field. Matching places appear as you type; pick one to also set the map pin, or keep typing free text if nothing matches. Drag the pin or double-click the map to adjust it by hand. Add directions or accessibility notes if attendees need them. If Copy Google/Apple Maps opens the wrong place while the pin looks correct, use **Pin wrong? Fix link** to paste the correct Maps URLs (the pin and static map stay as they are).

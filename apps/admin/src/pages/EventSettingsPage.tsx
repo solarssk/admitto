@@ -994,8 +994,7 @@ export function EventSettingsPage() {
             <div className="settings-field-row">
               <div className="settings-field-group">
                 <TimeInput
-                  label="Event hours — start"
-                  hint="Optional. Shown on tickets and wallet passes as a time range."
+                  label="Event hours (start)"
                   value={form.eventHoursStart}
                   disabled={isArchived || saving}
                   onChange={(value) => setForm({ ...form, eventHoursStart: value })}
@@ -1003,13 +1002,14 @@ export function EventSettingsPage() {
               </div>
               <div className="settings-field-group">
                 <TimeInput
-                  label="Event hours — end"
+                  label="Event hours (end)"
                   value={form.eventHoursEnd}
                   disabled={isArchived || saving}
                   onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
                 />
               </div>
             </div>
+            <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
 
             <div className="settings-field-group event-settings-timezone">
               <label className="at-label" htmlFor="event-timezone">
