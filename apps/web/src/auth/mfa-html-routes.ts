@@ -25,7 +25,7 @@ import {
   renderMfaEnrollBackupCodesPage,
   renderMfaEnrollStartPage,
 } from "../mfa-page.js";
-import { createAuthPageScriptNonce } from "../auth-page-security.js";
+import { applyAuthPageSecurityHeaders, createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
@@ -48,9 +48,7 @@ function htmlResponse(
   status: 200 | 401 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  for (const [name, value] of Object.entries(getMfaPageSecurityHeaders(scriptNonce, trustedOrigins))) {
-    c.header(name, value);
-  }
+  applyAuthPageSecurityHeaders(c, getMfaPageSecurityHeaders(scriptNonce, trustedOrigins));
   return c.html(html, status);
 }
 
@@ -61,11 +59,7 @@ function htmlEnrollResponse(
   status: 200 | 401 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  for (const [name, value] of Object.entries(
-    getMfaEnrollPageSecurityHeaders(scriptNonce, trustedOrigins),
-  )) {
-    c.header(name, value);
-  }
+  applyAuthPageSecurityHeaders(c, getMfaEnrollPageSecurityHeaders(scriptNonce, trustedOrigins));
   return c.html(html, status);
 }
 
@@ -508,11 +502,7 @@ export async function handlePostMfaEnrollDownloadCodes(
 
   // Plain-text download ships no scripts; nonce is only generated to satisfy the shared header shape.
   const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
-  for (const [name, value] of Object.entries(
-    getMfaEnrollPageSecurityHeaders(createAuthPageScriptNonce(), trustedOrigins),
-  )) {
-    c.header(name, value);
-  }
+  applyAuthPageSecurityHeaders(c, getMfaEnrollPageSecurityHeaders(createAuthPageScriptNonce(), trustedOrigins));
   c.header("Content-Type", "text/plain; charset=utf-8");
   c.header("Content-Disposition", 'attachment; filename="admitto-backup-codes.txt"');
   return c.body(codes.join("\n") + "\n", 200);

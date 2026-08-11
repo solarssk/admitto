@@ -19,7 +19,7 @@ import {
   PASSWORD_TOO_SHORT,
   PASSWORD_COMPLETE_FAILED,
 } from "../change-password-page.js";
-import { createAuthPageScriptNonce } from "../auth-page-security.js";
+import { applyAuthPageSecurityHeaders, createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
@@ -34,11 +34,7 @@ function htmlResponse(
   status: 200 | 400 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  for (const [name, value] of Object.entries(
-    getChangePasswordPageSecurityHeaders(scriptNonce, trustedOrigins),
-  )) {
-    c.header(name, value);
-  }
+  applyAuthPageSecurityHeaders(c, getChangePasswordPageSecurityHeaders(scriptNonce, trustedOrigins));
   return c.html(html, status);
 }
 

@@ -84,7 +84,7 @@ export function CspTrustedOriginsModal({
       <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 560px)" }}>
         <div ref={scrollRef} className="add-attendee-modal__scroll">
           <h2 className="add-attendee-modal__title" id={titleId}>
-            <i className="ti ti-shield-lock" aria-hidden="true" />
+            <i className="ti ti-shield-lock" aria-hidden="true" />{" "}
             Trusted third-party script origins
           </h2>
           <p className="add-attendee-modal__subtitle">

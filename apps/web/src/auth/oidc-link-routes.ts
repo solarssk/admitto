@@ -5,7 +5,7 @@ import {
   userRequiresMfaStepUp,
   verifyOidcLinkStepUp,
 } from "@admitto/auth";
-import { createAuthPageScriptNonce } from "../auth-page-security.js";
+import { applyAuthPageSecurityHeaders, createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
@@ -24,9 +24,7 @@ function htmlResponse(
   status: 200 | 401 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  for (const [name, value] of Object.entries(getOidcLinkPageSecurityHeaders(scriptNonce, trustedOrigins))) {
-    c.header(name, value);
-  }
+  applyAuthPageSecurityHeaders(c, getOidcLinkPageSecurityHeaders(scriptNonce, trustedOrigins));
   return c.html(html, status);
 }
 

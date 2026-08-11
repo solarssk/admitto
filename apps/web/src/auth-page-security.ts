@@ -1,9 +1,17 @@
 import { randomBytes } from "node:crypto";
+import type { Context } from "hono";
 import { AUTH_PAGE_ICON_CSP } from "./favicon.js";
 
 /** Per-response nonce for trusted inline scripts on auth HTML pages. */
 export function createAuthPageScriptNonce(): string {
   return randomBytes(16).toString("base64");
+}
+
+/** Apply the security headers used by a nonce-protected auth HTML response. */
+export function applyAuthPageSecurityHeaders(c: Context, headers: Readonly<Record<string, string>>): void {
+  for (const [name, value] of Object.entries(headers)) {
+    c.header(name, value);
+  }
 }
 
 /** Security headers for auth pages that ship nonce-gated inline scripts. `trustedOrigins`

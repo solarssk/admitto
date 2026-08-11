@@ -1,7 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { getAuthPageInlineScriptHeaders } from "../../src/auth-page-security.js";
+import type { Context } from "hono";
+import { describe, expect, it, vi } from "vitest";
+import {
+  applyAuthPageSecurityHeaders,
+  getAuthPageInlineScriptHeaders,
+} from "../../src/auth-page-security.js";
 
 describe("auth-page-security", () => {
+  it("applies every supplied security header to the response", () => {
+    const header = vi.fn();
+    const context = { header } as unknown as Context;
+
+    applyAuthPageSecurityHeaders(context, {
+      "Content-Security-Policy": "default-src 'none'",
+      "X-Content-Type-Options": "nosniff",
+    });
+
+    expect(header).toHaveBeenCalledWith("Content-Security-Policy", "default-src 'none'");
+    expect(header).toHaveBeenCalledWith("X-Content-Type-Options", "nosniff");
+  });
+
   it("uses nonce-gated script-src for inline auth scripts", () => {
     const headers = getAuthPageInlineScriptHeaders("test-nonce-value");
     expect(headers["Content-Security-Policy"]).toContain("script-src 'nonce-test-nonce-value'");
