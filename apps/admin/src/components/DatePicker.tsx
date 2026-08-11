@@ -19,7 +19,7 @@ import {
 } from "../utils/event-dates.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
+import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PANEL_GAP_PX = 6;
@@ -179,18 +179,19 @@ export function DatePicker({
       const panel = panelRef.current!;
       const panelHeight = panel.scrollHeight;
       const panelWidth = panel.offsetWidth;
-      const spaceBelow = window.innerHeight - rect.bottom;
+      const viewport = getFixedOverlayViewport();
+      const spaceBelow = viewport.height - rect.bottom;
       const spaceAbove = rect.top;
       const above = spaceBelow < panelHeight + PANEL_GAP_PX && spaceAbove > spaceBelow;
       const available = (above ? spaceAbove : spaceBelow) - PANEL_GAP_PX - VIEWPORT_PAD_PX;
       const maxHeight = panelHeight > available ? Math.max(160, available) : undefined;
       const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
-      const rightAligned = window.innerWidth - rect.left < panelWidth;
+      const rightAligned = viewport.width - rect.left < panelWidth;
       const top = above
         ? rect.top - usedHeight - PANEL_GAP_PX
         : rect.bottom + PANEL_GAP_PX;
       let left = rightAligned ? rect.right - panelWidth : rect.left;
-      left = Math.min(left, window.innerWidth - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.min(left, viewport.width - VIEWPORT_PAD_PX - panelWidth);
       left = Math.max(left, VIEWPORT_PAD_PX);
 
       setPanelAbove(above);

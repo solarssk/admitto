@@ -1,10 +1,21 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { attachFixedOverlayLifecycle } from "../../src/utils/fixed-overlay-lifecycle.js";
+import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../../src/utils/fixed-overlay-lifecycle.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+function mockVisualViewport(width: number, height: number): VisualViewport {
+  const viewport = new EventTarget();
+  Object.defineProperties(viewport, {
+    width: { value: width },
+    height: { value: height },
+  });
+  vi.stubGlobal("visualViewport", viewport);
+  return viewport as VisualViewport;
+}
 
 function dispatchWindowScroll(target: EventTarget) {
   const scrollEvent = new Event("scroll", { bubbles: true });
@@ -21,6 +32,21 @@ describe("attachFixedOverlayLifecycle", () => {
     expect(onResize).toHaveBeenCalledTimes(1);
 
     cleanup();
+  });
+
+  it("uses the visual viewport and repositions on its resize or scroll", () => {
+    const viewport = mockVisualViewport(390, 430);
+    const onResize = vi.fn();
+    const cleanup = attachFixedOverlayLifecycle(null, onResize, () => {});
+
+    viewport.dispatchEvent(new Event("resize"));
+    viewport.dispatchEvent(new Event("scroll"));
+    expect(onResize).toHaveBeenCalledTimes(2);
+    expect(getFixedOverlayViewport()).toEqual({ width: 390, height: 430 });
+
+    cleanup();
+    viewport.dispatchEvent(new Event("resize"));
+    expect(onResize).toHaveBeenCalledTimes(2);
   });
 
   it("closes on scroll outside the panel", () => {

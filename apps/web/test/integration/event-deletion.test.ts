@@ -287,7 +287,7 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(event).not.toBeNull();
   });
 
-  it("returns 409 when archived but has an event-scoped mail template", async () => {
+  it("allows delete when the only event-scoped mail template is the saved ticket override", async () => {
     const eventId = await createEvent({ archived: true });
     await prisma.mailTemplate.create({
       data: {
@@ -295,6 +295,33 @@ describe("DELETE /api/admin/events/:eventId", () => {
         scope_id: eventId,
         name: "ticket",
         label: "Ticket email",
+        subject_template: "Subject",
+        body_template: "Body",
+        template_format: "html",
+        compiled_html_template: "<p>Body</p>",
+      },
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(200);
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    expect(event).toBeNull();
+
+    const template = await prisma.mailTemplate.findFirst({
+      where: { scope_type: "event", scope_id: eventId },
+    });
+    expect(template).toBeNull();
+  });
+
+  it("returns 409 when archived but has an additional event-scoped mail template", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: eventId,
+        name: "reminder",
+        label: "Reminder",
         subject_template: "Subject",
         body_template: "Body",
         template_format: "html",

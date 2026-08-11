@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Communication → Templates: on phones, the selected template name is no longer covered by its status badge; the last-edited date is available from the Edit template control. **Delete event** now permits an otherwise-empty event whose only saved mail template is its non-deletable default Ticket email override; additional custom templates still block deletion.
+- Organisation Settings → Health check: the mobile **More actions** menu now stays compact instead of expanding to fit its longest description.
+- Organisation Settings → Logs: on iPhone browsers, opening Filters or typing a date no longer leaves the page or the calendar clipped behind the software keyboard. Filter and option panels now stay within the visible screen and scroll when necessary.
+
 ## [0.4.14] - 2026-08-11
 
 ### Added
