@@ -6,6 +6,13 @@ import { bodyLimit } from "hono/body-limit";
 import { Prisma, prisma as defaultPrisma, type PrismaClient, type AttendeeStatus } from "@admitto/db";
 import { recordTicketViewed } from "@admitto/mail-delivery";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
+import {
+  PassCreatorClient,
+  WalletProviderError,
+  type WalletPassInput,
+  type WalletPassProvider,
+  type WalletPassResult,
+} from "@admitto/wallet";
 import type { GeocodingProvider } from "@admitto/location";
 import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
@@ -17,6 +24,7 @@ import {
   loadEventTicketTypes,
 } from "@admitto/tickets";
 import {
+  formatDate,
   getTicketPageSecurityHeaders,
   renderTicket,
   renderNotFound,
@@ -42,6 +50,7 @@ import {
   resolveBaseUrl,
   resolveCheckinToken,
   resolveAllowCheckinBearer,
+  resolvePassCreatorConfig,
   validateCheckinBootConfig,
   resolveOpsHealthTokenOption,
   validateOpsHealthBootConfig,
@@ -372,6 +381,8 @@ export interface CreateAppOptions {
   geocodingProvider?: GeocodingProvider;
   /** Test-only injection point - static map PNG resolver for `/m/:eventId.png`. */
   eventStaticMapService?: Pick<EventStaticMapService, "getForEvent">;
+  /** Test-only injection point — bypasses PassCreator env config / real HTTP for wallet routes. */
+  walletPassProvider?: WalletPassProvider;
   opsHealthToken?: string | null;
   /** JSON access log per request (defaults to `LOG_HTTP_REQUESTS` env). */
   logHttpRequests?: boolean;
@@ -590,22 +601,192 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   }
 
+  async function loadOptionalBrandingTheme() {
+    try {
+      return await getBrandingTheme(db);
+    } catch {
+      return null;
+    }
+  }
+
   /** Branded public HTML 404/500. Theme load is optional: skip on global misses (no DB flood). */
   async function renderPublicHtmlError(
     c: Context,
     status: 404 | 500,
     options: { loadTheme?: boolean } = {},
   ) {
-    let theme = null;
-    if (options.loadTheme !== false) {
-      try {
-        theme = await getBrandingTheme(db);
-      } catch {
-        theme = null;
-      }
-    }
+    const theme = options.loadTheme === false ? null : await loadOptionalBrandingTheme();
     const html = status === 404 ? renderNotFound(theme) : renderServerError(theme);
     return htmlWithSecurityHeaders(c, html, status, theme);
+  }
+
+  const passCreatorConfig = resolvePassCreatorConfig();
+  const passCreatorClient: WalletPassProvider | null =
+    options.walletPassProvider ?? (passCreatorConfig ? new PassCreatorClient(passCreatorConfig) : null);
+
+  /** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
+  function formatEventHours(event: { eventHoursStart: string | null; eventHoursEnd: string | null }): string | undefined {
+    if (!event.eventHoursStart || !event.eventHoursEnd) return undefined;
+    return `${event.eventHoursStart}-${event.eventHoursEnd}`;
+  }
+
+  async function buildWalletPassInput(
+    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+  ): Promise<WalletPassInput> {
+    const display = await resolveTicketPageDisplay(resolved);
+    const { attendee, event } = display;
+    return {
+      attendeeName: attendee.name,
+      eventDateLabel: formatDate(event.date),
+      eventHoursLabel: formatEventHours(event),
+      eventLocationLabel: event.location || undefined,
+      ticketTypeLabel: attendee.ticket_type || "General",
+      userProvidedId: `admitto:${event.id}:${attendee.id}`,
+    };
+  }
+
+  /**
+   * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
+   * provider URL. Never a bare 500 - failures redirect back to the ticket page with a retry
+   * notice (ADR 0041 §3b).
+   */
+  async function handleWalletRedirect(
+    c: Context,
+    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+    platform: "apple" | "google",
+    backHref: string,
+  ): Promise<Response> {
+    const { attendee, event } = resolved;
+
+    if (!isAdmittable(attendee.status as AttendeeStatus)) {
+      return c.redirect(backHref, 302);
+    }
+    if (!passCreatorClient) {
+      return c.redirect(`${backHref}?walletError=1`, 302);
+    }
+    const client = passCreatorClient;
+
+    let existing: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
+    try {
+      existing = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
+    } catch (err) {
+      console.error("walletPass lookup failed:", err);
+      recordSystemLog({
+        level: "error",
+        source: "api",
+        message: "wallet_pass_lookup_failed",
+        fields: { eventId: event.id, attendeeId: attendee.id },
+      });
+      return c.redirect(`${backHref}?walletError=1`, 302);
+    }
+    let providerUrls: { apple_url: string | null; android_url: string | null };
+
+    /** Returns null (after logging) instead of throwing - a database error here must still land
+     * on the retry redirect below, not escape to app.onError as a bare JSON 500. */
+    async function markActive(
+      userProvidedId: string,
+      result: WalletPassResult,
+    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      try {
+        await db.walletPass.upsert({
+          where: { attendee_id: attendee.id },
+          create: {
+            attendee_id: attendee.id,
+            provider: "passcreator",
+            provider_pass_id: result.providerPassId,
+            user_provided_id: userProvidedId,
+            download_url: result.downloadUrl,
+            apple_url: result.appleUrl,
+            android_url: result.androidUrl,
+            status: "active",
+            issued_at: new Date(),
+          },
+          update: {
+            provider: "passcreator",
+            provider_pass_id: result.providerPassId,
+            user_provided_id: userProvidedId,
+            download_url: result.downloadUrl,
+            apple_url: result.appleUrl,
+            android_url: result.androidUrl,
+            status: "active",
+            last_error_code: null,
+            issued_at: new Date(),
+          },
+        });
+      } catch (err) {
+        console.error("walletPass upsert (active) failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_upsert_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return null;
+      }
+      return { apple_url: result.appleUrl, android_url: result.androidUrl };
+    }
+
+    /**
+     * A concurrent request for the same attendee can win the race and create the pass first -
+     * PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recovers the
+     * winner's pass instead of overwriting its "active" row with "failed" (which would otherwise
+     * make every later click retry forever against an already-existing pass). Returns null (after
+     * marking the pass failed and logging) when creation could not be recovered.
+     */
+    async function createOrRecoverPass(
+      input: WalletPassInput,
+    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      try {
+        const result = await client.createPass(input);
+        return await markActive(input.userProvidedId, result);
+      } catch (err) {
+        const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
+        const recovered =
+          code === "wallet_provider_duplicate"
+            ? await client.findByUserProvidedId(input.userProvidedId).catch(() => null)
+            : null;
+        if (recovered) return markActive(input.userProvidedId, recovered);
+
+        console.error("PassCreator createPass failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_create_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
+        });
+        try {
+          await db.walletPass.upsert({
+            where: { attendee_id: attendee.id },
+            create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
+            update: { status: "failed", last_error_code: code },
+          });
+        } catch (upsertErr) {
+          console.error("walletPass upsert (failed) failed:", upsertErr);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_pass_upsert_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+        }
+        return null;
+      }
+    }
+
+    if (existing?.status === "active") {
+      providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
+    } else {
+      const input = await buildWalletPassInput(resolved);
+      const created = await createOrRecoverPass(input);
+      if (!created) return c.redirect(`${backHref}?walletError=1`, 302);
+      providerUrls = created;
+    }
+
+    const url = platform === "apple" ? providerUrls.apple_url : providerUrls.android_url;
+    if (!url) {
+      return c.redirect(`${backHref}?walletError=1`, 302);
+    }
+    return c.redirect(url, 302);
   }
 
   async function renderTicketPage(
@@ -673,12 +854,7 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("recordTicketViewed failed:", err);
     }
 
-    let theme;
-    try {
-      theme = await getBrandingTheme(db);
-    } catch {
-      theme = null;
-    }
+    const theme = await loadOptionalBrandingTheme();
 
     const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
     const displayToken = resolveDisplayToken(internalToken, agencyPublicRef);
@@ -697,12 +873,19 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("weather summarize failed for ticket page:", err);
       weather = null;
     }
+    const walletBase =
+      route === "/t/:eventSlug/a/:ref"
+        ? `/t/${resolvedForDisplay.event.slug}/a/${agencyPublicRef}`
+        : `/t/${internalToken}`;
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
         staticMapEnabled: mapTiles.enabled,
         weather,
+        walletAppleHref: `${walletBase}/wallet/apple`,
+        walletGoogleHref: `${walletBase}/wallet/google`,
+        walletError: c.req.query("walletError") === "1",
       }),
       200,
       theme,
@@ -1587,6 +1770,45 @@ export function createApp(options: CreateAppOptions = {}) {
     return c.body(new Uint8Array(result.png), 200);
   });
 
+  /**
+   * Mode A ticket lookup shared by the ticket page and the on-demand wallet routes below - a
+   * genuine database error becomes a logged 500 (Response), matching the Mode B agency route's
+   * own error handling; an unresolved token still becomes plain `null` for the caller to turn
+   * into a 404.
+   */
+  async function resolveTicketOrError(
+    c: Context,
+    token: string,
+    route: string,
+  ): Promise<Awaited<ReturnType<typeof resolveTicket>> | Response> {
+    try {
+      return await resolveTicket(token, db);
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientInitializationError ||
+        err instanceof Prisma.PrismaClientKnownRequestError ||
+        err instanceof Prisma.PrismaClientUnknownRequestError
+      ) {
+        console.error("resolveTicket database error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_resolution_failed",
+          fields: { route, errorKind: "database" },
+        });
+      } else {
+        console.error("resolveTicket unexpected error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_resolution_failed",
+          fields: { route, errorKind: "unexpected" },
+        });
+      }
+      return renderPublicHtmlError(c, 500);
+    }
+  }
+
   // Mode B ticket page — must be registered before /t/:token
   app.get("/t/:eventSlug/a/:ref", async (c) => {
     const { eventSlug, ref } = c.req.param();
@@ -1612,41 +1834,46 @@ export function createApp(options: CreateAppOptions = {}) {
   // Mode A ticket page
   app.get("/t/:token", async (c) => {
     const token = c.req.param("token");
-
-    let resolved;
-    try {
-      resolved = await resolveTicket(token, db);
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientInitializationError ||
-        err instanceof Prisma.PrismaClientKnownRequestError ||
-        err instanceof Prisma.PrismaClientUnknownRequestError
-      ) {
-        console.error("resolveTicket database error:", err);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "ticket_resolution_failed",
-          fields: { route: "/t/:token", errorKind: "database" },
-        });
-      } else {
-        console.error("resolveTicket unexpected error:", err);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "ticket_resolution_failed",
-          fields: { route: "/t/:token", errorKind: "unexpected" },
-        });
-      }
-      return renderPublicHtmlError(c, 500);
-    }
-
+    const resolved = await resolveTicketOrError(c, token, "/t/:token");
+    if (resolved instanceof Response) return resolved;
     if (!resolved) {
       return renderPublicHtmlError(c, 404);
     }
-
     return renderTicketPage(c, resolved, token);
   });
+
+  // On-demand wallet pass — Mode A (own ticket page, script-src 'none' so this is a plain <a href> nav)
+  for (const platform of ["apple", "google"] as const) {
+    app.get(`/t/:token/wallet/${platform}`, async (c) => {
+      const token = c.req.param("token");
+      const resolved = await resolveTicketOrError(c, token, "/t/:token/wallet/:platform");
+      if (resolved instanceof Response) return resolved;
+      if (!resolved) return renderPublicHtmlError(c, 404);
+      return handleWalletRedirect(c, resolved, platform, `/t/${token}`);
+    });
+  }
+
+  // On-demand wallet pass — Mode B (agency ticket page)
+  for (const platform of ["apple", "google"] as const) {
+    app.get(`/t/:eventSlug/a/:ref/wallet/${platform}`, async (c) => {
+      const { eventSlug, ref } = c.req.param();
+      let resolved;
+      try {
+        resolved = await findAttendeeForEventRoute(eventSlug, ref, db);
+      } catch (err) {
+        console.error("findAttendeeForEventRoute error:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "ticket_agency_lookup_failed",
+          fields: { route: "/t/:eventSlug/a/:ref/wallet/:platform" },
+        });
+        return renderPublicHtmlError(c, 500);
+      }
+      if (resolved?.mode !== "agency") return renderPublicHtmlError(c, 404);
+      return handleWalletRedirect(c, resolved, platform, `/t/${eventSlug}/a/${ref}`);
+    });
+  }
 
   // Mode B hosted QR — filename param is "{public_ref}.png"
   app.get("/q/:eventSlug/a/:filename", async (c) => {

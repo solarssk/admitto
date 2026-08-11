@@ -178,6 +178,22 @@ export function validateOpsHealthBootConfig(env: EnvLike = process.env): void {
   }
 }
 
+/**
+ * PassCreator config from env vars (temporary - Event Settings → Wallet replaces this with
+ * stored per-org/per-event config in a later PR). Returns null when unconfigured so callers can
+ * fail soft (redirect with an error) instead of crashing boot.
+ */
+export function resolvePassCreatorConfig(
+  env: EnvLike = process.env,
+): { apiKey: string; templateId: string; baseUrl?: string } | null {
+  const apiKey = env["PASSCREATOR_API_KEY"]?.trim();
+  const templateId = env["PASSCREATOR_TEMPLATE_ID"]?.trim();
+  if (!apiKey || !templateId) return null;
+  const rawBaseUrl = env["PASSCREATOR_BASE_URL"]?.trim();
+  const baseUrl = rawBaseUrl?.startsWith("https://") ? rawBaseUrl : undefined;
+  return { apiKey, templateId, ...(baseUrl ? { baseUrl } : {}) };
+}
+
 /** Boot-time validation for Cloudflare Access config (resolved env → DB → defaults). */
 export async function validateCfAccessBootConfig(prisma: PrismaClient): Promise<void> {
   const config = await getCfAccessConfig(prisma);

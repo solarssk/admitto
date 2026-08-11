@@ -175,6 +175,7 @@ export type ResolvedTicket = {
   event: {
     id: string;
     title: string;
+    slug: string;
     date: Date;
     /** IANA timezone for the event calendar day (weather / display). */
     timezone: string;
