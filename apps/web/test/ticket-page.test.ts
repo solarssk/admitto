@@ -77,6 +77,7 @@ describe("renderRevoked", () => {
       event: {
         id: "e1",
         title: overrides?.title ?? "Launch Event",
+        slug: "launch-event",
         date: new Date("2026-09-01T09:00:00Z"),
         timezone: "UTC",
         ...EMPTY_EVENT_LOCATION,
