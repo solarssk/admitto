@@ -77,6 +77,7 @@ export default defineConfig({
     projects: [
       "packages/db/vitest.config.ts",
       "packages/tickets/vitest.config.ts",
+      "packages/wallet/vitest.config.ts",
       "packages/import/vitest.config.ts",
       "packages/mail-delivery/vitest.config.ts",
       "packages/mailer-config/vitest.config.ts",
