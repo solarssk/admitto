@@ -180,19 +180,19 @@ export function DatePicker({
       const panelHeight = panel.scrollHeight;
       const panelWidth = panel.offsetWidth;
       const viewport = getFixedOverlayViewport();
-      const spaceBelow = viewport.height - rect.bottom;
-      const spaceAbove = rect.top;
+      const spaceBelow = viewport.bottom - rect.bottom;
+      const spaceAbove = rect.top - viewport.top;
       const above = spaceBelow < panelHeight + PANEL_GAP_PX && spaceAbove > spaceBelow;
-      const available = (above ? spaceAbove : spaceBelow) - PANEL_GAP_PX - VIEWPORT_PAD_PX;
-      const maxHeight = panelHeight > available ? Math.max(160, available) : undefined;
+      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - PANEL_GAP_PX - VIEWPORT_PAD_PX);
+      const maxHeight = panelHeight > available ? available : undefined;
       const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
-      const rightAligned = viewport.width - rect.left < panelWidth;
+      const rightAligned = viewport.right - rect.left < panelWidth;
       const top = above
         ? rect.top - usedHeight - PANEL_GAP_PX
         : rect.bottom + PANEL_GAP_PX;
       let left = rightAligned ? rect.right - panelWidth : rect.left;
-      left = Math.min(left, viewport.width - VIEWPORT_PAD_PX - panelWidth);
-      left = Math.max(left, VIEWPORT_PAD_PX);
+      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
 
       setPanelAbove(above);
       setPanelRightAligned(rightAligned);
@@ -200,8 +200,8 @@ export function DatePicker({
         position: "fixed",
         top,
         left,
-        maxHeight: maxHeight ? `${maxHeight}px` : undefined,
-        overflowY: maxHeight ? "auto" : undefined,
+        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
+        overflowY: maxHeight !== undefined ? "auto" : undefined,
         visibility: "visible",
         zIndex: 1100,
       });

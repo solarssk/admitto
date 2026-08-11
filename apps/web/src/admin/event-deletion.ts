@@ -33,7 +33,7 @@ import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@a
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import {
-  lockEventForMailSettingsWrite,
+  lockEventForScopedWrite,
   requireAuditActor,
   requireEventId,
   requireSuperadmin,
@@ -156,7 +156,7 @@ export async function deleteEvent(
       // that route) - without this, a concurrent PUT can validate the event exists, then
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
       // MailSettings row with no FK to catch it (CodeRabbit review).
-      await lockEventForMailSettingsWrite(tx, eventId);
+      await lockEventForScopedWrite(tx, eventId);
 
       const event = await tx.event.findUnique({
         where: { id: eventId },

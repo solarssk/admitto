@@ -1,10 +1,27 @@
-/** The actually visible viewport. On iOS Safari this shrinks when the software keyboard opens,
- * while `window.innerHeight` can keep reporting the full layout viewport. */
-export function getFixedOverlayViewport(): { width: number; height: number } {
+/** Bounds of the actually visible viewport. On iOS Safari this can shrink and pan when the
+ * software keyboard opens, while `window.innerHeight` still reports the layout viewport. */
+export type FixedOverlayViewport = {
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+export function getFixedOverlayViewport(): FixedOverlayViewport {
   const visualViewport = window.visualViewport;
+  const width = visualViewport?.width || window.innerWidth;
+  const height = visualViewport?.height || window.innerHeight;
+  const left = visualViewport?.offsetLeft ?? 0;
+  const top = visualViewport?.offsetTop ?? 0;
   return {
-    width: visualViewport?.width || window.innerWidth,
-    height: visualViewport?.height || window.innerHeight,
+    width,
+    height,
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
   };
 }
 

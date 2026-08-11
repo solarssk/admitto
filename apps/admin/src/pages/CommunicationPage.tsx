@@ -2586,6 +2586,9 @@ export function CommunicationPage() {
       <EditTemplateModal
         open={editModalOpen}
         template={activeTemplateMeta}
+        lastEdited={
+          activeTemplateMeta ? formatEventDate(activeTemplateMeta.updated_at, event.timezone) : null
+        }
         busy={templateActionBusy || saving}
         onClose={() => {
           if (templateActionBusy || saving) return;

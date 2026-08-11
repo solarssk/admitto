@@ -128,6 +128,17 @@ async function deleteEventRequest(eventId: string, cookie: string, headers: Reco
   });
 }
 
+async function createEventTemplateRequest(eventId: string) {
+  return app.request(`/api/admin/events/${eventId}/templates`, {
+    method: "POST",
+    headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: "Concurrent reminder",
+      template_format: "mjml",
+    }),
+  });
+}
+
 describe("DELETE /api/admin/events/:eventId", () => {
   it("returns 401 without auth", async () => {
     const eventId = await createEvent({ archived: true });
@@ -312,6 +323,34 @@ describe("DELETE /api/admin/events/:eventId", () => {
       where: { scope_type: "event", scope_id: eventId },
     });
     expect(template).toBeNull();
+  });
+
+  it("serializes template creation with deletion so no orphaned MailTemplate can remain", async () => {
+    const eventId = await createEvent({ archived: true });
+    // Both requests take the same advisory lock inside their mutations. The order is intentionally
+    // unspecified: creation first makes deletion see real content, while deletion first makes the
+    // creation re-check find no event. Either outcome is safe; an event that was deleted can never
+    // retain a polymorphic MailTemplate row with no foreign key to remove it.
+    const [createResponse, deleteResponse] = await Promise.all([
+      createEventTemplateRequest(eventId),
+      deleteEventRequest(eventId, superCookie),
+    ]);
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    const templates = await prisma.mailTemplate.findMany({
+      where: { scope_type: "event", scope_id: eventId },
+    });
+
+    if (event === null) {
+      expect(deleteResponse.status).toBe(200);
+      // The access check runs before the locked re-check, so a request that reached the route
+      // after deletion can be rejected as either no-longer-in-scope (403) or not found (404).
+      expect([403, 404]).toContain(createResponse.status);
+      expect(templates).toEqual([]);
+    } else {
+      expect(deleteResponse.status).toBe(409);
+      expect(createResponse.status).toBe(201);
+      expect(templates).toHaveLength(1);
+    }
   });
 
   it("returns 409 when archived but has an additional event-scoped mail template", async () => {

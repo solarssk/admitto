@@ -7,11 +7,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mockVisualViewport(width: number, height: number): VisualViewport {
+function mockVisualViewport(
+  width: number,
+  height: number,
+  offsets: { left: number; top: number } = { left: 0, top: 0 },
+): VisualViewport {
   const viewport = new EventTarget();
   Object.defineProperties(viewport, {
     width: { value: width },
     height: { value: height },
+    offsetLeft: { value: offsets.left },
+    offsetTop: { value: offsets.top },
   });
   vi.stubGlobal("visualViewport", viewport);
   return viewport as VisualViewport;
@@ -35,14 +41,21 @@ describe("attachFixedOverlayLifecycle", () => {
   });
 
   it("uses the visual viewport and repositions on its resize or scroll", () => {
-    const viewport = mockVisualViewport(390, 430);
+    const viewport = mockVisualViewport(390, 430, { left: 20, top: 300 });
     const onResize = vi.fn();
     const cleanup = attachFixedOverlayLifecycle(null, onResize, () => {});
 
     viewport.dispatchEvent(new Event("resize"));
     viewport.dispatchEvent(new Event("scroll"));
     expect(onResize).toHaveBeenCalledTimes(2);
-    expect(getFixedOverlayViewport()).toEqual({ width: 390, height: 430 });
+    expect(getFixedOverlayViewport()).toEqual({
+      width: 390,
+      height: 430,
+      left: 20,
+      top: 300,
+      right: 410,
+      bottom: 730,
+    });
 
     cleanup();
     viewport.dispatchEvent(new Event("resize"));

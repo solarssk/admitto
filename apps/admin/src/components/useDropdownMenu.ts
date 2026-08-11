@@ -122,18 +122,18 @@ export function useDropdownMenu<
       // rect covers test environments and panels whose content has no scroll container.
       const panelHeight = Math.max(panel.scrollHeight, panel.getBoundingClientRect().height);
       const viewport = getFixedOverlayViewport();
-      const spaceBelow = viewport.height - triggerRect.bottom;
-      const spaceAbove = triggerRect.top;
+      const spaceBelow = viewport.bottom - triggerRect.bottom;
+      const spaceAbove = triggerRect.top - viewport.top;
       // Only flip when upward genuinely has more room - never flip into an even tighter fit.
       const above = panelHeight > spaceBelow && spaceAbove > spaceBelow;
       const available = Math.max(0, (above ? spaceAbove : spaceBelow) - gap - VIEWPORT_PAD_PX);
-      const maxHeight = panelHeight > available ? Math.max(160, available) : undefined;
+      const maxHeight = panelHeight > available ? available : undefined;
       const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
       const top = above ? triggerRect.top - usedHeight - gap : triggerRect.bottom + gap;
 
       let left = align === "end" ? triggerRect.right - panelWidth : triggerRect.left;
-      left = Math.min(left, viewport.width - VIEWPORT_PAD_PX - panelWidth);
-      left = Math.max(left, VIEWPORT_PAD_PX);
+      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
 
       setOpenUpward(above);
       setPanelStyle({
@@ -141,8 +141,8 @@ export function useDropdownMenu<
         top,
         left,
         width: matchTriggerWidth ? panelWidth : undefined,
-        maxHeight: maxHeight ? `${maxHeight}px` : undefined,
-        overflowY: maxHeight ? "auto" : undefined,
+        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
+        overflowY: maxHeight !== undefined ? "auto" : undefined,
         visibility: "visible",
       });
     };
