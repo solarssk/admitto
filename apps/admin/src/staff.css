@@ -6510,17 +6510,6 @@ output.mail-field-hint {
   align-items: stretch;
 }
 
-/* (B) Recent activity's header carries extra content (All/Issues filter pills + a live badge)
- * that renders taller than a plain text title's line-height alone, so the shared
- * `.at-card__header`'s fixed padding produces a visibly shorter header on Check-in progress
- * (title only) next to it in the same grid row. Pin a matching min-height — derived from the
- * filter pills' real rendered height plus the header's own vertical padding, not a bare magic
- * number — on both of this row's card headers only; every other page's `.at-card__header` is
- * untouched. */
-.overview-card--header-fixed .at-card__header {
-  min-height: calc(var(--control-h-sm) + 4px + (var(--space-4) * 2));
-}
-
 /* Stretching the row (above) makes both cards the height of the taller one, but a plain `.at-card`
  * is a block box — its body wouldn't fill that extra height on its own, just leave blank space
  * under its content. Turn the card into a flex column and let its body absorb the slack;
@@ -7952,4 +7941,3 @@ output.mail-field-hint {
 /* Settings tab bar's horizontal scroll + edge-fade behavior now lives in the
    shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
    used instead of the plain <Tabs> in SettingsLayout.tsx. */
-

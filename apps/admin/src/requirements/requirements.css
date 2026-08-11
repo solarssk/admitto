@@ -42,12 +42,6 @@
   }
 }
 
-/* Normalise card header height across all Requirements sections so cards with
-   and without action buttons appear the same height. */
-.requirements-section .at-card__header {
-  min-height: calc(var(--control-h-sm) + 2 * var(--space-4));
-}
-
 .requirements-section-hint {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
