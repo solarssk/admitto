@@ -22,10 +22,7 @@ function eventScopeMatch(eventId: string): Prisma.AdminAuditLogWhereInput[] {
   ];
 }
 
-/** Free-text search over actor (email/display name) and event title - resolved to concrete ids
- * up front since neither lives directly queryable on AdminAuditLog itself (actor needs a User
- * join, event scope only lives in metadata). Superadmin-only route, org-scoped table, and this
- * runs at settings-page volume, so two small lookups per request is an acceptable cost. */
+/** Free-text search over actor snapshot columns, live User rows, and event title. */
 async function resolveSearchMatch(
   db: PrismaClient,
   orgId: string,
@@ -49,6 +46,8 @@ async function resolveSearchMatch(
   return {
     OR: [
       { actor_user_id: { in: actors.map((a) => a.id) } },
+      { actor_email: { contains: search, mode: "insensitive" } },
+      { actor_display_name: { contains: search, mode: "insensitive" } },
       ...events.flatMap((e) => eventScopeMatch(e.id)),
     ],
   };
@@ -81,6 +80,41 @@ async function buildAuditLogWhere(c: Context, db: PrismaClient, orgId: string): 
   };
 }
 
+type ActorIdentityRow = {
+  actor_user_id: string;
+  actor_email: string | null;
+  actor_display_name: string | null;
+};
+
+async function resolveLegacyActorMap(
+  db: PrismaClient,
+  rows: ActorIdentityRow[],
+): Promise<Record<string, UserDisplayRow>> {
+  const needsJoin = rows.some((r) => !r.actor_email);
+  if (!needsJoin) return Object.create(null);
+  const actorIds = [...new Set(rows.filter((r) => !r.actor_email).map((r) => r.actor_user_id))];
+  return resolveUserDisplayMap(db, actorIds);
+}
+
+function resolveActorEmail(row: ActorIdentityRow, actorMap: Record<string, UserDisplayRow>): string | null {
+  if (row.actor_email) return row.actor_email;
+  return actorMap[row.actor_user_id]?.email ?? null;
+}
+
+function resolveActorDisplayName(
+  row: ActorIdentityRow,
+  actorMap: Record<string, UserDisplayRow>,
+): string | null {
+  if (row.actor_email) return row.actor_display_name;
+  return actorMap[row.actor_user_id]?.display_name ?? null;
+}
+
+function actorCsvLabel(row: ActorIdentityRow, actorMap: Record<string, UserDisplayRow>): string {
+  const email = resolveActorEmail(row, actorMap);
+  const name = resolveActorDisplayName(row, actorMap);
+  return name || email || row.actor_user_id;
+}
+
 /** GET /api/admin/audit-log — paginated org-scoped admin audit entries. Superadmin only. */
 export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
@@ -101,14 +135,14 @@ export async function handleGetAuditLog(c: Context, db: PrismaClient): Promise<R
     db.adminAuditLog.count({ where }),
   ]);
 
-  const actorMap = await resolveUserDisplayMap(db, rows.map((r) => r.actor_user_id));
+  const actorMap = await resolveLegacyActorMap(db, rows);
 
   const entries = rows.map((r) => ({
     id: r.id,
     action_type: r.action_type,
     actor_user_id: r.actor_user_id,
-    actor_email: actorMap[r.actor_user_id]?.email ?? null,
-    actor_display_name: actorMap[r.actor_user_id]?.display_name ?? null,
+    actor_email: resolveActorEmail(r, actorMap),
+    actor_display_name: resolveActorDisplayName(r, actorMap),
     actor_timezone: r.actor_timezone,
     ip: r.ip,
     country: resolveIpLocation(r.ip),
@@ -128,20 +162,21 @@ function buildAuditLogCsv(
     action_type: string;
     metadata: unknown;
     actor_user_id: string;
+    actor_email: string | null;
+    actor_display_name: string | null;
     ip: string | null;
   }[],
   actorMap: Record<string, UserDisplayRow>,
 ): string {
   const header = CSV_COLUMNS.map((col) => quoteCsvCell(col)).join(",");
   const csvRows = rows.map((r) => {
-    const actor = actorMap[r.actor_user_id];
     const meta = r.metadata as Record<string, unknown> | null;
     const eventId = meta?.eventId ?? meta?.event_id;
     return [
       r.created_at.toISOString(),
       sanitizeCsvCell(r.action_type),
       typeof eventId === "string" ? sanitizeCsvCell(eventId) : "Instance",
-      sanitizeCsvCell(actor?.email ?? r.actor_user_id),
+      sanitizeCsvCell(actorCsvLabel(r, actorMap)),
       sanitizeCsvCell(r.ip),
       sanitizeCsvCell(meta ? JSON.stringify(meta) : ""),
     ]
@@ -172,7 +207,7 @@ export async function handleExportAuditLog(c: Context, db: PrismaClient): Promis
   // `take` is defense-in-depth, not the primary guard (the count() check above already rejects
   // an over-cap export) - matches findFilteredAttendeesForExport's own belt-and-suspenders cap.
   const rows = await db.adminAuditLog.findMany({ where, orderBy: { created_at: "desc" }, take: EXPORT_ROW_CAP });
-  const actorMap = await resolveUserDisplayMap(db, rows.map((r) => r.actor_user_id));
+  const actorMap = await resolveLegacyActorMap(db, rows);
   const csv = buildAuditLogCsv(rows, actorMap);
 
   await selfAuditCsvExport(db, c, { organizationId: orgId, actionType: "audit_log_exported", rowCount: rows.length });

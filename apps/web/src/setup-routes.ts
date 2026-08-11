@@ -20,6 +20,7 @@ import {
   type SetupFormValues,
 } from "./setup-page.js";
 import { createAuthPageScriptNonce } from "./auth-page-security.js";
+import { parseOptionalClientTimezone } from "./admin/timezone.js";
 
 const DISPLAY_NAME_MAX = 120;
 
@@ -181,6 +182,7 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
     password,
     ip: resolveClientIp(c),
     userAgent: c.req.header("user-agent"),
+    timezone: parseOptionalClientTimezone(form["timezone"]),
   });
 
   if (!result.ok) {

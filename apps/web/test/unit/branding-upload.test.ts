@@ -11,10 +11,12 @@ import {
   deleteBrandingUploadByUrl,
   parseUploadsUrl,
   resolveUploadDir,
+  rethrowStorageWriteError,
   saveBrandingUpload,
   saveEventUpload,
   saveThemeFontUpload,
 } from "../../src/admin/branding-upload.js";
+import { StoragePathError } from "@admitto/storage";
 
 /** Minimal valid 1×1 PNG (transparent). */
 const PNG_BYTES = Buffer.from(
@@ -65,6 +67,28 @@ afterEach(() => {
     process.env.UPLOAD_DIR = savedUploadDir;
   }
   rmSync(uploadDir, { recursive: true, force: true });
+});
+
+describe("rethrowStorageWriteError", () => {
+  it("maps StoragePathError to invalid_upload_url", () => {
+    expect(() => rethrowStorageWriteError(new StoragePathError())).toThrow(
+      expect.objectContaining({ code: "invalid_upload_url", status: 400 }),
+    );
+  });
+
+  it("maps common filesystem codes to upload_storage_unavailable", () => {
+    for (const code of ["ENOENT", "EACCES", "ENOSPC", "EROFS"] as const) {
+      expect(() => rethrowStorageWriteError(Object.assign(new Error(code), { code }))).toThrow(
+        expect.objectContaining({ code: "upload_storage_unavailable", status: 503 }),
+      );
+    }
+  });
+
+  it("rethrows unrelated errors unchanged", () => {
+    const err = new Error("boom");
+    expect(() => rethrowStorageWriteError(err)).toThrow(err);
+    expect(() => rethrowStorageWriteError({ notAnError: true })).toThrow();
+  });
 });
 
 describe("resolveUploadDir", () => {

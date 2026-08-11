@@ -70,7 +70,7 @@ describe("EventCustomFieldModal — create", () => {
   it("keeps Create field disabled for a select field with no options", () => {
     renderModal(null);
     fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Size" } });
-    fireEvent.click(screen.getByRole("button", { name: "Select" }));
+    fireEvent.click(screen.getByRole("button", { name: "Single choice" }));
     expect(screen.getByRole("button", { name: "Create field" }).hasAttribute("disabled")).toBe(true);
     expect(screen.queryByText("Select fields need at least one option.")).toBeNull();
     expect(createEventCustomField).not.toHaveBeenCalled();
@@ -104,7 +104,7 @@ describe("EventCustomFieldModal — create", () => {
     });
     renderModal(null);
     fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt size" } });
-    fireEvent.click(screen.getByRole("button", { name: "Select" }));
+    fireEvent.click(screen.getByRole("button", { name: "Single choice" }));
     fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "S\nM\nL" } });
     fireEvent.click(screen.getByRole("button", { name: "Required" }));
     fireEvent.click(screen.getByRole("button", { name: "Create field" }));

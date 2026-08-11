@@ -75,6 +75,7 @@ function makeSecurityEntry(overrides: Partial<SecurityAuditLogEntryDto> = {}): S
     user_display_name: "Alice Admin",
     ip: "192.0.2.10",
     country: { kind: "unknown" },
+    actor_timezone: null,
     metadata: { email: "alice@example.com", userAgent: "curl/8.0" },
     created_at: "2026-01-01T12:00:00.000Z",
     ...overrides,
@@ -283,6 +284,28 @@ describe("AuditLogPanel rendering", () => {
 
     const table = await screen.findByRole("table");
     expect(within(table).queryByText("View")).toBeNull();
+  });
+
+  it("keeps target account email in Details for user lifecycle actions (distinct from the actor User column)", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue({
+      entries: [
+        makeAuditEntry({
+          action_type: "user_deleted",
+          metadata: { userId: "target-user", email: "deleted-target@example.com" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderAuditPanel();
+
+    const table = await screen.findByRole("table");
+    const trigger = within(table).getByText("View");
+    fireEvent.click(trigger);
+    expect(within(table).getByText("Email")).toBeTruthy();
+    expect(within(table).getByText("deleted-target@example.com")).toBeTruthy();
   });
 
   it("closes the Details popover on an outside click", async () => {
@@ -1377,13 +1400,13 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).queryByText("Internal network")).toBeNull();
   });
 
-  it("shows the viewer's own local time as a secondary line under the UTC timestamp, not the actor's", async () => {
+  it("falls back to the viewer's local time when actor_timezone is missing", async () => {
     const resolvedOptionsSpy = vi
       .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
       .mockReturnValue({ timeZone: "Europe/Warsaw" } as Intl.ResolvedDateTimeFormatOptions);
     try {
       vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
-        entries: [makeSecurityEntry()],
+        entries: [makeSecurityEntry({ actor_timezone: null })],
         total: 1,
         page: 1,
         pageSize: 25,
@@ -1400,11 +1423,50 @@ describe("AuditLogPanel Security view rendering", () => {
     }
   });
 
-  it("shows the redacted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {
+  it("shows the actor's stored timezone under Time when actor_timezone is set", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ actor_timezone: "Asia/Tokyo", created_at: "2026-01-01T12:00:00.000Z" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText(/Asia\/Tokyo/)).toBeTruthy();
+    expect(within(table).getByTitle("User's local time")).toBeTruthy();
+  });
+
+  it("shows the attempted email under Unknown for a failed login, mirroring Audit's actor email subline", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [
         makeSecurityEntry({
           id: "sec-5",
+          event_type: "auth.login.fail",
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          metadata: { email: "alice@example.com" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Unknown")).toBeTruthy();
+    expect(within(table).getByText("alice@example.com")).toBeTruthy();
+  });
+
+  it("falls back to the legacy redacted email for a failed login logged before it was unredacted", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          id: "sec-5b",
           event_type: "auth.login.fail",
           user_id: null,
           user_email: null,
@@ -1424,7 +1486,7 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).getByText("a***@example.com")).toBeTruthy();
   });
 
-  it("falls back to email when display name is unset, to Unknown for a null user_id, and Unknown for a since-deleted user", async () => {
+  it("falls back to email when display name is unset, to Unknown for a null user_id, and Deleted user for a since-deleted user without snapshot", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [
         makeSecurityEntry({ id: "sec-2", user_display_name: null, user_email: "bob@example.com" }),
@@ -1451,7 +1513,7 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(rows[1]!).getByText("Unknown")).toBeTruthy();
     expect(within(rows[1]!).getByText("Login failed")).toBeTruthy();
     expect(within(rows[1]!).getByText("-")).toBeTruthy();
-    const deletedCell = within(rows[2]!).getByText("Unknown").closest("td");
+    const deletedCell = within(rows[2]!).getByText("Deleted user").closest("td");
     expect(deletedCell?.getAttribute("title")).toBe("deleted-user");
   });
 
@@ -1472,6 +1534,7 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(within(table).getByText("User agent")).toBeTruthy();
     expect(within(table).getByText("curl/8.0")).toBeTruthy();
+    expect(within(table).queryByText("Email")).toBeNull();
   });
 
   it("does not render a View trigger when metadata is empty", async () => {
@@ -1562,14 +1625,13 @@ describe("AuditLogPanel Security view rendering", () => {
     }
   });
 
-  it("row-copy summary excludes email_redacted from Details, already shown in the User line", async () => {
+  it("copies User's local time in the row summary when actor_timezone is set", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [
         makeSecurityEntry({
-          user_id: null,
-          user_email: null,
-          user_display_name: null,
-          metadata: { email_redacted: "a***@example.com", note: "hello" },
+          actor_timezone: "Asia/Tokyo",
+          created_at: "2026-01-01T12:00:00.000Z",
+          metadata: { userAgent: "curl/8.0" },
         }),
       ],
       total: 1,
@@ -1587,12 +1649,44 @@ describe("AuditLogPanel Security view rendering", () => {
 
       expect(writeText).toHaveBeenCalledTimes(1);
       const [summary] = writeText.mock.calls[0]!;
-      expect(summary).toContain("User: Unknown (a***@example.com)");
+      expect(summary).toMatch(/User's local time · .*Asia\/Tokyo/);
+      expect(summary).not.toMatch(/Your local time/);
+    } finally {
+      Object.assign(navigator, { clipboard: originalClipboard });
+    }
+  });
+
+  it("row-copy summary excludes email from Details, already shown in the User line", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          metadata: { email: "alice@example.com", note: "hello" },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+    const originalClipboard = navigator.clipboard;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    try {
+      renderSecurityPanel();
+      const table = await screen.findByRole("table");
+      fireEvent.click(within(table).getByRole("button", { name: "Copy row" }));
+
+      expect(writeText).toHaveBeenCalledTimes(1);
+      const [summary] = writeText.mock.calls[0]!;
+      expect(summary).toContain("User: Unknown (alice@example.com)");
       expect(summary).toContain("Details:");
       expect(summary).toContain("Note: hello");
-      // email_redacted already shown on the User line above - the Details section (mirroring
-      // Audit's own buildRowSummary and the Details popover) must not repeat it.
-      expect(summary).not.toMatch(/Email redacted/i);
+      // email already shown on the User line above - the Details section (mirroring Audit's own
+      // buildRowSummary and the Details popover) must not repeat it.
+      expect(summary).not.toMatch(/^Email:/im);
     } finally {
       Object.assign(navigator, { clipboard: originalClipboard });
     }

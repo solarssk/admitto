@@ -199,7 +199,7 @@ describe("Mode B public routes — public_ref", () => {
     expect(res.status).toBe(500);
     const html = await res.text();
     expect(html).toContain("Something went wrong");
-    expect(html).toContain('class="at-public-notice__code">500<');
+    expect(html).toContain('class="at-public-error__code">500<');
     expect(html).not.toContain("Event ticket");
     expect(querySystemLogs({ source: "api" })).toContainEqual(
       expect.objectContaining({
@@ -338,7 +338,7 @@ describe("Mode B public routes — public_ref", () => {
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).toContain("Not found");
-    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain('class="at-public-error__code">404<');
     expect(html).toContain("This link is invalid or the page no longer exists.");
     expect(html).not.toContain("Event ticket");
     expect(html).not.toContain("Ticket not found");
@@ -349,7 +349,7 @@ describe("Mode B public routes — public_ref", () => {
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).toContain("Not found");
-    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain('class="at-public-error__code">404<');
   });
 
   it("does not serve an internal attendee through Mode B ticket or QR routes", async () => {
@@ -468,7 +468,7 @@ describe("global public HTML 404", () => {
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).toContain("ticket-page");
-    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain('class="at-public-error__code">404<');
     expect(html).toContain("Not found");
     expect(html).toContain("This link is invalid or the page no longer exists.");
     expect(html).not.toContain("Event ticket");
@@ -483,7 +483,7 @@ describe("global public HTML 404", () => {
     expect(spy).not.toHaveBeenCalled();
     const html = await res.text();
     expect(html).toContain("Not found");
-    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain('class="at-public-error__code">404<');
   });
 
   it("still renders a ticket-route 404 when branding theme lookup fails", async () => {
@@ -494,7 +494,7 @@ describe("global public HTML 404", () => {
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).toContain("Not found");
-    expect(html).toContain('class="at-public-notice__code">404<');
+    expect(html).toContain('class="at-public-error__code">404<');
   });
 
   it("keeps API misses as JSON", async () => {

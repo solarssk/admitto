@@ -23,6 +23,7 @@ import {
 } from "@admitto/mail-delivery";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
+import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
@@ -93,6 +94,7 @@ async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Pr
       "mail_delivery",
       `ok claimed=${result.claimed} sent=${result.sent} failed=${result.failed} skipped=${result.skipped}`,
     );
+    await publishActivityChanged(result.eventIds);
   } finally {
     await locks.release("mail_delivery");
   }
@@ -118,6 +120,7 @@ async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
       "import",
       `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed} reclaimed=${result.reclaimed} healed=${result.healed}`,
     );
+    await publishActivityChanged(result.eventIds);
   } finally {
     await locks.release("import");
   }
@@ -262,6 +265,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     process.off("SIGTERM", onStop);
     process.off("SIGINT", onStop);
     await locks.close();
+    await closeSsePublishClient();
     log("heartbeat", "stopped");
   }
 }

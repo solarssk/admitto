@@ -56,7 +56,8 @@ export interface EventOverviewResponse {
   busiest_hour: { hour: string; count: number } | null;
   /** Active attendees per catalog ticket type (batch 04), catalog order, zero-count types omitted. */
   ticket_type_breakdown: Array<{ key: string; label: string; color: string; count: number }>;
-  /** Newest-first merged feed of check-ins, mail delivery failures, and import batches. */
+  /** Newest-first merged feed of check-ins, mail delivery failures, import batches, attendees
+   * added, and item issue/return. */
   recent_activity: EventRecentActivityEntry[];
   contacts: EventContactData[];
   resources: EventResourceData[];
@@ -64,7 +65,16 @@ export interface EventOverviewResponse {
 
 export interface EventRecentActivityEntry {
   id: string;
-  type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
+  type:
+    | "checkin"
+    | "mail_bounced"
+    | "mail_failed"
+    | "mail_resent"
+    | "import"
+    | "attendee_added"
+    | "item_issued"
+    | "item_returned"
+    | "item_revoked";
   tone: "ok" | "warn" | "error" | "info" | "muted";
   attendee_name?: string | null;
   /** Links the entry to the attendee's detail view in the admin UI; null for entries with no
@@ -234,17 +244,80 @@ async function loadRecentImportActivity(db: PrismaClient, eventId: string): Prom
   });
 }
 
-/** Merges the three activity sources newest-first and caps the total. Taking up to
+const ATTENDEE_ACTION_ACTIVITY_TYPES = [
+  "attendee_created_manual",
+  "item_issued",
+  "item_returned",
+  "item_revoked",
+] as const;
+
+/** Attendees manually added, and items issued/returned, sourced from AttendeeActionLog (already
+ * written by attendees-api-routes.ts and item-states.ts). Item rows carry only event_item_key in
+ * metadata, so item labels are resolved with a second, event-scoped EventItem lookup. */
+async function loadRecentAttendeeActionActivity(
+  db: PrismaClient,
+  eventId: string,
+): Promise<EventRecentActivityEntry[]> {
+  const rows = await db.attendeeActionLog.findMany({
+    where: { event_id: eventId, action_type: { in: [...ATTENDEE_ACTION_ACTIVITY_TYPES] } },
+    orderBy: { created_at: "desc" },
+    take: RECENT_ACTIVITY_LIMIT,
+    select: {
+      id: true,
+      action_type: true,
+      created_at: true,
+      attendee_id: true,
+      metadata: true,
+      attendee: { select: { name: true } },
+    },
+  });
+  if (rows.length === 0) return [];
+
+  const itemKeys = new Set<string>();
+  for (const row of rows) {
+    const key = (row.metadata as { event_item_key?: string } | null)?.event_item_key;
+    if (key) itemKeys.add(key);
+  }
+  const itemLabels: Map<string, string> = new Map(
+    itemKeys.size > 0
+      ? (
+          await db.eventItem.findMany({
+            where: { event_id: eventId, key: { in: [...itemKeys] } },
+            select: { key: true, label: true },
+          })
+        ).map((item): [string, string] => [item.key, item.label])
+      : [],
+  );
+
+  return rows.map((row) => {
+    const itemKey = (row.metadata as { event_item_key?: string } | null)?.event_item_key;
+    const itemLabel = itemKey ? (itemLabels.get(itemKey) ?? itemKey) : "item";
+    const base = { id: `action:${row.id}`, attendee_name: row.attendee?.name, attendee_id: row.attendee_id, occurred_at: row.created_at.toISOString() };
+    switch (row.action_type) {
+      case "item_returned":
+        return { ...base, type: "item_returned" as const, tone: "muted" as const, message: `returned ${itemLabel}` };
+      case "item_issued":
+        return { ...base, type: "item_issued" as const, tone: "ok" as const, message: `issued ${itemLabel}` };
+      case "item_revoked":
+        return { ...base, type: "item_revoked" as const, tone: "warn" as const, message: `revoked ${itemLabel}` };
+      default:
+        return { ...base, type: "attendee_added" as const, tone: "info" as const, message: "added" };
+    }
+  });
+}
+
+/** Merges the activity sources newest-first and caps the total. Taking up to
  * RECENT_ACTIVITY_LIMIT from each source (already sorted newest-first) before merging is
  * sufficient for a correct top-N merge - the final slice can never need more than N items from
  * any single source. */
 async function loadRecentActivity(db: PrismaClient, eventId: string): Promise<EventRecentActivityEntry[]> {
-  const [checkins, mailFailures, imports] = await Promise.all([
+  const [checkins, mailFailures, imports, attendeeActions] = await Promise.all([
     loadRecentCheckInActivity(db, eventId),
     loadRecentMailFailureActivity(db, eventId),
     loadRecentImportActivity(db, eventId),
+    loadRecentAttendeeActionActivity(db, eventId),
   ]);
-  return [...checkins, ...mailFailures, ...imports]
+  return [...checkins, ...mailFailures, ...imports, ...attendeeActions]
     .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
     .slice(0, RECENT_ACTIVITY_LIMIT);
 }

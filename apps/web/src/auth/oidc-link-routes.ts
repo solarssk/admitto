@@ -12,6 +12,7 @@ import { getOidcLinkPageSecurityHeaders, renderOidcLinkForm } from "./oidc-link-
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import { checkOidcLinkStepUpRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
 const LINK_ERROR = "Invalid password or code. Try again.";
 
@@ -145,5 +146,6 @@ export async function handlePostOidcLink(
     redirectNext: next,
     linkUserId: auth.userId,
     linkStepUpAt: new Date(),
+    timezone: parseOptionalClientTimezone(form["timezone"]),
   });
 }

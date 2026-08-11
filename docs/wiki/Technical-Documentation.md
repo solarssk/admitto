@@ -8,6 +8,8 @@
 The Wiki documents supported application use. It does not duplicate deployment, architecture, security, privacy, or release procedures.
 
 - [Repository documentation map](https://github.com/solarssk/admitto#documentation-map)
+- [Production deploy guide](https://github.com/solarssk/admitto/blob/main/deploy/README.md) (minimum to boot, Portainer / NPM variants)
+- [Environment variable reference](https://github.com/solarssk/admitto/blob/main/deploy/ENV.md) (generated dictionary)
 - [Security policy](https://github.com/solarssk/admitto/blob/main/SECURITY.md)
 - [Data protection and retention](https://github.com/solarssk/admitto/blob/main/DATA-PROTECTION.md)
 - [Versioning and releases](https://github.com/solarssk/admitto/blob/main/VERSIONING.md)

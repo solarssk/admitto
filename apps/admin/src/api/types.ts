@@ -1109,6 +1109,8 @@ export interface SessionListDto {
   expiresAt: string;
   authMethod: string;
   stage: string;
+  /** Signer's IANA timezone at login — null for older sessions / non-browser captures. */
+  timezone: string | null;
   isCurrent: boolean;
 }
 
@@ -1332,6 +1334,8 @@ export interface SecurityAuditLogEntryDto {
   user_display_name: string | null;
   ip: string | null;
   country: IpLocationDto;
+  /** Actor's IANA timezone at the event — null for older rows, bots, or non-browser captures. */
+  actor_timezone: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
@@ -1469,7 +1473,16 @@ export interface EventResourceDto {
 
 export interface EventRecentActivityEntry {
   id: string;
-  type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
+  type:
+    | "checkin"
+    | "mail_bounced"
+    | "mail_failed"
+    | "mail_resent"
+    | "import"
+    | "attendee_added"
+    | "item_issued"
+    | "item_returned"
+    | "item_revoked";
   tone: "ok" | "warn" | "error" | "info" | "muted";
   attendee_name?: string | null;
   /** Links the entry to the attendee's detail view; null for entries with no single attendee

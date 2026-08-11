@@ -78,6 +78,7 @@ import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
 import { resolveBulkSendAttendeeIds, BULK_SEND_LIMIT } from "./bulk-send-routes.js";
+import { publishActivityChanged } from "./checkin-sse-publish.js";
 
 const ATTENDEE_DETAIL_SELECT = {
   id: true,
@@ -2525,6 +2526,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
       return row;
     });
 
+    publishActivityChanged(eventId);
     const dto = await buildAttendeeDetailDto(db, eventId, created);
     return c.json(dto, 201);
   } catch (err) {
@@ -2729,6 +2731,7 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
 
   try {
     await revokeItemState({ attendeeId, eventId, itemKey, audit: adminAuditFromContext(c) }, db);
+    publishActivityChanged(eventId);
     const card = await getAttendeeCard(eventId, attendeeId, db);
     return c.json({ card });
   } catch (err) {

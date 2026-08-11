@@ -308,7 +308,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
   const actorUserId = c.get("auth").userId;
 
   try {
-    // No advisory lock here (unlike lockEventForMailSettingsWrite for MailSettings):
+    // No advisory lock here (unlike lockEventForScopedWrite for MailSettings/Templates):
     // EventLocation has a real FK with onDelete: Cascade, so a concurrent permanent event
     // delete either finishes first (the upsert below then fails its FK check, caught and
     // mapped to 404) or runs after (Postgres cascades the delete for us). Two admins

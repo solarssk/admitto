@@ -1,18 +1,18 @@
 services:
-  # One-shot: migration status check, pre-migration backup, `migrate deploy`, and backfills -
-  # steps that need root (to write into the root-only migration_backups volume) or must complete
-  # before the web server accepts traffic. The `app` service below only starts once this exits 0
-  # (docker:S6471 - app itself never runs as root). Retention runs on the Admitto worker (ADR 0042).
+  # One-shot: migration status check, `migrate deploy`, and backfills - steps that must complete
+  # before the web server accepts traffic. The `app` service below only starts once this exits 0.
+  # Runs as the same non-root `node` user as `app`/`worker` (ADR 0043 - backup is the operator's
+  # responsibility, not a step here; see the `db-backup` service and deploy/README.md for the
+  # nightly/pre-upgrade backup runbook). Retention runs on the Admitto worker (ADR 0042).
   migrate:
     image: ${ADMITTO_IMAGE:-ghcr.io/solarssk/admitto:local}
     build:
       context: ..
       dockerfile: Dockerfile
-    user: root
     command: ["migrate"]
     # Disables the image's inherited HEALTHCHECK (a port-3000 HTTP probe meant for `app`'s server) -
     # this container never listens on anything, so that probe can only ever report false-unhealthy
-    # while a slow pg_dump/backfill is still legitimately running.
+    # while a slow backfill is still legitimately running.
     healthcheck:
       disable: true
     env_file: .env
@@ -20,10 +20,8 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
-      MIGRATION_BACKUP_DIR: /backups
       EMERGENCY_EXPORT_DIR: /app/emergency-exports
     volumes:
-      - migration_backups:/backups
       - ./emergency-exports:/app/emergency-exports
     depends_on:
       db:
@@ -179,4 +177,6 @@ networks:
 
 volumes:
   postgres_data:
+  # Name predates ADR 0043; only `db-backup`'s nightly dumps write here now (`migrate` no longer
+  # backs up before applying a schema change - see the `migrate` service comment above).
   migration_backups:

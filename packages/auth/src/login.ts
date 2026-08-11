@@ -39,6 +39,8 @@ export interface LoginInput {
   deviceLabel?: string;
   /** Raw trusted-device cookie value, if present. */
   trustedDeviceToken?: string;
+  /** Browser IANA timezone when captured at sign-in. */
+  timezone?: string | null;
 }
 
 /** Discriminated result after password verification. */
@@ -61,13 +63,19 @@ export async function login(
 
   const passwordOk = await verifyPasswordOrDummy(input.password, user?.password_hash ?? null);
   if (!user || !passwordOk) {
-    await logLoginFailure(prisma, audit ?? { email, ip: input.ip, userAgent: input.userAgent });
+    await logLoginFailure(
+      prisma,
+      audit ?? { email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone },
+    );
     await recordFailedLoginFailureSideEffects(prisma, user, { ip: input.ip });
     return INVALID;
   }
 
   if (!user.is_active) {
-    await logLoginFailure(prisma, audit ?? { email, ip: input.ip, userAgent: input.userAgent });
+    await logLoginFailure(
+      prisma,
+      audit ?? { email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone },
+    );
     return { ok: false, reason: "inactive" };
   }
 
@@ -112,10 +120,11 @@ export async function login(
     ip: input.ip,
     userAgent: input.userAgent,
     deviceLabel: input.deviceLabel,
+    timezone: input.timezone,
   });
 
   await logLoginSuccess(prisma, {
-    ...(audit ?? { email, ip: input.ip, userAgent: input.userAgent }),
+    ...(audit ?? { email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone }),
     userId: user.id,
   });
   await resetFailedLoginStreak(prisma, user.id);

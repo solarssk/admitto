@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
+import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
 
 const VIEWPORT_PAD_PX = 8;
 
@@ -118,16 +118,22 @@ export function useDropdownMenu<
       const panelWidth = matchTriggerWidth
         ? Math.max(minWidth ?? 0, triggerRect.width)
         : panel.getBoundingClientRect().width;
-      const panelHeight = panel.getBoundingClientRect().height;
-      const spaceBelow = window.innerHeight - triggerRect.bottom;
-      const spaceAbove = triggerRect.top;
+      // `scrollHeight` stays natural after this effect applies a maxHeight, while the bounding
+      // rect covers test environments and panels whose content has no scroll container.
+      const panelHeight = Math.max(panel.scrollHeight, panel.getBoundingClientRect().height);
+      const viewport = getFixedOverlayViewport();
+      const spaceBelow = viewport.bottom - triggerRect.bottom;
+      const spaceAbove = triggerRect.top - viewport.top;
       // Only flip when upward genuinely has more room - never flip into an even tighter fit.
       const above = panelHeight > spaceBelow && spaceAbove > spaceBelow;
-      const top = above ? triggerRect.top - panelHeight - gap : triggerRect.bottom + gap;
+      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - gap - VIEWPORT_PAD_PX);
+      const maxHeight = panelHeight > available ? available : undefined;
+      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
+      const top = above ? triggerRect.top - usedHeight - gap : triggerRect.bottom + gap;
 
       let left = align === "end" ? triggerRect.right - panelWidth : triggerRect.left;
-      left = Math.min(left, window.innerWidth - VIEWPORT_PAD_PX - panelWidth);
-      left = Math.max(left, VIEWPORT_PAD_PX);
+      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
 
       setOpenUpward(above);
       setPanelStyle({
@@ -135,6 +141,8 @@ export function useDropdownMenu<
         top,
         left,
         width: matchTriggerWidth ? panelWidth : undefined,
+        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
+        overflowY: maxHeight !== undefined ? "auto" : undefined,
         visibility: "visible",
       });
     };

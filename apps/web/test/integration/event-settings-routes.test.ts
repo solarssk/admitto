@@ -182,6 +182,8 @@ afterEach(async () => {
       timezone: "UTC",
       capacity: null,
       archived_at: null,
+      created_by_timezone: null,
+      archived_by_timezone: null,
       logo_url: null,
       header_image_url: null,
     },
@@ -232,6 +234,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       archived_at: string | null;
       created_at: string;
       is_deletable: boolean;
+      deletion_blockers: string[];
       organization_name: string;
       active_items: { id: string; name: string; enabled: boolean }[];
       logo_url: string | null;
@@ -252,6 +255,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.archived_at).toBeNull();
     expect(new Date(body.created_at).toString()).not.toBe("Invalid Date");
     expect(body.is_deletable).toBe(false);
+    expect(body.deletion_blockers.length).toBeGreaterThan(0);
     expect(body.organization_name).toBe("Settings Org");
     expect(body.active_items.some((i) => i.id === ITEM_SET && i.name === "Badge")).toBe(true);
     expect(body.logo_url).toBeNull();
@@ -262,6 +266,54 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.resolved_header_image_url).toBeNull();
     expect(body.admitted_count).toBe(0);
     expect(body.issued_items_count).toBe(0);
+  });
+
+  it("normalizes legacy event and audit timezones in the settings response", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: {
+        timezone: "Asia/Calcutta",
+        created_by_timezone: "Europe/Kiev",
+        archived_by_timezone: "Etc/UTC",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      timezone: string;
+      created_by_timezone: string | null;
+      archived_by_timezone: string | null;
+    };
+    expect(body.timezone).toBe("Asia/Kolkata");
+    expect(body.created_by_timezone).toBe("Europe/Kyiv");
+    expect(body.archived_by_timezone).toBe("UTC");
+  });
+
+  it("preserves unrecognized stored timezone identifiers in the settings response", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: {
+        timezone: "Legacy/Event",
+        created_by_timezone: "Legacy/Created",
+        archived_by_timezone: "Legacy/Archived",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      timezone: string;
+      created_by_timezone: string | null;
+      archived_by_timezone: string | null;
+    };
+    expect(body.timezone).toBe("Legacy/Event");
+    expect(body.created_by_timezone).toBe("Legacy/Created");
+    expect(body.archived_by_timezone).toBe("Legacy/Archived");
   });
 
   it("returns admitted_count and issued_items_count reflecting real activity", async () => {
@@ -418,9 +470,11 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     const body = (await res.json()) as {
       archived_at: string | null;
       is_deletable: boolean;
+      deletion_blockers: string[];
     };
     expect(body.archived_at).not.toBeNull();
     expect(body.is_deletable).toBe(true);
+    expect(body.deletion_blockers).toEqual([]);
   });
 
   it("returns is_deletable: true for an ACTIVE event with zero activity (archiving is not required)", async () => {
@@ -432,10 +486,12 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       status: string;
       archived_at: string | null;
       is_deletable: boolean;
+      deletion_blockers: string[];
     };
     expect(body.status).toBe("active");
     expect(body.archived_at).toBeNull();
     expect(body.is_deletable).toBe(true);
+    expect(body.deletion_blockers).toEqual([]);
   });
 
   it("returns 404 for non-existent event (superadmin)", async () => {
@@ -509,6 +565,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
         title: string;
         slug: string;
         is_deletable: boolean;
+        deletion_blockers: string[];
         admitted_count: number;
         issued_items_count: number;
       };
@@ -516,6 +573,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.event.title).toBe("Renamed Event");
     expect(body.event.slug).toBe("event-settings");
     expect(body.event.is_deletable).toBe(false);
+    expect(body.event.deletion_blockers.length).toBeGreaterThan(0);
     expect(body.event.admitted_count).toBe(0);
     expect(body.event.issued_items_count).toBe(0);
 

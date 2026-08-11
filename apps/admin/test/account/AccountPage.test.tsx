@@ -120,6 +120,7 @@ function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionLis
     expiresAt: "2026-01-02T00:00:00.000Z",
     authMethod: "local",
     stage: "active",
+    timezone: null,
     isCurrent: true,
     ...overrides,
   };
@@ -937,6 +938,25 @@ describe("AccountPage toasts", () => {
     expect(screen.getByText("curl/8.7.1")).toBeTruthy();
   });
 
+  it("shows the signer's stored timezone under Logged in when Session.timezone is set", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({
+      sessions: [
+        makeAccountSession({
+          timezone: "Europe/Warsaw",
+          loginAt: "2026-01-01T12:00:00.000Z",
+        }),
+      ],
+    });
+
+    renderWithToast(<AccountPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Europe\/Warsaw/)).toBeTruthy();
+    });
+    expect(screen.getByTitle("Signer's local time")).toBeTruthy();
+  });
+
   it("shows the resolved country under the IP address for a session with one", async () => {
     mockLoadedAccount();
     mockFetchSessions.mockResolvedValue({
@@ -1260,6 +1280,7 @@ describe("AccountPage toasts", () => {
       expiresAt: "2026-01-02T00:00:00.000Z",
       authMethod: "local",
       stage: "active",
+      timezone: null,
       isCurrent: false,
     };
     mockLoadedAccount();
@@ -1294,6 +1315,7 @@ describe("AccountPage toasts", () => {
       expiresAt: "2026-01-02T00:00:00.000Z",
       authMethod: "local",
       stage: "active",
+      timezone: null,
       isCurrent: true,
     };
     const otherSession = {

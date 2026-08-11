@@ -20,6 +20,22 @@ afterEach(() => {
 });
 
 describe("EditTemplateModal", () => {
+  it("keeps the last-edited timestamp visible after a touch user opens the editor", () => {
+    render(
+      <EditTemplateModal
+        open
+        template={reminder}
+        lastEdited="Jan 02, 2026"
+        busy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Last edited Jan 02, 2026")).toBeTruthy();
+  });
+
   it("Escape dismisses only the nested delete confirmation, not the whole editor", () => {
     const onClose = vi.fn();
     const onDelete = vi.fn();

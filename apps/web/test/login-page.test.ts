@@ -21,6 +21,17 @@ describe("login page rendering", () => {
     );
   });
 
+  it("includes a hidden timezone field and capture script for local login and SSO", () => {
+    const html = renderLoginForm("test-nonce", undefined, undefined, [
+      { id: "contoso", button_label: "Contoso SSO" },
+    ]);
+
+    expect(html).toContain('name="timezone"');
+    expect(html).toContain("resolvedOptions().timeZone");
+    expect(html).toContain("auth-btn-sso");
+    expect(html).toContain('searchParams.set("tz"');
+  });
+
   it("escapes operator event rows before rendering them", () => {
     const html = renderOperatorLanding("operator@example.com", [
       { title: "Welcome & check-in", slug: "summer<gala>" },

@@ -544,6 +544,64 @@ describe("PUT /api/admin/events/:eventId/template", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it.each([
+    [
+      "MJML compilation errors",
+      () => new MjmlCompileError([{ message: "Invalid MJML" }]),
+      {
+        error: "template_validation_failed",
+        errors: ["There's a formatting problem in the template body. Check that area and try again."],
+      },
+    ],
+    [
+      "unknown placeholders",
+      () => new UnknownPlaceholdersError(["not_a_placeholder"]),
+      { error: "template_validation_failed", errors: ["Unknown placeholder: not_a_placeholder"] },
+    ],
+    [
+      "placeholders inside HTML comments",
+      () => new PlaceholderInHtmlCommentError(["event_name"]),
+      { error: "template_validation_failed", errors: ["Placeholder in HTML comment: event_name"] },
+    ],
+    [
+      "unquoted placeholder attributes",
+      () => new UnquotedAttributePlaceholderError(["href"]),
+      { error: "template_validation_failed", errors: ["Unquoted attribute placeholder: href"] },
+    ],
+  ])("keeps the established response for %s thrown during the template write", async (_label, writeError, expected) => {
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(writeError());
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(validTemplate),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual(expected);
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
+  it("does not turn an unexpected ticket-template write failure into a validation response", async () => {
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+        method: "PUT",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(validTemplate),
+      });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "internal_error" });
+    } finally {
+      consoleError.mockRestore();
+      transaction.mockRestore();
+    }
+  });
 });
 
 describe("POST /api/admin/events/:eventId/template/preview", () => {

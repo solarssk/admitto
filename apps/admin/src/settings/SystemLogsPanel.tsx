@@ -119,6 +119,12 @@ export interface SystemLogsPanelHandle {
 
 interface SystemLogsPanelProps {
   isDesktop: boolean;
+  /** Whether the System tab is the one currently shown. AuditLogPanel keeps this panel mounted
+   * even while the operator is on the Audit/Security tab (see LogsPanelViews), so without this
+   * the poll effect below would keep hitting the live-tail endpoint every tick regardless of
+   * which tab is actually on screen. Only gates the recurring poll, not the initial/filter-change
+   * load, so switching back here still shows the last-fetched (not stale-forever) lines. */
+  isVisible: boolean;
   /** Rendered inline in this panel's own toolbar on mobile, where AuditLogPanel's Card header
    * only has room for the title and the System/Audit toggle - matches how the shared LogView's
    * own Clear filters/Export logs move down the same way. Undefined on desktop, where
@@ -140,7 +146,7 @@ interface SystemLogsPanelProps {
  * stdout independent of this view, so nothing is lost if the buffer resets or the UI is down.
  */
 export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanelProps>(function SystemLogsPanel(
-  { isDesktop, liveButton, downloadButton, onLiveChange, onHasEntriesChange },
+  { isDesktop, isVisible, liveButton, downloadButton, onLiveChange, onHasEntriesChange },
   ref,
 ) {
   const [entries, setEntries] = useState<SystemLogEntryDto[]>([]);
@@ -210,8 +216,9 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
 
   // Polling loop, independent of filter changes - reads filtersRef/cursorRef fresh each tick so
   // toggling Live off and back on resumes from where it left off instead of resetting the view.
+  // Also gated on isVisible - see its own comment on SystemLogsPanelProps.
   useEffect(() => {
-    if (!live) return;
+    if (!live || !isVisible) return;
     // Re-enabling Live always starts the degraded-state tracking fresh.
     pollFailureCountRef.current = 0;
     setPollDegraded(false);
@@ -272,7 +279,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       currentAbort?.abort();
       window.clearInterval(intervalId);
     };
-  }, [live]);
+  }, [live, isVisible]);
 
   // New lines arriving while scrolled to the bottom should keep the view pinned there; if the
   // operator has scrolled up to read older lines, don't yank them back down.

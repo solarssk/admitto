@@ -1,6 +1,6 @@
 {
   "name": "admitto",
-  "version": "0.4.13",
+  "version": "0.4.14",
   "private": true,
   "license": "Apache-2.0",
   "description": "Admitto — event access gateway (attendee import, QR tickets, wallet passes, M365 mail, check-in)",
@@ -29,7 +29,8 @@
     "mail:deliveries": "npm run cli -w @admitto/mail-delivery -- deliveries",
     "auth:bootstrap": "npm run cli -w @admitto/auth -- bootstrap-superadmin",
     "worker": "npm run cli -w @admitto/cli -- worker",
-    "docs:check": "node scripts/check-wiki-docs.mjs",
+    "docs:env": "node scripts/generate-env-dictionary.mjs",
+    "docs:check": "node scripts/check-wiki-docs.mjs && node scripts/generate-env-dictionary.mjs --check",
     "docs:pr-check": "node scripts/check-pr-docs-impact.mjs"
   },
   "type": "module",

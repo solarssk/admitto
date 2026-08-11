@@ -29,6 +29,7 @@ import { setSessionCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { clearOidcFlowCookie, oidcFlowCookieMatches } from "./oidc-flow-cookie.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
+import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
 const OIDC_LOGIN_ERROR_PATH = "/login?error=oidc_failed";
 
@@ -70,7 +71,10 @@ export async function handleOidcStart(c: Context, db: PrismaClient, baseUrl: str
   }
 
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
-  return beginOidcAuthorizationRedirect(c, db, baseUrl, providerId, { redirectNext: next });
+  return beginOidcAuthorizationRedirect(c, db, baseUrl, providerId, {
+    redirectNext: next,
+    timezone: parseOptionalClientTimezone(c.req.query("tz")),
+  });
 }
 
 /**
@@ -175,6 +179,7 @@ async function finalizeOidcLogin(
       authMethod: AUTH_METHOD.OIDC,
       ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
+      timezone: consumed.timezone,
     });
 
     let next: string;
@@ -192,6 +197,7 @@ async function finalizeOidcLogin(
       userId,
       subject,
       ip: resolveClientIp(c),
+      timezone: consumed.timezone,
     });
     return c.redirect(next, 302);
   } catch (err) {

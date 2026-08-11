@@ -94,7 +94,10 @@ describe("privileged-login-alert", () => {
       const create = vi.fn().mockResolvedValue({});
       const db = {
         roleAssignment: { findMany: vi.fn().mockResolvedValue([{ role: "admin" }]) },
-        user: { updateMany: vi.fn() },
+        user: {
+          updateMany: vi.fn(),
+          findUnique: vi.fn().mockResolvedValue({ email: "admin@example.com", display_name: null }),
+        },
         $queryRaw: queryRaw,
         securityAuditLog: { create },
       } as unknown as PrismaClient;
@@ -109,8 +112,11 @@ describe("privileged-login-alert", () => {
         data: {
           event_type: "auth.login.repeated_failures",
           user_id: "user-1",
+          user_email: "admin@example.com",
+          user_display_name: null,
           ip: "9.9.9.9",
-          metadata: { email: "admin@example.com", streak: PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD },
+          actor_timezone: null,
+          metadata: { streak: PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD },
         },
       });
     });

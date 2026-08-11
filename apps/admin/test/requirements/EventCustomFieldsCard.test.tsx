@@ -30,6 +30,7 @@ const dietaryField: EventCustomFieldDto = {
   id: "field-dietary",
   source_field: "dietary",
   label: "Dietary requirements",
+  description: "Allergies and meal preferences",
   type: "text",
   required: false,
   options: null,
@@ -49,6 +50,7 @@ function renderCard(fields: EventCustomFieldDto[], loading = false) {
       event={event}
       fields={fields}
       loading={loading}
+      showLoading={loading}
       onChanged={onChanged}
     />,
   );
@@ -56,21 +58,29 @@ function renderCard(fields: EventCustomFieldDto[], loading = false) {
 }
 
 describe("EventCustomFieldsCard", () => {
-  it("shows an empty-state row when there are no fields", () => {
+  it("shows EmptyState when there are no fields", () => {
     renderCard([]);
-    expect(screen.getByText(/No custom fields yet\./)).toBeTruthy();
+    expect(screen.getByText("No custom fields yet")).toBeTruthy();
+    expect(
+      screen.getByText(/Add one to collect extra attendee data, like dietary requirements/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("lists fields with their type and required status", () => {
+  it("lists fields with description and required status", () => {
     const shirtField: EventCustomFieldDto = {
       ...dietaryField,
       id: "f2",
       source_field: "shirt_size",
       label: "Shirt size",
+      description: null,
       type: "select",
       required: true,
     };
     renderCard([dietaryField, shirtField]);
+
+    expect(screen.getByRole("columnheader", { name: "Description" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Type" })).toBeNull();
 
     const dietaryRow = screen.getByText("Dietary requirements").closest("tr");
     const shirtRow = screen.getByText("Shirt size").closest("tr");
@@ -78,11 +88,13 @@ describe("EventCustomFieldsCard", () => {
     expect(shirtRow).not.toBeNull();
 
     expect(within(dietaryRow!).getByText("dietary")).toBeTruthy();
-    expect(within(dietaryRow!).getByText("text")).toBeTruthy();
+    expect(within(dietaryRow!).getByText("Allergies and meal preferences")).toBeTruthy();
+    expect(within(dietaryRow!).getByLabelText("Text")).toBeTruthy();
     expect(within(dietaryRow!).getByText("No")).toBeTruthy();
 
-    expect(within(shirtRow!).getByText("select")).toBeTruthy();
     expect(within(shirtRow!).getByText("Yes")).toBeTruthy();
+    expect(within(shirtRow!).getByLabelText("Single choice")).toBeTruthy();
+    expect(within(shirtRow!).queryByText("Single choice")).toBeNull();
   });
 
   it("shows the add-field modal with a header subtitle", () => {

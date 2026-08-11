@@ -14,6 +14,7 @@ export function MoreActionsMenuItem({
   tooltip,
   variant,
   onClick,
+  className,
 }: Readonly<{
   icon: string;
   label: ReactNode;
@@ -22,9 +23,15 @@ export function MoreActionsMenuItem({
   tooltip?: string | null;
   variant?: "warning" | "danger";
   onClick: () => void;
+  /** Extra class(es) on the item's wrapper, e.g. to show/hide a specific item at a breakpoint. */
+  className?: string;
 }>) {
   return (
-    <Tooltip content={tooltip} className="more-actions-menu__item-wrapper" axis="horizontal">
+    <Tooltip
+      content={tooltip}
+      className={["more-actions-menu__item-wrapper", className].filter(Boolean).join(" ")}
+      axis="horizontal"
+    >
       <button
         type="button"
         role="menuitem"

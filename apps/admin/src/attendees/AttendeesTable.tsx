@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, Tooltip } from "@admitto/ui";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -193,15 +193,22 @@ function PassActionButtons({
           reasonId={`restore-pass-reason-${reasonIdSuffix}`}
           disabled={passActionBusyIds.has(row.id)}
         >
-          {(guard) => (
-            <IconButton
-              label="Restore pass"
-              icon={<i className="ti ti-refresh" aria-hidden="true" />}
-              size="sm"
-              {...guard}
-              onClick={() => onRestorePass(row)}
-            />
-          )}
+          {(guard) => {
+            const button = (
+              <IconButton
+                label="Restore pass"
+                icon={<i className="ti ti-refresh" aria-hidden="true" />}
+                size="sm"
+                {...guard}
+                onClick={() => onRestorePass(row)}
+              />
+            );
+            return guard.disabled ? (
+              button
+            ) : (
+              <Tooltip content="Restore pass. Re-enable check-in for this attendee.">{button}</Tooltip>
+            );
+          }}
         </ArchivedGuard>
       ) : null}
       {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
@@ -210,15 +217,24 @@ function PassActionButtons({
           reasonId={`revoke-pass-reason-${reasonIdSuffix}`}
           disabled={passActionBusyIds.has(row.id)}
         >
-          {(guard) => (
-            <IconButton
-              label="Revoke pass"
-              icon={<i className="ti ti-ban" aria-hidden="true" />}
-              size="sm"
-              {...guard}
-              onClick={() => onRevokePass(row)}
-            />
-          )}
+          {(guard) => {
+            const button = (
+              <IconButton
+                label="Revoke pass"
+                icon={<i className="ti ti-ban" aria-hidden="true" />}
+                size="sm"
+                {...guard}
+                onClick={() => onRevokePass(row)}
+              />
+            );
+            return guard.disabled ? (
+              button
+            ) : (
+              <Tooltip content="Revoke pass. They cannot check in until the pass is restored.">
+                {button}
+              </Tooltip>
+            );
+          }}
         </ArchivedGuard>
       ) : null}
     </>
@@ -365,12 +381,14 @@ function AttendeeCard({
           <span className="attendee-readonly">Not checked in</span>
         )}
         <div className="attendees-card__actions">
-          <IconButton
-            label="View attendee"
-            icon={<i className="ti ti-eye" aria-hidden="true" />}
-            size="sm"
-            onClick={onView}
-          />
+          <Tooltip content="View attendee profile">
+            <IconButton
+              label="View attendee"
+              icon={<i className="ti ti-eye" aria-hidden="true" />}
+              size="sm"
+              onClick={onView}
+            />
+          </Tooltip>
           <PassActionButtons
             row={row}
             event={event}
@@ -1242,12 +1260,14 @@ function AttendeesListContent({
               </td>
               <td>
                 <div className="attendees-table-v2__actions">
-                  <IconButton
-                    label="View attendee"
-                    icon={<i className="ti ti-eye" aria-hidden="true" />}
-                    size="sm"
-                    onClick={() => onViewAttendee(row.id)}
-                  />
+                  <Tooltip content="View attendee profile">
+                    <IconButton
+                      label="View attendee"
+                      icon={<i className="ti ti-eye" aria-hidden="true" />}
+                      size="sm"
+                      onClick={() => onViewAttendee(row.id)}
+                    />
+                  </Tooltip>
                   <PassActionButtons
                     row={row}
                     event={event}
@@ -1487,6 +1507,7 @@ export function AttendeesTable({
               searchPlaceholder="Search page sizes…"
               emptyLabel="No page sizes found"
               showLabel={false}
+              minWidth={72}
               value={String(pageSize)}
               options={[10, 25, 50, 100].map((n) => ({ id: String(n), label: String(n) }))}
               onChange={(id) => onPageSizeChange(Number(id))}

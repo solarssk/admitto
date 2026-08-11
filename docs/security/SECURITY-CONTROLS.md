@@ -58,8 +58,8 @@ flowchart TB
 
 Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
 common web hardening (`httpOnly`, `SameSite`, `secure` in production).
-Expired or revoked session and trusted-device rows are purged best-effort during container startup
-after migrations/backfills with a 120-second timeout. Operators can also run
+Expired or revoked session and trusted-device rows are purged best-effort on the Admitto **worker**
+(at boot and about every 24 hours). Operators can also run
 `npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
 to preview counts).
 **Trusted-device revocation on logout.** Signing out (`POST /logout` in the staff UI, or
@@ -74,7 +74,7 @@ use next.
 > or app does not. Instance operators can also shorten or disable trusted-device persistence
 > entirely via the `trusted_device_days` setting (`0` disables the feature).
 Frozen email delivery bodies (`EmailDelivery.rendered_html` / `rendered_subject`) are nullified
-best-effort during container startup once a delivery is terminal and older than 60 days
+best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days
 (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
 `npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run`.
 
@@ -233,7 +233,7 @@ directly (misconfigured port exposure, or from elsewhere on the same network) co
 rate-limit IP, CSRF origin, and cookie `Secure` flag. **Residual:** the default deploy topology
 pins `TRUSTED_PROXY_CIDRS` to the whole `internal` compose network subnet, not just the `proxy`
 container's individual address — a compromise of another container on that same network (`db`,
-`redis`, `migrate`, `retention`) could still inject these headers. Narrowing to a single pinned
+`redis`, `migrate`, `worker`) could still inject these headers. Narrowing to a single pinned
 container IP was judged not worth the added operational fragility (static IPs in Compose); this
 subnet-level allowlist is still a materially smaller trust boundary than "any direct connection."
 
@@ -244,7 +244,8 @@ When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF or
 
 ## Outbound HTTP (SSRF mitigation)
 
-Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches use
+Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches
+(and Cloudflare Access JWKS) use
 [`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts) plus
 [`safeOidcFetch`](../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
@@ -259,6 +260,14 @@ Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC tok
 Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
 **public** URLs the instance can reach — perimeter egress filtering remains an operator control.
+
+**Self-hosted private SSO allowlist.** `SSO_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
+hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
+listed destinations skip the private/loopback checks for identity outbound fetches. One list
+covers every configured provider that shares those hosts (OIDC today; intended for future SAML
+metadata fetches on the same guard). Residual risk: a compromised admin can still point provider
+settings at any allowlisted name; keep the list minimal and ensure DNS for those names is under
+operator control. Set the variable on `app`. HTTPS remains required.
 
 **Mail transport destinations (v0.4.13+).** The same class of guard now also covers SMTP host,
 Power Automate webhook URL, and the bounce-detection IMAP host: each is checked against a
@@ -292,11 +301,11 @@ and `worker`.
 - **Health endpoints:** `/healthz` — liveness + DB ping, rate-limited, no PII; `/readyz` —
   token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
   security headers; neither exposes secrets or attendee data.
-- **Container privilege (v0.4.13+):** the production image no longer runs as root. A one-shot
-  `migrate` compose service (which needs root only to write pre-migration backups) handles schema
-  migration and backups, then the main `app` container starts as an unprivileged user with no
-  filesystem access to the backup volume at all — so a compromised application process can't read
-  or tamper with its own database dumps.
+- **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
+  (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
+  service; database dumps are **not** written during migrate. Operators take a pre-upgrade dump
+  (and the nightly `db-backup` service writes scheduled dumps to a volume that `app` does not mount),
+  so a compromised application process cannot read or tamper with those dumps.
 
 ---
 
@@ -317,8 +326,8 @@ Be explicit with auditors about what is **out of product scope** today:
   retention window (30 days by default).
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
-  auth-state purge, email delivery snapshot nullification, and security audit log purge run
-  best-effort at container startup and daily thereafter, and are also available as CLI maintenance
+  auth-state purge, email delivery snapshot nullification, and security audit log purge run on the
+  Admitto **worker** at boot and about every 24 hours, and are also available as CLI maintenance
   commands).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
 - No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot — minimum
