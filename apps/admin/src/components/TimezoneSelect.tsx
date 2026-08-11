@@ -366,6 +366,12 @@ export function TimezoneSelect({
     closePanel();
   };
 
+  const onOptionKeyDown = (event: KeyboardEvent<HTMLLIElement>, entry: TzEntry) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectOption(entry);
+  };
+
   const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -494,34 +500,34 @@ export function TimezoneSelect({
                       {item.label}
                     </li>
                   ) : (
-                    <li key={item.id} role="presentation">
-                      <button
-                        type="button"
-                        id={`${listboxId}-option-${item.optionIndex}`}
-                        role="option"
-                        data-option-index={item.optionIndex}
-                        aria-selected={item.entry.iana === selectedIana}
-                        className={[
-                          "timezone-select__option",
-                          item.entry.iana === selectedIana && "timezone-select__option--selected",
-                          item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        // Pointer movement is deliberately used in addition to mouse enter:
-                        // fixed panels can be entered while the pointer is already held down.
-                        onPointerMove={() => setHighlightIndex(item.optionIndex)}
-                        onMouseEnter={() => setHighlightIndex(item.optionIndex)}
-                        onClick={() => selectOption(item.entry)}
-                      >
-                        <span className="timezone-select__option-row">
-                          <span className="timezone-select__option-city">{item.entry.city}</span>
-                          <span className="timezone-select__option-iana">{item.entry.iana}</span>
-                          {searching && item.entry.offsetLabel ? (
-                            <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
-                          ) : null}
-                        </span>
-                      </button>
+                    <li
+                      key={item.id}
+                      id={`${listboxId}-option-${item.optionIndex}`}
+                      role="option"
+                      tabIndex={-1}
+                      data-option-index={item.optionIndex}
+                      aria-selected={item.entry.iana === selectedIana}
+                      className={[
+                        "timezone-select__option",
+                        item.entry.iana === selectedIana && "timezone-select__option--selected",
+                        item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onKeyDown={(event) => onOptionKeyDown(event, item.entry)}
+                      // Pointer movement is deliberately used in addition to mouse enter:
+                      // fixed panels can be entered while the pointer is already held down.
+                      onPointerMove={() => setHighlightIndex(item.optionIndex)}
+                      onMouseEnter={() => setHighlightIndex(item.optionIndex)}
+                      onClick={() => selectOption(item.entry)}
+                    >
+                      <span className="timezone-select__option-row">
+                        <span className="timezone-select__option-city">{item.entry.city}</span>
+                        <span className="timezone-select__option-iana">{item.entry.iana}</span>
+                        {searching && item.entry.offsetLabel ? (
+                          <span className="timezone-select__option-offset">{item.entry.offsetLabel}</span>
+                        ) : null}
+                      </span>
                     </li>
                   ),
                 )
