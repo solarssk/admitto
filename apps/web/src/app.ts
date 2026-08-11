@@ -601,20 +601,21 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   }
 
+  async function loadOptionalBrandingTheme() {
+    try {
+      return await getBrandingTheme(db);
+    } catch {
+      return null;
+    }
+  }
+
   /** Branded public HTML 404/500. Theme load is optional: skip on global misses (no DB flood). */
   async function renderPublicHtmlError(
     c: Context,
     status: 404 | 500,
     options: { loadTheme?: boolean } = {},
   ) {
-    let theme = null;
-    if (options.loadTheme !== false) {
-      try {
-        theme = await getBrandingTheme(db);
-      } catch {
-        theme = null;
-      }
-    }
+    const theme = options.loadTheme === false ? null : await loadOptionalBrandingTheme();
     const html = status === 404 ? renderNotFound(theme) : renderServerError(theme);
     return htmlWithSecurityHeaders(c, html, status, theme);
   }
@@ -818,12 +819,7 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("recordTicketViewed failed:", err);
     }
 
-    let theme;
-    try {
-      theme = await getBrandingTheme(db);
-    } catch {
-      theme = null;
-    }
+    const theme = await loadOptionalBrandingTheme();
 
     const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
     const displayToken = resolveDisplayToken(internalToken, agencyPublicRef);
