@@ -22,7 +22,7 @@ Prepare the event title, calendar date, timezone, and optional location.
 2. Select **New event**. On an empty list, the button can read **Create event**.
 3. Enter the **Event title**.
 4. Select the **Event date** and **Event timezone** (shown with a **UTC±N** offset). Search by city (for example Warsaw); Admitto saves the official region clock for that place (shown as `Europe/Warsaw`) so event times and reports stay correct.
-5. Optionally set **Event hours (start)** and **Event hours (end)** (24-hour time, e.g. `18:00`-`22:00`). Leave both blank to omit a time-of-day range. This is shown on tickets and, when configured, wallet passes; it does not change the calendar date itself.
+5. Optionally set **Event hours (start)** and **Event hours (end)** in your account's selected 12-hour (AM/PM) or 24-hour format. Set either value independently, or set both for a range. Leave both blank to omit event hours. The configured value appears on tickets and, when configured, wallet passes; it does not change the calendar date itself.
 6. Optionally add **Location**. Start typing a venue name or address and pick a match, or type free text. If search finds nothing useful, you can still create the event and set the map pin and coordinates later under **Event settings**, **Location** tab.
 7. Select **Create event**.
 

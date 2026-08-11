@@ -1008,6 +1008,7 @@ export function EventSettingsPage() {
                       value={form.eventHoursEnd}
                       disabled={isArchived || saving}
                       onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
+                      pickerAlign="end"
                     />
                   </div>
                 </div>

@@ -35,6 +35,10 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const [date, setDate] = useState("");
   const [eventHoursStart, setEventHoursStart] = useState("");
   const [eventHoursEnd, setEventHoursEnd] = useState("");
+  const [eventHoursStartValid, setEventHoursStartValid] = useState(true);
+  const [eventHoursEndValid, setEventHoursEndValid] = useState(true);
+  const eventHoursStartValidRef = useRef(true);
+  const eventHoursEndValidRef = useRef(true);
   const [timezone, setTimezone] = useState(defaultBrowserTimezone);
   const [venueName, setVenueName] = useState("");
   // Only set right after picking a geocoding suggestion; free-typed text carries just
@@ -53,6 +57,10 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
     setDate("");
     setEventHoursStart("");
     setEventHoursEnd("");
+    eventHoursStartValidRef.current = true;
+    eventHoursEndValidRef.current = true;
+    setEventHoursStartValid(true);
+    setEventHoursEndValid(true);
     setTimezone(defaultBrowserTimezone());
     setVenueName("");
     setVenueGeocode(null);
@@ -67,10 +75,22 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
 
   useModalFocusTrap(panelRef, open, handleClose);
 
-  const canSubmit = Boolean(title.trim() && slug.trim() && date && timezone);
+  const canSubmit = Boolean(title.trim() && slug.trim() && date && timezone && eventHoursStartValid && eventHoursEndValid);
+
+  const updateEventHoursStartValidity = (valid: boolean) => {
+    eventHoursStartValidRef.current = valid;
+    setEventHoursStartValid(valid);
+  };
+
+  const updateEventHoursEndValidity = (valid: boolean) => {
+    eventHoursEndValidRef.current = valid;
+    setEventHoursEndValid(valid);
+  };
 
   const handleSubmit = async () => {
     // Create is disabled while submitting or while the form is incomplete.
+    // The refs make the just-blurred TimeInput authoritative even before React re-renders its button.
+    if (!canSubmit || !eventHoursStartValidRef.current || !eventHoursEndValidRef.current) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -147,6 +167,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
                 value={eventHoursStart}
                 disabled={submitting}
                 onChange={setEventHoursStart}
+                onValidityChange={updateEventHoursStartValidity}
               />
               <TimeInput
                 id="ce-hours-end"
@@ -154,6 +175,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
                 value={eventHoursEnd}
                 disabled={submitting}
                 onChange={setEventHoursEnd}
+                pickerAlign="end"
+                onValidityChange={updateEventHoursEndValidity}
               />
             </div>
             <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>

@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 import { getPreferredTimeFormat } from "../utils/locale-store.js";
+import "../staff.css";
 
 type TimeParts = { hours: number; minutes: number };
 
@@ -74,6 +75,10 @@ export interface TimeInputProps {
   error?: string;
   /** Override the account regional format when an embedding form needs a specific display. */
   hourCycle?: "12h" | "24h";
+  /** Keep a popover inside the available edge of a paired field row. */
+  pickerAlign?: "start" | "end";
+  /** Reports whether the current typed value can safely be submitted. */
+  onValidityChange?: (valid: boolean) => void;
 }
 
 /** A browser-independent time control. It stores 24-hour HH:MM, while typing and the picker
@@ -88,6 +93,8 @@ export function TimeInput({
   hint,
   error,
   hourCycle,
+  pickerAlign = "start",
+  onValidityChange,
 }: Readonly<TimeInputProps>) {
   const uid = useId();
   const controlId = id ?? `ti-${uid}`;
@@ -139,18 +146,23 @@ export function TimeInput({
 
   useClickOutside(containerRef, pickerOpen, closePicker, [pickerRef]);
 
+  function setTypedValidity(valid: boolean): void {
+    setTypedInvalid(!valid);
+    onValidityChange?.(valid);
+  }
+
   function commit(raw: string): boolean {
     if (!raw.trim()) {
-      setTypedInvalid(false);
+      setTypedValidity(true);
       onChange("");
       return true;
     }
     const parsed = parseFlexibleTime(raw);
     if (!parsed) {
-      setTypedInvalid(true);
+      setTypedValidity(false);
       return false;
     }
-    setTypedInvalid(false);
+    setTypedValidity(true);
     setText(formatTime(parsed, twelveHour));
     setPickerTime(splitTime(parsed));
     onChange(parsed);
@@ -161,7 +173,7 @@ export function TimeInput({
     const canonical = `${String(next.hours).padStart(2, "0")}:${String(next.minutes).padStart(2, "0")}`;
     setPickerTime(next);
     setText(formatTime(canonical, twelveHour));
-    setTypedInvalid(false);
+    setTypedValidity(true);
     onChange(canonical);
   }
 
@@ -170,7 +182,10 @@ export function TimeInput({
   const meridiem = pickerTime.hours < 12 ? "AM" : "PM";
 
   return (
-    <div className="at-field time-input" ref={containerRef}>
+    <div
+      className={["at-field", "time-input", pickerAlign === "end" && "time-input--picker-end"].filter(Boolean).join(" ")}
+      ref={containerRef}
+    >
       {label ? <label className="at-label" htmlFor={controlId}>{label}</label> : null}
       <div className={["time-input__control", isInvalid && "time-input__control--invalid"].filter(Boolean).join(" ")}>
         <button
@@ -205,7 +220,7 @@ export function TimeInput({
           onChange={(event: ChangeEvent<HTMLInputElement>) => {
             const nextText = event.target.value;
             setText(nextText);
-            setTypedInvalid(false);
+            if (typedInvalid) setTypedValidity(true);
             // Do not publish a partial value. In particular, `2` may be the start of `23`;
             // publishing it here would rerender the parent and replace the operator's text with
             // 02:00 before they can type the next digit. Blur or Enter performs the conversion.

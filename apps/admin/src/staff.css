@@ -7884,6 +7884,13 @@ output.mail-field-hint {
   box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
 }
 
+/* The paired end-time control opens toward the available edge, keeping the AM/PM column
+   inside a narrow modal instead of letting the picker be clipped on the right. */
+.time-input--picker-end .time-input__picker {
+  right: 0;
+  left: auto;
+}
+
 .time-input__picker--twelve-hour {
   grid-template-columns: minmax(4.5rem, 1fr) minmax(4.5rem, 1fr) minmax(4rem, 1fr);
   max-width: min(17rem, calc(100vw - 32px));

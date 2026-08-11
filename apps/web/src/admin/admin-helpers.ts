@@ -217,7 +217,7 @@ export function parseEventDateInput(date: string): Date {
   return new Date(date.includes("T") ? date : `${date}T12:00:00.000Z`);
 }
 
-/** Display-only 24h "HH:MM" for Event.event_hours_start/end — shared by create and patch. */
+/** Display-only 24h "HH:MM" for Event.event_hours_start/end - shared by create and patch. */
 export const eventHoursField = z
   .string()
   .trim()

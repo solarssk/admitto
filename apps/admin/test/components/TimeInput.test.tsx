@@ -44,6 +44,24 @@ describe("TimeInput", () => {
     expect(screen.getByText("Use a time such as 18:00 or 6:00 PM.")).toBeTruthy();
   });
 
+  it("reports that an incomplete typed time cannot be submitted", () => {
+    const onValidityChange = vi.fn();
+    render(
+      <TimeInput
+        hourCycle="24h"
+        label="Event hours start"
+        value=""
+        onChange={vi.fn()}
+        onValidityChange={onValidityChange}
+      />,
+    );
+    const input = screen.getByLabelText("Event hours start");
+    fireEvent.change(input, { target: { value: "6" } });
+    fireEvent.blur(input);
+
+    expect(onValidityChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("accepts AM/PM text and stores the equivalent 24-hour value", () => {
     const onChange = vi.fn();
     render(<TimeInput hourCycle="12h" label="Event hours start" value="" onChange={onChange} />);
@@ -113,5 +131,12 @@ describe("TimeInput", () => {
   it("uses ariaLabel when no visible label is passed", () => {
     render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
     expect(screen.getByLabelText("Start time")).toBeTruthy();
+  });
+
+  it("marks an end-aligned picker for right-edge positioning", () => {
+    const { container } = render(
+      <TimeInput ariaLabel="End time" value="" onChange={vi.fn()} pickerAlign="end" />,
+    );
+    expect(container.querySelector(".time-input--picker-end")).toBeTruthy();
   });
 });

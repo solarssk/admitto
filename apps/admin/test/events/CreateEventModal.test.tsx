@@ -182,6 +182,20 @@ describe("CreateEventModal", () => {
     });
   });
 
+  it("does not create an event while a manually entered time is invalid", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const startTime = screen.getByLabelText("Event hours (start)");
+    fireEvent.change(startTime, { target: { value: "6" } });
+    fireEvent.blur(startTime);
+
+    const createButton = screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement;
+    expect(createButton.disabled).toBe(true);
+    fireEvent.click(createButton);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
   it("keeps the event-hours hint with its paired controls", () => {
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
 

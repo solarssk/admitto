@@ -888,29 +888,41 @@ describe("PATCH /api/admin/events/:eventId", () => {
   });
 
   it("updates event_hours_start/end and clears them with null", async () => {
-    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+    const original = await prisma.event.findUniqueOrThrow({
+      where: { id: EVENT_SET },
+      select: { event_hours_start: true, event_hours_end: true },
     });
-    expect(setRes.status).toBe(200);
-    const setBody = (await setRes.json()) as {
-      event: { event_hours_start: string | null; event_hours_end: string | null };
-    };
-    expect(setBody.event.event_hours_start).toBe("18:00");
-    expect(setBody.event.event_hours_end).toBe("22:00");
 
-    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
-      method: "PATCH",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ event_hours_start: null, event_hours_end: null }),
-    });
-    expect(clearRes.status).toBe(200);
-    const clearBody = (await clearRes.json()) as {
-      event: { event_hours_start: string | null; event_hours_end: string | null };
-    };
-    expect(clearBody.event.event_hours_start).toBeNull();
-    expect(clearBody.event.event_hours_end).toBeNull();
+    try {
+      const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+      });
+      expect(setRes.status).toBe(200);
+      const setBody = (await setRes.json()) as {
+        event: { event_hours_start: string | null; event_hours_end: string | null };
+      };
+      expect(setBody.event.event_hours_start).toBe("18:00");
+      expect(setBody.event.event_hours_end).toBe("22:00");
+
+      const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_hours_start: null, event_hours_end: null }),
+      });
+      expect(clearRes.status).toBe(200);
+      const clearBody = (await clearRes.json()) as {
+        event: { event_hours_start: string | null; event_hours_end: string | null };
+      };
+      expect(clearBody.event.event_hours_start).toBeNull();
+      expect(clearBody.event.event_hours_end).toBeNull();
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: original,
+      });
+    }
   });
 
   it("returns 400 when slug is sent (strict schema)", async () => {

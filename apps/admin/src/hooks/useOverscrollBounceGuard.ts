@@ -30,7 +30,8 @@ export function useOverscrollBounceGuard(ref: RefObject<HTMLElement | null>, ope
       // let their end-of-list gesture chain into the page behind the modal.
       let nested = event.target instanceof Element ? event.target : null;
       while (nested && nested !== el) {
-        if (nested.scrollHeight > nested.clientHeight) return;
+        const overflowY = window.getComputedStyle(nested).overflowY;
+        if ((overflowY === "auto" || overflowY === "scroll") && nested.scrollHeight > nested.clientHeight) return;
         nested = nested.parentElement;
       }
       // 2px tolerance for sub-pixel scroll positions (same as useScrollFade) —

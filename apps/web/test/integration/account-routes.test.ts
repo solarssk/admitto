@@ -1033,11 +1033,16 @@ describe("PATCH /api/account/profile — preferred_time_format", () => {
   });
 
   it("clears the time preference with null", async () => {
-    await app.request("/api/account/profile", {
+    const set = await app.request("/api/account/profile", {
       method: "PATCH",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
       body: JSON.stringify({ preferred_time_format: "24h" }),
     });
+    expect(set.status).toBe(200);
+    expect((await set.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: "24h" }),
+    );
+
     const res = await app.request("/api/account/profile", {
       method: "PATCH",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
