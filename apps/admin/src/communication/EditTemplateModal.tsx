@@ -18,6 +18,9 @@ export interface EditTemplateDraft {
 export interface EditTemplateModalProps {
   open: boolean;
   template: MailTemplateListItem | null;
+  /** Localized timestamp from the event's timezone, available after opening the pencil dialog
+   * for touch users who cannot inspect the toolbar hover tooltip. */
+  lastEdited?: string | null;
   busy: boolean;
   onClose: () => void;
   onSave: (templateId: string, draft: EditTemplateDraft) => void;
@@ -30,6 +33,7 @@ export interface EditTemplateModalProps {
 export function EditTemplateModal({
   open,
   template,
+  lastEdited = null,
   busy,
   onClose,
   onSave,
@@ -92,6 +96,7 @@ export function EditTemplateModal({
             Rename this template, give it an icon, and add a short description to tell it apart
             from the others in the picker. This does not change its subject or body.
           </p>
+          {lastEdited && <p className="add-attendee-modal__hint">Last edited {lastEdited}</p>}
           <div className="add-attendee-modal__fields">
             <Input
               label="Template label"

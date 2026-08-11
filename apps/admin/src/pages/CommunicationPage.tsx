@@ -831,6 +831,11 @@ function TemplatePickerBar({
   const activeMeta = templates.find((t) => t.id === activeKey);
   const isDefault = activeKey === "virtual-ticket" && source !== "event";
   const identityBusy = templateActionBusy || contentSaving;
+  // Archive and unavailable-state reasons take precedence over the informational timestamp;
+  // nesting both tooltips makes two portal bubbles appear for one disabled pencil control.
+  const editTimestamp = activeMeta && canEdit && !identityBusy && !isEventArchived(event)
+    ? `Last edited ${formatEventDate(activeMeta.updated_at, event.timezone)}`
+    : undefined;
   return (
     <Card>
       <div className="communication-template-picker">
@@ -859,24 +864,28 @@ function TemplatePickerBar({
           )
         )}
         <span className="communication-template-picker__actions">
-          <ArchivedGuard
-            event={event}
-            reasonId="edit-template-reason"
-            disabled={!canEdit || identityBusy}
-            tooltip={!canEdit ? "Save this template once to edit its details." : undefined}
+          <Tooltip
+            content={editTimestamp}
           >
-            {(guard) => (
-              <button
-                type="button"
-                className="communication-template-picker__edit"
-                aria-label="Edit template"
-                onClick={onEdit}
-                {...guard}
-              >
-                <i className="ti ti-pencil" aria-hidden="true" />
-              </button>
-            )}
-          </ArchivedGuard>
+            <ArchivedGuard
+              event={event}
+              reasonId="edit-template-reason"
+              disabled={!canEdit || identityBusy}
+              tooltip={!canEdit ? "Save this template once to edit its details." : undefined}
+            >
+              {(guard) => (
+                <button
+                  type="button"
+                  className="communication-template-picker__edit"
+                  aria-label="Edit template"
+                  onClick={onEdit}
+                  {...guard}
+                >
+                  <i className="ti ti-pencil" aria-hidden="true" />
+                </button>
+              )}
+            </ArchivedGuard>
+          </Tooltip>
           <ArchivedGuard event={event} reasonId="new-template-reason" disabled={templateActionBusy}>
             {(guard) => (
               <Button
@@ -2577,6 +2586,9 @@ export function CommunicationPage() {
       <EditTemplateModal
         open={editModalOpen}
         template={activeTemplateMeta}
+        lastEdited={
+          activeTemplateMeta ? formatEventDate(activeTemplateMeta.updated_at, event.timezone) : null
+        }
         busy={templateActionBusy || saving}
         onClose={() => {
           if (templateActionBusy || saving) return;

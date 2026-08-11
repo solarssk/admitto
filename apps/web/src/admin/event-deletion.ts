@@ -3,7 +3,9 @@
  *
  * Delete does not require the event to be archived first - it is reachable for any
  * event (active or archived) that has no retained attendees or event-specific content
- * across six independent signals plus no pinned note. Archiving is a separate,
+ * across six independent signals plus no pinned note. A saved `ticket` template is the
+ * event's replaceable copy of the built-in default, rather than independent event content, so
+ * it is removed with the event instead of blocking deletion. Archiving is a separate,
  * independently useful action (marks an event read-only/done) but is no longer a delete
  * prerequisite: an otherwise-empty event is equally safe to delete whether or not it has
  * been archived. Both the Event Settings DTO hint (`is_deletable` / `deletion_blockers`,
@@ -15,9 +17,9 @@
  * CheckIn/EmailDelivery/WalletPass rows (those all require an Attendee row first, and the
  * existing attendee-delete route already cleans them up transactionally - see
  * attendees-api-routes.ts). EventItem/EventContact/EventResource/TicketType cascade on event
- * delete. MailTemplate has no FK to Event (matched by scope_id string) so it can't block the
- * delete at the DB level - the guard checks it explicitly, and the transaction below
- * defensively removes any event-scoped template so nothing is left orphaned.
+ * delete. MailTemplate has no FK to Event (matched by scope_id string) so custom templates
+ * can't block the delete at the DB level - the guard checks them explicitly, and the transaction
+ * below removes all event-scoped templates so nothing is left orphaned.
  * AttendeeActionLog.event_id cascades on event delete too. Operational history (exports,
  * config changes, attendee_erased rows with null attendee_id) is deliberately NOT a
  * deletability signal: demo/test events would otherwise become permanently undeletable after
@@ -31,7 +33,7 @@ import { BADGE_ITEM_KEY, STANDARD_TICKET_TYPE_KEY, writeAdminAuditLog } from "@a
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import {
-  lockEventForMailSettingsWrite,
+  lockEventForScopedWrite,
   requireAuditActor,
   requireEventId,
   requireSuperadmin,
@@ -78,7 +80,12 @@ export async function countEventActivitySignals(
     db.ticketType.count({ where: { event_id: eventId, key: { not: STANDARD_TICKET_TYPE_KEY } } }),
     db.eventContact.count({ where: { event_id: eventId } }),
     db.eventResource.count({ where: { event_id: eventId } }),
-    db.mailTemplate.count({ where: { scope_type: "event", scope_id: eventId } }),
+    // A saved `ticket` row is only an event-local override of the built-in default. It cannot
+    // be deleted on its own, but permanent event deletion can safely discard it. Only additional
+    // templates represent retained event content.
+    db.mailTemplate.count({
+      where: { scope_type: "event", scope_id: eventId, name: { not: "ticket" } },
+    }),
   ]);
   return {
     attendeeCount,
@@ -149,7 +156,7 @@ export async function deleteEvent(
       // that route) - without this, a concurrent PUT can validate the event exists, then
       // this transaction deletes it, then the PUT's upsert recreates an orphaned
       // MailSettings row with no FK to catch it (CodeRabbit review).
-      await lockEventForMailSettingsWrite(tx, eventId);
+      await lockEventForScopedWrite(tx, eventId);
 
       const event = await tx.event.findUnique({
         where: { id: eventId },
@@ -179,9 +186,8 @@ export async function deleteEvent(
         ...imageAssets.map((asset) => asset.url),
       ];
 
-      // Defensive cleanup: MailTemplate has no FK to Event, so this is a no-op given the
-      // guard above already requires eventMailTemplateCount === 0 - kept so a deleted
-      // event can never leave an orphaned scope_id behind under any future race.
+      // MailTemplate has no FK to Event. Custom rows have already been ruled out by the guard;
+      // an optional saved `ticket` override is intentionally removed here with the event.
       await tx.mailTemplate.deleteMany({ where: { scope_type: "event", scope_id: eventId } });
 
       // MailSettings (event-scoped mail transport override, #511) is the same polymorphic

@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
@@ -125,6 +125,17 @@ async function deleteEventRequest(eventId: string, cookie: string, headers: Reco
   return app.request(`/api/admin/events/${eventId}`, {
     method: "DELETE",
     headers: { Cookie: cookie, ...headers },
+  });
+}
+
+async function createEventTemplateRequest(eventId: string) {
+  return app.request(`/api/admin/events/${eventId}/templates`, {
+    method: "POST",
+    headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      label: "Concurrent reminder",
+      template_format: "mjml",
+    }),
   });
 }
 
@@ -287,7 +298,7 @@ describe("DELETE /api/admin/events/:eventId", () => {
     expect(event).not.toBeNull();
   });
 
-  it("returns 409 when archived but has an event-scoped mail template", async () => {
+  it("allows delete when the only event-scoped mail template is the saved ticket override", async () => {
     const eventId = await createEvent({ archived: true });
     await prisma.mailTemplate.create({
       data: {
@@ -295,6 +306,84 @@ describe("DELETE /api/admin/events/:eventId", () => {
         scope_id: eventId,
         name: "ticket",
         label: "Ticket email",
+        subject_template: "Subject",
+        body_template: "Body",
+        template_format: "html",
+        compiled_html_template: "<p>Body</p>",
+      },
+    });
+
+    const res = await deleteEventRequest(eventId, superCookie);
+    expect(res.status).toBe(200);
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    expect(event).toBeNull();
+
+    const template = await prisma.mailTemplate.findFirst({
+      where: { scope_type: "event", scope_id: eventId },
+    });
+    expect(template).toBeNull();
+  });
+
+  it("serializes template creation with deletion so no orphaned MailTemplate can remain", async () => {
+    const eventId = await createEvent({ archived: true });
+    // Both requests take the same advisory lock inside their mutations. The order is intentionally
+    // unspecified: creation first makes deletion see real content, while deletion first makes the
+    // creation re-check find no event. Either outcome is safe; an event that was deleted can never
+    // retain a polymorphic MailTemplate row with no foreign key to remove it.
+    const [createResponse, deleteResponse] = await Promise.all([
+      createEventTemplateRequest(eventId),
+      deleteEventRequest(eventId, superCookie),
+    ]);
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    const templates = await prisma.mailTemplate.findMany({
+      where: { scope_type: "event", scope_id: eventId },
+    });
+
+    if (event === null) {
+      expect(deleteResponse.status).toBe(200);
+      // The access check runs before the locked re-check, so a request that reached the route
+      // after deletion can be rejected as either no-longer-in-scope (403) or not found (404).
+      expect([403, 404]).toContain(createResponse.status);
+      expect(templates).toEqual([]);
+    } else {
+      expect(deleteResponse.status).toBe(409);
+      expect(createResponse.status).toBe(201);
+      expect(templates).toHaveLength(1);
+    }
+  });
+
+  it("returns 404 without creating a template when deletion wins after access validation", async () => {
+    const eventId = await createEvent({ archived: false });
+    // The initial access check completed. Permanent deletion then lands while the request waits
+    // for its transaction, so the locked re-check must turn the stale create into a 404.
+    const transaction = vi.spyOn(prisma, "$transaction").mockImplementation(
+      (async (callback: unknown) => {
+        await prisma.event.delete({ where: { id: eventId } });
+        return (callback as (tx: PrismaClient) => Promise<unknown>)(prisma);
+      }) as never,
+    );
+
+    try {
+      const res = await createEventTemplateRequest(eventId);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+      expect(
+        await prisma.mailTemplate.count({ where: { scope_type: "event", scope_id: eventId } }),
+      ).toBe(0);
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
+  it("returns 409 when archived but has an additional event-scoped mail template", async () => {
+    const eventId = await createEvent({ archived: true });
+    await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: eventId,
+        name: "reminder",
+        label: "Reminder",
         subject_template: "Subject",
         body_template: "Body",
         template_format: "html",

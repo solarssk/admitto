@@ -54,7 +54,7 @@ Tab inventory:
 1. Open **Event settings** → **Danger zone**.
 2. Use **Revoke all check-ins** or **Revoke all items issued** only when the event process requires a bulk undo (each asks for confirmation).
 3. Ask a Superadmin to **Archive event** when the event should become fully read-only.
-4. **Delete event** is Superadmin-only. It is available when the event has no attendees and no event-specific content left to clear (custom items, custom ticket types, contacts, resources, pinned note, or event mail template). Operational history alone does not block delete. Confirming requires typing the event title.
+4. **Delete event** is Superadmin-only. It is available when the event has no attendees and no event-specific content left to clear (custom items, custom ticket types, contacts, resources, pinned note, or additional named mail templates). A saved Ticket email override is removed with the event and does not block deletion. Operational history alone does not block delete. Confirming requires typing the event title.
 
 ## Expected result
 

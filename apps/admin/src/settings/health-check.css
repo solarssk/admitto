@@ -293,6 +293,14 @@
     display: block;
   }
 
+  /* The shared menu may widen to its longest hint. Keep this Health check action list compact
+     on phones; the hints wrap within the panel instead of making it span most of the screen. */
+  .health-check__actions .more-actions-menu__panel {
+    box-sizing: border-box;
+    width: min(260px, calc(100vw - (2 * var(--space-4))));
+    min-width: 0;
+  }
+
   .health-check__detail {
     grid-template-columns: 1fr;
     gap: 0.1rem;

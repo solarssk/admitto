@@ -164,6 +164,16 @@ async function patchTemplateMetadata(
   });
 }
 
+/** Simulate a concurrent delete after a route has loaded a template but before it has its lock. */
+function deleteTemplateBeforeNextTransaction(templateId: string) {
+  return vi.spyOn(prisma, "$transaction").mockImplementation(
+    (async (callback: unknown) => {
+      await prisma.mailTemplate.delete({ where: { id: templateId } });
+      return (callback as (tx: PrismaClient) => Promise<unknown>)(prisma);
+    }) as never,
+  );
+}
+
 async function ensureEventB(client: PrismaClient) {
   const existing = await client.event.findUnique({ where: { id: EVENT_B } });
   if (existing) return;
@@ -1225,5 +1235,118 @@ describe("multi-template API", () => {
     expect(row.label).toBe("Reminder (renamed)");
     expect(row.icon).toBe("bell");
     expect(row.subject_template).toBe("Updated {{event_name}}");
+  });
+
+  it("PUT /templates/:id returns 404 instead of recreating a template deleted while it waits for the event lock", async () => {
+    const created = await postNamedTemplate(app, "Race reminder");
+    const transaction = deleteTemplateBeforeNextTransaction(created.id);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${created.id}`, {
+        method: "PUT",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify(validTemplate),
+      });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+      expect(await prisma.mailTemplate.findUnique({ where: { id: created.id } })).toBeNull();
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
+  it("PUT /templates/:id preserves an unexpected write failure as a server error", async () => {
+    const created = await postNamedTemplate(app, "Unexpected write reminder");
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${created.id}`, {
+        method: "PUT",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify(validTemplate),
+      });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "internal_error" });
+    } finally {
+      consoleError.mockRestore();
+      transaction.mockRestore();
+    }
+  });
+
+  it("PATCH /templates/:id returns 404 when the template disappears after validation", async () => {
+    const created = await postNamedTemplate(app, "Metadata race reminder");
+    const transaction = deleteTemplateBeforeNextTransaction(created.id);
+
+    try {
+      const res = await patchTemplateMetadata(app, created.id, { label: "Renamed reminder" });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+      expect(await prisma.mailTemplate.findUnique({ where: { id: created.id } })).toBeNull();
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
+  it("PATCH /templates/:id preserves an unexpected write failure as a server error", async () => {
+    const created = await postNamedTemplate(app, "Unexpected metadata reminder");
+    const transaction = vi.spyOn(prisma, "$transaction").mockRejectedValue(new Error("database unavailable"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const res = await patchTemplateMetadata(app, created.id, { label: "Renamed reminder" });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "internal_error" });
+    } finally {
+      consoleError.mockRestore();
+      transaction.mockRestore();
+    }
+  });
+
+  it("DELETE /templates/:id returns 404 when the template disappears after validation", async () => {
+    const created = await postNamedTemplate(app, "Delete race reminder");
+    const transaction = deleteTemplateBeforeNextTransaction(created.id);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${created.id}`, {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+      expect(await prisma.mailTemplate.findUnique({ where: { id: created.id } })).toBeNull();
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
+  it("DELETE /templates/:id still protects a template that becomes the required ticket template", async () => {
+    const created = await postNamedTemplate(app, "Custom template becoming ticket");
+    const transaction = vi.spyOn(prisma, "$transaction").mockImplementation(
+      (async (callback: unknown) => {
+        await prisma.mailTemplate.update({ where: { id: created.id }, data: { name: "ticket" } });
+        return (callback as (tx: PrismaClient) => Promise<unknown>)(prisma);
+      }) as never,
+    );
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${created.id}`, {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(422);
+      expect(await res.json()).toEqual({ error: "template_required" });
+      expect(await prisma.mailTemplate.findUnique({ where: { id: created.id } })).not.toBeNull();
+    } finally {
+      transaction.mockRestore();
+    }
   });
 });
