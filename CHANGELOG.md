@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-08-11
+
 ### Added
 - **Deploy docs:** clearer first-boot checklist (what must be env vs UI), Portainer/NPM without compose nginx (Variant B), and a generated environment dictionary ([`deploy/ENV.md`](deploy/ENV.md)) built from code scan + [`deploy/env-catalog.json`](deploy/env-catalog.json) (`npm run docs:env`; drift checked by `npm run docs:check`).
 - Event Overview's Recent activity now also shows attendees added and items issued/returned/revoked, alongside check-ins, mail failures, and imports.
@@ -904,7 +906,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.13...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.14...HEAD
+[0.4.14]: https://github.com/solarssk/admitto/compare/v0.4.13...v0.4.14
 [0.4.13]: https://github.com/solarssk/admitto/compare/v0.4.12...v0.4.13
 [0.4.12]: https://github.com/solarssk/admitto/compare/v0.4.11...v0.4.12
 [0.4.11]: https://github.com/solarssk/admitto/compare/v0.4.10...v0.4.11
