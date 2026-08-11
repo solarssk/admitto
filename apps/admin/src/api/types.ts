@@ -1131,6 +1131,7 @@ export interface SystemSettingsDto {
   trusted_device_days: SecuritySettingField<number>;
   mfa_required_roles: SecuritySettingField<string[]>;
   instance_url: SecuritySettingField<string | null>;
+  csp_trusted_origins: SecuritySettingField<string[]>;
 }
 
 export interface PatchSystemSettingsBody {
@@ -1141,6 +1142,7 @@ export interface PatchSystemSettingsBody {
   trusted_device_days?: number | null;
   mfa_required_roles?: string[] | null;
   instance_url?: string | null;
+  csp_trusted_origins?: string[] | null;
 }
 
 export interface RoleAssignmentDto {

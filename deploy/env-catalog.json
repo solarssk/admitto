@@ -629,6 +629,15 @@
       "summary": "Comma-separated roles that must enroll MFA (default admin,superadmin)."
     },
     {
+      "name": "CSP_TRUSTED_ORIGINS",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Settings → Security (preferred); env locks UI",
+      "summary": "JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages."
+    },
+    {
       "name": "CF_ACCESS_ENABLED",
       "group": "identity",
       "boot": "optional",

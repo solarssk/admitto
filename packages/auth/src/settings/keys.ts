@@ -23,6 +23,10 @@ export const SETTING_SETUP_COMPLETE = "setup_complete";
 /** Public instance URL for ticket links and mail asset absolutization (v0.4.9). */
 export const SETTING_INSTANCE_URL = "instance_url";
 
+/** Extra https:// origins trusted to run script / send data on the staff SPA and auth pages
+ *  (e.g. an analytics beacon or a Turnstile-style login challenge widget). */
+export const SETTING_CSP_TRUSTED_ORIGINS = "csp_trusted_origins";
+
 export const SYSTEM_SETTING_KEYS = [
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
@@ -37,4 +41,5 @@ export const SYSTEM_SETTING_KEYS = [
   SETTING_BRANDING_THEME,
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
+  SETTING_CSP_TRUSTED_ORIGINS,
 ] as const;

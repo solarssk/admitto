@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Organisation Settings → Logs: on iPhone browsers, opening Filters or typing a date no longer leaves the page or the calendar clipped behind the software keyboard. Filter and option panels now stay within the visible screen and scroll when necessary.
 - Timezone selection now uses one global IANA timezone catalogue with legacy aliases folded into their preferred current names. Map suggestions, event saves, and the picker consistently use one entry, for example, `Asia/Calcutta` is accepted but shown and saved as `Asia/Kolkata`.
 
+### Added
+- Organisation Settings → Security: superadmins can now allow specific third-party `https://` origins to run script, send data, and (on sign-in pages) render an embedded widget, for example an analytics/monitoring beacon like Cloudflare Web Analytics or a login challenge widget like Cloudflare Turnstile, without weakening the Content-Security-Policy for anything else.
+
 ## [0.4.14] - 2026-08-11
 
 ### Added

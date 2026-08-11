@@ -20,6 +20,7 @@ import {
   type SetupFormValues,
 } from "./setup-page.js";
 import { createAuthPageScriptNonce } from "./auth-page-security.js";
+import { resolveCspTrustedOriginsSafe } from "./csp-trusted-origins.js";
 import { parseOptionalClientTimezone } from "./admin/timezone.js";
 
 const DISPLAY_NAME_MAX = 120;
@@ -43,8 +44,14 @@ export async function resolveStaffEntryPath(db: PrismaClient): Promise<"/setup" 
 }
 
 /** Apply setup page security headers and return an HTML response. */
-function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 409 = 200): Response {
-  for (const [name, value] of Object.entries(getSetupPageSecurityHeaders(scriptNonce))) {
+function htmlResponse(
+  c: Context,
+  html: string,
+  scriptNonce: string,
+  status: 200 | 409 = 200,
+  trustedOrigins: readonly string[] = [],
+): Response {
+  for (const [name, value] of Object.entries(getSetupPageSecurityHeaders(scriptNonce, trustedOrigins))) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -116,8 +123,9 @@ export async function handleGetSetup(c: Context, db: PrismaClient): Promise<Resp
   if (!(await isFirstRunRequired(db))) {
     return c.redirect("/login", 302);
   }
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   const scriptNonce = createAuthPageScriptNonce();
-  return htmlResponse(c, renderSetupPage(scriptNonce), scriptNonce);
+  return htmlResponse(c, renderSetupPage(scriptNonce), scriptNonce, 200, trustedOrigins);
 }
 
 /** POST /setup — create superadmin, mark setup incomplete, auto-login → MFA enroll. */
@@ -128,9 +136,16 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
 
   const form = await parseSetupForm(c);
   const validated = validateSetupForm(form);
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   if (!validated.ok) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderSetupPage(scriptNonce, validated.code, validated.values), scriptNonce);
+    return htmlResponse(
+      c,
+      renderSetupPage(scriptNonce, validated.code, validated.values),
+      scriptNonce,
+      200,
+      trustedOrigins,
+    );
   }
 
   const { email, password, displayName } = validated;
@@ -172,6 +187,8 @@ export async function handlePostSetup(c: Context, db: PrismaClient): Promise<Res
         c,
         renderSetupPage(scriptNonce, "email_taken", { email, display_name: displayName ?? undefined }),
         scriptNonce,
+        200,
+        trustedOrigins,
       );
     }
     throw err;

@@ -5,7 +5,8 @@ import {
   userRequiresMfaStepUp,
   verifyOidcLinkStepUp,
 } from "@admitto/auth";
-import { createAuthPageScriptNonce } from "../auth-page-security.js";
+import { applyAuthPageSecurityHeaders, createAuthPageScriptNonce } from "../auth-page-security.js";
+import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
 import { getOidcLinkPageSecurityHeaders, renderOidcLinkForm } from "./oidc-link-page.js";
@@ -16,10 +17,14 @@ import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
 const LINK_ERROR = "Invalid password or code. Try again.";
 
-function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 401 = 200): Response {
-  for (const [name, value] of Object.entries(getOidcLinkPageSecurityHeaders(scriptNonce))) {
-    c.header(name, value);
-  }
+function htmlResponse(
+  c: Context,
+  html: string,
+  scriptNonce: string,
+  status: 200 | 401 = 200,
+  trustedOrigins: readonly string[] = [],
+): Response {
+  applyAuthPageSecurityHeaders(c, getOidcLinkPageSecurityHeaders(scriptNonce, trustedOrigins));
   return c.html(html, status);
 }
 
@@ -71,10 +76,13 @@ export async function handleGetOidcLink(c: Context, db: PrismaClient): Promise<R
   }
 
   const requiresTotp = await requiresTotpForUser(db, auth.userId);
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   return htmlResponse(
     c,
     renderLinkForm(scriptNonce, providerId, provider.display_name, requiresTotp, next),
     scriptNonce,
+    200,
+    trustedOrigins,
   );
 }
 
@@ -102,6 +110,7 @@ export async function handlePostOidcLink(
   }
 
   const requiresTotp = await requiresTotpForUser(db, auth.userId);
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
 
   if (!password) {
     return htmlResponse(
@@ -109,6 +118,7 @@ export async function handlePostOidcLink(
       renderLinkForm(scriptNonce, providerId, provider.display_name, requiresTotp, next, LINK_ERROR),
       scriptNonce,
       401,
+      trustedOrigins,
     );
   }
 
@@ -139,6 +149,7 @@ export async function handlePostOidcLink(
       renderLinkForm(scriptNonce, providerId, provider.display_name, requiresTotp, next, message),
       scriptNonce,
       401,
+      trustedOrigins,
     );
   }
 

@@ -9,13 +9,19 @@ import { renderNoticeHtml } from "./auth-notice.js";
 import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
 /** Security headers for MFA verify (nonce-gated inline script for OTP digit widget). */
-export function getMfaPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getMfaPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 /** MFA enroll allows nonce-gated inline script for clipboard copy and OTP widget. */
-export function getMfaEnrollPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getMfaEnrollPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 interface AuthOtpCodeFieldOptions {
