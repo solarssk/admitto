@@ -565,7 +565,7 @@ export function createApp(options: CreateAppOptions = {}) {
     onError: (c) => c.json({ error: "file too large" }, 413),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
-  const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
+  const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot, db });
 
   void sweepExpiredOidcAuthStates(db).catch((err) => {
     console.error("OidcAuthState sweep failed:", err);
@@ -1488,7 +1488,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/setup", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostSetup(c, db));
   app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
-  app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c));
+  app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c, db));
   app.post("/mfa/verify", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaVerify(c, db, rateLimitStore),
   );

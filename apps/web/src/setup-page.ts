@@ -26,8 +26,11 @@ function esc(s: string): string {
 }
 
 /** Security headers for server-rendered first-run setup page. */
-export function getSetupPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getSetupPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 export type SetupErrorCode =

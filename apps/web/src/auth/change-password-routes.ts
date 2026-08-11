@@ -20,14 +20,23 @@ import {
   PASSWORD_COMPLETE_FAILED,
 } from "../change-password-page.js";
 import { createAuthPageScriptNonce } from "../auth-page-security.js";
+import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
 import { resolveInstanceOrganizationId } from "../admin/instance-org.js";
 
-function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 400 = 200): Response {
-  for (const [name, value] of Object.entries(getChangePasswordPageSecurityHeaders(scriptNonce))) {
+function htmlResponse(
+  c: Context,
+  html: string,
+  scriptNonce: string,
+  status: 200 | 400 = 200,
+  trustedOrigins: readonly string[] = [],
+): Response {
+  for (const [name, value] of Object.entries(
+    getChangePasswordPageSecurityHeaders(scriptNonce, trustedOrigins),
+  )) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -72,8 +81,9 @@ async function requireForcedPasswordChange(
 export async function handleGetChangePassword(c: Context, db: PrismaClient): Promise<Response> {
   const gate = await requireForcedPasswordChange(c, db);
   if (gate instanceof Response) return gate;
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   const scriptNonce = createAuthPageScriptNonce();
-  return htmlResponse(c, renderChangePasswordForm(scriptNonce), scriptNonce);
+  return htmlResponse(c, renderChangePasswordForm(scriptNonce), scriptNonce, 200, trustedOrigins);
 }
 
 /** POST /change-password — update password, clear flag, revoke other sessions. */
@@ -84,19 +94,20 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
   const form = await parseForm(c);
   const password = form.password ?? "";
   const confirm = form.password_confirm ?? "";
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
 
   if (password.length < PASSWORD_MIN_LENGTH) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_SHORT), scriptNonce, 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_SHORT), scriptNonce, 400, trustedOrigins);
   }
   if (isPasswordTooCommon(password)) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_COMMON_CODE), scriptNonce, 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_TOO_COMMON_CODE), scriptNonce, 400, trustedOrigins);
   }
   // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
   if (password !== confirm) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_MISMATCH), scriptNonce, 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, PASSWORD_MISMATCH), scriptNonce, 400, trustedOrigins);
   }
 
   try {
@@ -145,6 +156,6 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
         ? PASSWORD_COMPLETE_FAILED
         : PASSWORD_INVALID;
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderChangePasswordForm(scriptNonce, message), scriptNonce, 400);
+    return htmlResponse(c, renderChangePasswordForm(scriptNonce, message), scriptNonce, 400, trustedOrigins);
   }
 }

@@ -53,8 +53,11 @@ function loginAutofillClearScript(scriptNonce: string): string {
  * Referrer-Policy same-origin is the primary CSRF signal for HTML form POSTs (Safari);
  * Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
  */
-export function getLoginPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getLoginPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 /** SSO provider link for login footer. */

@@ -22,8 +22,11 @@ function esc(s: string): string {
 }
 
 /** Security headers for the OIDC account-link step-up page (same CSP as other auth HTML). */
-export function getOidcLinkPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getOidcLinkPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 export interface RenderOidcLinkFormOptions {
