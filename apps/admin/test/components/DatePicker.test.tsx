@@ -8,7 +8,25 @@ import * as eventDates from "../../src/utils/event-dates.js";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+function mockVisualViewport(
+  width: number,
+  getHeight: () => number,
+  getOffsetTop: () => number = () => 0,
+  getOffsetLeft: () => number = () => 0,
+): VisualViewport {
+  const viewport = new EventTarget();
+  Object.defineProperties(viewport, {
+    width: { value: width },
+    height: { get: getHeight },
+    offsetTop: { get: getOffsetTop },
+    offsetLeft: { get: getOffsetLeft },
+  });
+  vi.stubGlobal("visualViewport", viewport);
+  return viewport as VisualViewport;
+}
 
 function mockOpenCalendarBasics() {
   vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
@@ -364,8 +382,69 @@ describe("DatePicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Choose date" });
-    expect(dialog.style.maxHeight).toBe("160px");
+    expect(dialog.style.maxHeight).toBe("96px");
     expect(dialog.style.overflowY).toBe("auto");
+  });
+
+  it("never raises a calendar above less than 160px of available viewport space", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 50, bottom: 60, left: 50 },
+      panelHeight: 500,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 120,
+    });
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.style.maxHeight).toBe("46px");
+    expect(dialog.style.overflowY).toBe("auto");
+  });
+
+  it("repositions and clamps for Safari's visual viewport when the keyboard opens", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 350, bottom: 390, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    let visualHeight = 768;
+    const visualViewport = mockVisualViewport(390, () => visualHeight);
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.className).not.toContain("date-picker__panel--above");
+
+    visualHeight = 440;
+    act(() => visualViewport.dispatchEvent(new Event("resize")));
+    expect(dialog.className).toContain("date-picker__panel--above");
+    expect(dialog.style.maxHeight).toBe("");
+  });
+
+  it("keeps the calendar within the panned visual viewport", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 500, bottom: 540, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    mockVisualViewport(390, () => 400, () => 300);
+
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Choose date" });
+    expect(dialog.className).toContain("date-picker__panel--above");
+    expect(dialog.style.top).toBe("308px");
+    expect(dialog.style.maxHeight).toBe("186px");
   });
 
   it("does not clamp the panel's height when it fits in the available space", async () => {

@@ -38,7 +38,7 @@ import { emitSystemLog } from "@admitto/shared/system-log";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
-  lockEventForMailSettingsWrite,
+  lockEventForScopedWrite,
   requireEventId,
   requireSuperadmin,
 } from "./admin-helpers.js";
@@ -158,7 +158,7 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
       // this request holds the lock, so two racing PUTs can no longer both validate
       // against stale pre-write state and then serialize into a merged configuration
       // that was never actually validated as a whole (CodeRabbit review, round 2).
-      await lockEventForMailSettingsWrite(tx, eventId);
+      await lockEventForScopedWrite(tx, eventId);
       const stillExists = await tx.event.findUnique({ where: { id: eventId }, select: { id: true } });
       if (!stillExists) throw new EventGoneDuringWriteError();
 

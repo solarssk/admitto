@@ -25,6 +25,7 @@ function makeSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
     expiresAt: "2026-01-02T12:00:00.000Z",
     authMethod: "local",
     stage: "active",
+    timezone: null,
     isCurrent: false,
     ...overrides,
   };
@@ -316,8 +317,8 @@ describe("ActiveSessionsTab rendering", () => {
     renderWithToast(<ActiveSessionsTab />);
 
     await screen.findByRole("table");
-    expect(within(screen.getByText("local@example.com").closest("tr")!).getByText("Local")).toBeTruthy();
-    expect(within(screen.getByText("sso@example.com").closest("tr")!).getByText("SSO")).toBeTruthy();
+    expect(within(screen.getByText("local@example.com").closest("tr")!).getByText("Local password")).toBeTruthy();
+    expect(within(screen.getByText("sso@example.com").closest("tr")!).getByText("Identity provider")).toBeTruthy();
   });
 
   it("reports the loaded session count to the parent for the tab label", async () => {
@@ -543,7 +544,7 @@ describe("ActiveSessionsTab rendering", () => {
     });
   });
 
-  it("shows the login time in UTC with the viewer's own local time below it, and an explanatory tooltip on the column header", async () => {
+  it("shows the login time in UTC with the viewer's own local time below it when no signer timezone is stored", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(new Date("2026-01-01T13:00:00.000Z").getTime());
     try {
       vi.mocked(fetchSessions).mockResolvedValue({
@@ -556,17 +557,34 @@ describe("ActiveSessionsTab rendering", () => {
       expect(within(table).getByText("-")).toBeTruthy();
       expect(within(table).getByText("30 min ago")).toBeTruthy();
       expect(within(table).getByText("2026-01-01 12:00:00 UTC")).toBeTruthy();
+      expect(within(table).getByTitle("Your local time")).toBeTruthy();
 
       const headerTrigger = within(table).getByText("Logged in").closest(".at-tooltip-trigger");
       expect(headerTrigger).toBeTruthy();
       fireEvent.mouseEnter(headerTrigger!);
       expect(await screen.findByRole("tooltip")).toHaveProperty(
         "textContent",
-        "Top: when this session started, in UTC. Below: the same moment in your own local time.",
+        "UTC on top. Below (user icon): the signer's local time at login. Missing for older sessions - then your browser timezone (desktop icon).",
       );
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("shows the signer's stored timezone under Logged in when Session.timezone is set", async () => {
+    vi.mocked(fetchSessions).mockResolvedValue({
+      sessions: [
+        makeSession({
+          timezone: "Europe/Warsaw",
+          loginAt: "2026-01-01T12:00:00.000Z",
+        }),
+      ],
+    });
+    renderWithToast(<ActiveSessionsTab />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText(/Warsaw/)).toBeTruthy();
+    expect(within(table).getByTitle("Signer's local time")).toBeTruthy();
   });
 });
 
@@ -876,7 +894,7 @@ describe("ActiveSessionsTab revoke success", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Sign-in method,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Identity provider (SSO)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Identity provider" }));
 
     expect(screen.queryByText("local@example.com")).toBeNull();
     expect(screen.getByText("sso@example.com")).toBeTruthy();

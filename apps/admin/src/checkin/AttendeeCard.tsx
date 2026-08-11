@@ -337,9 +337,9 @@ export function AttendeeCard({
           </div>
         )}
 
-        {/* 4. Secondary actions footer (mockup ci-result__actions). Clear
-            lives only here now, as a small ghost button next to Add note —
-            PREVIEW previously had its own second, block-width Clear button
+        {/* 4. Secondary actions footer (mockup ci-result__actions). Close
+            lives only here now, as a small ghost button next to Add note.
+            PREVIEW previously had its own second, block-width Close button
             directly under Confirm check-in, which read as an oversized,
             visually-competing pair (PO review, round 3). */}
         {(showUndo || onAddNote || onCancel || showRevokeCheckIn) && (
@@ -396,7 +396,7 @@ export function AttendeeCard({
                 onClick={() => onCancel()}
                 icon={<i className="ti ti-x" aria-hidden="true" />}
               >
-                Clear
+                Close
               </Button>
             )}
           </div>

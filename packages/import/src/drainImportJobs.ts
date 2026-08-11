@@ -21,6 +21,9 @@ export type DrainImportJobsResult = {
   reclaimed: number;
   /** Stale `running` jobs healed to succeeded (import already committed). */
   healed: number;
+  /** Event ids with a successfully committed import this tick, for the worker to announce over
+   * SSE (ADR 0044). */
+  eventIds: string[];
 };
 
 type ClaimedImportJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
@@ -102,15 +105,20 @@ export async function drainImportJobs(
   let claimed = 0;
   let succeeded = 0;
   let failed = 0;
+  const eventIds: string[] = [];
 
   for (let i = 0; i < limit; i += 1) {
     const job = await claimNextAdminJob(db, "import_commit");
     if (!job) break;
     claimed += 1;
     const outcome = await processImportJob(db, storage, job);
-    if (outcome === "succeeded") succeeded += 1;
-    else failed += 1;
+    if (outcome === "succeeded") {
+      succeeded += 1;
+      if (job.event_id) eventIds.push(job.event_id);
+    } else {
+      failed += 1;
+    }
   }
 
-  return { claimed, succeeded, failed, reclaimed, healed };
+  return { claimed, succeeded, failed, reclaimed, healed, eventIds };
 }

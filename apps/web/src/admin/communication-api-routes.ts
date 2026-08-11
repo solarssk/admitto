@@ -49,6 +49,7 @@ import {
   adminAuditFromContext,
   assertEventManageAccess,
   csvExportResponse,
+  lockEventForScopedWrite,
   positiveIntQuery,
   requireEventId,
   resolveMailInstanceBaseUrl,
@@ -83,6 +84,10 @@ const templateBodySchema = z
     template_format: z.enum(["mjml", "html"]),
   })
   .strict();
+
+/** The event or the requested template disappeared while this write waited for the same
+ * advisory lock used by permanent event deletion. */
+class EventTemplateGoneDuringWriteError extends Error {}
 
 const testSendBodySchema = z
   .object({
@@ -323,6 +328,7 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 
   try {
     await db.$transaction(async (tx) => {
+      await lockEventForTemplateWrite(tx, eventId);
       // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
       // lock before its asset_in_use recheck - without it, a delete could commit between that
       // handler's check and this save (Postgres default isolation is READ COMMITTED).
@@ -344,27 +350,8 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
       });
     });
   } catch (err) {
-    if (err instanceof UnknownPlaceholdersError) {
-      return templateValidationResponse(
-        c,
-        err.unknown.map((u) => `Unknown placeholder: ${u}`),
-      );
-    }
-    if (err instanceof MjmlCompileError) {
-      return mjmlCompileErrorResponse(c, err);
-    }
-    if (err instanceof PlaceholderInHtmlCommentError) {
-      return templateValidationResponse(
-        c,
-        err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
-      );
-    }
-    if (err instanceof UnquotedAttributePlaceholderError) {
-      return templateValidationResponse(
-        c,
-        err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
-      );
-    }
+    const response = eventTemplateWriteErrorResponse(c, err);
+    if (response) return response;
     throw err;
   }
 
@@ -905,10 +892,51 @@ async function uniqueTemplateName(
   }
 }
 
-async function getEventTemplateRow(db: PrismaClient, eventId: string, templateId: string) {
+async function getEventTemplateRow(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+  templateId: string,
+) {
   return db.mailTemplate.findFirst({
     where: { id: templateId, scope_type: "event", scope_id: eventId },
   });
+}
+
+/** Acquire the deletion lock before touching an event-scoped template, then re-check the event.
+ * MailTemplate's polymorphic scope has no foreign key, so this is what prevents an orphaned row
+ * if permanent deletion committed while a request was waiting for the lock. */
+async function lockEventForTemplateWrite(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+  await lockEventForScopedWrite(tx, eventId);
+  const event = await tx.event.findUnique({ where: { id: eventId }, select: { id: true } });
+  if (!event) throw new EventTemplateGoneDuringWriteError();
+}
+
+/** Re-read a template after taking the event deletion lock so stale writes cannot revive it. */
+async function getLockedEventTemplateRow(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  templateId: string,
+) {
+  await lockEventForTemplateWrite(tx, eventId);
+  const current = await getEventTemplateRow(tx, eventId, templateId);
+  if (!current) throw new EventTemplateGoneDuringWriteError();
+  return current;
+}
+
+/** Maps errors from a locked template write to the API's established validation responses. */
+function eventTemplateWriteErrorResponse(c: Context, err: unknown): Response | undefined {
+  if (err instanceof EventTemplateGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
+  if (err instanceof UnknownPlaceholdersError) {
+    return templateValidationResponse(c, err.unknown.map((u) => `Unknown placeholder: ${u}`));
+  }
+  if (err instanceof MjmlCompileError) return mjmlCompileErrorResponse(c, err);
+  if (err instanceof PlaceholderInHtmlCommentError) {
+    return templateValidationResponse(c, err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`));
+  }
+  if (err instanceof UnquotedAttributePlaceholderError) {
+    return templateValidationResponse(c, err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`));
+  }
+  return undefined;
 }
 
 export type EventTemplateListItemDto = {
@@ -1025,12 +1053,13 @@ export async function handlePutEventTemplateById(
 
   try {
     await db.$transaction(async (tx) => {
+      const current = await getLockedEventTemplateRow(tx, eventId, templateId);
       // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
       // lock before its asset_in_use recheck - without it, a delete could commit between that
       // handler's check and this save (Postgres default isolation is READ COMMITTED).
       await acquireEventImageAssetsLock(tx, eventId);
       await setMailTemplate(
-        { scopeType: "event", scopeId: eventId, name: existing.name },
+        { scopeType: "event", scopeId: eventId, name: current.name },
         {
           subject,
           body: templateBody,
@@ -1049,27 +1078,8 @@ export async function handlePutEventTemplateById(
       });
     });
   } catch (err) {
-    if (err instanceof UnknownPlaceholdersError) {
-      return templateValidationResponse(
-        c,
-        err.unknown.map((u) => `Unknown placeholder: ${u}`),
-      );
-    }
-    if (err instanceof MjmlCompileError) {
-      return mjmlCompileErrorResponse(c, err);
-    }
-    if (err instanceof PlaceholderInHtmlCommentError) {
-      return templateValidationResponse(
-        c,
-        err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
-      );
-    }
-    if (err instanceof UnquotedAttributePlaceholderError) {
-      return templateValidationResponse(
-        c,
-        err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
-      );
-    }
+    const response = eventTemplateWriteErrorResponse(c, err);
+    if (response) return response;
     throw err;
   }
 
@@ -1100,7 +1110,16 @@ export async function handlePatchEventTemplateMetadata(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const updated = await updateMailTemplateMetadata(templateId, body, db);
+  let updated: Awaited<ReturnType<typeof updateMailTemplateMetadata>>;
+  try {
+    updated = await db.$transaction(async (tx) => {
+      await getLockedEventTemplateRow(tx, eventId, templateId);
+      return updateMailTemplateMetadata(templateId, body, tx);
+    });
+  } catch (err) {
+    if (err instanceof EventTemplateGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
+    throw err;
+  }
 
   return c.json({
     id: updated.id,
@@ -1114,8 +1133,8 @@ export async function handlePatchEventTemplateMetadata(
   } satisfies EventTemplateListItemDto);
 }
 
-/** Create the event's template row inside a transaction, serialized against the image-assets
- * delete handler (see lock comment) and re-checking the per-event template cap under lock. */
+/** Create the event's template row inside a transaction, serialized against permanent deletion
+ * and the image-assets delete handler, and re-checking the per-event template cap under lock. */
 async function createEventTemplateRow(
   db: PrismaClient,
   eventId: string,
@@ -1126,6 +1145,7 @@ async function createEventTemplateRow(
   label: string,
 ) {
   return db.$transaction(async (tx) => {
+    await lockEventForTemplateWrite(tx, eventId);
     // Serializes against event-image-assets-routes.ts's delete handler, which takes the
     // same lock before its asset_in_use recheck - without it, a delete could commit between
     // that handler's check and this create (Postgres default isolation is READ COMMITTED).
@@ -1158,6 +1178,7 @@ function createTemplateErrorResponse(
   err: unknown,
   attempt: number,
 ): Response | "retry" | undefined {
+  if (err instanceof EventTemplateGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
   if (err instanceof TemplateLimitReachedError) {
     return c.json({ error: "template_limit_reached", limit: MAX_TEMPLATES_PER_EVENT }, 422);
   }
@@ -1277,7 +1298,17 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
     return c.json({ error: "template_required" }, 422);
   }
 
-  await db.mailTemplate.delete({ where: { id: templateId } });
+  const result = await db.$transaction(async (tx) => {
+    const current = await getLockedEventTemplateRow(tx, eventId, templateId);
+    if (current.name === "ticket") return "template_required" as const;
+    await tx.mailTemplate.delete({ where: { id: templateId } });
+    return "ok" as const;
+  }).catch((err: unknown) => {
+    if (err instanceof EventTemplateGoneDuringWriteError) return "not_found" as const;
+    throw err;
+  });
+  if (result === "not_found") return c.json({ error: "not_found" }, 404);
+  if (result === "template_required") return c.json({ error: "template_required" }, 422);
   return c.json({ ok: true });
 }
 

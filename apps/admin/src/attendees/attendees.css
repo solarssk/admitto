@@ -315,7 +315,7 @@
 }
 
 .attendees-table-foot__pagesize .searchable-select {
-  width: auto;
+  width: 4.5rem;
 }
 
 .attendees-table-foot__pagesize .searchable-select__trigger {
@@ -1012,7 +1012,10 @@
   border-radius: var(--radius-lg);
   padding: var(--space-5);
   width: min(480px, 100%);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
   overflow: auto;
   box-shadow: var(--shadow-lg);
   display: flex;

@@ -406,7 +406,10 @@ export function renderTicket(
   });
 }
 
-/** Shared branded shell for public HTML errors. Same card + muted notice for every status. */
+const PUBLIC_ERROR_404_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6 -6"/><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"/><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"/></svg>`;
+const PUBLIC_ERROR_500_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></svg>`;
+
+/** Shared branded shell for public HTML errors (404 and 500 share the same layout). */
 export function renderPublicErrorPage(options: {
   statusCode: 404 | 500;
   heading: string;
@@ -414,6 +417,7 @@ export function renderPublicErrorPage(options: {
   theme?: BrandingTheme | null;
 }): string {
   const styles = buildTicketPageStyles(options.theme);
+  const icon = options.statusCode === 404 ? PUBLIC_ERROR_404_ICON : PUBLIC_ERROR_500_ICON;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -429,11 +433,12 @@ export function renderPublicErrorPage(options: {
         <img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>
       </div>
     </header>
-    <div class="ticket__body">
-      <div class="at-public-notice" role="status">
-        <p class="at-public-notice__code">${options.statusCode}</p>
-        <h1 class="at-public-notice__heading">${esc(options.heading)}</h1>
-        <p>${esc(options.message)}</p>
+    <div class="ticket__body ticket__body--public-error">
+      <div class="at-public-error" role="status">
+        <span class="at-public-error__icon">${icon}</span>
+        <p class="at-public-error__code">${options.statusCode}</p>
+        <h1 class="at-public-error__heading">${esc(options.heading)}</h1>
+        <p class="at-public-error__message">${esc(options.message)}</p>
       </div>
     </div>
   </article>

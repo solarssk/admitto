@@ -43,14 +43,19 @@ export async function probeStreamAuth(
 
 /**
  * Subscribe to live check-in SSE for an event (same-origin session cookie).
- * Ignores heartbeat `ping` events; dispatches `checkin` only.
+ * Ignores heartbeat `ping` events; dispatches `checkin` and `activity_changed`.
+ * `onActivityChanged` fires for attendee-add / item issue/return/revoke - events with no
+ * optimistic-render payload, just a signal to refetch the overview.
  */
 export function useEventStream(
   eventId: string | undefined,
   onCheckin: (event: StreamCheckinEvent) => void,
+  onActivityChanged?: () => void,
 ): { connected: boolean; status: StreamStatus } {
   const onCheckinRef = useRef(onCheckin);
   onCheckinRef.current = onCheckin;
+  const onActivityChangedRef = useRef(onActivityChanged);
+  onActivityChangedRef.current = onActivityChanged;
 
   const [status, setStatus] = useState<StreamStatus>("connecting");
   const connected = status === "connected";
@@ -99,6 +104,8 @@ export function useEventStream(
           if (data.type === "ping") return;
           if (data.type === "checkin") {
             onCheckinRef.current(data as StreamCheckinEvent);
+          } else if (data.type === "activity_changed") {
+            onActivityChangedRef.current?.();
           }
         } catch {
           /* ignore malformed payloads */

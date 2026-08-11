@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { logger } from "./logger.js";
+import { resolveClientIp } from "./rate-limit/client-ip.js";
 
 /**
  * Path prefixes whose remainder embeds ticket/QR tokens (`/t/:token`,
@@ -34,9 +35,13 @@ export function resolveLogHttpRequests(env: NodeJS.ProcessEnv = process.env): bo
 
 /**
  * One JSON access-log line per request: method, redacted path, status,
- * duration. Deliberately no IP, user agent, cookies, or query string — the
- * default log stream stays free of personal data and secrets; request-level
- * attribution belongs to the reverse proxy and the DB audit log.
+ * duration, plus the client IP when the request came from an authenticated
+ * staff actor (admin/superadmin session or check-in operator) — mirrors an
+ * IdP's actor-attributed activity log for known identities. Anonymous/
+ * attendee-facing requests (ticket views, public check-in) still omit IP:
+ * the default log stream stays free of personal data for traffic that isn't
+ * tied to a known staff identity; deep per-request forensics for those
+ * belong to the reverse proxy and the DB audit log.
  */
 export function createRequestLogMiddleware(): MiddlewareHandler {
   return async (c, next) => {
@@ -47,11 +52,13 @@ export function createRequestLogMiddleware(): MiddlewareHandler {
       const status = c.res?.status ?? 500;
       const path = new URL(c.req.url).pathname;
       if (!((HEALTH_PROBE_PATHS.has(path) || SELF_LOG_EXEMPT_PATHS.has(path)) && status < 400)) {
+        const isStaffActor = Boolean(c.get("auth") || c.get("operatorUserId"));
         logger.info("http_request", {
           method: c.req.method,
           path: redactRequestPath(path),
           status,
           duration_ms: Math.round(performance.now() - startedAt),
+          ...(isStaffActor ? { ip: resolveClientIp(c) } : {}),
         });
       }
     }

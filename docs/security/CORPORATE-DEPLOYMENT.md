@@ -39,7 +39,7 @@ own database, secrets, and operator access.
 | **Edge TLS / public routing** | Customer reverse proxy, load balancer, or CDN |
 | **DNS** | Customer-controlled |
 | **Transactional email** | Customer Microsoft 365 / Graph and/or corporate SMTP relay |
-| **Backups** | Customer policy (application supports pre-migration dump hooks) |
+| **Backups** | Customer policy (manual pre-upgrade `pg_dump` + nightly `db-backup` compose service) |
 | **Monitoring** | Customer tools; application exposes liveness and token-gated readiness endpoints |
 
 Optional **wallet pass** integration (planned) may add a third-party pass provider — see
@@ -111,12 +111,13 @@ Initial platform administrator is created via documented bootstrap CLI inside th
 
 ## Upgrade and rollback
 
-1. Pull the new container image tag.
-2. Update compose image reference.
-3. Restart stack — migrations run on startup with optional pre-migration backup.
-4. Verify health endpoints.
+1. Take a manual database backup (see `deploy/README.md`).
+2. Pull the new container image tag.
+3. Update compose image reference.
+4. Restart stack — the one-shot `migrate` service applies schema changes; there is no automatic pre-migration dump.
+5. Verify health endpoints.
 
-Rollback: previous image tag (no schema change) or database restore from pre-migration backup.
+Rollback: previous image tag (no schema change) or database restore from your pre-upgrade backup or a nightly dump.
 Details in `deploy/README.md`.
 
 ---

@@ -76,6 +76,13 @@ export function createStaffAdminGate(prisma: PrismaClient) {
       return loginBoundaryResponse(c, prisma);
     }
 
+    // Set as soon as the session is validated, before the admin-access/password-change checks
+    // below - a denied or redirected request here is still a known staff identity, and
+    // request-log's IP attribution (apps/web/src/request-log.ts) reads this regardless of how
+    // the request is ultimately handled. Re-set (with the resolved email) once known, further
+    // down on the success path.
+    c.set("auth", result.auth);
+
     if (!(await canAccessAdminPanel(prisma, result.auth.userId))) {
       return forbiddenNoAdminAccess(c, prisma, result.auth.userId);
     }

@@ -31,7 +31,6 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   useOverscrollBounceGuard(scrollRef, open);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
   const [date, setDate] = useState("");
   const [eventHoursStart, setEventHoursStart] = useState("");
   const [eventHoursEnd, setEventHoursEnd] = useState("");
@@ -44,15 +43,12 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!slugTouched) {
-      setSlug(slugFromTitle(title, 80));
-    }
-  }, [title, slugTouched]);
+    setSlug(slugFromTitle(title, 80));
+  }, [title]);
 
   const resetForm = () => {
     setTitle("");
     setSlug("");
-    setSlugTouched(false);
     setDate("");
     setEventHoursStart("");
     setEventHoursEnd("");
@@ -95,7 +91,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError("This link name is already in use. Choose another.");
+        setError("An event with a similar name already exists. Change the title slightly and try again.");
       } else {
         setError(operatorApiErrorMessage(err, "Failed to create event. Try again."));
       }
@@ -115,7 +111,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
           <i className="ti ti-calendar-plus" aria-hidden="true" /> New event
         </h2>
         <p className="add-attendee-modal__subtitle">
-          Add a title and date. Location is optional.
+          Add a title and date.
         </p>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
@@ -132,23 +128,6 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             required
             disabled={submitting}
             onChange={(e) => setTitle(e.target.value)}
-            {...NO_AUTOFILL_PROPS}
-          />
-          <Input
-            id="ce-slug"
-            label="Link name *"
-            hint="Short permanent ID for this event (lowercase letters, numbers, - or _). Used in agency ticket links such as /t/summer-summit/a/…. Ordinary tickets use a private token only (/t/…). Filled from the title; editable now, not after create."
-            icon={<i className="ti ti-link" aria-hidden="true" />}
-            className="mono"
-            value={slug}
-            maxLength={80}
-            pattern="[a-z0-9_\-]+"
-            required
-            disabled={submitting}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              setSlugTouched(true);
-            }}
             {...NO_AUTOFILL_PROPS}
           />
           <DatePicker
@@ -186,17 +165,18 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
               onChange={setTimezone}
               disabled={submitting}
               required
-              hint="Search by city (for example Delhi or Warsaw). The saved value is a standard timezone ID such as Asia/Kolkata or Europe/Warsaw; often a region name, not the city you typed."
+              hint="Search by city (for example Warsaw). Admitto saves the official region clock for that place (shown as Europe/Warsaw) so event times and reports stay correct."
             />
           </div>
           <VenueAutocomplete
             id="ce-location"
-            label="Location"
+            label="Location (optional)"
             value={venueName}
             maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
             disabled={submitting}
+            showFindButton={false}
             placeholder="e.g. Convention Center, Warsaw"
-            hint="Optional. Search a venue or address. If nothing matches, create the event anyway and set the map pin and coordinates later under Event settings, Location tab."
+            hint="Search a venue or address. If nothing matches, create the event anyway and set the map pin later under Event settings, Location tab."
             onChange={(text) => {
               setVenueName(text);
               setVenueGeocode(null);

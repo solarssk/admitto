@@ -1,0 +1,58 @@
+.csp-origin-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.csp-origin-row .at-field {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Align Add to the input control, not to the field's bottom edge: a validation message below
+ * the input must not push the button down. */
+.csp-origin-row > .at-btn {
+  flex: 0 0 auto;
+  margin-top: calc(var(--fs-sm) * var(--lh-normal) + var(--space-1));
+  height: var(--control-h);
+}
+
+.csp-origin-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.csp-origin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.csp-origin-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: var(--at-gray-200);
+  color: var(--text-secondary);
+  padding: 0;
+  cursor: pointer;
+}
+
+.csp-origin-chip-remove:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}

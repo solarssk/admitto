@@ -28,6 +28,8 @@ export interface CreateOidcAuthStateInput {
   linkUserId?: string;
   /** Password/TOTP re-verification timestamp for link flows. */
   linkStepUpAt?: Date;
+  /** Browser IANA timezone captured at /start (carried to callback). */
+  timezone?: string | null;
 }
 
 /** Persist short-lived OAuth state; sweeps stale rows first. */
@@ -46,6 +48,7 @@ export async function createOidcAuthState(
       redirect_next: input.redirectNext ?? null,
       link_user_id: input.linkUserId ?? null,
       link_step_up_at: input.linkStepUpAt ?? null,
+      timezone: input.timezone ?? null,
       expires_at,
     },
   });
@@ -59,6 +62,7 @@ export interface ConsumedOidcAuthState {
   redirect_next: string | null;
   link_user_id: string | null;
   link_step_up_at: Date | null;
+  timezone: string | null;
 }
 
 interface ConsumedOidcAuthStateRow {
@@ -69,6 +73,7 @@ interface ConsumedOidcAuthStateRow {
   redirect_next: string | null;
   link_user_id: string | null;
   link_step_up_at: Date | null;
+  timezone: string | null;
 }
 
 /**
@@ -101,7 +106,7 @@ export async function consumeOidcAuthState(
     WHERE "state" = ${state}
       AND "consumed_at" IS NULL
       AND "expires_at" > (NOW() AT TIME ZONE 'utc')
-    RETURNING "id", "provider_id", "nonce", "code_verifier", "redirect_next", "link_user_id", "link_step_up_at"
+    RETURNING "id", "provider_id", "nonce", "code_verifier", "redirect_next", "link_user_id", "link_step_up_at", "timezone"
   `;
   return rows[0] ?? null;
 }

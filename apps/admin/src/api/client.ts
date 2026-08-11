@@ -510,21 +510,22 @@ export async function fetchEventImageAssets(
 ): Promise<EventImageAssetDto[]> {
   const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/image-assets`, {
     credentials: "same-origin",
+    cache: "no-store",
     signal,
   });
   const data = await parseJson<EventImageAssetsListResponse>(res);
   return data.items;
 }
 
-/** Upload a new named branding image asset (file + token); throws ApiError on validation/conflict. */
+/** Upload a new named branding image asset (file + display name); server slugifies the token. */
 export async function createEventImageAsset(
   eventId: string,
   file: File,
-  token: string,
+  name: string,
 ): Promise<EventImageAssetDto> {
   const fd = new FormData();
   fd.append("file", file);
-  fd.append("token", token);
+  fd.append("name", name);
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/image-assets`,
     multipartPostInit(fd),

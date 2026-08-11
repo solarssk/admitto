@@ -5,7 +5,7 @@ import { canManageEvent, canManageInstance } from "@admitto/auth";
 import { IllegalItemTransitionError, writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
-import { isValidIanaTimezone } from "./timezone.js";
+import { parseOptionalClientTimezone } from "./timezone.js";
 import {
   InstanceUrlRequiredError,
   resolveInstanceBaseUrl,
@@ -59,9 +59,7 @@ export async function assertEventManageAccess(
 /** Client-supplied IANA timezone (X-Client-Timezone header), validated - null when missing or
  * not a real timezone. Best-effort audit metadata: never blocks the request either way. */
 export function resolveClientTimezone(c: Context): string | null {
-  const raw = c.req.header("x-client-timezone");
-  if (!raw || !isValidIanaTimezone(raw)) return null;
-  return raw;
+  return parseOptionalClientTimezone(c.req.header("x-client-timezone"));
 }
 
 /** Build ops audit context from the authenticated admin request. */
@@ -248,16 +246,18 @@ export function parseDateBound(raw: string | undefined, bound: "start" | "end"):
 
 /**
  * Acquires a Postgres advisory lock scoped to one event, held for the rest of the current
- * transaction. Serializes permanent event deletion against a concurrent event mail-settings
- * PUT on the same eventId — whichever transaction starts first blocks the other until it
- * commits, so a PUT can never recreate an orphaned MailSettings row for an event a
- * concurrent delete just removed (MailSettings has no FK to Event; see event-deletion.ts).
- * Call at the very start of both transactions, before any other read (CodeRabbit review).
+ * transaction. Serializes permanent event deletion against writes to polymorphic event-scoped
+ * rows without an Event foreign key (MailSettings and MailTemplate). Whichever transaction
+ * starts first blocks the other until it commits, so a write can never recreate an orphaned
+ * scoped row for an event a concurrent delete just removed. Call at the very start of both
+ * transactions, before any other read.
  */
-export async function lockEventForMailSettingsWrite(
+export async function lockEventForScopedWrite(
   tx: Prisma.TransactionClient,
   eventId: string,
 ): Promise<void> {
+  // Keep the established key so rolling app instances still synchronize while a release is
+  // deployed, even though the lock now protects more than MailSettings.
   const lockKey = `event-mail-settings:${eventId}`;
   await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }

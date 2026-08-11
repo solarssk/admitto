@@ -123,7 +123,7 @@ function makeApp(partial: PartialAuth, db: PrismaClient = makeDb()): {
     c.set("partialAuth", partial);
     await next();
   });
-  app.get("/mfa/verify", (c) => handleGetMfaVerify(c));
+  app.get("/mfa/verify", (c) => handleGetMfaVerify(c, db));
   app.post("/mfa/verify", (c) => handlePostMfaVerify(c, db, store));
   app.get("/mfa/enroll", (c) => handleGetMfaEnroll(c, db));
   app.post("/mfa/enroll/start", (c) => handlePostMfaEnrollStart(c, db));

@@ -291,16 +291,39 @@ model Attendee {
 }
 
 model WalletPass {
-  id            String   @id @default(cuid())
-  attendee_id   String   @unique
-  attendee      Attendee @relation(fields: [attendee_id], references: [id])
-  pass_type_id  String
-  serial_number String
-  auth_token    String
-  pass_url      String?
-  status        String   @default("active")
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  id                String    @id @default(cuid())
+  attendee_id       String    @unique
+  attendee          Attendee  @relation(fields: [attendee_id], references: [id])
+
+  // Provider identity (ADR 0009, ADR 0041 §2). "passcreator" is the only provider today.
+  provider          String    @default("passcreator")
+  provider_pass_id  String?
+  user_provided_id  String?
+
+  download_url      String?
+  apple_url         String?
+  android_url       String?
+
+  // pending = not yet created (on-demand, first "Add to Wallet" click); active = created;
+  // voided/failed/expired per WalletPassStatus (packages/db/src/status.ts).
+  status            String    @default("pending")
+  last_error_code   String?
+  last_synced_at    DateTime?
+
+  issued_at         DateTime?
+  voided_at         DateTime?
+
+  // Legacy/native-provider seam (ADR 0009 §3) - nullable, unused while provider = passcreator.
+  pass_type_id      String?
+  serial_number     String?
+  auth_token        String?
+  pass_url          String?
+
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  @@unique([provider, provider_pass_id])
+  @@unique([provider, user_provided_id])
 }
 
 model EmailDelivery {
@@ -472,6 +495,9 @@ model AdminAuditLog {
   // Actor's IANA timezone at write time — null for rows predating this column or written
   // outside a browser request. Mirrors AttendeeActionLog.client_timezone.
   actor_timezone  String?
+  // Immutable staff identity at write time — survives hard delete of the User row.
+  actor_email         String?
+  actor_display_name  String?
 
   @@index([organization_id, created_at(sort: Desc)])
 }
@@ -491,6 +517,13 @@ model SecurityAuditLog {
   ip         String?
   metadata   Json?
   created_at DateTime @default(now())
+  // Immutable staff identity at write time — null when user_id is null (enumeration-safe).
+  user_email        String?
+  user_display_name String?
+  // Actor's IANA timezone at write time — null for events with no known actor (e.g. a failed
+  // login against an unknown/anonymous browser) or captured outside a browser request. Mirrors
+  // AdminAuditLog.actor_timezone.
+  actor_timezone String?
 
   @@index([event_type, created_at(sort: Desc)])
   @@index([user_id])
@@ -655,6 +688,9 @@ model Session {
   device_label String?
   ip           String?
   user_agent   String?
+  // Signer's IANA timezone at login time — null when captured outside a browser request
+  // (no JS, older sessions). Mirrors AdminAuditLog.actor_timezone.
+  timezone     String?
   created_at   DateTime  @default(now())
   last_seen_at DateTime  @default(now())
   expires_at   DateTime
@@ -825,6 +861,10 @@ model OidcAuthState {
   redirect_next   String?
   link_user_id    String?
   link_step_up_at DateTime?
+  // Browser's IANA timezone, captured at /start and carried through to the callback so the
+  // resulting Session/SecurityAuditLog row can record it (no JS execution point at the IdP
+  // redirect callback itself). Mirrors AdminAuditLog.actor_timezone.
+  timezone        String?
   expires_at      DateTime
   consumed_at     DateTime?
   created_at      DateTime         @default(now())

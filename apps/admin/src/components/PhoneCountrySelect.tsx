@@ -64,7 +64,7 @@ export function PhoneCountrySelect({ id, label, value, disabled, onChange }: Rea
       >
         {selected ? (
           <>
-            <span aria-hidden="true">{selected.flag}</span>
+            <span className="phone-country-select__flag" aria-hidden="true">{selected.flag}</span>
             <span>{selected.dialCode}</span>
           </>
         ) : (
@@ -107,7 +107,7 @@ export function PhoneCountrySelect({ id, label, value, disabled, onChange }: Rea
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleSelect(c)}
                   >
-                    <span aria-hidden="true">{c.flag}</span>
+                    <span className="phone-country-select__flag" aria-hidden="true">{c.flag}</span>
                     <span className="phone-country-select__name">{c.name}</span>
                     <span className="phone-country-select__code">{c.dialCode}</span>
                   </button>

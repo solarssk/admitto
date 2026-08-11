@@ -3,7 +3,7 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+> **Last verified:** Admitto 0.4.14
 
 ## What this page helps you do
 
@@ -19,7 +19,7 @@ Open the correct organisation and event. If another manager may be editing the s
 
 1. Open **Overview**.
 2. Review the compact **Setup checklist** for unfinished setup.
-3. Review KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** ring with ticket-type breakdown, and **Recent activity** (check-ins, mail failures, and imports).
+3. Review KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** ring with ticket-type breakdown, and **Recent activity** (check-ins, attendees added, item issue/return/revoke, mail failures, and imports).
 4. Use **Pinned note**, **Key contacts**, and **Important links & files** when your event keeps that operational context on Overview.
 5. Follow a readiness prompt when it points to unfinished setup.
 
@@ -33,7 +33,7 @@ Event settings are organised into tabs. Each card that needs saving (Basic infor
 4. Save the General card.
 5. Open **Location** to set the venue's name and address. Start typing a venue name or an address into the single search field. Matching places appear as you type; pick one to also set the map pin, or keep typing free text if nothing matches. Drag the pin or double-click the map to adjust it by hand. Add directions or accessibility notes if attendees need them. If Copy Google/Apple Maps opens the wrong place while the pin looks correct, use **Pin wrong? Fix link** to paste the correct Maps URLs (the pin and static map stay as they are).
 6. Review **Ticket types** for the event's catalog (label + colour), not free-text guest types.
-7. Review **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. Logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add asset**.
+7. Review **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. Logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add image**. Enter a normal image name; Admitto creates the `{{variable}}` for templates.
 8. Return to **Overview** and confirm that the event now shows the intended state.
 
 Tab inventory:
@@ -54,7 +54,7 @@ Tab inventory:
 1. Open **Event settings** → **Danger zone**.
 2. Use **Revoke all check-ins** or **Revoke all items issued** only when the event process requires a bulk undo (each asks for confirmation).
 3. Ask a Superadmin to **Archive event** when the event should become fully read-only.
-4. **Delete event** is Superadmin-only and only available when the event has no real activity; it requires typing the event title to confirm.
+4. **Delete event** is Superadmin-only. It is available when the event has no attendees and no event-specific content left to clear (custom items, custom ticket types, contacts, resources, pinned note, or additional named mail templates). A saved Ticket email override is removed with the event and does not block deletion. Operational history alone does not block delete. Confirming requires typing the event title.
 
 ## Expected result
 

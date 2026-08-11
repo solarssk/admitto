@@ -23,8 +23,13 @@ export type EventSettingsDto = {
   created_at: string;
   /** Browser timezone of whoever created the event, when known. */
   created_by_timezone: string | null;
-  /** True when the event has zero real activity and can be permanently deleted. */
+  /** True when the event has no remaining delete blockers and can be permanently deleted. */
   is_deletable: boolean;
+  /**
+   * Remaining reasons Delete event is disabled (empty when `is_deletable` is true).
+   * Keys match the server deletability guard (attendees, custom_items, ...).
+   */
+  deletion_blockers: string[];
   /** Attendees currently checked in — drives the "Revoke all check-ins" Danger Zone row. */
   admitted_count: number;
   /** Individual issued/returned item hand-outs across all attendees — drives "Revoke all items issued". */

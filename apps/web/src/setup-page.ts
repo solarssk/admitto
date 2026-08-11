@@ -8,6 +8,7 @@ import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 import { renderNoticeHtml } from "./auth-notice.js";
 import {
   authFormSubmitScript,
+  authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -25,8 +26,11 @@ function esc(s: string): string {
 }
 
 /** Security headers for server-rendered first-run setup page. */
-export function getSetupPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getSetupPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 export type SetupErrorCode =
@@ -83,6 +87,7 @@ export function renderSetupPage(
     <p class="subtitle">Create your administrator account to get started.</p>
     ${errorBlock}
     <form method="post" action="/setup" aria-label="Admitto initial setup">
+      <input type="hidden" name="timezone" value="" autocomplete="off">
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
         <input class="auth-input" id="email" type="email" name="email" placeholder="admin@example.com" required autocomplete="username" inputmode="email" autocapitalize="off"${emailValue}>
@@ -111,6 +116,6 @@ export function renderSetupPage(
     step: "Initial setup",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${passwordStrengthAuthScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
+    scripts: `${passwordStrengthAuthScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce)}`,
   });
 }

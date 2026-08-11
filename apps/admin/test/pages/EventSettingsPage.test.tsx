@@ -146,6 +146,7 @@ const activeEvent = {
   archived_at: null as string | null,
   created_at: "2026-01-15T00:00:00.000Z",
   is_deletable: false,
+  deletion_blockers: ["attendees"] as string[],
   admitted_count: 0,
   issued_items_count: 0,
   organization_name: "Org",
@@ -357,7 +358,7 @@ describe("EventSettingsPage save label", () => {
 });
 
 describe("EventSettingsPage subtitle", () => {
-  const SUBTITLE = "Manage this event's details, images, and access controls.";
+  const SUBTITLE = "Manage event details, images, and access.";
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
@@ -497,14 +498,14 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByRole("tab", { name: "Location" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(await screen.findByText("Find on map")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     await screen.findByText("Basic information");
     const basicInformationHint = screen.getByText("Basic information").closest(".at-tooltip-trigger");
     fireEvent.mouseEnter(basicInformationHint!);
     expect(screen.getByRole("tooltip").textContent).toBe(
-      "Title and date appear on tickets and emails. Set the venue in the Location tab.",
+      "Title, date, capacity, and timezone.",
     );
   });
 
@@ -611,7 +612,7 @@ describe("EventSettingsPage tabs", () => {
     ).toBeNull();
   });
 
-  it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {
+  it("shows the image asset library for a non-superadmin org admin", async () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
@@ -620,13 +621,12 @@ describe("EventSettingsPage tabs", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "Images" }));
     expect(await screen.findByText("Event logo")).toBeTruthy();
-    // Event logo stays available to any event admin...
     expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
-    // ...but the image asset library (upload/list/delete routes require superadmin) does not
-    // mount at all for a non-superadmin, so it never fires the 403 fetch it otherwise would.
-    expect(screen.queryByText("Upload images")).toBeNull();
-    expect(screen.getByText("Superadmin only")).toBeTruthy();
-    expect(fetchEventImageAssets).not.toHaveBeenCalled();
+    expect(screen.getByText("Upload images")).toBeTruthy();
+    expect(screen.queryByText("Superadmin only")).toBeNull();
+    await waitFor(() => {
+      expect(fetchEventImageAssets).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
+    });
   });
 
   it("uploads a branding file through the event-scoped upload endpoint", async () => {
@@ -750,7 +750,7 @@ describe("EventSettingsPage tabs", () => {
     ) as HTMLInputElement;
     expect(assetFileInput.disabled).toBe(true);
     expect(
-      screen.getByText("This event is archived - the asset library cannot be changed."),
+      screen.getByText("This event is archived - the image library cannot be changed."),
     ).toBeTruthy();
   });
 
@@ -1065,6 +1065,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       is_deletable: false,
+      deletion_blockers: ["attendees", "pinned_note"],
     });
     renderSettings();
     await openDangerZone();
@@ -1075,19 +1076,19 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.disabled).toBe(true);
     const describedBy = button.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy!)?.textContent).toBe(
-      "This event has data and cannot be deleted",
+      "Still blocking delete: attendees, pinned note.",
     );
-    expect(
-      screen.getByText(
-        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
-      ),
-    ).toBeTruthy();
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(
+      "Still blocking delete: attendees, pinned note.",
+    );
   });
 
   it("renders Delete event enabled for a superadmin on an active, empty event", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       is_deletable: true,
+      deletion_blockers: [],
     });
     renderSettings();
     await openDangerZone();
@@ -1107,6 +1108,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...archivedEvent,
       is_deletable: false,
+      deletion_blockers: ["custom_items", "contacts"],
     });
     renderSettings("/admin/events/evt-2/settings");
     await openDangerZone();
@@ -1117,19 +1119,59 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.disabled).toBe(true);
     const describedBy = button.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy!)?.textContent).toBe(
-      "This event has data and cannot be deleted",
+      "Still blocking delete: custom items, contacts.",
     );
-    expect(
-      screen.getByText(
-        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
-      ),
-    ).toBeTruthy();
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(
+      "Still blocking delete: custom items, contacts.",
+    );
+  });
+
+  it("falls back to generic delete copy when not deletable without named blockers", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+      deletion_blockers: [],
+    });
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const fallback =
+      "This event still has content that must be cleared before it can be permanently deleted.";
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(fallback);
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(fallback);
+  });
+
+  it("labels unknown deletion blockers with spaced words", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+      deletion_blockers: ["future_blocker_type"],
+    });
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      "Still blocking delete: future blocker type.",
+    );
   });
 
   it("renders Delete event enabled for a superadmin on an archived, empty event", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...archivedEvent,
       is_deletable: true,
+      deletion_blockers: [],
     });
     renderSettings("/admin/events/evt-2/settings");
     await openDangerZone();

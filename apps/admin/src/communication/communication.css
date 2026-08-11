@@ -41,6 +41,18 @@
   margin-left: auto;
 }
 
+/* Keep the compact toolbar to one row on phones. The last-edited timestamp moves to the pencil
+   tooltip, leaving the selector enough room to show its label without making the card taller. */
+@media (max-width: 720px) {
+  .communication-template-picker > .at-badge {
+    display: none;
+  }
+
+  .communication-template-picker__actions {
+    gap: var(--space-2);
+  }
+}
+
 /* No align-items: start here on purpose - the row sizes to the editor Card's own natural
    height (it's always the taller side), and default stretch then pulls the shorter preview
    column up to match it instead of leaving empty space under a short mail-client box. */

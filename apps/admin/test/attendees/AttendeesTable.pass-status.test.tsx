@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
-import { mockMatchMedia } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const baseRow: AttendeeRowDto = {
@@ -109,9 +109,51 @@ describe("AttendeesTable pass status actions", () => {
       />,
     );
 
-    expect(
-      (screen.getByRole("button", { name: "Revoke pass" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    const revoke = screen.getByRole("button", { name: "Revoke pass" }) as HTMLButtonElement;
+    expect(revoke.disabled).toBe(true);
+    expect(getTooltipText(revoke)).not.toMatch(/cannot check in until the pass is restored/);
+  });
+
+  it("disables Restore pass without the restore hover hint when the event is archived", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        event={{ archived_at: "2026-07-01T00:00:00.000Z" }}
+        items={[{ ...baseRow, status: "revoked" }]}
+        onRevokePass={vi.fn()}
+        onRestorePass={vi.fn()}
+      />,
+    );
+
+    const restore = screen.getByRole("button", { name: "Restore pass" }) as HTMLButtonElement;
+    expect(restore.disabled).toBe(true);
+    expect(getTooltipText(restore)).not.toMatch(/Re-enable check-in for this attendee/);
+  });
+
+  it("exposes Restore and Revoke pass hover hints on active events", () => {
+    const { rerender } = render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        onRevokePass={vi.fn()}
+        onRestorePass={vi.fn()}
+      />,
+    );
+    expect(getTooltipText(screen.getByRole("button", { name: "Revoke pass" }))).toMatch(
+      /cannot check in until the pass is restored/,
+    );
+
+    rerender(
+      <AttendeesTable
+        {...tableProps}
+        items={[{ ...baseRow, status: "revoked" }]}
+        onRevokePass={vi.fn()}
+        onRestorePass={vi.fn()}
+      />,
+    );
+    expect(getTooltipText(screen.getByRole("button", { name: "Restore pass" }))).toMatch(
+      /Re-enable check-in for this attendee/,
+    );
   });
 
   it("hides pass actions for cancelled attendees", () => {
