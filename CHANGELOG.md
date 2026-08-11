@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Failed login attempts now show the full attempted email in the Security audit log (and are searchable there), matching how successful sign-ins and other providers attribute activity.** Operational stdout / System logs still redact (`a***@example.com`). Superadmin-only durable table; matches the retention policy already documented for this trail.
 
 ### Fixed
+- Admin table pagination now opens a compact **Rows per page** menu, and card headers keep a consistent height whether or not they contain actions.
 - Event Settings → Images: the "file too large" messages on the event logo drop zone and the crop dialog now use the same bordered Notice style as the rest of the image library, instead of two different ad-hoc red-text treatments.
 - Check-in's Recent scans no longer shows a duplicate "Checked in" row for the same admission after a follow-up action (e.g. issuing a badge) refreshes the sidebar: the persisted check-in timestamp now matches the one already shown by the optimistic local echo instead of being read from the database's own clock.
 - Event Settings no longer crashes on load: the image library imports placeholder names from a browser-safe `@admitto/mail-templates` subpath instead of the package root (which pulled Prisma/Node APIs into the SPA).
