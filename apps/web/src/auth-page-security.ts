@@ -8,7 +8,7 @@ export function createAuthPageScriptNonce(): string {
 
 /** Security headers for auth pages that ship nonce-gated inline scripts. `trustedOrigins`
  *  (Settings → Security, `csp_trusted_origins`) extends `script-src` alongside the nonce and adds
- *  `connect-src`/`frame-src` for a login challenge widget (e.g. Cloudflare Turnstile) — omitted
+ *  `connect-src`/`frame-src` for a login challenge widget (e.g. Cloudflare Turnstile); omitted
  *  entirely when empty, so an unconfigured instance gets today's exact header. */
 export function getAuthPageInlineScriptHeaders(
   scriptNonce: string,

@@ -2,7 +2,7 @@ import type { PrismaClient, Prisma } from "@admitto/db";
 import { getSetting } from "./resolver.js";
 import { SETTING_CSP_TRUSTED_ORIGINS } from "./keys.js";
 
-/** Upper bound on trusted origins — keeps the CSP header size sane and the admin UI reviewable. */
+/** Upper bound on trusted origins, keeps the CSP header size sane and the admin UI reviewable. */
 export const MAX_CSP_TRUSTED_ORIGINS = 10;
 
 const FORBIDDEN_CSP_ORIGIN_VALUES = new Set([
@@ -14,8 +14,12 @@ const FORBIDDEN_CSP_ORIGIN_VALUES = new Set([
   "blob:",
 ]);
 
-/** True when `raw` is exactly an `https://` origin (scheme + host [+ port]) — no path, query,
- *  fragment, trailing slash, or credentials, and none of the CSP source-list keywords/wildcards. */
+/** True when `raw` is exactly an `https://` origin (scheme + host [+ port]), no path, query,
+ *  fragment, trailing slash, credentials, or wildcard host, and none of the CSP source-list
+ *  keywords. `new URL()` accepts `*` and `*.example.com` as syntactically valid hostnames (the
+ *  WHATWG URL spec doesn't forbid `*` in a host), so a host-wildcard check is required on top of
+ *  the origin round-trip check below, or a CSP host-source wildcard like `https://*` would be
+ *  accepted here and end up trusting every HTTPS origin. */
 export function isValidCspTrustedOrigin(raw: string): boolean {
   const trimmed = raw.trim();
   if (!trimmed || FORBIDDEN_CSP_ORIGIN_VALUES.has(trimmed)) return false;
@@ -26,6 +30,7 @@ export function isValidCspTrustedOrigin(raw: string): boolean {
   } catch {
     return false;
   }
+  if (parsed.hostname.includes("*")) return false;
   return parsed.origin === trimmed;
 }
 
@@ -63,7 +68,7 @@ export function validateCspTrustedOrigins(raw: unknown): string[] {
 
 /** Defensive filter for the CSP header path: never throws. A hand-edited or otherwise
  *  corrupted SystemSettings row must not break the `/admin`, `/account`, `/operator`, or
- *  auth-page CSP — invalid or excess entries are silently dropped instead. */
+ *  auth-page CSP; invalid or excess entries are silently dropped instead. */
 export function sanitizeCspTrustedOrigins(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();

@@ -129,7 +129,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | optional | app | none | no | Idle timeout for operator sessions (ms). |
 | `TRUSTED_DEVICE_DAYS` | optional | app | none | no | MFA trusted-device cookie lifetime in days. |
 | `MFA_REQUIRED_ROLES` | optional | app | none | no | Comma-separated roles that must enroll MFA (default admin,superadmin). |
-| `CSP_TRUSTED_ORIGINS` | optional | app | none | no | JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages. |
+| `CSP_TRUSTED_ORIGINS` | optional | app | Settings → Security (preferred); env locks UI | no | JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages. |
 
 ## Identity (env lock / seed)
 

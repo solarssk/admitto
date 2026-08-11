@@ -634,7 +634,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages."
     },
     {
