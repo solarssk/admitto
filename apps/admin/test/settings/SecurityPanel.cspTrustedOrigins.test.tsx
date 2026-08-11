@@ -118,6 +118,88 @@ describe("SecurityPanel — trusted third-party script origins", () => {
     expect(within(dialog).getByText("No trusted origins yet.")).toBeTruthy();
   });
 
+  it("explains that wildcard origins are not allowed", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Manage origins" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Add an origin"), {
+      target: { value: "https://*.example.com" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(within(dialog).getByText(/contains a wildcard/)).toBeTruthy();
+    expect(within(dialog).getByText(/one exact https:\/\/ origin instead/)).toBeTruthy();
+  });
+
+  it("adds an origin with Enter and clears the validation message when editing", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Manage origins" }));
+    const dialog = screen.getByRole("dialog");
+    const input = within(dialog).getByLabelText("Add an origin");
+    fireEvent.change(input, { target: { value: "not-a-valid-origin" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(within(dialog).getByText(/not a valid https:\/\/ origin/)).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "https://static.cloudflareinsights.com" } });
+    expect(within(dialog).queryByText(/not a valid https:\/\/ origin/)).toBeNull();
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(within(dialog).getByText("https://static.cloudflareinsights.com")).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe("");
+  });
+
+  it("rejects duplicate origins and discards unsaved edits when cancelled", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue({
+      ...baseSettings,
+      csp_trusted_origins: { value: ["https://saved.example.com"], source: "db" },
+    });
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Manage origins" }));
+    let dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Add an origin"), {
+      target: { value: "https://saved.example.com" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(within(dialog).getByText(/already in the list/)).toBeTruthy();
+
+    fireEvent.change(within(dialog).getByLabelText("Add an origin"), {
+      target: { value: "https://unsaved.example.com" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(manageOriginsButton());
+    dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("https://saved.example.com")).toBeTruthy();
+    expect(within(dialog).queryByText("https://unsaved.example.com")).toBeNull();
+  });
+
+  it("prevents adding more than the trusted-origin limit", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue({
+      ...baseSettings,
+      csp_trusted_origins: {
+        value: Array.from({ length: 10 }, (_, index) => `https://saved-${index}.example.com`),
+        source: "db",
+      },
+    });
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Manage origins" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Add an origin"), {
+      target: { value: "https://over-limit.example.com" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    expect(within(dialog).getByText(/At most 10 trusted origins are allowed/)).toBeTruthy();
+    expect(within(dialog).queryByText("https://over-limit.example.com")).toBeNull();
+  });
+
   it("shows the security warning once an origin is saved", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);

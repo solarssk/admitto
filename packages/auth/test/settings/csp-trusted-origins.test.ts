@@ -47,6 +47,7 @@ describe("isValidCspTrustedOrigin", () => {
     ["fragment", "https://example.com#frag"],
     ["credentials", "https://user:pass@example.com"],
     ["javascript scheme", "javascript:alert(1)"],
+    ["malformed https URL", "https://["],
     ["empty string", ""],
     ["whitespace only", "   "],
     ["not a url", "not-a-url"],

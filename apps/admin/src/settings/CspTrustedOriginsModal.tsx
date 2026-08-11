@@ -49,7 +49,11 @@ export function CspTrustedOriginsModal({
     const value = inputValue.trim();
     if (!value) return;
     if (!isValidCspTrustedOrigin(value)) {
-      setError(`"${value}" is not a valid https:// origin.`);
+      setError(
+        value.includes("*")
+          ? `"${value}" contains a wildcard (*). Enter one exact https:// origin instead.`
+          : `"${value}" is not a valid https:// origin.`,
+      );
       return;
     }
     if (origins.includes(value)) {

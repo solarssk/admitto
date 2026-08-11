@@ -1,12 +1,20 @@
 .csp-origin-row {
   display: flex;
   gap: var(--space-2);
-  align-items: flex-end;
+  align-items: flex-start;
 }
 
 .csp-origin-row .at-field {
   flex: 1;
   min-width: 0;
+}
+
+/* Align Add to the input control, not to the field's bottom edge: a validation message below
+ * the input must not push the button down. */
+.csp-origin-row > .at-btn {
+  flex: 0 0 auto;
+  margin-top: calc(var(--fs-sm) * var(--lh-normal) + var(--space-1));
+  height: var(--control-h);
 }
 
 .csp-origin-chips {
