@@ -21,7 +21,7 @@ function dispatchWheel(el: HTMLElement, deltaY: number): boolean {
   return el.dispatchEvent(event);
 }
 
-function makeNestedPicker(overflowY: "auto" | "clip" | "scroll"): HTMLButtonElement {
+function makeNestedPicker(overflowY: "auto" | "clip" | "hidden" | "scroll"): HTMLButtonElement {
   const picker = document.createElement("div");
   picker.style.overflowY = overflowY;
   Object.defineProperty(picker, "clientHeight", { value: 100, configurable: true });
@@ -95,6 +95,15 @@ describe("useOverscrollBounceGuard", () => {
   it("still cancels a wheel gesture for a clipped nested picker", () => {
     const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
     const option = makeNestedPicker("clip");
+    el.appendChild(option.parentElement!);
+    renderHook(() => useOverscrollBounceGuard({ current: el }));
+
+    expect(dispatchWheel(option, 100)).toBe(false);
+  });
+
+  it("still cancels a wheel gesture for a hidden-overflow nested picker", () => {
+    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    const option = makeNestedPicker("hidden");
     el.appendChild(option.parentElement!);
     renderHook(() => useOverscrollBounceGuard({ current: el }));
 

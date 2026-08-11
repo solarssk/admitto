@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { TimeInput } from "../../src/components/TimeInput.js";
 import { setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 
@@ -80,6 +80,18 @@ describe("TimeInput", () => {
     expect((input as HTMLInputElement).value).toBe("6:30 PM");
   });
 
+  it("accepts midnight written with AM and displays it in the account format", () => {
+    const onChange = vi.fn();
+    render(<TimeInput hourCycle="12h" label="Event hours start" value="" onChange={onChange} />);
+    const input = screen.getByLabelText("Event hours start");
+
+    fireEvent.change(input, { target: { value: "12:00 AM" } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenLastCalledWith("00:00");
+    expect((input as HTMLInputElement).value).toBe("12:00 AM");
+  });
+
   it("uses the account Time format independently from the Regional format", () => {
     setPreferredTimeFormat("12h");
     const { rerender } = render(<TimeInput label="Event hours start" value="18:30" onChange={vi.fn()} />);
@@ -114,6 +126,29 @@ describe("TimeInput", () => {
     expect((screen.getByLabelText("Event hours start") as HTMLInputElement).value).toBe("6:30 PM");
   });
 
+  it("lets 12-hour picker users switch a selected evening time back to AM", () => {
+    const onChange = vi.fn();
+    render(
+      <TimeInput hourCycle="12h" label="Event hours start" value="18:30" onChange={onChange} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+    fireEvent.click(within(screen.getByLabelText("AM or PM")).getByRole("button", { name: "AM" }));
+
+    expect(onChange).toHaveBeenLastCalledWith("06:30");
+  });
+
+  it("chooses a 24-hour picker value without exposing an AM/PM column", () => {
+    const onChange = vi.fn();
+    render(<TimeInput hourCycle="24h" label="Event hours start" value="09:00" onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+    expect(screen.queryByLabelText("AM or PM")).toBeNull();
+    fireEvent.click(within(screen.getByLabelText("Hour")).getByRole("button", { name: "18" }));
+
+    expect(onChange).toHaveBeenLastCalledWith("18:00");
+  });
+
   it("keeps the picker closed while the operator focuses the field to type manually", () => {
     render(<TimeInput label="Event hours start" value="" onChange={vi.fn()} />);
     fireEvent.focus(screen.getByLabelText("Event hours start"));
@@ -130,6 +165,48 @@ describe("TimeInput", () => {
     expect(screen.getByText("Use a time such as 18:00 or 6:00 PM.")).toBeTruthy();
   });
 
+  it("supports keyboard commit, dismissal, and opening the picker", () => {
+    const onChange = vi.fn();
+    render(<TimeInput hourCycle="24h" label="Event hours start" value="" onChange={onChange} />);
+    const input = screen.getByLabelText("Event hours start");
+
+    fireEvent.change(input, { target: { value: "1845" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith("18:45");
+    expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("dialog", { name: "Choose time" })).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+  });
+
+  it("prefers an explicit error over its normal hint", () => {
+    const { rerender } = render(
+      <TimeInput
+        hourCycle="24h"
+        label="Event hours start"
+        value=""
+        onChange={vi.fn()}
+        hint="Optional time on tickets"
+      />,
+    );
+    expect(screen.getByText("Optional time on tickets")).toBeTruthy();
+
+    rerender(
+      <TimeInput
+        hourCycle="24h"
+        label="Event hours start"
+        value=""
+        onChange={vi.fn()}
+        hint="Optional time on tickets"
+        error="Choose a valid time"
+      />,
+    );
+    expect(screen.getByText("Choose a valid time")).toBeTruthy();
+    expect(screen.queryByText("Optional time on tickets")).toBeNull();
+  });
+
   it("clears the stored time when the field is emptied", () => {
     const onChange = vi.fn();
     render(<TimeInput hourCycle="24h" label="Event hours start" value="18:00" onChange={onChange} />);
@@ -144,6 +221,29 @@ describe("TimeInput", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
     fireEvent.pointerDown(screen.getByRole("button", { name: "Elsewhere" }));
     expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+  });
+
+  it("does not reopen when the click that follows an outside pointerdown lands on the icon", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <>
+          <TimeInput label="Event hours start" value="" onChange={vi.fn()} />
+          <button type="button">Elsewhere</button>
+        </>,
+      );
+      const pickerButton = screen.getByRole("button", { name: "Open time picker" });
+      fireEvent.click(pickerButton);
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Elsewhere" }));
+      fireEvent.click(pickerButton);
+
+      expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+      act(() => vi.runAllTimers());
+      fireEvent.click(pickerButton);
+      expect(screen.getByRole("dialog", { name: "Choose time" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("uses ariaLabel when no visible label is passed", () => {
