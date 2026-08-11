@@ -17,6 +17,7 @@ import {
   type LogoCropMeta,
 } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { normalizeTimeZone } from "@admitto/shared/timezones";
 import { z } from "zod";
 import {
   adminAuditFromContext,
@@ -28,7 +29,12 @@ import {
 } from "./admin-helpers.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
-import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
+import {
+  countEventActivitySignals,
+  isEventDeletable,
+  listEventDeletionBlockers,
+  type EventDeletionBlocker,
+} from "./event-deletion.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import { isManagedUploadUrlReferenced } from "./branding-upload-refs.js";
@@ -93,23 +99,26 @@ type EventSettingsRow = {
 
 function serializeEventSettings(
   event: EventSettingsRow,
-  deletability: { isDeletable: boolean },
+  deletability: { isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] },
   revokeCounts: { admittedCount: number; issuedItemsCount: number },
 ): EventSettingsDto {
+  const normalizeNullableTimeZone = (value: string | null) =>
+    value === null ? null : normalizeTimeZone(value) ?? value;
   const resolved = resolveBrandingFromEvent(event);
   return {
     id: event.id,
     title: event.title,
     slug: event.slug,
     date: event.date.toISOString(),
-    timezone: event.timezone,
+    timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
-    archived_by_timezone: event.archived_by_timezone,
+    archived_by_timezone: normalizeNullableTimeZone(event.archived_by_timezone),
     created_at: event.created_at.toISOString(),
-    created_by_timezone: event.created_by_timezone,
+    created_by_timezone: normalizeNullableTimeZone(event.created_by_timezone),
     is_deletable: deletability.isDeletable,
+    deletion_blockers: deletability.deletionBlockers,
     admitted_count: revokeCounts.admittedCount,
     issued_items_count: revokeCounts.issuedItemsCount,
     organization_name: event.organization.name,
@@ -151,14 +160,15 @@ const EVENT_SETTINGS_SELECT = {
   },
 } as const;
 
-/** Load activity signals for an event and evaluate the shared delete guard against them. */
+/** Load content signals for an event and evaluate the shared delete guard against them. */
 async function loadDeletability(
   db: PrismaClient,
   eventId: string,
   event: { archived_at: Date | null; pinned_note: string | null },
-): Promise<{ isDeletable: boolean }> {
+): Promise<{ isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] }> {
   const signals = await countEventActivitySignals(db, eventId);
-  return { isDeletable: isEventDeletable(event, signals) };
+  const deletionBlockers = listEventDeletionBlockers(event, signals);
+  return { isDeletable: isEventDeletable(event, signals), deletionBlockers };
 }
 
 /** Live counts backing the Danger Zone's "Revoke all check-ins" / "Revoke all items issued" rows.

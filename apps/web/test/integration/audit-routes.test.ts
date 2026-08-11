@@ -371,7 +371,7 @@ describe("GET /api/admin/audit-log", () => {
     expect(ips).not.toContain("9.9.9.9");
   });
 
-  it("returns actor_user_id when actor user is deleted", async () => {
+  it("returns actor snapshot when actor user is deleted", async () => {
     const ghostId = "ghost-actor-audit-test";
     await prisma.user.create({
       data: { id: ghostId, email: "ghost-audit@example.com", password_hash: await hashPassword(PASSWORD) },
@@ -380,6 +380,8 @@ describe("GET /api/admin/audit-log", () => {
       data: {
         organization_id: ORG_AUDIT,
         actor_user_id: ghostId,
+        actor_email: "ghost-audit@example.com",
+        actor_display_name: "Ghost Actor",
         action_type: "system_settings_updated",
         metadata: { fields: ["session_ttl_ms"] },
       },
@@ -390,10 +392,11 @@ describe("GET /api/admin/audit-log", () => {
       headers: { Cookie: superCookie },
     });
     const body = (await res.json()) as {
-      entries: { actor_user_id: string; actor_email: string | null }[];
+      entries: { actor_user_id: string; actor_email: string | null; actor_display_name: string | null }[];
     };
     const ghostEntry = body.entries.find((e) => e.actor_user_id === ghostId);
-    expect(ghostEntry?.actor_email).toBeNull();
+    expect(ghostEntry?.actor_email).toBe("ghost-audit@example.com");
+    expect(ghostEntry?.actor_display_name).toBe("Ghost Actor");
 
     await prisma.adminAuditLog.deleteMany({
       where: { actor_user_id: ghostId, organization_id: ORG_AUDIT },

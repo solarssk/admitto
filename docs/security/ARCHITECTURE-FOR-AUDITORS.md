@@ -38,6 +38,7 @@ flowchart TB
   end
   subgraph stack [Admitto stack on customer host]
     APP[Application]
+    WORKER[Background worker]
     PG[(PostgreSQL)]
     RD[(Redis)]
   end
@@ -52,7 +53,18 @@ flowchart TB
   APP --> RD
   APP --> Mail
   APP -.-> Wallet
+  WORKER --> PG
+  WORKER --> RD
+  WORKER --> Mail
 ```
+
+The application and background worker are separate processes from the same container image (ADR
+0042), not the same process under different threads. Only the application accepts inbound HTTP
+traffic; the worker has no listening port and is not reachable from the edge. The worker runs
+scheduled/queued jobs against the same database (mail delivery drain, bounce ingest, attendee
+import commit, retention purges) and coordinates with the application over Redis (job locks, and
+pub/sub so a worker-driven change reflects live in an open admin session without the operator
+having to refresh).
 
 ---
 

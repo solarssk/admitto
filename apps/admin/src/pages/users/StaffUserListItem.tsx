@@ -55,11 +55,11 @@ function UserRoles({ user }: Readonly<{ user: UserListItemDto }>) {
 function UserAuthMethod({ hasSso }: Readonly<{ hasSso: boolean }>) {
   return hasSso ? (
     <span className="users-page__auth">
-      <i className="ti ti-cloud-lock" aria-hidden="true" /> SSO
+      <i className="ti ti-cloud-lock" aria-hidden="true" /> Identity provider
     </span>
   ) : (
     <span className="users-page__auth">
-      <i className="ti ti-key" aria-hidden="true" /> Local
+      <i className="ti ti-key" aria-hidden="true" /> Local password
     </span>
   );
 }
@@ -70,12 +70,12 @@ function UserMfa({ hasMfa }: Readonly<{ hasMfa: boolean }>) {
       {hasMfa ? (
         <>
           <i className="ti ti-shield-check" style={{ color: "var(--status-ok)" }} aria-hidden="true" />{" "}
-          TOTP
+          Authenticator app
         </>
       ) : (
         <>
           <i className="ti ti-shield-off" style={{ color: "var(--text-disabled)" }} aria-hidden="true" />{" "}
-          None
+          Not set up
         </>
       )}
     </span>
@@ -190,7 +190,7 @@ export function StaffUserCard({ user, onEdit }: Readonly<StaffUserListItemProps>
           </dd>
         </div>
         <div>
-          <dt>MFA</dt>
+          <dt>Two-factor</dt>
           <dd>
             <UserMfa hasMfa={user.has_mfa} />
           </dd>

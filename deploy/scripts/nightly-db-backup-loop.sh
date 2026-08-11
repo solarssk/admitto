@@ -1,6 +1,6 @@
 #!/bin/sh
 # Nightly pg_dump sidecar — network auth via POSTGRES_* from .env (no node/DATABASE_URL parser).
-# Pattern mirrors write_pre_migration_backup in docker-entrypoint.sh (tmp file, exit checks, gzip -t).
+# Dumps SQL to a temp file, then gzip -c into nightly-*.sql.gz; gzip -t before the file is kept.
 
 set -eu
 

@@ -1,7 +1,8 @@
 import { Avatar, Badge, IconButton, Tooltip } from "@admitto/ui";
 import type { SessionListDto } from "../../api/types.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
-import { formatRelativeTime, viewerLocalTime } from "../../utils/event-dates.js";
+import { ActorOrViewerLocalTimeLine } from "../../components/ActorOrViewerLocalTimeLine.js";
+import { formatRelativeTime } from "../../utils/event-dates.js";
 import { parseUserAgent } from "../../utils/parseUserAgent.js";
 import { GeoCell } from "../../components/GeoCell.js";
 
@@ -11,16 +12,16 @@ function formatPrimaryTime(iso: string): string {
 }
 
 export const LOGGED_IN_HINT =
-  "Top: when this session started, in UTC. Below: the same moment in your own local time.";
+  "UTC on top. Below (user icon): the signer's local time at login. Missing for older sessions - then your browser timezone (desktop icon).";
 
 export function SessionSignIn({ authMethod }: Readonly<{ authMethod: string }>) {
   return authMethod === "oidc" ? (
     <span className="sessions-signin sessions-signin--sso">
-      <i className="ti ti-cloud" aria-hidden="true" /> SSO
+      <i className="ti ti-cloud" aria-hidden="true" /> Identity provider
     </span>
   ) : (
     <span className="sessions-signin sessions-signin--local">
-      <i className="ti ti-key" aria-hidden="true" /> Local
+      <i className="ti ti-key" aria-hidden="true" /> Local password
     </span>
   );
 }
@@ -74,7 +75,11 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
       </td>
       <td>
         {formatPrimaryTime(s.loginAt)} UTC
-        <div className="sessions-subdued">{viewerLocalTime(s.loginAt)}</div>
+        <ActorOrViewerLocalTimeLine
+          iso={s.loginAt}
+          actorTimezone={s.timezone}
+          actorTitle="Signer's local time"
+        />
       </td>
       <td>{formatRelativeTime(s.lastSeenAt)}</td>
       <td className="sessions-col-tablet-hide">
@@ -137,7 +142,11 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
           <dt>Logged in</dt>
           <dd>
             {formatPrimaryTime(s.loginAt)} UTC
-            <div className="sessions-subdued">{viewerLocalTime(s.loginAt)}</div>
+            <ActorOrViewerLocalTimeLine
+              iso={s.loginAt}
+              actorTimezone={s.timezone}
+              actorTitle="Signer's local time"
+            />
           </dd>
         </div>
         <div>

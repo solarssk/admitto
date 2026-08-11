@@ -77,6 +77,8 @@ describe("GET /setup", () => {
     const html = await res.text();
     expect(html).toContain('action="/setup"');
     expect(html).toContain('name="confirm_password"');
+    expect(html).toContain('name="timezone"');
+    expect(html).toContain("resolvedOptions().timeZone");
     expect(html).toContain('autocomplete="username"');
     expect(html).toContain('passwordrules="minlength: 12;"');
     expect(html).toContain("Set up Admitto");
@@ -185,6 +187,7 @@ describe("POST /setup", () => {
         password: SETUP_PASSWORD,
         confirm_password: SETUP_PASSWORD,
         display_name: "First Admin",
+        timezone: "Europe/Warsaw",
       }).toString(),
       redirect: "manual",
     });
@@ -205,6 +208,15 @@ describe("POST /setup", () => {
       where: { key: SETTING_SETUP_COMPLETE },
     });
     expect(setting?.value_json).toBe("false");
+
+    const session = await prisma.session.findFirst({ where: { user_id: user!.id } });
+    expect(session?.timezone).toBe("Europe/Warsaw");
+
+    const loginAudit = await prisma.securityAuditLog.findFirst({
+      where: { user_id: user!.id, event_type: "auth.login.success" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(loginAudit?.actor_timezone).toBe("Europe/Warsaw");
   });
 
   it("returns 409 already_initialized when concurrent first-run setup races", async () => {

@@ -5,6 +5,23 @@ import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
 
 afterEach(cleanup);
 
+function mockVisualViewport(
+  width: number,
+  getHeight: () => number,
+  getOffsetTop: () => number = () => 0,
+  getOffsetLeft: () => number = () => 0,
+): VisualViewport {
+  const viewport = new EventTarget();
+  Object.defineProperties(viewport, {
+    width: { value: width },
+    height: { get: getHeight },
+    offsetTop: { get: getOffsetTop },
+    offsetLeft: { get: getOffsetLeft },
+  });
+  vi.stubGlobal("visualViewport", viewport);
+  return viewport as VisualViewport;
+}
+
 // jsdom doesn't implement ResizeObserver - same mock shape as MapPicker.test.tsx's own, letting
 // a test fire the callback manually via .trigger() to simulate the panel's content shrinking.
 class MockResizeObserver {
@@ -132,6 +149,78 @@ describe("useDropdownMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
 
     expect(screen.getByRole("menu").dataset.up).toBe("true");
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("repositions for the smaller visual viewport when the mobile keyboard opens", () => {
+    let visualHeight = 900;
+    const visualViewport = mockVisualViewport(390, () => visualHeight);
+    vi.stubGlobal("innerHeight", 900);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 0, right: 260, width: 260, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 450 };
+      return { ...base, top: 350, bottom: 360, height: 10 };
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    expect(screen.getByRole("menu").dataset.up).toBe("false");
+
+    visualHeight = 400;
+    act(() => visualViewport.dispatchEvent(new Event("resize")));
+    const menu = screen.getByRole("menu");
+    expect(menu.dataset.up).toBe("true");
+    expect(menu.style.top).toBe("8px");
+    expect(menu.style.maxHeight).toBe("338px");
+    expect(menu.style.overflowY).toBe("auto");
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps a dropdown within the panned visual viewport", () => {
+    const visualViewport = mockVisualViewport(390, () => 400, () => 300);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 50, right: 310, width: 260, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 450 };
+      return { ...base, top: 500, bottom: 510, height: 10 };
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.dataset.up).toBe("true");
+    expect(menu.style.top).toBe("308px");
+    expect(menu.style.maxHeight).toBe("188px");
+
+    act(() => visualViewport.dispatchEvent(new Event("scroll")));
+    expect(screen.getByRole("menu").style.top).toBe("308px");
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("never raises a dropdown above less than 160px of available viewport space", () => {
+    vi.stubGlobal("innerHeight", 120);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 0, right: 260, width: 260, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 300 };
+      return { ...base, top: 50, bottom: 60, height: 10 };
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.style.maxHeight).toBe("48px");
+    expect(menu.style.overflowY).toBe("auto");
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

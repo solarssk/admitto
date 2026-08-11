@@ -491,6 +491,9 @@ model AdminAuditLog {
   // Actor's IANA timezone at write time — null for rows predating this column or written
   // outside a browser request. Mirrors AttendeeActionLog.client_timezone.
   actor_timezone  String?
+  // Immutable staff identity at write time — survives hard delete of the User row.
+  actor_email         String?
+  actor_display_name  String?
 
   @@index([organization_id, created_at(sort: Desc)])
 }
@@ -510,6 +513,13 @@ model SecurityAuditLog {
   ip         String?
   metadata   Json?
   created_at DateTime @default(now())
+  // Immutable staff identity at write time — null when user_id is null (enumeration-safe).
+  user_email        String?
+  user_display_name String?
+  // Actor's IANA timezone at write time — null for events with no known actor (e.g. a failed
+  // login against an unknown/anonymous browser) or captured outside a browser request. Mirrors
+  // AdminAuditLog.actor_timezone.
+  actor_timezone String?
 
   @@index([event_type, created_at(sort: Desc)])
   @@index([user_id])
@@ -674,6 +684,9 @@ model Session {
   device_label String?
   ip           String?
   user_agent   String?
+  // Signer's IANA timezone at login time — null when captured outside a browser request
+  // (no JS, older sessions). Mirrors AdminAuditLog.actor_timezone.
+  timezone     String?
   created_at   DateTime  @default(now())
   last_seen_at DateTime  @default(now())
   expires_at   DateTime
@@ -844,6 +857,10 @@ model OidcAuthState {
   redirect_next   String?
   link_user_id    String?
   link_step_up_at DateTime?
+  // Browser's IANA timezone, captured at /start and carried through to the callback so the
+  // resulting Session/SecurityAuditLog row can record it (no JS execution point at the IdP
+  // redirect callback itself). Mirrors AdminAuditLog.actor_timezone.
+  timezone        String?
   expires_at      DateTime
   consumed_at     DateTime?
   created_at      DateTime         @default(now())

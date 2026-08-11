@@ -1,4 +1,4 @@
-# Overlay for scripts/test-migration-backup.sh only.
+# Overlay for scripts/test-migrate-entrypoint.sh only.
 # Uses .env.smoke (gitignored) instead of deploy/.env so a local stack is untouched.
 services:
   migrate:

@@ -296,7 +296,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               showLabel={false}
               value={ticketType}
               options={[
-                { id: "", label: "-" },
+                { id: "", label: "No ticket type" },
                 ...ticketTypes.map((type) => ({ id: type.key, label: type.label })),
               ]}
               disabled={submitting}

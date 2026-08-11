@@ -64,7 +64,7 @@ function EventItemsTableBody({
     if (!showLoading) return null;
     return (
       <tr>
-        <td colSpan={3} className="attendees-empty">
+        <td colSpan={4} className="attendees-empty">
           Loading…
         </td>
       </tr>
@@ -73,7 +73,7 @@ function EventItemsTableBody({
   if (items.length === 0) {
     return (
       <tr>
-        <td colSpan={3} className="attendees-empty">
+        <td colSpan={4} className="attendees-empty">
           No items yet. Add one to configure what operators issue at check-in.
         </td>
       </tr>
@@ -88,7 +88,9 @@ function EventItemsTableBody({
               <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
               <div className="requirements-item-info">
                 <div className="requirements-item-name">{item.label}</div>
-                <div className="requirements-item-id">{item.key}</div>
+                <div className="requirements-item-id">
+                  <code>{item.key}</code>
+                </div>
               </div>
             </div>
           </td>
@@ -97,24 +99,26 @@ function EventItemsTableBody({
               <span className="requirements-item-desc">{item.description}</span>
             )}
           </td>
+          <td className="requirements-item-status-col">
+            <ArchivedGuard
+              event={event}
+              reasonId={`toggle-item-reason-${item.id}`}
+              disabled={togglingIds.has(item.id)}
+            >
+              {(guard) => (
+                <Switch
+                  label={item.enabled ? "On" : "Off"}
+                  checked={item.enabled}
+                  aria-busy={togglingIds.has(item.id)}
+                  onChange={() => onToggle(item)}
+                  aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
+                  {...guard}
+                />
+              )}
+            </ArchivedGuard>
+          </td>
           <td className="requirements-item-actions">
             <div className="requirements-item-actions__wrap">
-              <ArchivedGuard
-                event={event}
-                reasonId={`toggle-item-reason-${item.id}`}
-                disabled={togglingIds.has(item.id)}
-              >
-                {(guard) => (
-                  <Switch
-                    label={item.enabled ? "On" : "Off"}
-                    checked={item.enabled}
-                    aria-busy={togglingIds.has(item.id)}
-                    onChange={() => onToggle(item)}
-                    aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
-                    {...guard}
-                  />
-                )}
-              </ArchivedGuard>
               <ArchivedGuard event={event} reasonId={`edit-item-reason-${item.id}`}>
                 {(guard) => (
                   <IconButton
@@ -340,6 +344,9 @@ function AddItemModal({
           </div>
         </form>
         <div className="event-item-modal__footer">
+          <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             type="submit"
             form="add-item-form"
@@ -347,9 +354,6 @@ function AddItemModal({
             disabled={adding || !addLabel.trim()}
           >
             {adding ? "Creating…" : "Create"}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
           </Button>
         </div>
       </div>
@@ -567,6 +571,19 @@ export function RequirementsPage() {
       <PageHeader
         title="Requirements"
         subtitle="Configure what this event issues to attendees and operational behaviour."
+        actions={
+          <a
+            href="https://github.com/solarssk/admitto/wiki/Requirements-and-Fulfilment"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="at-btn at-btn--secondary"
+          >
+            <span className="at-btn__icon" aria-hidden="true">
+              <i className="ti ti-book" aria-hidden="true" />
+            </span>
+            <span>Documentation</span>
+          </a>
+        }
       />
       {loadError && !loading ? (
         <EmptyState
@@ -609,7 +626,8 @@ export function RequirementsPage() {
                 <tr>
                   <th>Item</th>
                   <th className="requirements-item-desc-col">Description</th>
-                  <th>Active</th>
+                  <th className="requirements-item-status-col">Active</th>
+                  <th className="requirements-item-actions" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>

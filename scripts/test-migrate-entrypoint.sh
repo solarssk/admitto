@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Integration smoke: pre-migration backup in docker entrypoint (ADR 0027).
+# Integration smoke: the migrate compose service applies schema + backfills, runs non-root, and
+# unblocks `app` (deploy/docker-entrypoint.sh). Backup is the operator's responsibility (ADR 0043)
+# and is not exercised here — see scripts/test-migration-backup.sh in history for the old coverage.
 # Uses an isolated Compose project name and .env.smoke so it does not tear down
 # or overwrite a developer's normal deploy/ stack (postgres_data, migration_backups, .env).
 set -euo pipefail
@@ -35,6 +37,8 @@ prepare_env() {
     rm -f "${SMOKE_ENV}.bak"
   fi
   node validate-env.mjs "$SMOKE_ENV"
+  chmod +x scripts/init-host-dirs.sh 2>/dev/null || true
+  ./scripts/init-host-dirs.sh 2>/dev/null || mkdir -p emergency-exports uploads
 }
 
 on_fail() {
@@ -51,35 +55,26 @@ trap cleanup EXIT
 
 prepare_env
 
-echo "== Scenario A: pending migrations → pre-migration backup file =="
+echo "== Scenario A: fresh stack -> migrate runs non-root and app becomes healthy =="
 if ! $COMPOSE up -d --build --wait; then
   on_fail
   exit 1
 fi
 
-backup_count="$($COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
-if [[ "${backup_count:-0}" -lt 1 ]]; then
-  echo "expected at least one pre-migration backup on first start" >&2
+migrate_uid="$($COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'id -u')"
+if [[ "$migrate_uid" == "0" ]]; then
+  echo "expected migrate to run as a non-root uid (got 0)" >&2
   on_fail
   exit 1
 fi
+echo "Scenario A OK (migrate uid=$migrate_uid)"
 
-$COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'gzip -t /backups/pre-migration-*.sql.gz'
-echo "Scenario A OK (backups=$backup_count)"
-
-echo "== Scenario B: re-run with no pending migrations → no new backup =="
-before="$backup_count"
-$COMPOSE run --rm --no-deps migrate
-after="$($COMPOSE run --rm --no-deps --entrypoint sh migrate -c 'ls -1 /backups/pre-migration-*.sql.gz 2>/dev/null | wc -l' | tr -d ' ')"
-if [[ "$after" != "$before" ]]; then
-  echo "expected backup count unchanged after re-running migrate (before=$before after=$after)" >&2
-  exit 1
-fi
-$COMPOSE restart app
+echo "== Scenario B: bare app restart never re-runs migrate; retention stays off app boot =="
 # A bare restart never re-runs migrate (depends_on: condition: service_completed_successfully is
 # only evaluated on `docker compose up`). Retention no longer runs on app boot (ADR 0042 — the
 # worker owns product retention). Assert the HTTP process comes back without the old retention
 # startup line, and that the web listen log appears.
+$COMPOSE restart app
 # Poll instead of a fixed sleep: restart-to-ready timing varies with CI load.
 app_ready=0
 for _ in $(seq 1 30); do
@@ -101,31 +96,7 @@ if $COMPOSE logs app --since 30s 2>&1 | grep -q "purging expired/revoked auth se
 fi
 echo "Scenario B OK"
 
-echo "== Scenario C: pg_dump failure → no migrations applied =="
-cleanup
-trap - EXIT
-prepare_env
-
-$COMPOSE up -d db redis --wait
-
-# Fresh DB: run migrate once with fake pg_dump on PATH (pending migrations, backup required).
-if $COMPOSE run --rm \
-  -e PATH="/opt/fake-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-  -v "$ROOT/scripts/fixtures/fake-pg-dump:/opt/fake-bin:ro" \
-  --no-deps migrate; then
-  echo "expected migrate container to fail when pg_dump fails" >&2
-  exit 1
-fi
-
-applied="$($COMPOSE exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL" 2>/dev/null || echo 0' | tr -d ' ')"
-if [[ -z "$applied" ]]; then applied=0; fi
-if [[ "${applied:-0}" != "0" ]]; then
-  echo "expected zero applied migrations after pg_dump failure (got $applied)" >&2
-  exit 1
-fi
-echo "Scenario C OK"
-
-echo "== Scenario D: backfill timeout → migrate exits =="
+echo "== Scenario C: backfill timeout -> migrate exits nonzero =="
 cleanup
 trap - EXIT
 prepare_env
@@ -140,7 +111,7 @@ if $COMPOSE run --rm \
   exit 1
 fi
 
-echo "Scenario D OK"
+echo "Scenario C OK"
 
 cleanup
-echo "test-migration-backup.sh: all passed"
+echo "test-migrate-entrypoint.sh: all passed"

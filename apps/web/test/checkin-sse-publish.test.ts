@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Context } from "hono";
 import type { AdmitResult } from "@admitto/tickets";
-import { publishCheckinIfValid } from "../src/admin/checkin-sse-publish.js";
+import { publishCheckinIfValid, publishActivityChanged } from "../src/admin/checkin-sse-publish.js";
 import * as sseChannel from "../src/admin/sse-channel.js";
 
 function validResult(): AdmitResult {
@@ -39,5 +39,29 @@ describe("publishCheckinIfValid", () => {
       expect.objectContaining({ deviceLabel: "Gate A", operatorId: "op-1" }),
     );
     publishSpy.mockRestore();
+  });
+});
+
+describe("publishActivityChanged", () => {
+  it("publishes a payload-less activity_changed event for the given event", () => {
+    const publishSpy = vi.spyOn(sseChannel, "publish");
+
+    publishActivityChanged("evt-1");
+
+    expect(publishSpy).toHaveBeenCalledWith("evt-1", { type: "activity_changed" });
+    publishSpy.mockRestore();
+  });
+
+  it("swallows a publish failure instead of throwing (non-fatal)", () => {
+    const publishSpy = vi.spyOn(sseChannel, "publish").mockImplementation(() => {
+      throw new Error("channel exploded");
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(() => publishActivityChanged("evt-1")).not.toThrow();
+    expect(errorSpy).toHaveBeenCalledWith("SSE publish failed (non-fatal):", expect.any(Error));
+
+    publishSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });

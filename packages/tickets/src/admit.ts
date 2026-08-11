@@ -105,7 +105,7 @@ export async function admitAttendee(
     }
 
     const checkIn = await tx.checkIn.create({
-      data: { ...logBase, status: "VALID" },
+      data: { ...logBase, status: "VALID", checked_in_at: now },
     });
 
     await writeActionLog(tx, {

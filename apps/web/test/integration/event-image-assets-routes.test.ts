@@ -43,10 +43,10 @@ let adminCookie = "";
 let adminOtherCookie = "";
 let opCookie = "";
 
-function uploadForm(token: string, file: Blob = new Blob([PNG_BYTES], { type: "image/png" })): FormData {
+function uploadForm(name: string, file: Blob = new Blob([PNG_BYTES], { type: "image/png" })): FormData {
   const fd = new FormData();
   fd.append("file", file, "asset.png");
-  fd.append("token", token);
+  fd.append("name", name);
   return fd;
 }
 
@@ -208,6 +208,14 @@ afterAll(async () => {
 });
 
 describe("GET /api/admin/events/:eventId/image-assets", () => {
+  it("allows a same-org admin to list image assets", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      headers: { cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
   it("returns an empty list for a fresh event", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       headers: { Cookie: superCookie, ...sameOrigin },
@@ -224,12 +232,7 @@ describe("GET /api/admin/events/:eventId/image-assets", () => {
     expect(res.status).toBe(403);
   });
 
-  it("rejects a same-org admin (non-superadmin) with 403 — image assets are superadmin-only since this data flows into attendee-facing email content", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
-      headers: { Cookie: adminCookie, ...sameOrigin },
-    });
-    expect(res.status).toBe(403);
-  });
+  /* org admins may manage image assets (v0.4.14) */
 
   it("returns 403 for an admin of a different organization", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
@@ -257,7 +260,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
       created_at: string;
     };
     expect(body.token).toBe("sponsor_logo");
-    expect(body.filename).toBe("asset.png");
+    expect(body.filename).toBe("sponsor_logo");
     expect(body.mime_type).toBe("image/png");
     // saveEventUpload re-encodes via sharp (EXIF strip); size differs from the raw client buffer.
     expect(body.size_bytes).toBeGreaterThan(0);
@@ -277,38 +280,41 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(log?.metadata).toEqual({ token: "sponsor_logo" });
   });
 
-  it("rejects an invalid token format with 400", async () => {
+  it("rejects a name that cannot form a token with 400", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
-      body: uploadForm("Not-Valid!"),
+      body: uploadForm("!!!"),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("invalid_token");
+    expect(body.error).toBe("invalid_name");
   });
 
-  it("rejects a token beginning with a digit", async () => {
+  it("slugifies a display name that starts with a digit", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
-      body: uploadForm("1sponsor"),
+      body: uploadForm("1 Sponsor Banner"),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { token: string; filename: string };
+    expect(body.token).toBe("sponsor_banner");
+    expect(body.filename).toBe("1 Sponsor Banner");
   });
 
-  it("rejects a token colliding with a reserved static placeholder", async () => {
+  it("auto-suffixes when the slug matches a reserved static placeholder", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("logo_url"),
     });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("reserved_token");
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { token: string };
+    expect(body.token).toBe("logo_url_2");
   });
 
-  it("rejects a duplicate token within the same event with 409 and leaves no orphaned file", async () => {
+  it("auto-suffixes a duplicate name within the same event", async () => {
     const first = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
@@ -316,18 +322,14 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     });
     expect(first.status).toBe(201);
 
-    const eventUploadDir = join(uploadDir, "default", "events", EVENT_IA);
-    const filesBefore = readdirSync(eventUploadDir).length;
-
     const second = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
       headers: { Cookie: superCookie, ...sameOrigin },
       body: uploadForm("dup_token"),
     });
-    expect(second.status).toBe(409);
-    const body = (await second.json()) as { error: string };
-    expect(body.error).toBe("token_conflict");
-    expect(readdirSync(eventUploadDir)).toHaveLength(filesBefore);
+    expect(second.status).toBe(201);
+    const body = (await second.json()) as { token: string };
+    expect(body.token).toBe("dup_token_2");
   });
 
   it("rejects unsupported file type with 415", async () => {
@@ -342,14 +344,7 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(res.status).toBe(415);
   });
 
-  it("rejects a same-org admin (non-superadmin) with 403 — image assets are superadmin-only since this data flows into attendee-facing email content", async () => {
-    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin },
-      body: uploadForm("same_org_admin_denied"),
-    });
-    expect(res.status).toBe(403);
-  });
+  /* org admins may manage image assets (v0.4.14) */
 
   it("returns 403 for an admin of a different organization", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
@@ -653,20 +648,7 @@ describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
     expect(res.status).toBe(403);
   });
 
-  it("rejects a same-org admin (non-superadmin) with 403 — image assets are superadmin-only since this data flows into attendee-facing email content", async () => {
-    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
-      method: "POST",
-      headers: { Cookie: superCookie, ...sameOrigin },
-      body: uploadForm("same_org_admin_delete_denied"),
-    });
-    const created = (await createRes.json()) as { id: string };
-
-    const res = await app.request(
-      `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
-      { method: "DELETE", headers: { Cookie: adminCookie, ...sameOrigin } },
-    );
-    expect(res.status).toBe(403);
-  });
+  /* org admins may manage image assets (v0.4.14) */
 
   it("returns 403 for an admin of a different organization", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {

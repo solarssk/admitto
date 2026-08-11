@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
+import { fetch as undiciFetch } from "undici";
 import {
   NominatimProvider,
   GeocodingProviderError,
@@ -7,8 +9,31 @@ import {
   awaitWithAbortSignal,
 } from "../../src/maps/nominatim-provider.js";
 
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("undici", () => {
+  function MockAgent(this: { close: () => Promise<void> }) {
+    this.close = vi.fn().mockResolvedValue(undefined);
+  }
+  return {
+    Agent: vi.fn(MockAgent),
+    fetch: vi.fn(),
+  };
+});
+
+const mockedLookup = vi.mocked(lookup);
+const mockedUndiciFetch = vi.mocked(undiciFetch);
+
 const USER_AGENT = "Admitto/0.0.0-test (+https://example.com; ops@example.com)";
 const buildUserAgent = async () => USER_AGENT;
+
+beforeEach(() => {
+  mockedLookup.mockClear();
+  mockedUndiciFetch.mockClear();
+  mockedLookup.mockResolvedValue([{ address: "1.2.3.4", family: 4 }] as unknown as Awaited<ReturnType<typeof lookup>>);
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -394,9 +419,12 @@ describe("NominatimProvider.search", () => {
     await expect(makeProvider(fetchFn).search("unexpected")).resolves.toEqual([]);
   });
 
-  it("uses global fetch when no fetch function is injected", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
-    vi.stubGlobal("fetch", fetchFn);
+  it("re-resolves the host and pins the connection when no fetch function is injected", async () => {
+    mockedUndiciFetch.mockResolvedValue(
+      jsonResponse(geocodeJsonBody([])) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+    );
+    const globalFetch = vi.fn();
+    vi.stubGlobal("fetch", globalFetch);
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",
       timeoutMs: 5_000,
@@ -404,7 +432,53 @@ describe("NominatimProvider.search", () => {
     });
 
     await expect(provider.search("Warsaw")).resolves.toEqual([]);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(mockedLookup).toHaveBeenCalledTimes(1);
+    expect(mockedUndiciFetch).toHaveBeenCalledOnce();
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+
+  it("maps a blocked/rebound geocoding host to unavailable", async () => {
+    mockedLookup.mockResolvedValue([{ address: "169.254.169.254", family: 4 }] as unknown as Awaited<ReturnType<typeof lookup>>);
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 5_000,
+      buildUserAgent,
+    });
+
+    await expect(provider.search("Warsaw")).rejects.toMatchObject({ kind: "unavailable" });
+    expect(mockedUndiciFetch).not.toHaveBeenCalled();
+  });
+
+  it("times out (instead of hanging) when DNS resolution stalls past the configured deadline", async () => {
+    mockedLookup.mockImplementation(() => new Promise(() => {})); // never resolves
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 20,
+      buildUserAgent,
+    });
+
+    await expect(provider.search("Warsaw")).rejects.toMatchObject({ kind: "timeout" });
+    expect(mockedUndiciFetch).not.toHaveBeenCalled();
+  }, 1000);
+
+  it("retries the next validated record after a connect failure", async () => {
+    mockedLookup.mockResolvedValue([
+      { address: "2001:db8::1", family: 6 },
+      { address: "203.0.113.9", family: 4 },
+    ] as unknown as Awaited<ReturnType<typeof lookup>>);
+    mockedUndiciFetch
+      .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { code: "ENETUNREACH" }))
+      .mockResolvedValueOnce(
+        jsonResponse(geocodeJsonBody([])) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+      );
+    const provider = new NominatimProvider({
+      baseUrl: "https://nominatim.example.org",
+      timeoutMs: 5_000,
+      buildUserAgent,
+    });
+
+    await expect(provider.search("Warsaw")).resolves.toEqual([]);
+    expect(mockedUndiciFetch).toHaveBeenCalledTimes(2);
   });
 
   it("maps User-Agent construction failures to unavailable", async () => {
@@ -468,9 +542,12 @@ describe("NominatimProvider.reverse", () => {
     expect(await makeProvider(fetchFn).reverse(0, 0)).toBeNull();
   });
 
-  it("uses global fetch for reverse when no fetch function is injected", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
-    vi.stubGlobal("fetch", fetchFn);
+  it("re-resolves the host and pins the connection for reverse when no fetch function is injected", async () => {
+    mockedUndiciFetch.mockResolvedValue(
+      jsonResponse(geocodeJsonBody([])) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+    );
+    const globalFetch = vi.fn();
+    vi.stubGlobal("fetch", globalFetch);
     const provider = new NominatimProvider({
       baseUrl: "https://nominatim.example.org",
       timeoutMs: 5_000,
@@ -479,7 +556,9 @@ describe("NominatimProvider.reverse", () => {
     });
 
     await expect(provider.reverse(0, 0)).resolves.toBeNull();
-    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(mockedLookup).toHaveBeenCalledTimes(1);
+    expect(mockedUndiciFetch).toHaveBeenCalledOnce();
+    expect(globalFetch).not.toHaveBeenCalled();
   });
 
   it("returns null when reverse only contains malformed features", async () => {

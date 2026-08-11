@@ -179,6 +179,13 @@ async function seed(client: PrismaClient) {
     ],
   });
 
+  await client.eventItem.createMany({
+    data: [
+      { event_id: EVENT_ACTIVITY, key: "badge", label: "Badge" },
+      { event_id: EVENT_ACTIVITY, key: "giftbag", label: "Gift bag" },
+    ],
+  });
+
   const superUser = await client.user.create({ data: { email: EMAIL_SUPER, password_hash } });
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   const adminBUser = await client.user.create({ data: { email: EMAIL_ADMIN_B, password_hash } });
@@ -418,14 +425,47 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  await client.attendeeActionLog.create({
-    data: {
-      id: "log-overview-activity-import",
-      event_id: EVENT_ACTIVITY,
-      action_type: "attendees_imported",
-      created_at: new Date("2027-02-01T06:00:00.000Z"),
-      metadata: { filename: "activity-guests.csv", created: 3, updated: 1, skipped: 0 },
-    },
+  await client.attendeeActionLog.createMany({
+    data: [
+      {
+        id: "log-overview-activity-import",
+        event_id: EVENT_ACTIVITY,
+        action_type: "attendees_imported",
+        created_at: new Date("2027-02-01T06:00:00.000Z"),
+        metadata: { filename: "activity-guests.csv", created: 3, updated: 1, skipped: 0 },
+      },
+      {
+        id: "log-overview-activity-added",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_NONE,
+        action_type: "attendee_created_manual",
+        created_at: new Date("2027-02-01T11:00:00.000Z"),
+      },
+      {
+        id: "log-overview-activity-issued",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_STD_1,
+        action_type: "item_issued",
+        created_at: new Date("2027-02-01T09:30:00.000Z"),
+        metadata: { event_item_key: "badge", from_state: "pending", to_state: "issued" },
+      },
+      {
+        id: "log-overview-activity-returned",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_STD_2,
+        action_type: "item_returned",
+        created_at: new Date("2027-02-01T07:30:00.000Z"),
+        metadata: { event_item_key: "giftbag", from_state: "issued", to_state: "returned" },
+      },
+      {
+        id: "log-overview-activity-revoked",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_VIP_1,
+        action_type: "item_revoked",
+        created_at: new Date("2027-02-01T06:30:00.000Z"),
+        metadata: { event_item_key: "badge", from_state: "issued", to_state: "pending" },
+      },
+    ],
   });
 
   // Regression fixture for the "revoke all check-ins" bug: both attendees were checked in and
@@ -821,7 +861,7 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     ]);
   });
 
-  it("returns recent_activity merged newest-first across check-ins, mail failures, and imports", async () => {
+  it("returns recent_activity merged newest-first across check-ins, mail failures, imports, attendee adds, and item issue/return", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_ACTIVITY}/overview`, {
       headers: { Cookie: adminCookie },
     });
@@ -829,15 +869,25 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     const body = (await res.json()) as EventOverviewResponse;
 
     expect(body.recent_activity.map((entry) => entry.occurred_at)).toEqual([
+      "2027-02-01T11:00:00.000Z",
       "2027-02-01T10:00:00.000Z",
+      "2027-02-01T09:30:00.000Z",
       "2027-02-01T09:00:00.000Z",
       "2027-02-01T08:30:00.000Z",
       "2027-02-01T08:00:00.000Z",
+      "2027-02-01T07:30:00.000Z",
       "2027-02-01T07:00:00.000Z",
+      "2027-02-01T06:30:00.000Z",
       "2027-02-01T06:00:00.000Z",
     ]);
 
-    const [checkin, bounced, , , failed, imported] = body.recent_activity;
+    const [added, checkin, issued, bounced, , , returned, failed, revoked, imported] = body.recent_activity;
+    expect(added).toMatchObject({
+      type: "attendee_added",
+      tone: "info",
+      attendee_id: ATT_ACT_NONE,
+      message: "added",
+    });
     expect(checkin).toMatchObject({
       type: "checkin",
       tone: "ok",
@@ -845,11 +895,23 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       attendee_id: ATT_ACT_VIP_1,
       message: "checked in",
     });
+    expect(issued).toMatchObject({
+      type: "item_issued",
+      tone: "ok",
+      attendee_id: ATT_ACT_STD_1,
+      message: "issued Badge",
+    });
     expect(bounced).toMatchObject({
       type: "mail_bounced",
       tone: "error",
       attendee_id: ATT_ACT_STD_1,
       message: "Ticket email bounced for bounced-guest@example.com",
+    });
+    expect(returned).toMatchObject({
+      type: "item_returned",
+      tone: "muted",
+      attendee_id: ATT_ACT_STD_2,
+      message: "returned Gift bag",
     });
     expect(failed).toMatchObject({
       type: "mail_failed",
@@ -857,14 +919,20 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       attendee_id: ATT_ACT_VIP_1,
       message: "Ticket email failed for failed-guest@example.com",
     });
+    expect(revoked).toMatchObject({
+      type: "item_revoked",
+      tone: "warn",
+      attendee_id: ATT_ACT_VIP_1,
+      message: "revoked Badge",
+    });
     expect(imported).toMatchObject({
       type: "import",
       tone: "muted",
       attendee_id: null,
       message: "4 attendees imported",
     });
-    // Length 6 (not 7) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
-    // check-in there would otherwise sort first, ahead of the 10:00 entry asserted above.
-    expect(body.recent_activity).toHaveLength(6);
+    // Length 10 (not 11) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
+    // check-in there would otherwise sort first, ahead of the 11:00 entry asserted above.
+    expect(body.recent_activity).toHaveLength(10);
   });
 });

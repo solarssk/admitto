@@ -24,7 +24,6 @@
 
 ---
 
-> **Status: v0.4.x (pre-1.0), internal.**
 > Treat personal data carefully until your organisation's data protection review is complete.
 > See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [SECURITY.md](SECURITY.md) before deploying.
 >
@@ -43,7 +42,7 @@ first thing to plan for, before the rest of this README.
 | **Deciding whether to adopt Admitto** (no in-house IT yet) | [docs/security/CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md): what running it actually requires |
 | **Event Manager, check-in operator, or Superadmin** (using Admitto) | [User guide Wiki](https://github.com/solarssk/admitto/wiki) (source: [`docs/wiki/`](docs/wiki/)) |
 | **Developer** (local setup, tests) | This README · [infra/README.md](infra/README.md) · [packages/README.md](packages/README.md) · [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) |
-| **Operator** (production deploy) | [deploy/README.md](deploy/README.md) |
+| **Operator** (production deploy) | [deploy/README.md](deploy/README.md) · [deploy/ENV.md](deploy/ENV.md) (env dictionary) |
 | **Security / privacy reviewer** | [SECURITY.md](SECURITY.md) · [docs/security/SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md) · [docs/security/ARCHITECTURE-FOR-AUDITORS.md](docs/security/ARCHITECTURE-FOR-AUDITORS.md) |
 | **DPO / GDPR** | [DATA-PROTECTION.md](DATA-PROTECTION.md) · [docs/security/GDPR-ONE-PAGER.md](docs/security/GDPR-ONE-PAGER.md) · [docs/security/DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 

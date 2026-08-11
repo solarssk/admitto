@@ -4332,14 +4332,16 @@ output.mail-field-hint {
     padding-inline: var(--space-2);
   }
 
-  /* MFA switches need more horizontal room than a numeric field — span below the label. */
+  /* MFA switches need more horizontal room than a numeric field — span below the label.
+     Stacked one per row instead of wrapping: at this width the three switches
+     (Superadmin/Administrator/Operator) don't fit on one line, and flex-wrap left an
+     uneven 2-then-1 layout instead of a predictable list. */
   .security-settings-row__control.security-mfa-section__switches {
     grid-column: 1 / -1;
     justify-self: stretch;
+    flex-direction: column;
     align-items: flex-start;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-3);
+    gap: var(--space-2);
   }
 }
 
@@ -5145,6 +5147,10 @@ output.mail-field-hint {
 }
 
 .smtp-connection-tls-row {
+  /* Overrides the generic .settings-row mobile column-stack below (same specificity, this
+     rule comes later in the file) so the switch stays beside the label on narrow screens,
+     matching the desktop layout instead of dropping onto its own line. */
+  flex-direction: row;
   align-items: center;
   gap: var(--space-3);
   margin: 0;
@@ -5198,8 +5204,8 @@ output.mail-field-hint {
 
 .sessions-table-wrap {
   overflow-x: auto;
-  margin: 0 calc(-1 * var(--space-4));
-  padding: 0 var(--space-4);
+  margin: 0 calc(-1 * var(--pad-card));
+  padding: 0 var(--pad-card);
 }
 
 .table {
@@ -5251,11 +5257,11 @@ output.mail-field-hint {
   gap: var(--space-1);
 }
 
-.geo-cell > [aria-hidden="true"]:first-child {
+.geo-cell__flag {
   display: inline-block;
   width: 1.25rem;
   text-align: center;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
 .sessions-action-col {
@@ -6504,17 +6510,6 @@ output.mail-field-hint {
   align-items: stretch;
 }
 
-/* (B) Recent activity's header carries extra content (All/Issues filter pills + a live badge)
- * that renders taller than a plain text title's line-height alone, so the shared
- * `.at-card__header`'s fixed padding produces a visibly shorter header on Check-in progress
- * (title only) next to it in the same grid row. Pin a matching min-height — derived from the
- * filter pills' real rendered height plus the header's own vertical padding, not a bare magic
- * number — on both of this row's card headers only; every other page's `.at-card__header` is
- * untouched. */
-.overview-card--header-fixed .at-card__header {
-  min-height: calc(var(--control-h-sm) + 4px + (var(--space-4) * 2));
-}
-
 /* Stretching the row (above) makes both cards the height of the taller one, but a plain `.at-card`
  * is a block box — its body wouldn't fill that extra height on its own, just leave blank space
  * under its content. Turn the card into a flex column and let its body absorb the slack;
@@ -6591,7 +6586,7 @@ output.mail-field-hint {
  * of the old flat single-line "dot + label … value" table row (#G polish). */
 .overview-readiness-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
 }
 
@@ -6600,7 +6595,6 @@ output.mail-field-hint {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding-top: 2px;
 }
 
 .overview-readiness-item__body strong {
@@ -7331,7 +7325,10 @@ output.mail-field-hint {
 .overview-modal__panel {
   position: relative;
   width: min(480px, 100%);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   background: var(--surface-card);
   border-radius: var(--radius-lg);
@@ -7375,6 +7372,26 @@ output.mail-field-hint {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.overview-contact-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.overview-contact-modal__phone-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.overview-contact-modal__phone-row .phone-country-select {
+  flex: 0 0 8.5rem;
+}
+
+.overview-contact-modal__phone-row > .at-field:not(.phone-country-select) {
+  flex: 1;
+  min-width: 0;
 }
 
 .overview-modal__footer {
@@ -7745,6 +7762,16 @@ output.mail-field-hint {
   color: var(--text-disabled);
 }
 
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix (pointer: coarse, not a max-width - see its own comment) for
+   .at-input/.at-select/.at-textarea in packages/ui. */
+@media (pointer: coarse) {
+  .date-picker__input {
+    font-size: 16px;
+  }
+}
+
 /* This is a native <dialog> (see DatePicker.tsx), not a plain <div> - the rules below
    reset the UA default dialog styling (inset on all sides, auto margin, fit-content
    sizing, Canvas colors) back to what the plain <div> it replaced would have had.
@@ -7914,4 +7941,3 @@ output.mail-field-hint {
 /* Settings tab bar's horizontal scroll + edge-fade behavior now lives in the
    shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
    used instead of the plain <Tabs> in SettingsLayout.tsx. */
-

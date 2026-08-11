@@ -38,6 +38,7 @@ import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
+import { resolveClientTimezone } from "../admin/admin-helpers.js";
 
 const AUTH_ERROR = { error: "unauthorized" } as const;
 
@@ -141,6 +142,7 @@ export async function handleLogin(
     ip: resolveClientIp(c),
     userAgent: c.req.header("user-agent"),
     trustedDeviceToken,
+    timezone: resolveClientTimezone(c),
   });
 
   if (!result.ok) {

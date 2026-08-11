@@ -71,6 +71,7 @@ describe("drainImportJobs", () => {
       failed: 0,
       reclaimed: 2,
       healed: 1,
+      eventIds: [],
     });
     expect(reclaimStaleImportJobs).toHaveBeenCalledWith(
       db,
@@ -92,6 +93,7 @@ describe("drainImportJobs", () => {
       failed: 0,
       reclaimed: 0,
       healed: 0,
+      eventIds: ["evt-1"],
     });
     expect(executeImportCommit).toHaveBeenCalledWith(
       db,
@@ -118,6 +120,7 @@ describe("drainImportJobs", () => {
       failed: 0,
       reclaimed: 0,
       healed: 0,
+      eventIds: ["evt-1"],
     });
   });
 
@@ -133,6 +136,7 @@ describe("drainImportJobs", () => {
       failed: 1,
       reclaimed: 0,
       healed: 0,
+      eventIds: [],
     });
     expect(db.adminJob.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -187,6 +191,7 @@ describe("drainImportJobs", () => {
       failed: 1,
       reclaimed: 0,
       healed: 0,
+      eventIds: [],
     });
     expect(executeImportCommit).not.toHaveBeenCalled();
     expect(db.adminJob.update).toHaveBeenCalledWith(
@@ -207,6 +212,7 @@ describe("drainImportJobs", () => {
       failed: 0,
       reclaimed: 0,
       healed: 0,
+      eventIds: [],
     });
     expect(executeImportCommit).not.toHaveBeenCalled();
   });
@@ -227,6 +233,7 @@ describe("drainImportJobs", () => {
       failed: 0,
       reclaimed: 0,
       healed: 0,
+      eventIds: ["evt-1", "evt-1"],
     });
 
     db.adminJob.findFirst.mockClear().mockResolvedValue(null);

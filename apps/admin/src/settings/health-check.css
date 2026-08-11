@@ -3,6 +3,9 @@
 .health-check__card .at-card__header {
   flex-wrap: wrap;
   row-gap: var(--space-2);
+  /* The shared 61px height applies to a single row. Health Check deliberately wraps its
+     toolbar, so it must grow for a second row without overlapping the card body. */
+  height: auto;
 }
 
 .health-check__card .at-card__actions {
@@ -48,14 +51,25 @@
 
 .health-check__meta {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.4rem;
   margin: 0;
   flex: 0 1 auto;
+  min-width: 0;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-mono, var(--fs-xs));
   color: var(--text-muted, var(--tblr-secondary));
-  white-space: nowrap;
+}
+
+.health-check__meta span {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* The menu mirror of "Run live checks" - shown only below the header's mobile breakpoint
+   (media query below), where the standalone button is hidden instead. */
+.health-check__live-menu-item {
+  display: none;
 }
 
 .health-check__meta .ti {
@@ -266,9 +280,25 @@
 }
 
 @media (max-width: 720px) {
-  .health-check__actions {
-    width: 100%;
-    justify-content: flex-start;
+  /* Below this width "Overview" + both header buttons no longer fit on one line. Move
+     "Run live checks" into the "More actions" menu (its mirror item there) instead of letting
+     the header wrap to two rows - "More actions" alone stays inline next to the title, so the
+     width:100% row-stacking this block used before (when both buttons were still here) is no
+     longer needed. */
+  .health-check__run-live-trigger {
+    display: none;
+  }
+
+  .health-check__live-menu-item {
+    display: block;
+  }
+
+  /* The shared menu may widen to its longest hint. Keep this Health check action list compact
+     on phones; the hints wrap within the panel instead of making it span most of the screen. */
+  .health-check__actions .more-actions-menu__panel {
+    box-sizing: border-box;
+    width: min(260px, calc(100vw - (2 * var(--space-4))));
+    min-width: 0;
   }
 
   .health-check__detail {

@@ -97,6 +97,8 @@ export async function getRecentCheckIns(
       // without these the sidebar kept showing a reversed admission as a
       // permanently-green "Checked in" row with no indication it was undone.
       source: { in: ["scan", "manual", "undo", "admin_revoke"] },
+      // Duplicate scan warnings are audit records, not recent activity.
+      status: { not: "ALREADY_CHECKED_IN" },
     },
     orderBy: [{ checked_in_at: "desc" }, { id: "desc" }],
     take: safeLimit,

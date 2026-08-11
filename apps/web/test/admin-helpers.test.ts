@@ -32,6 +32,11 @@ describe("resolveClientTimezone (Codecov review — previously untested)", () =>
     const res = await appWithRequest({ "X-Client-Timezone": "Europe/Warsaw" });
     expect(await res.json()).toEqual({ timezone: "Europe/Warsaw" });
   });
+
+  it("normalizes a legacy timezone header", async () => {
+    const res = await appWithRequest({ "X-Client-Timezone": "Asia/Calcutta" });
+    expect(await res.json()).toEqual({ timezone: "Asia/Kolkata" });
+  });
 });
 
 describe("isValidCalendarDate", () => {

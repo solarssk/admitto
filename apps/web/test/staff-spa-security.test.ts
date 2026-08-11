@@ -137,4 +137,18 @@ describe("getStaffSpaSecurityHeaders", () => {
     const csp = getStaffSpaSecurityHeaders()["Content-Security-Policy"]!;
     expect(cspAllowsOrigin(csp, "img-src", "https://cdn.example.com")).toBe(true);
   });
+
+  it("stays 'self'-only when no trusted origins are configured (regression guard)", () => {
+    const csp = getStaffSpaSecurityHeaders(process.env, [])["Content-Security-Policy"]!;
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("connect-src 'self'");
+  });
+
+  it("appends configured trusted origins to script-src and connect-src", () => {
+    const csp = getStaffSpaSecurityHeaders(process.env, [
+      "https://static.cloudflareinsights.com",
+    ])["Content-Security-Policy"]!;
+    expect(csp).toContain("script-src 'self' https://static.cloudflareinsights.com");
+    expect(csp).toContain("connect-src 'self' https://static.cloudflareinsights.com");
+  });
 });

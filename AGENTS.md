@@ -166,6 +166,13 @@ lazy `communication` chunk) using `.add-attendee-modal__*` classes with no impor
 at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` — every consumer of
 a shared modal/component CSS file should show up importing it directly.
 
+**Do not import `@admitto/mail-templates` (package root) from `apps/admin`.** The barrel re-exports
+Prisma/mjml server modules; Vite can ship them into a lazy SPA chunk (`fileURLToPath is not a
+function` on Event Settings). Use browser-safe subpaths only (e.g.
+`@admitto/mail-templates/placeholders`). Same idea as avoiding `@admitto/auth`'s root entry for
+password helpers (`./constants`, `./password-strength`). Type-only re-exports from the root remain
+OK when they stay `import type` / `export type`.
+
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
 `AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.

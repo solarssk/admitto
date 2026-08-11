@@ -76,6 +76,7 @@ import {
   createHealthzRateLimitMiddleware,
   rateLimit,
 } from "./rate-limit/policies.js";
+import { skipBulkSendRateLimitForDryRun } from "./rate-limit/skip-bulk-send-dry-run.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import {
@@ -564,7 +565,7 @@ export function createApp(options: CreateAppOptions = {}) {
     onError: (c) => c.json({ error: "file too large" }, 413),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
-  const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot });
+  const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot, db });
 
   void sweepExpiredOidcAuthStates(db).catch((err) => {
     console.error("OidcAuthState sweep failed:", err);
@@ -752,7 +753,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostUnarchiveEvent(c, db),
   );
   // Delete is intentionally not wrapped in guardArchivedEvent: it does NOT require the
-  // event to be archived (isEventDeletable in event-deletion.ts checks zero-activity
+  // event to be archived (isEventDeletable in event-deletion.ts checks remaining content
   // signals only, never archived_at), so gating it behind "already archived" would be
   // the opposite of that guard's "block mutations on archived events" purpose.
   app.delete("/api/admin/events/:eventId", jsonPostCsrf, staffAdminGate, (c) =>
@@ -1151,6 +1152,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/send",
     jsonPostCsrf,
     staffAdminGate,
+    skipBulkSendRateLimitForDryRun,
     adminBulkResendRateLimit,
     guardArchivedEvent((c) => handleBulkSend(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
   );
@@ -1486,7 +1488,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/setup", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostSetup(c, db));
   app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", htmlPostCsrf, loginRateLimitHtml, (c) => handlePostLogin(c, db, rateLimitStore));
-  app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c));
+  app.get("/mfa/verify", requirePartialSessionHtml, (c) => handleGetMfaVerify(c, db));
   app.post("/mfa/verify", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaVerify(c, db, rateLimitStore),
   );
