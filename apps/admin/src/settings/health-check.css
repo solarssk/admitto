@@ -3,6 +3,9 @@
 .health-check__card .at-card__header {
   flex-wrap: wrap;
   row-gap: var(--space-2);
+  /* The shared 61px height applies to a single row. Health Check deliberately wraps its
+     toolbar, so it must grow for a second row without overlapping the card body. */
+  height: auto;
 }
 
 .health-check__card .at-card__actions {
