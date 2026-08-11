@@ -107,15 +107,11 @@ describe("TimezoneSelect", () => {
     expect(onChange).toHaveBeenCalledWith("Asia/Tokyo");
   });
 
-  it("keeps custom IANA value visible when not in filtered list", async () => {
-    render(<TimezoneSelect value="Pacific/Kiritimati" onChange={() => {}} />);
+  it("keeps an unrecognized stored value visible when not in the catalogue", async () => {
+    render(<TimezoneSelect value="Legacy/Removed" onChange={() => {}} />);
     openPicker();
-    fireEvent.change(screen.getByLabelText("Search timezones"), {
-      target: { value: "zzznomatch" },
-    });
     await waitFor(() => {
-      expect(screen.queryAllByRole("option")).toHaveLength(0);
-      expect(screen.getByText("No matching timezones")).toBeTruthy();
+      expect(screen.getByRole("option", { name: /Legacy\/Removed/ })).toBeTruthy();
     });
   });
 
@@ -135,6 +131,24 @@ describe("TimezoneSelect", () => {
       ).toBe(true);
       expect(options.some((o) => o.textContent?.includes("Europe/Warsaw"))).toBe(false);
       expect(options[0]?.textContent).toMatch(/Kolkata|Calcutta/);
+    });
+  });
+
+  it("shows one Kolkata option for the current and legacy IANA identifiers", async () => {
+    render(<TimezoneSelect value="Asia/Calcutta" onChange={() => {}} />);
+    expect(screen.getByRole("button").textContent).toContain("Asia/Kolkata");
+
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), {
+      target: { value: "calcutta" },
+    });
+
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(options).toHaveLength(1);
+      expect(options[0]?.textContent).toContain("Kolkata");
+      expect(options[0]?.textContent).toContain("Asia/Kolkata");
+      expect(options[0]?.textContent).toContain("UTC+");
     });
   });
 

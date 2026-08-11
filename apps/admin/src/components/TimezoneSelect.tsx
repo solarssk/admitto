@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
 } from "react";
+import { getTimeZones, normalizeTimeZone } from "@admitto/shared/timezones";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
 import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
 
@@ -32,6 +33,7 @@ const HIDDEN_FIXED_PANEL: CSSProperties = {
 interface TzEntry {
   iana: string;
   city: string;
+  countryName: string;
   abbr: string;
   offsetLabel: string;
   offsetHours: number;
@@ -42,97 +44,13 @@ type TimezoneListItem =
   | { kind: "group"; id: string; label: string }
   | { kind: "option"; id: string; entry: TzEntry; optionIndex: number };
 
-const FALLBACK_TIMEZONES = [
-  "UTC",
-  "Europe/London",
-  "Europe/Paris",
-  "Europe/Berlin",
-  "Europe/Warsaw",
-  "Europe/Moscow",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "America/Sao_Paulo",
-  "Asia/Dubai",
-  "Asia/Calcutta",
-  "Asia/Tokyo",
-  "Asia/Shanghai",
-  "Asia/Singapore",
-  "Australia/Sydney",
-  "Pacific/Auckland",
-];
-
 const MAX_SEARCH_RESULTS = 120;
 
-const RUSSIA_IANAS = [
-  "Europe/Kaliningrad",
-  "Europe/Moscow",
-  "Europe/Samara",
-  "Europe/Volgograd",
-  "Asia/Yekaterinburg",
-  "Asia/Omsk",
-  "Asia/Novosibirsk",
-  "Asia/Krasnoyarsk",
-  "Asia/Irkutsk",
-  "Asia/Yakutsk",
-  "Asia/Vladivostok",
-  "Asia/Magadan",
-  "Asia/Sakhalin",
-  "Asia/Kamchatka",
-  "Asia/Anadyr",
-];
-
-const INDIA_SEARCH_ALIASES = [
-  "india",
-  "indian",
-  "delhi",
-  "mumbai",
-  "bombay",
-  "bangalore",
-  "chennai",
-  "kolkata",
-  "calcutta",
-  "hyderabad",
-  "pune",
-  "ist",
-];
-
-/** Extra search terms for common country/city queries not present in IANA paths. */
-const IANA_SEARCH_ALIASES: Record<string, string[]> = {
-  "Asia/Kolkata": INDIA_SEARCH_ALIASES,
-  "Asia/Calcutta": INDIA_SEARCH_ALIASES,
-  "Europe/Warsaw": ["poland", "polish", "krakow", "wroclaw", "gdansk"],
-  "Europe/Moscow": ["russia", "russian", "moscow", "msk"],
-  "Europe/London": ["uk", "britain", "british", "england", "gmt", "bst"],
-  "Europe/Berlin": ["germany", "german", "deutschland", "munich", "frankfurt"],
-  "Europe/Paris": ["france", "french", "cet"],
-  "America/New_York": ["usa", "us", "eastern", "nyc", "newyork"],
-  "America/Los_Angeles": ["pacific", "la", "california", "westcoast"],
-  "America/Chicago": ["central", "chicago"],
-  "Asia/Dubai": ["uae", "emirates", "dubai"],
-  "Asia/Tokyo": ["japan", "japanese", "jst"],
-  "Asia/Shanghai": ["china", "chinese", "beijing", "shanghai", "cst"],
-  "Asia/Singapore": ["singapore", "sgt"],
-  "Asia/Bangkok": ["thailand", "thai"],
-  "Asia/Seoul": ["korea", "korean", "southkorea"],
-  "Australia/Sydney": ["australia", "australian", "aest"],
-  "Africa/Cairo": ["egypt", "egyptian"],
-  "Africa/Johannesburg": ["southafrica"],
-  "America/Toronto": ["canada", "canadian", "toronto"],
-  "America/Mexico_City": ["mexico", "mexican"],
-  "America/Sao_Paulo": ["brazil", "brazilian"],
-};
-
-/** Country/region search returns all relevant IANA zones, sorted by offset. */
-const COUNTRY_SEARCH_BUNDLES: Record<string, string[]> = {
-  russia: RUSSIA_IANAS,
-  russian: RUSSIA_IANAS,
-  india: ["Asia/Calcutta", "Asia/Kolkata"],
-  indian: ["Asia/Calcutta", "Asia/Kolkata"],
-};
-
-function buildTzEntry(iana: string, now: Date): TzEntry {
+function buildTzEntry(
+  zone: ReturnType<typeof getTimeZones>[number],
+  now: Date,
+): TzEntry {
+  const iana = zone.iana;
   const abbrParts = new Intl.DateTimeFormat("en", {
     timeZone: iana,
     timeZoneName: "short",
@@ -157,8 +75,7 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     : 0;
 
   const segments = iana.split("/");
-  const city = (segments.at(-1) ?? iana).replaceAll("_", " ");
-  const aliases = IANA_SEARCH_ALIASES[iana] ?? [];
+  const city = iana === "UTC" ? "UTC" : (segments.at(-1) ?? iana).replaceAll("_", " ");
 
   const searchText = [
     iana,
@@ -169,13 +86,17 @@ function buildTzEntry(iana: string, now: Date): TzEntry {
     offsetRaw,
     offsetLabel.replace(/^UTC/i, ""),
     offsetRaw.replace(/^GMT/i, ""),
-    ...aliases,
+    zone.countryName,
+    zone.continentName,
+    zone.alternativeName,
+    ...zone.mainCities,
+    ...zone.aliases,
   ]
     .join(" ")
     .toLowerCase()
     .replace(/\s/g, "");
 
-  return { iana, city, abbr, offsetLabel, offsetHours, searchText };
+  return { iana, city, countryName: zone.countryName, abbr, offsetLabel, offsetHours, searchText };
 }
 
 function sortByOffset(entries: TzEntry[]): TzEntry[] {
@@ -187,15 +108,7 @@ function sortByOffset(entries: TzEntry[]): TzEntry[] {
 
 function buildTzIndex(): TzEntry[] {
   const now = new Date();
-  const ianaList =
-    typeof Intl.supportedValuesOf === "function"
-      ? Intl.supportedValuesOf("timeZone")
-      : FALLBACK_TIMEZONES;
-  const entries = ianaList.map((iana) => buildTzEntry(iana, now));
-  if (!entries.some((e) => e.iana === "UTC")) {
-    entries.push(buildTzEntry("UTC", now));
-  }
-  return sortByOffset(entries);
+  return sortByOffset(getTimeZones().map((zone) => buildTzEntry(zone, now)));
 }
 
 let tzIndex: TzEntry[] | null = null;
@@ -205,27 +118,9 @@ function getTzIndex(): TzEntry[] {
   return tzIndex;
 }
 
-function entriesForIanas(index: TzEntry[], ianas: string[]): TzEntry[] {
-  const out: TzEntry[] = [];
-  const seen = new Set<string>();
-  for (const iana of ianas) {
-    const entry = findTzEntry(index, iana);
-    if (entry && !seen.has(entry.iana)) {
-      seen.add(entry.iana);
-      out.push(entry);
-    }
-  }
-  return sortByOffset(out);
-}
-
 function searchTz(index: TzEntry[], query: string): TzEntry[] {
   const q = query.trim().toLowerCase().replace(/\s/g, "");
   if (!q) return index;
-
-  const bundle = COUNTRY_SEARCH_BUNDLES[q];
-  if (bundle) {
-    return entriesForIanas(index, bundle);
-  }
 
   // eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
   const om = /^(gmt)?([+-])(\d{1,2})(?:[:.，,](\d{1,2}))?$/.exec(q);
@@ -237,21 +132,21 @@ function searchTz(index: TzEntry[], query: string): TzEntry[] {
     return sortByOffset(index.filter((e) => Math.abs(e.offsetHours - fractHours) < 0.09));
   }
 
-  const matches = index.filter((e) => e.searchText.includes(q));
-  const aliasPriority = matches.filter((e) =>
-    (IANA_SEARCH_ALIASES[e.iana] ?? []).some((alias) => alias.replace(/\s/g, "") === q),
+  // Prefer an exact country match over incidental IANA text such as the `Indian/` region.
+  const countryMatches = index.filter(
+    (entry) => entry.countryName.toLowerCase().replace(/\s/g, "") === q,
   );
-  const aliasIanas = new Set(aliasPriority.map((e) => e.iana));
-  const rest = sortByOffset(matches.filter((e) => !aliasIanas.has(e.iana)));
-  return [...sortByOffset(aliasPriority), ...rest].slice(0, MAX_SEARCH_RESULTS);
+  if (countryMatches.length > 0) return sortByOffset(countryMatches);
+
+  return sortByOffset(index.filter((entry) => entry.searchText.includes(q))).slice(
+    0,
+    MAX_SEARCH_RESULTS,
+  );
 }
 
 function findTzEntry(index: TzEntry[], iana: string): TzEntry | undefined {
-  const direct = index.find((e) => e.iana === iana);
-  if (direct) return direct;
-  if (iana === "Asia/Kolkata") return index.find((e) => e.iana === "Asia/Calcutta");
-  if (iana === "Asia/Calcutta") return index.find((e) => e.iana === "Asia/Kolkata");
-  return undefined;
+  const preferred = normalizeTimeZone(iana) ?? iana;
+  return index.find((entry) => entry.iana === preferred);
 }
 
 function ensureSelectedInOptions(
@@ -260,14 +155,16 @@ function ensureSelectedInOptions(
   index: TzEntry[],
   searching: boolean,
 ): TzEntry[] {
-  if (!value || options.some((e) => e.iana === value)) return options;
+  const preferred = normalizeTimeZone(value) ?? value;
+  if (!value || options.some((entry) => entry.iana === preferred)) return options;
   if (searching) return options;
-  const entry = findTzEntry(index, value);
+  const entry = findTzEntry(index, preferred);
   if (entry) return sortByOffset([entry, ...options]);
   return sortByOffset([
     {
       iana: value,
       city: value.replaceAll("_", " "),
+      countryName: "",
       abbr: value,
       offsetLabel: "UTC+0",
       offsetHours: 0,
@@ -348,6 +245,7 @@ export function TimezoneSelect({
 
   const index = getTzIndex();
   const searching = Boolean(deferred.trim());
+  const selectedIana = normalizeTimeZone(value) ?? value;
 
   const options = useMemo(() => {
     const base = searching ? searchTz(index, deferred) : index;
@@ -387,11 +285,11 @@ export function TimezoneSelect({
 
   useEffect(() => {
     if (!open) return;
-    const selectedIdx = options.findIndex((e) => e.iana === value);
+    const selectedIdx = options.findIndex((entry) => entry.iana === selectedIana);
     setHighlightIndex(Math.max(selectedIdx, 0));
     const t = window.setTimeout(() => searchRef.current?.focus(), 0);
     return () => window.clearTimeout(t);
-  }, [open, value, options]);
+  }, [open, selectedIana, options]);
 
   useClickOutside(containerRef, open, closePanel);
 
@@ -598,10 +496,10 @@ export function TimezoneSelect({
                       id={`${listboxId}-option-${item.optionIndex}`}
                       role="option"
                       data-option-index={item.optionIndex}
-                      aria-selected={item.entry.iana === value}
+                      aria-selected={item.entry.iana === selectedIana}
                       className={[
                         "timezone-select__option",
-                        item.entry.iana === value && "timezone-select__option--selected",
+                        item.entry.iana === selectedIana && "timezone-select__option--selected",
                         item.optionIndex === highlightIndex && "timezone-select__option--highlighted",
                       ]
                         .filter(Boolean)

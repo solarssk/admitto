@@ -2,7 +2,7 @@
   "name": "@admitto/shared",
   "version": "0.0.1",
   "private": true,
-  "description": "Admitto shared utilities — neutral helpers, dependency-free except the ./pinned-dispatcher subpath (undici)",
+  "description": "Admitto shared utilities — neutral helpers, with focused dependencies for shared runtime integrations",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -30,6 +30,10 @@
     "./sse-events": {
       "types": "./dist/sseEvents.d.ts",
       "default": "./dist/sseEvents.js"
+    },
+    "./timezones": {
+      "types": "./dist/timezones.d.ts",
+      "default": "./dist/timezones.js"
     }
   },
   "scripts": {
@@ -40,6 +44,8 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@vvo/tzdb": "^6.198.0",
+    "tzdata": "^1.0.50",
     "undici": "^8.7.0"
   },
   "devDependencies": {

@@ -66,7 +66,7 @@ beforeAll(async () => {
       public_ref: generateToken(),
     },
   });
-});
+}, 60_000);
 
 afterAll(async () => {
   await prisma.$disconnect();

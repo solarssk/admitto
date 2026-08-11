@@ -17,6 +17,7 @@ import {
   type LogoCropMeta,
 } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { normalizeTimeZone } from "@admitto/shared/timezones";
 import { z } from "zod";
 import {
   adminAuditFromContext,
@@ -101,19 +102,21 @@ function serializeEventSettings(
   deletability: { isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] },
   revokeCounts: { admittedCount: number; issuedItemsCount: number },
 ): EventSettingsDto {
+  const normalizeNullableTimeZone = (value: string | null) =>
+    value === null ? null : normalizeTimeZone(value) ?? value;
   const resolved = resolveBrandingFromEvent(event);
   return {
     id: event.id,
     title: event.title,
     slug: event.slug,
     date: event.date.toISOString(),
-    timezone: event.timezone,
+    timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
-    archived_by_timezone: event.archived_by_timezone,
+    archived_by_timezone: normalizeNullableTimeZone(event.archived_by_timezone),
     created_at: event.created_at.toISOString(),
-    created_by_timezone: event.created_by_timezone,
+    created_by_timezone: normalizeNullableTimeZone(event.created_by_timezone),
     is_deletable: deletability.isDeletable,
     deletion_blockers: deletability.deletionBlockers,
     admitted_count: revokeCounts.admittedCount,
