@@ -112,6 +112,14 @@
   gap: var(--space-4);
 }
 
+.add-attendee-modal__time-range {
+  display: flex;
+  flex-direction: column;
+  /* Keep the explanatory copy at the same label-to-hint distance as a regular field,
+     rather than a full field-row gap below the two time controls. */
+  gap: var(--space-1);
+}
+
 /* Two short fields (e.g. Event hours start/end) side by side on wider screens instead of each
    taking a full-width line of mostly empty space. */
 .add-attendee-modal__field-row {

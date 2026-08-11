@@ -991,38 +991,42 @@ export function EventSettingsPage() {
               </div>
             </div>
 
-            <div className="settings-field-row">
-              <div className="settings-field-group">
-                <TimeInput
-                  label="Event hours (start)"
-                  value={form.eventHoursStart}
-                  disabled={isArchived || saving}
-                  onChange={(value) => setForm({ ...form, eventHoursStart: value })}
-                />
+            <div className="settings-event-schedule">
+              <div className="settings-event-schedule__hours">
+                <div className="settings-field-row">
+                  <div className="settings-field-group">
+                    <TimeInput
+                      label="Event hours (start)"
+                      value={form.eventHoursStart}
+                      disabled={isArchived || saving}
+                      onChange={(value) => setForm({ ...form, eventHoursStart: value })}
+                    />
+                  </div>
+                  <div className="settings-field-group">
+                    <TimeInput
+                      label="Event hours (end)"
+                      value={form.eventHoursEnd}
+                      disabled={isArchived || saving}
+                      onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
+                    />
+                  </div>
+                </div>
+                <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
               </div>
-              <div className="settings-field-group">
-                <TimeInput
-                  label="Event hours (end)"
-                  value={form.eventHoursEnd}
-                  disabled={isArchived || saving}
-                  onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
-                />
-              </div>
-            </div>
-            <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
 
-            <div className="settings-field-group event-settings-timezone">
-              <label className="at-label" htmlFor="event-timezone">
-                Event timezone
-              </label>
-              <TimezoneSelect
-                id="event-timezone"
-                compact
-                value={form.timezone}
-                onChange={(tz) => setForm({ ...form, timezone: tz })}
-                disabled={isArchived || saving}
-              />
-              <span className="at-hint">All check-in times and reports use this timezone.</span>
+              <div className="settings-field-group event-settings-timezone">
+                <label className="at-label" htmlFor="event-timezone">
+                  Event timezone
+                </label>
+                <TimezoneSelect
+                  id="event-timezone"
+                  compact
+                  value={form.timezone}
+                  onChange={(tz) => setForm({ ...form, timezone: tz })}
+                  disabled={isArchived || saving}
+                />
+                <span className="at-hint">All check-in times and reports use this timezone.</span>
+              </div>
             </div>
 
             <div className="settings-field-group slug-field">

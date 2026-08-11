@@ -182,6 +182,14 @@ describe("CreateEventModal", () => {
     });
   });
 
+  it("keeps the event-hours hint with its paired controls", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+
+    expect(
+      screen.getByText("Optional. Shown on tickets and wallet passes as a time range.").closest(".add-attendee-modal__time-range"),
+    ).not.toBeNull();
+  });
+
   it("submits the timezone chosen from the picker rather than the browser default", async () => {
     mockCreateEvent.mockResolvedValueOnce({ id: "evt-1" } as never);
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);

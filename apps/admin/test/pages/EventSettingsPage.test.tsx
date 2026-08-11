@@ -436,6 +436,9 @@ describe("EventSettingsPage tabs", () => {
     expect(
       screen.getByText("When the event takes place. Times and reports use the timezone below."),
     ).toBeTruthy();
+    const schedule = screen.getByText("Event hours (start)").closest(".settings-event-schedule");
+    expect(schedule).not.toBeNull();
+    expect(screen.getByText("Event timezone").closest(".settings-event-schedule")).toBe(schedule);
     const titleInput = screen.getByLabelText("Event title") as HTMLInputElement;
     expect(titleInput.getAttribute("data-bwignore")).toBe("true");
     expect(titleInput.getAttribute("data-1p-ignore")).toBe("true");

@@ -139,23 +139,25 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             disabled={submitting}
             onChange={setDate}
           />
-          <div className="add-attendee-modal__field-row">
-            <TimeInput
-              id="ce-hours-start"
-              label="Event hours (start)"
-              value={eventHoursStart}
-              disabled={submitting}
-              onChange={setEventHoursStart}
-            />
-            <TimeInput
-              id="ce-hours-end"
-              label="Event hours (end)"
-              value={eventHoursEnd}
-              disabled={submitting}
-              onChange={setEventHoursEnd}
-            />
+          <div className="add-attendee-modal__time-range">
+            <div className="add-attendee-modal__field-row">
+              <TimeInput
+                id="ce-hours-start"
+                label="Event hours (start)"
+                value={eventHoursStart}
+                disabled={submitting}
+                onChange={setEventHoursStart}
+              />
+              <TimeInput
+                id="ce-hours-end"
+                label="Event hours (end)"
+                value={eventHoursEnd}
+                disabled={submitting}
+                onChange={setEventHoursEnd}
+              />
+            </div>
+            <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
           </div>
-          <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
           <div className="at-field">
             <label className="at-label" htmlFor={timezoneId}>
               Event timezone *

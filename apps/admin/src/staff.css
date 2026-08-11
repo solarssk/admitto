@@ -7824,7 +7824,6 @@ output.mail-field-hint {
   justify-content: center;
   flex: none;
   width: var(--control-h);
-  border-right: 1px solid var(--border);
   background: var(--surface-page, #f8fafc);
   color: var(--text-muted);
   border: 0;
