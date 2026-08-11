@@ -65,6 +65,7 @@ COPY packages/storage/package.json packages/storage/
 COPY packages/location/package.json packages/location/
 COPY packages/db/package.json packages/db/
 COPY packages/tickets/package.json packages/tickets/
+COPY packages/wallet/package.json packages/wallet/
 COPY packages/auth/package.json packages/auth/
 COPY packages/mailer/package.json packages/mailer/
 COPY packages/mailer-config/package.json packages/mailer-config/
@@ -90,6 +91,7 @@ COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 COPY --from=builder /app/packages/db/prisma.config.ts ./packages/db/prisma.config.ts
 COPY --from=builder /app/packages/tickets/dist ./packages/tickets/dist
+COPY --from=builder /app/packages/wallet/dist ./packages/wallet/dist
 COPY --from=builder /app/packages/auth/dist ./packages/auth/dist
 COPY --from=builder /app/packages/mailer/dist ./packages/mailer/dist
 COPY --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/dist
