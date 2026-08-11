@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
@@ -350,6 +350,29 @@ describe("DELETE /api/admin/events/:eventId", () => {
       expect(deleteResponse.status).toBe(409);
       expect(createResponse.status).toBe(201);
       expect(templates).toHaveLength(1);
+    }
+  });
+
+  it("returns 404 without creating a template when deletion wins after access validation", async () => {
+    const eventId = await createEvent({ archived: false });
+    // The initial access check completed. Permanent deletion then lands while the request waits
+    // for its transaction, so the locked re-check must turn the stale create into a 404.
+    const transaction = vi.spyOn(prisma, "$transaction").mockImplementation(
+      (async (callback: unknown) => {
+        await prisma.event.delete({ where: { id: eventId } });
+        return (callback as (tx: PrismaClient) => Promise<unknown>)(prisma);
+      }) as never,
+    );
+
+    try {
+      const res = await createEventTemplateRequest(eventId);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+      expect(
+        await prisma.mailTemplate.count({ where: { scope_type: "event", scope_id: eventId } }),
+      ).toBe(0);
+    } finally {
+      transaction.mockRestore();
     }
   });
 

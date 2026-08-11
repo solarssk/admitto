@@ -1226,4 +1226,31 @@ describe("multi-template API", () => {
     expect(row.icon).toBe("bell");
     expect(row.subject_template).toBe("Updated {{event_name}}");
   });
+
+  it("PUT /templates/:id returns 404 instead of recreating a template deleted while it waits for the event lock", async () => {
+    const created = await postNamedTemplate(app, "Race reminder");
+    const transaction = vi.spyOn(prisma, "$transaction").mockImplementation(
+      (async (callback: unknown) => {
+        await prisma.mailTemplate.delete({ where: { id: created.id } });
+        return (callback as (tx: PrismaClient) => Promise<unknown>)(prisma);
+      }) as never,
+    );
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${created.id}`, {
+        method: "PUT",
+        headers: {
+          Cookie: adminCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify(validTemplate),
+      });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not_found" });
+      expect(await prisma.mailTemplate.findUnique({ where: { id: created.id } })).toBeNull();
+    } finally {
+      transaction.mockRestore();
+    }
+  });
 });
