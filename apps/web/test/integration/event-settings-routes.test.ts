@@ -1008,9 +1008,21 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.event.wallet_apple_enabled).toBe(false);
     expect(body.event.wallet_google_enabled).toBe(true);
 
+    const googleRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_google_enabled: false }),
+    });
+    expect(googleRes.status).toBe(200);
+    const googleBody = (await googleRes.json()) as {
+      event: { wallet_apple_enabled: boolean; wallet_google_enabled: boolean };
+    };
+    expect(googleBody.event.wallet_apple_enabled).toBe(false);
+    expect(googleBody.event.wallet_google_enabled).toBe(false);
+
     await prisma.event.update({
       where: { id: EVENT_SET },
-      data: { wallet_apple_enabled: true },
+      data: { wallet_apple_enabled: true, wallet_google_enabled: true },
     });
   });
 
@@ -1114,6 +1126,26 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.message).toContain("Gala Pass");
   });
 
+  it("POST /wallet/test succeeds with a generic message when PassCreator reports no template name", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: true, data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "draft-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message: string };
+    expect(body.ok).toBe(true);
+    expect(body.message).toBe("Connected to PassCreator.");
+  });
+
   it("POST /wallet/test reports failure when PassCreator rejects the key", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ success: false, errors: ["bad key"] }), {
@@ -1198,6 +1230,78 @@ describe("PATCH /api/admin/events/:eventId", () => {
     const body = (await res.json()) as { ok: boolean; error: string };
     expect(body.ok).toBe(false);
     expect(body.error).toContain("Template ID not found");
+  });
+
+  it("POST /wallet/test reports rate limiting when PassCreator returns 429 on every retry", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["slow down"] }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("rate-limiting");
+  }, 15000);
+
+  it("POST /wallet/test reports a generic rejection for an unmapped PassCreator error", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["boom"] }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("PassCreator rejected the request.");
+  });
+
+  it("POST /wallet/test returns validation_failed when templateId is missing", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("POST /wallet/test reports a decrypt failure for a corrupted saved API key", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: { wallet_api_key_enc: "not-valid-ciphertext" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId: "tmpl-probe" }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("could not be decrypted");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_api_key_enc: null } });
+    }
   });
 
   it("POST /wallet/test reports a generic failure when the network request itself fails", async () => {

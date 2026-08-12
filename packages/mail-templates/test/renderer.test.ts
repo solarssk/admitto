@@ -454,10 +454,10 @@ describe("renderTemplateTrustedForStorage", () => {
     expect(frozen.html).not.toContain("SHOULD_NOT_PERSIST");
   });
 
-  it("materializeStoredDeliveryMessage applies wallet links at send time", () => {
+  it("materializeStoredDeliveryMessage applies wallet links at send time, including in the subject", () => {
     const frozen = renderTemplateTrustedForStorage(
       {
-        subject: "Hi",
+        subject: "Add to wallet: {{apple_wallet_url}}",
         compiledHtml: '<a href="{{apple_wallet_url}}">Apple</a><a href="{{google_wallet_url}}">Google</a>',
       },
       { first_name: "Bob" },
@@ -468,6 +468,7 @@ describe("renderTemplateTrustedForStorage", () => {
       apple_wallet_url: "https://example.com/t/tok/wallet/apple",
       google_wallet_url: "https://example.com/t/tok/wallet/google",
     });
+    expect(sent.subject).toBe("Add to wallet: https://example.com/t/tok/wallet/apple");
     expect(sent.html).toContain('href="https://example.com/t/tok/wallet/apple"');
     expect(sent.html).toContain('href="https://example.com/t/tok/wallet/google"');
     expect(sent.html).not.toContain("{{apple_wallet_url}}");
@@ -487,6 +488,21 @@ describe("renderTemplateTrustedForStorage", () => {
       qr_image_url: "https://example.com/q/tok.png",
       apple_wallet_url: "",
       google_wallet_url: "",
+    });
+    expect(sent.html).not.toContain("href=");
+  });
+
+  it("materializeStoredDeliveryMessage treats a missing wallet link key like an empty one", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Hi",
+        compiledHtml: '<a href="{{apple_wallet_url}}">Apple</a>',
+      },
+      { first_name: "Bob" },
+    );
+    const sent = materializeStoredDeliveryMessage(frozen, {
+      ticket_url: "https://example.com/t/tok",
+      qr_image_url: "https://example.com/q/tok.png",
     });
     expect(sent.html).not.toContain("href=");
   });

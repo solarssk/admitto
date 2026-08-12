@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PrismaClient } from "@admitto/db";
+import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
@@ -152,6 +152,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   await prisma.walletPass.deleteMany({ where: { attendee: { event_id: EVENT_ID } } });
   await prisma.walletPass.deleteMany({ where: { attendee: { event_id: EVENT_ID_NO_LOCATION } } });
 });
@@ -207,6 +208,26 @@ describe("On-demand wallet routes", () => {
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.status).toBe("active");
     expect(saved?.apple_url).toBe("https://pc.test/apple/x");
+  });
+
+  it("Mode A apple, attendee with no email on file: omits attendeeEmailLabel", async () => {
+    await prisma.attendee.update({ where: { id: ATTENDEE_MODE_A_ID }, data: { email: "" } });
+    try {
+      const provider = stubProvider();
+      const app = makeApp(provider);
+
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      expect(provider.createPass).toHaveBeenCalledWith(
+        expect.objectContaining({ attendeeEmailLabel: undefined }),
+      );
+    } finally {
+      await prisma.attendee.update({
+        where: { id: ATTENDEE_MODE_A_ID },
+        data: { email: "modea@example.com" },
+      });
+    }
   });
 
   it("Mode A apple, event with no venue: omits Maps links and address fields", async () => {
@@ -612,6 +633,81 @@ describe("On-demand wallet routes", () => {
       expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_api_key_enc: null } });
+    }
+  });
+
+  it("builds a real PassCreatorClient and creates a pass when no provider is injected", async () => {
+    const app = createApp({
+      prisma,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: { wallet_api_key_enc: encryptToString("real-test-key") },
+    });
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(String(url)).toContain("/api/v3/pass");
+      expect((init?.headers as Record<string, string>).Authorization).toBe("real-test-key");
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { identifier: "real-1", iPhoneUri: "https://pc.test/real/apple", androidUri: "https://pc.test/real/android" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("https://pc.test/real/apple");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_api_key_enc: null } });
+    }
+  });
+
+  it("passes the event's saved field mapping through to the real PassCreatorClient", async () => {
+    const app = createApp({
+      prisma,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: {
+        wallet_api_key_enc: encryptToString("real-test-key"),
+        wallet_field_mapping: { attendeeFullName: "full_name" },
+      },
+    });
+
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { data: Record<string, unknown> };
+      expect(body.data.full_name).toBe("Mode A Guest");
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: { identifier: "real-2", iPhoneUri: "https://pc.test/real2/apple", androidUri: "https://pc.test/real2/android" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+      expect(res.status).toBe(302);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_ID },
+        data: { wallet_api_key_enc: null, wallet_field_mapping: Prisma.JsonNull },
+      });
     }
   });
 });

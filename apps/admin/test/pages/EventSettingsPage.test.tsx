@@ -899,15 +899,22 @@ describe("EventSettingsPage tabs", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add field" }));
     fireEvent.click(screen.getByRole("button", { name: "Add field" }));
-    expect(screen.getAllByLabelText("PassCreator field key")).toHaveLength(2);
+    const twoKeyInputs = screen.getAllByLabelText("PassCreator field key");
+    expect(twoKeyInputs).toHaveLength(2);
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Remove field" })[0]!);
+    // Editing the first row's key and value while a second row exists confirms the second row
+    // stays untouched (the update targets its own index, not every row in the mapping array).
+    fireEvent.click(screen.getAllByRole("button", { name: "Value, none selected" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Attendee full name" }));
+    expect(screen.getAllByRole("button", { name: "Value, none selected" })).toHaveLength(1);
+
+    fireEvent.change(twoKeyInputs[0]!, { target: { value: "attendeeFullName" } });
+    expect((twoKeyInputs[1] as HTMLInputElement).value).toBe("");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove field" })[1]!);
     const keyInputs = screen.getAllByLabelText("PassCreator field key");
     expect(keyInputs).toHaveLength(1);
-    fireEvent.change(keyInputs[0]!, { target: { value: "attendeeFullName" } });
-
-    fireEvent.click(screen.getByRole("button", { name: "Value, none selected" }));
-    fireEvent.click(screen.getByRole("button", { name: "Attendee full name" }));
+    expect((keyInputs[0] as HTMLInputElement).value).toBe("attendeeFullName");
 
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
@@ -939,6 +946,42 @@ describe("EventSettingsPage tabs", () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Gala Pass/);
+    });
+  });
+
+  it("falls back to a generic success toast when Test connection reports no message", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({ ok: true });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Connected\./);
+    });
+  });
+
+  it("falls back to a generic error toast when Test connection reports no error message", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({ ok: false });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not reach PassCreator\./);
     });
   });
 
