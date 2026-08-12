@@ -11,10 +11,14 @@ const { fetchOidcDiscovery } = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("../src/oidc/discovery.js", () => ({
-  fetchOidcDiscovery,
-  testOidcConnection: vi.fn(),
-}));
+vi.mock("../src/oidc/discovery.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/oidc/discovery.js")>();
+  return {
+    ...actual,
+    fetchOidcDiscovery,
+    testOidcConnection: vi.fn(),
+  };
+});
 
 import {
   createIdentityProviderWithMappings,
@@ -206,6 +210,45 @@ describe("OIDC provider save — discovery outside transaction", () => {
       [],
     );
     expect(fetchOidcDiscovery).not.toHaveBeenCalled();
+  });
+
+  it("strips a pasted .well-known/openid-configuration suffix from the issuer even when all endpoints are provided (no discovery call to self-correct via)", async () => {
+    const prisma = mockPrismaForTxn();
+    await createIdentityProviderWithMappings(
+      prisma,
+      {
+        ...baseInput,
+        issuer: "https://idp.example.com/.well-known/openid-configuration",
+        authorization_endpoint: "https://idp.example.com/authorize",
+        token_endpoint: "https://idp.example.com/token",
+        jwks_uri: "https://idp.example.com/jwks",
+      },
+      [],
+    );
+    expect(fetchOidcDiscovery).not.toHaveBeenCalled();
+    const createCall = vi.mocked(prisma.identityProvider.create).mock.calls[0]![0] as { data: { issuer: string } };
+    expect(createCall.data.issuer).toBe("https://idp.example.com");
+  });
+
+  it("persists a bare issuer with no trailing slash exactly as given when all endpoints are provided", async () => {
+    // Regression guard: this must never come back as "https://accounts.google.com/" (a slash the
+    // IdP's own `iss` claim doesn't have), or every login through it would fail id token
+    // validation's exact issuer match - see token.ts.
+    const prisma = mockPrismaForTxn();
+    await createIdentityProviderWithMappings(
+      prisma,
+      {
+        ...baseInput,
+        issuer: "https://accounts.google.com",
+        authorization_endpoint: "https://idp.example.com/authorize",
+        token_endpoint: "https://idp.example.com/token",
+        jwks_uri: "https://idp.example.com/jwks",
+      },
+      [],
+    );
+    expect(fetchOidcDiscovery).not.toHaveBeenCalled();
+    const createCall = vi.mocked(prisma.identityProvider.create).mock.calls[0]![0] as { data: { issuer: string } };
+    expect(createCall.data.issuer).toBe("https://accounts.google.com");
   });
 });
 

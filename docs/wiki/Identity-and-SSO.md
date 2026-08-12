@@ -64,7 +64,7 @@ A local password always keeps working as a fallback (unless the account has no l
    | Field in Admitto | What it is | Example |
    |---|---|---|
    | Display name | The name shown on the "Sign in with…" button | `Contoso SSO` |
-   | Issuer URL | Your identity provider's base URL | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
+   | Issuer URL | Your identity provider's base URL, **not** the `/.well-known/openid-configuration` discovery document some providers show you; pasting that full URL is a common mistake. Admitto accepts and corrects it automatically, but the bare URL is what's actually stored | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
    | Client ID | The application/client ID your identity provider assigned when you registered Admitto there | `1a2b3c4d-...` |
    | Client secret | The client secret your identity provider generated for that same registration | *(paste once; never shown again)* |
    | Authorization / Token / JWKS / UserInfo endpoints | Usually filled automatically by **Discover** (step 5) from the Issuer URL. Fill by hand only if your provider doesn't support discovery | |

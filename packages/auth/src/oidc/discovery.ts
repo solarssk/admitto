@@ -10,15 +10,33 @@ export interface OidcDiscoveryDocument {
   end_session_endpoint?: string;
 }
 
-function normalizeIssuer(issuer: string): string {
-  return issuer.endsWith("/") ? issuer : `${issuer}/`;
+// Optional trailing slash after the suffix - a plausible extra keystroke when copying a
+// discovery URL - is stripped too, so it doesn't survive as a literal tail that fails the
+// exact-suffix match below.
+const WELL_KNOWN_SUFFIX_RE = /\/\.well-known\/openid-configuration\/?$/;
+
+/**
+ * Strip an accidentally-pasted discovery document URL down to the bare issuer. Many other apps'
+ * OIDC setup docs have operators copy the full `.well-known/openid-configuration` URL; Admitto's
+ * issuer must be the bare value (it's compared verbatim against every token's `iss` claim -
+ * token.ts), and appending `.well-known/...` to an already-suffixed issuer 404s instead of
+ * discovering anything. Does NOT add a trailing slash: a slash the IdP's own issuer doesn't have
+ * would make every future token fail that verbatim comparison. See fetchOidcDiscovery for the
+ * separate trailing slash needed only to build the discovery document's URL.
+ */
+export function normalizeIssuerInput(issuer: string): string {
+  return issuer.trim().replace(WELL_KNOWN_SUFFIX_RE, "");
 }
 
 /** Fetch and parse OIDC discovery document. */
 export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryDocument> {
-  const base = normalizeIssuer(issuer);
+  const base = normalizeIssuerInput(issuer);
   assertSafeOidcFetchUrl(base);
-  const url = new URL(".well-known/openid-configuration", base).toString();
+  // new URL(relative, base) only treats `base` as a directory when it ends in "/" - otherwise
+  // its last path segment is replaced instead of kept. This trailing slash is purely local to
+  // resolving the discovery URL and must never leak into a stored/returned issuer value.
+  const discoveryBase = base.endsWith("/") ? base : `${base}/`;
+  const url = new URL(".well-known/openid-configuration", discoveryBase).toString();
   assertSafeOidcFetchUrl(url);
   const res = await safeOidcFetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) {

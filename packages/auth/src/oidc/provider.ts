@@ -2,7 +2,7 @@ import type { IdentityProvider, Prisma, PrismaClient } from "@admitto/db";
 import { encryptClientSecret, hasClientSecret } from "./provider-secret.js";
 import { PROVIDER_TYPE_OIDC } from "./constants.js";
 import { normalizeSsoLoginButtonLabelInput } from "./login-button-label.js";
-import { fetchOidcDiscovery } from "./discovery.js";
+import { fetchOidcDiscovery, normalizeIssuerInput } from "./discovery.js";
 import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
 /** Admin form / API payload for creating or updating an OIDC identity provider. */
@@ -109,7 +109,11 @@ export async function listOidcProviders(
 
 /** Fetch or validate OIDC endpoints from input; may call discovery HTTP when endpoints are omitted. */
 async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedEndpoints> {
-  assertSafeOidcFetchUrl(normalizeIssuerForValidation(input.issuer));
+  // Also strips an accidentally-pasted /.well-known/openid-configuration suffix - see
+  // normalizeIssuerInput. Endpoints given explicitly below skip discovery entirely, so this is
+  // the only place that would otherwise save an issuer no token's `iss` claim will ever match.
+  const normalizedIssuer = normalizeIssuerInput(input.issuer);
+  assertSafeOidcFetchUrl(normalizedIssuer);
   if (input.authorization_endpoint && input.token_endpoint && input.jwks_uri) {
     assertSafeOidcFetchUrl(input.authorization_endpoint);
     assertSafeOidcFetchUrl(input.token_endpoint);
@@ -117,7 +121,7 @@ async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedE
     if (input.userinfo_endpoint) assertSafeOidcFetchUrl(input.userinfo_endpoint);
     if (input.end_session_endpoint) assertSafeOidcFetchUrl(input.end_session_endpoint);
     return {
-      issuer: input.issuer,
+      issuer: normalizedIssuer,
       authorization_endpoint: input.authorization_endpoint,
       token_endpoint: input.token_endpoint,
       jwks_uri: input.jwks_uri,
@@ -125,6 +129,8 @@ async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedE
       end_session_endpoint: input.end_session_endpoint ?? null,
     };
   }
+  // discovery.issuer (the value the IdP's own document reports) is used below, not
+  // normalizedIssuer - it's the authoritative bare issuer regardless of what was pasted here.
   const discovery = await fetchOidcDiscovery(input.issuer);
   const endpoints = {
     issuer: discovery.issuer,
@@ -140,11 +146,6 @@ async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedE
   if (endpoints.userinfo_endpoint) assertSafeOidcFetchUrl(endpoints.userinfo_endpoint);
   if (endpoints.end_session_endpoint) assertSafeOidcFetchUrl(endpoints.end_session_endpoint);
   return endpoints;
-}
-
-/** Ensure issuer URL ends with `/` before SSRF validation. */
-function normalizeIssuerForValidation(issuer: string): string {
-  return issuer.endsWith("/") ? issuer : `${issuer}/`;
 }
 
 /** OIDC endpoints resolved from discovery or explicit admin input. */

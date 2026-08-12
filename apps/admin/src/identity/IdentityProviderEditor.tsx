@@ -230,8 +230,10 @@ function clientSecretFieldLabel(mode: EditorMode, hasSecret: boolean): string {
   return hasSecret ? "New client secret" : "Client secret";
 }
 
-function clientSecretFieldHint(mode: EditorMode, hasSecret: boolean): string | undefined {
-  return mode === "edit" && hasSecret ? "Leave blank to keep the stored secret." : undefined;
+function clientSecretFieldHint(mode: EditorMode, hasSecret: boolean): string {
+  return mode === "edit" && hasSecret
+    ? "Leave blank to keep the stored secret."
+    : "From the same application registration as the Client ID above.";
 }
 
 function discoverButtonLabel(discovering: boolean): string {
@@ -782,6 +784,7 @@ export function IdentityProviderEditor({
             value={draft.display_name}
             invalid={Boolean(errors.display_name)}
             error={errors.display_name}
+            hint="Shown on the 'Sign in with…' button."
             onChange={(e) => setDraft((d) => setField(d, "display_name", e.target.value))}
             placeholder="Google"
             required
@@ -791,6 +794,7 @@ export function IdentityProviderEditor({
             value={draft.issuer}
             invalid={Boolean(errors.issuer)}
             error={errors.issuer}
+            hint="The base URL only, not the /.well-known/openid-configuration document."
             onChange={(e) => setDraft((d) => setField(d, "issuer", e.target.value))}
             placeholder="https://accounts.google.com"
             required
@@ -800,6 +804,7 @@ export function IdentityProviderEditor({
             value={draft.client_id}
             invalid={Boolean(errors.client_id)}
             error={errors.client_id}
+            hint="From your identity provider's application registration."
             onChange={(e) => setDraft((d) => setField(d, "client_id", e.target.value))}
             required
           />
@@ -853,6 +858,7 @@ export function IdentityProviderEditor({
             value={draft.authorization_endpoint}
             invalid={Boolean(errors.authorization_endpoint)}
             error={errors.authorization_endpoint}
+            hint="Where users sign in and approve access. Usually filled by Discover."
             onChange={(e) => setDraft((d) => setField(d, "authorization_endpoint", e.target.value))}
             placeholder="https://accounts.google.com/o/oauth2/v2/auth"
           />
@@ -861,6 +867,7 @@ export function IdentityProviderEditor({
             value={draft.token_endpoint}
             invalid={Boolean(errors.token_endpoint)}
             error={errors.token_endpoint}
+            hint="Where Admitto exchanges the sign-in code for tokens."
             onChange={(e) => setDraft((d) => setField(d, "token_endpoint", e.target.value))}
             placeholder="https://oauth2.googleapis.com/token"
           />
@@ -869,6 +876,7 @@ export function IdentityProviderEditor({
             value={draft.jwks_uri}
             invalid={Boolean(errors.jwks_uri)}
             error={errors.jwks_uri}
+            hint="Public keys Admitto uses to verify token signatures."
             onChange={(e) => setDraft((d) => setField(d, "jwks_uri", e.target.value))}
             placeholder="https://www.googleapis.com/oauth2/v3/certs"
           />
@@ -877,6 +885,7 @@ export function IdentityProviderEditor({
             value={draft.userinfo_endpoint}
             invalid={Boolean(errors.userinfo_endpoint)}
             error={errors.userinfo_endpoint}
+            hint="Optional. Extra profile claims fetched after sign-in."
             onChange={(e) => setDraft((d) => setField(d, "userinfo_endpoint", e.target.value))}
             placeholder="https://openidconnect.googleapis.com/v1/userinfo"
           />
@@ -890,6 +899,7 @@ export function IdentityProviderEditor({
             value={draft.claim_email}
             invalid={Boolean(errors.claim_email)}
             error={errors.claim_email}
+            hint="Which token claim holds the user's email address."
             onChange={(e) => setDraft((d) => setField(d, "claim_email", e.target.value))}
             placeholder="email"
           />
@@ -907,6 +917,7 @@ export function IdentityProviderEditor({
             value={draft.claim_given_name}
             invalid={Boolean(errors.claim_given_name)}
             error={errors.claim_given_name}
+            hint="Only used when the Name claim above is absent."
             onChange={(e) => setDraft((d) => setField(d, "claim_given_name", e.target.value))}
             placeholder="given_name"
           />
@@ -915,6 +926,7 @@ export function IdentityProviderEditor({
             value={draft.claim_family_name}
             invalid={Boolean(errors.claim_family_name)}
             error={errors.claim_family_name}
+            hint="Only used when the Name claim above is absent."
             onChange={(e) => setDraft((d) => setField(d, "claim_family_name", e.target.value))}
             placeholder="family_name"
           />
@@ -923,6 +935,7 @@ export function IdentityProviderEditor({
             value={draft.claim_phone}
             invalid={Boolean(errors.claim_phone)}
             error={errors.claim_phone}
+            hint="Optional. Only applies if your provider sends one."
             onChange={(e) => setDraft((d) => setField(d, "claim_phone", e.target.value))}
             placeholder="phone_number"
           />
