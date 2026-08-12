@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { lookup } from "node:dns/promises";
+import { fetch as undiciFetch } from "undici";
 import sharp from "sharp";
 import {
   assertSafeTileFetchUrl,
@@ -15,6 +17,23 @@ import {
   STATIC_MAP_WIDTH,
   StaticMapRenderError,
 } from "../../src/maps/static-map.js";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("undici", () => {
+  function MockAgent(this: { close: () => Promise<void> }) {
+    this.close = vi.fn().mockResolvedValue(undefined);
+  }
+  return {
+    Agent: vi.fn(MockAgent),
+    fetch: vi.fn(),
+  };
+});
+
+const mockedLookup = vi.mocked(lookup);
+const mockedUndiciFetch = vi.mocked(undiciFetch);
 
 async function solidTilePng(color: { r: number; g: number; b: number }): Promise<Buffer> {
   return sharp({
@@ -104,15 +123,18 @@ describe("isAllowedDeclaredTileSize", () => {
 describe("renderStaticMapPng content-length accept path", () => {
   it("reads the body when Content-Length is present and within the cap", async () => {
     const tile = await solidTilePng({ r: 40, g: 50, b: 60 });
-    const fetchFn = vi.fn().mockImplementation(async () =>
-      new Response(tile, {
+    const fetchFn = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+      // Works around a Node process bug where an unrelated undici import elsewhere corrupts
+      // global fetch's gzip decompression over HTTP/2 - see NO_COMPRESSION_HEADERS' doc comment.
+      expect(init?.headers).toMatchObject({ "Accept-Encoding": "identity" });
+      return new Response(tile, {
         status: 200,
         headers: {
           "content-type": "image/png",
           "content-length": String(tile.byteLength),
         },
-      }),
-    );
+      });
+    });
     const png = await renderStaticMapPng(
       { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
       {
@@ -909,12 +931,61 @@ describe("renderStaticMapPng", () => {
     ).rejects.toMatchObject({ message: expect.stringContaining("Failed to composite static map") });
   });
 
-  it("uses global fetch when fetchFn is omitted", async () => {
-    const tile = await solidTilePng({ r: 10, g: 20, b: 30 });
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
-      new Response(tile, { status: 200, headers: { "content-type": "image/png" } }),
-    );
-    try {
+  describe("without a fetchFn override (production DNS pinning)", () => {
+    it("pins the connection to a resolved address instead of using global fetch", async () => {
+      const tile = await solidTilePng({ r: 10, g: 20, b: 30 });
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      mockedLookup.mockResolvedValue([
+        { address: "1.2.3.4", family: 4 },
+      ] as unknown as Awaited<ReturnType<typeof lookup>>);
+      mockedUndiciFetch.mockImplementation(
+        async () =>
+          new Response(tile, {
+            status: 200,
+            headers: { "content-type": "image/png" },
+          }) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+      );
+      try {
+        const png = await renderStaticMapPng(
+          { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+          {
+            tileConfig: {
+              enabled: true,
+              tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+              attribution: "",
+              maxZoom: 19,
+            },
+            userAgent: "Admitto/test",
+          },
+        );
+        expect(png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+        expect(mockedLookup).toHaveBeenCalled();
+        expect(mockedUndiciFetch).toHaveBeenCalled();
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("follows a safe redirect and re-resolves/re-pins the new hop", async () => {
+      const tile = await solidTilePng({ r: 7, g: 8, b: 9 });
+      mockedLookup.mockResolvedValue([
+        { address: "1.2.3.4", family: 4 },
+      ] as unknown as Awaited<ReturnType<typeof lookup>>);
+      mockedUndiciFetch.mockImplementation(async (url) => {
+        const requested = String(url);
+        if (!requested.includes("cdn-tiles.example")) {
+          const redirected = requested.replace("tiles.example", "cdn-tiles.example");
+          return new Response(null, {
+            status: 302,
+            headers: { location: redirected },
+          }) as unknown as Awaited<ReturnType<typeof undiciFetch>>;
+        }
+        return new Response(tile, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }) as unknown as Awaited<ReturnType<typeof undiciFetch>>;
+      });
       const png = await renderStaticMapPng(
         { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
         {
@@ -928,10 +999,35 @@ describe("renderStaticMapPng", () => {
         },
       );
       expect(png.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-      expect(fetchSpy).toHaveBeenCalled();
-    } finally {
-      fetchSpy.mockRestore();
-    }
+      // Each hop is independently re-resolved and re-pinned, not just the tile's first attempt.
+      expect(mockedLookup.mock.calls.length).toBeGreaterThan(1);
+    });
+
+    it("rejects a redirect to a blocked/private host", async () => {
+      mockedLookup.mockResolvedValue([
+        { address: "1.2.3.4", family: 4 },
+      ] as unknown as Awaited<ReturnType<typeof lookup>>);
+      mockedUndiciFetch.mockResolvedValue(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://169.254.169.254/latest" },
+        }) as unknown as Awaited<ReturnType<typeof undiciFetch>>,
+      );
+      await expect(
+        renderStaticMapPng(
+          { latitude: 52.23, longitude: 21.01, zoom: 14, width: 256, height: 256 },
+          {
+            tileConfig: {
+              enabled: true,
+              tileUrl: "https://tiles.example/{z}/{x}/{y}.png",
+              attribution: "",
+              maxZoom: 19,
+            },
+            userAgent: "Admitto/test",
+          },
+        ),
+      ).rejects.toThrow(/blocked/);
+    });
   });
 });
 

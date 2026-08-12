@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Organisation Settings → Identity → group mapping: the Organization/Event field is now a searchable picker showing real names instead of a raw ID with nothing to guide it, so a mistyped value can no longer save a mapping that could never match a real user's grant. The editor is wider so the mapping row has room to breathe, and on narrow screens it now packs two fields per line instead of stacking every field onto its own row.
 - Organisation Settings → Identity → provider editor: every field now has a short inline hint, including an explicit warning that Issuer URL must be the bare URL, not the `/.well-known/openid-configuration` discovery document some providers show you. Pasting the full discovery URL there (directly, or via **Discover**) is now corrected automatically instead of silently breaking sign-in later or 404ing.
 - Add to Apple Wallet / Google Wallet: the pass now carries the same QR code as the attendee's ticket page, so scanning it at check-in resolves to the right attendee. Previously the pass fell back to PassCreator's own internal identifier, which check-in could not match.
+- Wallet pass creation/update, Microsoft Graph mail sending, and MET Norway weather lookups now ask the provider not to compress responses, working around a process-wide bug where an unrelated `undici` import elsewhere in the same process can silently corrupt automatic gzip decompression on HTTP/2 connections so the response reports success but its body and headers arrive unusable.
 
 ### Added
 - Organisation Settings → Security: superadmins can now allow specific third-party `https://` origins to run script, send data, and (on sign-in pages) render an embedded widget, for example an analytics/monitoring beacon like Cloudflare Web Analytics or a login challenge widget like Cloudflare Turnstile, without weakening the Content-Security-Policy for anything else.
@@ -32,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Users & roles: **Reset password** and **Reset two-factor** are now disabled for staff accounts signed in through an identity provider, in both the menu and the API, since resetting a password on an SSO-managed account previously created a working local sign-in path alongside the identity provider link with no warning shown.
 - **Log out now also ends the session at the identity provider**, when it advertises a logout endpoint via discovery, instead of only clearing the local Admitto session. Previously the identity provider's session (and any other application sharing it) stayed signed in, so a fresh SSO login could silently succeed without re-authenticating. Existing OIDC providers pick this up the next time **Discover** is run.
+- Static map tile fetching (the map image on tickets and mail) now re-resolves and pins the connection to a freshly validated address for every request and every redirect hop, closing the same DNS-rebinding gap already fixed for weather and address lookup.
 
 ## [0.4.14] - 2026-08-11
 

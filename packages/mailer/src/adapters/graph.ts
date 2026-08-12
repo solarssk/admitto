@@ -11,7 +11,7 @@ import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { validateMailMessage } from "../validation.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { redactEmail } from "@admitto/shared";
+import { NO_COMPRESSION_HEADERS, redactEmail } from "@admitto/shared";
 
 /**
  * Microsoft Graph — app-only send (client credentials flow).
@@ -55,7 +55,7 @@ export class GraphAdapter implements MailerAdapter {
     try {
       res = await this.fetchFn(`${this.authority}/oauth2/v2.0/token`, {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
+        headers: { "content-type": "application/x-www-form-urlencoded", ...NO_COMPRESSION_HEADERS },
         body: new URLSearchParams({
           grant_type: "client_credentials",
           client_id: this.config.clientId,
@@ -135,6 +135,7 @@ export class GraphAdapter implements MailerAdapter {
         headers: {
           authorization: `Bearer ${tokenResult.token}`,
           "content-type": "application/json",
+          ...NO_COMPRESSION_HEADERS,
         },
         body: JSON.stringify({
           message: graphMessage,
