@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
 import type { IdentityProvider, Prisma, PrismaClient, User } from "@admitto/db";
-import { hashPassword } from "../password.js";
 import { normalizeEmail } from "../user.js";
 import { runInTransaction } from "../prisma-tx.js";
 import type { ExternalIdentityClaims } from "../oidc/claims.js";
