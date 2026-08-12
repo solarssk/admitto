@@ -230,18 +230,16 @@
   margin-top: var(--space-3);
 }
 
+/* Stays a single row (Value | Key | Remove) at every width, including phones - the Value
+   dropdown's own label truncates with an ellipsis (searchable-select.css) and minmax(0, 1fr)
+   lets both text columns shrink past their content's natural size, so there's no need to fall
+   back to stacking the three fields into separate rows on narrow screens. */
 .wallet-field-mapping__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--space-2);
   margin-top: var(--space-3);
-}
-
-@media (max-width: 640px) {
-  .wallet-field-mapping__row {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Apple/Google Wallet toggle rows: a colored circular icon badge spanning both the
