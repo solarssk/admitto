@@ -96,10 +96,16 @@ describe("TicketTypesCard", () => {
     renderCard([vipType]);
 
     fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+    fireEvent.blur(input);
 
     expect(
-      await screen.findByText('A ticket type named "New type" already exists for this event.'),
+      await screen.findByText('"Staff" is already used by another ticket type in this event.'),
     ).toBeTruthy();
+    // A retryable failure (name conflict) keeps the draft row open instead of discarding what the
+    // admin typed.
+    expect(screen.getByLabelText("New ticket type label")).toBeTruthy();
   });
 
   it("exposes an accessible label for each row's label input", () => {
@@ -165,11 +171,20 @@ describe("TicketTypesCard", () => {
     await waitFor(() => expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { color: "blue" }));
   });
 
-  it("adds a new ticket type and calls onChanged", async () => {
+  it("opens an empty draft row on click without calling createTicketType yet", () => {
+    renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+
+    expect(screen.getByLabelText("New ticket type label")).toBeTruthy();
+    expect(createTicketType).not.toHaveBeenCalled();
+  });
+
+  it("creates the type with the name actually typed - its key derives from that, not a placeholder", async () => {
     vi.mocked(createTicketType).mockResolvedValueOnce({
       id: "tt-new",
-      key: "new_type",
-      label: "New type",
+      key: "staff",
+      label: "Staff",
       color: "blue",
       sort_order: 1,
       attendee_count: 0,
@@ -178,11 +193,38 @@ describe("TicketTypesCard", () => {
     const { onChanged } = renderCard([vipType]);
 
     fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+    fireEvent.blur(input);
 
     await waitFor(() =>
-      expect(createTicketType).toHaveBeenCalledWith("evt-1", { label: "New type", color: "blue" }),
+      expect(createTicketType).toHaveBeenCalledWith("evt-1", { label: "Staff", color: "blue" }),
     );
     expect(onChanged).toHaveBeenCalledTimes(1);
+    // Draft row is gone once the real row lands.
+    expect(screen.queryByLabelText("New ticket type label")).toBeNull();
+  });
+
+  it("cancels the draft without calling createTicketType when blurred empty", () => {
+    renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    fireEvent.blur(screen.getByLabelText("New ticket type label"));
+
+    expect(createTicketType).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("New ticket type label")).toBeNull();
+  });
+
+  it("cancels the draft on Escape without calling createTicketType", () => {
+    renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(createTicketType).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("New ticket type label")).toBeNull();
   });
 
   it("shows a warning toast (not the generic error) when the per-event type limit is reached", async () => {
@@ -192,8 +234,13 @@ describe("TicketTypesCard", () => {
     renderCard([vipType]);
 
     fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+    fireEvent.blur(input);
 
     expect(await screen.findByText("Ticket type limit reached for this event.")).toBeTruthy();
+    // Nothing left to retry - the draft row closes.
+    expect(screen.queryByLabelText("New ticket type label")).toBeNull();
   });
 
   it("shows the generic error toast when add fails for an unexpected reason", async () => {
@@ -201,6 +248,9 @@ describe("TicketTypesCard", () => {
     renderCard([vipType]);
 
     fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+    fireEvent.blur(input);
 
     expect(await screen.findByText("Something went wrong. Try again.")).toBeTruthy();
   });
