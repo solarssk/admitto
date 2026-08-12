@@ -1,3 +1,4 @@
+import { NO_COMPRESSION_HEADERS } from "@admitto/shared";
 import { WalletProviderError } from "./types.js";
 import type { WalletPassInput, WalletPassResult } from "./types.js";
 import type { WalletPassProvider } from "./provider.js";
@@ -153,6 +154,7 @@ export class PassCreatorClient implements WalletPassProvider {
           method,
           headers: {
             Authorization: this.apiKey,
+            ...NO_COMPRESSION_HEADERS,
             ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
           },
           body: body !== undefined ? JSON.stringify(body) : undefined,

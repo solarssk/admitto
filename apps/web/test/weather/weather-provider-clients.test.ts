@@ -294,6 +294,9 @@ describe("MetNoClient", () => {
   it("sends User-Agent and returns a daily aggregate", async () => {
     const fetchFn = vi.fn(async (_input: string | URL, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ "User-Agent": "Admitto/test" });
+      // Works around a Node process bug where an unrelated undici import elsewhere corrupts
+      // global fetch's gzip decompression over HTTP/2 - see NO_COMPRESSION_HEADERS' doc comment.
+      expect(init?.headers).toMatchObject({ "Accept-Encoding": "identity" });
       expect(init?.redirect).toBe("error");
       return new Response(
         JSON.stringify({
