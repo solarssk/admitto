@@ -1059,6 +1059,44 @@ describe("EventSettingsPage tabs", () => {
     expect(options).toHaveLength(1);
   });
 
+  it("shows a hover tooltip explaining what a field mapping row's selected value sends", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "full_name" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Attendee full name" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    expect(screen.getByRole("tooltip").textContent).toBe("The attendee's full name.");
+  });
+
+  it("keeps a field mapping row's hint icon decorative until a value is picked", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    const trigger = screen.getByRole("button", { name: "Value, none selected" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const icon = row.querySelector(".wallet-field-mapping__hint i") as HTMLElement;
+
+    expect(icon.getAttribute("aria-hidden")).toBe("true");
+    expect(icon.hasAttribute("aria-label")).toBe(false);
+  });
+
   it("falls back to a generic success toast when Test connection reports no message", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,

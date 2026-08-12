@@ -240,16 +240,27 @@
   margin-top: var(--space-3);
 }
 
-/* Stays a single row (Value | Key | Remove) at every width, including phones - the Value
+/* Stays a single row (Value | Key | Hint | Remove) at every width, including phones - the Value
    dropdown's own label truncates with an ellipsis (searchable-select.css) and minmax(0, 1fr)
    lets both text columns shrink past their content's natural size, so there's no need to fall
-   back to stacking the three fields into separate rows on narrow screens. */
+   back to stacking the fields into separate rows on narrow screens. The hint icon's column is
+   always rendered (even for a row with no value picked yet, see the Tooltip's own `content`
+   fallback) so the Remove button's column position never shifts between rows. */
 .wallet-field-mapping__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
   align-items: start;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+/* Vertically centers the small info icon against the taller Value/Key/Remove controls beside it
+   (the row's own align-items: start otherwise pins it to their top edge) - same cursor: help
+   convention as .security-field-warning-trigger for an icon-only tooltip trigger. */
+.wallet-field-mapping__hint {
+  align-self: center;
+  color: var(--text-muted);
+  cursor: help;
 }
 
 /* Apple/Google Wallet toggle rows: a colored circular icon badge spanning both the

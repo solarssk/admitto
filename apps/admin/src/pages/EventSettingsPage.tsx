@@ -7,7 +7,7 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, Switch, useToast, type ToastVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import {
   ApiError,
@@ -163,7 +163,7 @@ const WALLET_PLACEHOLDER_LABELS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[num
   region: "Region",
   country: "Country",
   ticket_type: "Ticket type",
-  ticket_url: "Ticket/QR URL",
+  ticket_url: "Ticket/QR value",
 };
 
 /** Groups the Value dropdown's options by category so the list is easier to scan - matches
@@ -194,10 +194,41 @@ const WALLET_PLACEHOLDER_ICONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[numb
   ticket_url: "ticket",
 };
 
+/** What each placeholder actually resolves to at send time (apps/web/src/app.ts's own
+ * buildWalletPassInput) - shown in the Field mapping row's hint icon so an admin doesn't have to
+ * guess what a row will put on the pass. "Not sent if..." callouts mirror toPassCreatorData's own
+ * `if (value) custom[key] = value` - a falsy value is omitted from the PassCreator payload
+ * entirely, not sent as an empty string. */
+const WALLET_PLACEHOLDER_DESCRIPTIONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string> = {
+  full_name: "The attendee's full name.",
+  first_name: "The attendee's first name only. Not sent if the attendee has no first name on file.",
+  last_name: "The attendee's last name only. Not sent if the attendee has no last name on file.",
+  email: "The attendee's email address. Not sent if the attendee has no email on file.",
+  company: "The attendee's company. Not sent if not set.",
+  department: "The attendee's department. Not sent if not set.",
+  event_name: "This event's name.",
+  event_date: "This event's date, formatted the same way as the ticket page.",
+  event_hours: 'This event\'s hours, e.g. "18:00-22:00". Not sent if the event has no hours set.',
+  event_location: "This event's location text. Not sent if not set.",
+  directions_text: "This event's directions text. Not sent if not set.",
+  accessibility_text: "This event's accessibility notes. Not sent if not set.",
+  google_maps_url: "A Google Maps link to the event location. Not sent if the event has no coordinates.",
+  apple_maps_url: "An Apple Maps link to the event location. Not sent if the event has no coordinates.",
+  object_name: "The venue name from the event's address. Not sent if not set.",
+  street: "The street from the event's address. Not sent if not set.",
+  postcode: "The postal code from the event's address. Not sent if not set.",
+  city: "The city from the event's address. Not sent if not set.",
+  region: "The region from the event's address. Not sent if not set.",
+  country: "The country from the event's address. Not sent if not set.",
+  ticket_type: 'The attendee\'s ticket type, e.g. "VIP". Defaults to "General" if none is set.',
+  ticket_url: "The same value encoded in the ticket's QR code and barcode.",
+};
+
 const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
   id,
   icon: WALLET_PLACEHOLDER_ICONS[id],
   label: WALLET_PLACEHOLDER_LABELS[id],
+  description: WALLET_PLACEHOLDER_DESCRIPTIONS[id],
 }));
 
 /** Renders field mapping rows grouped by category (attendee, event, notes, maps, address,
@@ -1567,6 +1598,7 @@ export function EventSettingsPage() {
                     const availableOptions = WALLET_PLACEHOLDER_OPTIONS.filter(
                       (o) => o.id === row.value || !usedByOtherRows.has(o.id),
                     );
+                    const selectedOption = WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value);
                     return (
                     <div className="wallet-field-mapping__row" key={row.id}>
                       <SearchableSelect
@@ -1605,6 +1637,13 @@ export function EventSettingsPage() {
                           })
                         }
                       />
+                      <Tooltip content={selectedOption?.description} className="wallet-field-mapping__hint">
+                        {selectedOption ? (
+                          <i className="ti ti-info-circle" aria-label={selectedOption.description} />
+                        ) : (
+                          <i className="ti ti-info-circle" aria-hidden="true" />
+                        )}
+                      </Tooltip>
                       <Button
                         type="button"
                         id={`event-wallet-field-mapping-remove-${row.id}`}
