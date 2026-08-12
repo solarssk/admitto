@@ -113,6 +113,17 @@ export function useDropdownMenu<
     /* v8 ignore if */
     if (!trigger || !panel) return;
 
+    // Which side the panel opens on is re-decided only when the *available space* around the
+    // trigger actually changes (a real window/viewport resize, e.g. a mobile keyboard opening) -
+    // not every time the panel's own content changes size. Without this lock, SearchableSelect's
+    // list shrinking as the user types (e.g. a search narrowing to one result) could flip a panel
+    // that opened upward - because the *full* option list didn't fit below - down to below the
+    // trigger the instant the narrower result count suddenly does fit there, yanking the panel
+    // out from under the user mid-keystroke (PO report).
+    let lastSpaceBelow: number | undefined;
+    let lastSpaceAbove: number | undefined;
+    let lockedAbove = false;
+
     const updatePlacement = () => {
       const triggerRect = trigger.getBoundingClientRect();
       const panelWidth = matchTriggerWidth
@@ -124,8 +135,12 @@ export function useDropdownMenu<
       const viewport = getFixedOverlayViewport();
       const spaceBelow = viewport.bottom - triggerRect.bottom;
       const spaceAbove = triggerRect.top - viewport.top;
+      const spaceUnchanged = spaceBelow === lastSpaceBelow && spaceAbove === lastSpaceAbove;
       // Only flip when upward genuinely has more room - never flip into an even tighter fit.
-      const above = panelHeight > spaceBelow && spaceAbove > spaceBelow;
+      const above = spaceUnchanged ? lockedAbove : panelHeight > spaceBelow && spaceAbove > spaceBelow;
+      lockedAbove = above;
+      lastSpaceBelow = spaceBelow;
+      lastSpaceAbove = spaceAbove;
       const available = Math.max(0, (above ? spaceAbove : spaceBelow) - gap - VIEWPORT_PAD_PX);
       const maxHeight = panelHeight > available ? available : undefined;
       const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
