@@ -1,5 +1,6 @@
 import {
   authFormSubmitScript,
+  authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   AUTH_SSO_BUTTON_ICON_SVG,
   renderAuthBrand,
@@ -52,8 +53,11 @@ function loginAutofillClearScript(scriptNonce: string): string {
  * Referrer-Policy same-origin is the primary CSRF signal for HTML form POSTs (Safari);
  * Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
  */
-export function getLoginPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getLoginPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 /** SSO provider link for login footer. */
@@ -117,6 +121,7 @@ export function renderLoginForm(
     ${ssoBlock}
     <form method="post" action="/login" aria-label="Admitto sign in">
       ${nextField}
+      <input type="hidden" name="timezone" value="" autocomplete="off">
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
         <input class="auth-input" id="email" type="email" name="email" placeholder="you@example.com" required autocomplete="username">
@@ -133,7 +138,7 @@ export function renderLoginForm(
     step: "Sign in",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${authFormSubmitScript(scriptNonce)}\n${loginAutofillClearScript(scriptNonce)}`,
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce, { ssoLinks: true })}\n${loginAutofillClearScript(scriptNonce)}`,
   });
 }
 

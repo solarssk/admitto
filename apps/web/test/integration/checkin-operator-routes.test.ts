@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
@@ -15,11 +15,13 @@ import {
   handleCheckinLookup,
   handleCheckinScan,
   handleCheckinAdmit,
+  handleCheckinItemAction,
   handleCheckinNote,
   handleCheckinUndo,
   eventIdFromCheckinBody,
 } from "../../src/admin/checkin-api-routes.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import * as sseChannel from "../../src/admin/sse-channel.js";
 
 const ORG_A = "org-op-routes-a";
 const ORG_B = "org-op-routes-b";
@@ -40,6 +42,7 @@ const sameOrigin = { Origin: "http://localhost" };
 
 async function seedFixture(client: PrismaClient): Promise<void> {
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
+  await client.eventItem.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
   await client.checkIn.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
   await client.attendee.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] } } });
   await client.roleAssignment.deleteMany({ where: { user_id: USER_OP_A } });
@@ -94,6 +97,10 @@ async function seedFixture(client: PrismaClient): Promise<void> {
   });
   attendeeId = att.id;
 
+  await client.eventItem.create({
+    data: { event_id: EVENT_A, key: "badge", label: "Badge" },
+  });
+
   const tokenB = generateToken();
   const attB = await client.attendee.create({
     data: {
@@ -123,6 +130,7 @@ function buildMutatingApp(config = { allowBearer: false, operatorToken: null as 
   app.post("/api/checkin/lookup", ...chain, (c) => handleCheckinLookup(c, prisma));
   app.post("/api/checkin/scan", ...chain, (c) => handleCheckinScan(c, prisma));
   app.post("/api/checkin/admit", ...chain, (c) => handleCheckinAdmit(c, prisma));
+  app.post("/api/checkin/items/:itemKey", ...chain, (c) => handleCheckinItemAction(c, prisma));
   app.post("/api/checkin/notes", ...chain, (c) => handleCheckinNote(c, prisma));
   app.post("/api/checkin/undo", ...chain, (c) => handleCheckinUndo(c, prisma));
   return app;
@@ -228,6 +236,27 @@ describe("POST /api/checkin/lookup (Lock #3)", () => {
         data: { ops_config: {} },
       });
     }
+  });
+});
+
+describe("POST /api/checkin/items/:itemKey", () => {
+  afterEach(() => {
+    sseChannel.resetSseChannelsForTests();
+  });
+
+  it("publishes an activity_changed SSE signal after a successful item transition", async () => {
+    const publishSpy = vi.spyOn(sseChannel, "publish");
+
+    const res = await post("/api/checkin/items/badge", {
+      eventId: EVENT_A,
+      attendeeId,
+      targetState: "issued",
+      deviceId: SESSION_DEVICE,
+    });
+
+    expect(res.status).toBe(200);
+    expect(publishSpy).toHaveBeenCalledWith(EVENT_A, { type: "activity_changed" });
+    publishSpy.mockRestore();
   });
 });
 

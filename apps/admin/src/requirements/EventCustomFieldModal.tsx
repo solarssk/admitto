@@ -46,7 +46,6 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   const isEdit = field !== null;
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, onClose);
 
@@ -54,8 +53,17 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   if (saving) submitLabel = "Saving…";
   else if (isEdit) submitLabel = "Save";
 
+  const labelTrimmed = form.label.trim();
+  const selectOptions = form.options
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const canSubmit =
+    labelTrimmed.length > 0 &&
+    form.source_field.length > 0 &&
+    (form.type !== "select" || selectOptions.length > 0);
+
   function updateLabel(value: string) {
-    setError(null);
     setForm((f) => ({
       ...f,
       label: value,
@@ -65,22 +73,11 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const label = form.label.trim();
+    if (!canSubmit) return;
+    const label = labelTrimmed;
     const source_field = form.source_field;
-    if (!label || !source_field) {
-      setError("Enter a display label using letters or numbers.");
-      return;
-    }
     const description = form.description.trim();
-    const options = form.options
-      .split(/[,\n]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (form.type === "select" && options.length === 0) {
-      setError("Select fields need at least one option.");
-      return;
-    }
-    setError(null);
+    const options = selectOptions;
     setSaving(true);
     try {
       if (isEdit) {
@@ -125,17 +122,18 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
         <div className="event-item-modal__header">
           <div>
             <h2 id="custom-field-modal-title" className="event-item-modal__title">
+              <i className="ti ti-forms" aria-hidden="true" />
               {isEdit ? "Edit custom field" : "Add custom field"}
             </h2>
+            <p className="event-item-modal__subtitle">
+              {isEdit
+                ? "Update how this field appears to operators."
+                : "Collect extra attendee details on import and show them to operators during check-in."}
+            </p>
           </div>
           <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
         </div>
         <form id="custom-field-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
-          {error && (
-            <p className="text-error" role="alert">
-              {error}
-            </p>
-          )}
           <div className="at-field">
             <div className="add-item-label-row">
               <label className="at-label" htmlFor="cf-label">
@@ -143,7 +141,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               </label>
               {form.source_field && (
                 <span className="at-hint">
-                  ID: <code>{form.source_field}</code>
+                  ID: <code className="requirements-item-id">{form.source_field}</code>
                 </span>
               )}
             </div>
@@ -204,42 +202,47 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                     type="button"
                     className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
                     onClick={() => {
-                      setError(null);
                       setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : "" }));
                     }}
                     aria-pressed={form.type === value}
                     aria-label={btnLabel}
                   >
                     <i className={`ti ${icon}`} />
+                    <span>{btnLabel}</span>
                   </button>
                 </Tooltip>
               ))}
             </div>
+            <span className="at-hint">
+              {CUSTOM_FIELD_TYPES.find((type) => type.value === form.type)?.hint}
+            </span>
+            {form.type === "select" && (
+              <>
+                <label className="at-label" htmlFor="cf-options">
+                  Options (one per line)
+                </label>
+                <textarea
+                  id="cf-options"
+                  className="at-textarea"
+                  rows={3}
+                  value={form.options}
+                  onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
+                  placeholder={"Vegetarian\nVegan\nGluten-free"}
+                  aria-label="Select options"
+                />
+              </>
+            )}
           </div>
-          {form.type === "select" && (
-            <div className="at-field">
-              <label className="at-label" htmlFor="cf-options">
-                Options (one per line)
-              </label>
-              <textarea
-                id="cf-options"
-                className="at-textarea"
-                rows={3}
-                value={form.options}
-                onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
-                placeholder={"Vegetarian\nVegan\nGluten-free"}
-                aria-label="Select options"
-              />
-            </div>
-          )}
         </form>
         <div className="event-item-modal__footer">
-          <Button type="submit" form="custom-field-form" variant="primary" disabled={saving}>
-            {submitLabel}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
+          <div className="event-item-modal__footer-end">
+            <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving}>
+              {submitLabel}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

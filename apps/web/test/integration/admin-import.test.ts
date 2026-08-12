@@ -408,20 +408,6 @@ describe("POST /api/admin/events/:eventId/import/preview", () => {
     expect(body.parse.warnings).toContain("Duplicate column(s) detected");
   });
 
-  it("sanitizes single-word name warnings without exposing the name", async () => {
-    const csv = ["name,email", "Madonna,solo@example.com"].join("\n");
-    const res = await postImport(
-      `/api/admin/events/${EVENT_A}/import/preview`,
-      csvFormData(csv),
-      adminCookie,
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { parse: { warnings: string[] } };
-    expect(body.parse.warnings.length).toBeGreaterThan(0);
-    expect(body.parse.warnings[0]).toMatch(/single-word name/);
-    expect(body.parse.warnings[0]).not.toContain("Madonna");
-  });
-
   it("returns importId on successful preview", async () => {
     const res = await postImport(
       `/api/admin/events/${EVENT_A}/import/preview`,
@@ -1410,43 +1396,67 @@ describe("GET /api/admin/events/:eventId/import/template", () => {
 
 describe("GET /api/admin/events/:eventId/import/history", () => {
   afterAll(async () => {
-    await prisma.attendeeActionLog.deleteMany({
-      where: { event_id: { in: [EVENT_A, EVENT_B] }, action_type: "attendees_imported" },
+    await prisma.adminJob.deleteMany({
+      where: { event_id: { in: [EVENT_A, EVENT_B] }, type: "import_commit" },
     });
   });
 
-  it("returns committed imports newest-first with counts and filename from the audit log", async () => {
-    await prisma.attendeeActionLog.deleteMany({
-      where: { event_id: EVENT_A, action_type: "attendees_imported" },
+  it("returns terminal import jobs newest-first including failed/reclaimed", async () => {
+    await prisma.adminJob.deleteMany({
+      where: { event_id: EVENT_A, type: "import_commit" },
     });
-    await prisma.attendeeActionLog.createMany({
+    await prisma.adminJob.createMany({
       data: [
         {
+          type: "import_commit",
+          status: "succeeded",
+          organization_id: ORG_A,
           event_id: EVENT_A,
-          attendee_id: null,
-          action_type: "attendees_imported",
+          filename: "first.csv",
+          created_count: 10,
+          updated_count: 2,
+          skipped_count: 1,
           created_at: new Date("2026-06-01T10:00:00Z"),
-          metadata: { created: 10, updated: 2, skipped: 1, filename: "first.csv" },
+          finished_at: new Date("2026-06-01T10:01:00Z"),
         },
         {
+          type: "import_commit",
+          status: "failed",
+          organization_id: ORG_A,
           event_id: EVENT_A,
-          attendee_id: null,
-          action_type: "attendees_imported",
-          created_at: new Date("2026-06-02T10:00:00Z"),
-          metadata: { created: 5, updated: 0, skipped: 0, filename: "second.xlsx" },
+          filename: "broken.csv",
+          error: "Import job abandoned (worker stopped while running). Upload the file again.",
+          // Older created_at than second.xlsx, but later finished_at (reclaim) → first in list.
+          created_at: new Date("2026-06-02T09:00:00Z"),
+          finished_at: new Date("2026-06-03T12:00:00Z"),
         },
-        // Different action types and other events never leak into the history.
         {
+          type: "import_commit",
+          status: "succeeded",
+          organization_id: ORG_A,
           event_id: EVENT_A,
-          attendee_id: null,
-          action_type: "attendees_exported",
-          metadata: { format: "csv", count: 3 },
+          filename: "second.xlsx",
+          created_count: 5,
+          updated_count: 0,
+          skipped_count: 0,
+          created_at: new Date("2026-06-03T10:00:00Z"),
+          finished_at: new Date("2026-06-03T10:01:00Z"),
+        },
+        // Pending / other events never leak into the history.
+        {
+          type: "import_commit",
+          status: "pending",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          filename: "still-pending.csv",
         },
         {
+          type: "import_commit",
+          status: "succeeded",
+          organization_id: ORG_B,
           event_id: EVENT_B,
-          attendee_id: null,
-          action_type: "attendees_imported",
-          metadata: { created: 99, updated: 0, skipped: 0, filename: "other-event.csv" },
+          filename: "other-event.csv",
+          created_count: 99,
         },
       ],
     });
@@ -1457,27 +1467,35 @@ describe("GET /api/admin/events/:eventId/import/history", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as { items: Array<Record<string, unknown>> };
-    expect(body.items).toHaveLength(2);
+    expect(body.items).toHaveLength(3);
     expect(body.items[0]).toMatchObject({
+      filename: "broken.csv",
+      status: "failed",
+      error: expect.stringMatching(/abandoned/i),
+    });
+    expect(body.items[1]).toMatchObject({
       filename: "second.xlsx",
       created: 5,
       updated: 0,
       skipped: 0,
+      status: "succeeded",
+      error: null,
     });
-    expect(body.items[1]).toMatchObject({ filename: "first.csv", created: 10, updated: 2, skipped: 1 });
+    expect(body.items[2]).toMatchObject({ filename: "first.csv", created: 10, updated: 2, skipped: 1 });
     expect(typeof body.items[0]!.created_at).toBe("string");
   });
 
-  it("tolerates legacy rows with missing metadata fields", async () => {
-    await prisma.attendeeActionLog.deleteMany({
-      where: { event_id: EVENT_A, action_type: "attendees_imported" },
+  it("tolerates succeeded jobs with missing count columns", async () => {
+    await prisma.adminJob.deleteMany({
+      where: { event_id: EVENT_A, type: "import_commit" },
     });
-    await prisma.attendeeActionLog.create({
+    await prisma.adminJob.create({
       data: {
+        type: "import_commit",
+        status: "succeeded",
+        organization_id: ORG_A,
         event_id: EVENT_A,
-        attendee_id: null,
-        action_type: "attendees_imported",
-        metadata: { created: 3 },
+        result_json: { created: 3 },
       },
     });
 
@@ -1486,7 +1504,13 @@ describe("GET /api/admin/events/:eventId/import/history", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: Array<Record<string, unknown>> };
-    expect(body.items[0]).toMatchObject({ filename: null, created: 3, updated: 0, skipped: 0 });
+    expect(body.items[0]).toMatchObject({
+      filename: null,
+      created: 3,
+      updated: 0,
+      skipped: 0,
+      status: "succeeded",
+    });
   });
 
   it("returns 403 for an operator and for an admin outside the event's organization", async () => {

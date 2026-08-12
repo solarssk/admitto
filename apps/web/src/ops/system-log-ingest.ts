@@ -1,5 +1,5 @@
 /**
- * Ops-only ingest so sidecar processes (bounce-ingest) can append to the app
+ * Ops-only ingest so the Admitto worker (bounce job) can append to the app
  * process System Logs buffer via OPS_HEALTH_TOKEN.
  */
 import type { Context } from "hono";

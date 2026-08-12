@@ -3,11 +3,11 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
-Create clear attendee categories used across the event lifecycle.
+Create the event's ticket-type catalog (label + colour). Free-text guest types are no longer used; attendee forms, imports, filters, check-in, and reports read only from this catalog.
 
 ## Before you start
 

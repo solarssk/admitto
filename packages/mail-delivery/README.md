@@ -55,7 +55,7 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 ## Snapshot retention
 
 Terminal deliveries keep frozen HTML/subject for retry and support. After 60 days (override with
-`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`), container startup and
+`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`), the Admitto **worker** (boot + ~24h) and
 `nullify-delivery-snapshots` clear `rendered_html` / `rendered_subject` while preserving delivery
 log metadata.
 

@@ -8,7 +8,9 @@ import { join, resolve } from "node:path";
 
 export function resolveAppVersion(): string {
   return (
-    JSON.parse(readFileSync(resolve(__dirname, "../../package.json"), "utf-8")) as { version: string }
+    JSON.parse(readFileSync(resolve(import.meta.dirname, "../../package.json"), "utf-8")) as {
+      version: string;
+    }
   ).version;
 }
 
@@ -37,7 +39,7 @@ function gitHeadSha(): string | null {
     // shells out through (tsc, prisma, vite itself) - this is trusted build/CI tooling, never
     // fed untrusted input, so it isn't a meaningfully different exposure than the rest of the
     // toolchain (SonarCloud typescript:S4036 reviewed and accepted).
-    return execSync("git rev-parse HEAD", { cwd: __dirname }).toString().trim(); // NOSONAR - see comment above
+    return execSync("git rev-parse HEAD", { cwd: import.meta.dirname }).toString().trim(); // NOSONAR - see comment above
   } catch {
     return null;
   }

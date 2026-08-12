@@ -4,7 +4,7 @@
  * grid, secret field UI, provider-specific cards, test result preview, and footer
  * are identical between the two scopes; only what fetches/saves/tests differs.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Badge, Button, Card, HintLabel, Input, Notice, Switch, Tooltip } from "@admitto/ui";
 import type {
   MailPlainFieldDto,
@@ -198,6 +198,7 @@ export function makeSecretHandlers(
 
 export function SecretFieldRow({
   label,
+  hint,
   field,
   edit,
   onReplace,
@@ -207,6 +208,8 @@ export function SecretFieldRow({
   disabled = false,
 }: Readonly<{
   label: string;
+  /** Optional visible hint below the field, same placement/styling as Input's own `hint` prop. */
+  hint?: string;
   field: MailSecretFieldDto;
   edit: SecretEdits[keyof SecretEdits];
   onReplace: () => void;
@@ -218,6 +221,7 @@ export function SecretFieldRow({
   disabled?: boolean;
 }>) {
   const editing = edit.mode !== "idle";
+  const hintId = useId();
   const [confirmed, setConfirmed] = useState(false);
   useEffect(() => {
     if (!editing) setConfirmed(false);
@@ -240,6 +244,7 @@ export function SecretFieldRow({
               <Input
                 type="password"
                 aria-label={label}
+                aria-describedby={hint ? hintId : undefined}
                 {...NO_AUTOFILL_PROPS}
                 className="mail-secret-field__input"
                 placeholder={edit.mode === "clear" ? "Will be cleared on save" : "New value"}
@@ -316,6 +321,11 @@ export function SecretFieldRow({
             </>
           )}
         </div>
+        {hint && (
+          <span id={hintId} className="at-hint">
+            {hint}
+          </span>
+        )}
       </div>
     </div>
   );

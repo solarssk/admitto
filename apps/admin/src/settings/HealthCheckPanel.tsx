@@ -195,9 +195,13 @@ function HealthGroupSection({
 function HealthCheckMoreActions({
   onExport,
   onCopy,
+  onRunLive,
+  liveLoading,
 }: Readonly<{
   onExport: () => void;
   onCopy: () => void;
+  onRunLive: () => void;
+  liveLoading: boolean;
 }>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -220,6 +224,20 @@ function HealthCheckMoreActions({
       </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+          {/* Mirrors the standalone "Run live checks" button in the header — hidden there and
+              shown only here below the header's mobile breakpoint (health-check.css), so the
+              header stays one row instead of wrapping. */}
+          <MoreActionsMenuItem
+            className="health-check__live-menu-item"
+            icon="refresh"
+            label="Run live checks"
+            hint="Re-check local status and probe address lookup, mail transport, identity providers, and Cloudflare Access"
+            disabled={liveLoading}
+            onClick={() => {
+              close();
+              onRunLive();
+            }}
+          />
           <MoreActionsMenuItem
             icon="download"
             label="Export"
@@ -359,7 +377,10 @@ export function HealthCheckPanel() {
         title="Overview"
         actions={
           <div className="health-check__actions">
-            <Tooltip content="Re-check local status and probe address lookup, mail transport (SMTP/Graph), identity providers, and Cloudflare Access when configured">
+            <Tooltip
+              content="Re-check local status and probe address lookup, mail transport (SMTP/Graph), identity providers, and Cloudflare Access when configured"
+              className="health-check__run-live-trigger"
+            >
               <Button
                 type="button"
                 variant="secondary"
@@ -380,6 +401,8 @@ export function HealthCheckPanel() {
             <HealthCheckMoreActions
               onExport={handleExport}
               onCopy={() => void handleCopy()}
+              onRunLive={() => void handleLive()}
+              liveLoading={liveLoading}
             />
           </div>
         }

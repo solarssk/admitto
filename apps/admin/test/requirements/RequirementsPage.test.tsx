@@ -253,6 +253,19 @@ describe("RequirementsPage badge/ops-config sync", () => {
 });
 
 describe("RequirementsPage — Add item and Edit item", () => {
+  it("shows the Add item modal header subtitle", async () => {
+    fetchEventItems.mockResolvedValue([]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+
+    expect(screen.getByRole("heading", { name: "Add item" })).toBeTruthy();
+    expect(
+      screen.getByText(/physical item or resource issued or tracked at check-in/i),
+    ).toBeTruthy();
+  });
+
   it("shows an inline error and does not create an item when the name has no usable characters", async () => {
     fetchEventItems.mockResolvedValue([]);
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());

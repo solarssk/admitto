@@ -23,7 +23,7 @@ import {
   type OpsAuditContext,
 } from "@admitto/tickets";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
-import { publishCheckinIfValid } from "./checkin-sse-publish.js";
+import { publishCheckinIfValid, publishActivityChanged } from "./checkin-sse-publish.js";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import {
   countAttendeesByEvent,
@@ -321,6 +321,7 @@ export async function handleCheckinItemAction(c: Context, db: PrismaClient): Pro
       },
       db,
     );
+    publishActivityChanged(eventId);
     const card = await getAttendeeCard(eventId, attendeeId, db);
     return c.json({ ...result, card }, 200);
   } catch (err) {

@@ -110,14 +110,28 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
+**Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** — the
+app's JS already requires a browser new enough that woff2 is a given, so older formats are pure
+dead weight in the package-shipped CSS (Tabler icons, `@fontsource` text fonts). This does **not**
+apply to organisation-uploaded custom branding fonts (`FontFamilyModal.tsx`, `uploadThemeFont`) —
+those accept whatever format the customer's own font file comes in
+(`woff2`/`woff`/`ttf`/`otf`, see `FONT_FILE_RE`), and we don't control that. See
+[packages/ui/README.md](packages/ui/README.md) "Fonts" for the full reasoning, what's currently
+shipped vs. stripped, script/locale coverage gaps (Arabic, CJK, RTL), and why the same fix doesn't
+mechanically extend to `@fontsource` text fonts (CSS `@import` bypasses Vite's plugin hooks — don't
+re-attempt that approach without reading why it failed first).
+
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
 
-**Before push / claiming CI will pass:** run the tests for what you changed **and** the same
+**Before push / claiming CI will pass:** run the **full package test suite** for every workspace
+you changed (e.g. `npm test -w @admitto/admin`, not a single `--run some.test.ts`), **and** the same
 gate CI uses for those packages (`npm run build` / typecheck when `.ts`/`.tsx` or tests included
-in `tsc` changed). Vitest alone is not enough: `apps/web` and `apps/admin` both build with
+in `tsc` changed). A subset Vitest run is for debugging only and does **not** authorize push.
+Vitest alone is not enough for typecheck: `apps/web` and `apps/admin` both build with
 `tsc` (CI jobs fail on `TS18047` / `TS2493` even when Vitest is green). Touching admin UI means
 `npm run build -w @admitto/admin` before push; touching web means `npm run build -w @admitto/web`.
-Prefer `npm test` (or the CI job subset you changed) after build. Do not push on red. For fetch
+Prefer full `npm test` when blast radius is unclear. Do not push on red. Cite the commands and
+pass/fail in the handoff. For fetch
 mocks in web tests, type the first argument (`input: string | URL`); bare `vi.fn(async () => …)`
 makes `mock.calls[0][0]` a `TS2493` under `tsc` even when Vitest is green. After a null-check on
 React state, nest handlers must use narrowed locals (`const weather = weatherDraft`) — TypeScript
@@ -151,6 +165,29 @@ does not suppress anything — the whole line is one comment token to the parser
 Sonar's own marker only registers when NOSONAR leads it. Confirmed by re-checking the PR's issue
 list after pushing, not by assumption — the same file's own `role="presentation"` suppression a
 few lines away (NOSONAR leading its own comment) did clear, this trailing form did not.
+
+**`apps/admin` pages are lazily code-split (`React.lazy`) — a component's CSS import must live in
+that component's own file, not just "somewhere already loaded on this page".** A modal/component
+that reuses another feature's CSS classes (e.g. the shared `add-attendee-modal.css` "standard
+modal" markup, or `IconPicker`'s `icon-picker.css`) needs its own `import "*.css"` line even if
+some other already-visited lazy chunk happens to load that stylesheet too — that only works by
+accident of navigation order within one browser session, and renders fully unstyled on a cold
+visit straight to the page that's missing the import. Found via `CreateTemplateDialog.tsx` (in the
+lazy `communication` chunk) using `.add-attendee-modal__*` classes with no import of that CSS file
+at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` — every consumer of
+a shared modal/component CSS file should show up importing it directly.
+
+**Do not import `@admitto/mail-templates` or `@admitto/tickets` (package root) from `apps/admin`.**
+Both barrels re-export Prisma/node-only server modules (mjml/fs for mail-templates; Prisma,
+`node:crypto`, pdfkit for tickets); Vite can ship them into a lazy SPA chunk (`fileURLToPath is not
+a function` on Event Settings was the mail-templates incident; the tickets barrel separately pulled
+the entire `typescript` compiler into a lazy chunk via `htmlnano`→`cosmiconfig`'s optional TS-config
+loader). Use browser-safe subpaths only (e.g. `@admitto/mail-templates/placeholders`,
+`@admitto/tickets/custom-data-reserved`, `@admitto/tickets/event-item-usability`). Same idea as
+avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`).
+Type-only re-exports from the root remain OK when they stay `import type` / `export type`. A local
+build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been
+externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
 
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,

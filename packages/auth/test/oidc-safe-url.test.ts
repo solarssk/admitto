@@ -9,14 +9,25 @@ vi.mock("node:dns/promises", () => ({
 
 const mockedLookup = vi.mocked(lookup);
 
+const allowlistKey = "SSO_PRIVATE_DESTINATION_ALLOWLIST";
+const initialNodeEnv = process.env["NODE_ENV"];
+const initialAllowlist = process.env[allowlistKey];
+
 beforeEach(() => {
   process.env["NODE_ENV"] = "test";
+  delete process.env[allowlistKey];
   mockedLookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as Awaited<
     ReturnType<typeof lookup>
   >);
 });
 
 afterEach(() => {
+  if (initialNodeEnv === undefined) delete process.env["NODE_ENV"];
+  else process.env["NODE_ENV"] = initialNodeEnv;
+
+  if (initialAllowlist === undefined) delete process.env[allowlistKey];
+  else process.env[allowlistKey] = initialAllowlist;
+
   vi.unstubAllGlobals();
 });
 
@@ -75,6 +86,28 @@ describe("assertSafeOidcFetchUrl", () => {
     expect(() => assertSafeOidcFetchUrl("https://0.0.0.0/")).toThrow(/private or link-local/);
     expect(() => assertSafeOidcFetchUrl("https://[::]/")).toThrow(/private or link-local/);
   });
+
+  it("honors SSO_PRIVATE_DESTINATION_ALLOWLIST for private hostnames in production", () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "auth.example.lan,192.168.1.50";
+    expect(() => assertSafeOidcFetchUrl("https://auth.example.lan/")).not.toThrow();
+    expect(() => assertSafeOidcFetchUrl("https://192.168.1.50/")).not.toThrow();
+    // Sync check only sees IP/metadata literals; non-allowlisted private IPs stay blocked.
+    expect(() => assertSafeOidcFetchUrl("https://192.168.1.51/")).toThrow(/private or link-local/);
+  });
+
+  it("still requires HTTPS for allowlisted hosts in production", () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "auth.example.lan";
+    expect(() => assertSafeOidcFetchUrl("http://auth.example.lan/")).toThrow(/HTTPS/);
+  });
+
+  it("matches equivalent IPv6 allowlist forms after WHATWG canonicalization", () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "fd00:0:0:0:0:0:0:1";
+    expect(() => assertSafeOidcFetchUrl("https://[fd00::1]/")).not.toThrow();
+    expect(() => assertSafeOidcFetchUrl("https://[fd00:0:0:0:0:0:0:1]/")).not.toThrow();
+  });
 });
 
 describe("fetchOidcDiscovery SSRF guard", () => {
@@ -92,6 +125,70 @@ describe("fetchOidcDiscovery SSRF guard", () => {
 
     await expect(fetchOidcDiscovery("http://127.0.0.1:9999/")).rejects.toBeInstanceOf(TypeError);
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("inserts the slash a bare issuer is missing before appending .well-known, without storing it", async () => {
+    // A bare issuer's own trailing slash is added only to build this request URL - it must not
+    // replace the issuer's last path segment (what new URL(relative, base) would do without it).
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        issuer: "http://127.0.0.1:9999",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchOidcDiscovery("http://127.0.0.1:9999");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:9999/.well-known/openid-configuration",
+      expect.anything(),
+    );
+  });
+
+  it("carries end_session_endpoint through when the document advertises one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+          userinfo_endpoint: "http://127.0.0.1:9999/userinfo",
+          end_session_endpoint: "http://127.0.0.1:9999/end-session",
+        }),
+      }),
+    );
+
+    const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/");
+    expect(doc.end_session_endpoint).toBe("http://127.0.0.1:9999/end-session");
+    expect(doc.userinfo_endpoint).toBe("http://127.0.0.1:9999/userinfo");
+  });
+
+  it("resolves end_session_endpoint to undefined when the document doesn't advertise one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/");
+    expect(doc.end_session_endpoint).toBeUndefined();
   });
 });
 
@@ -125,5 +222,16 @@ describe("assertSafeOidcFetchUrlResolved", () => {
     mockedLookup.mockClear();
     await expect(assertSafeOidcFetchUrlResolved("http://localhost:9999/")).resolves.toBeUndefined();
     expect(mockedLookup).not.toHaveBeenCalled();
+  });
+
+  it("allows allowlisted hostnames that resolve privately in production", async () => {
+    process.env["NODE_ENV"] = "production";
+    process.env[allowlistKey] = "auth.example.lan";
+    mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
+      ReturnType<typeof lookup>
+    >);
+    await expect(
+      assertSafeOidcFetchUrlResolved("https://auth.example.lan/"),
+    ).resolves.toBeUndefined();
   });
 });

@@ -1,13 +1,3 @@
-.communication-default-banner {
-  margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--surface-hover);
-  border: 1px solid var(--border);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
 .bounce-banner__link {
   padding: 0;
   border: none;
@@ -20,81 +10,191 @@
 }
 
 .bounce-banner__link:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
-.communication-compose {
-  display: grid;
-  grid-template-columns: 220px 1fr 1fr;
+.communication-templates-tab {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
-  margin-bottom: var(--space-4);
 }
 
-.communication-templates {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.communication-templates__header {
+.communication-template-picker {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  font-size: var(--fs-sm);
-  font-weight: 600;
+  gap: var(--space-3);
 }
 
-.communication-templates__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+.communication-template-picker__select {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.communication-templates__item {
+/* Pushed to the row's trailing edge regardless of how wide the select/badge/meta before it are -
+   Delete always sits right next to New template, not drifting with the select's own width. */
+.communication-template-picker__actions {
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  flex: none;
+  margin-left: auto;
 }
 
-.communication-templates__item button[type="button"]:first-child {
-  flex: 1;
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
+/* Keep the compact toolbar to one row on phones. The last-edited timestamp moves to the pencil
+   tooltip, leaving the selector enough room to show its label without making the card taller. */
+@media (max-width: 720px) {
+  .communication-template-picker > .at-badge {
+    display: none;
+  }
+
+  .communication-template-picker__actions {
+    gap: var(--space-2);
+  }
+}
+
+/* No align-items: start here on purpose - the row sizes to the editor Card's own natural
+   height (it's always the taller side), and default stretch then pulls the shorter preview
+   column up to match it instead of leaving empty space under a short mail-client box. */
+.communication-templates-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 960px) {
+  .communication-templates-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Matches --control-h - the same height as the picker's own SearchableSelect trigger and a
+   default (non-sm) Button, so every control on this row shares one consistent height instead
+   of mixing --control-h and --control-h-sm. */
+.communication-template-picker__edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  height: var(--control-h);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface-card);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--fs-sm);
-}
-
-.communication-templates__item--active button[type="button"]:first-child {
-  border-color: var(--accent);
-  background: var(--surface-hover);
-}
-
-.communication-templates__delete {
-  border: none;
   background: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: var(--space-1);
 }
 
-.communication-templates__delete:disabled {
+.communication-template-picker__edit:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.communication-template-picker__edit:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-@media (max-width: 960px) {
-  .communication-compose {
-    grid-template-columns: 1fr;
+/* No Card wrapper here (see TemplatesPreviewPanel's own comment) - .communication-mail-client
+   draws its own box, this just gives it room to sit at full column height next to the editor. */
+.communication-templates-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+}
+
+/* Grows the mail-client box (and its iframe) to fill that stretched height instead of sitting
+   at its own short natural height with empty space below - scoped to the Templates tab only,
+   the Send tab's own preview stays its natural content height inside the Message card. */
+.communication-templates-preview .communication-mail-client {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.communication-templates-preview .communication-preview-frame {
+  flex: 1 1 auto;
+}
+
+.communication-preview-toolbar__status {
+  font-size: var(--fs-xs);
+}
+
+.communication-send-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Matches .mail-test-send__controls (Event/Organisation Mail transport's own Send test email
+   card) - a single dropdown reads as a form field, not a full-bleed block, at half the card's
+   width. */
+.communication-half-field {
+  max-width: calc((100% - var(--space-4)) / 2);
+}
+
+@media (max-width: 720px) {
+  .communication-half-field {
+    max-width: none;
   }
+}
+
+.communication-recipient-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.communication-recipient-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.communication-recipient-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.communication-recipient-card--active {
+  border-color: var(--primary);
+  background: var(--surface-hover);
+}
+
+.communication-recipient-card i {
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.communication-recipient-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.communication-recipient-card__label {
+  font-weight: 500;
+}
+
+.communication-recipient-card__description {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.communication-send-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .communication-editor-fieldset {
@@ -132,6 +232,7 @@
 }
 
 .communication-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -152,15 +253,57 @@
   background: var(--surface-hover);
 }
 
-.communication-format-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-3) 0;
+/* Always-visible small thumbnail for image placeholders (see IMAGE_PLACEHOLDER_SAMPLES) - a
+   hover-only preview is too easy to never discover at all (PO report: "I don't see anything"),
+   so this is the guaranteed baseline; the larger .communication-chip-preview below is a bonus
+   for a closer look, not the only way to see it. */
+.communication-chip-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  /* Real images (the event's own map/logo) rarely arrive pre-cropped square like the QR/badge
+     SVGs did - contain (not cover) so a wide map or wallet badge letterboxes instead of having
+     its edges cropped off or getting stretched into the wrong aspect ratio. */
+  object-fit: contain;
+}
+
+/* Larger image preview shown above the chip on hover/focus - CSS-only reveal (no JS state).
+   Opens upward: every chip with a sample image (qr_image_url, logo_url, header_image_url,
+   event_map_url) lives at least one row below the placeholder list's own top edge, so there's
+   always room above; unlike a chip in the very first row, which would have nowhere to render it. */
+.communication-chip-preview {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-dropdown);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.communication-chip-preview img {
+  display: block;
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+}
+
+.communication-chip:hover .communication-chip-preview,
+.communication-chip:focus-visible .communication-chip-preview {
+  opacity: 1;
+  visibility: visible;
 }
 
 .communication-format-hint {
+  margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
 }
 
@@ -184,6 +327,28 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-sm);
   resize: vertical;
+  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll (staff.css /
+     attendees.css) - the body is long enough to scroll on most real templates, and the native
+     scrollbar reads as inconsistent with the rest of the app next to it. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.communication-textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.communication-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.communication-textarea::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.communication-textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .communication-errors {
@@ -198,31 +363,9 @@
 .communication-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-4);
-}
-
-.communication-status {
-  margin-top: var(--space-2);
-  font-size: var(--fs-sm);
-}
-
-.communication-status--ok {
-  color: var(--status-ok, #2fb344);
-}
-
-.communication-status--error {
-  color: var(--status-error, #d63939);
-}
-
-.communication-preview-subject {
-  margin-bottom: var(--space-3);
-  font-size: var(--fs-sm);
-}
-
-.communication-preview-subject strong {
-  display: block;
-  margin-bottom: var(--space-1);
 }
 
 .communication-preview-empty {
@@ -232,28 +375,124 @@
   font-size: var(--fs-sm);
 }
 
-.communication-preview-frame {
-  width: 100%;
-  min-height: 320px;
+/* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
+ * as a light surface, dark mode here would look like a broken/unstyled email, not a themed one. */
+.communication-mail-client {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fff;
+  overflow: hidden;
 }
 
-.communication-test-send {
-  margin-bottom: var(--space-4);
-}
-
-.communication-test-row {
+.communication-mail-client__toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid #e8eaed;
+  background: #f6f8fc;
+  color: #5f6368;
+  font-size: 1.1rem;
 }
 
-.communication-test-row .at-field {
-  flex: 1;
-  min-width: 220px;
+.communication-mail-client__toolbar-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+/* Real (non-decorative) content sharing the toolbar's left slot with the archive/trash/reply/
+   dots icons - own smaller font-size since the bar's 1.1rem is sized for those icon glyphs,
+   not body text. */
+.communication-mail-client__toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.communication-mail-client__subject {
+  padding: var(--space-4) var(--space-4) 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #202124;
+}
+
+.communication-mail-client__from {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-bottom: 1px solid #e8eaed;
+}
+
+.communication-mail-client__from-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.communication-mail-client__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: none;
+  gap: 4px;
+  /* Top-aligned with .from-name's own line (the row's align-items: flex-start), not centered
+   * across the whole two-line sender block - matches where a real inbox puts the timestamp. */
+  padding-top: 2px;
+  font-size: var(--fs-xs);
+  color: #5f6368;
+}
+
+.communication-mail-client__folder,
+.communication-mail-client__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.communication-mail-client__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--text-on-primary);
+  font-size: 1.1rem;
+}
+
+.communication-mail-client__from-name {
+  font-weight: 600;
+  color: #202124;
+}
+
+.communication-mail-client__from-address {
+  font-weight: 400;
+  color: #5f6368;
+}
+
+.communication-mail-client__to {
+  font-size: var(--fs-xs);
+  color: #5f6368;
+}
+
+.communication-preview-frame {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  border: none;
+  background: #fff;
+}
+
+/* Same box as the iframe above (so swapping between them causes no layout shift) with a
+   centered spinner instead of rendered content, while a preview fetch is in flight. */
+.communication-preview-frame--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Toolbar lives inside the log Card (like attendees-toolbar), not above it - search fills
@@ -459,4 +698,42 @@
   padding: var(--space-6);
   text-align: center;
   color: var(--text-muted);
+}
+
+/* Communication header: "Documentation" is a single short action, same shape as Reports'
+   "Export" - keep it beside the title on mobile too instead of the shared PageHeader's default
+   stack-below-full-width, and shrink it to match .reports-pageheader/.event-settings-pageheader/
+   .settings-pageheader verbatim (drifting from those reads as a mismatch - PO review, see
+   staff.css). */
+@media (max-width: 767px) {
+  .communication-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .communication-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .communication-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .communication-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+}
+
+/* Very narrow phones: shared content padding leaves ~272px at 320px. Restoring a column stack
+   here keeps the Documentation action reachable without horizontal scroll. */
+@media (max-width: 380px) {
+  .communication-pageheader .at-pageheader__row {
+    flex-direction: column;
+  }
+
+  .communication-pageheader .at-pageheader__actions {
+    justify-content: flex-start;
+  }
 }

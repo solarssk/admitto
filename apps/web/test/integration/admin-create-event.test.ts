@@ -473,6 +473,21 @@ describe("POST /api/admin/events", () => {
     expect(body.event.timezone).toBe("Asia/Kolkata");
   });
 
+  it("stores a legacy IANA alias using the preferred identifier", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "Legacy Kolkata Summit",
+      slug: "legacy-kolkata-summit",
+      date: "2026-09-01",
+      timezone: "Asia/Calcutta",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { event: { id: string; timezone: string } };
+    expect(body.event.timezone).toBe("Asia/Kolkata");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: body.event.id } });
+    expect(row.timezone).toBe("Asia/Kolkata");
+  });
+
   it("returns 400 when timezone is missing", async () => {
     const res = await postCreateEvent(superCookie, {
       title: "Default TZ Event",

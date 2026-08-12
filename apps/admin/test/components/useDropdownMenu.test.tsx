@@ -5,6 +5,23 @@ import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
 
 afterEach(cleanup);
 
+function mockVisualViewport(
+  width: number,
+  getHeight: () => number,
+  getOffsetTop: () => number = () => 0,
+  getOffsetLeft: () => number = () => 0,
+): VisualViewport {
+  const viewport = new EventTarget();
+  Object.defineProperties(viewport, {
+    width: { value: width },
+    height: { get: getHeight },
+    offsetTop: { get: getOffsetTop },
+    offsetLeft: { get: getOffsetLeft },
+  });
+  vi.stubGlobal("visualViewport", viewport);
+  return viewport as VisualViewport;
+}
+
 // jsdom doesn't implement ResizeObserver - same mock shape as MapPicker.test.tsx's own, letting
 // a test fire the callback manually via .trigger() to simulate the panel's content shrinking.
 class MockResizeObserver {
@@ -137,6 +154,78 @@ describe("useDropdownMenu", () => {
     vi.unstubAllGlobals();
   });
 
+  it("repositions for the smaller visual viewport when the mobile keyboard opens", () => {
+    let visualHeight = 900;
+    const visualViewport = mockVisualViewport(390, () => visualHeight);
+    vi.stubGlobal("innerHeight", 900);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 0, right: 260, width: 260, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 450 };
+      return { ...base, top: 350, bottom: 360, height: 10 };
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    expect(screen.getByRole("menu").dataset.up).toBe("false");
+
+    visualHeight = 400;
+    act(() => visualViewport.dispatchEvent(new Event("resize")));
+    const menu = screen.getByRole("menu");
+    expect(menu.dataset.up).toBe("true");
+    expect(menu.style.top).toBe("8px");
+    expect(menu.style.maxHeight).toBe("338px");
+    expect(menu.style.overflowY).toBe("auto");
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps a dropdown within the panned visual viewport", () => {
+    const visualViewport = mockVisualViewport(390, () => 400, () => 300);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 50, right: 310, width: 260, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 450 };
+      return { ...base, top: 500, bottom: 510, height: 10 };
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.dataset.up).toBe("true");
+    expect(menu.style.top).toBe("308px");
+    expect(menu.style.maxHeight).toBe("188px");
+
+    act(() => visualViewport.dispatchEvent(new Event("scroll")));
+    expect(screen.getByRole("menu").style.top).toBe("308px");
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("never raises a dropdown above less than 160px of available viewport space", () => {
+    vi.stubGlobal("innerHeight", 120);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 0, right: 260, width: 260, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 300 };
+      return { ...base, top: 50, bottom: 60, height: 10 };
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.style.maxHeight).toBe("48px");
+    expect(menu.style.overflowY).toBe("auto");
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("repositions an upward-flipped panel when its own content shrinks, not just on window resize", () => {
     // Regression coverage for the bot review finding: SearchableSelect/PhoneCountrySelect's
     // list can shrink by hundreds of pixels as the user types into the search box. A panel
@@ -166,6 +255,73 @@ describe("useDropdownMenu", () => {
     act(() => MockResizeObserver.instances.at(-1)!.trigger());
 
     expect(screen.getByRole("menu").style.top).toBe("296px"); // 350 - 50 - 4, re-anchored
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("never flips a panel back down just because its shrinking content would now fit below", () => {
+    // Regression coverage for the PO-reported bug: SearchableSelect's option list can shrink
+    // enough while typing (e.g. a search narrowing to one result) that the *shorter* content
+    // would fit below the trigger, even though the *original, full* list didn't. Re-deciding
+    // "above" purely from the new (smaller) panelHeight - as opposed to only re-deciding when the
+    // trigger/viewport's own available space actually changes - flipped the panel from above the
+    // trigger to below it mid-keystroke, a visible jump the fix in useDropdownMenu.ts prevents.
+    let panelHeight = 200;
+    vi.stubGlobal("innerHeight", 400);
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: panelHeight };
+      return { ...base, top: 350, bottom: 360, height: 10 }; // trigger, only 40px of room below
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    expect(screen.getByRole("menu").dataset.up).toBe("true");
+
+    // A single search result: shorter than the 40px available below the trigger, which a fresh
+    // above/below decision from this height alone would place below it.
+    panelHeight = 30;
+    act(() => MockResizeObserver.instances.at(-1)!.trigger());
+
+    const menu = screen.getByRole("menu");
+    expect(menu.dataset.up).toBe("true");
+    expect(menu.style.top).toBe("316px"); // 350 - 30 - 4, still anchored above
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("still flips when the available space itself genuinely changes, not just the content", () => {
+    // Companion to the regression test above: the lock must not freeze the side forever - a real
+    // viewport change (the existing "mobile keyboard" test covers this end-to-end) still needs to
+    // re-decide. This isolates that the space-changed comparison itself (not e.g. an accidental
+    // "decide once and never again") is what the fix relies on, using a plain resize rather than
+    // visualViewport so it's independent of that other test's mocking.
+    let triggerBottom = 100;
+    vi.stubGlobal("innerHeight", 400);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 200 };
+      return { ...base, top: triggerBottom - 10, bottom: triggerBottom, height: 10 };
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    // Plenty of room below (300px) and only 90px above - opens downward.
+    expect(screen.getByRole("menu").dataset.up).toBe("false");
+
+    // Trigger moves near the bottom of the viewport (e.g. the page scrolled) - now only 40px
+    // below but 350px above, so the same 200px-tall panel no longer fits below.
+    triggerBottom = 360;
+    act(() => window.dispatchEvent(new Event("resize")));
+
+    expect(screen.getByRole("menu").dataset.up).toBe("true");
 
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

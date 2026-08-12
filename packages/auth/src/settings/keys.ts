@@ -26,6 +26,10 @@ export const SETTING_INSTANCE_URL = "instance_url";
 /** Passkey / security-key (WebAuthn) MFA method availability (#341/#342). */
 export const SETTING_WEBAUTHN_ENABLED = "webauthn_enabled";
 
+/** Extra https:// origins trusted to run script / send data on the staff SPA and auth pages
+ *  (e.g. an analytics beacon or a Turnstile-style login challenge widget). */
+export const SETTING_CSP_TRUSTED_ORIGINS = "csp_trusted_origins";
+
 export const SYSTEM_SETTING_KEYS = [
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
@@ -41,4 +45,5 @@ export const SYSTEM_SETTING_KEYS = [
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
   SETTING_WEBAUTHN_ENABLED,
+  SETTING_CSP_TRUSTED_ORIGINS,
 ] as const;

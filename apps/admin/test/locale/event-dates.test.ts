@@ -3,6 +3,7 @@ import {
   calendarDateInZone,
   formatAdmissionDisplay,
   formatEventDate,
+  formatWalletDatePreview,
   formatEventDateTime,
   formatEventTime,
   formatRelativeTime,
@@ -48,6 +49,19 @@ describe("formatEventDate with preferred locale", () => {
   it("respects event timezone with locale", () => {
     setPreferredLocale("en-GB");
     expect(formatEventDate("2026-06-28T15:00:00.000Z", "Asia/Tokyo")).toBe("29 Jun 2026");
+  });
+});
+
+describe("formatWalletDatePreview", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("formats a date en-GB regardless of the admin's own preferred locale", () => {
+    setPreferredLocale("de-DE");
+    expect(formatWalletDatePreview("2026-06-28")).toBe("28 June 2026");
+  });
+
+  it("returns null for an empty date instead of the literal string 'Invalid Date'", () => {
+    expect(formatWalletDatePreview("")).toBeNull();
   });
 });
 

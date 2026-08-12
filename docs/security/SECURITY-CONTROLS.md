@@ -4,7 +4,7 @@ This document describes **security capabilities** that Admitto supports in typic
 self-hosted deployments. It is written for **privacy officers, security reviewers, and operators**
 at mid-size and enterprise organizations.
 
-For **repository CI** (SAST, secret scan, container scan, SBOM), see [SECURITY.md](../SECURITY.md).
+For **repository CI** (SAST, secret scan, container scan, SBOM), see [SECURITY.md](../../SECURITY.md).
 For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md).
 
 > **How to read this:** rows describe what organizations commonly require and how Admitto can be
@@ -24,7 +24,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** | App · Config |
 | Authorization | Least privilege by role and event/org scope | **RBAC** (admin, operator, platform roles) | App |
 | Strong auth | MFA for privileged users | **TOTP** for elevated roles | App · Config |
-| Edge access | Restrict staff URLs at the perimeter | Optional zero-trust / access gateway in front of staff paths | Operator |
+| Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway — e.g. **Cloudflare Access** — in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
 | Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store recommended in production) | App · Config |
@@ -32,8 +32,8 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Secrets | No credentials in source code | Env / secret manager; integration secrets encrypted in DB | App · Operator |
 | Data at rest | Protect tickets and integration secrets | Field-level encryption for sensitive data; **disk encryption** | App · Operator |
 | Transport | TLS to users | Terminated at customer **reverse proxy, load balancer, or CDN** | Operator |
-| Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines; a superadmin-only live tail of recent activity (see **System logs** in [DATA-PROTECTION.md](../DATA-PROTECTION.md)) | App |
-| Supply chain | Scans on code and container image | Documented in [SECURITY.md](../SECURITY.md) | App |
+| Logging | Minimise personal data in logs | Redacted identifiers in audit output; no secrets in log lines; a superadmin-only live tail of recent activity (see **System logs** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) | App |
+| Supply chain | Scans on code and container image | Documented in [SECURITY.md](../../SECURITY.md) | App |
 
 ---
 
@@ -58,8 +58,8 @@ flowchart TB
 
 Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
 common web hardening (`httpOnly`, `SameSite`, `secure` in production).
-Expired or revoked session and trusted-device rows are purged best-effort during container startup
-after migrations/backfills with a 120-second timeout. Operators can also run
+Expired or revoked session and trusted-device rows are purged best-effort on the Admitto **worker**
+(at boot and about every 24 hours). Operators can also run
 `npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
 to preview counts).
 **Trusted-device revocation on logout.** Signing out (`POST /logout` in the staff UI, or
@@ -74,9 +74,26 @@ use next.
 > or app does not. Instance operators can also shorten or disable trusted-device persistence
 > entirely via the `trusted_device_days` setting (`0` disables the feature).
 Frozen email delivery bodies (`EmailDelivery.rendered_html` / `rendered_subject`) are nullified
-best-effort during container startup once a delivery is terminal and older than 60 days
+best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days
 (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
 `npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run`.
+
+**Session idle timeout (v0.4.13+).** Sessions previously only expired on an absolute lifetime
+(admin defaulted to 7 days), with no inactivity check — a stolen or left-open admin browser tab
+stayed authenticated for up to a week. A `full`-stage session now also ends once `now -
+last_seen_at` exceeds a configurable idle window (`SESSION_IDLE_TIMEOUT_ADMIN_MS` /
+`SESSION_IDLE_TIMEOUT_OPERATOR_MS`, same env-lock pattern as the absolute-lifetime settings).
+Defaults: admin 30 min idle / 12h absolute (down from 7 days); operator 2h idle / 12h absolute.
+Settings → Security warns inline when either an absolute lifetime or an idle timeout is set past a
+sane threshold, and the API rejects a save where the idle timeout would exceed that role's own
+absolute lifetime.
+
+**Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
+change, self-service Account change, admin-initiated create/reset) now rejects the ~250 most common
+passwords and trivial patterns (a single repeated character, a simple ascending/descending run) —
+enforced server-side, not just the strength meter shown while typing — per NIST SP 800-63B-4
+§3.1.1.2's requirement to check candidates against a blocklist instead of relying on
+character-composition rules.
 
 ### Implemented in codebase (v0.4.3)
 
@@ -116,12 +133,12 @@ Organizations with stricter policies often add controls **outside** the applicat
 |-------|-------------------------------------|
 | Edge / CDN | Cloudflare, Akamai, corporate CDN with WAF |
 | Reverse proxy | nginx, **Nginx Proxy Manager**, HAProxy, F5, cloud load balancer |
-| Network | Site-to-site VPN, zero-trust client, private link to origin |
-| Identity | Entra ID, Okta, Authentik, other OIDC providers |
+| Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway — **Cloudflare Access is natively supported** (Organisation Settings → Identity): Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt |
+| Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity) — staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles |
 | Mail | Microsoft 365 / Graph, corporate SMTP relay |
 
 Admitto is designed to sit **behind** a trusted reverse proxy (`TRUST_PROXY` and forwarded headers
-documented in [`deploy/README.md`](../deploy/README.md)). The proxy must **overwrite**
+documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **overwrite**
 `X-Forwarded-For` with the real client IP — never append to a browser-supplied value.
 
 ---
@@ -166,6 +183,7 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST …/template/preview` | user + event | 20 / 60 s | event admin |
 | `POST …/template/test-send` | user + event | 5 / 60 s | event admin |
 | `POST /api/admin/mail-settings/test` | user | 5 / 60 s | admin |
+| `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
 | attendee resend, check-in scan/history | per-route keys | see `apps/web/src/*-rate-limit.ts` | operator / admin |
 
 ### Superadmin (identity provider UI)
@@ -215,7 +233,7 @@ directly (misconfigured port exposure, or from elsewhere on the same network) co
 rate-limit IP, CSRF origin, and cookie `Secure` flag. **Residual:** the default deploy topology
 pins `TRUSTED_PROXY_CIDRS` to the whole `internal` compose network subnet, not just the `proxy`
 container's individual address — a compromise of another container on that same network (`db`,
-`redis`, `migrate`, `retention`) could still inject these headers. Narrowing to a single pinned
+`redis`, `migrate`, `worker`) could still inject these headers. Narrowing to a single pinned
 container IP was judged not worth the added operational fragility (static IPs in Compose); this
 subnet-level allowlist is still a materially smaller trust boundary than "any direct connection."
 
@@ -226,7 +244,8 @@ When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF or
 
 ## Outbound HTTP (SSRF mitigation)
 
-Superadmin OIDC provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches use
+Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches
+(and Cloudflare Access JWKS) use
 [`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts) plus
 [`safeOidcFetch`](../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
@@ -242,6 +261,31 @@ Requires **superadmin** session (or Cloudflare Access JWT with instance admin ro
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
 **public** URLs the instance can reach — perimeter egress filtering remains an operator control.
 
+**Self-hosted private SSO allowlist.** `SSO_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
+hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
+listed destinations skip the private/loopback checks for identity outbound fetches. One list
+covers every configured provider that shares those hosts (OIDC today; intended for future SAML
+metadata fetches on the same guard). Residual risk: a compromised admin can still point provider
+settings at any allowlisted name; keep the list minimal and ensure DNS for those names is under
+operator control. Set the variable on `app`. HTTPS remains required.
+
+**Mail transport destinations (v0.4.13+).** The same class of guard now also covers SMTP host,
+Power Automate webhook URL, and the bounce-detection IMAP host: each is checked against a
+private/loopback/link-local/cloud-metadata blocklist both when saved and immediately before the
+server connects, with the real connection pinned to the already-validated address (closing the same
+DNS-rebinding gap the OIDC guard closes). Event-level dedicated mail transport additionally now
+requires superadmin (matching the organization-wide Mail settings page) and can no longer silently
+send the organization's real SMTP password or Power Automate key to a connection target the event
+override changed - saving or sending now requires that override to also supply its own credential.
+
+**Self-hosted private MTA allowlist.** `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
+hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
+listed destinations skip the private/loopback checks at save and connect. This is narrower than
+`ALLOW_PRIVATE_MAIL_DESTINATIONS=true`, which remains non-production only (global bypass). Residual
+risk: a compromised admin can still point mail settings at any allowlisted name; keep the list
+minimal and ensure DNS for those names is under operator control. Set the variable on both `app`
+and `worker`.
+
 ---
 
 ## Data protection in operations
@@ -253,10 +297,15 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
   import content) and secrets are never logged in full. A small, named set of staff/operator
   accountability events (login success, admin actions) does log the acting staff member's own
   email address — see **Logs** and **System logs (live tail)** in
-  [DATA-PROTECTION.md](../DATA-PROTECTION.md) for exactly which events and why.
+  [DATA-PROTECTION.md](../../DATA-PROTECTION.md) for exactly which events and why.
 - **Health endpoints:** `/healthz` — liveness + DB ping, rate-limited, no PII; `/readyz` —
   token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
   security headers; neither exposes secrets or attendee data.
+- **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
+  (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
+  service; database dumps are **not** written during migrate. Operators take a pre-upgrade dump
+  (and the nightly `db-backup` service writes scheduled dumps to a volume that `app` does not mount),
+  so a compromised application process cannot read or tamper with those dumps.
 
 ---
 
@@ -265,11 +314,11 @@ discover/test. Residual risk: compromised superadmin account can still trigger o
 Be explicit with auditors about what is **out of product scope** today:
 
 - No built-in SIEM or central log platform (forward container logs if required). The in-app
-  **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../DATA-PROTECTION.md)) is a
+  **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a
   short, in-memory live tail for day-to-day diagnostics — not a substitute for a SIEM: it holds
   only the last 1000 entries and is emptied on every restart. A narrower, durable exception exists
   for ten auth/security event types (login, MFA, logout, OIDC, access-denied) — see **Durable
-  security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../DATA-PROTECTION.md); this
+  security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md); this
   is a queryable incident-review trail, not a general-purpose log platform, and rate-limit/system
   log signals stay ephemeral and operator-shipped as above. That trail is also neither complete nor
   permanent: persistence is best-effort (a write failure is logged but never blocks the underlying
@@ -277,8 +326,8 @@ Be explicit with auditors about what is **out of product scope** today:
   retention window (30 days by default).
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
-  auth-state purge, email delivery snapshot nullification, and security audit log purge run
-  best-effort at container startup and daily thereafter, and are also available as CLI maintenance
+  auth-state purge, email delivery snapshot nullification, and security audit log purge run on the
+  Admitto **worker** at boot and about every 24 hours, and are also available as CLI maintenance
   commands).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
 - No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot — minimum
@@ -341,8 +390,8 @@ Source constants: `apps/web/src/**/*-rate-limit*.ts`, `packages/auth/src/oidc/sa
 
 ## Related documents
 
-- [SECURITY.md](../SECURITY.md) — vulnerability reporting, CI controls
-- [DATA-PROTECTION.md](../DATA-PROTECTION.md) — personal data handling
+- [SECURITY.md](../../SECURITY.md) — vulnerability reporting, CI controls
+- [DATA-PROTECTION.md](../../DATA-PROTECTION.md) — personal data handling
 - [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md) — deployment model
 - [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md) — scope and data flows
 - [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) — privacy summary for DPO review

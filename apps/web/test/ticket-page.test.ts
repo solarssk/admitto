@@ -11,6 +11,14 @@ import {
 } from "../src/ticket-page.js";
 
 const EMPTY_EVENT_LOCATION = {
+  eventHoursStart: null,
+  eventHoursEnd: null,
+  walletEnabled: true,
+  walletTemplateId: null,
+  walletApiKeyEnc: null,
+  walletAppleEnabled: true,
+  walletGoogleEnabled: true,
+  walletFieldMapping: null,
   formattedAddress: null,
   addressComponents: null,
   latitude: null,
@@ -32,6 +40,10 @@ function ticketFor(logoUrl: string | null) {
       email: "x@example.com",
       name: "Guest",
       status: "confirmed",
+      first_name: null,
+      last_name: null,
+      company: null,
+      department: null,
       token_hash: null,
       qr_payload: null,
       external_uuid: null,
@@ -40,6 +52,7 @@ function ticketFor(logoUrl: string | null) {
     event: {
       id: "e1",
       title: "Launch Event",
+      slug: "launch-event",
       date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
       location: null,
@@ -50,25 +63,110 @@ function ticketFor(logoUrl: string | null) {
 }
 
 describe("renderRevoked", () => {
-  it("renders cancelled tickets with cancelled wording", () => {
-    const html = renderRevoked("Alice Example", "Launch Event", "cancelled");
+  function revokedTicket(overrides?: {
+    name?: string;
+    title?: string;
+    location?: string | null;
+    ticket_type?: string | null;
+  }) {
+    return {
+      mode: "internal" as const,
+      attendee: {
+        id: "a1",
+        event_id: "e1",
+        email: "x@example.com",
+        name: overrides?.name ?? "Bob Example",
+        status: "revoked",
+        first_name: null,
+        last_name: null,
+        company: null,
+        department: null,
+        token_hash: null,
+        qr_payload: null,
+        external_uuid: null,
+        ticket_type: overrides?.ticket_type ?? "Standard",
+      },
+      event: {
+        id: "e1",
+        title: overrides?.title ?? "Launch Event",
+        slug: "launch-event",
+        date: new Date("2026-09-01T09:00:00Z"),
+        timezone: "UTC",
+        ...EMPTY_EVENT_LOCATION,
+        // After the empty-location spread so defaults/overrides are not wiped if EMPTY gains `location`.
+        location: overrides?.location ?? "Main Hall",
+        logoUrl: null,
+      },
+    };
+  }
+
+  it("renders cancelled tickets with cancelled wording in the ticket card", () => {
+    const html = renderRevoked(revokedTicket({ name: "Alice Example" }), null, "cancelled");
     expect(html).toContain("Ticket cancelled");
-    expect(html).toContain("has been cancelled");
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("ticket__event-name");
+    expect(html).toContain("Alice Example");
+    expect(html).toContain("Launch Event");
+    expect(html).toContain("no longer valid for entry");
+    expect(html).toContain("contact the organisers");
     expect(html).not.toContain("Ticket revoked");
+    expect(html).not.toContain('class="ticket__qr"');
+    expect(html).not.toContain("Present this QR code");
+    expect(html).not.toContain("apple-wallet-badge");
+    expect(html).not.toContain("Getting there");
+    expect(html).toContain("ticket__status-notice");
   });
 
-  it("renders revoked tickets with revoked wording", () => {
-    const html = renderRevoked("Bob Example", "Launch Event", "revoked");
+  it("renders revoked tickets with revoked wording in the ticket card", () => {
+    const html = renderRevoked(revokedTicket(), null, "revoked");
     expect(html).toContain("Ticket revoked");
-    expect(html).toContain("has been revoked");
+    expect(html).toContain("ticket__status-notice");
+    expect(html).toContain("Bob Example");
+    expect(html).toContain("Main Hall");
+    expect(html).toContain("Standard");
+    expect(html).not.toContain("has been revoked");
+    expect(html).not.toContain('class="ticket__qr"');
+    expect(html).not.toContain('class="ticket__wallets"');
+    expect(html).not.toContain("apple-wallet-badge.svg");
+  });
+
+  it("escapes attendee and event names in the revoked card", () => {
+    const html = renderRevoked(
+      revokedTicket({ name: `<script>x</script>`, title: `A & B <Event>` }),
+      null,
+      "revoked",
+    );
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("A &amp; B &lt;Event&gt;");
   });
 });
 
-describe("renderServerError", () => {
-  it("renders a generic support-safe error page", () => {
+describe("renderPublicErrorPage (404 / 500)", () => {
+  it("renders a branded 500 with status code and generic copy", () => {
     const html = renderServerError();
-    expect(html).toContain("Server error");
-    expect(html).toContain("Unable to render this ticket right now");
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("at-public-error");
+    expect(html).toContain('class="at-public-error__code">500<');
+    expect(html).toContain("Something went wrong");
+    expect(html).toContain("Unable to load this page right now. Please try again later.");
+    expect(html).toContain(">Admitto<");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Server error");
+    expect(html).not.toContain("Unable to render this ticket");
+  });
+
+  it("renders a branded 404 with status code and generic copy", () => {
+    const html = renderNotFound();
+    expect(html).toContain("ticket-page");
+    expect(html).toContain("at-public-error");
+    expect(html).toContain('class="at-public-error__code">404<');
+    expect(html).toContain("Not found");
+    expect(html).toContain("This link is invalid or the page no longer exists.");
+    expect(html).toContain(">Admitto<");
+    expect(html).not.toContain("Event ticket");
+    expect(html).not.toContain("Ticket not found");
+    expect(html).not.toContain("This ticket link");
   });
 });
 
@@ -83,6 +181,10 @@ describe("renderTicket", () => {
           email: "x@example.com",
           name: "Example User",
           status: '"><style>boom</style>',
+          first_name: null,
+          last_name: null,
+          company: null,
+          department: null,
           token_hash: null,
           qr_payload: null,
           external_uuid: null,
@@ -91,6 +193,7 @@ describe("renderTicket", () => {
         event: {
           id: "event-1",
           title: "Launch Event",
+          slug: "launch-event",
           date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
           location: null,
@@ -99,6 +202,8 @@ describe("renderTicket", () => {
         },
       },
       "data:image/png;base64,abc",
+      undefined,
+      { walletAppleHref: "/t/token/wallet/apple", walletGoogleHref: "/t/token/wallet/google" },
     );
 
     expect(html).toContain("Standard");
@@ -110,11 +215,64 @@ describe("renderTicket", () => {
     expect(html).toContain("wallet-badge-frame");
     expect(html).toContain("wallet-badge--apple");
     expect(html).toContain("How do I add this to my phone?");
-    expect(html).toContain("coming soon");
-    expect(html).toContain("not tappable yet");
-    expect(html).toContain('aria-disabled="true"');
+    expect(html).not.toContain("coming soon");
+    expect(html).not.toContain("aria-disabled");
     expect(html).not.toContain("badge-\"><style>boom</style>");
     expect(html).not.toContain("<style>boom</style>");
+  });
+
+  it("omits the wallet badges and help text entirely when no wallet hrefs are provided", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
+    // The stylesheet unconditionally defines .wallet-badge-frame/.ticket__wallets rules - check
+    // the markup itself (img src, help copy) rather than class names that also appear in CSS.
+    expect(html).not.toContain("apple-wallet-badge.svg");
+    expect(html).not.toContain("google-wallet-badge.svg");
+    expect(html).not.toContain("How do I add this to my phone?");
+  });
+
+  it("renders only the configured wallet badge when just one platform has an href", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc", undefined, {
+      walletAppleHref: "/t/token/wallet/apple",
+    });
+    expect(html).toContain("apple-wallet-badge.svg");
+    expect(html).not.toContain("google-wallet-badge.svg");
+  });
+
+  it("does not show the wallet retry notice when the wallet badges are hidden", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc", undefined, {
+      walletError: true,
+    });
+    expect(html).not.toContain("Could not add this ticket to your wallet");
+  });
+
+  it("renders the event hours range in the meta row when both are set", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: { ...ticketFor(null).event, eventHoursStart: "18:00", eventHoursEnd: "22:00" },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("18:00–22:00");
+  });
+
+  it("renders an open-ended hours label when only one side of the range is set", () => {
+    const startOnly = renderTicket(
+      { ...ticketFor(null), event: { ...ticketFor(null).event, eventHoursStart: "18:00" } },
+      "data:image/png;base64,abc",
+    );
+    expect(startOnly).toContain("from 18:00");
+
+    const endOnly = renderTicket(
+      { ...ticketFor(null), event: { ...ticketFor(null).event, eventHoursEnd: "22:00" } },
+      "data:image/png;base64,abc",
+    );
+    expect(endOnly).toContain("until 22:00");
+  });
+
+  it("omits the hours meta span when neither start nor end is set", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
+    expect(html).not.toContain("M12 7v5l3 3");
   });
 
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {
@@ -298,8 +456,8 @@ describe("renderTicket", () => {
     expect(html).not.toContain('<p class="ticket__address">');
   });
 
-  it("renders the not-found page", () => {
-    expect(renderNotFound()).toContain("Ticket not found");
+  it("renders the branded not-found page", () => {
+    expect(renderNotFound()).toContain("Not found");
   });
 
   it("omits Getting there when no attendee-facing location details exist", () => {
@@ -364,6 +522,10 @@ describe("getTicketPageSecurityHeaders", () => {
           email: "x@example.com",
           name: "Guest",
           status: "confirmed",
+          first_name: null,
+          last_name: null,
+          company: null,
+          department: null,
           token_hash: null,
           qr_payload: null,
           external_uuid: null,
@@ -372,6 +534,7 @@ describe("getTicketPageSecurityHeaders", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
           location: null,
@@ -411,6 +574,10 @@ describe("getTicketPageSecurityHeaders", () => {
           email: "x@example.com",
           name: "Guest",
           status: "confirmed",
+          first_name: null,
+          last_name: null,
+          company: null,
+          department: null,
           token_hash: null,
           qr_payload: null,
           external_uuid: null,
@@ -419,6 +586,7 @@ describe("getTicketPageSecurityHeaders", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
       timezone: "UTC",
           location: null,

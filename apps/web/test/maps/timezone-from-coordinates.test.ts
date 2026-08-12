@@ -23,6 +23,16 @@ describe("timezoneFromCoordinates", () => {
     expect(tz).toBe("Asia/Kolkata");
   });
 
+  it("normalizes a legacy zone returned by the coordinate lookup", () => {
+    vi.mocked(findTimezones).mockReturnValueOnce(["Asia/Calcutta"]);
+    expect(timezoneFromCoordinates(28.6139, 77.209)).toBe("Asia/Kolkata");
+  });
+
+  it("preserves an unrecognized zone returned by the coordinate lookup", () => {
+    vi.mocked(findTimezones).mockReturnValueOnce(["Legacy/Removed"]);
+    expect(timezoneFromCoordinates(28.6139, 77.209)).toBe("Legacy/Removed");
+  });
+
   it("returns an Etc zone over open ocean rather than throwing", () => {
     expect(timezoneFromCoordinates(0, -30)).toMatch(/^Etc\//);
   });

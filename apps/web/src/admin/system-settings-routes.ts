@@ -12,6 +12,10 @@ import {
   getTrustedDeviceDays,
   getMfaRequiredRoles,
   getInstanceUrl,
+  getCspTrustedOrigins,
+  validateCspTrustedOrigins,
+  CspTrustedOriginsError,
+  MAX_CSP_TRUSTED_ORIGINS,
   SETTING_SESSION_TTL,
   SETTING_OPERATOR_SESSION_TTL,
   SETTING_SESSION_IDLE_TIMEOUT,
@@ -19,6 +23,7 @@ import {
   SETTING_TRUSTED_DEVICE_DAYS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_INSTANCE_URL,
+  SETTING_CSP_TRUSTED_ORIGINS,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -50,6 +55,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     trustedDays,
     mfaRoles,
     instanceUrl,
+    cspTrustedOrigins,
     adminTtlSrc,
     opTtlSrc,
     adminIdleSrc,
@@ -57,6 +63,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     trustedDaysSrc,
     mfaRolesSrc,
     instanceUrlSrc,
+    cspTrustedOriginsSrc,
   ] = await Promise.all([
     getSessionTtlAdminMs(db),
     getSessionTtlOperatorMs(db),
@@ -65,6 +72,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getTrustedDeviceDays(db),
     getMfaRequiredRoles(db),
     getInstanceUrl(db),
+    getCspTrustedOrigins(db),
     getSettingSource(db, SETTING_SESSION_TTL),
     getSettingSource(db, SETTING_OPERATOR_SESSION_TTL),
     getSettingSource(db, SETTING_SESSION_IDLE_TIMEOUT),
@@ -72,6 +80,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getSettingSource(db, SETTING_TRUSTED_DEVICE_DAYS),
     getSettingSource(db, SETTING_MFA_REQUIRED_ROLES),
     getSettingSource(db, SETTING_INSTANCE_URL),
+    getSettingSource(db, SETTING_CSP_TRUSTED_ORIGINS),
   ]);
 
   return {
@@ -82,6 +91,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     trusted_device_days: { value: trustedDays, source: trustedDaysSrc },
     mfa_required_roles: { value: mfaRoles, source: mfaRolesSrc },
     instance_url: { value: instanceUrl, source: instanceUrlSrc },
+    csp_trusted_origins: { value: cspTrustedOrigins, source: cspTrustedOriginsSrc },
   };
 }
 
@@ -101,6 +111,18 @@ const instanceUrlSchema = z
       normalizePersistedInstanceUrl(value);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Invalid instance URL";
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
+  });
+
+const cspTrustedOriginsSchema = z
+  .array(z.string())
+  .max(MAX_CSP_TRUSTED_ORIGINS)
+  .superRefine((value, ctx) => {
+    try {
+      validateCspTrustedOrigins(value);
+    } catch (err) {
+      const message = err instanceof CspTrustedOriginsError ? err.message : "Invalid trusted origin";
       ctx.addIssue({ code: z.ZodIssueCode.custom, message });
     }
   });
@@ -135,6 +157,7 @@ const patchSchema = z
       .nullable()
       .optional(),
     instance_url: instanceUrlSchema.nullable().optional(),
+    csp_trusted_origins: cspTrustedOriginsSchema.nullable().optional(),
   })
   .strict();
 
@@ -146,6 +169,7 @@ const KEY_MAP = {
   trusted_device_days: SETTING_TRUSTED_DEVICE_DAYS,
   mfa_required_roles: SETTING_MFA_REQUIRED_ROLES,
   instance_url: SETTING_INSTANCE_URL,
+  csp_trusted_origins: SETTING_CSP_TRUSTED_ORIGINS,
 } as const satisfies Record<string, string>;
 
 /** Idle-timeout field paired with the absolute-lifetime field it must not exceed. */
@@ -228,6 +252,9 @@ export async function handlePatchSystemSettings(c: Context, db: PrismaClient): P
         let value = data[bodyKey];
         if (bodyKey === "instance_url" && typeof value === "string") {
           value = normalizePersistedInstanceUrl(value);
+        }
+        if (bodyKey === "csp_trusted_origins" && Array.isArray(value)) {
+          value = validateCspTrustedOrigins(value);
         }
         if (value === null || value === undefined) {
           await tx.systemSettings.deleteMany({ where: { key: settingKey } });

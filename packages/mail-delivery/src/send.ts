@@ -117,6 +117,8 @@ function materializePendingMessage(item: PendingSend): MailMessage {
 /** Attendee fields needed to process a single ticket-email send. */
 interface AttendeeForSend extends AttendeeLinkInput {
   name: string;
+  first_name: string | null;
+  last_name: string | null;
   email: string;
   token_enc: string | null;
 }
@@ -207,7 +209,12 @@ async function processAttendeeForSend({
     };
   }
 
-  const { first_name, last_name } = splitDisplayName(attendee.name);
+  // Real fields once the attendee has been through import/manual add/edit post-migration;
+  // un-migrated attendees (both still null) fall back to splitting the combined name.
+  const { first_name, last_name } =
+    attendee.first_name !== null || attendee.last_name !== null
+      ? { first_name: attendee.first_name ?? "", last_name: attendee.last_name ?? "" }
+      : splitDisplayName(attendee.name);
   const locationVars = buildEventLocationTemplateVars(
     event.id,
     event.location_details,
@@ -230,8 +237,8 @@ async function processAttendeeForSend({
       ...locationVars,
       logo_url: branding.logo_url,
       header_image_url: branding.header_image_url,
-      apple_wallet_url: "",
-      google_wallet_url: "",
+      // apple_wallet_url/google_wallet_url are deferred (STORAGE_DEFERRED_LINK_PLACEHOLDERS),
+      // same as ticket_url/qr_image_url - materialized later from `links` at actual delivery.
       download_page_url: "",
       ...customAssets.vars,
     },

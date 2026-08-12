@@ -20,6 +20,7 @@ import {
   SETTING_TRUSTED_DEVICE_DAYS,
   SETTING_INSTANCE_URL,
   SETTING_WEBAUTHN_ENABLED,
+  SETTING_CSP_TRUSTED_ORIGINS,
 } from "./keys.js";
 
 /** Built-in defaults when DB and env are unset. */
@@ -37,6 +38,7 @@ export const SETTING_DEFAULTS = new Map<string, unknown>([
   [SETTING_BRANDING_THEME, {}],
   [SETTING_INSTANCE_URL, null],
   [SETTING_WEBAUTHN_ENABLED, true],
+  [SETTING_CSP_TRUSTED_ORIGINS, []],
 ]);
 
 /** Env var locks — when set, override DB value. */
@@ -53,4 +55,5 @@ export const SETTING_ENV_LOCKS = new Map<string, string>([
   [SETTING_CF_ACCESS_PROTECTED_PREFIXES, "CF_ACCESS_PROTECTED_PREFIXES"],
   [SETTING_INSTANCE_URL, "BASE_URL"],
   [SETTING_WEBAUTHN_ENABLED, "WEBAUTHN_ENABLED"],
+  [SETTING_CSP_TRUSTED_ORIGINS, "CSP_TRUSTED_ORIGINS"],
 ]);

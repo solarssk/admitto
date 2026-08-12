@@ -437,6 +437,7 @@ export {
   bounceIngestStaleMsFromIntervalSeconds,
   bounceIngestStaleMsForEvent,
   parseBounceIngestTickSeconds,
+  workerHeartbeatStaleMs,
   listBounceIngestRecentRuns,
   pruneBounceIngestRunHistory,
   BOUNCE_INGEST_RUN_HISTORY_LIMIT,

@@ -50,7 +50,9 @@ export function PaginationFooter({
     <div className="audit-log-footer">
       <div className="audit-log-footer__summary">
         <span className="audit-log-footer__info">
-          {`Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, totalRows)} of ${totalRows}`}
+          {totalRows === 0
+            ? "Showing 0 of 0"
+            : `Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, totalRows)} of ${totalRows}`}
         </span>
         <div className="audit-log-pagesize">
           <label htmlFor={`${idPrefix}-pagesize-select`}>Rows per page</label>
@@ -61,6 +63,7 @@ export function PaginationFooter({
             searchPlaceholder="Search…"
             emptyLabel="No options found"
             showLabel={false}
+            minWidth={72}
             value={String(pageSize)}
             options={pageSizeOptions.map((size) => ({ id: String(size), label: String(size) }))}
             onChange={(id) => onPageSizeChange(Number(id))}

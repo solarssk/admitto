@@ -1,7 +1,8 @@
 {
   "name": "admitto",
-  "version": "0.4.12",
+  "version": "0.4.14",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Admitto — event access gateway (attendee import, QR tickets, wallet passes, M365 mail, check-in)",
   "workspaces": [
     "packages/*",
@@ -11,7 +12,7 @@
     "test": "npm run test --workspaces --if-present",
     "precoverage": "npm run build",
     "coverage": "npm run coverage --workspaces --if-present",
-    "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/location && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/storage && npm run build -w @admitto/import && npm run build -w @admitto/ui && npm run build -w @admitto/admin && npm run build -w @admitto/web && npm run build -w @admitto/cli",
+    "build": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/location && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/wallet && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/storage && npm run build -w @admitto/import && npm run build -w @admitto/ui && npm run build -w @admitto/admin && npm run build -w @admitto/web && npm run build -w @admitto/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint 'packages/*/src/**/*.{ts,tsx}' 'apps/*/src/**/*.{ts,tsx}'",
     "db:migrate": "npm run db:migrate -w @admitto/db",
@@ -28,7 +29,8 @@
     "mail:deliveries": "npm run cli -w @admitto/mail-delivery -- deliveries",
     "auth:bootstrap": "npm run cli -w @admitto/auth -- bootstrap-superadmin",
     "worker": "npm run cli -w @admitto/cli -- worker",
-    "docs:check": "node scripts/check-wiki-docs.mjs",
+    "docs:env": "node scripts/generate-env-dictionary.mjs",
+    "docs:check": "node scripts/check-wiki-docs.mjs && node scripts/generate-env-dictionary.mjs --check",
     "docs:pr-check": "node scripts/check-pr-docs-impact.mjs"
   },
   "type": "module",

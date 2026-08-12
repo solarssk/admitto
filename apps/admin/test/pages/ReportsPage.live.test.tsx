@@ -115,11 +115,11 @@ afterEach(() => {
 });
 
 describe("ReportsPage — live SSE updates (ADR 0014)", () => {
-  it("always renders the live badge next to the hourly chart", async () => {
+  it("always renders the live indicator next to the hourly chart", async () => {
     fetchEventReports.mockResolvedValue(reportFixture(5));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText("live")).toBeTruthy();
+      expect(screen.getByRole("status", { name: "Live" })).toBeTruthy();
     });
   });
 
@@ -246,6 +246,65 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     }
   });
 
+  it("steps Previous from the clamped page after a reconcile leaves page ahead of safePage", async () => {
+    // 250 rows @ 50/page → 5 pages. After reconcile to 60 rows → 2 pages, raw page stays 5
+    // while the footer shows safePage=2. Previous must use safePage so one click reaches page 1.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const bigLog = Array.from({ length: 250 }, (_, i) => ({
+        attendee_id: `att-${i + 1}`,
+        name: `Guest ${i + 1}`,
+        email: `guest-${i + 1}@example.com`,
+        ticket_type: null,
+        admitted_at: "2026-06-01T10:00:00.000Z",
+        operator_user_id: null,
+        operator_display_name: null,
+        operator_email: null,
+        device_id: null,
+        items: [],
+      }));
+      const mediumLog = bigLog.slice(0, 60);
+      fetchEventReports
+        .mockResolvedValueOnce(reportFixture(250, { admission_log: bigLog, admission_log_total: 250 }))
+        .mockResolvedValue(reportFixture(60, { admission_log: mediumLog, admission_log_total: 60 }));
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("Guest 1")).toBeTruthy();
+      });
+      expect(screen.getByText("Page 1 of 5")).toBeTruthy();
+      for (let i = 0; i < 4; i += 1) {
+        fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      }
+      await waitFor(() => {
+        expect(screen.getByText("Page 5 of 5")).toBeTruthy();
+        expect(screen.getByText("Guest 201")).toBeTruthy();
+      });
+
+      act(() => {
+        streamHandler?.(liveEvent);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+
+      await waitFor(() => {
+        expect(fetchEventReports).toHaveBeenCalledTimes(2);
+        expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+        expect(screen.getByText("Guest 51")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+      await waitFor(() => {
+        expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+        expect(screen.getByText("Guest 1")).toBeTruthy();
+      });
+      expect(screen.queryByText("Guest 51")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("cancels a pending reconcile timer when the viewed event changes, instead of letting it fire against the old event later (#587 review)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -313,7 +372,7 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     renderPage();
 
     await screen.findByText("No Device Guest");
-    const table = document.querySelector(".reports-log-table");
+    const table = document.querySelector(".table");
     expect(table).toBeTruthy();
     expect(within(table!).getByText("No Device Guest")).toBeTruthy();
     // Operator is never blank - it shows "(No operator)" instead of "-" - so only the empty
@@ -354,5 +413,60 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
     // instead of "-", so only the empty Items marker remains.
     expect(within(cards as HTMLElement).getByText("(No operator)")).toBeTruthy();
     expect(within(cards as HTMLElement).getAllByText("-")).toHaveLength(1);
+  });
+
+  it("shows the empty admission-log state on desktop and mobile when the log has no rows", async () => {
+    // Page-level empty ("No check-ins yet") only when admitted === 0. AdmissionLog's own
+    // empty copy needs admitted > 0 with an empty log payload.
+    fetchEventReports.mockResolvedValue(
+      reportFixture(3, { admission_log: [], admission_log_total: 3 }),
+    );
+    renderPage();
+    expect(await screen.findByText("No admissions yet")).toBeTruthy();
+
+    cleanup();
+    mockMatchMedia(false);
+    fetchEventReports.mockResolvedValue(
+      reportFixture(3, { admission_log: [], admission_log_total: 3 }),
+    );
+    renderPage();
+    expect(await screen.findByText("No admissions yet")).toBeTruthy();
+    expect(document.querySelector(".reports-log-cards")).not.toBeNull();
+  });
+
+  it("shows No matches when ticket-type filters exclude every admission", async () => {
+    fetchEventReports.mockResolvedValue(
+      reportFixture(1, {
+        by_ticket_type: [
+          { key: "vip", type: "VIP", color: "purple", total: 1, admitted: 1, admission_pct: 100 },
+          { key: "standard", type: "Standard", color: "gray", total: 1, admitted: 0, admission_pct: 0 },
+        ],
+        admission_log: [
+          {
+            attendee_id: "att-vip",
+            name: "Vip Guest",
+            email: "vip@example.com",
+            ticket_type: "vip",
+            admitted_at: "2026-06-01T10:00:00.000Z",
+            operator_user_id: null,
+            operator_display_name: null,
+            operator_email: null,
+            device_id: null,
+            items: ["Badge"],
+          },
+        ],
+        admission_log_total: 1,
+      }),
+    );
+
+    renderPage();
+    await screen.findByText("Vip Guest");
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Standard" }));
+
+    expect(await screen.findByText("No matches")).toBeTruthy();
+    expect(screen.queryByText("Vip Guest")).toBeNull();
   });
 });

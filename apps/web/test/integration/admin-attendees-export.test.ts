@@ -9,6 +9,8 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { generateToken, hashToken } from "@admitto/tickets";
+import { drainExportJobs } from "@admitto/tickets";
+import { getDefaultStorage } from "@admitto/storage";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -48,9 +50,43 @@ let opId: string;
 let adminCookie = "";
 let opCookie = "";
 
+/**
+ * Enqueue filtered export (202), drain the worker job, return the download Response (200 file).
+ * Non-202 responses (403/400/429) are returned unchanged.
+ */
+async function exportAttendeesAndDrain(path: string, cookie: string): Promise<Response> {
+  const queued = await app.request(path, { headers: { Cookie: cookie } });
+  if (queued.status !== 202) return queued;
+
+  const body = (await queued.json()) as { jobId?: string };
+  if (!body.jobId) {
+    throw new Error("export enqueue 202 missing jobId");
+  }
+
+  for (let i = 0; i < 40; i += 1) {
+    const job = await prisma.adminJob.findUnique({
+      where: { id: body.jobId },
+      select: { status: true },
+    });
+    if (job?.status === "succeeded" || job?.status === "failed") break;
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 10 });
+  }
+
+  const eventMatch = /\/api\/admin\/events\/([^/?]+)/.exec(path);
+  if (!eventMatch) {
+    throw new Error(`export path missing event id: ${path}`);
+  }
+  return app.request(
+    `/api/admin/events/${eventMatch[1]}/export/jobs/${body.jobId}/download`,
+    { headers: { Cookie: cookie } },
+  );
+}
+
+
 async function seed(client: PrismaClient) {
   const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY, EVENT_EX_JACKET, EVENT_EX_SHIRT, EVENT_EX_INJ_HEADER];
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.adminJob.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.eventItem.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -402,6 +438,129 @@ describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () =
   });
 });
 
+describe("GET /api/admin/events/:eventId/export/jobs/:jobId", () => {
+  beforeEach(() => {
+    rateLimitStore.reset();
+  });
+
+  it("returns job status over HTTP and 404/400 for bad job lookups", async () => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+
+    const pending = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(pending.status).toBe(200);
+    expect(await pending.json()).toMatchObject({ jobId, status: "pending" });
+    expect(pending.headers.get("Cache-Control")).toBe("no-store");
+
+    const notReady = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(notReady.status).toBe(404);
+    expect(await notReady.json()).toEqual({ error: "not_ready" });
+
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+
+    const done = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(done.status).toBe(200);
+    expect(await done.json()).toMatchObject({ jobId, status: "succeeded" });
+
+    const missing = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/does-not-exist`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "not_found" });
+
+    const blank = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/%20`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(blank.status).toBe(400);
+    expect(await blank.json()).toEqual({ error: "jobId required" });
+
+    const missingDownload = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/does-not-exist/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(missingDownload.status).toBe(404);
+    expect(await missingDownload.json()).toEqual({ error: "not_found" });
+
+    const blankDownload = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/%20/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(blankDownload.status).toBe(400);
+    expect(await blankDownload.json()).toEqual({ error: "jobId required" });
+  });
+
+  it("download falls back to octet-stream and export.bin when job meta is sparse", async () => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(queued.status).toBe(202);
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: {
+        filename: null,
+        result_json: { request: { kind: "attendees_filtered", format: "csv", filters: {} } },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
+    expect(res.headers.get("Content-Disposition")).toMatch(/filename="export\.bin"/);
+  });
+
+  it("treats succeeded jobs without a storage key and array result_json as not ready / sparse meta", async () => {
+    const queued = await app.request(
+      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip`,
+      { headers: { Cookie: adminCookie } },
+    );
+    const { jobId } = (await queued.json()) as { jobId: string };
+    await drainExportJobs(prisma, getDefaultStorage(), { limit: 5 });
+
+    const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: { storage_key: null },
+    });
+    const noKey = await app.request(`/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(noKey.status).toBe(404);
+    expect(await noKey.json()).toEqual({ error: "not_ready" });
+
+    await prisma.adminJob.update({
+      where: { id: jobId },
+      data: {
+        storage_key: job.storage_key,
+        filename: null,
+        result_json: [],
+      },
+    });
+    const arrayMeta = await app.request(
+      `/api/admin/events/${EVENT_EX}/export/jobs/${jobId}/download`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(arrayMeta.status).toBe(200);
+    expect(arrayMeta.headers.get("Content-Type")).toBe("application/octet-stream");
+  });
+});
+
 describe("GET /api/admin/events/:eventId/attendees/export", () => {
   beforeEach(() => {
     rateLimitStore.reset();
@@ -413,7 +572,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
         `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
         { headers: { Cookie: adminCookie } },
       );
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(202);
     }
 
     const limited = await app.request(
@@ -422,13 +581,13 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     );
     expect(limited.status).toBe(429);
     expect(await limited.json()).toEqual({ error: "too many requests" });
+
+    // Drop queued jobs so later tests do not wait behind this rate-limit backlog.
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_EX, type: "export" } });
   });
 
   it("format=xlsx → 200, Content-Type xlsx, Content-Disposition attachment", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&ticket_type=vip`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&ticket_type=vip`, adminCookie);
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -439,10 +598,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("format=csv → 200, Content-Type text/csv", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv`, adminCookie);
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/csv");
     expect(res.headers.get("Cache-Control")).toBe("no-store");
@@ -461,18 +617,12 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("bad format=invalid → 400", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=invalid`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=invalid`, adminCookie);
     expect(res.status).toBe(400);
   });
 
   it("format=pdf → 200, application/pdf, PDF magic bytes", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=pdf&ticket_type=vip`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=pdf&ticket_type=vip`, adminCookie);
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("application/pdf");
     expect(res.headers.get("Content-Disposition")).toMatch(/attachment/);
@@ -485,18 +635,12 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("operator → 403 on PDF export", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=pdf`,
-      { headers: { Cookie: opCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=pdf`, opCookie);
     expect(res.status).toBe(403);
   });
 
   it("xlsx has check-off column and print settings", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx`, adminCookie);
     expect(res.status).toBe(200);
     const buf = await res.arrayBuffer();
     const sheet = await parseXlsxSheet(buf);
@@ -510,10 +654,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("xlsx formats admitted_at in event timezone (not raw ISO)", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&status=admitted`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&status=admitted`, adminCookie);
     expect(res.status).toBe(200);
     const rows = await parseXlsxRows(await res.arrayBuffer());
     const vipRow = rows.find((r) => r[1] === "Vip One");
@@ -529,10 +670,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export does not include attribute columns when event has no contents", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv`, adminCookie);
     expect(res.status).toBe(200);
     const text = await res.text();
     const header = text.split("\r\n")[0] ?? "";
@@ -542,10 +680,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export includes dynamic Jacket size column from the custom-field registry", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX_JACKET}/attendees/export?format=csv&status=admitted`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX_JACKET}/attendees/export?format=csv&status=admitted`, adminCookie);
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
     const header = lines[0] ?? "";
@@ -556,10 +691,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export includes Shirt size column for a dedicated custom field", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX_SHIRT}/attendees/export?format=xlsx`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX_SHIRT}/attendees/export?format=xlsx`, adminCookie);
     expect(res.status).toBe(200);
     const rows = await parseXlsxRows(await res.arrayBuffer());
     expect(rows[0]).toContain("Shirt size");
@@ -576,10 +708,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as { items: { name: string }[]; total: number };
 
-    const exportRes = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&${query}`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const exportRes = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&${query}`, adminCookie);
     expect(exportRes.status).toBe(200);
     const lines = (await exportRes.text()).split("\r\n").filter(Boolean);
     expect(lines.length - 1).toBe(listBody.total);
@@ -595,10 +724,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     await prisma.attendeeActionLog.deleteMany({
       where: { event_id: EVENT_EX, action_type: "attendees_exported" },
     });
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=pdf`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=pdf`, adminCookie);
     expect(res.status).toBe(200);
 
     const log = await prisma.attendeeActionLog.findFirst({
@@ -611,10 +737,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export respects ticket_type filter (xlsx: only vip rows)", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&ticket_type=vip`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&ticket_type=vip`, adminCookie);
     expect(res.status).toBe(200);
     const rows = await parseXlsxRows(await res.arrayBuffer());
     expect(rows).toHaveLength(5);
@@ -627,10 +750,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export respects status filter", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&status=admitted`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&status=admitted`, adminCookie);
     expect(res.status).toBe(200);
     const text = await res.text();
     const lines = text.split("\r\n").filter(Boolean);
@@ -640,10 +760,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export respects q filter", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&q=Standard`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&q=Standard`, adminCookie);
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("Standard Guest");
@@ -651,10 +768,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("export respects all active filters simultaneously", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&status=admitted&q=Vip+One`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&status=admitted&q=Vip+One`, adminCookie);
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
     expect(lines).toHaveLength(2);
@@ -664,10 +778,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("json custom_data search respects ticket_type before export cap", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=MegaCorp`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=MegaCorp`, adminCookie);
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
     expect(lines).toHaveLength(2);
@@ -692,20 +803,14 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
       }),
     });
 
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=SharedBulkCorp`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=SharedBulkCorp`, adminCookie);
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
     expect(lines).toHaveLength(1);
   });
 
   it("no matches → file with headers only", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=nonexistent`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=nonexistent`, adminCookie);
     expect(res.status).toBe(200);
     const text = await res.text();
     const lines = text.split("\r\n").filter(Boolean);
@@ -715,10 +820,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("formula injection CSV: cell prefixed with apostrophe", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=HYPERLINK`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&ticket_type=vip&q=HYPERLINK`, adminCookie);
     expect(res.status).toBe(200);
     const text = await res.text();
     const injLine = text.split("\r\n").find((l) => l.includes("HYPERLINK"));
@@ -727,20 +829,14 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("formula injection CSV: attribute column header quoted and sanitized", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX_INJ_HEADER}/attendees/export?format=csv`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX_INJ_HEADER}/attendees/export?format=csv`, adminCookie);
     expect(res.status).toBe(200);
     const header = (await res.text()).split("\r\n")[0] ?? "";
     expect(header).toMatch(/"'=HYPERLINK\(""https:\/\/evil\.com"",""click""\)"/);
   });
 
   it("formula injection XLSX: cell starts with apostrophe", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&ticket_type=vip&q=HYPERLINK`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=xlsx&ticket_type=vip&q=HYPERLINK`, adminCookie);
     expect(res.status).toBe(200);
     const rows = await parseXlsxRows(await res.arrayBuffer());
     const injRow = rows.find((r) => r[1]?.includes("HYPERLINK"));
@@ -749,10 +845,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("exported rows do NOT contain token_hash / token_enc / QR fields", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv`, adminCookie);
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).not.toContain("token_hash");
@@ -764,10 +857,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     await prisma.attendeeActionLog.deleteMany({
       where: { event_id: EVENT_EX, action_type: "attendees_exported" },
     });
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv`, adminCookie);
     expect(res.status).toBe(200);
 
     const log = await prisma.attendeeActionLog.findFirst({
@@ -782,10 +872,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
     await prisma.attendeeActionLog.deleteMany({
       where: { event_id: EVENT_EX, action_type: "attendees_exported" },
     });
-    await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&q=secret`,
-      { headers: { Cookie: adminCookie } },
-    );
+    await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&q=secret`, adminCookie);
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { event_id: EVENT_EX, action_type: "attendees_exported" },
@@ -799,10 +886,7 @@ describe("GET /api/admin/events/:eventId/attendees/export", () => {
   });
 
   it("operator → 403", async () => {
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv`,
-      { headers: { Cookie: opCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv`, opCookie);
     expect(res.status).toBe(403);
   });
 });
@@ -993,10 +1077,7 @@ describe("mail_status filter — list + export (#522)", () => {
     await prisma.attendeeActionLog.deleteMany({
       where: { event_id: EVENT_EX, action_type: "attendees_exported" },
     });
-    const res = await app.request(
-      `/api/admin/events/${EVENT_EX}/attendees/export?format=csv&mail_status=failed`,
-      { headers: { Cookie: adminCookie } },
-    );
+    const res = await exportAttendeesAndDrain(`/api/admin/events/${EVENT_EX}/attendees/export?format=csv&mail_status=failed`, adminCookie);
     expect(res.status).toBe(200);
     const lines = (await res.text()).split("\r\n").filter(Boolean);
     expect(lines).toHaveLength(2); // header + ATT_STD

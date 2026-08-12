@@ -23,8 +23,5 @@ export async function touchWorkerHeartbeat(
   });
 }
 
-/** Stale window for Health / HEALTHCHECK: 2× tick + slack (default tick 60s → 150s). */
-export function workerHeartbeatStaleMs(tickSeconds: number): number {
-  const tick = Number.isFinite(tickSeconds) && tickSeconds > 0 ? tickSeconds : 60;
-  return Math.max(90_000, tick * 2 * 1000 + 30_000);
-}
+/** Re-export shared Health stale window (same formula as Settings → Health). */
+export { workerHeartbeatStaleMs } from "@admitto/mail-delivery";

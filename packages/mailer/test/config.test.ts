@@ -4,10 +4,13 @@ import { isBlockedMailHost, resolveSafeMailDestination } from "../src/ssrfGuard.
 
 describe("config", () => {
   const envKey = "ALLOW_PRIVATE_MAIL_DESTINATIONS";
+  const allowlistKey = "MAIL_PRIVATE_DESTINATION_ALLOWLIST";
   let previousPrivateMailOverride: string | undefined;
+  let previousAllowlist: string | undefined;
 
   beforeAll(() => {
     previousPrivateMailOverride = process.env[envKey];
+    previousAllowlist = process.env[allowlistKey];
   });
 
   afterEach(() => {
@@ -15,6 +18,11 @@ describe("config", () => {
       delete process.env[envKey];
     } else {
       process.env[envKey] = previousPrivateMailOverride;
+    }
+    if (previousAllowlist === undefined) {
+      delete process.env[allowlistKey];
+    } else {
+      process.env[allowlistKey] = previousAllowlist;
     }
   });
   it("validates powerautomate config and requires a URL + fromAddress", () => {
@@ -187,6 +195,40 @@ describe("config", () => {
     }
   });
 
+  it("accepts allowlisted private hosts in production", () => {
+    const previousNodeEnv = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    delete process.env[envKey];
+    process.env[allowlistKey] = "LOCALHOST, 192.168.1.10";
+    try {
+      expect(isBlockedMailHost("localhost")).toBe(false);
+      expect(isBlockedMailHost("LOCALHOST")).toBe(false);
+      expect(isBlockedMailHost("192.168.1.10")).toBe(false);
+      expect(isBlockedMailHost("10.0.0.5")).toBe(true);
+
+      const okHost = safeParseMailerConfig({
+        provider: "smtp",
+        host: "localhost",
+        user: "u",
+        password: "p",
+        fromAddress: "a@example.com",
+      });
+      expect(okHost.success).toBe(true);
+
+      const blocked = safeParseMailerConfig({
+        provider: "smtp",
+        host: "10.0.0.5",
+        user: "u",
+        password: "p",
+        fromAddress: "a@example.com",
+      });
+      expect(blocked.success).toBe(false);
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = previousNodeEnv;
+    }
+  });
+
   it("resolveSafeMailDestination honors the lab override and blocks by default", async () => {
     const previousNodeEnv = process.env["NODE_ENV"];
     process.env["NODE_ENV"] = "test";
@@ -201,6 +243,29 @@ describe("config", () => {
       const records = await resolveSafeMailDestination("127.0.0.1");
       expect(records.length).toBeGreaterThan(0);
       expect(records.every((r) => r.address === "127.0.0.1")).toBe(true);
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = previousNodeEnv;
+    }
+  });
+
+  it("resolveSafeMailDestination honors MAIL_PRIVATE_DESTINATION_ALLOWLIST in production", async () => {
+    const previousNodeEnv = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    delete process.env[envKey];
+    process.env[allowlistKey] = "LOCALHOST, 127.0.0.1";
+    try {
+      await expect(resolveSafeMailDestination("192.168.1.10")).rejects.toMatchObject({
+        name: "MailDestinationError",
+        code: "mail_destination_blocked",
+      });
+
+      const records = await resolveSafeMailDestination("127.0.0.1");
+      expect(records.length).toBeGreaterThan(0);
+      expect(records.every((r) => r.address === "127.0.0.1")).toBe(true);
+
+      const hostnameRecords = await resolveSafeMailDestination("localhost");
+      expect(hostnameRecords.length).toBeGreaterThan(0);
     } finally {
       if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
       else process.env["NODE_ENV"] = previousNodeEnv;

@@ -131,6 +131,30 @@ describe("mergeFormAfterReload", () => {
 
     expect(merged.rsvp_status).toBe("declined");
   });
+
+  it("keeps an in-progress first/last name edit that diverged since the last load", () => {
+    const previousDetail = detail({ first_name: "Anna", last_name: "Alpha" });
+    const reloaded = detail({ first_name: "Anna", last_name: "Beta" });
+    const currentForm = toAttendeeForm(previousDetail, []);
+    currentForm.first_name = "Annie"; // operator is mid-edit, hasn't saved yet
+    currentForm.last_name = "Gamma";
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, reloaded, []);
+
+    expect(merged.first_name).toBe("Annie");
+    expect(merged.last_name).toBe("Gamma");
+  });
+
+  it("takes the reloaded first/last name when the operator hasn't touched them", () => {
+    const previousDetail = detail({ first_name: "Anna", last_name: "Alpha" });
+    const reloaded = detail({ first_name: "Anna", last_name: "Beta" });
+    const currentForm = toAttendeeForm(previousDetail, []);
+
+    const merged = mergeFormAfterReload(currentForm, previousDetail, reloaded, []);
+
+    expect(merged.first_name).toBe("Anna");
+    expect(merged.last_name).toBe("Beta");
+  });
 });
 
 describe("formatDateTime", () => {

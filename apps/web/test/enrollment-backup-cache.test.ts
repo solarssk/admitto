@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MFA_PENDING_SESSION_TTL_MS } from "@admitto/auth/constants";
 import {
   clearEnrollmentBackupCacheForTests,
+  extendEnrollmentBackupCodes,
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
   submittedCodesMatchStashedEnrollmentBackup,
@@ -47,5 +48,23 @@ describe("enrollment-backup-cache", () => {
       true,
     );
     expect(submittedCodesMatchStashedEnrollmentBackup("sess-1", [])).toBe(false);
+  });
+
+  it("ignores empty code lists when stashing", () => {
+    stashEnrollmentBackupCodes("sess-empty", []);
+    expect(getStashedEnrollmentBackupCodes("sess-empty")).toBeUndefined();
+  });
+
+  it("extendEnrollmentBackupCodes returns false when nothing is stashed", () => {
+    expect(extendEnrollmentBackupCodes("missing")).toBe(false);
+  });
+
+  it("extendEnrollmentBackupCodes lengthens TTL for an active stash", () => {
+    stashEnrollmentBackupCodes("sess-1", ["AAAA-BBBB-CCCC-DDDD"]);
+    // Leave less than BACKUP_CODES_STEP_TTL_MS remaining so extend moves expiry forward.
+    vi.advanceTimersByTime(MFA_PENDING_SESSION_TTL_MS - 60_000);
+    expect(extendEnrollmentBackupCodes("sess-1")).toBe(true);
+    vi.advanceTimersByTime(60_000 + 1); // past the original MFA-pending expiry
+    expect(getStashedEnrollmentBackupCodes("sess-1")).toEqual(["AAAA-BBBB-CCCC-DDDD"]);
   });
 });

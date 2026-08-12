@@ -374,31 +374,6 @@
   font-size: 0.875rem;
 }
 
-.reports-log-table-wrap {
-  overflow-x: auto;
-}
-
-.reports-log-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-sm);
-}
-
-.reports-log-table th,
-.reports-log-table td {
-  padding: 0.65rem var(--space-4);
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  /* The Attendee cell is the only two-line one (name + email) - centering instead of
-     top-aligning keeps every other column's single line level with its midpoint, not its top. */
-  vertical-align: middle;
-}
-
-.reports-log-table th {
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
 .reports-log-user {
   display: flex;
   flex-direction: column;
@@ -414,12 +389,6 @@
 .reports-log-user-link:focus-visible {
   color: var(--primary);
   text-decoration: none;
-}
-
-.reports-log-empty {
-  text-align: center;
-  color: var(--text-muted);
-  padding: var(--space-5) var(--space-4);
 }
 
 .reports-log-foot {

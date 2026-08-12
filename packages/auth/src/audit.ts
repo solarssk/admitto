@@ -7,6 +7,24 @@ export { redactEmail };
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+type UserIdentitySnapshot = { email: string; display_name: string | null };
+
+/** Resolve staff email/display_name at audit write time (immutable snapshot columns). */
+async function resolveUserIdentitySnapshot(
+  db: Db,
+  userId: string | null | undefined,
+): Promise<UserIdentitySnapshot | null> {
+  if (!userId) return null;
+  try {
+    return await db.user.findUnique({
+      where: { id: userId },
+      select: { email: true, display_name: true },
+    });
+  } catch {
+    return null;
+  }
+}
+
 /** The 12 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
  * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
  * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
@@ -40,17 +58,23 @@ async function writeSecurityAuditLog(
     event_type: SecurityAuditEventType;
     user_id?: string | null;
     ip?: string | null;
+    /** Actor's IANA timezone at write time — null when unknown (bots, older clients, CLI). */
+    actor_timezone?: string | null;
     // Every one of this module's 10 callers always supplies a metadata object - non-optional
     // here rather than a defensive `?? undefined` fallback for a shape nothing ever passes.
     metadata: Record<string, unknown>;
   },
 ): Promise<void> {
   try {
+    const snapshot = await resolveUserIdentitySnapshot(db, fields.user_id);
     await db.securityAuditLog.create({
       data: {
         event_type: fields.event_type,
         user_id: fields.user_id ?? null,
+        user_email: snapshot?.email ?? null,
+        user_display_name: snapshot?.display_name ?? null,
         ip: fields.ip ?? null,
+        actor_timezone: fields.actor_timezone ?? null,
         metadata: fields.metadata as Prisma.InputJsonValue,
       },
     });
@@ -86,11 +110,15 @@ function systemLogLevelFor(event: string): "info" | "warn" {
  * and record the same event into the System logs live-tail buffer under the "security" source
  * — this is the single place every auth/security event in this module already flows through,
  * so hooking in here covers logins, MFA, rate-limit blocks, and OIDC events without a separate
- * call at each site.
+ * call at each site. `opts.quiet` skips the stdout JSON only, for callers whose "log collector"
+ * is a human at an interactive terminal rather than a container log aggregator (the break-glass
+ * CLI commands) — the System logs buffer entry still happens either way.
  */
-export function emitAuditEvent(event: string, fields: Record<string, unknown>): void {
+export function emitAuditEvent(event: string, fields: Record<string, unknown>, opts?: { quiet?: boolean }): void {
   const { event: _ignoredEvent, ts: _ignoredTs, ...safeFields } = fields;
-  console.info(JSON.stringify({ ...safeFields, ts: new Date().toISOString(), event }));
+  if (!opts?.quiet) {
+    console.info(JSON.stringify({ ...safeFields, ts: new Date().toISOString(), event }));
+  }
   recordSystemLog({ level: systemLogLevelFor(event), source: "security", message: event, fields: safeFields });
 }
 
@@ -99,6 +127,8 @@ export interface LoginAuditContext {
   email: string;
   ip?: string;
   userAgent?: string;
+  /** Browser IANA timezone when captured (HTML form / header); omit when unknown. */
+  timezone?: string | null;
 }
 
 /** Context for MFA completion audit events. */
@@ -158,17 +188,20 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
     event_type: "auth.login.success",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
-    metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
+    actor_timezone: ctx.timezone ?? null,
+    metadata: { userAgent: ctx.userAgent ?? null },
   });
 }
 
-/** Emit `auth.login.fail` as JSON to stdout (uniform shape for enumeration-safe failures) and
- * persist a durable `SecurityAuditLog` row (`user_id: null` - same enumeration-safety reasoning:
- * never reveals whether the email belongs to a real user). Redacted, unlike logLoginSuccess above:
- * `ctx.email` here is unauthenticated form input - the login attempt failed, so this could be any
- * real address someone typed in, not a verified staff identity (external review on PR #593). Full
- * email on success is fine precisely because it's post-authentication; that reasoning doesn't
- * extend to a failed attempt. */
+/** Emit `auth.login.fail` as JSON to stdout and persist a durable `SecurityAuditLog` row.
+ * `user_id: null` - the login attempt failed, so this never resolves against (or reveals whether
+ * there is) a real account; the write path itself doesn't check account existence, avoiding a
+ * behavioral side channel. Split redaction: stdout / System-log still emit `redactEmail` (failed
+ * attempt is unauthenticated input; container logs may be forwarded under an operator-controlled
+ * retention policy - see DATA-PROTECTION.md). The durable superadmin-only `SecurityAuditLog` row
+ * stores the full attempted email in `metadata.email` so investigations can attribute
+ * brute-force/credential-stuffing to a specific address (OWASP Logging Cheat Sheet; PO decision
+ * reversing PR #593's more conservative durable-row call). */
 export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<void> {
   emitAuditEvent("auth.login.fail", {
     email: redactEmail(ctx.email),
@@ -179,7 +212,8 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
     event_type: "auth.login.fail",
     user_id: null,
     ip: ctx.ip ?? null,
-    metadata: { email_redacted: redactEmail(ctx.email), userAgent: ctx.userAgent ?? null },
+    actor_timezone: ctx.timezone ?? null,
+    metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
   });
 }
 
@@ -189,22 +223,38 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
  * `logLoginSuccess`/`logOidcLoginSuccess` (where the email belongs to the person authenticating,
  * i.e. the accountable actor), `email` here identifies the *target* of an operator-run CLI
  * command - already resolvable via `user_id` in the admin panel's user join - so it's kept in the
- * ephemeral stdout emit only, not durably persisted (CodeRabbit PR #611). */
+ * ephemeral stdout emit only, not durably persisted (CodeRabbit PR #611). `ctx.quiet` (set by the
+ * break-glass CLI commands themselves) skips that stdout JSON, since those commands print their
+ * own human-readable result line right after and an operator's terminal isn't a log collector;
+ * the durable row below is unaffected either way. */
 export async function logMfaBreakGlass(
   db: Db,
-  ctx: { action: string; email: string; userId?: string; ip?: string },
+  ctx: { action: string; email: string; userId?: string; ip?: string; quiet?: boolean },
 ): Promise<void> {
-  emitAuditEvent("auth.mfa.break_glass", {
-    action: ctx.action,
-    email: ctx.email,
-    ip: ctx.ip ?? null,
-  });
+  emitAuditEvent(
+    "auth.mfa.break_glass",
+    { action: ctx.action, email: ctx.email, ip: ctx.ip ?? null },
+    { quiet: ctx.quiet },
+  );
   await writeSecurityAuditLog(db, {
     event_type: "auth.mfa.break_glass",
     user_id: ctx.userId ?? null,
     ip: ctx.ip ?? null,
     metadata: { action: ctx.action },
   });
+}
+
+/** `logMfaBreakGlass` for the break-glass CLI commands specifically (`reset-mfa`,
+ * `generate-emergency-recovery`, in both `packages/auth/src/cli.ts` and `apps/cli/src/commands/
+ * auth.ts`). Always quiet - unlike `logMfaBreakGlass` itself, this wrapper's `ctx` has no `quiet`
+ * field to set, so a future break-glass call site can't reintroduce the raw-JSON-on-terminal bug
+ * by simply forgetting to pass `quiet: true`; every CLI command gets the right behavior by
+ * construction instead of by convention. */
+export async function logMfaBreakGlassCli(
+  db: Db,
+  ctx: { action: string; email: string; userId?: string; ip?: string },
+): Promise<void> {
+  await logMfaBreakGlass(db, { ...ctx, quiet: true });
 }
 
 /** Emit `auth.mfa.success` after TOTP or recovery code verification and persist a durable
@@ -325,6 +375,8 @@ export async function logOidcLoginSuccess(
     userId: string;
     subject?: string;
     ip?: string;
+    /** Browser IANA timezone captured at OIDC /start (carried via OidcAuthState). */
+    timezone?: string | null;
   },
 ): Promise<void> {
   emitAuditEvent("auth.oidc.success", {
@@ -337,6 +389,7 @@ export async function logOidcLoginSuccess(
     event_type: "auth.oidc.success",
     user_id: input.userId,
     ip: input.ip ?? null,
+    actor_timezone: input.timezone ?? null,
     metadata: { providerId: input.providerId, subject: input.subject ?? null },
   });
 }
@@ -408,7 +461,7 @@ export async function logRepeatedFailedLogins(
     event_type: "auth.login.repeated_failures",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
-    metadata: { email: ctx.email, streak: ctx.streak },
+    metadata: { streak: ctx.streak },
   });
 }
 

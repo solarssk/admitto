@@ -207,11 +207,12 @@ describe("EventCard", () => {
     );
   });
 
-  it("renders Maps unavailable when a pin exists but map previews are disabled", () => {
+  it("renders Preview unavailable when a pin exists but map previews are off or missing", () => {
     renderCard({}, { ...baseEvent, has_coordinates: true, map_preview_path: null });
     expect(document.querySelector(".event-card__map-img")).toBeNull();
-    expect(screen.getByText("Maps unavailable")).toBeTruthy();
+    expect(screen.getByText("Preview unavailable")).toBeTruthy();
     expect(screen.queryByText("No location")).toBeNull();
+    expect(screen.queryByText("Maps unavailable")).toBeNull();
   });
 
   it("renders a map placeholder when there is no pin", () => {

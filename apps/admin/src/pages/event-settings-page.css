@@ -177,6 +177,29 @@
   gap: var(--space-4);
 }
 
+/* Event hours are related to the event's clock, so keep their two compact controls and the
+   timezone chooser together on one row whenever the settings card has room. The range hint
+   stays with its controls at the standard field-to-hint spacing instead of becoming a separate
+   stack item with a full row gap. */
+.settings-event-schedule {
+  display: grid;
+  grid-template-columns: minmax(20rem, 1fr) minmax(18rem, 1.4fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.settings-event-schedule__hours {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+@media (max-width: 760px) {
+  .settings-event-schedule {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
   .settings-field-row {
     grid-template-columns: 1fr;
@@ -185,6 +208,89 @@
 
 .settings-field-group > p {
   margin: 0;
+}
+
+/* Separates this subsection from the Apple/Google toggle pair above it, the same way
+   .settings-row's own border-bottom separates rows within a list. */
+.wallet-field-mapping {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+/* Overrides .settings-row's default flex-start so "Add field" centers against the
+   full two-line label+description block, not just the first line. */
+.wallet-field-mapping__header {
+  align-items: center;
+}
+
+/* Overrides the generic .settings-row mobile column-stack (staff.css) so "Add field" stays
+   beside the label+description on narrow screens instead of dropping onto its own line below
+   them, matching the Security panel's "Manage origins" row and .smtp-connection-tls-row. The
+   compound selector (two classes, same element - see the className on this row) outweighs the
+   generic single-class .settings-row rule regardless of which stylesheet loads later. */
+.settings-row.wallet-field-mapping__header {
+  flex-direction: row;
+  align-items: center;
+}
+
+/* Same value as .wallet-field-mapping__row's own margin-top below, so the gap under the
+   header reads identically whether it's followed by the default-mapping notice or the
+   first custom row. */
+.wallet-field-mapping .at-notice {
+  margin-top: var(--space-3);
+}
+
+/* Stays a single row (Value | Key | Hint | Remove) at every width, including phones - the Value
+   dropdown's own label truncates with an ellipsis (searchable-select.css) and minmax(0, 1fr)
+   lets both text columns shrink past their content's natural size, so there's no need to fall
+   back to stacking the fields into separate rows on narrow screens. The hint icon's column is
+   always rendered (even for a row with no value picked yet, see the Tooltip's own `content`
+   fallback) so the Remove button's column position never shifts between rows. */
+.wallet-field-mapping__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* Hint icon renders with the same at-btn/at-btn--secondary classes as the Remove button beside
+   it (same box, height, border, hover state) - but it never does anything on click, so cursor:
+   help replaces at-btn's own pointer to signal "hover for info", not "click me". The compound
+   selector wins over at-btn's own single-class cursor rule regardless of stylesheet load order
+   (same trick as .settings-row.wallet-field-mapping__header above). */
+.at-btn.wallet-field-mapping__hint {
+  cursor: help;
+}
+
+/* Apple/Google Wallet toggle rows: a colored circular icon badge spanning both the
+   label and description lines, matching the icon-badge pattern used in modal headers
+   (e.g. requirements.css .event-item-modal__title i) instead of a small inline glyph.
+   With 3 flex children (icon, text, switch), the inherited justify-content: space-between
+   would split the free space into two equal gaps - a huge icon-to-text gap as well as the
+   intended text-to-switch one. Let the text block grow instead, so the icon sits close to
+   its label and only the trailing gap (before the switch) absorbs the free space. */
+.wallet-platform-row {
+  gap: var(--space-3);
+  justify-content: flex-start;
+}
+
+.wallet-platform-row .settings-row__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wallet-platform-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1.25rem;
 }
 
 /* Status card: three short items, so use three columns on wide screens

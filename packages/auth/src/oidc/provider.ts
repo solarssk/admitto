@@ -2,7 +2,7 @@ import type { IdentityProvider, Prisma, PrismaClient } from "@admitto/db";
 import { encryptClientSecret, hasClientSecret } from "./provider-secret.js";
 import { PROVIDER_TYPE_OIDC } from "./constants.js";
 import { normalizeSsoLoginButtonLabelInput } from "./login-button-label.js";
-import { fetchOidcDiscovery } from "./discovery.js";
+import { fetchOidcDiscovery, normalizeIssuerInput } from "./discovery.js";
 import { assertSafeOidcFetchUrl } from "./safe-url.js";
 
 /** Admin form / API payload for creating or updating an OIDC identity provider. */
@@ -15,6 +15,11 @@ export interface IdentityProviderInput {
   token_endpoint?: string;
   jwks_uri?: string;
   userinfo_endpoint?: string;
+  /** Discovery-only - no admin form field sets this directly, see resolveEndpoints.
+   * Tri-state: undefined preserves whatever is already stored (the normal save path never
+   * touches this field at all); explicit null clears it (post-discovery, when the provider no
+   * longer advertises one - see updateIdentityProvider/updateIdentityProviderWithMappings). */
+  end_session_endpoint?: string | null;
   claim_email?: string;
   claim_name?: string;
   claim_groups?: string;
@@ -104,20 +109,28 @@ export async function listOidcProviders(
 
 /** Fetch or validate OIDC endpoints from input; may call discovery HTTP when endpoints are omitted. */
 async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedEndpoints> {
-  assertSafeOidcFetchUrl(normalizeIssuerForValidation(input.issuer));
+  // Also strips an accidentally-pasted /.well-known/openid-configuration suffix - see
+  // normalizeIssuerInput. Endpoints given explicitly below skip discovery entirely, so this is
+  // the only place that would otherwise save an issuer no token's `iss` claim will ever match.
+  const normalizedIssuer = normalizeIssuerInput(input.issuer);
+  assertSafeOidcFetchUrl(normalizedIssuer);
   if (input.authorization_endpoint && input.token_endpoint && input.jwks_uri) {
     assertSafeOidcFetchUrl(input.authorization_endpoint);
     assertSafeOidcFetchUrl(input.token_endpoint);
     assertSafeOidcFetchUrl(input.jwks_uri);
     if (input.userinfo_endpoint) assertSafeOidcFetchUrl(input.userinfo_endpoint);
+    if (input.end_session_endpoint) assertSafeOidcFetchUrl(input.end_session_endpoint);
     return {
-      issuer: input.issuer,
+      issuer: normalizedIssuer,
       authorization_endpoint: input.authorization_endpoint,
       token_endpoint: input.token_endpoint,
       jwks_uri: input.jwks_uri,
       userinfo_endpoint: input.userinfo_endpoint ?? null,
+      end_session_endpoint: input.end_session_endpoint ?? null,
     };
   }
+  // discovery.issuer (the value the IdP's own document reports) is used below, not
+  // normalizedIssuer - it's the authoritative bare issuer regardless of what was pasted here.
   const discovery = await fetchOidcDiscovery(input.issuer);
   const endpoints = {
     issuer: discovery.issuer,
@@ -125,17 +138,14 @@ async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedE
     token_endpoint: input.token_endpoint ?? discovery.token_endpoint,
     jwks_uri: input.jwks_uri ?? discovery.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? discovery.userinfo_endpoint ?? null,
+    end_session_endpoint: input.end_session_endpoint ?? discovery.end_session_endpoint ?? null,
   };
   assertSafeOidcFetchUrl(endpoints.authorization_endpoint);
   assertSafeOidcFetchUrl(endpoints.token_endpoint);
   assertSafeOidcFetchUrl(endpoints.jwks_uri);
   if (endpoints.userinfo_endpoint) assertSafeOidcFetchUrl(endpoints.userinfo_endpoint);
+  if (endpoints.end_session_endpoint) assertSafeOidcFetchUrl(endpoints.end_session_endpoint);
   return endpoints;
-}
-
-/** Ensure issuer URL ends with `/` before SSRF validation. */
-function normalizeIssuerForValidation(issuer: string): string {
-  return issuer.endsWith("/") ? issuer : `${issuer}/`;
 }
 
 /** OIDC endpoints resolved from discovery or explicit admin input. */
@@ -145,6 +155,7 @@ export interface ResolvedEndpoints {
   token_endpoint: string;
   jwks_uri: string;
   userinfo_endpoint: string | null;
+  end_session_endpoint: string | null;
 }
 
 /** Create provider record from pre-resolved endpoints (no outbound HTTP). */
@@ -164,6 +175,7 @@ export async function createIdentityProviderWithEndpoints(
       token_endpoint: endpoints.token_endpoint,
       jwks_uri: endpoints.jwks_uri,
       userinfo_endpoint: endpoints.userinfo_endpoint,
+      end_session_endpoint: endpoints.end_session_endpoint,
       claim_email: input.claim_email ?? "email",
       claim_name: input.claim_name ?? "name",
       claim_groups: input.claim_groups ?? "groups",
@@ -209,6 +221,7 @@ export async function updateIdentityProviderWithEndpoints(
       token_endpoint: endpoints.token_endpoint,
       jwks_uri: endpoints.jwks_uri,
       userinfo_endpoint: endpoints.userinfo_endpoint,
+      end_session_endpoint: endpoints.end_session_endpoint,
       claim_email: input.claim_email ?? existing.claim_email,
       claim_name: input.claim_name ?? existing.claim_name,
       claim_groups: input.claim_groups ?? existing.claim_groups,
@@ -225,13 +238,26 @@ export async function updateIdentityProviderWithEndpoints(
 }
 
 /**
- * Update provider — omitted client_secret leaves existing encrypted value unchanged (mailer pattern).
+ * Explicit null must win over existing (a caller - handleApiDiscoverProvider - that just re-ran
+ * discovery and found no endpoint), not fall through to it like `??` would: only true omission
+ * (undefined, every other caller) means "preserve whatever is already stored." Shared by
+ * updateIdentityProvider and updateIdentityProviderWithMappings (SonarCloud duplication).
  */
-export async function updateIdentityProvider(
+function resolveEndSessionEndpointOnUpdate(
+  input: Pick<IdentityProviderInput, "end_session_endpoint">,
+  existing: Pick<IdentityProvider, "end_session_endpoint">,
+): string | null | undefined {
+  return input.end_session_endpoint === undefined
+    ? existing.end_session_endpoint ?? undefined
+    : input.end_session_endpoint;
+}
+
+/** Shared by updateIdentityProvider and updateIdentityProviderWithMappings (SonarCloud duplication). */
+async function resolveExistingAndEndpoints(
   prisma: PrismaClient | Prisma.TransactionClient,
   id: string,
   input: IdentityProviderInput,
-): Promise<IdentityProvider> {
+): Promise<{ existing: IdentityProvider; endpoints: ResolvedEndpoints }> {
   const existing = await prisma.identityProvider.findUniqueOrThrow({ where: { id } });
   const endpoints = await resolveEndpoints({
     ...input,
@@ -240,8 +266,20 @@ export async function updateIdentityProvider(
     token_endpoint: input.token_endpoint ?? existing.token_endpoint,
     jwks_uri: input.jwks_uri ?? existing.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
+    end_session_endpoint: resolveEndSessionEndpointOnUpdate(input, existing),
   });
+  return { existing, endpoints };
+}
 
+/**
+ * Update provider — omitted client_secret leaves existing encrypted value unchanged (mailer pattern).
+ */
+export async function updateIdentityProvider(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  id: string,
+  input: IdentityProviderInput,
+): Promise<IdentityProvider> {
+  const { existing, endpoints } = await resolveExistingAndEndpoints(prisma, id, input);
   return updateIdentityProviderWithEndpoints(prisma, id, input, endpoints, existing);
 }
 
@@ -291,6 +329,15 @@ export interface GroupRoleMappingInput {
 const ALLOWED_MAPPING_ROLES = new Set(["superadmin", "admin", "operator"]);
 const ALLOWED_MAPPING_SCOPE_TYPES = new Set(["instance", "organization", "event"]);
 
+/** The only scope each role can hold - same pairing the admin SPA's mapping repeater derives
+ * scope from (identityProviderValidation.ts's scopeForRole) and UserEditModal.tsx's direct role
+ * grants already enforce; kept here too since this function is the actual write-time gate. */
+const MAPPING_ROLE_SCOPE: Record<string, string> = {
+  superadmin: "instance",
+  admin: "organization",
+  operator: "event",
+};
+
 /** Reject mapping rows that would fail RoleAssignment CHECK constraints at login time. */
 export function validateGroupRoleMappingInput(mapping: GroupRoleMappingInput): void {
   const group = mapping.group.trim();
@@ -305,6 +352,11 @@ export function validateGroupRoleMappingInput(mapping: GroupRoleMappingInput): v
   if (!ALLOWED_MAPPING_SCOPE_TYPES.has(mapping.scope_type)) {
     throw new Error(
       `Invalid scope_type "${mapping.scope_type}"; must be one of: instance, organization, event`,
+    );
+  }
+  if (mapping.scope_type !== MAPPING_ROLE_SCOPE[mapping.role]) {
+    throw new Error(
+      `Invalid scope_type "${mapping.scope_type}" for role "${mapping.role}"; ${mapping.role} mappings must use ${MAPPING_ROLE_SCOPE[mapping.role]} scope`,
     );
   }
   mappingStorageScopeId(mapping.scope_type, mapping.scope_id);
@@ -363,15 +415,7 @@ export async function updateIdentityProviderWithMappings(
   input: IdentityProviderInput,
   mappings: GroupRoleMappingInput[],
 ): Promise<IdentityProvider> {
-  const existing = await prisma.identityProvider.findUniqueOrThrow({ where: { id } });
-  const endpoints = await resolveEndpoints({
-    ...input,
-    issuer: input.issuer || existing.issuer,
-    authorization_endpoint: input.authorization_endpoint ?? existing.authorization_endpoint,
-    token_endpoint: input.token_endpoint ?? existing.token_endpoint,
-    jwks_uri: input.jwks_uri ?? existing.jwks_uri,
-    userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
-  });
+  const { existing, endpoints } = await resolveExistingAndEndpoints(prisma, id, input);
   return prisma.$transaction(async (tx) => {
     const provider = await updateIdentityProviderWithEndpoints(tx, id, input, endpoints, existing);
     await replaceProviderGroupMappings(tx, provider.id, mappings);

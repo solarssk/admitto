@@ -24,8 +24,11 @@ function esc(s: string): string {
 }
 
 /** Security headers for the forced password-change page. */
-export function getChangePasswordPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getChangePasswordPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 const PASSWORD_MISMATCH = "password_mismatch";

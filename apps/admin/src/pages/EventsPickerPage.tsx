@@ -9,6 +9,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { EventCard, eventGridClassName } from "../components/EventCard.js";
 import { CreateEventModal } from "../events/CreateEventModal.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import "./events-picker-page.css";
 
 type PickerTab = "active" | "archived";
 
@@ -80,16 +81,22 @@ export function EventsPickerPage() {
   const handleCreated = (event: EventDto) => {
     // Pass the event we already hold so EventLayout can render the shell
     // immediately instead of re-fetching the events list (#274).
-    navigate(`/admin/events/${event.id}/attendees`, { state: { event } });
+    navigate(`/admin/events/${event.id}/overview`, { state: { event } });
   };
 
   return (
     <div className="events-picker-screen">
       <PageHeader
+        className="events-picker-pageheader"
         title="Events"
         subtitle="Select an event to manage its lifecycle."
         actions={
-          <Button type="button" variant="primary" onClick={() => setCreateOpen(true)}>
+          <Button
+            type="button"
+            variant="primary"
+            icon={<i className="ti ti-calendar-plus" aria-hidden="true" />}
+            onClick={() => setCreateOpen(true)}
+          >
             New event
           </Button>
         }

@@ -546,6 +546,16 @@ describe("DELETE /api/admin/users/:id", () => {
       },
     });
     await createSession(prisma, { userId: deleteUserId, stage: SESSION_STAGE.FULL, ip: "127.0.0.9" });
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "auth.login.success",
+        user_id: deleteUserId,
+        user_email: "users-delete-target@example.com",
+        user_display_name: null,
+        ip: "127.0.0.9",
+        metadata: { userAgent: "vitest" },
+      },
+    });
   });
 
   it("returns 401 without auth", async () => {
@@ -591,7 +601,16 @@ describe("DELETE /api/admin/users/:id", () => {
         where: { organization_id: ORG_USERS, action_type: "user_deleted" },
         orderBy: { created_at: "desc" },
       }),
-    ).toMatchObject({ metadata: { userId: deleteUserId } });
+    ).toMatchObject({
+      metadata: { userId: deleteUserId },
+      actor_email: EMAIL_SUPER,
+    });
+
+    expect(
+      await prisma.securityAuditLog.findFirst({ where: { user_id: deleteUserId } }),
+    ).toMatchObject({
+      user_email: "users-delete-target@example.com",
+    });
   });
 
   it("returns 404 for an unknown user", async () => {
@@ -1214,6 +1233,33 @@ describe("POST /api/admin/users/:id/reset-2fa", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("returns 409 cannot_reset_mfa_sso_managed and leaves MFA methods untouched for an SSO-managed account", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-reset-mfa@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-reset-mfa-subject", user_id: created.id },
+    });
+    await prisma.userMfaMethod.create({
+      data: { user_id: created.id, type: "totp", secret_enc: "enc", confirmed_at: new Date() },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/reset-2fa`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("cannot_reset_mfa_sso_managed");
+      expect(await prisma.userMfaMethod.count({ where: { user_id: created.id } })).toBe(1);
+    } finally {
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: created.id } });
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
 });
 
 describe("POST /api/admin/users/:id/reset-password", () => {
@@ -1245,6 +1291,33 @@ describe("POST /api/admin/users/:id/reset-password", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("password_too_common");
+  });
+
+  it("returns 409 cannot_reset_password_sso_managed and leaves the hash untouched for an SSO-managed account", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-reset-password@example.com", password_hash: null },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-reset-password-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/reset-password`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("cannot_reset_password_sso_managed");
+
+      const user = await prisma.user.findUnique({ where: { id: created.id } });
+      expect(user?.password_hash).toBeNull();
+      expect(user?.must_change_password).toBe(false);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
   });
 });
 

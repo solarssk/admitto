@@ -35,7 +35,7 @@ export function GeoCell({ location }: Readonly<{ location: IpLocationDto }>) {
   if (location.kind === "resolved" && location.countryCode) {
     return (
       <span className="geo-cell">
-        <span aria-hidden="true">{flagEmoji(location.countryCode)}</span> {countryDisplayName(location.countryCode)}
+        <span className="geo-cell__flag" aria-hidden="true">{flagEmoji(location.countryCode)}</span> {countryDisplayName(location.countryCode)}
       </span>
     );
   }
