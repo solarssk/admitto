@@ -25,14 +25,17 @@ import {
   deleteAttendeeNote,
   fetchAttendeeDetail,
   fetchTicketTypes,
+  reissueWalletPass,
   resendTicket,
+  restoreWalletPass,
   revokeAttendeeCheckIn,
   updateAttendee,
   updateAttendeeNote,
+  voidWalletPass,
   type EventFullMeta,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeDetailDto, DeliveryDto, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch } from "../api/types.js";
+import type { AttendeeDetailDto, DeliveryDto, EventDto, NoteAuthorRole, RsvpStatus, TicketTypeDto, UpdateAttendeePatch, WalletPassActionDto } from "../api/types.js";
 import {
   loadAttendeeDetailData,
   mergeFormAfterReload,
@@ -86,6 +89,7 @@ import "../attendees/attendees.css";
 
 type TabId = "overview" | "activity" | "notes";
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
+type ActiveWalletAction = "void" | "restore" | "reissue" | null;
 
 /** Secondary actions that don't need their own header button - Resend ticket always, plus Edit
  * once folded in here below the mobile breakpoint (see `showEdit`) and Revoke check-in/items/pass
@@ -115,6 +119,11 @@ function MoreActionsMenu({
   onRevokeItems,
   onRestorePass,
   onRevokePass,
+  walletPass,
+  walletBusy,
+  onVoidWallet,
+  onRestoreWallet,
+  onReissueWallet,
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
@@ -136,6 +145,11 @@ function MoreActionsMenu({
   onRevokeItems: () => void;
   onRestorePass: () => void;
   onRevokePass: () => void;
+  walletPass: WalletPassActionDto | null;
+  walletBusy: boolean;
+  onVoidWallet: () => void;
+  onRestoreWallet: () => void;
+  onReissueWallet: () => void;
 }>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -237,6 +251,31 @@ function MoreActionsMenu({
               onRevokePass();
             }}
           />
+          {/* Own divider only when the group itself renders something (walletPass in an
+              active/voided state) - an unconditional one here would leave an empty gap between
+              two adjacent dividers whenever the attendee has no wallet pass yet (bot review). */}
+          {walletPass && (walletPass.status === "active" || walletPass.status === "voided") && (
+            <>
+              <hr className="more-actions-menu__divider" />
+              <WalletActionMenuItems
+                event={event}
+                walletPass={walletPass}
+                walletBusy={walletBusy}
+                onVoid={() => {
+                  setOpen(false);
+                  onVoidWallet();
+                }}
+                onRestore={() => {
+                  setOpen(false);
+                  onRestoreWallet();
+                }}
+                onReissue={() => {
+                  setOpen(false);
+                  onReissueWallet();
+                }}
+              />
+            </>
+          )}
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd, unlike Resend ticket above — GDPR erasure requests can
            * legally arrive after an event ends, and the DELETE endpoint itself doesn't block
@@ -371,6 +410,82 @@ function RevokeActionMenuItems({
   );
 }
 
+/** Void/Restore/Reissue only make sense once the attendee has actually added a pass to a wallet
+ * (walletPass null until their first "Add to Wallet" click succeeds or fails) - nothing renders
+ * before then, matching RevokeActionMenuItems' own toggle-by-state shape above. Reissue stays
+ * available in both active and voided states (it only pushes fresh data, independent of void
+ * state); Void/Restore toggle the same way Revoke/Restore pass do above. */
+function WalletActionMenuItems({
+  event,
+  walletPass,
+  walletBusy,
+  onVoid,
+  onRestore,
+  onReissue,
+}: Readonly<{
+  event: ArchivedGuardEvent;
+  walletPass: WalletPassActionDto | null;
+  walletBusy: boolean;
+  onVoid: () => void;
+  onRestore: () => void;
+  onReissue: () => void;
+}>) {
+  if (!walletPass || (walletPass.status !== "active" && walletPass.status !== "voided")) return null;
+
+  return (
+    <>
+      {walletPass.status === "active" ? (
+        <ArchivedGuard event={event} reasonId="void-wallet-pass-reason-menu" disabled={walletBusy}>
+          {(guard) => (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--warning"
+              {...guard}
+              onClick={onVoid}
+            >
+              <i className="ti ti-wallet-off" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Void wallet pass</span>
+                <span className="more-actions-menu__item-hint">Show as invalid in Apple/Google Wallet</span>
+              </span>
+            </button>
+          )}
+        </ArchivedGuard>
+      ) : (
+        <ArchivedGuard event={event} reasonId="restore-wallet-pass-reason-menu" disabled={walletBusy}>
+          {(guard) => (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              {...guard}
+              onClick={onRestore}
+            >
+              <i className="ti ti-refresh" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Restore wallet pass</span>
+                <span className="more-actions-menu__item-hint">Show as valid again in Apple/Google Wallet</span>
+              </span>
+            </button>
+          )}
+        </ArchivedGuard>
+      )}
+      <ArchivedGuard event={event} reasonId="reissue-wallet-pass-reason-menu" disabled={walletBusy}>
+        {(guard) => (
+          <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onReissue}>
+            <i className="ti ti-refresh-dot" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Reissue wallet pass</span>
+              <span className="more-actions-menu__item-hint">Push the current name/ticket type/event details</span>
+            </span>
+          </button>
+        )}
+      </ArchivedGuard>
+    </>
+  );
+}
+
 type ChipTone = "ok" | "warn" | "error" | "neutral";
 
 function passStatusTone(status: string): ChipTone {
@@ -392,6 +507,23 @@ function mailTone(status: string | null): ChipTone {
   if (!status) return "neutral";
   const variant = resolveStatusMeta(status).variant;
   return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
+}
+
+function walletStatusLabel(pass: WalletPassActionDto | null): string {
+  if (!pass) return "Not added";
+  if (pass.status === "active") return "Added";
+  if (pass.status === "voided") return "Voided";
+  if (pass.status === "failed") return "Failed";
+  if (pass.status === "expired") return "Expired";
+  return "Pending";
+}
+
+function walletTone(pass: WalletPassActionDto | null): ChipTone {
+  if (!pass) return "neutral";
+  if (pass.status === "active") return "ok";
+  if (pass.status === "voided" || pass.status === "failed") return "error";
+  if (pass.status === "expired") return "warn";
+  return "neutral";
 }
 
 function itemStateLabel(state: string): string {
@@ -586,11 +718,34 @@ function AttendeeOverviewTab({
         </Card>
 
         <Card title="Wallet">
-          <EmptyState
-            icon={<i className="ti ti-wallet" aria-hidden="true" />}
-            title="Not added to a wallet"
-            description="Apple Wallet and Google Wallet support isn't available yet."
-          />
+          {detail.wallet_pass ? (
+            <div className="attendee-detail-readonly">
+              <div className="attendee-detail-row">
+                <span>Status</span>
+                <span>{walletStatusLabel(detail.wallet_pass)}</span>
+              </div>
+              {detail.wallet_pass.last_synced_at && (
+                <div className="attendee-detail-row">
+                  <span>Last synced</span>
+                  <span className="mono">
+                    {formatEventDateTime(detail.wallet_pass.last_synced_at, event.timezone)}
+                  </span>
+                </div>
+              )}
+              {detail.wallet_pass.last_error_code && (
+                <div className="attendee-detail-row">
+                  <span>Last error</span>
+                  <span className="mono">{detail.wallet_pass.last_error_code}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<i className="ti ti-wallet" aria-hidden="true" />}
+              title="Not added to a wallet"
+              description="This attendee hasn't added their ticket to Apple Wallet or Google Wallet yet."
+            />
+          )}
         </Card>
       </div>
 
@@ -1126,6 +1281,11 @@ export function AttendeeDetailPage() {
   const [activeRevoke, setActiveRevoke] = useState<ActiveRevokeAction>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  // Same mutually-exclusive-by-construction shape as activeRevoke above, for the wallet pass's
+  // own three lifecycle actions.
+  const [activeWalletAction, setActiveWalletAction] = useState<ActiveWalletAction>(null);
+  const [walletBusy, setWalletBusy] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
   const [restoreCapacityBlocked, setRestoreCapacityBlocked] = useState<EventFullMeta | null>(null);
   const [restoreForceCapacity, setRestoreForceCapacity] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -1167,6 +1327,9 @@ export function AttendeeDetailPage() {
     setRevokeError(null);
     setRevokeBusy(false);
     setActiveRevoke(null);
+    setWalletError(null);
+    setWalletBusy(false);
+    setActiveWalletAction(null);
     setNoteDraft("");
     setNoteSubmitting(false);
     setEditingNoteId(null);
@@ -1483,6 +1646,66 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Voids the wallet pass at the provider (e.g. PassCreator) - it stays installed on the
+   * attendee's phone but shows as invalid there. */
+  async function handleWalletVoid() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setWalletBusy(true);
+    setWalletError(null);
+    try {
+      await voidWalletPass(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      setActiveWalletAction(null);
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setWalletError(operatorApiErrorMessage(err, "Could not void the wallet pass."));
+    } finally {
+      if (isStillSelected(target)) setWalletBusy(false);
+    }
+  }
+
+  /** Reverses a previous void, restoring the wallet pass to active at the provider. */
+  async function handleWalletRestore() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setWalletBusy(true);
+    setWalletError(null);
+    try {
+      await restoreWalletPass(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      setActiveWalletAction(null);
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setWalletError(operatorApiErrorMessage(err, "Could not restore the wallet pass."));
+    } finally {
+      if (isStillSelected(target)) setWalletBusy(false);
+    }
+  }
+
+  /** Pushes the attendee's current name/ticket type/event details to the already-issued wallet
+   * pass, e.g. after a ticket type change or a corrected name. */
+  async function handleWalletReissue() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setWalletBusy(true);
+    setWalletError(null);
+    try {
+      await reissueWalletPass(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      setActiveWalletAction(null);
+      addToast("Wallet pass reissued.", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setWalletError(operatorApiErrorMessage(err, "Could not reissue the wallet pass."));
+    } finally {
+      if (isStillSelected(target)) setWalletBusy(false);
+    }
+  }
+
   /** Adds a staff note from the Notes tab - same AttendeeNote model as check-in's note
    * composer, so the response's full detail DTO (incl. the new note) replaces local state
    * directly, matching handlePassStatusChange's toast-on-success / inline-error-on-failure split. */
@@ -1697,6 +1920,20 @@ export function AttendeeDetailPage() {
                 setRevokeError(null);
                 setActiveRevoke("pass");
               }}
+              walletPass={detail.wallet_pass}
+              walletBusy={walletBusy}
+              onVoidWallet={() => {
+                setWalletError(null);
+                setActiveWalletAction("void");
+              }}
+              onRestoreWallet={() => {
+                setWalletError(null);
+                setActiveWalletAction("restore");
+              }}
+              onReissueWallet={() => {
+                setWalletError(null);
+                setActiveWalletAction("reissue");
+              }}
             />
             <Button variant="secondary" onClick={handleBack}>
               Back
@@ -1756,12 +1993,12 @@ export function AttendeeDetailPage() {
           </div>
         </div>
         <div className="attendee-status-chip">
-          <span className="attendee-status-chip__icon attendee-status-chip__icon--neutral">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
             <i className="ti ti-wallet" aria-hidden="true" />
           </span>
           <div className="attendee-status-chip__body">
             <strong>Wallet</strong>
-            <span>Not added</span>
+            <span>{walletStatusLabel(detail.wallet_pass)}</span>
           </div>
         </div>
       </div>
@@ -2114,6 +2351,57 @@ export function AttendeeDetailPage() {
           if (!revokeBusy) {
             setActiveRevoke(null);
             setRevokeError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={activeWalletAction === "void"}
+        title="Void wallet pass?"
+        message={`${detail.name}'s pass stays installed on their phone but shows as invalid in Apple/Google Wallet. You can restore it later.`}
+        confirmLabel="Void"
+        confirmVariant="danger"
+        loading={walletBusy}
+        errorMessage={walletError ?? undefined}
+        onConfirm={() => void handleWalletVoid()}
+        onCancel={() => {
+          if (!walletBusy) {
+            setActiveWalletAction(null);
+            setWalletError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={activeWalletAction === "restore"}
+        title="Restore wallet pass?"
+        message={`This shows ${detail.name}'s pass as valid again in Apple/Google Wallet.`}
+        confirmLabel="Restore"
+        confirmVariant="primary"
+        loading={walletBusy}
+        errorMessage={walletError ?? undefined}
+        onConfirm={() => void handleWalletRestore()}
+        onCancel={() => {
+          if (!walletBusy) {
+            setActiveWalletAction(null);
+            setWalletError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={activeWalletAction === "reissue"}
+        title="Reissue wallet pass?"
+        message={`Pushes ${detail.name}'s current name, ticket type, and event details to their already-installed wallet pass.`}
+        confirmLabel="Reissue"
+        confirmVariant="primary"
+        loading={walletBusy}
+        errorMessage={walletError ?? undefined}
+        onConfirm={() => void handleWalletReissue()}
+        onCancel={() => {
+          if (!walletBusy) {
+            setActiveWalletAction(null);
+            setWalletError(null);
           }
         }}
       />

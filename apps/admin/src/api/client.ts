@@ -27,6 +27,7 @@ import type {
   BulkRevokeItemsResponse,
   BulkRevokeCheckInResponse,
   BulkRevokePassResponse,
+  WalletPassActionDto,
   EventItemDto,
   EventItemsListResponse,
   CreateEventItemBody,
@@ -742,6 +743,35 @@ export async function revokeAttendeeCheckIn(
     jsonPostInit({}),
   );
   return parseJson<{ card: AttendeeCardDto }>(res);
+}
+
+/** Admin/superadmin-only: void the attendee's wallet pass at the provider (e.g. PassCreator) -
+ * the pass stays installed on the attendee's phone but shows as voided/invalid there. */
+export async function voidWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/void`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: reverse a previous void, restoring the wallet pass to active. */
+export async function restoreWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/restore`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: push the attendee's current name/ticket type/event details to the
+ * already-issued wallet pass, e.g. after a ticket type change or a corrected name. */
+export async function reissueWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/reissue`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
 }
 
 /** Add a note on the attendee detail page's Notes tab — shares the same AttendeeNote model

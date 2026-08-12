@@ -212,7 +212,16 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
-import type { AttendeeStatus } from "@admitto/db/status";
+import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
+
+export interface WalletPassActionDto {
+  status: WalletPassStatus;
+  voided_at: string | null;
+  apple_url: string | null;
+  android_url: string | null;
+  last_synced_at: string | null;
+  last_error_code: string | null;
+}
 
 export interface AttendeeRowDto {
   id: string;
@@ -286,6 +295,7 @@ export interface AttendeeDetailDto {
   rsvp_status: RsvpStatus;
   rsvp_source: string | null;
   rsvp_updated_at: string | null;
+  wallet_pass: WalletPassActionDto | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
