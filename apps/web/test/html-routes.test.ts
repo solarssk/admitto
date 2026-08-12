@@ -343,6 +343,27 @@ describe("html-routes", () => {
     expect(mockLogout).toHaveBeenCalled();
   });
 
+  it("still completes local logout when the end-session redirect rejects with a non-Error value", async () => {
+    mockValidatePartial.mockResolvedValue({
+      userId: "u1",
+      sessionId: "s1",
+      stage: "full",
+      session: { id: "s1", auth_method: "oidc", oidc_provider_id: "idp-1" },
+    } as unknown as Awaited<ReturnType<typeof validatePartialSession>>);
+    // Not every rejection is an Error instance (e.g. a thrown string, or a non-Error object) -
+    // the err instanceof Error fallback branch needs its own case, distinct from the Error one above.
+    mockEndSessionRedirect.mockRejectedValue("connection reset");
+
+    const res = await makeApp().request("/logout", {
+      method: "POST",
+      headers: { Cookie: "admitto_session=tok" },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+    expect(mockLogout).toHaveBeenCalled();
+  });
+
   it("still revokes the session and redirects to /login when baseUrl is null (Instance URL not configured yet), even for an OIDC session", async () => {
     mockValidatePartial.mockResolvedValue({
       userId: "u1",

@@ -318,4 +318,45 @@ describe("OIDC provider save — end_session_endpoint clear vs preserve", () => 
     };
     expect(call.data.end_session_endpoint).toBe("https://idp.example.com/end-session");
   });
+
+  // The other two "omitted" tests above preserve an EXISTING non-null value - they never touch
+  // the ?? undefined fallback inside that same branch, for a provider that never had one stored
+  // in the first place (existing.end_session_endpoint itself null, not just absent from input).
+  const existingProviderNoEndSession = { ...existingProvider, end_session_endpoint: null };
+
+  it("stays null (not a stored value) when both the caller and the existing row have no end_session_endpoint", async () => {
+    const prisma = {
+      identityProvider: {
+        findUniqueOrThrow: vi.fn(async () => existingProviderNoEndSession),
+        update: vi.fn(async () => existingProviderNoEndSession),
+      },
+    } as unknown as PrismaClient;
+
+    await updateIdentityProvider(prisma, "prov-1", { ...discoveredInput });
+
+    const call = vi.mocked(prisma.identityProvider.update).mock.calls[0]![0] as {
+      data: { end_session_endpoint: string | null | undefined };
+    };
+    expect(call.data.end_session_endpoint).toBeFalsy();
+  });
+
+  it("stays null via updateIdentityProviderWithMappings too, when neither the caller nor the existing row has one", async () => {
+    const identityProvider = {
+      findUniqueOrThrow: vi.fn(async () => existingProviderNoEndSession),
+      update: vi.fn(async () => existingProviderNoEndSession),
+    };
+    const prisma = {
+      $transaction: vi.fn(async (fn: (inner: { identityProvider: typeof identityProvider; oidcGroupRoleMapping: unknown }) => Promise<unknown>) =>
+        fn({ identityProvider, oidcGroupRoleMapping: { deleteMany: vi.fn(), createMany: vi.fn() } }),
+      ),
+      identityProvider,
+    } as unknown as PrismaClient;
+
+    await updateIdentityProviderWithMappings(prisma, "prov-1", { ...discoveredInput }, []);
+
+    const call = vi.mocked(identityProvider.update).mock.calls[0]![0] as {
+      data: { end_session_endpoint: string | null | undefined };
+    };
+    expect(call.data.end_session_endpoint).toBeFalsy();
+  });
 });
