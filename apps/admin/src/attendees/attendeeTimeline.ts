@@ -1,5 +1,5 @@
 import type { AttendeeStatus } from "@admitto/db/status";
-import type { AttendeeActionLogEntryDto, AttendeeDetailItemDto, RsvpStatus } from "../api/types.js";
+import type { AttendeeActionLogEntryDto, AttendeeDetailItemDto, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import type { CustomDataFieldDef } from "./customData.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
@@ -236,17 +236,26 @@ function attendeeEditedDetail(
   entry: AttendeeActionLogEntryDto,
   meta: Record<string, unknown>,
   customFields: CustomDataFieldDef[],
+  ticketTypes: TicketTypeDto[],
 ): string | null {
   if (entry.action_type !== "attendee_edited") return null;
   const fields = meta.fields;
   if (!Array.isArray(fields) || fields.length === 0) return null;
   const customFieldLabels = new Map(customFields.map((f) => [f.source_field, f.label]));
+  // ticket_type stores the catalog's immutable `key`, not its current `label` - a type renamed
+  // after this log entry was written must still resolve to its current label here, same as
+  // itemStateDetail does for event_item_key below, otherwise a rename makes old log rows show a
+  // stale/never-shown-elsewhere key (e.g. "new_type", frozen from before the first rename).
+  const ticketTypeLabels = new Map(ticketTypes.map((t) => [t.key, t.label]));
   return fields
     .map((f) => {
       const key = String(f);
       const label = fieldChangeLabel(key, customFieldLabels);
       const change = fieldValueChange(meta.field_changes, key);
-      return change ? `${label}: ${change.from ?? "-"} → ${change.to ?? "-"}` : label;
+      if (!change) return label;
+      const from = key === "ticket_type" && change.from !== null ? (ticketTypeLabels.get(change.from) ?? change.from) : change.from;
+      const to = key === "ticket_type" && change.to !== null ? (ticketTypeLabels.get(change.to) ?? change.to) : change.to;
+      return `${label}: ${from ?? "-"} → ${to ?? "-"}`;
     })
     .join(", ");
 }
@@ -289,12 +298,13 @@ export function getTimelineDetail(
   entry: AttendeeActionLogEntryDto,
   customFields: CustomDataFieldDef[] = [],
   eventItems: AttendeeDetailItemDto[] = [],
+  ticketTypes: TicketTypeDto[] = [],
 ): string {
   const meta = entry.metadata;
   if (!meta) return "";
   return (
     rsvpChangeDetail(entry, meta) ??
-    attendeeEditedDetail(entry, meta, customFields) ??
+    attendeeEditedDetail(entry, meta, customFields, ticketTypes) ??
     passChangeDetail(entry, meta) ??
     itemStateDetail(entry, meta, eventItems) ??
     ""
