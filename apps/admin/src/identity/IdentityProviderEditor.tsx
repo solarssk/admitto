@@ -794,7 +794,7 @@ export function IdentityProviderEditor({
             value={draft.issuer}
             invalid={Boolean(errors.issuer)}
             error={errors.issuer}
-            hint="The base URL only — not the /.well-known/openid-configuration document."
+            hint="The base URL only, not the /.well-known/openid-configuration document."
             onChange={(e) => setDraft((d) => setField(d, "issuer", e.target.value))}
             placeholder="https://accounts.google.com"
             required
@@ -885,7 +885,7 @@ export function IdentityProviderEditor({
             value={draft.userinfo_endpoint}
             invalid={Boolean(errors.userinfo_endpoint)}
             error={errors.userinfo_endpoint}
-            hint="Optional — extra profile claims fetched after sign-in."
+            hint="Optional. Extra profile claims fetched after sign-in."
             onChange={(e) => setDraft((d) => setField(d, "userinfo_endpoint", e.target.value))}
             placeholder="https://openidconnect.googleapis.com/v1/userinfo"
           />
@@ -935,7 +935,7 @@ export function IdentityProviderEditor({
             value={draft.claim_phone}
             invalid={Boolean(errors.claim_phone)}
             error={errors.claim_phone}
-            hint="Optional — only applies if your provider sends one."
+            hint="Optional. Only applies if your provider sends one."
             onChange={(e) => setDraft((d) => setField(d, "claim_phone", e.target.value))}
             placeholder="phone_number"
           />
