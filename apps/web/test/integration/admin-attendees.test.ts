@@ -1215,6 +1215,12 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(body.voided_at).not.toBeNull();
       const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
       expect(row?.status).toBe("voided");
+
+      const audit = await prisma.attendeeActionLog.findFirst({
+        where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_voided" },
+      });
+      expect(audit).not.toBeNull();
+      expect(audit!.metadata).toMatchObject({ previous_status: "active" });
     });
 
     it("returns 404 when the attendee has no wallet pass yet", async () => {
@@ -1257,6 +1263,11 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(await res.json()).toEqual({ error: "wallet_provider_unauthorized" });
       const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
       expect(row?.status).toBe("active");
+      expect(
+        await prisma.attendeeActionLog.count({
+          where: { attendee_id: attendeeId, action_type: "wallet_pass_voided" },
+        }),
+      ).toBe(0);
     });
 
     it("rejects operator", async () => {
@@ -1292,6 +1303,12 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       const body = (await res.json()) as { status: string; voided_at: string | null };
       expect(body.status).toBe("active");
       expect(body.voided_at).toBeNull();
+
+      const audit = await prisma.attendeeActionLog.findFirst({
+        where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_restored" },
+      });
+      expect(audit).not.toBeNull();
+      expect(audit!.metadata).toMatchObject({ previous_status: "voided" });
     });
   });
 
@@ -1332,6 +1349,11 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(body.status).toBe("active");
       expect(body.apple_url).toBe("https://pc.test/apple/new");
       expect(body.android_url).toBe("https://pc.test/android/new");
+
+      const audit = await prisma.attendeeActionLog.findFirst({
+        where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_reissued" },
+      });
+      expect(audit).not.toBeNull();
     });
 
     it("returns 409 when the attendee has never been issued a ticket", async () => {

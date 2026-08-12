@@ -98,6 +98,9 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["attendee_edited", "Profile updated"],
     ["pass_revoked", "Pass revoked"],
     ["pass_restored", "Pass restored"],
+    ["wallet_pass_voided", "Wallet pass voided"],
+    ["wallet_pass_restored", "Wallet pass restored"],
+    ["wallet_pass_reissued", "Wallet pass reissued"],
     ["scan_preview", "Scan preview"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineLabel(labelEntry(actionType))).toBe(expected);
@@ -413,6 +416,39 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
     ).toBe("Revoked → Active");
   });
 
+  it("shows the wallet pass status transition for wallet_pass_voided", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "wallet_pass_voided",
+          metadata: { previous_status: "active" },
+        }),
+      ),
+    ).toBe("Added → Voided");
+  });
+
+  it("shows the wallet pass status transition for wallet_pass_restored", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "wallet_pass_restored",
+          metadata: { previous_status: "voided" },
+        }),
+      ),
+    ).toBe("Voided → Added");
+  });
+
+  it("returns an empty string for wallet_pass_reissued (no status change worth diffing)", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "wallet_pass_reissued",
+          metadata: { previous_status: "active" },
+        }),
+      ),
+    ).toBe("");
+  });
+
   it("shows the humanized event item key for item_issued/item_returned/item_revoked", () => {
     expect(
       getTimelineDetail(
@@ -504,12 +540,15 @@ describe("getTimelineTone (PO review — colored icons to distinguish outcomes)"
     expect(getTimelineTone(entry("check_in"))).toBe("ok");
     expect(getTimelineTone(entry("item_issued"))).toBe("ok");
     expect(getTimelineTone(entry("pass_restored"))).toBe("ok");
+    expect(getTimelineTone(entry("wallet_pass_restored"))).toBe("ok");
+    expect(getTimelineTone(entry("wallet_pass_reissued"))).toBe("ok");
   });
 
   it("marks a negative outcome error", () => {
     expect(getTimelineTone(entry("check_in_revoked"))).toBe("error");
     expect(getTimelineTone(entry("pass_revoked"))).toBe("error");
     expect(getTimelineTone(entry("mail_bounced"))).toBe("error");
+    expect(getTimelineTone(entry("wallet_pass_voided"))).toBe("error");
   });
 
   it("marks routine/informational rows neutral by default", () => {

@@ -2881,6 +2881,7 @@ async function loadWalletActionContext(
       externalUuid: string | null;
       tokenEnc: string | null;
       providerPassId: string;
+      previousStatus: string;
       provider: WalletPassProvider;
     }
 > {
@@ -2899,7 +2900,7 @@ async function loadWalletActionContext(
         qr_payload: true,
         external_uuid: true,
         token_enc: true,
-        wallet_pass: { select: { provider_pass_id: true } },
+        wallet_pass: { select: { provider_pass_id: true, status: true } },
       },
     }),
     db.event.findUnique({
@@ -2930,6 +2931,7 @@ async function loadWalletActionContext(
     externalUuid: attendee.external_uuid,
     tokenEnc: attendee.token_enc,
     providerPassId: attendee.wallet_pass.provider_pass_id,
+    previousStatus: attendee.wallet_pass.status,
     provider,
   };
 }
@@ -2949,9 +2951,19 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
     return walletProviderErrorResponse(c, err, "handleVoidAttendeeWalletPass");
   }
 
-  const updated = await db.walletPass.update({
-    where: { attendee_id: ctx.attendeeId },
-    data: { status: "voided", voided_at: new Date(), last_error_code: null },
+  const updated = await db.$transaction(async (tx) => {
+    const row = await tx.walletPass.update({
+      where: { attendee_id: ctx.attendeeId },
+      data: { status: "voided", voided_at: new Date(), last_error_code: null },
+    });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: ctx.attendeeId,
+      action_type: "wallet_pass_voided",
+      audit: adminAuditFromContext(c),
+      metadata: { previous_status: ctx.previousStatus },
+    });
+    return row;
   });
   return c.json(serializeWalletPassAction(updated));
 }
@@ -2971,9 +2983,19 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
     return walletProviderErrorResponse(c, err, "handleRestoreAttendeeWalletPass");
   }
 
-  const updated = await db.walletPass.update({
-    where: { attendee_id: ctx.attendeeId },
-    data: { status: "active", voided_at: null, last_error_code: null },
+  const updated = await db.$transaction(async (tx) => {
+    const row = await tx.walletPass.update({
+      where: { attendee_id: ctx.attendeeId },
+      data: { status: "active", voided_at: null, last_error_code: null },
+    });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: ctx.attendeeId,
+      action_type: "wallet_pass_restored",
+      audit: adminAuditFromContext(c),
+      metadata: { previous_status: ctx.previousStatus },
+    });
+    return row;
   });
   return c.json(serializeWalletPassAction(updated));
 }
@@ -3015,16 +3037,26 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
     return walletProviderErrorResponse(c, err, "handleReissueAttendeeWalletPass");
   }
 
-  const updated = await db.walletPass.update({
-    where: { attendee_id: ctx.attendeeId },
-    data: {
-      download_url: result.downloadUrl,
-      apple_url: result.appleUrl,
-      android_url: result.androidUrl,
-      status: "active",
-      last_error_code: null,
-      last_synced_at: new Date(),
-    },
+  const updated = await db.$transaction(async (tx) => {
+    const row = await tx.walletPass.update({
+      where: { attendee_id: ctx.attendeeId },
+      data: {
+        download_url: result.downloadUrl,
+        apple_url: result.appleUrl,
+        android_url: result.androidUrl,
+        status: "active",
+        last_error_code: null,
+        last_synced_at: new Date(),
+      },
+    });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: ctx.attendeeId,
+      action_type: "wallet_pass_reissued",
+      audit: adminAuditFromContext(c),
+      metadata: { previous_status: ctx.previousStatus },
+    });
+    return row;
   });
   return c.json(serializeWalletPassAction(updated));
 }
