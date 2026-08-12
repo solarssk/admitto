@@ -21,6 +21,11 @@ describe("toPassCreatorData", () => {
     expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
   });
 
+  it("also exposes the ticket/QR URL as a mappable ticket_url placeholder", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1", { barcodeSource: "ticket_url" });
+    expect(data.barcodeSource).toBe("https://tickets.example.com/t/tok-1");
+  });
+
   it("includes eventHours and eventPlace when both labels are provided", () => {
     const data = toPassCreatorData(
       { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },

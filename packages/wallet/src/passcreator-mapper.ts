@@ -3,9 +3,14 @@ import type { WalletPassInput } from "./types.js";
 /**
  * Placeholder tokens a wallet field mapping can reference. Matches the mail-template placeholder
  * vocabulary (packages/mail-templates/src/placeholders.ts) where the underlying value already
- * exists on WalletPassInput - not the full mail set, since ticket_url-style mail-only tokens have
- * no meaning on a wallet pass. Exported so the admin API can validate a submitted mapping's values
+ * exists on WalletPassInput. Exported so the admin API can validate a submitted mapping's values
  * against the same list this mapper actually resolves.
+ *
+ * `ticket_url` is the same payload sent as the top-level `barcodeValue` API field (input.barcodeValue).
+ * Some PassCreator templates' Barcode Value box is bound to a fixed placeholder like
+ * {userProvidedId} instead of reading barcodeValue - mapping ticket_url to a registered Additional
+ * Property lets an admin re-point that box at {theirPropertyName} so the pass's actual barcode
+ * matches the ticket.
  */
 export const WALLET_MAPPING_PLACEHOLDERS = [
   "full_name",
@@ -29,6 +34,7 @@ export const WALLET_MAPPING_PLACEHOLDERS = [
   "region",
   "country",
   "ticket_type",
+  "ticket_url",
 ] as const;
 
 function walletPlaceholderValues(input: WalletPassInput): Record<string, string | undefined> {
@@ -54,6 +60,7 @@ function walletPlaceholderValues(input: WalletPassInput): Record<string, string 
     region: input.addressRegionLabel,
     country: input.addressCountryLabel,
     ticket_type: input.ticketTypeLabel,
+    ticket_url: input.barcodeValue,
   };
 }
 

@@ -163,6 +163,7 @@ const WALLET_PLACEHOLDER_LABELS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[num
   region: "Region",
   country: "Country",
   ticket_type: "Ticket type",
+  ticket_url: "Ticket/QR URL",
 };
 
 const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
