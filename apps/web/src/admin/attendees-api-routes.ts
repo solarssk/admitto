@@ -11,8 +11,8 @@ import {
   type DeliveryDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
+import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus } from "@admitto/db/status";
-import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import {
   loadEventCustomDataFields,
   buildCustomDataFromInput,
@@ -30,7 +30,6 @@ import {
   ATTENDEE_SORT_COLUMNS,
   EXPORT_ROW_CAP,
   countFilteredAttendees,
-  findFilteredAttendeesForExport,
   findFilteredAttendeesForList,
   findSelectedAttendeesForExport,
   isAdmittable,
@@ -60,15 +59,9 @@ import {
   type AttendeeSortBy,
   type AttendeeSortDir,
   type ExportAttendeeSqlRow,
+  buildAttendeesExportArtifact,
 } from "@admitto/tickets";
-import {
-  buildExportColumns,
-  buildExportCsv,
-  buildSanitizedExportRows,
-  type SanitizedExportRow,
-} from "@admitto/tickets/attendees-export";
 import { canManageInstance } from "@admitto/auth";
-import { buildExportPdfBuffer } from "./attendees-export-pdf.js";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -78,16 +71,20 @@ import {
   resolveClientTimezone,
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
+import { loadEventAdminJob } from "./admin-job-http.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { randomUUID } from "node:crypto";
 import { optimisticAttendeeUpdate, StaleWriteError, isStaleWrite } from "./optimistic-update.js";
 import { resolveBulkSendAttendeeIds, BULK_SEND_LIMIT } from "./bulk-send-routes.js";
+import { publishActivityChanged } from "./checkin-sse-publish.js";
 
 const ATTENDEE_DETAIL_SELECT = {
   id: true,
   name: true,
+  first_name: true,
+  last_name: true,
   email: true,
   company: true,
   department: true,
@@ -109,7 +106,8 @@ const rsvpStatusSchema = z.enum(RSVP_STATUSES);
 
 const patchAttendeeFieldsSchema = z
   .object({
-    name: z.string().trim().min(1).max(100).optional(),
+    first_name: z.string().trim().min(1).max(100).optional(),
+    last_name: z.string().trim().min(1).max(100).optional(),
     email: z.string().trim().email().max(254).optional(),
     company: z.string().trim().max(200).optional().nullable(),
     department: z.string().trim().max(200).optional().nullable(),
@@ -138,6 +136,10 @@ const patchAttendeeSchema = patchAttendeeFieldsSchema.extend({
 const resendBodySchema = z
   .object({
     to: z.string().trim().email().optional(),
+    // Resend this specific template instead of the event's current default - used by the
+    // Delivery log row's "Resend", which resends what actually bounced/failed, not whatever
+    // template is active today.
+    templateId: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -186,51 +188,14 @@ const customDataFieldsRecordSchema = z.record(
 const createAttendeeSchema = z
   .object({
     email: z.string().trim().email().max(254),
-    name: z.string().trim().min(1).max(200),
+    first_name: z.string().trim().min(1).max(100),
+    last_name: z.string().trim().min(1).max(100),
     company: z.string().trim().max(200).optional(),
     department: z.string().trim().max(200).optional(),
     ticket_type: z.string().trim().max(100).optional(),
     custom_data: customDataFieldsRecordSchema.optional(),
   })
   .strict();
-
-/** Build XLSX bytes for sanitized export rows (dynamic exceljs import, ESM-safe). */
-async function buildExportXlsxBuffer(
-  exportRows: SanitizedExportRow[],
-  exportColumns: string[],
-): Promise<Uint8Array> {
-  const exceljs = await import("exceljs");
-  const ExcelJS = exceljs.default ?? exceljs;
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Attendees");
-  ws.columns = exportColumns.map((h, i) => ({
-    header: h,
-    width: i === 0 ? 5 : 28,
-  }));
-  for (const r of exportRows) {
-    const row = ws.addRow([
-      r.check_off,
-      r.name,
-      r.email,
-      r.company,
-      r.department,
-      r.ticket_type,
-      r.check_in_status,
-      r.admitted_at,
-      ...r.attribute_values,
-    ]);
-    row.getCell(1).alignment = { horizontal: "center" };
-  }
-  ws.pageSetup = {
-    fitToPage: true,
-    fitToWidth: 1,
-    fitToHeight: 0,
-    orientation: "landscape",
-    paperSize: 9,
-  };
-  ws.views = [{ state: "frozen", ySplit: 1 }];
-  return new Uint8Array(await wb.xlsx.writeBuffer());
-}
 
 /** Append bulk audit row after a successful filtered or explicit-selection export (no raw
  * search term, no attendee ids — `selected_count` is how many ids the operator requested,
@@ -322,6 +287,8 @@ export type AttendeeNoteDto = {
 export type AttendeeDetailDto = {
   id: string;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
   email: string;
   company: string | null;
   department: string | null;
@@ -739,6 +706,8 @@ async function buildAttendeeDetailDto(
   row: {
     id: string;
     name: string;
+    first_name: string | null;
+    last_name: string | null;
     email: string;
     company: string | null;
     department: string | null;
@@ -766,6 +735,8 @@ async function buildAttendeeDetailDto(
   return {
     id: row.id,
     name: row.name,
+    first_name: row.first_name,
+    last_name: row.last_name,
     email: row.email,
     company,
     department,
@@ -838,70 +809,25 @@ async function buildExportFileResponse(
     | { status: string; ticket_type?: string; mail_status?: string; has_query: boolean }
     | { selected_count: number },
 ): Promise<Response> {
-  const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const [attributeFieldsResult, ticketTypes] = await Promise.all([
-    loadEventCustomDataFields(db, eventId).catch((err) => err),
-    loadEventTicketTypes(db, eventId),
-  ]);
-  if (attributeFieldsResult instanceof Error) {
-    return c.json({ error: customDataErrorCode(attributeFieldsResult) }, 400);
-  }
-  const attributeFields = attributeFieldsResult;
-
-  const exportColumns = buildExportColumns(attributeFields);
-  const exportRows = buildSanitizedExportRows(rows, attributeFields, timeZone, ticketTypes);
-
-  const timestamp = new Date().toISOString().slice(0, 10);
-  const filename = `attendees-${eventId}-${timestamp}.${format}`;
-
-  if (format === "csv") {
-    const csv = buildExportCsv(exportRows, exportColumns);
-    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
-    return new Response(csv, {
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": attachmentContentDisposition(filename),
-        "Cache-Control": "no-store",
-        "Pragma": "no-cache",
-      },
-    });
+  let artifact;
+  try {
+    artifact = await buildAttendeesExportArtifact(db, eventId, rows, format, event);
+  } catch (err) {
+    return c.json({ error: customDataErrorCode(err) }, 400);
   }
 
-  if (format === "pdf") {
-    const bytes = await buildExportPdfBuffer(exportRows, exportColumns, {
-      title: event.title,
-      date: event.date,
-    });
-    await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
-    return new Response(bytes, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": attachmentContentDisposition(filename),
-        "Cache-Control": "no-store",
-        "Pragma": "no-cache",
-      },
-    });
-  }
-
-  const bytes = await buildExportXlsxBuffer(exportRows, exportColumns);
-  await auditAttendeesExported(db, c, eventId, format, exportRows.length, auditFilters);
-  return new Response(bytes, {
+  await auditAttendeesExported(db, c, eventId, format, artifact.rowCount, auditFilters);
+  return new Response(new Uint8Array(artifact.bytes), {
     headers: {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": attachmentContentDisposition(filename),
+      "Content-Type": artifact.contentType,
+      "Content-Disposition": attachmentContentDisposition(artifact.filename),
       "Cache-Control": "no-store",
       "Pragma": "no-cache",
     },
   });
 }
 
-/** GET /api/admin/events/:eventId/attendees/export — filtered subset as XLSX, CSV, or PDF (no
- * tokens). An explicit-selection export (checked rows in the bulk bar) is a separate POST
- * endpoint (`handleExportSelectedAttendees`, below) — its ids never travel in a query string,
- * since the default reverse-proxy access log records the full request URI (unlike this app's
- * own PII-free access log), and a selection of attendee ids is exactly the kind of detail that
- * log shouldn't retain. */
+/** GET /api/admin/events/:eventId/attendees/export — enqueue filtered export (202). */
 export async function handleExportAttendees(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -920,7 +846,7 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { title: true, date: true, timezone: true },
+    select: { title: true, date: true, timezone: true, organization_id: true },
   });
   if (!event) {
     return c.json({ error: "not_found" }, 404);
@@ -931,12 +857,71 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
   }
 
-  const rows = await findFilteredAttendeesForExport(db, eventId, filterParams);
-  return buildExportFileResponse(db, c, eventId, rows, format, event, {
-    status,
-    ticket_type,
-    mail_status,
-    has_query: Boolean(q),
+  const audit = adminAuditFromContext(c);
+  const job = await db.adminJob.create({
+    data: {
+      type: "export",
+      status: "pending",
+      organization_id: event.organization_id,
+      event_id: eventId,
+      actor_user_id: audit.operator ?? null,
+      session_id: audit.sessionId ?? null,
+      client_timezone: resolveClientTimezone(c),
+      result_json: {
+        request: {
+          kind: "attendees_filtered",
+          format,
+          filters: filterParams,
+        },
+      },
+    },
+  });
+
+  return c.json({ jobId: job.id, status: "pending", format, rowCount: total }, 202);
+}
+
+/** GET /api/admin/events/:eventId/export/jobs/:jobId */
+export async function handleGetExportJob(c: Context, db: PrismaClient): Promise<Response> {
+  const loaded = await loadEventAdminJob(c, db, "export");
+  if (loaded instanceof Response) return loaded;
+  const { job } = loaded;
+
+  c.header("Cache-Control", "no-store");
+  return c.json({
+    jobId: job.id,
+    status: job.status,
+    error: job.error,
+    filename: job.filename,
+    rowCount: job.created_count,
+    created_at: job.created_at.toISOString(),
+    started_at: job.started_at ? job.started_at.toISOString() : null,
+  });
+}
+
+/** GET /api/admin/events/:eventId/export/jobs/:jobId/download */
+export async function handleDownloadExportJob(c: Context, db: PrismaClient): Promise<Response> {
+  const loaded = await loadEventAdminJob(c, db, "export");
+  if (loaded instanceof Response) return loaded;
+  const { job } = loaded;
+  if (job.status !== "succeeded" || !job.storage_key) return c.json({ error: "not_ready" }, 404);
+
+  const { getDefaultStorage } = await import("@admitto/storage");
+  const bytes = await getDefaultStorage().get(job.storage_key);
+  const meta =
+    job.result_json && typeof job.result_json === "object" && !Array.isArray(job.result_json)
+      ? (job.result_json as Record<string, unknown>)
+      : {};
+  const contentType =
+    typeof meta.contentType === "string" ? meta.contentType : "application/octet-stream";
+  const filename = job.filename ?? "export.bin";
+
+  return new Response(bytes, {
+    headers: {
+      "Content-Type": contentType,
+      "Content-Disposition": attachmentContentDisposition(filename),
+      "Cache-Control": "no-store",
+      Pragma: "no-cache",
+    },
   });
 }
 
@@ -1065,11 +1050,35 @@ function applyCustomDataFieldPatches(
   }
 }
 
+/** Diff first_name/last_name against existing values and rebuild `name` from the pair, for
+ * `computePatchChanges` below — mutates `data`/`fields` only when a component actually changed
+ * (SonarCloud S3776: keeps this out of computePatchChanges's cognitive-complexity count). */
+function applyNamePatchFields(
+  existing: { first_name: string | null; last_name: string | null },
+  patch: { first_name?: string; last_name?: string },
+  data: Prisma.AttendeeUncheckedUpdateInput,
+  fields: string[],
+): void {
+  if (patch.first_name === undefined && patch.last_name === undefined) return;
+  const nextFirstName = patch.first_name ?? existing.first_name;
+  const nextLastName = patch.last_name ?? existing.last_name;
+  const firstNameChanged = nextFirstName !== existing.first_name;
+  const lastNameChanged = nextLastName !== existing.last_name;
+  if (!firstNameChanged && !lastNameChanged) return;
+  data.first_name = nextFirstName;
+  data.last_name = nextLastName;
+  data.name = [nextFirstName, nextLastName].filter(Boolean).join(" ");
+  if (firstNameChanged) fields.push("first_name");
+  if (lastNameChanged) fields.push("last_name");
+}
+
 /** Compute Prisma update payload, changed field names, and before/after values (for
  * LOGGED_VALUE_FIELDS only) from a PATCH body. */
 function computePatchChanges(
   existing: {
     name: string;
+    first_name: string | null;
+    last_name: string | null;
     email: string;
     company: string | null;
     department: string | null;
@@ -1100,10 +1109,7 @@ function computePatchChanges(
     return customData;
   };
 
-  if (patch.name !== undefined && patch.name !== existing.name) {
-    data.name = patch.name;
-    fields.push("name");
-  }
+  applyNamePatchFields(existing, patch, data, fields);
   if (patch.email !== undefined && patch.email !== existing.email) {
     data.email = patch.email;
     fields.push("email");
@@ -1219,10 +1225,23 @@ function computeStatusChange(
  * inside the PATCH transaction, under the same advisory lock ticket-type DELETE uses (TOCTOU
  * fix, code review) - see the comment there. */
 async function validateAndNormalizeProfilePatch(
-  existing: { custom_data: unknown },
+  existing: { custom_data: unknown; first_name: string | null; last_name: string | null },
   profilePatch: Omit<PatchInput, "rsvp_status" | "status">,
   loadAllowedFieldsOnce: () => Promise<EventItemContent[]>,
 ): Promise<{ error: string } | null> {
+  // A legacy attendee (both split fields still null, pre-dating this migration) only has its
+  // full name in `name`. Patching just one of first_name/last_name would derive the other half
+  // from null and silently drop the rest of the name from `name` (Codex review, PR790) - require
+  // both together until the record has been migrated to real split fields.
+  const suppliesFirstName = profilePatch.first_name !== undefined;
+  const suppliesLastName = profilePatch.last_name !== undefined;
+  if (
+    suppliesFirstName !== suppliesLastName &&
+    (existing.first_name === null || existing.last_name === null)
+  ) {
+    return { error: "legacy_name_requires_both_fields" };
+  }
+
   if (profilePatch.custom_data_fields) {
     try {
       profilePatch.custom_data_fields = validateCustomDataPatch(
@@ -1567,6 +1586,29 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
   }
 }
 
+/** Writes the central admin audit row (Instance Settings → Audit log) for an attendee lifecycle
+ * event - factors out the actor/session/ip/timezone boilerplate shared by every call site below
+ * (SonarCloud duplication). See the note on attendee_erased below for why these events need a
+ * record outside the attendee's own (deletable) AttendeeActionLog trail. */
+async function writeAttendeeLifecycleAuditLog(
+  tx: Prisma.TransactionClient,
+  c: Context,
+  audit: OpsAuditContext,
+  organizationId: string | null,
+  actionType: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  await writeAdminAuditLog(tx, {
+    organizationId,
+    actorUserId: audit.operator ?? c.get("auth").userId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType,
+    metadata,
+  });
+}
+
 /** DELETE /api/admin/events/:eventId/attendees/:id — GDPR erasure path. */
 export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -1623,20 +1665,12 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
     // attendees) to meet GDPR Art. 33/34 breach-notification duties, which is impossible if
     // the identity is gone from every table. Lawful basis: Art. 6(1)(f) legitimate interest
     // (security monitoring), scoped to this one admin-only log - not the erasure action itself.
-    await writeAdminAuditLog(tx, {
-      organizationId: existing.event.organization_id,
-      actorUserId: audit.operator ?? c.get("auth").userId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "attendee_erased",
-      metadata: {
-        event_id: eventId,
-        event_title: existing.event.title,
-        attendee_id: attendeeId,
-        attendee_name: existing.name,
-        attendee_email: existing.email,
-      },
+    await writeAttendeeLifecycleAuditLog(tx, c, audit, existing.event.organization_id, "attendee_erased", {
+      event_id: eventId,
+      event_title: existing.event.title,
+      attendee_id: attendeeId,
+      attendee_name: existing.name,
+      attendee_email: existing.email,
     });
     return "deleted" as const;
   });
@@ -1716,20 +1750,19 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
     // See the matching note on attendee_erased above - name/email are deliberately included in
     // this one central, superadmin-only log (not the erasure action's own AttendeeActionLog
     // entry) so a security incident affecting multiple attendees at once is investigable.
-    await writeAdminAuditLog(tx, {
-      organizationId: event?.organization_id ?? null,
-      actorUserId: audit.operator ?? c.get("auth").userId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "attendees_bulk_erased",
-      metadata: {
+    await writeAttendeeLifecycleAuditLog(
+      tx,
+      c,
+      audit,
+      event?.organization_id ?? null,
+      "attendees_bulk_erased",
+      {
         event_id: eventId,
         event_title: event?.title,
         count: deleted.length,
         attendees: deleted.map((a) => ({ id: a.id, name: a.name, email: a.email })),
       },
-    });
+    );
     return deleted.length;
   });
 
@@ -2395,7 +2428,8 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const { email, name, company, department, ticket_type, custom_data } = parsed.data;
+  const { email, first_name, last_name, company, department, ticket_type, custom_data } = parsed.data;
+  const name = [first_name, last_name].filter(Boolean).join(" ");
 
   const duplicate = await db.attendee.findFirst({
     where: { event_id: eventId, email: { equals: email, mode: "insensitive" } },
@@ -2448,6 +2482,8 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
           event_id: eventId,
           email,
           name,
+          first_name,
+          last_name,
           company: company?.trim() ? company.trim() : null,
           department: department?.trim() ? department.trim() : null,
           ticket_type: ticket_type?.trim() ? ticket_type.trim() : null,
@@ -2479,25 +2515,18 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
       // the matching note on attendee_erased above for why attendee lifecycle events need a
       // record outside the attendee's own (deletable) AttendeeActionLog trail.
       const event = await tx.event.findUnique({ where: { id: eventId }, select: { organization_id: true, title: true } });
-      await writeAdminAuditLog(tx, {
-        organizationId: event?.organization_id ?? null,
-        actorUserId: audit.operator ?? c.get("auth").userId,
-        sessionId: audit.sessionId,
-        ip: audit.ip,
-        timezone: audit.timezone,
-        actionType: "attendee_created_manual",
-        metadata: {
-          event_id: eventId,
-          event_title: event?.title,
-          attendee_id: row.id,
-          attendee_name: row.name,
-          attendee_email: row.email,
-        },
+      await writeAttendeeLifecycleAuditLog(tx, c, audit, event?.organization_id ?? null, "attendee_created_manual", {
+        event_id: eventId,
+        event_title: event?.title,
+        attendee_id: row.id,
+        attendee_name: row.name,
+        attendee_email: row.email,
       });
 
       return row;
     });
 
+    publishActivityChanged(eventId);
     const dto = await buildAttendeeDetailDto(db, eventId, created);
     return c.json(dto, 201);
   } catch (err) {
@@ -2549,12 +2578,16 @@ export async function handleResendEventAttendeeTicket(
   try {
     sendResult = await resendTicketEmail(attendeeId, db, process.env, mailDeps, {
       to,
+      templateId: parsed.data.templateId,
       baseUrl: baseUrlOrRes,
       timezone: resolveClientTimezone(c) ?? undefined,
       actorUserId: resendAudit.operator,
       sessionId: resendAudit.sessionId,
     });
   } catch (err) {
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: "template_not_found" }, 404);
+    }
     const mailErr = mailTransportSetupErrorResponse(c, err);
     if (mailErr) return mailErr;
     throw err;
@@ -2598,6 +2631,37 @@ export async function handleResendEventAttendeeTicket(
   });
 
   return c.json(toDeliveryDto(latest));
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/dismiss-bounce
+ * Acknowledges the Communication bounce notifier for this attendee (Delivery log row menu),
+ * without resending anything. No "is this attendee actually bounced" guard - the UI only ever
+ * shows this action for a bounced row, and the write is idempotent and harmless outside that
+ * case (nothing else reads it besides the bounced-count query, which already compares the
+ * timestamp against the attendee's latest delivery).
+ */
+export async function handleDismissAttendeeBounce(c: Context, db: PrismaClient): Promise<Response> {
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendeeId, eventId } = attendeeContextOrRes;
+
+  const dismissedAt = new Date();
+  await db.$transaction(async (tx) => {
+    await tx.attendee.update({
+      where: { id: attendeeId },
+      data: { email_bounce_dismissed_at: dismissedAt },
+    });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: "bounce_dismissed",
+      audit: adminAuditFromContext(c),
+      metadata: {},
+    });
+  });
+
+  return c.json({ email_bounce_dismissed_at: dismissedAt.toISOString() });
 }
 
 /**
@@ -2667,6 +2731,7 @@ export async function handleRevokeAttendeeItem(c: Context, db: PrismaClient): Pr
 
   try {
     await revokeItemState({ attendeeId, eventId, itemKey, audit: adminAuditFromContext(c) }, db);
+    publishActivityChanged(eventId);
     const card = await getAttendeeCard(eventId, attendeeId, db);
     return c.json({ card });
   } catch (err) {

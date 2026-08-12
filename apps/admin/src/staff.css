@@ -3014,6 +3014,14 @@
   width: min(720px, 100%);
 }
 
+/* The mapping repeater's row (Group/Role/Scope/[Organization or Event]) is the widest content
+   in any --wide panel - at 720px its columns sit at their minmax() floor with almost no slack.
+   A dedicated modifier (rather than raising --wide itself) keeps CfAccessEditor, the class's
+   other consumer, at its existing width. */
+.identity-modal__panel--identity-editor {
+  width: min(880px, 100%);
+}
+
 .identity-modal__scroll {
   overflow: auto;
   /* Without this, scrolling past the panel's own end with a trackpad
@@ -3072,6 +3080,22 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3) var(--space-4);
+}
+
+.identity-editor__redirect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.identity-editor__redirect-hint {
+  margin-top: var(--space-3);
+}
+
+.identity-editor__redirect-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 /* Protocol picker (Add identity provider) — visual only today: OIDC is the only
@@ -3156,35 +3180,59 @@
   font-size: var(--fs-sm);
 }
 
-/* Flex, not grid: a row with no Organization/Event ID field (instance scope)
-   simply has one fewer cell, and the rest stretch to fill the freed space
-   instead of leaving a placeholder-shaped gap. */
+/* Grid, not flex: explicit columns so the row settles at one even width per
+   field instead of flex-wrap breaking wherever content happens to overflow.
+   Two column counts (with/without the Organization/Event ID cell) rather than
+   one fixed template with an item missing, so Group/Role/Scope still widen to
+   fill the row on instance-scope mappings instead of leaving a placeholder-
+   shaped gap where the ID field would have been. Remove is always the last
+   column in both templates. */
 .identity-mappings__row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) minmax(120px, 1fr) minmax(100px, 0.8fr) auto;
   align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
 
+.identity-mappings__row--with-scope-id {
+  grid-template-columns: minmax(150px, 1.2fr) minmax(110px, 0.9fr) minmax(90px, 0.7fr) minmax(120px, 0.9fr) auto;
+}
+
+/* A grid item's default auto-minimum is its content's min-content size, not 0 - without this, a
+   long Event/Organization name (or Group value) refuses to shrink below that intrinsic width and
+   blows out its column past the track's own sizing (confirmed visually: the mobile 1fr/1fr
+   columns below held their track width but the *content* still overflowed the panel edge until
+   this was added). The searchable-select trigger's own ellipsis (searchable-select.css) only gets
+   a chance to truncate once its ancestor chain actually permits shrinking that far. */
+.identity-mappings__row > * {
+  min-width: 0;
+}
+
 .identity-mappings__row:last-of-type {
   border-bottom: 0;
 }
 
-.identity-mappings__cell {
-  flex: 1 1 0;
-  min-width: 130px;
-}
-
-.identity-mappings__cell--group {
-  flex: 1.2 1 0;
-}
-
 .identity-mappings__remove {
-  flex: none;
   display: flex;
   align-items: flex-end;
+}
+
+@media (max-width: 640px) {
+  /* Two columns, not one: Group+Role pair on the first row, Scope+[Organization or Event] (when
+     present) on the second - a full single-column stack (PO report) wastes width phones already
+     have. Remove always spans both columns below (odd item count in the 3-field/instance-scope
+     case) instead of stranding it alone next to Scope. */
+  .identity-mappings__row,
+  .identity-mappings__row--with-scope-id {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .identity-mappings__remove {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
 }
 
 .identity-mappings__remove .at-btn:hover:not(:disabled) {
@@ -3626,7 +3674,7 @@
 
 /* Font family upload modal (FontFamilyModal) */
 .fontfam-modal-body {
-  padding: 4px 20px 4px;
+  padding: 0;
 }
 
 .fontfam-dropzone {
@@ -4316,14 +4364,16 @@ output.mail-field-hint {
     padding-inline: var(--space-2);
   }
 
-  /* MFA switches need more horizontal room than a numeric field — span below the label. */
+  /* MFA switches need more horizontal room than a numeric field — span below the label.
+     Stacked one per row instead of wrapping: at this width the three switches
+     (Superadmin/Administrator/Operator) don't fit on one line, and flex-wrap left an
+     uneven 2-then-1 layout instead of a predictable list. */
   .security-settings-row__control.security-mfa-section__switches {
     grid-column: 1 / -1;
     justify-self: stretch;
+    flex-direction: column;
     align-items: flex-start;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-3);
+    gap: var(--space-2);
   }
 }
 
@@ -5129,6 +5179,10 @@ output.mail-field-hint {
 }
 
 .smtp-connection-tls-row {
+  /* Overrides the generic .settings-row mobile column-stack below (same specificity, this
+     rule comes later in the file) so the switch stays beside the label on narrow screens,
+     matching the desktop layout instead of dropping onto its own line. */
+  flex-direction: row;
   align-items: center;
   gap: var(--space-3);
   margin: 0;
@@ -5182,8 +5236,8 @@ output.mail-field-hint {
 
 .sessions-table-wrap {
   overflow-x: auto;
-  margin: 0 calc(-1 * var(--space-4));
-  padding: 0 var(--space-4);
+  margin: 0 calc(-1 * var(--pad-card));
+  padding: 0 var(--pad-card);
 }
 
 .table {
@@ -5235,11 +5289,11 @@ output.mail-field-hint {
   gap: var(--space-1);
 }
 
-.geo-cell > [aria-hidden="true"]:first-child {
+.geo-cell__flag {
   display: inline-block;
   width: 1.25rem;
   text-align: center;
-  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
 .sessions-action-col {
@@ -5766,19 +5820,36 @@ output.mail-field-hint {
 
 .audit-log-card__top {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--space-2);
 }
 
-.audit-log-card__time {
-  /* Was flex: none - fine while the secondary line was just a short city name, but the
-     actor-local line now also carries a tz abbreviation and country ("GMT+2 for actor
-     (Warsaw, Poland)"), long enough that a fixed-width sibling next to the action badge
-     pushed the card wider than the viewport instead of wrapping. */
-  flex: 1 1 auto;
+.audit-log-card__action {
+  flex: none;
   min-width: 0;
-  text-align: right;
+  max-width: 100%;
+  width: 100%;
+}
+
+.audit-log-card__action .at-badge {
+  white-space: normal;
+  text-align: left;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.35;
+  padding-block: 4px;
+  box-sizing: border-box;
+  vertical-align: top;
+}
+
+.audit-log-card__time {
+  /* Stacked under the action badge on cards so long labels never squeeze beside UTC /
+     user-local time (and the ti-user icon in UserLocalTimeLine). */
+  flex: none;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
 }
 
 .audit-log-card__meta {
@@ -6471,17 +6542,6 @@ output.mail-field-hint {
   align-items: stretch;
 }
 
-/* (B) Recent activity's header carries extra content (All/Issues filter pills + a live badge)
- * that renders taller than a plain text title's line-height alone, so the shared
- * `.at-card__header`'s fixed padding produces a visibly shorter header on Check-in progress
- * (title only) next to it in the same grid row. Pin a matching min-height — derived from the
- * filter pills' real rendered height plus the header's own vertical padding, not a bare magic
- * number — on both of this row's card headers only; every other page's `.at-card__header` is
- * untouched. */
-.overview-card--header-fixed .at-card__header {
-  min-height: calc(var(--control-h-sm) + 4px + (var(--space-4) * 2));
-}
-
 /* Stretching the row (above) makes both cards the height of the taller one, but a plain `.at-card`
  * is a block box — its body wouldn't fill that extra height on its own, just leave blank space
  * under its content. Turn the card into a flex column and let its body absorb the slack;
@@ -6558,7 +6618,7 @@ output.mail-field-hint {
  * of the old flat single-line "dot + label … value" table row (#G polish). */
 .overview-readiness-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
 }
 
@@ -6567,7 +6627,6 @@ output.mail-field-hint {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding-top: 2px;
 }
 
 .overview-readiness-item__body strong {
@@ -6791,16 +6850,47 @@ output.mail-field-hint {
 }
 
 /* Recent activity */
-/* Live indicator now renders as <Badge variant="ok" dot> (the app's existing dot-badge pattern,
- * e.g. CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled" pills) — this class only adds
- * the pulse that's specific to a live-connection signal, on top of Badge's own pill styling. */
+/* Decorative live indicator — solid success chip with a breathing white dot (not a disabled button). */
+.overview-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h-sm);
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--status-ok);
+  color: #fff;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.overview-live-indicator__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  flex: none;
+}
+
 @keyframes overview-live-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .overview-live-badge .at-badge__dot {
+  /* Keep the existing Badge pulse until Overview/Reports switch to .overview-live-indicator
+   * (stacked follow-up). Both selectors share the same keyframe. */
+  .overview-live-badge .at-badge__dot,
+  .overview-live-indicator__dot {
     animation: overview-live-pulse 1.6s ease-in-out infinite;
   }
 }
@@ -6818,6 +6908,21 @@ output.mail-field-hint {
 }
 
 .seg-control.overview-activity-filter .seg-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  line-height: 1;
+}
+
+/* MJML/HTML format toggle (Communication's Templates tab editor card) — same fix as
+ * .seg-control.overview-activity-filter above, for the identical reason: rendered inline in the
+ * editor Card's header `actions` row rather than a row of its own. */
+.seg-control.communication-format-toggle {
+  margin-bottom: 0;
+  height: var(--control-h-sm);
+}
+
+.seg-control.communication-format-toggle .seg-btn {
   display: inline-flex;
   align-items: center;
   padding: 0 var(--space-2);
@@ -7252,7 +7357,10 @@ output.mail-field-hint {
 .overview-modal__panel {
   position: relative;
   width: min(480px, 100%);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   background: var(--surface-card);
   border-radius: var(--radius-lg);
@@ -7264,15 +7372,58 @@ output.mail-field-hint {
 }
 
 .overview-modal__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: var(--fs-h3);
   font-weight: 600;
+}
+
+.overview-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
+}
+
+.overview-modal__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 
 .overview-modal__body {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.overview-contact-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.overview-contact-modal__phone-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.overview-contact-modal__phone-row .phone-country-select {
+  flex: 0 0 8.5rem;
+}
+
+.overview-contact-modal__phone-row > .at-field:not(.phone-country-select) {
+  flex: 1;
+  min-width: 0;
 }
 
 .overview-modal__footer {
@@ -7506,10 +7657,21 @@ output.mail-field-hint {
 }
 
 .timezone-select__option {
+  display: block;
+  width: 100%;
   padding: 0.45rem 0.55rem;
+  border: 0;
   border-radius: var(--radius-sm, 0.375rem);
+  background: transparent;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   overflow: hidden;
+}
+
+.timezone-select__option:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
 .timezone-select__option-row {
@@ -7557,6 +7719,14 @@ output.mail-field-hint {
 
 .timezone-select__option--selected.timezone-select__option--highlighted {
   background: var(--brand-100, #dbeafe);
+}
+
+/* A selected timezone keeps its blue fill; every other item gets a clearly visible pointer
+   state. The inset accent is deliberately independent of background variables/themes. */
+.timezone-select__option:not(.timezone-select__option--selected):hover,
+.timezone-select__option:not(.timezone-select__option--selected).timezone-select__option--highlighted {
+  background-color: #e7f0fc;
+  box-shadow: inset 3px 0 0 var(--brand-500, #3b82f6);
 }
 
 .timezone-select__empty {
@@ -7641,6 +7811,205 @@ output.mail-field-hint {
 
 .date-picker__input::placeholder {
   color: var(--text-disabled);
+}
+
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix (pointer: coarse, not a max-width - see its own comment) for
+   .at-input/.at-select/.at-textarea in packages/ui. */
+@media (pointer: coarse) {
+  .date-picker__input {
+    font-size: 16px;
+  }
+}
+
+/* TimeInput is a custom picker rather than <input type="time"> so its behaviour and appearance
+   stay consistent across browsers while still respecting the operator's 12/24-hour preference. */
+.time-input {
+  position: relative;
+}
+
+.time-input__control {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: var(--control-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--surface-card, #fff);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.time-input__control:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.time-input__control--invalid {
+  border-color: var(--status-error);
+}
+
+.time-input__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--control-h);
+  background: var(--surface-page, #f8fafc);
+  color: var(--text-muted);
+  border: 0;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.time-input__icon:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.time-input__icon:disabled {
+  cursor: not-allowed;
+  color: var(--text-disabled);
+}
+
+.time-input__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  padding: 0 0.75rem;
+}
+
+.time-input__input:focus {
+  outline: none;
+}
+
+.time-input__input:disabled {
+  background: var(--at-gray-100, #f3f4f6);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.time-input__input::placeholder {
+  color: var(--text-disabled);
+}
+
+.time-input__picker {
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 1fr) minmax(4.5rem, 1fr);
+  gap: 0.65rem;
+  width: max-content;
+  max-width: min(13rem, calc(100vw - 32px));
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--surface-card, #fff);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+}
+
+/* The paired end-time control opens toward the available edge, keeping the AM/PM column
+   inside a narrow modal instead of letting the picker be clipped on the right. */
+.time-input--picker-end .time-input__picker {
+  right: 0;
+  left: auto;
+}
+
+.time-input__picker--twelve-hour {
+  grid-template-columns: minmax(4.5rem, 1fr) minmax(4.5rem, 1fr) minmax(4rem, 1fr);
+  max-width: min(17rem, calc(100vw - 32px));
+}
+
+.time-input__picker-column {
+  min-width: 0;
+}
+
+.time-input__picker-label {
+  display: block;
+  margin: 0 0 0.35rem;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+  font-size: var(--fs-xs, 0.75rem);
+  font-weight: var(--fw-medium, 500);
+}
+
+.time-input__picker-scroll {
+  position: relative;
+  display: grid;
+  grid-auto-rows: 2rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  border-radius: var(--radius-sm, 0.375rem);
+  background: linear-gradient(to bottom, var(--surface-page, #f8fafc), transparent 16%, transparent 84%, var(--surface-page, #f8fafc));
+}
+
+.time-input__picker-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.time-input__picker-column--meridiem .time-input__picker-scroll {
+  grid-auto-rows: 2.5rem;
+  max-height: 5rem;
+}
+
+.time-input__picker-option {
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-sm, 0.375rem);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  scroll-snap-align: center;
+}
+
+.time-input__picker-option:hover,
+.time-input__picker-option:focus-visible {
+  outline: none;
+  background: var(--surface-page, #f8fafc);
+}
+
+.time-input__picker-option:focus-visible {
+  box-shadow: var(--ring);
+}
+
+.time-input__picker-option--selected {
+  background: var(--at-blue-100, #dbeafe);
+  color: var(--at-blue-700, #1d4ed8);
+  font-weight: var(--fw-medium, 500);
+}
+
+@media (max-width: 420px) {
+  .time-input__picker {
+    width: min(100%, 13rem);
+  }
+
+  .time-input__picker--twelve-hour {
+    grid-template-columns: 1fr 1fr 0.85fr;
+    width: min(100%, 17rem);
+  }
+
+  .time-input__picker-scroll { max-height: 8rem; }
+}
+
+@media (pointer: coarse) {
+  .time-input__input {
+    font-size: 16px;
+  }
 }
 
 /* This is a native <dialog> (see DatePicker.tsx), not a plain <div> - the rules below
@@ -7812,4 +8181,3 @@ output.mail-field-hint {
 /* Settings tab bar's horizontal scroll + edge-fade behavior now lives in the
    shared ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
    used instead of the plain <Tabs> in SettingsLayout.tsx. */
-

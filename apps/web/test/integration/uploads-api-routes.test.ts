@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -345,6 +345,7 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
 
     const getRes = await app.request(body.url);
     expect(getRes.status).toBe(200);
+    expect(getRes.headers.get("Content-Type")).toBe("image/png");
 
     const superUser = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL_SUPER } });
     expect(
@@ -353,6 +354,16 @@ describe("POST /api/admin/events/:eventId/branding-upload", () => {
         orderBy: { created_at: "desc" },
       }),
     ).toMatchObject({ metadata: { eventId: EVENT_OWN } });
+  });
+
+  it("does not serve export/import artifacts from public /uploads (csv/xlsx/pdf)", async () => {
+    const rel = `default/events/${EVENT_OWN}`;
+    mkdirSync(join(uploadDir, rel), { recursive: true });
+    for (const name of ["export.csv", "export.xlsx", "ticket.pdf"]) {
+      writeFileSync(join(uploadDir, rel, name), "not-public");
+      const res = await app.request(`/uploads/${rel}/${name}`);
+      expect(res.status, name).toBe(404);
+    }
   });
 
   it("accepts PNG for the org admin who manages the event (not superadmin-only)", async () => {
@@ -494,7 +505,7 @@ describe("DELETE /api/admin/uploads", () => {
       body: (() => {
         const fd = new FormData();
         fd.append("file", new Blob([VALID_PNG], { type: "image/png" }), "asset.png");
-        fd.append("token", "cleanup_guard");
+        fd.append("name", "Cleanup guard");
         return fd;
       })(),
     });

@@ -1,0 +1,506 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button, Card, Notice } from "@admitto/ui";
+import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import type { AttendeeRowDto, BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
+import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
+import { ArchivedGuard } from "../components/ArchivedGuard.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
+import { AttendeePicker } from "./AttendeePicker.js";
+
+interface CommunicationSendPanelProps {
+  event: ArchivedGuardEvent;
+  eventId: string;
+  /** The template to send. Undefined means "use the built-in default ticket template" (the
+   * backend's `sendEventBulk` already falls back to it when `templateId` is omitted) - that's
+   * the normal case for an event that never saved an explicit override. Only `snapshotMissing`
+   * below means sending is actually unavailable. */
+  templateId?: string;
+  /** True only when the editor's template snapshot failed to load - the one case where there is
+   * truly nothing to send, as opposed to "no explicit override" (which still sends the default). */
+  snapshotMissing: boolean;
+  /** True when the Templates tab editor has unsaved changes. A bulk send always renders the
+   * saved template server-side (only `templateId` is posted, never the live draft), so sending
+   * while dirty would silently deliver the previous saved content to every recipient instead of
+   * what's on screen - blocked here rather than letting that happen. */
+  isDirty: boolean;
+}
+
+type SendPhase = "form" | "polling" | "done";
+
+const RECIPIENT_OPTIONS: ReadonlyArray<{
+  value: BulkSendFilter["type"];
+  label: string;
+  description: string;
+  icon: string;
+}> = [
+  {
+    value: "all",
+    label: "All attendees",
+    description: "Every attendee on this event, regardless of status.",
+    icon: "ti-users",
+  },
+  {
+    value: "rsvp_status",
+    label: "By attendance status",
+    description: "Only attendees with the attendance status you pick below.",
+    icon: "ti-calendar-event",
+  },
+  {
+    value: "ticket_type",
+    label: "By ticket type",
+    description: "Only attendees holding the ticket type you pick below.",
+    icon: "ti-ticket",
+  },
+  {
+    value: "no_delivery",
+    label: "Not yet emailed",
+    description: "Only attendees who've never received this template - catch up latecomers without re-emailing everyone.",
+    icon: "ti-mail-off",
+  },
+  {
+    value: "attendee_ids",
+    label: "Specific attendees",
+    description: "Pick individual attendees by name or email.",
+    icon: "ti-user-search",
+  },
+];
+
+/** Notice tone for the send/queue result: "info" while still in flight, "warning" when nothing
+ * useful happened (no match, nothing queued) or some messages failed, "success" otherwise. */
+function resultVariant(
+  phase: SendPhase,
+  batchStatus: { queued: number; sent: number; failed: number } | null,
+): "info" | "success" | "warning" {
+  if (phase === "polling") return "info";
+  if (!batchStatus) return "warning";
+  return batchStatus.failed > 0 ? "warning" : "success";
+}
+
+/** Recipients filter, dry-run count, and batch send/status for the currently selected template.
+ * Inline panel for the Send tab - carries the same form/count/send/poll logic that used to live
+ * in a modal (CommunicationSendDialog), reset whenever the selected template changes instead of
+ * on modal open/close. */
+export function CommunicationSendPanel({
+  event,
+  eventId,
+  templateId,
+  snapshotMissing,
+  isDirty,
+}: Readonly<CommunicationSendPanelProps>) {
+  const runIdRef = useRef(0);
+
+  const [filterType, setFilterType] = useState<BulkSendFilter["type"]>("all");
+  const [ticketType, setTicketType] = useState("");
+  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
+  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
+  const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>("confirmed");
+  const [selectedAttendees, setSelectedAttendees] = useState<AttendeeRowDto[]>([]);
+  const [recipientCount, setRecipientCount] = useState<number | null>(null);
+  const [phase, setPhase] = useState<SendPhase>("form");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [batchStatus, setBatchStatus] = useState<{ queued: number; sent: number; failed: number } | null>(
+    null,
+  );
+  const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+
+  const resetForm = useCallback(() => {
+    runIdRef.current += 1;
+    setFilterType("all");
+    setTicketType("");
+    setTicketTypes([]);
+    setTicketTypesError(null);
+    setRsvpStatus("confirmed");
+    setSelectedAttendees([]);
+    setRecipientCount(null);
+    setPhase("form");
+    setBusy(false);
+    setError(null);
+    setResultMessage(null);
+    setBatchId(null);
+    setBatchStatus(null);
+  }, []);
+
+  // Clears count/result/batch UI without touching the admin's chosen filter strategy (all /
+  // ticket type / RSVP / specific attendees). Ticket type *value* and options are cleared by the
+  // fetch effect below. Selected attendee chips *are* cleared on event switch - those IDs belong
+  // to the previous event and must not be submitted against the new one.
+  const resetSendOutcome = useCallback(() => {
+    runIdRef.current += 1;
+    setSelectedAttendees([]);
+    setRecipientCount(null);
+    setPhase("form");
+    setBusy(false);
+    setError(null);
+    setResultMessage(null);
+    setBatchId(null);
+    setBatchStatus(null);
+  }, []);
+
+  // Switching the selected template is the tab equivalent of the old dialog's reopen - stale
+  // filter/count/result state from a previous template must not carry over.
+  useEffect(() => {
+    resetForm();
+  }, [templateId, resetForm]);
+
+  // Event switch often keeps the same templateId (or undefined for inherited ticket). Count,
+  // dry-run, and batch polling from the previous event must not stay on screen.
+  useEffect(() => {
+    resetSendOutcome();
+  }, [eventId, resetSendOutcome]);
+
+  useEffect(() => {
+    if (snapshotMissing) return;
+    // Clears the selected value along with the stale options list below - not just cosmetic:
+    // leaving a previous event's ticket_type key selected would keep filterReady true (it only
+    // checks the string is non-empty) and could send/count against a key that means nothing, or
+    // something different, on the new event (review). Only the value resets, not filterType -
+    // silently reverting the admin's chosen filter *strategy* back to "all recipients" would be
+    // a bigger, more surprising behavior change than asking them to re-pick a value.
+    setTicketType("");
+    setTicketTypes([]);
+    let cancelled = false;
+    setTicketTypesError(null);
+    fetchTicketTypes(eventId)
+      .then((types) => {
+        if (!cancelled) setTicketTypes(types);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setTicketTypes([]);
+        setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, templateId, snapshotMissing, ticketTypesRetryToken]);
+
+  useEffect(() => {
+    if (phase !== "polling" || !batchId) return;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    const ac = new AbortController();
+
+    const poll = async () => {
+      try {
+        const status = await fetchBulkSendStatus(eventId, batchId, ac.signal);
+        if (cancelled) return;
+        setBatchStatus({ queued: status.queued, sent: status.sent, failed: status.failed });
+        if (status.queued === 0) {
+          setPhase("done");
+          setResultMessage(`Send complete: ${status.sent} sent, ${status.failed} failed.`);
+          return;
+        }
+        timeoutId = window.setTimeout(() => {
+          void poll();
+        }, 2000);
+      } catch (err) {
+        if (cancelled || ac.signal.aborted) return;
+        setError(operatorApiErrorMessage(err, "Failed to load send status."));
+        setResultMessage(null);
+        setPhase("done");
+      }
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      ac.abort();
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    };
+  }, [batchId, eventId, phase]);
+
+  if (snapshotMissing) {
+    return (
+      <Card title="Send">
+        <p className="muted">Could not load the ticket template. Reload the page.</p>
+      </Card>
+    );
+  }
+
+  const buildFilter = (): BulkSendFilter => {
+    if (filterType === "ticket_type") return { type: "ticket_type", value: ticketType.trim() };
+    if (filterType === "rsvp_status") return { type: "rsvp_status", value: rsvpStatus };
+    if (filterType === "no_delivery") return { type: "no_delivery" };
+    if (filterType === "attendee_ids") {
+      return { type: "attendee_ids", ids: selectedAttendees.map((a) => a.id) };
+    }
+    return { type: "all" };
+  };
+
+  const filterReady =
+    (filterType !== "ticket_type" || ticketType.trim().length > 0) &&
+    (filterType !== "attendee_ids" || selectedAttendees.length > 0);
+  // Only lock the picker once a real send is in flight/done - a quick dry-run count is
+  // non-destructive and re-enabling the cards a beat later just for that read as flicker.
+  const pickerLocked = phase !== "form";
+
+  // Both runDryRun and runSend are only ever invoked from a button gated by
+  // disabled={busy || !filterReady} below - filterReady is guaranteed true here.
+  const runDryRun = async () => {
+    const runId = runIdRef.current;
+    setBusy(true);
+    setError(null);
+    setRecipientCount(null);
+    try {
+      const body = await sendEventBulk(eventId, {
+        templateId,
+        filter: buildFilter(),
+        dryRun: true,
+      });
+      if (runId !== runIdRef.current) return;
+      if ("recipientCount" in body) {
+        setRecipientCount(body.recipientCount);
+      }
+    } catch (err) {
+      if (runId !== runIdRef.current) return;
+      setError(operatorApiErrorMessage(err, "Dry run failed."));
+    } finally {
+      if (runId === runIdRef.current) setBusy(false);
+    }
+  };
+
+  const runSend = async () => {
+    const runId = runIdRef.current;
+    setBusy(true);
+    setError(null);
+    setResultMessage(null);
+    try {
+      const body = await sendEventBulk(eventId, {
+        templateId,
+        filter: buildFilter(),
+      });
+
+      if (runId !== runIdRef.current) return;
+
+      if (body.batchId == null) {
+        setPhase("done");
+        setResultMessage("No recipients matched.");
+        return;
+      }
+
+      if (body.queued === 0) {
+        setPhase("done");
+        const detail: string[] = [];
+        if (body.skipped > 0) detail.push(`${body.skipped} skipped`);
+        if (body.failed > 0) detail.push(`${body.failed} failed`);
+        setResultMessage(
+          detail.length > 0 ? `No emails queued (${detail.join(", ")}).` : "No emails queued.",
+        );
+        return;
+      }
+
+      setBatchId(body.batchId);
+      setBatchStatus({ queued: body.queued, sent: 0, failed: body.failed });
+      setPhase("polling");
+      setResultMessage(`Queued ${body.queued}, sending in progress…`);
+    } catch (err) {
+      if (runId !== runIdRef.current) return;
+      setError(operatorApiErrorMessage(err, "Send failed."));
+    } finally {
+      if (runId === runIdRef.current) setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Send to">
+      <div className="settings-card-stack">
+        <p className="settings-card-intro">
+          Choose which attendees get this template, check how many that is, then send.
+        </p>
+        <div className="communication-recipient-cards" role="radiogroup" aria-label="Recipients">
+          {RECIPIENT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={filterType === opt.value}
+              aria-label={opt.label}
+              aria-describedby={`communication-recipient-${opt.value}-desc`}
+              disabled={pickerLocked}
+              className={[
+                "communication-recipient-card",
+                filterType === opt.value && "communication-recipient-card--active",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => {
+                setFilterType(opt.value);
+                setRecipientCount(null);
+                setError(null);
+              }}
+            >
+              <i className={`ti ${opt.icon}`} aria-hidden="true" />
+              <span className="communication-recipient-card__text">
+                <span className="communication-recipient-card__label" aria-hidden="true">
+                  {opt.label}
+                </span>
+                <span
+                  id={`communication-recipient-${opt.value}-desc`}
+                  className="communication-recipient-card__description"
+                >
+                  {opt.description}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+        {filterType === "rsvp_status" && (
+          <>
+            <div className="communication-half-field">
+              <SearchableSelect
+                id="communication-send-rsvp-status"
+                label="Attendance status"
+                placeholder="Select status…"
+                searchPlaceholder="Search statuses…"
+                emptyLabel="No statuses found"
+                value={rsvpStatus}
+                disabled={pickerLocked}
+                options={RSVP_STATUS_OPTIONS}
+                onChange={(id) => {
+                  setRsvpStatus(id as RsvpStatus);
+                  setRecipientCount(null);
+                }}
+              />
+            </div>
+            <p className="mail-field-hint">
+              Attendees currently marked with this status will receive the email.
+            </p>
+          </>
+        )}
+        {filterType === "ticket_type" && (
+          <>
+            <div className="communication-half-field">
+              <SearchableSelect
+                id="communication-send-ticket-type"
+                label="Ticket type"
+                placeholder="Choose…"
+                searchPlaceholder="Search ticket types…"
+                emptyLabel="No ticket types found"
+                value={ticketType}
+                disabled={pickerLocked}
+                options={ticketTypes.map((type) => ({ id: type.key, label: type.label }))}
+                onChange={(id) => {
+                  setTicketType(id);
+                  setRecipientCount(null);
+                  setError(null);
+                }}
+              />
+            </div>
+            <p className="mail-field-hint">
+              Attendees holding this ticket type will receive the email.
+            </p>
+          </>
+        )}
+        {filterType === "ticket_type" && ticketTypesError && (
+          <p className="mail-field-hint" role="alert">
+            {ticketTypesError}{" "}
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => setTicketTypesRetryToken((n) => n + 1)}
+            >
+              Retry
+            </button>
+          </p>
+        )}
+        {filterType === "attendee_ids" && (
+          <AttendeePicker
+            eventId={eventId}
+            selected={selectedAttendees}
+            disabled={pickerLocked}
+            onChange={(attendees) => {
+              setSelectedAttendees(attendees);
+              setRecipientCount(null);
+              setError(null);
+            }}
+          />
+        )}
+        {error && (
+          <Notice variant="error" role="alert">
+            {error}
+          </Notice>
+        )}
+        {phase === "form" && (
+          <>
+            {isDirty && (
+              <Notice variant="warning">
+                You have unsaved template changes. Save them on the Templates tab first, otherwise
+                sending delivers the last saved version, not what's on screen.
+              </Notice>
+            )}
+            {recipientCount != null &&
+              (recipientCount === 0 ? (
+                <Notice variant="warning" as="output">
+                  No recipients match this filter.
+                </Notice>
+              ) : (
+                <Notice variant="success" as="output">
+                  <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
+                </Notice>
+              ))}
+            <div className="communication-send-panel__actions">
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<i className="ti ti-calculator" aria-hidden="true" />}
+                disabled={busy || !filterReady}
+                onClick={() => void runDryRun()}
+              >
+                {busy ? "Checking…" : "Count recipients"}
+              </Button>
+              <ArchivedGuard
+                event={event}
+                reasonId="send-email-reason"
+                disabled={busy || !filterReady || isDirty}
+              >
+                {(guard) => (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    icon={<i className="ti ti-send" aria-hidden="true" />}
+                    onClick={() => void runSend()}
+                    {...guard}
+                  >
+                    {busy ? "Sending…" : "Send"}
+                  </Button>
+                )}
+              </ArchivedGuard>
+            </div>
+          </>
+        )}
+        {(phase === "polling" || phase === "done") && (
+          <>
+            {resultMessage && (
+              <Notice variant={resultVariant(phase, batchStatus)} as="output">
+                {resultMessage}
+              </Notice>
+            )}
+            {batchStatus && phase === "polling" && (
+              <p className="mail-field-hint">
+                Queued: {batchStatus.queued} · Sent: {batchStatus.sent} · Failed:{" "}
+                {batchStatus.failed}
+              </p>
+            )}
+            <div className="communication-send-panel__actions">
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                disabled={busy}
+                onClick={resetForm}
+              >
+                Send another
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
+  );
+}

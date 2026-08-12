@@ -61,6 +61,20 @@ describe("TimezoneSelect", () => {
     });
   });
 
+  it("restores the full browse list when a search is cleared", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const search = screen.getByLabelText("Search timezones");
+    fireEvent.change(search, { target: { value: "tokyo" } });
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(1));
+
+    fireEvent.change(search, { target: { value: "" } });
+    await waitFor(() => {
+      expect(screen.getAllByRole("option").length).toBeGreaterThan(200);
+      expect(screen.getByText("Sorted west to east by UTC offset · type to filter")).toBeTruthy();
+    });
+  });
+
   it("matches city names with spaces in the query", async () => {
     render(<TimezoneSelect value="UTC" onChange={() => {}} />);
     openPicker();
@@ -107,15 +121,43 @@ describe("TimezoneSelect", () => {
     expect(onChange).toHaveBeenCalledWith("Asia/Tokyo");
   });
 
-  it("keeps custom IANA value visible when not in filtered list", async () => {
-    render(<TimezoneSelect value="Pacific/Kiritimati" onChange={() => {}} />);
+  it("selects an option focused in the list with Enter", async () => {
+    const onChange = vi.fn();
+    render(<TimezoneSelect value="UTC" onChange={onChange} compact />);
+    expect(document.querySelector(".timezone-select--compact")).toBeTruthy();
     openPicker();
-    fireEvent.change(screen.getByLabelText("Search timezones"), {
-      target: { value: "zzznomatch" },
-    });
+    fireEvent.change(screen.getByLabelText("Search timezones"), { target: { value: "tokyo" } });
+    const [tokyo] = await screen.findAllByRole("option");
+
+    fireEvent.keyDown(tokyo!, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith("Asia/Tokyo");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("keeps the panel open while the pointer moves into its fixed results layer", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const option = (await screen.findAllByRole("option"))[0]!;
+    fireEvent.pointerDown(option);
+    fireEvent.mouseEnter(option);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+
+  it("highlights the option currently under the pointer", async () => {
+    render(<TimezoneSelect value="UTC" onChange={() => {}} />);
+    openPicker();
+    const option = (await screen.findAllByRole("option")).find((entry) =>
+      entry.textContent?.includes("Anchorage"),
+    )!;
+    fireEvent.pointerMove(option);
+    expect(option.classList.contains("timezone-select__option--highlighted")).toBe(true);
+  });
+
+  it("keeps an unrecognized stored value visible when not in the catalogue", async () => {
+    render(<TimezoneSelect value="Legacy/Removed" onChange={() => {}} />);
+    openPicker();
     await waitFor(() => {
-      expect(screen.queryAllByRole("option")).toHaveLength(0);
-      expect(screen.getByText("No matching timezones")).toBeTruthy();
+      expect(screen.getByRole("option", { name: /Legacy\/Removed/ })).toBeTruthy();
     });
   });
 
@@ -135,6 +177,24 @@ describe("TimezoneSelect", () => {
       ).toBe(true);
       expect(options.some((o) => o.textContent?.includes("Europe/Warsaw"))).toBe(false);
       expect(options[0]?.textContent).toMatch(/Kolkata|Calcutta/);
+    });
+  });
+
+  it("shows one Kolkata option for the current and legacy IANA identifiers", async () => {
+    render(<TimezoneSelect value="Asia/Calcutta" onChange={() => {}} />);
+    expect(screen.getByRole("button").textContent).toContain("Asia/Kolkata");
+
+    openPicker();
+    fireEvent.change(screen.getByLabelText("Search timezones"), {
+      target: { value: "calcutta" },
+    });
+
+    await waitFor(() => {
+      const options = screen.getAllByRole("option");
+      expect(options).toHaveLength(1);
+      expect(options[0]?.textContent).toContain("Kolkata");
+      expect(options[0]?.textContent).toContain("Asia/Kolkata");
+      expect(options[0]?.textContent).toContain("UTC+");
     });
   });
 
@@ -372,5 +432,75 @@ describe("TimezoneSelect", () => {
         screen.getAllByRole("option").some((o) => o.textContent?.includes("Etc/Unknown_Zone")),
       ).toBe(true);
     });
+  });
+
+  it("closes and stays closed when clicking an external <label for> while open", () => {
+    render(
+      <div>
+        <label htmlFor="event-tz">Event timezone</label>
+        <TimezoneSelect id="event-tz" value="UTC" onChange={() => {}} />
+      </div>,
+    );
+    fireEvent.click(document.getElementById("event-tz")!);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    const externalLabel = screen.getByText("Event timezone");
+    fireEvent.pointerDown(externalLabel);
+    fireEvent.click(externalLabel);
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("stays closed after an outside pointerdown that would otherwise reopen via the trigger click", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <div>
+          <button type="button">Outside</button>
+          <TimezoneSelect id="tz-suppress" value="UTC" onChange={() => {}} />
+        </div>,
+      );
+      fireEvent.click(document.getElementById("tz-suppress")!);
+      expect(screen.getByRole("listbox")).toBeTruthy();
+
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+      expect(screen.queryByRole("listbox")).toBeNull();
+
+      // Same gesture's click can land on the re-focused trigger; suppress that reopen.
+      fireEvent.click(document.getElementById("tz-suppress")!);
+      expect(screen.queryByRole("listbox")).toBeNull();
+      act(() => {
+        vi.runAllTimers();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("allows reopening after an ordinary outside close once the closing gesture finishes", () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <div>
+          <button type="button">Outside</button>
+          <TimezoneSelect id="tz-reopen" value="UTC" onChange={() => {}} />
+        </div>,
+      );
+      fireEvent.click(document.getElementById("tz-reopen")!);
+      expect(screen.getByRole("listbox")).toBeTruthy();
+
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+      expect(screen.queryByRole("listbox")).toBeNull();
+      // Click landed on Outside, not the trigger - flush the gesture so suppression clears.
+      fireEvent.click(screen.getByRole("button", { name: "Outside" }));
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      fireEvent.click(document.getElementById("tz-reopen")!);
+      expect(screen.getByRole("listbox")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

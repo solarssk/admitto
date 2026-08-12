@@ -63,6 +63,7 @@ export async function handleGetSessions(c: Context, db: PrismaClient): Promise<R
     expiresAt: s.expires_at.toISOString(),
     authMethod: s.auth_method,
     stage: s.stage,
+    timezone: s.timezone,
     isCurrent: !!currentSessionId && s.id === currentSessionId,
   }));
 

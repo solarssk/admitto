@@ -116,6 +116,36 @@ describe("useEventStream", () => {
     expect(onCheckin.mock.calls[0]?.[0]).toMatchObject({ attendeeId: "att-1" });
   });
 
+  it("ignores activity_changed when no onActivityChanged callback was given", () => {
+    const onCheckin = vi.fn();
+    expect(() => {
+      renderHook(() => useEventStream("evt-1", onCheckin));
+      act(() => {
+        instances[0]?.listeners.onopen?.();
+        instances[0]?.listeners.onmessage?.({
+          data: JSON.stringify({ type: "activity_changed" }),
+        } as MessageEvent);
+      });
+    }).not.toThrow();
+    expect(onCheckin).not.toHaveBeenCalled();
+  });
+
+  it("dispatches activity_changed to onActivityChanged, not onCheckin", () => {
+    const onCheckin = vi.fn();
+    const onActivityChanged = vi.fn();
+    renderHook(() => useEventStream("evt-1", onCheckin, onActivityChanged));
+
+    act(() => {
+      instances[0]?.listeners.onopen?.();
+      instances[0]?.listeners.onmessage?.({
+        data: JSON.stringify({ type: "activity_changed" }),
+      } as MessageEvent);
+    });
+
+    expect(onActivityChanged).toHaveBeenCalledTimes(1);
+    expect(onCheckin).not.toHaveBeenCalled();
+  });
+
   it("sets auth_error only when the stream probe returns denied", async () => {
     vi.mocked(fetch).mockResolvedValue({ status: 403 } as Response);
     const { result } = renderHook(() => useEventStream("evt-1", vi.fn()));

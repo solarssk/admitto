@@ -5,7 +5,9 @@ export {
   resolveMailConfigForOrg,
   tryParseOrgMailConfigFromRow,
   tryParseEventMailConfigFromRow,
+  MailConfigError,
 } from "./resolver.js";
+export type { MailConfigErrorCode } from "./resolver.js";
 export { describeMailConfig, describeMailConfigForOrg, describeMailConfigForOrgWizard } from "./describer.js";
 export { validateOrgMailSettingsUpdate, validateEventMailSettingsUpdate } from "./validateOrgUpdate.js";
 export type {

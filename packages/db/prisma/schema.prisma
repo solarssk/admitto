@@ -33,53 +33,67 @@ model Organization {
 }
 
 model Event {
-  id                   String              @id @default(cuid())
-  organization_id      String
-  organization         Organization        @relation(fields: [organization_id], references: [id], onDelete: Restrict)
-  title                String
-  slug                 String              @unique
-  date                 DateTime
-  timezone             String              @default("UTC")
-  capacity             Int?
-  logo_url             String?
+  id                           String                     @id @default(cuid())
+  organization_id              String
+  organization                 Organization               @relation(fields: [organization_id], references: [id], onDelete: Restrict)
+  title                        String
+  slug                         String                     @unique
+  date                         DateTime
+  // Display-only "HH:MM" 24h range shown on tickets/wallet passes; Event.date has no time-range
+  // field of its own. Independently optional - the admin UI pairs them but neither is required.
+  event_hours_start            String?
+  event_hours_end              String?
+  // Per-event PassCreator config (ADR 0041): template + API key both live on the event, not the
+  // organization - keeps a leaked/rotated key scoped to one event's logs instead of the instance.
+  wallet_enabled               Boolean                    @default(true)
+  wallet_template_id           String?
+  wallet_api_key_enc           String?
+  wallet_apple_enabled         Boolean                    @default(true)
+  wallet_google_enabled        Boolean                    @default(true)
+  // Admin-defined PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}).
+  // Null/empty = the built-in default mapping (name, eventDate, eventHours, eventPlace, ticketType).
+  wallet_field_mapping         Json?
+  timezone                     String                     @default("UTC")
+  capacity                     Int?
+  logo_url                     String?
   // Full pre-crop file for re-Edit; display still uses logo_url (cropped).
-  logo_original_url    String?
+  logo_original_url            String?
   // Percent crop + zoom last applied: { unit:"%", x, y, width, height, zoom }.
-  logo_crop            Json?
-  header_image_url     String?
-  created_at           DateTime            @default(now())
+  logo_crop                    Json?
+  header_image_url             String?
+  created_at                   DateTime                   @default(now())
   // No FK (matches AdminAuditLog.actor_user_id) - a deactivated/deleted user must not block
   // reads of the event they created/archived. Null for historical rows predating this column;
   // backfilled best-effort from AdminAuditLog where a matching event_created/event_archived
   // entry exists (see backfill-event-actor-attribution.ts).
-  created_by_user_id   String?
+  created_by_user_id           String?
   // Actor's IANA timezone at the moment of the matching action - mirrors AdminAuditLog.
   // actor_timezone/AttendeeActionLog.client_timezone. Null for rows predating this column, a
   // non-browser actor (CLI), or where backfill found no matching audit entry.
-  created_by_timezone  String?
-  archived_at          DateTime?
-  archived_by_user_id  String?
-  archived_by_timezone String?
+  created_by_timezone          String?
+  archived_at                  DateTime?
+  archived_by_user_id          String?
+  archived_by_timezone         String?
   // Event-day ops (ADR 0010): require_confirm_on_scan, badge_at_entry, etc.
-  ops_config           Json?
+  ops_config                   Json?
   // Single operational sticky note shown on the overview page to all staff.
-  pinned_note          String?             @db.Text
-  attendees            Attendee[]
-  check_ins            CheckIn[]
-  email_deliveries     EmailDelivery[]
-  event_items          EventItem[]
-  attendee_notes       AttendeeNote[]
-  action_logs          AttendeeActionLog[]
-  contacts             EventContact[]
-  resources            EventResource[]
-  image_assets         EventImageAsset[]
-  custom_fields        EventCustomField[]
-  ticket_types                   TicketType[]
-  location_details               EventLocation?
-  bounce_ingest_settings         BounceIngestSettings?
-  bounce_ingest_processed_uids   BounceIngestProcessedUid[]
-  bounce_ingest_runs             BounceIngestRun[]
-  admin_jobs                     AdminJob[]
+  pinned_note                  String?                    @db.Text
+  attendees                    Attendee[]
+  check_ins                    CheckIn[]
+  email_deliveries             EmailDelivery[]
+  event_items                  EventItem[]
+  attendee_notes               AttendeeNote[]
+  action_logs                  AttendeeActionLog[]
+  contacts                     EventContact[]
+  resources                    EventResource[]
+  image_assets                 EventImageAsset[]
+  custom_fields                EventCustomField[]
+  ticket_types                 TicketType[]
+  location_details             EventLocation?
+  bounce_ingest_settings       BounceIngestSettings?
+  bounce_ingest_processed_uids BounceIngestProcessedUid[]
+  bounce_ingest_runs           BounceIngestRun[]
+  admin_jobs                   AdminJob[]
 
   @@index([organization_id])
   @@index([organization_id, archived_at])
@@ -167,30 +181,30 @@ model EventCustomField {
 // `latitude`/`longitude` are both-or-neither (see assertCoordinatePairing in @admitto/location) -
 // checked again at the DB layer below.
 model EventLocation {
-  id                 String    @id @default(cuid())
-  event_id           String    @unique
-  event              Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  id                       String    @id @default(cuid())
+  event_id                 String    @unique
+  event                    Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
   // Short display name (e.g. "National Stadium") - picked from a geocoding suggestion or typed
   // free-text. Mirrors the old Event.location in meaning/limits (trimmed, max 300 chars).
-  venue_name         String?
-  formatted_address  String?
-  latitude           Float?
-  longitude          Float?
-  map_zoom           Int       @default(15)
-  directions_text    String?   @db.Text
-  accessibility_text String?   @db.Text
+  venue_name               String?
+  formatted_address        String?
+  latitude                 Float?
+  longitude                Float?
+  map_zoom                 Int       @default(15)
+  directions_text          String?   @db.Text
+  accessibility_text       String?   @db.Text
   // Plain string, not a Prisma enum (see header comment) - e.g. "nominatim".
-  geocoding_provider String?
-  geocoded_at        DateTime?
+  geocoding_provider       String?
+  geocoded_at              DateTime?
   // Structured address grid from the last geocode/reverse (object_name, street, postcode,
   // city, region, country). Null when never set or cleared with the map pin.
-  address_components Json?
+  address_components       Json?
   // Manual deep-link overrides when the lat/lng-built Google/Apple URL opens the wrong place.
   // Null = build from coordinates as usual. Does not move the OSM pin or static map.
-  google_maps_url_override String? @db.Text
-  apple_maps_url_override  String? @db.Text
-  created_at         DateTime  @default(now())
-  updated_at         DateTime  @updatedAt
+  google_maps_url_override String?   @db.Text
+  apple_maps_url_override  String?   @db.Text
+  created_at               DateTime  @default(now())
+  updated_at               DateTime  @updatedAt
 }
 
 // Per-event catalog of ticket types (batch 04 / #351) - replaces free-text Attendee.ticket_type.
@@ -219,54 +233,60 @@ enum EventResourceType {
 }
 
 model Attendee {
-  id                  String              @id @default(cuid())
-  event_id            String
-  event               Event               @relation(fields: [event_id], references: [id])
-  email               String
-  name                String
+  id                        String              @id @default(cuid())
+  event_id                  String
+  event                     Event               @relation(fields: [event_id], references: [id])
+  email                     String
+  name                      String
+  first_name                String?
+  last_name                 String?
   // SHA-256(raw_token) for Mode A tickets; null for Mode B (agency) attendees.
   // Raw token never stored — exists only in the ticket URL / QR handed to the attendee.
-  token_hash          String?             @unique
+  token_hash                String?             @unique
   // AES-256-GCM encrypted raw ticket token (for same-link resend — ADR 0006).
   // Null for Mode B (agency) attendees; null for unissued Mode A attendees.
-  token_enc           String?
+  token_enc                 String?
   // Agency-provided QR payload preserved as source of truth for import.
-  qr_payload          String?
-  external_uuid       String?
+  qr_payload                String?
+  external_uuid             String?
   // Non-guessable public URL key for Mode B ticket/QR pages (/t/:slug/a/:ref) — not Attendee.id.
-  public_ref          String?             @unique
-  ticket_type         String?
+  public_ref                String?             @unique
+  ticket_type               String?
   // Enforces ticket_type at the DB level, on top of the app-level catalog check every write path
   // already does - defense-in-depth for data written outside those paths (raw SQL, a restored
   // backup). NULL ticket_type is exempt (composite FKs don't check rows where either column is
   // NULL), so an unset type is unaffected. onDelete: Restrict matches the app's own
   // type_in_use check (ticket-types-routes.ts) - a type already blocked from deletion while any
   // attendee has it now also can't be deleted out from under one via a direct DB delete.
-  ticket_type_catalog TicketType?         @relation(fields: [event_id, ticket_type], references: [event_id, key], onDelete: Restrict, onUpdate: Cascade)
-  company             String?
-  department          String?
+  ticket_type_catalog       TicketType?         @relation(fields: [event_id, ticket_type], references: [event_id, key], onDelete: Restrict, onUpdate: Cascade)
+  company                   String?
+  department                String?
   // Descriptive import/form fields (company, department, shirt_size) — ADR 0010.
-  custom_data         Json?
-  status              String              @default("registered")
+  custom_data               Json?
+  status                    String              @default("registered")
   // RSVP lifecycle (ADR 0033) — distinct from check-in and Attendee.status.
-  rsvp_status         String              @default("none")
-  rsvp_updated_at     DateTime?
-  rsvp_source         String?
+  rsvp_status               String              @default("none")
+  rsvp_updated_at           DateTime?
+  rsvp_source               String?
   // Set atomically on first VALID check-in (CAS WHERE admitted_at IS NULL).
   // Null = not yet admitted. Reset only by explicit admin revert action.
-  admitted_at         DateTime?
-  admitted_by         String?
-  created_at          DateTime            @default(now())
+  admitted_at               DateTime?
+  admitted_by               String?
+  // Set when an admin dismisses the Communication bounce notifier for this attendee (Delivery
+  // log row menu). Only covers bounces up to this timestamp - a later delivery that bounces
+  // again re-surfaces, since that is new information, not the same unresolved bounce.
+  email_bounce_dismissed_at DateTime?
+  created_at                DateTime            @default(now())
   // Acting admin's IANA timezone at the moment this row was created (manual add / import
   // commit) — null for rows predating this column or created outside a browser request.
-  client_timezone     String?
-  updated_at          DateTime            @default(now()) @updatedAt
-  email_deliveries    EmailDelivery[]
-  wallet_pass         WalletPass?
-  check_ins           CheckIn[]
-  item_states         AttendeeItemState[]
-  notes               AttendeeNote[]
-  action_logs         AttendeeActionLog[]
+  client_timezone           String?
+  updated_at                DateTime            @default(now()) @updatedAt
+  email_deliveries          EmailDelivery[]
+  wallet_pass               WalletPass?
+  check_ins                 CheckIn[]
+  item_states               AttendeeItemState[]
+  notes                     AttendeeNote[]
+  action_logs               AttendeeActionLog[]
 
   @@unique([event_id, email])
   // Enforce agency-UUID uniqueness per event for idempotent re-import.
@@ -281,16 +301,39 @@ model Attendee {
 }
 
 model WalletPass {
-  id            String   @id @default(cuid())
-  attendee_id   String   @unique
-  attendee      Attendee @relation(fields: [attendee_id], references: [id])
-  pass_type_id  String
-  serial_number String
-  auth_token    String
+  id          String   @id @default(cuid())
+  attendee_id String   @unique
+  attendee    Attendee @relation(fields: [attendee_id], references: [id])
+
+  // Provider identity (ADR 0009, ADR 0041 §2). "passcreator" is the only provider today.
+  provider         String  @default("passcreator")
+  provider_pass_id String?
+  user_provided_id String?
+
+  download_url String?
+  apple_url    String?
+  android_url  String?
+
+  // pending = not yet created (on-demand, first "Add to Wallet" click); active = created;
+  // voided/failed/expired per WalletPassStatus (packages/db/src/status.ts).
+  status          String    @default("pending")
+  last_error_code String?
+  last_synced_at  DateTime?
+
+  issued_at DateTime?
+  voided_at DateTime?
+
+  // Legacy/native-provider seam (ADR 0009 §3) - nullable, unused while provider = passcreator.
+  pass_type_id  String?
+  serial_number String?
+  auth_token    String?
   pass_url      String?
-  status        String   @default("active")
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([provider, provider_pass_id])
+  @@unique([provider, user_provided_id])
 }
 
 model EmailDelivery {
@@ -347,6 +390,9 @@ model EmailDelivery {
   @@index([organization_id])
   @@index([event_id, created_at(sort: Desc)])
   @@index([attendee_id, event_id, status])
+  // Latest-delivery lookup (overview bounce KPI, attendeeMailStatusSql): one row per attendee
+  // ordered by created_at DESC, id DESC.
+  @@index([attendee_id, created_at(sort: Desc), id(sort: Desc)])
 }
 
 model CheckIn {
@@ -448,17 +494,20 @@ model AttendeeActionLog {
 
 // Instance/org-scoped admin audit (ADR 0031) — superadmin settings, sessions, archiving.
 model AdminAuditLog {
-  id              String   @id @default(cuid())
-  organization_id String?
-  actor_user_id   String
-  action_type     String
-  metadata        Json?
-  ip              String?
-  session_id      String?
-  created_at      DateTime @default(now())
+  id                 String   @id @default(cuid())
+  organization_id    String?
+  actor_user_id      String
+  action_type        String
+  metadata           Json?
+  ip                 String?
+  session_id         String?
+  created_at         DateTime @default(now())
   // Actor's IANA timezone at write time — null for rows predating this column or written
   // outside a browser request. Mirrors AttendeeActionLog.client_timezone.
-  actor_timezone  String?
+  actor_timezone     String?
+  // Immutable staff identity at write time — survives hard delete of the User row.
+  actor_email        String?
+  actor_display_name String?
 
   @@index([organization_id, created_at(sort: Desc)])
 }
@@ -472,12 +521,19 @@ model AdminAuditLog {
 // 30-day retention (packages/auth/src/retention.ts, purgeSecurityAuditLog), unlike AdminAuditLog's
 // operator-run IP-retention convention, since this table can grow quickly under attack.
 model SecurityAuditLog {
-  id         String   @id @default(cuid())
-  event_type String
-  user_id    String?
-  ip         String?
-  metadata   Json?
-  created_at DateTime @default(now())
+  id                String   @id @default(cuid())
+  event_type        String
+  user_id           String?
+  ip                String?
+  metadata          Json?
+  created_at        DateTime @default(now())
+  // Immutable staff identity at write time — null when user_id is null (enumeration-safe).
+  user_email        String?
+  user_display_name String?
+  // Actor's IANA timezone at write time — null for events with no known actor (e.g. a failed
+  // login against an unknown/anonymous browser) or captured outside a browser request. Mirrors
+  // AdminAuditLog.actor_timezone.
+  actor_timezone    String?
 
   @@index([event_type, created_at(sort: Desc)])
   @@index([user_id])
@@ -570,12 +626,12 @@ model BounceIngestProcessedUid {
 
 // Recent automatic bounce-ingest runs per event (short retention; last-run also on settings).
 model BounceIngestRun {
-  id         String   @id @default(cuid())
-  event_id   String
-  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  ran_at     DateTime @default(now())
-  ok         Boolean
-  summary    Json // same compact shape as BounceIngestSettings.last_run_summary
+  id       String   @id @default(cuid())
+  event_id String
+  event    Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  ran_at   DateTime @default(now())
+  ok       Boolean
+  summary  Json // same compact shape as BounceIngestSettings.last_run_summary
 
   @@index([event_id, ran_at(sort: Desc)])
 }
@@ -587,6 +643,10 @@ model MailTemplate {
   scope_id               String
   name                   String          @default("ticket")
   label                  String          @default("Ticket email")
+  // Same shape as EventItem.icon: a Tabler icon name, unvalidated against the real Tabler set
+  // (kebab-case shape only), null falls back to a fixed default in the picker UI.
+  icon                   String?         @db.VarChar(64)
+  description            String?         @db.VarChar(500)
   subject_template       String
   body_template          String          @db.Text
   template_format        String // "mjml" | "html"
@@ -599,29 +659,30 @@ model MailTemplate {
 }
 
 model User {
-  id                   String             @id @default(cuid())
-  email                String             @unique
-  password_hash        String?
-  display_name         String?
-  preferred_locale     String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
+  id                    String             @id @default(cuid())
+  email                 String             @unique
+  password_hash         String?
+  display_name          String?
+  preferred_locale      String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
+  preferred_time_format String? // "12h" | "24h"; null = browser default
   // Internal contact use only (not shown on tickets/public pages). Dial code includes the "+",
   // e.g. "+48"; phone_number is the local number with no formatting/validation beyond digits.
-  phone_country_code   String?
-  phone_number         String?
-  is_active            Boolean            @default(true)
-  must_change_password Boolean            @default(false)
+  phone_country_code    String?
+  phone_number          String?
+  is_active             Boolean            @default(true)
+  must_change_password  Boolean            @default(false)
   // Consecutive failed login attempts, tracked only for admin/superadmin accounts (P0 security
   // review) to alert when a privileged account is under attack; reset to 0 on a successful
   // login or once the streak crosses the alert threshold (see auth.login.repeated_failures).
-  failed_login_streak  Int                @default(0)
-  created_at           DateTime           @default(now())
-  updated_at           DateTime           @updatedAt
-  sessions             Session[]
-  role_assignments     RoleAssignment[]
-  oidc_role_grants     OidcRoleGrant[]
-  mfa_methods          UserMfaMethod[]
-  trusted_devices      TrustedDevice[]
-  external_identities  ExternalIdentity[]
+  failed_login_streak   Int                @default(0)
+  created_at            DateTime           @default(now())
+  updated_at            DateTime           @updatedAt
+  sessions              Session[]
+  role_assignments      RoleAssignment[]
+  oidc_role_grants      OidcRoleGrant[]
+  mfa_methods           UserMfaMethod[]
+  trusted_devices       TrustedDevice[]
+  external_identities   ExternalIdentity[]
 }
 
 model Session {
@@ -633,11 +694,19 @@ model Session {
   stage        String    @default("full")
   // local | oidc — IdP-authenticated sessions skip local TOTP policy (prompt 16b).
   auth_method  String    @default("local")
+  // Which IdP this OIDC session came from - null for local sessions. Read at logout to look up
+  // end_session_endpoint (RP-initiated logout); SetNull on provider delete so removing an IdP
+  // config just drops that one signal instead of destroying otherwise-valid sessions.
+  oidc_provider_id String?
+  oidc_provider     IdentityProvider? @relation(fields: [oidc_provider_id], references: [id], onDelete: SetNull)
   // Optional UI context only — not an authorization source (ADR 0011).
   scope        String?
   device_label String?
   ip           String?
   user_agent   String?
+  // Signer's IANA timezone at login time — null when captured outside a browser request
+  // (no JS, older sessions). Mirrors AdminAuditLog.actor_timezone.
+  timezone     String?
   created_at   DateTime  @default(now())
   last_seen_at DateTime  @default(now())
   expires_at   DateTime
@@ -735,6 +804,11 @@ model IdentityProvider {
   token_endpoint         String
   jwks_uri               String
   userinfo_endpoint      String?
+  // RP-initiated logout (OIDC end session). Discovery-only - never hand-entered in the admin
+  // form, same value the "Discover" action already reads and validates for the other endpoints.
+  // Null means this IdP didn't advertise one (or was never (re)discovered after this field was
+  // added) - logout then just falls back to clearing the local session, same as before.
+  end_session_endpoint   String?
   claim_email            String   @default("email")
   claim_name             String   @default("name")
   claim_groups           String   @default("groups")
@@ -753,6 +827,7 @@ model IdentityProvider {
   group_role_mappings OidcGroupRoleMapping[]
   oidc_role_grants    OidcRoleGrant[]
   oidc_auth_states    OidcAuthState[]
+  sessions            Session[]
 
   @@unique([issuer, client_id])
 }
@@ -821,6 +896,10 @@ model OidcAuthState {
   redirect_next   String?
   link_user_id    String?
   link_step_up_at DateTime?
+  // Browser's IANA timezone, captured at /start and carried through to the callback so the
+  // resulting Session/SecurityAuditLog row can record it (no JS execution point at the IdP
+  // redirect callback itself). Mirrors AdminAuditLog.actor_timezone.
+  timezone        String?
   expires_at      DateTime
   consumed_at     DateTime?
   created_at      DateTime         @default(now())

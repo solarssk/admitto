@@ -23,7 +23,10 @@
 .delivery-modal__panel {
   position: relative;
   width: min(100%, 640px);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: hidden;
   background: var(--surface-card);
   border: 1px solid var(--border);
@@ -46,8 +49,8 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
-  border-bottom: 1px solid var(--border);
-  padding: var(--space-5) var(--space-5) var(--space-4);
+  /* No divider under the subtitle — same as add-attendee / FontFamily / requirements modals. */
+  padding: var(--space-5) var(--space-5) 0;
 }
 
 .delivery-modal__title {

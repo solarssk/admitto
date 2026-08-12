@@ -1,10 +1,11 @@
 import type { PrismaClient } from "@admitto/db";
 import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
 import { createMailer, sendBatch } from "@admitto/mailer";
-import { resolveMailConfig } from "@admitto/mailer-config";
+import { MailConfigError, resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { resolveAttendeeMailLinks } from "./links.js";
 import { mapSendResultToDelivery } from "./mapSendResult.js";
+import { sanitizeDeliveryError } from "./sanitizeError.js";
 import type { MailDeliveryDeps } from "./send.js";
 
 export interface RetryDeliveryOptions {
@@ -47,8 +48,27 @@ export async function retryDelivery(
     links,
   );
 
-  const mailConfig = await resolveMailConfig(delivery.event_id, prisma, env);
-  const mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
+  let mailer;
+  try {
+    const mailConfig = await resolveMailConfig(delivery.event_id, prisma, env);
+    mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
+  } catch (err) {
+    if (err instanceof MailConfigError) {
+      // Stored secret still can't be decrypted — same failure for every attempt until an
+      // admin re-enters it in Mail settings. Record it so the delivery detail view reflects
+      // why this retry did nothing, instead of leaving the prior attempt's stale error.
+      await prisma.emailDelivery.update({
+        where: { id: deliveryId },
+        data: {
+          error: sanitizeDeliveryError(err.message),
+          attempted_at: new Date(),
+          attempts: { increment: 1 },
+        },
+      });
+      return { ok: false, reason: err.code };
+    }
+    throw err;
+  }
 
   const message = {
     to: delivery.recipient_email,

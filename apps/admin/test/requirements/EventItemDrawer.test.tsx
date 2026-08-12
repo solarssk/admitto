@@ -188,7 +188,7 @@ describe("EventItemDrawer", () => {
 
   it("shows a hint instead of a picker when the event has no custom fields yet", () => {
     renderDrawer(giftbagItem, []);
-    expect(screen.getByText("No custom fields defined for this event yet.")).toBeTruthy();
+    expect(screen.getByText(/No custom fields defined for this event yet/)).toBeTruthy();
   });
 
   it("edits details and icon, checks a custom field hint, then saves the assembled payload", async () => {

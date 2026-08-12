@@ -18,10 +18,12 @@ import {
   resolveEventImageAssetVars,
   createMailTemplate,
   setMailTemplate,
+  updateMailTemplateMetadata,
   validateTemplate,
   materializeStoredDeliveryMessageRedacted,
   UnknownPlaceholdersError,
   MjmlCompileError,
+  friendlyMjmlErrorMessage,
   PlaceholderInHtmlCommentError,
   UnquotedAttributePlaceholderError,
   resolveTemplateById,
@@ -47,6 +49,7 @@ import {
   adminAuditFromContext,
   assertEventManageAccess,
   csvExportResponse,
+  lockEventForScopedWrite,
   positiveIntQuery,
   requireEventId,
   resolveMailInstanceBaseUrl,
@@ -71,6 +74,9 @@ export const MAX_TEMPLATE_BODY_BYTES =
 /** Max JSON body for POST `/template/test-send` (`{ to }` only). */
 export const MAX_TEMPLATE_TEST_SEND_BODY_BYTES = 4_096;
 
+/** Max JSON body for PATCH `/templates/:templateId` (`{ label?, icon?, description? }` only). */
+export const MAX_TEMPLATE_METADATA_BODY_BYTES = 4_096;
+
 const templateBodySchema = z
   .object({
     subject_template: z.string().trim().min(1).max(TEMPLATE_SUBJECT_CHAR_LIMIT),
@@ -78,6 +84,10 @@ const templateBodySchema = z
     template_format: z.enum(["mjml", "html"]),
   })
   .strict();
+
+/** The event or the requested template disappeared while this write waited for the same
+ * advisory lock used by permanent event deletion. */
+class EventTemplateGoneDuringWriteError extends Error {}
 
 const testSendBodySchema = z
   .object({
@@ -101,6 +111,11 @@ export type EventTemplateDto = {
   /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
    * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
   image_placeholders: string[];
+  /** Resolved `{{logo_url}}` / `{{header_image_url}}` (event → organization → empty) - the same
+   * values a real send would use, for the placeholder-chip hover preview. Empty string means
+   * nothing is configured at either scope. */
+  logo_url: string;
+  header_image_url: string;
 };
 
 /** Paginated delivery log response for GET /deliveries. */
@@ -163,9 +178,10 @@ function templateValidationResponse(c: Context, errors: string[]): Response {
   return c.json({ error: "template_validation_failed", errors }, 400);
 }
 
-/** Return 400 JSON when MJML compilation fails. */
+/** Return 400 JSON when MJML compilation fails. Operator-facing text only - never the raw
+ * compiler message (internal jargon, and formattedMessage embeds a server file path). */
 function mjmlCompileErrorResponse(c: Context, err: MjmlCompileError): Response {
-  const errors = err.errors.map((e) => e.formattedMessage ?? e.message);
+  const errors = err.errors.map((e) => friendlyMjmlErrorMessage(e));
   return c.json({ error: "template_validation_failed", errors }, 400);
 }
 
@@ -264,6 +280,15 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
 
   const template = await resolveEventTemplateForEditor(db, eventId);
   const { names: customAssetNames } = await resolveEventImageAssetVars(eventId, db);
+  const brandingEvent = await db.event.findUniqueOrThrow({
+    where: { id: eventId },
+    select: {
+      logo_url: true,
+      header_image_url: true,
+      organization: { select: { logo_url: true, header_image_url: true } },
+    },
+  });
+  const branding = resolveBrandingFromEvent(brandingEvent);
 
   const dto: EventTemplateDto = {
     ...template,
@@ -274,6 +299,8 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
     image_placeholders: [...IMAGE_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
       a.localeCompare(b),
     ),
+    logo_url: branding.logo_url,
+    header_image_url: branding.header_image_url,
   };
 
   return c.json(dto);
@@ -301,6 +328,7 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
 
   try {
     await db.$transaction(async (tx) => {
+      await lockEventForTemplateWrite(tx, eventId);
       // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
       // lock before its asset_in_use recheck - without it, a delete could commit between that
       // handler's check and this save (Postgres default isolation is READ COMMITTED).
@@ -322,27 +350,8 @@ export async function handlePutEventTemplate(c: Context, db: PrismaClient): Prom
       });
     });
   } catch (err) {
-    if (err instanceof UnknownPlaceholdersError) {
-      return templateValidationResponse(
-        c,
-        err.unknown.map((u) => `Unknown placeholder: ${u}`),
-      );
-    }
-    if (err instanceof MjmlCompileError) {
-      return mjmlCompileErrorResponse(c, err);
-    }
-    if (err instanceof PlaceholderInHtmlCommentError) {
-      return templateValidationResponse(
-        c,
-        err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
-      );
-    }
-    if (err instanceof UnquotedAttributePlaceholderError) {
-      return templateValidationResponse(
-        c,
-        err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
-      );
-    }
+    const response = eventTemplateWriteErrorResponse(c, err);
+    if (response) return response;
     throw err;
   }
 
@@ -806,6 +815,25 @@ const updateTemplateBodySchema = z
   })
   .strict();
 
+// eslint-disable-next-line security/detect-unsafe-regex -- bounded input; validated pattern
+const tablerIconNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const templateIconSchema = z.string().trim().max(64).regex(tablerIconNamePattern, "invalid icon");
+
+const updateTemplateMetadataBodySchema = z
+  .object({
+    label: z.string().trim().min(1).max(120).optional(),
+    icon: z
+      .union([templateIconSchema, z.literal(""), z.null()])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v || null)),
+    description: z
+      .union([z.string().trim().max(500), z.null()])
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v || null)),
+  })
+  .strict();
+
 const EMPTY_TEMPLATE_SUBJECT = "Your message for {{event_name}}";
 const EMPTY_TEMPLATE_BODY_MJML = `<mjml>
   <mj-body>
@@ -864,16 +892,59 @@ async function uniqueTemplateName(
   }
 }
 
-async function getEventTemplateRow(db: PrismaClient, eventId: string, templateId: string) {
+async function getEventTemplateRow(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+  templateId: string,
+) {
   return db.mailTemplate.findFirst({
     where: { id: templateId, scope_type: "event", scope_id: eventId },
   });
+}
+
+/** Acquire the deletion lock before touching an event-scoped template, then re-check the event.
+ * MailTemplate's polymorphic scope has no foreign key, so this is what prevents an orphaned row
+ * if permanent deletion committed while a request was waiting for the lock. */
+async function lockEventForTemplateWrite(tx: Prisma.TransactionClient, eventId: string): Promise<void> {
+  await lockEventForScopedWrite(tx, eventId);
+  const event = await tx.event.findUnique({ where: { id: eventId }, select: { id: true } });
+  if (!event) throw new EventTemplateGoneDuringWriteError();
+}
+
+/** Re-read a template after taking the event deletion lock so stale writes cannot revive it. */
+async function getLockedEventTemplateRow(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  templateId: string,
+) {
+  await lockEventForTemplateWrite(tx, eventId);
+  const current = await getEventTemplateRow(tx, eventId, templateId);
+  if (!current) throw new EventTemplateGoneDuringWriteError();
+  return current;
+}
+
+/** Maps errors from a locked template write to the API's established validation responses. */
+function eventTemplateWriteErrorResponse(c: Context, err: unknown): Response | undefined {
+  if (err instanceof EventTemplateGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
+  if (err instanceof UnknownPlaceholdersError) {
+    return templateValidationResponse(c, err.unknown.map((u) => `Unknown placeholder: ${u}`));
+  }
+  if (err instanceof MjmlCompileError) return mjmlCompileErrorResponse(c, err);
+  if (err instanceof PlaceholderInHtmlCommentError) {
+    return templateValidationResponse(c, err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`));
+  }
+  if (err instanceof UnquotedAttributePlaceholderError) {
+    return templateValidationResponse(c, err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`));
+  }
+  return undefined;
 }
 
 export type EventTemplateListItemDto = {
   id: string;
   name: string;
   label: string;
+  icon: string | null;
+  description: string | null;
   template_format: TemplateFormat;
   subject_template: string;
   updated_at: string;
@@ -899,6 +970,8 @@ export async function handleListEventTemplates(c: Context, db: PrismaClient): Pr
       id: true,
       name: true,
       label: true,
+      icon: true,
+      description: true,
       template_format: true,
       subject_template: true,
       updated_at: true,
@@ -909,6 +982,8 @@ export async function handleListEventTemplates(c: Context, db: PrismaClient): Pr
     id: row.id,
     name: row.name,
     label: row.label,
+    icon: row.icon,
+    description: row.description,
     template_format: row.template_format as TemplateFormat,
     subject_template: row.subject_template,
     updated_at: row.updated_at.toISOString(),
@@ -933,6 +1008,8 @@ export async function handleGetEventTemplateById(c: Context, db: PrismaClient): 
     id: row.id,
     name: row.name,
     label: row.label,
+    icon: row.icon,
+    description: row.description,
     template_format: row.template_format as TemplateFormat,
     subject_template: row.subject_template,
     body_template: row.body_template,
@@ -976,17 +1053,20 @@ export async function handlePutEventTemplateById(
 
   try {
     await db.$transaction(async (tx) => {
+      const current = await getLockedEventTemplateRow(tx, eventId, templateId);
       // Serializes against event-image-assets-routes.ts's delete handler, which takes the same
       // lock before its asset_in_use recheck - without it, a delete could commit between that
       // handler's check and this save (Postgres default isolation is READ COMMITTED).
       await acquireEventImageAssetsLock(tx, eventId);
       await setMailTemplate(
-        { scopeType: "event", scopeId: eventId, name: existing.name },
+        { scopeType: "event", scopeId: eventId, name: current.name },
         {
           subject,
           body: templateBody,
           format,
-          label: body.label ?? existing.label,
+          // Omit label when the PUT body did not send one so a concurrent metadata PATCH
+          // (rename) is not silently overwritten by the stale `existing.label` snapshot.
+          ...(body.label !== undefined ? { label: body.label } : {}),
         },
         tx,
       );
@@ -998,35 +1078,63 @@ export async function handlePutEventTemplateById(
       });
     });
   } catch (err) {
-    if (err instanceof UnknownPlaceholdersError) {
-      return templateValidationResponse(
-        c,
-        err.unknown.map((u) => `Unknown placeholder: ${u}`),
-      );
-    }
-    if (err instanceof MjmlCompileError) {
-      return mjmlCompileErrorResponse(c, err);
-    }
-    if (err instanceof PlaceholderInHtmlCommentError) {
-      return templateValidationResponse(
-        c,
-        err.placeholders.map((p) => `Placeholder in HTML comment: ${p}`),
-      );
-    }
-    if (err instanceof UnquotedAttributePlaceholderError) {
-      return templateValidationResponse(
-        c,
-        err.attributes.map((a) => `Unquoted attribute placeholder: ${a}`),
-      );
-    }
+    const response = eventTemplateWriteErrorResponse(c, err);
+    if (response) return response;
     throw err;
   }
 
   return handleGetEventTemplateById(c, db);
 }
 
-/** Create the event's template row inside a transaction, serialized against the image-assets
- * delete handler (see lock comment) and re-checking the per-event template cap under lock. */
+/** PATCH /api/admin/events/:eventId/templates/:templateId - identity fields only
+ * (label/icon/description); no MJML compilation, no placeholder validation, since none of
+ * these fields ever appear in the rendered email. */
+export async function handlePatchEventTemplateMetadata(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const eventId = requireEventId(c);
+  if (eventId instanceof Response) return eventId;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const templateId = c.req.param("templateId") ?? "";
+  const existing = await getEventTemplateRow(db, eventId, templateId);
+  if (!existing) return c.json({ error: "not_found" }, 404);
+
+  let body: z.infer<typeof updateTemplateMetadataBodySchema>;
+  try {
+    body = updateTemplateMetadataBodySchema.parse(await c.req.json());
+  } catch {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
+  let updated: Awaited<ReturnType<typeof updateMailTemplateMetadata>>;
+  try {
+    updated = await db.$transaction(async (tx) => {
+      await getLockedEventTemplateRow(tx, eventId, templateId);
+      return updateMailTemplateMetadata(templateId, body, tx);
+    });
+  } catch (err) {
+    if (err instanceof EventTemplateGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
+    throw err;
+  }
+
+  return c.json({
+    id: updated.id,
+    name: updated.name,
+    label: updated.label,
+    icon: updated.icon,
+    description: updated.description,
+    template_format: updated.template_format as TemplateFormat,
+    subject_template: updated.subject_template,
+    updated_at: updated.updated_at.toISOString(),
+  } satisfies EventTemplateListItemDto);
+}
+
+/** Create the event's template row inside a transaction, serialized against permanent deletion
+ * and the image-assets delete handler, and re-checking the per-event template cap under lock. */
 async function createEventTemplateRow(
   db: PrismaClient,
   eventId: string,
@@ -1037,6 +1145,7 @@ async function createEventTemplateRow(
   label: string,
 ) {
   return db.$transaction(async (tx) => {
+    await lockEventForTemplateWrite(tx, eventId);
     // Serializes against event-image-assets-routes.ts's delete handler, which takes the
     // same lock before its asset_in_use recheck - without it, a delete could commit between
     // that handler's check and this create (Postgres default isolation is READ COMMITTED).
@@ -1069,6 +1178,7 @@ function createTemplateErrorResponse(
   err: unknown,
   attempt: number,
 ): Response | "retry" | undefined {
+  if (err instanceof EventTemplateGoneDuringWriteError) return c.json({ error: "not_found" }, 404);
   if (err instanceof TemplateLimitReachedError) {
     return c.json({ error: "template_limit_reached", limit: MAX_TEMPLATES_PER_EVENT }, 422);
   }
@@ -1151,6 +1261,8 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
           id: created.id,
           name: created.name,
           label: created.label,
+          icon: created.icon,
+          description: created.description,
           template_format: created.template_format as TemplateFormat,
           subject_template: created.subject_template,
           body_template: created.body_template,
@@ -1186,7 +1298,17 @@ export async function handleDeleteEventTemplate(c: Context, db: PrismaClient): P
     return c.json({ error: "template_required" }, 422);
   }
 
-  await db.mailTemplate.delete({ where: { id: templateId } });
+  const result = await db.$transaction(async (tx) => {
+    const current = await getLockedEventTemplateRow(tx, eventId, templateId);
+    if (current.name === "ticket") return "template_required" as const;
+    await tx.mailTemplate.delete({ where: { id: templateId } });
+    return "ok" as const;
+  }).catch((err: unknown) => {
+    if (err instanceof EventTemplateGoneDuringWriteError) return "not_found" as const;
+    throw err;
+  });
+  if (result === "not_found") return c.json({ error: "not_found" }, 404);
+  if (result === "template_required") return c.json({ error: "template_required" }, 422);
   return c.json({ ok: true });
 }
 

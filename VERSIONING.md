@@ -1,5 +1,9 @@
 # Versioning
 
+> **Stability status:** see the table below for what `v0.x`, `v1.0`, and `v1.1+` mean, and check
+> the current release tag or the open GitHub milestone for exactly where the project is right
+> now. That status lives there, not restated here, so it can't go stale between releases.
+
 Admitto uses **one product version** for releases. Internal workspace packages are not versioned independently.
 
 ## Source of truth (product)
@@ -18,8 +22,8 @@ Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** in
 
 | Line | Meaning |
 |------|---------|
-| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. **GitHub Releases for `v0.x.y` are marked pre-release** until `v1.0.0` — the product is not operator-ready for a real event. |
-| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. First **non–pre-release** GitHub Release. After this tag, the product can run a real event end-to-end. |
+| **`v0.x`** | **Path to MVP.** Everything required for the **first event** is built across `v0.4` → `v0.9`. Pre-1.0 tags are expected to iterate and refactor. Tags before `v0.4.13` are marked **pre-release** on GitHub; from `v0.4.13` onward, releases are stable enough for day-to-day use and are marked as the **latest** GitHub Release, even though the product isn't yet operator-ready for a real event. |
+| **`v1.0`** | **First-event go-live gate.** MVP is complete and event-ready. After this tag, the product can run a real event end-to-end. |
 | **`v1.1+`** | **Post-first-event feature waves.** Capabilities that are useful but **not** required for the first go-live (see examples below). |
 
 ### Planned sequence (high level)
@@ -29,8 +33,8 @@ This is the current product roadmap — details live in milestone descriptions a
 ```mermaid
 flowchart LR
     v04["v0.4.x ✓\nStaff SPA · check-in\nidentity · SSE · mail"]
-    v05["v0.5\nIngest API\nUsers UX"]
-    v06["v0.6\nWallet passes\nPassCreator"]
+    v05["v0.5\nIngest API · Users UX\nWallet passes (PassCreator)"]
+    v06["v0.6\nTBD"]
     v07["v0.7\nRSVP · ICS\nWaitlist"]
     v10(["v1.0\nFirst event\ngo-live"])
     v04 --> v05 --> v06 --> v07 --> v10
@@ -39,8 +43,8 @@ flowchart LR
 | Version | Focus |
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches — see [CHANGELOG.md](CHANGELOG.md)). |
-| **v0.5** | External-ingest `/api/ingest` (Power Automate / MS Forms), users-table UX, template lifecycle triggers. |
-| **v0.6** | Wallet passes (Apple/Google via PassCreator). |
+| **v0.5** | External-ingest `/api/ingest` (Power Automate / MS Forms), users-table UX, template lifecycle triggers, wallet passes (Apple/Google via PassCreator). |
+| **v0.6** | TBD. |
 | **v0.7** | RSVP intake, calendar iMIP/ICS, waitlist. |
 | **v0.8–v0.9** | Hardening + dry run (Outlook/devices, batch tests, backup/restore, event-day readiness — ADR 0012). |
 | **v1.0** | First event **go-live ready** = MVP complete. |
@@ -81,7 +85,7 @@ Do not bump per-package versions unless we start publishing libraries separately
 6. Commit on `main` — include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
 7. **Merge the release PR** — GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
    - verifies release artifacts (`sync-release-docs.py --check`, notes file, non-empty `.title` file, CHANGELOG section),
-   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y — …` from the `.title` file (pre-release when major is `0`),
+   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y — …` from the `.title` file, marked as the **latest** release,
    - triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload),
    - closes the open milestone titled `v0.x.y`.
 

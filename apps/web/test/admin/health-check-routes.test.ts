@@ -3,6 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
+import { MailConfigError } from "@admitto/mailer-config";
 
 const { writeFileMock, setRealWriteFile, restoreWriteFile } = vi.hoisted(() => {
   const writeFileMock = vi.fn();
@@ -81,10 +82,10 @@ vi.mock("../../src/admin/admin-build-meta.js", () => ({
   adminDistCandidates: vi.fn(() => []),
 }));
 vi.mock("../../src/admin/instance-org.js", () => ({ resolveInstanceOrganizationId }));
-vi.mock("@admitto/mailer-config", () => ({
-  describeMailConfigForOrg,
-  resolveMailConfigForOrg,
-}));
+vi.mock("@admitto/mailer-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/mailer-config")>();
+  return { ...actual, describeMailConfigForOrg, resolveMailConfigForOrg };
+});
 vi.mock("../../src/weather/weather-org-settings.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/weather/weather-org-settings.js")>();
   return {
@@ -375,6 +376,16 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
     bounceIngestSettings: {
       findMany: vi.fn().mockResolvedValue([]),
     },
+    // Fresh beat so Core stays ok unless a test overrides the heartbeat mock.
+    backgroundWorkerHeartbeat: {
+      findUnique: vi.fn().mockResolvedValue({
+        last_beat_at: new Date(),
+        hostname: "test-worker",
+      }),
+    },
+    event: {
+      count: vi.fn().mockResolvedValue(0),
+    },
     ...overrides,
   } as unknown as PrismaClient;
 }
@@ -418,6 +429,8 @@ describe("collectAdminHealth", () => {
     const core = report.groups[0]!.checks;
     expect(core.find((c) => c.id === "database")?.label).toBe("Database");
     expect(core.find((c) => c.id === "rate_limit_storage")?.label).toBe("Rate-limit storage");
+    expect(core.find((c) => c.id === "background_worker")?.label).toBe("Background worker");
+    expect(core.find((c) => c.id === "background_worker")?.status).toBe("ok");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.label).toBe("Mail delivery queue");
     expect(core.find((c) => c.id === "file_storage")?.label).toBe("File storage");
     expect(core.find((c) => c.id === "file_storage")?.status).toBe("ok");
@@ -430,9 +443,12 @@ describe("collectAdminHealth", () => {
       summary: "Not configured",
     });
     expect(external.find((c) => c.id === "email_sending")?.label).toBe("Email sending, SMTP");
-    expect(external.find((c) => c.id === "wallet_passes")?.status).toBe("planned");
+    expect(external.find((c) => c.id === "wallet_passes")?.status).toBe("not_configured");
     expect(external.find((c) => c.id === "wallet_passes")?.label).toBe(
       "Wallet passes, PassCreator",
+    );
+    expect(external.find((c) => c.id === "wallet_passes")?.summary).toBe(
+      "Not configured for any event yet",
     );
     expect(external.find((c) => c.id === "address_lookup")?.label).toBe(
       "Address lookup, Nominatim",
@@ -450,6 +466,184 @@ describe("collectAdminHealth", () => {
       core
         .find((c) => c.id === "database")
         ?.details.some((d) => d.key === "last_checked" && d.value === report.generated_at),
+    ).toBe(true);
+  });
+
+  it("marks background_worker degraded when no heartbeat row exists", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")).toMatchObject({
+      status: "degraded",
+      summary: expect.stringMatching(/never reported a heartbeat/i),
+    });
+    expect(report.overall).toBe("degraded");
+  });
+
+  it("marks background_worker degraded when the heartbeat is stale", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            last_beat_at: new Date("2026-08-03T11:00:00.000Z"),
+            hostname: null,
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({
+      status: "degraded",
+      summary: expect.stringMatching(/stale/i),
+    });
+    expect(report.overall).toBe("degraded");
+  });
+
+  it("uses the 5m floor when the tick-derived stale window is smaller", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            // 6 minutes old: stale under the 5m floor; tick=15 alone would only be ~105s.
+            last_beat_at: new Date("2026-08-03T11:54:00.000Z"),
+            hostname: "floor-worker",
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "15" }),
+      now: () => now,
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({ status: "degraded" });
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "300000")).toBe(true);
+  });
+
+  it("uses the tick-derived stale window when it exceeds the 5m floor", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            // 8 minutes old: stale when tick=120 → staleMs=420s
+            last_beat_at: new Date("2026-08-03T11:52:00.000Z"),
+            hostname: "tick-worker",
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ BOUNCE_INGEST_TICK_SECONDS: "120" }),
+      now: () => now,
+    });
+
+    const row = report.groups[0]!.checks.find((c) => c.id === "background_worker");
+    expect(row).toMatchObject({ status: "degraded" });
+    expect(row?.details.some((d) => d.key === "stale_after_ms" && d.value === "420000")).toBe(true);
+  });
+
+  it("includes an empty hostname coalesce path on a fresh beat with null hostname", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    const now = new Date("2026-08-03T12:00:00.000Z");
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockResolvedValue({
+            last_beat_at: new Date("2026-08-03T11:59:50.000Z"),
+            hostname: null,
+          }),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => now,
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")?.status).toBe("ok");
+  });
+
+  it("falls back when background worker heartbeat lookup throws", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({
+        backgroundWorkerHeartbeat: {
+          findUnique: vi.fn().mockRejectedValue(new Error("db down")),
+        },
+      }),
+      rateLimitStore: {} as never,
+      now: () => new Date("2026-08-03T12:00:00.000Z"),
+    });
+
+    expect(report.groups[0]!.checks.find((c) => c.id === "background_worker")).toMatchObject({
+      status: "degraded",
+      summary: "Could not evaluate background worker",
+    });
+    expect(
+      report.groups[0]!.checks
+        .find((c) => c.id === "background_worker")
+        ?.details.some((d) => d.key === "reason" && d.value === "lookup_failed"),
     ).toBe(true);
   });
 
@@ -862,6 +1056,66 @@ describe("collectAdminHealth", () => {
     expect(report.overall).toBe("ok");
   });
 
+  it("reports wallet as ok when at least one event has it fully configured", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count: vi.fn().mockResolvedValue(2) } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    expect(wallet?.status).toBe("ok");
+    expect(wallet?.summary).toBe("Configured for 2 events");
+    expect(report.overall).toBe("ok");
+  });
+
+  it("uses singular 'event' in the wallet summary when exactly one event is configured", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count: vi.fn().mockResolvedValue(1) } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    expect(wallet?.summary).toBe("Configured for 1 event");
+  });
+
+  it("reports wallet as degraded when the event lookup fails", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count: vi.fn().mockRejectedValue(new Error("db down")) } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    expect(wallet?.status).toBe("degraded");
+    expect(wallet?.summary).toBe("Could not evaluate wallet configuration");
+  });
+
   it("keeps returning a report when individual collectors reject", async () => {
     collectSetupChecks.mockRejectedValueOnce(new Error("setup boom"));
     collectGauges.mockRejectedValueOnce(new Error("gauges boom"));
@@ -981,7 +1235,7 @@ describe("collectAdminHealth", () => {
     vi.restoreAllMocks();
   });
 
-  it("marks address lookup not_configured when maps are disabled", async () => {
+  it("keeps address lookup available when maps (tiles) are disabled", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
       email_deliveries_queued: 0,
@@ -998,8 +1252,11 @@ describe("collectAdminHealth", () => {
     });
 
     const address = report.groups[1]!.checks.find((c) => c.id === "address_lookup");
-    expect(address?.status).toBe("not_configured");
-    expect(address?.summary).toBe("Maps disabled");
+    expect(address?.status).toBe("ok");
+    expect(address?.summary).toBe("Provider available");
+    expect(report.groups[1]!.checks.find((c) => c.id === "map_tiles")?.summary).toBe(
+      "Maps disabled",
+    );
   });
 
   it("covers core failure and warn branches for database, redis, encryption, and instance URL", async () => {
@@ -1150,6 +1407,30 @@ describe("collectAdminHealth", () => {
     expect(liveResolveFail.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe(
       "degraded",
     );
+
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "smtp", source: "organization", locked: false },
+    });
+    resolveMailConfigForOrg.mockRejectedValueOnce(
+      new MailConfigError(
+        "mail_secret_decryption_failed",
+        "A stored mail secret could not be decrypted.",
+      ),
+    );
+    const liveDecryptFail = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+      live: true,
+      probeMail: vi.fn(),
+    });
+    const decryptCheck = liveDecryptFail.groups[1]!.checks.find((c) => c.id === "email_sending");
+    expect(decryptCheck?.status).toBe("degraded");
+    expect(decryptCheck?.summary).toBe("Mail secret could not be decrypted");
+    expect(
+      decryptCheck?.details.some(
+        (d) => d.key === "reason" && d.value === "mail_secret_decryption_failed",
+      ),
+    ).toBe(true);
 
     describeMailConfigForOrg.mockResolvedValueOnce({
       provider: { value: "powerautomate", source: "organization", locked: false },

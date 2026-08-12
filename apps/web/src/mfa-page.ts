@@ -9,13 +9,19 @@ import { renderNoticeHtml } from "./auth-notice.js";
 import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
 /** Security headers for MFA verify (nonce-gated inline script for OTP digit widget). */
-export function getMfaPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getMfaPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 /** MFA enroll allows nonce-gated inline script for clipboard copy and OTP widget. */
-export function getMfaEnrollPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getMfaEnrollPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 interface AuthOtpCodeFieldOptions {
@@ -48,8 +54,9 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
     </div>`
     : "";
 
+  // Span + aria-labelledby on the digit group (not a bare <label> without `for`).
   return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? " data-backup-fallback" : ""}${options.autofocusOtp === false ? ' data-autofocus-otp="false"' : ""}>
-    <label class="auth-label" id="${escapeHtml(options.labelId)}">${escapeHtml(options.label)}</label>
+    <span class="auth-label" id="${escapeHtml(options.labelId)}">${escapeHtml(options.label)}</span>
     <div class="auth-otp-digits" role="group" aria-labelledby="${escapeHtml(options.labelId)}">${digits}</div>
     <input type="hidden" name="code" id="code" required>
     ${backupSection}
@@ -109,15 +116,18 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
     <div class="auth-qr-wrap">
       <img class="auth-qr" src="${escapeHtml(qrDataUri)}" width="200" height="200" alt="Scan with your authenticator app">
     </div>
-    <p class="auth-muted auth-mfa-setup-hint">Scan the QR code, or copy the setup key into Bitwarden, 1Password, or another authenticator.</p>
+    <p class="auth-muted auth-mfa-setup-hint">Scan the QR code with your authenticator app, or copy the setup key below.</p>
     <div class="auth-field">
       <label class="auth-label" for="enroll-secret">Setup key</label>
       <input class="auth-input auth-secret-input" id="enroll-secret" type="text" readonly value="${escapeHtml(setupKey)}" aria-label="Admitto authenticator setup key">
     </div>
     <div class="auth-mfa-actions">
       <button type="button" class="auth-btn-secondary" id="copy-enroll-secret">Copy setup key</button>
-      <a class="auth-btn-secondary auth-btn-link" href="${escapeHtml(otpauthUri)}" title="Add Admitto authenticator to your password manager">Open in password manager</a>
+      <span class="auth-mfa-mobile-only">
+        <a class="auth-btn-secondary auth-btn-link" href="${escapeHtml(otpauthUri)}" title="Open this setup link in your authenticator app">Try opening in your authenticator app</a>
+      </span>
     </div>
+    <p class="auth-muted auth-mfa-desktop-hint">On this computer: open your password manager or authenticator, choose Add one-time password, then scan this QR code from the screen or paste the setup key.</p>
     <details class="auth-otpauth-details">
       <summary class="auth-muted">Show full otpauth URI</summary>
       <code class="auth-uri-code">${escapeHtml(otpauthUri)}</code>
@@ -167,7 +177,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
 
   const downloadForm =
     backupCodes.length > 0
-      ? `<form method="post" action="/mfa/enroll/download-codes" style="margin-top:0.75rem">
+      ? `<form method="post" action="/mfa/enroll/download-codes" data-auth-no-submit-lock="true" style="margin-top:0.75rem">
       ${nextField}
       ${backupCodes.map((c) => `<input type="hidden" name="code" value="${escapeHtml(c)}">`).join("")}
       <button type="submit" class="auth-btn-secondary">Download backup codes</button>

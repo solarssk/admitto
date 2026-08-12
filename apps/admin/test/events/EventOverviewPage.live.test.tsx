@@ -18,13 +18,19 @@ const fetchTicketTypes = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
+let activityChangedHandler: (() => void) | null = null;
 // Lets a test simulate the SSE handshake not having completed yet (#C) — defaults to true so
 // every other test keeps its original "always connected" behavior.
 let mockStreamConnected = true;
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: (_eventId: string, onCheckin: (event: StreamCheckinEvent) => void) => {
+  useEventStream: (
+    _eventId: string,
+    onCheckin: (event: StreamCheckinEvent) => void,
+    onActivityChanged?: () => void,
+  ) => {
     streamHandler = onCheckin;
+    activityChangedHandler = onActivityChanged ?? null;
     return { connected: mockStreamConnected, status: mockStreamConnected ? "connected" : "connecting" };
   },
 }));
@@ -145,6 +151,16 @@ function statsRow(): HTMLElement {
   return document.querySelector(".overview-stats") as HTMLElement;
 }
 
+/** Setup checklist card - labels like "Tickets sent" also appear on the KPI row. */
+function checklistCard(): HTMLElement {
+  const title = Array.from(document.querySelectorAll(".at-card__title")).find(
+    (el) => el.textContent === "Setup checklist",
+  );
+  const card = title?.closest(".at-card");
+  if (!card) throw new Error("Setup checklist card not found");
+  return card as HTMLElement;
+}
+
 /** The Check-in progress card's admission ring legend now owns the admitted count display (the
  * top KPI row's old "Checked in" tile was removed in favor of a Days-to-event tile, #E1) — this
  * still carries the optimistic SSE delta instantly, same as the removed tile used to. */
@@ -156,6 +172,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   streamHandler = null;
+  activityChangedHandler = null;
   mockStreamConnected = true;
 });
 
@@ -370,6 +387,20 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     fetchTicketTypes.mockResolvedValue([]);
   });
 
+  it("uses PageHeader title Overview with a page subtitle instead of duplicating the event name from the sidebar", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Overview", level: 1 })).toBeTruthy();
+    });
+    expect(
+      screen.getByText("Track attendance, check-in progress, and setup status for this event."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Demo Event" })).toBeNull();
+  });
+
   it("shows a loading placeholder for the Attendees KPI instead of the raw (revoked-inclusive) events-picker count (#374)", async () => {
     let resolveOverview!: (value: EventOverviewDto) => void;
     fetchEventOverview.mockReturnValue(
@@ -577,7 +608,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByText("View full checklist in Event settings")).toBeTruthy();
   });
 
-  it("shows an all-clear line in the checklist when nothing needs action", async () => {
+  it("shows completed checklist rows alongside the remaining setup checks", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(50));
 
     renderPage();
@@ -585,7 +616,12 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.getByText("Setup checklist")).toBeTruthy();
     });
-    expect(screen.getByText("All checks look good")).toBeTruthy();
+    const checklist = within(checklistCard());
+    expect(checklist.getByText("Attendees imported")).toBeTruthy();
+    expect(checklist.getByText("Tickets sent")).toBeTruthy();
+    expect(checklist.getByText("Email delivery")).toBeTruthy();
+    expect(checklist.getByText("Check-in staff")).toBeTruthy();
+    expect(checklist.getByText("Event items")).toBeTruthy();
   });
 
   it("renders the Check-in progress card's ring percentage and glance stats", async () => {
@@ -627,7 +663,40 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("13:00–14:00")).toBeNull();
   });
 
-  it("renders the ticket-type breakdown bar only when more than one type has attendees", async () => {
+  it("renders the ticket-type breakdown section whenever attendees exist, with a full-width bar for a single type and an empty track when no check-ins yet", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(0, {
+        attendee_count: 50,
+        ticket_type_breakdown: [{ key: "standard", label: "Standard", color: "gray", count: 0 }],
+      }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    });
+    expect(screen.getByText("By ticket type")).toBeTruthy();
+    expect(document.querySelector(".overview-tt-bar")).toBeTruthy();
+    expect(document.querySelector(".overview-tt-bar__seg")).toBeNull();
+    expect(document.querySelector(".overview-tt-legend")).toBeNull();
+
+    cleanup();
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        ticket_type_breakdown: [{ key: "standard", label: "Standard", color: "gray", count: 5 }],
+      }),
+    );
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Standard")).toBeTruthy();
+    });
+    const singleSeg = document.querySelector(".overview-tt-bar__seg") as HTMLElement;
+    expect(singleSeg?.style.width).toBe("100%");
+  });
+
+  it("renders the ticket-type breakdown bar with multiple segments when more than one type has attendees", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, {
         ticket_type_breakdown: [
@@ -733,11 +802,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     const issuesButton = within(header).getByRole("radio", { name: "Issues" });
     expect(allButton).toBeTruthy();
     expect(issuesButton).toBeTruthy();
-    // Live indicator reuses the app's dot-Badge pattern (Badge variant="ok" dot), not a bespoke
-    // dot+text pair.
-    const liveBadge = within(header).getByText("live").closest(".at-badge") as HTMLElement;
-    expect(liveBadge.className).toContain("at-badge--ok");
-    expect(liveBadge.className).toContain("overview-live-badge");
+    // Live indicator is a decorative chip (role=status) with a breathing dot — not a disabled button.
+    const liveIndicator = within(header).getByRole("status", { name: "Live" });
+    expect(liveIndicator.className).toContain("overview-live-indicator");
+    expect(liveIndicator.querySelector(".overview-live-indicator__dot")).toBeTruthy();
+    expect(liveIndicator.className).not.toContain("at-btn");
 
     // All/Issues render as the shared Segmented control (radiogroup/radio + aria-checked), the
     // same standard used for Instance Settings' toggles - not a bespoke button pair.
@@ -771,7 +840,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
     const activityCard = screen.getByText("Recent activity").closest(".at-card") as HTMLElement;
     const header = activityCard.querySelector(".at-card__header") as HTMLElement;
-    expect(within(header).getByText("live")).toBeTruthy();
+    expect(within(header).getByRole("status", { name: "Live" })).toBeTruthy();
   });
 
   it("keeps the Recent activity scroll container mounted (stable card height) even when the Issues filter matches nothing, instead of swapping in a bare paragraph", async () => {
@@ -902,6 +971,42 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     }
   });
 
+  it("bounds the reconcile delay when activity_changed signals arrive continuously, instead of restarting the timer on every signal", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchEventOverview.mockResolvedValueOnce(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(admittedLegendValue()).toBe("5");
+      });
+      expect(activityChangedHandler).not.toBeNull();
+
+      fetchEventOverview.mockResolvedValue(overviewFixture(6));
+
+      // First signal starts the bounded reconcile timer.
+      act(() => { activityChangedHandler?.(); });
+      // Two more signals land well inside the 3s window - a busy handout desk issuing items
+      // back-to-back. A naive clear-and-restart debounce would push the reconcile further out
+      // each time and never catch up; the bound must let the original timer fire regardless.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      act(() => { activityChangedHandler?.(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      act(() => { activityChangedHandler?.(); });
+
+      // Only 1s left to reach 3s from the *first* signal - a reset-on-every-call debounce would
+      // still have ~2s left at this point (3s from the last signal at t=2000) and not have fired.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+
+      await waitFor(() => {
+        expect(admittedLegendValue()).toBe("6");
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reconciles a live check-in against its server row by attendee_id, not name+timestamp, since SSE's admittedAt and the server's DB-default occurred_at never match exactly (CodeRabbit)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
@@ -1009,6 +1114,8 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     // Renders as a modal dialog, not an inline-expanding form pushing the card content down.
     const dialog = await screen.findByRole("dialog", { name: "Add contact" });
+    expect(within(dialog).getByText("Add a key person staff can reach during the event.")).toBeTruthy();
+    expect(dialog.querySelector(".ti-address-book")).toBeTruthy();
     expect(within(dialog).getByLabelText("Name *")).toBeTruthy();
     expect(document.querySelector(".btn")).toBeNull();
 
@@ -1075,6 +1182,65 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
   });
 
+  it("stores a key contact phone as one E.164 value from the country picker and national number", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockCreateEventContact.mockResolvedValueOnce({
+      id: "c-phone",
+      name: "Jane Doe",
+      role: null,
+      phone: "+48500100200",
+      email: null,
+      note: null,
+      sort_order: 0,
+    } satisfies EventContactDto);
+
+    renderPage();
+
+    const keyContactsSection = await screen
+      .findByText("Key contacts")
+      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    fireEvent.click(within(keyContactsSection).getByRole("button", { name: "Add a key contact" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Add contact" });
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Phone country code, no code selected" }));
+    fireEvent.change(screen.getByLabelText("Search country or dial code"), { target: { value: "Poland" } });
+    fireEvent.click(screen.getByRole("button", { name: "Poland +48" }));
+
+    const phoneField = within(dialog).getByLabelText("Phone number") as HTMLInputElement;
+    fireEvent.change(phoneField, { target: { value: "500 100 200" } });
+    expect(phoneField.autocomplete).toBe("off");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockCreateEventContact).toHaveBeenCalledWith("evt-1", {
+        name: "Jane Doe",
+        role: null,
+        phone: "+48500100200",
+        email: null,
+      });
+    });
+  });
+
+  it("splits an existing key contact E.164 phone value when opening Edit", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        contacts: [
+          { id: "c-phone", name: "Jane Doe", role: null, phone: "+48500100200", email: null, note: null, sort_order: 0 },
+        ],
+      }),
+    );
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Jane Doe" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
+
+    expect(within(dialog).getByRole("button", { name: "Phone country code, Poland +48" })).toBeTruthy();
+    expect((within(dialog).getByLabelText("Phone number") as HTMLInputElement).value).toBe("500100200");
+  });
+
   it("opens Links & files' add flow as a modal dialog and updates the list on save", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
     mockCreateEventResource.mockResolvedValueOnce({
@@ -1095,6 +1261,10 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
 
     const dialog = await screen.findByRole("dialog", { name: "Add link or file" });
+    expect(
+      within(dialog).getByText("Share a useful link or file reference with staff on this overview."),
+    ).toBeTruthy();
+    expect(dialog.querySelector(".ti-link")).toBeTruthy();
     fireEvent.change(within(dialog).getByLabelText("Title *"), { target: { value: "Venue floor plan" } });
     fireEvent.change(within(dialog).getByLabelText("URL *"), {
       target: { value: "https://example.com/floor-plan" },
@@ -1196,6 +1366,10 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     fireEvent.click(addNote);
     const dialog = await screen.findByRole("dialog", { name: "Add pinned note" });
+    expect(
+      within(dialog).getByText("Shown to all staff on this overview. Use for day-of instructions."),
+    ).toBeTruthy();
+    expect(dialog.querySelector(".ti-pin")).toBeTruthy();
     fireEvent.change(within(dialog).getByPlaceholderText("Short operational note visible to all staff…"), {
       target: { value: "Gate B is closed today" },
     });

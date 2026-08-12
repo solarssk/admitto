@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { Button, IconButton, Input, ModalBackdrop, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, IconButton, Input, ModalBackdrop, Notice, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   deleteEventItem,
@@ -9,7 +9,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventCustomFieldDto, EventItemConfigDto, EventItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon } from "./customFieldType.js";
-import { IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
+import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import "./requirements.css";
 
@@ -73,6 +73,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
   // "badge" is auto-recreated by the server (ensureBadgeEventItem) — deleting it
   // would silently reappear, so deletion is blocked; disable it instead.
   const isDefaultItem = item.key === "badge";
+  const headerIcon = form.icon ?? item.icon ?? DEFAULT_EVENT_ITEM_ICON;
 
   useEffect(() => {
     setForm(toForm(item));
@@ -153,13 +154,22 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
           <div className="event-item-modal__header">
             <div>
               <h2 id="item-modal-title" className="event-item-modal__title">
+                <i className={`ti ti-${headerIcon}`} aria-hidden="true" />
                 {item.label}
               </h2>
-              <p className="requirements-item-id">Internal ID: {item.key}</p>
+              <p className="event-item-modal__id">
+                Internal ID: <code>{item.key}</code>
+              </p>
             </div>
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
           <form id="item-edit-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+            {isDefaultItem && (
+              <Notice variant="info">
+                Badge is the default item used by "Issue badge at entry". It cannot be deleted, but you can turn it
+                off when automatic badge issuing is not needed.
+              </Notice>
+            )}
             <div>
               <h3 className="event-item-modal__section-title">Details</h3>
               <div className="requirements-field-stack">
@@ -208,9 +218,10 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                 themselves in the "Custom attendee fields" card above.
               </p>
               {customFields.length === 0 ? (
-                <p className="requirements-section-hint">
-                  No custom fields defined for this event yet.
-                </p>
+                <Notice variant="info">
+                  No custom fields defined for this event yet. Add fields in Custom attendee fields
+                  above, then link them here.
+                </Notice>
               ) : (
                 <div className="requirements-field-stack">
                   {customFields.map((field) => (
@@ -227,7 +238,9 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                       <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
                       <div className="requirements-item-info">
                         <div className="requirements-item-name">{field.label}</div>
-                        <div className="requirements-item-id">{field.source_field}</div>
+                        <div className="requirements-item-id">
+                          <code>{field.source_field}</code>
+                        </div>
                       </div>
                     </label>
                   ))}
@@ -272,9 +285,6 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             </div>
           </form>
           <div className="event-item-modal__footer">
-            <Button type="submit" form="item-edit-form" variant="primary" disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
             <Tooltip
               content={
                 isDefaultItem
@@ -297,6 +307,14 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                 Delete item
               </Button>
             </Tooltip>
+            <div className="event-item-modal__footer-end">
+              <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting}>
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </div>
           </div>
         </div>
       </dialog>

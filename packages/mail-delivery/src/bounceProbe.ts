@@ -5,7 +5,7 @@ import { buildErrorCode } from "./bounceIngest/applyBounceResult.js";
 import { openBounceImapProvider } from "./bounceIngest/openProvider.js";
 import { parseBounceLines } from "./bounceIngest/parseBounceLine.js";
 import { markUidProcessed } from "./bounceIngest/processedUid.js";
-import { parseFolders } from "./bounceIngest/resolveAuth.js";
+import { BounceAuthError, parseFolders } from "./bounceIngest/resolveAuth.js";
 import type { InboundMailProvider, ParsedBounceLine } from "./bounceIngest/types.js";
 import { imapTestErrorForAdmin, transportTestErrorForAdmin } from "./sanitizeError.js";
 import type { MailDeliveryDeps } from "./send.js";
@@ -322,6 +322,13 @@ export async function runEventBounceProbe(
       env: ingestOptions.env ?? env,
     });
   } catch (err) {
+    // BounceAuthError is always operator-safe text by construction (missing/invalid IMAP
+    // settings, or an undecryptable stored secret) — surface it directly instead of the
+    // generic fallback below, which would otherwise hide e.g. mail_secret_decryption_failed.
+    if (err instanceof BounceAuthError) {
+      console.error(`[bounce-probe] IMAP open failed: ${err.message}`);
+      return failedProbe(sendResult, err.message);
+    }
     const raw = err instanceof Error ? err.message : String(err);
     console.error(`[bounce-probe] IMAP open failed: ${raw}`);
     return failedProbe(

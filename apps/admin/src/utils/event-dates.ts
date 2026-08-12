@@ -31,6 +31,25 @@ export function formatEventCalendarDate(iso: string): string {
 }
 
 /**
+ * Preview of the {{event_date}} wallet placeholder - mirrors apps/web/src/ticket-page.ts's own
+ * formatDate exactly (en-GB, day/long month/year), which is what actually lands on the pass.
+ * Deliberately NOT `getPreferredLocale()` like `formatEventDate` above: the wallet pass always
+ * renders en-GB regardless of the admin's own locale, so this previews that fixed output, not the
+ * viewer's own preference. Pinned to UTC since `Event.date` is stored as a UTC calendar day (see
+ * `formatEventCalendarDate` above) - avoids an off-by-one-day flip from the admin's own timezone.
+ */
+export function formatWalletDatePreview(isoDate: string): string | null {
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
  * Numeric UTC offset for `timezone` at the instant `iso`, e.g. "UTC+2" or "UTC+5:30" ("UTC"
  * with no offset for the UTC zone itself, which has none). Resolved for the given instant
  * (not the zone's year-round standard offset) so DST is reflected correctly — a Warsaw event
@@ -69,6 +88,13 @@ export function zonedTimeLabel(iso: string, timezone = "UTC"): string {
   if (timezone === "UTC") return "(UTC)";
   const offset = utcOffsetLabel(iso, timezone);
   return offset ? `(${timezone}, ${offset})` : `(${timezone})`;
+}
+
+/** Plain "9:41 AM"-style clock time in the viewer's own locale/zone, no date or offset — for
+ * decorative sample chrome (Communication's mail-client preview "received at" stamp) that isn't
+ * a real operational timestamp and so doesn't need Category 1/2's zone-disambiguation suffix. */
+export function browserClockTime(date: Date): string {
+  return date.toLocaleTimeString(getPreferredLocale(), { hour: "numeric", minute: "2-digit" });
 }
 
 /** Browser IANA zone for Category-1 stamps in staff UI (Send test, Health check Generated). */

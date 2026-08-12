@@ -18,11 +18,12 @@ import {
   testCfAccessConnection,
   testOidcConnection,
 } from "@admitto/auth";
-import { describeMailConfigForOrg, resolveMailConfigForOrg } from "@admitto/mailer-config";
+import { describeMailConfigForOrg, MailConfigError, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
 import {
   evaluateBounceIngestHealth,
   parseBounceIngestTickSeconds,
+  workerHeartbeatStaleMs,
 } from "@admitto/mail-delivery";
 import type { GeocodingProvider } from "@admitto/location";
 import { resolveUploadDir } from "@admitto/storage";
@@ -665,7 +666,24 @@ async function emailSendingRow(
         ["last_checked", checkedAt],
       ]),
     };
-  } catch {
+  } catch (err) {
+    // Only resolveOrgMailConfig() (live check only) decrypts stored secrets, so this is
+    // always a definitive, actionable problem rather than a transient lookup failure —
+    // call it out instead of the generic "Could not read mail settings" below.
+    if (err instanceof MailConfigError) {
+      return {
+        id: "email_sending",
+        label: "Email sending",
+        status: "degraded",
+        summary: "Mail secret could not be decrypted",
+        details: detailsFromEntries([
+          ["status", "degraded"],
+          ["configured", "yes"],
+          ["reason", err.code],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
     // Passive: env mail still counts as configured when org lookup fails.
     // Live: do not greenwash — effective config could not be resolved/probed.
     if (
@@ -893,21 +911,7 @@ async function addressLookupRow(
   const endpoint = safeEndpointDisplay(geo.baseUrl);
   const label = "Address lookup, Nominatim";
 
-  if (!resolveMapTileConfig(env).enabled) {
-    return {
-      id: "address_lookup",
-      label,
-      status: "not_configured",
-      summary: "Maps disabled",
-      details: detailsFromEntries([
-        ["status", "not_configured"],
-        ["provider", "nominatim"],
-        ["endpoint", endpoint],
-        ["last_checked", checkedAt],
-      ]),
-    };
-  }
-
+  // Geocoding stays available when Maps is toggled off — only tiles/static maps are gated.
   if (!live || !geocodingProvider) {
     return {
       id: "address_lookup",
@@ -1132,15 +1136,31 @@ async function weatherRow(
   return weatherLiveOkRow(label, config, endpoint, probe.latencyMs, checkedAt);
 }
 
-function plannedRow(id: string, label: string, summary: string): HealthCheckRow {
+/** Wallet (PassCreator) is configured per event (ADR 0041), not per instance - "ok" means at
+ * least one event currently has it fully turned on (enabled + template + API key). */
+async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
+  const configuredCount = await db.event.count({
+    where: {
+      wallet_enabled: true,
+      wallet_template_id: { not: null },
+      wallet_api_key_enc: { not: null },
+    },
+  });
+  const status = configuredCount > 0 ? "ok" : "not_configured";
+  const eventSuffix = configuredCount === 1 ? "" : "s";
+  const summary =
+    configuredCount > 0
+      ? `Configured for ${configuredCount} event${eventSuffix}`
+      : "Not configured for any event yet";
   return {
-    id,
-    label,
-    status: "planned",
+    id: "wallet_passes",
+    label: "Wallet passes, PassCreator",
+    status,
     summary,
     details: detailsFromEntries([
-      ["status", "planned"],
-      ["availability", "later_release"],
+      ["status", status],
+      ["configured_events", String(configuredCount)],
+      ["last_checked", checkedAt],
     ]),
   };
 }
@@ -1288,6 +1308,63 @@ export async function fileStorageRow(
   };
 }
 
+/** Soft check: Admitto worker heartbeat (does not affect /healthz). */
+async function backgroundWorkerRow(
+  db: PrismaClient,
+  checkedAt: string,
+  now: Date,
+  env: NodeJS.ProcessEnv,
+): Promise<HealthCheckRow> {
+  const tickSeconds = parseBounceIngestTickSeconds(env);
+  const staleMs = workerHeartbeatStaleMs(tickSeconds);
+  const beat = await db.backgroundWorkerHeartbeat.findUnique({
+    where: { id: "default" },
+    select: { last_beat_at: true, hostname: true },
+  });
+  if (!beat) {
+    return {
+      id: "background_worker",
+      label: "Background worker",
+      status: "degraded",
+      summary: "Worker has never reported a heartbeat. Run npm run worker or the compose worker service.",
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["reason", "never_ran"],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+  const ageMs = now.getTime() - beat.last_beat_at.getTime();
+  if (ageMs > staleMs) {
+    return {
+      id: "background_worker",
+      label: "Background worker",
+      status: "degraded",
+      summary: "Worker heartbeat is stale. Mail queue, import, export, and bounce may be delayed.",
+      details: detailsFromEntries([
+        ["status", "degraded"],
+        ["reason", "stale"],
+        ["last_beat_at", beat.last_beat_at.toISOString()],
+        ["hostname", beat.hostname ?? ""],
+        ["stale_after_ms", String(staleMs)],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+  return {
+    id: "background_worker",
+    label: "Background worker",
+    status: "ok",
+    summary: "Worker heartbeat is fresh",
+    details: detailsFromEntries([
+      ["status", "ok"],
+      ["last_beat_at", beat.last_beat_at.toISOString()],
+      ["hostname", beat.hostname ?? ""],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
 function buildGroup(
   id: HealthGroupId,
   label: string,
@@ -1406,11 +1483,37 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
+  const backgroundWorkerFallback: HealthCheckRow = {
+    id: "background_worker",
+    label: "Background worker",
+    status: "degraded",
+    summary: "Could not evaluate background worker",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
+  const walletFallback: HealthCheckRow = {
+    id: "wallet_passes",
+    label: "Wallet passes, PassCreator",
+    status: "degraded",
+    summary: "Could not evaluate wallet configuration",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
   const [
     setup,
     gauges,
     email,
     bounceIngest,
+    backgroundWorker,
+    wallet,
     idpRows,
     cfAccess,
     address,
@@ -1425,6 +1528,8 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       collectGauges(deps.db).catch(() => gaugesFallback),
       emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
       bounceIngestRow(deps.db, checkedAt, now, env).catch(() => bounceIngestFallback),
+      backgroundWorkerRow(deps.db, checkedAt, now, env).catch(() => backgroundWorkerFallback),
+      walletRow(deps.db, checkedAt).catch(() => walletFallback),
       identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
       cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
       addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
@@ -1451,6 +1556,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     }),
     setupToRedisRow(setup.redis, checkedAt),
     setupToEncryptionRow(setup.encryption, checkedAt),
+    backgroundWorker,
     mailQueueRow(gauges.email_deliveries_queued, gauges.email_deliveries_failed_retryable, checkedAt),
     setupToInstanceUrlRow(setup.base_url, checkedAt),
     fileStorage,
@@ -1459,11 +1565,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   const externalChecks: HealthCheckRow[] = [
     email,
     bounceIngest,
-    plannedRow(
-      "wallet_passes",
-      "Wallet passes, PassCreator",
-      "Coming in v0.6 · Apple & Google Wallet",
-    ),
+    wallet,
     address,
     mapTilesRow(env, checkedAt),
     weather,

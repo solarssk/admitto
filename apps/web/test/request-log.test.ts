@@ -116,6 +116,39 @@ describe("createRequestLogMiddleware", () => {
     expect(JSON.parse(lines[0]!)).toMatchObject({ path: "/api/admin/system-logs", status: 403 });
   });
 
+  it("omits ip for anonymous/unauthenticated requests", async () => {
+    const lines = captureInfoLines();
+    await appWithLogging().request("/ok");
+    const entry = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(entry).not.toHaveProperty("ip");
+  });
+
+  it("includes ip when the request has an authenticated staff session", async () => {
+    const lines = captureInfoLines();
+    const app = new Hono();
+    app.use("*", createRequestLogMiddleware());
+    app.get("/admin-only", (c) => {
+      c.set("auth", { userId: "staff-1" });
+      return c.text("ok");
+    });
+    await app.request("/admin-only");
+    const entry = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(entry).toHaveProperty("ip");
+  });
+
+  it("includes ip when the request has an authenticated check-in operator", async () => {
+    const lines = captureInfoLines();
+    const app = new Hono();
+    app.use("*", createRequestLogMiddleware());
+    app.get("/checkin-only", (c) => {
+      c.set("operatorUserId", "operator-1");
+      return c.text("ok");
+    });
+    await app.request("/checkin-only");
+    const entry = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(entry).toHaveProperty("ip");
+  });
+
   it("logs 404s for unknown routes", async () => {
     const lines = captureInfoLines();
     await appWithLogging().request("/nope");

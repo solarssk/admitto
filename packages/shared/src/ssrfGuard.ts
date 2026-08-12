@@ -26,6 +26,23 @@ export function unbracketHostname(hostname: string): string {
   return isIPv6(unbracketed) ? unbracketed.split("%")[0]! : unbracketed;
 }
 
+/**
+ * Normalize a hostname or IP literal for allowlist exact-match.
+ * WHATWG URL parsing compresses IPv6 (`fd00:0:0:0:0:0:0:1` -> `fd00::1`), so an allowlist
+ * entry pasted from either form still matches `new URL(issuer).hostname`.
+ */
+export function canonicalizeAllowlistHost(hostname: string): string {
+  const host = unbracketHostname(hostname.trim()).toLowerCase();
+  if (!host) return "";
+  if (!isIP(host)) return host;
+  try {
+    const url = isIP(host) === 6 ? new URL(`https://[${host}]/`) : new URL(`https://${host}/`);
+    return unbracketHostname(url.hostname).toLowerCase();
+  } catch {
+    return host;
+  }
+}
+
 /** Whether the hostname is loopback (localhost / 127.0.0.1 / ::1). */
 export function isLoopbackHost(hostname: string): boolean {
   const host = unbracketHostname(hostname).toLowerCase();
@@ -173,4 +190,32 @@ export async function resolveSafeHostname(hostname: string): Promise<LookupAddre
     assertResolvedIpSafe(record.address);
   }
   return records;
+}
+
+/**
+ * Reject `promise` when `signal` aborts. `dns.lookup` (used by {@link resolveSafeHostname})
+ * takes no AbortSignal of its own, so without this a stalled/unresponsive DNS server would
+ * hang past the caller's configured timeout — this races it against the same deadline the
+ * caller uses for the follow-up HTTP request, so DNS resolution stays inside that budget.
+ */
+export function awaitWithAbortSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
 }

@@ -5,6 +5,7 @@ import {
 import { renderNoticeHtml } from "../auth-notice.js";
 import {
   authFormSubmitScript,
+  authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -21,8 +22,11 @@ function esc(s: string): string {
 }
 
 /** Security headers for the OIDC account-link step-up page (same CSP as other auth HTML). */
-export function getOidcLinkPageSecurityHeaders(scriptNonce: string): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce);
+export function getOidcLinkPageSecurityHeaders(
+  scriptNonce: string,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 export interface RenderOidcLinkFormOptions {
@@ -55,6 +59,7 @@ export function renderOidcLinkForm(options: RenderOidcLinkFormOptions): string {
     ${errorBlock}
     <form method="post" action="/account/oidc/${esc(providerId)}/link" aria-label="Link identity provider">
       ${nextField}
+      <input type="hidden" name="timezone" value="" autocomplete="off">
       <div class="auth-field">
         <label class="auth-label" for="oidc-link-password">Password</label>
         <input class="auth-input" id="oidc-link-password" type="password" name="password" required autocomplete="current-password">
@@ -68,6 +73,6 @@ export function renderOidcLinkForm(options: RenderOidcLinkFormOptions): string {
     step: `Link ${providerName}`,
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: authFormSubmitScript(scriptNonce),
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce)}`,
   });
 }

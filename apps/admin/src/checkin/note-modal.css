@@ -26,6 +26,13 @@
   border-radius: var(--radius-lg);
   padding: var(--space-5);
   width: min(480px, 100%);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. Without this the panel had no height limit or scroll mechanism at all, so on a
+     short iOS viewport it could render taller than what's visible with no way to reach the
+     bottom. See add-attendee-modal.css for the same fix on the other modal shells. */
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
@@ -55,6 +62,15 @@
 .note-modal__textarea:focus {
   outline: 2px solid var(--border-focus);
   outline-offset: -1px;
+}
+
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. Matches the same fix (pointer: coarse, not a max-width - see its own comment) for
+   .at-input/.at-select/.at-textarea in packages/ui. */
+@media (pointer: coarse) {
+  .note-modal__textarea {
+    font-size: 16px;
+  }
 }
 
 .note-modal__counter {

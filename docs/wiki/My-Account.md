@@ -7,7 +7,7 @@
 
 ## What this page helps you do
 
-Update your own profile (display name, regional date format, and internal contact phone number), understand what your Sign-in and Role fields mean, connect or unlink a single sign-on (SSO) identity provider, change your password, manage two-factor authentication, and review your active sessions — all from **My account**.
+Update your own profile (display name, regional date format, time format, and internal contact phone number), understand what your Sign-in and Role fields mean, connect or unlink a single sign-on (SSO) identity provider, change your password, manage two-factor authentication, and review your active sessions — all from **My account**.
 
 ## Before you start
 
@@ -17,23 +17,24 @@ Sign in and open **My account** from the top-right account menu. No special perm
 
 1. **Display name** — the name shown to other staff (in role assignments, audit logs, and delivery history). Edit the field and click **Save**.
 2. **Regional format** — controls how dates are displayed to you (for example `28 Jun 2026` vs `06/28/2026`). The interface language itself stays English regardless of this setting.
-3. **Email** — shown for reference only; it cannot be changed from this page. Contact an administrator if it needs to change.
-4. **Phone number** — optional, for internal staff contact only. Pick the country code, then enter the number. It is never shown on tickets or to attendees.
-5. **Role** — read-only. Shows your current role (Operator, Organisation Admin, or Superadmin) and, for Operator/Organisation Admin, the specific events or organisations it applies to. Only an administrator can change this; see [Roles and Permissions](Roles-and-Permissions).
-6. **Account type** — read-only. Shows **Local account** if you sign in with a password you set yourself, or **Managed by \<provider name\>** if your sign-in is linked to an organisation identity provider (SSO). An account can be both at once — a local password kept as a fallback alongside a linked provider.
-7. **SSO** (Profile card header, next to the card title) — a menu for managing your own linked identity providers. Only appears when there's something to connect or unlink. It offers two kinds of action, and both can be available at once if more than one provider is configured:
+3. **Time format** — independently selects 24-hour time or 12-hour time with AM/PM. Choose **System default (browser)** to use your browser's setting; this does not change the date format above.
+4. **Email** — shown for reference only; it cannot be changed from this page. Contact an administrator if it needs to change.
+5. **Phone number** — optional, for internal staff contact only. Pick the country code, then enter the number. It is never shown on tickets or to attendees.
+6. **Role** — read-only. Shows your current role (Operator, Organisation Admin, or Superadmin) and, for Operator/Organisation Admin, the specific events or organisations it applies to. Only an administrator can change this; see [Roles and Permissions](Roles-and-Permissions).
+7. **Account type** — read-only. Shows **Local account** if you sign in with a password you set yourself, or **Managed by \<provider name\>** if your sign-in is linked to an organisation identity provider (SSO). An account can be both at once — a local password kept as a fallback alongside a linked provider.
+8. **SSO** (Profile card header, next to the card title) — a menu for managing your own linked identity providers. Only appears when there's something to connect or unlink. It offers two kinds of action, and both can be available at once if more than one provider is configured:
    - **Connect \<provider name\>** — link an additional identity provider to your account, one item per enabled provider you're not already linked to. Takes you to that provider's sign-in page; you re-authenticate with your current local password (and a code, if your account requires two-factor) before the new provider is linked. Only offered when your account already has a local password — an SSO-only account has no password to re-authenticate with, so this item doesn't appear until one is set (change your password from this page, or ask an administrator to set one).
    - **Unlink SSO** — remove every identity provider currently linked to your account and fall back to (or set) a local password. See the dedicated steps below.
-8. To **unlink SSO**: open the **SSO** menu and choose **Unlink SSO**. Set the new local password you'll sign in with, then confirm:
+9. To **unlink SSO**: open the **SSO** menu and choose **Unlink SSO**. Set the new local password you'll sign in with, then confirm:
    - If your account already has a confirmed authenticator app (TOTP), you're asked for a code from it (or a backup code) instead of a password — this is checked regardless of your role.
    - Otherwise, if your account has a local password, you're asked to enter it to confirm it's really you.
    - If your account has neither a confirmed authenticator app nor a local password (a brand-new SSO-only account that's never touched either setting), self-service unlink isn't possible — ask an administrator to unlink it for you instead.
    - If any of your roles were assigned automatically by an identity provider group (shown with a small cloud icon next to the role's scope on this page), unlinking is blocked until an administrator removes that role or you leave the underlying group — this stops SSO group-managed access from being silently converted into access you control yourself.
    - Unlinking ends your other active sessions immediately; the session you're using stays signed in.
-9. Click **Save** once you're done editing the profile fields above (Save is disabled until something has actually changed).
-10. **Password** — enter your current password plus a new one (at least 12 characters) to change it. This ends your other active sessions; the session you're using stays signed in. Not available on an account with no local password (SSO-only).
-11. **Two-factor authentication** — set up an authenticator app (TOTP) for a second sign-in factor. Save the 10 backup codes shown once during setup; they're your fallback if you lose access to the app.
-12. **Active sessions** — review where your account is currently signed in (device, IP, sign-in method, last active) and revoke any session that isn't yours, or all other sessions at once.
+10. Click **Save** once you're done editing the profile fields above (Save is disabled until something has actually changed).
+11. **Password** — enter your current password plus a new one (at least 12 characters) to change it. This ends your other active sessions; the session you're using stays signed in. Not available on an account with no local password (SSO-only).
+12. **Two-factor authentication** — set up an authenticator app (TOTP) for a second sign-in factor. Save the 10 backup codes shown once during setup; they're your fallback if you lose access to the app.
+13. **Active sessions** — review where your account is currently signed in (device, IP, sign-in method, last active) and revoke any session that isn't yours, or all other sessions at once.
 
 ## Expected result
 
@@ -45,6 +46,7 @@ Profile changes take effect immediately and are visible to administrators viewin
 - Account type updates itself automatically as you connect or unlink identity providers; there's nothing to save separately.
 - Phone number is internal-contact-only by design: it's never surfaced on attendee-facing tickets or pages.
 - Regional format changes how dates are displayed to you specifically; it does not affect what other staff see, and it doesn't change the interface language.
+- Time format changes only how time fields are displayed to you. It can use 12-hour time with AM/PM or 24-hour time regardless of the selected regional date format.
 - An account that requires two-factor authentication (per its role) is asked for a TOTP or backup code before a password change or 2FA reset can complete.
 - Unlinking SSO always demands one proof of identity beyond just being signed in — a TOTP/backup code if you have one confirmed, otherwise your current local password — precisely because it replaces the credential that gets you into the account. An account with neither has nothing to unlink with self-service; that's an intentional dead end, not a bug.
 - A role granted to you by an identity provider group can't be converted into a role you control yourself just by unlinking SSO. An administrator has to remove the grant (or you leave the group) first.

@@ -192,6 +192,7 @@ export class MetNoClient {
           Accept: "application/json",
           "User-Agent": this.userAgent,
         },
+        redirect: "error",
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {

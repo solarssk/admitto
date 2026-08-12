@@ -21,9 +21,12 @@
     "@admitto/db": "*",
     "@admitto/import": "*",
     "@admitto/mail-delivery": "*",
+    "@admitto/mail-templates": "*",
+    "@admitto/shared": "*",
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
-    "pg": "^8.16.0"
+    "pg": "^8.16.0",
+    "redis": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

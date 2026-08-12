@@ -40,7 +40,13 @@ def deploy_footer(version: str) -> str:
         lines.append(
             f"- Container image: `ghcr.io/solarssk/admitto:{version}` (rolling `:{major_minor}`)"
         )
-        if parts >= (0, 4, 2):
+        if parts >= (0, 4, 14):
+            lines.append(
+                "- Migrations apply **automatically on container start**. "
+                "**No manual `migrate deploy`.** Back up the database yourself before upgrading "
+                "(the stack no longer takes an automatic pre-migration backup)."
+            )
+        elif parts >= (0, 4, 2):
             lines.append(
                 "- Migrations apply **automatically on container start** "
                 "(with pre-migration backup when pending). **No manual `migrate deploy`.**"

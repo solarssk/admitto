@@ -171,6 +171,7 @@ interface ProviderDetail {
   enabled: boolean;
   login_button_label: string | null;
   mappings: { group: string; role: string; scope_type: string; scope_id: string }[];
+  redirect_uri: string | null;
 }
 interface ProviderListResponse {
   providers: ProviderListItem[];
@@ -261,6 +262,9 @@ describe("identity providers API — list & get", () => {
       expect(body.mappings).toEqual([
         { group: "admins", role: "superadmin", scope_type: "instance", scope_id: "" },
       ]);
+      expect(body.redirect_uri).toMatch(
+        new RegExp(`^https?://.+/api/auth/oidc/${PROVIDER_ID}/callback$`),
+      );
     } finally {
       await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
     }
@@ -376,6 +380,20 @@ describe("identity providers API — update", () => {
         issuer: "https://idp-api-test.example.com/",
         client_id: "api-test-client",
         mappings: [{ group: "ops", role: "operator", scope_type: "organization" }],
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "validation_failed" });
+  });
+
+  it("rejects a mapping whose scope_type doesn't match its role, even with a scope_id present", async () => {
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        display_name: "API Test IdP (renamed)",
+        issuer: "https://idp-api-test.example.com/",
+        client_id: "api-test-client",
+        mappings: [{ group: "admins", role: "admin", scope_type: "instance" }],
       }),
     });
     expect(res.status).toBe(400);

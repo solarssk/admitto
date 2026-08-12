@@ -15,6 +15,7 @@ import {
   persistBounceIngestLastRun,
   pruneBounceIngestRunHistory,
   serializeBounceIngestLastRun,
+  workerHeartbeatStaleMs,
 } from "../../src/bounceIngest/lastRun.js";
 
 function summary(partial: Partial<IngestSummary> = {}): IngestSummary {
@@ -236,6 +237,19 @@ describe("bounceIngestStaleMsForPoll", () => {
     expect(bounceIngestStaleMsForPoll(5)).toBe(BOUNCE_INGEST_STALE_MS);
     expect(bounceIngestStaleMsForPoll(60)).toBe(60 * 2 * 60_000);
     expect(bounceIngestStaleMsForPoll(null)).toBe(BOUNCE_INGEST_STALE_MS);
+  });
+});
+
+describe("workerHeartbeatStaleMs", () => {
+  it("uses 3× tick + 60s slack with a 5m floor", () => {
+    expect(workerHeartbeatStaleMs(60)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(10)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(120)).toBe(420_000);
+  });
+
+  it("falls back to the default tick for non-positive values", () => {
+    expect(workerHeartbeatStaleMs(0)).toBe(300_000);
+    expect(workerHeartbeatStaleMs(Number.NaN)).toBe(300_000);
   });
 });
 

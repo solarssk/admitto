@@ -56,7 +56,8 @@ export interface EventOverviewResponse {
   busiest_hour: { hour: string; count: number } | null;
   /** Active attendees per catalog ticket type (batch 04), catalog order, zero-count types omitted. */
   ticket_type_breakdown: Array<{ key: string; label: string; color: string; count: number }>;
-  /** Newest-first merged feed of check-ins, mail delivery failures, and import batches. */
+  /** Newest-first merged feed of check-ins, mail delivery failures, import batches, attendees
+   * added, and item issue/return. */
   recent_activity: EventRecentActivityEntry[];
   contacts: EventContactData[];
   resources: EventResourceData[];
@@ -64,7 +65,16 @@ export interface EventOverviewResponse {
 
 export interface EventRecentActivityEntry {
   id: string;
-  type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
+  type:
+    | "checkin"
+    | "mail_bounced"
+    | "mail_failed"
+    | "mail_resent"
+    | "import"
+    | "attendee_added"
+    | "item_issued"
+    | "item_returned"
+    | "item_revoked";
   tone: "ok" | "warn" | "error" | "info" | "muted";
   attendee_name?: string | null;
   /** Links the entry to the attendee's detail view in the admin UI; null for entries with no
@@ -75,6 +85,30 @@ export interface EventRecentActivityEntry {
 }
 
 const RECENT_ACTIVITY_LIMIT = 30;
+
+/** Distinct attendees whose most recent EmailDelivery row for this event is currently bounced
+ * and not dismissed - not a raw count of bounced rows. Each resend creates a new row rather than
+ * mutating the old one, so a raw groupBy-by-status count over all rows never goes back down even
+ * after a later resend succeeds. The correlated subquery mirrors attendeeMailStatusSql
+ * (packages/tickets/attendees-list-filters.ts) - "latest" is the row with the newest created_at,
+ * id as a deterministic tiebreak. email_bounce_dismissed_at only covers bounces up to that
+ * timestamp, so a fresh bounce on a later delivery (new information) re-surfaces regardless of an
+ * earlier dismissal. */
+async function countCurrentlyBouncedAttendees(db: PrismaClient, eventId: string): Promise<number> {
+  const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
+    SELECT COUNT(*)::bigint AS count FROM "Attendee" a
+    WHERE a.event_id = ${eventId}
+      AND (
+        SELECT ed.status = 'bounced'
+          AND (a.email_bounce_dismissed_at IS NULL OR a.email_bounce_dismissed_at < ed.created_at)
+        FROM "EmailDelivery" ed
+        WHERE ed.attendee_id = a.id
+        ORDER BY ed.created_at DESC, ed.id DESC
+        LIMIT 1
+      )
+  `;
+  return Number(count);
+}
 
 /** Most recent check-in and the busiest hour-of-day among currently-admitted attendees, in the
  * event's timezone. Sourced from Attendee.admitted_at rather than CheckIn: undo.ts/bulk-revoke.ts
@@ -210,17 +244,80 @@ async function loadRecentImportActivity(db: PrismaClient, eventId: string): Prom
   });
 }
 
-/** Merges the three activity sources newest-first and caps the total. Taking up to
+const ATTENDEE_ACTION_ACTIVITY_TYPES = [
+  "attendee_created_manual",
+  "item_issued",
+  "item_returned",
+  "item_revoked",
+] as const;
+
+/** Attendees manually added, and items issued/returned, sourced from AttendeeActionLog (already
+ * written by attendees-api-routes.ts and item-states.ts). Item rows carry only event_item_key in
+ * metadata, so item labels are resolved with a second, event-scoped EventItem lookup. */
+async function loadRecentAttendeeActionActivity(
+  db: PrismaClient,
+  eventId: string,
+): Promise<EventRecentActivityEntry[]> {
+  const rows = await db.attendeeActionLog.findMany({
+    where: { event_id: eventId, action_type: { in: [...ATTENDEE_ACTION_ACTIVITY_TYPES] } },
+    orderBy: { created_at: "desc" },
+    take: RECENT_ACTIVITY_LIMIT,
+    select: {
+      id: true,
+      action_type: true,
+      created_at: true,
+      attendee_id: true,
+      metadata: true,
+      attendee: { select: { name: true } },
+    },
+  });
+  if (rows.length === 0) return [];
+
+  const itemKeys = new Set<string>();
+  for (const row of rows) {
+    const key = (row.metadata as { event_item_key?: string } | null)?.event_item_key;
+    if (key) itemKeys.add(key);
+  }
+  const itemLabels: Map<string, string> = new Map(
+    itemKeys.size > 0
+      ? (
+          await db.eventItem.findMany({
+            where: { event_id: eventId, key: { in: [...itemKeys] } },
+            select: { key: true, label: true },
+          })
+        ).map((item): [string, string] => [item.key, item.label])
+      : [],
+  );
+
+  return rows.map((row) => {
+    const itemKey = (row.metadata as { event_item_key?: string } | null)?.event_item_key;
+    const itemLabel = itemKey ? (itemLabels.get(itemKey) ?? itemKey) : "item";
+    const base = { id: `action:${row.id}`, attendee_name: row.attendee?.name, attendee_id: row.attendee_id, occurred_at: row.created_at.toISOString() };
+    switch (row.action_type) {
+      case "item_returned":
+        return { ...base, type: "item_returned" as const, tone: "muted" as const, message: `returned ${itemLabel}` };
+      case "item_issued":
+        return { ...base, type: "item_issued" as const, tone: "ok" as const, message: `issued ${itemLabel}` };
+      case "item_revoked":
+        return { ...base, type: "item_revoked" as const, tone: "warn" as const, message: `revoked ${itemLabel}` };
+      default:
+        return { ...base, type: "attendee_added" as const, tone: "info" as const, message: "added" };
+    }
+  });
+}
+
+/** Merges the activity sources newest-first and caps the total. Taking up to
  * RECENT_ACTIVITY_LIMIT from each source (already sorted newest-first) before merging is
  * sufficient for a correct top-N merge - the final slice can never need more than N items from
  * any single source. */
 async function loadRecentActivity(db: PrismaClient, eventId: string): Promise<EventRecentActivityEntry[]> {
-  const [checkins, mailFailures, imports] = await Promise.all([
+  const [checkins, mailFailures, imports, attendeeActions] = await Promise.all([
     loadRecentCheckInActivity(db, eventId),
     loadRecentMailFailureActivity(db, eventId),
     loadRecentImportActivity(db, eventId),
+    loadRecentAttendeeActionActivity(db, eventId),
   ]);
-  return [...checkins, ...mailFailures, ...imports]
+  return [...checkins, ...mailFailures, ...imports, ...attendeeActions]
     .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
     .slice(0, RECENT_ACTIVITY_LIMIT);
 }
@@ -257,6 +354,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     activeAttendeeCount,
     activeAdmittedCount,
     deliveryStats,
+    bouncedAttendeeCount,
     requirementsCount,
     checkinStaffCount,
     attendeesWithTicketRows,
@@ -273,6 +371,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       where: { event_id: eventId },
       _count: { id: true },
     }),
+    countCurrentlyBouncedAttendees(db, eventId),
     db.eventItem.count({ where: { event_id: eventId, enabled: true } }),
     // Count active users who can perform check-in: event-scope operators + org-scope admins.
     db.roleAssignment.count({
@@ -326,7 +425,7 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
     (emailByStatus["accepted"] ?? 0) +
     (emailByStatus["sent"] ?? 0) +
     (emailByStatus["delivered"] ?? 0);
-  const emailBounced = emailByStatus["bounced"] ?? 0;
+  const emailBounced = bouncedAttendeeCount;
   const emailFailed =
     (emailByStatus["failed"] ?? 0) +
     (emailByStatus["rejected"] ?? 0);

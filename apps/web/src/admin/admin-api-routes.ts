@@ -5,6 +5,7 @@ import { z } from "zod";
 import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { normalizeTimeZone } from "@admitto/shared/timezones";
 import { assertCoordinatePairing, buildEventStaticMapPath, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
 import { createWeatherServiceFromDb } from "../weather/weather-org-settings.js";
 import { summarizeMany } from "../weather/weather-service.js";
@@ -15,6 +16,7 @@ import { resolveMapTileConfig } from "../maps/config.js";
 import {
   adminAuditFromContext,
   countAttendeesByEvent,
+  eventHoursField,
   isValidCalendarDate,
   parseEventDateInput,
   resolveActorEmailForLog,
@@ -47,6 +49,8 @@ const createEventSchema = z.object({
   slug: slugField,
   date: z.union([z.string().datetime({ offset: true }), dateOnlyField]),
   timezone: timezoneField,
+  event_hours_start: eventHoursField,
+  event_hours_end: eventHoursField,
   venue_name: z.string().trim().max(LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH).optional(),
   formatted_address: z.string().trim().max(LOCATION_LIMITS.ADDRESS_MAX_LENGTH).optional(),
   latitude: z.number().min(LOCATION_LIMITS.LATITUDE_MIN).max(LOCATION_LIMITS.LATITUDE_MAX).optional(),
@@ -60,6 +64,8 @@ type EventJsonRow = {
   slug: string;
   date: Date;
   timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   location: string | null;
   has_coordinates?: boolean;
   map_latitude?: number | null;
@@ -100,6 +106,8 @@ export function serializeEventDto(
   count?: number,
   userDisplayMap?: Record<string, UserDisplayRow>,
 ) {
+  const normalizeNullableTimeZone = (value: string | null) =>
+    value === null ? null : normalizeTimeZone(value) ?? value;
   const createdBy = event.created_by_user_id ? userDisplayMap?.[event.created_by_user_id] : undefined;
   const archivedBy = event.archived_by_user_id ? userDisplayMap?.[event.archived_by_user_id] : undefined;
   const mapPreviewPath = eventListMapPreviewPath(event);
@@ -111,7 +119,9 @@ export function serializeEventDto(
     title: event.title,
     slug: event.slug,
     date: event.date.toISOString(),
-    timezone: event.timezone,
+    timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
+    event_hours_start: event.event_hours_start,
+    event_hours_end: event.event_hours_end,
     location: event.location,
     has_coordinates: event.has_coordinates === true,
     map_preview_path: mapPreviewPath,
@@ -121,10 +131,10 @@ export function serializeEventDto(
     created_at: event.created_at.toISOString(),
     created_by_display_name: createdBy?.display_name ?? null,
     created_by_email: createdBy?.email ?? null,
-    created_by_timezone: event.created_by_timezone,
+    created_by_timezone: normalizeNullableTimeZone(event.created_by_timezone),
     archived_by_display_name: archivedBy?.display_name ?? null,
     archived_by_email: archivedBy?.email ?? null,
-    archived_by_timezone: event.archived_by_timezone,
+    archived_by_timezone: normalizeNullableTimeZone(event.archived_by_timezone),
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }
@@ -223,8 +233,19 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
     return c.json({ error: message }, 400);
   }
 
-  const { title, slug, date, timezone, venue_name, formatted_address, latitude, longitude, geocoding_provider } =
-    parsed.data;
+  const {
+    title,
+    slug,
+    date,
+    timezone,
+    event_hours_start,
+    event_hours_end,
+    venue_name,
+    formatted_address,
+    latitude,
+    longitude,
+    geocoding_provider,
+  } = parsed.data;
   const dateValue = parseEventDateInput(date);
 
   try {
@@ -258,6 +279,8 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
           slug,
           date: dateValue,
           timezone,
+          event_hours_start: event_hours_start ?? null,
+          event_hours_end: event_hours_end ?? null,
           organization_id: orgId,
           created_by_user_id: actorUserId,
           created_by_timezone: audit.timezone,

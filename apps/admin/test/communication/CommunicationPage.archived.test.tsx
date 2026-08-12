@@ -34,16 +34,21 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventTemplateById: (...args: unknown[]) => fetchEventTemplateById(...args),
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
-  previewEventTemplate: vi.fn(),
-  previewEventTemplateById: vi.fn(),
+  previewEventTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
+  previewEventTemplateById: vi.fn().mockResolvedValue({ subject: "", html: "" }),
   saveEventTemplate: vi.fn(),
   saveEventTemplateById: vi.fn(),
   createEventTemplate: vi.fn(),
   deleteEventTemplate: vi.fn(),
+  updateEventTemplateMetadata: vi.fn(),
   testSendEventTemplate: vi.fn(),
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventMailSettings: vi.fn().mockResolvedValue({
+    fields: { fromName: { value: null }, fromAddress: { value: null } },
+  }),
 }));
 
 const blockerState = {
@@ -93,7 +98,7 @@ const reminderRow = {
 
 function renderPage() {
   return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/communication"]}>
+    <MemoryRouter initialEntries={["/admin/events/evt-1/communication?tab=templates"]}>
       <Routes>
         <Route path="/admin/events/:eventId/communication" element={<CommunicationPage />} />
       </Routes>
@@ -145,17 +150,23 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("CommunicationPage archived lockdown", () => {
-  it("disables send email, new/delete template, preview, save, send test, and the editor fieldset", async () => {
+  it("disables send email, new/edit template, save, send test, and the editor fieldset", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Send email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
     });
 
-    expectArchivedLock(screen.getByRole("button", { name: "Send email" }));
-    expectArchivedLock(screen.getByRole("button", { name: "New" }));
-    expectArchivedLock(screen.getByRole("button", { name: "Delete Reminder" }));
-    expectArchivedLock(screen.getByRole("button", { name: "Preview" }));
+    expectArchivedLock(screen.getByRole("button", { name: "New template" }));
+
+    // Edit (rename/icon/description, with delete nested inside) only ever targets the currently
+    // open template, so switch to Reminder first to reach a real one.
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
+    });
+    expectArchivedLock(screen.getByRole("button", { name: "Edit template" }));
 
     // Save is already disabled while the form isn't dirty (editing is impossible
     // anyway since the fieldset below is disabled) — confirm it stays blocked.
@@ -163,7 +174,7 @@ describe("CommunicationPage archived lockdown", () => {
 
     // Give "Send test" a valid recipient (that field isn't part of the disabled
     // fieldset) to isolate the archived lock from the unrelated "invalid email" disable.
-    fireEvent.change(screen.getByLabelText("Recipient email"), {
+    fireEvent.change(screen.getByLabelText("Recipient"), {
       target: { value: "test@example.com" },
     });
     expectArchivedLock(screen.getByRole("button", { name: "Send test" }));
@@ -178,11 +189,24 @@ describe("CommunicationPage archived lockdown", () => {
     expect(
       (screen.getByRole("button", { name: "{{first_name}}" }) as HTMLButtonElement).disabled,
     ).toBe(false);
-    expect((screen.getByRole("button", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("radio", { name: "MJML" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
-    expect((screen.getByRole("button", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole("radio", { name: "HTML" }) as HTMLButtonElement).disabled).toBe(
       false,
     );
+  });
+
+  it("disables the Send button on the Send tab, but not Count recipients", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    });
+    expectArchivedLock(screen.getByRole("button", { name: "Send" }));
+    expect(
+      (screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 });

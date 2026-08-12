@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PercentCrop } from "react-image-crop";
-import { Button, useToast } from "@admitto/ui";
+import { Button, Notice, useToast } from "@admitto/ui";
 import type { LogoCropMeta } from "../api/types.js";
 import { uploadFile, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -586,9 +586,9 @@ export function LogoUploadZone({
         />
       </div>
       {zoneError ? (
-        <span className="at-hint at-hint--error" role="alert">
+        <Notice variant="error" role="alert">
           {zoneError}
-        </span>
+        </Notice>
       ) : null}
       <div className="logo-upload__actions">
         {showPreview ? (

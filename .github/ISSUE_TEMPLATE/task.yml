@@ -32,6 +32,7 @@ body:
         - db
         - import
         - checkin
+        - tickets
         - passcreator
         - ui
         - infra

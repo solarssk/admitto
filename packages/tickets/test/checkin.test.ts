@@ -374,6 +374,23 @@ describe("getRecentCheckIns", () => {
       await prisma.checkIn.delete({ where: { id: reversal.id } });
     }
   });
+
+  it("excludes duplicate-scan ALREADY_CHECKED_IN audit rows", async () => {
+    const duplicate = await prisma.checkIn.create({
+      data: {
+        attendee_id: attendeeAId,
+        event_id: EVENT_ID,
+        status: "ALREADY_CHECKED_IN",
+        source: "scan",
+      },
+    });
+    try {
+      const history = await getRecentCheckIns(EVENT_ID, prisma, 100);
+      expect(history.some((entry) => entry.id === duplicate.id)).toBe(false);
+    } finally {
+      await prisma.checkIn.delete({ where: { id: duplicate.id } });
+    }
+  });
 });
 
 describe("writeBulkActionLog (Codecov review — previously untested)", () => {

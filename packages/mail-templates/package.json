@@ -6,10 +6,15 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./placeholders": {
+      "types": "./dist/placeholders.d.ts",
+      "default": "./dist/placeholders.js"
     },
     "./branding": {
       "types": "./dist/branding.d.ts",

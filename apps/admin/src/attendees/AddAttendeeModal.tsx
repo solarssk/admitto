@@ -34,7 +34,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef, open);
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [company, setCompany] = useState("");
   const [department, setDepartment] = useState("");
   const [ticketType, setTicketType] = useState("");
@@ -107,7 +108,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
 
   const resetForm = () => {
     setEmail("");
-    setName("");
+    setFirstName("");
+    setLastName("");
     setCompany("");
     setDepartment("");
     setTicketType("");
@@ -130,7 +132,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
   // adding a typeless attendee during a brief load or a transient fetch failure.
   const canSubmit =
     email.trim() &&
-    name.trim() &&
+    firstName.trim() &&
+    lastName.trim() &&
     isValidEmail(email.trim()) &&
     !submitting &&
     !attributeFieldsLoading &&
@@ -154,7 +157,8 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
       }
       const attendee = await createAttendee(eventId, {
         email: email.trim(),
-        name: name.trim(),
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         company: company.trim() || undefined,
         department: department.trim() || undefined,
         ticket_type: ticketType.trim() || undefined,
@@ -197,7 +201,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
         </h2>
         <p className="add-attendee-modal__subtitle">
-          Enter their email and name. Everything else is optional.
+          Enter their email, first name, and last name. Everything else is optional.
         </p>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
@@ -236,13 +240,25 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
             {...NO_AUTOFILL_PROPS}
           />
           <Input
-            label="Name *"
+            label="First name *"
             required
             icon={<i className="ti ti-user" aria-hidden="true" />}
-            value={name}
+            value={firstName}
             disabled={submitting}
             onChange={(e) => {
-              setName(e.target.value);
+              setFirstName(e.target.value);
+              setError(null);
+            }}
+            {...NO_AUTOFILL_PROPS}
+          />
+          <Input
+            label="Last name *"
+            required
+            icon={<i className="ti ti-user" aria-hidden="true" />}
+            value={lastName}
+            disabled={submitting}
+            onChange={(e) => {
+              setLastName(e.target.value);
               setError(null);
             }}
             {...NO_AUTOFILL_PROPS}
@@ -280,7 +296,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
               showLabel={false}
               value={ticketType}
               options={[
-                { id: "", label: "-" },
+                { id: "", label: "No ticket type" },
                 ...ticketTypes.map((type) => ({ id: type.key, label: type.label })),
               ]}
               disabled={submitting}

@@ -74,6 +74,7 @@ const baseAccount: AccountDto = {
   email: "admin@example.com",
   display_name: "Admin",
   preferred_locale: "en-GB",
+  preferred_time_format: null,
   is_active: true,
   must_change_password: false,
   has_local_password: true,
@@ -120,6 +121,7 @@ function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionLis
     expiresAt: "2026-01-02T00:00:00.000Z",
     authMethod: "local",
     stage: "active",
+    timezone: null,
     isCurrent: true,
     ...overrides,
   };
@@ -262,6 +264,40 @@ describe("AccountPage toasts", () => {
     fireEvent.click(screen.getByRole("button", { name: /^System default \(browser\):/ }));
 
     expect(screen.getByRole("button", { name: /^Regional format, System default \(browser\)/ })).toBeTruthy();
+  });
+
+  it("saves a time format independently from the regional date format", async () => {
+    mockLoadedAccount();
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: "12h" });
+
+    renderWithToast(<AccountPage />);
+    await screen.findByRole("button", { name: /^Time format,/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Time format,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "12-hour time (1:30 PM)" }));
+    expect(screen.getByRole("button", { name: /^Time format, 12-hour time/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ preferred_time_format: "12h" });
+    });
+    expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
+  });
+
+  it("clears the time-format preference without changing the regional date format", async () => {
+    mockFetchAccount.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: "24h" });
+    mockPatchProfile.mockResolvedValueOnce({ ...baseAccount, preferred_time_format: null });
+
+    renderWithToast(<AccountPage />);
+    await screen.findByRole("button", { name: /^Time format, 24-hour time/ });
+    fireEvent.click(screen.getByRole("button", { name: /^Time format, 24-hour time/ }));
+    fireEvent.click(screen.getByRole("button", { name: "System default (browser)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockPatchProfile).toHaveBeenCalledWith({ preferred_time_format: null });
+    });
+    expect(screen.getByRole("button", { name: /^Regional format, English \(UK\)/ })).toBeTruthy();
   });
 
   it("toasts profile save errors", async () => {
@@ -937,6 +973,25 @@ describe("AccountPage toasts", () => {
     expect(screen.getByText("curl/8.7.1")).toBeTruthy();
   });
 
+  it("shows the signer's stored timezone under Logged in when Session.timezone is set", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({
+      sessions: [
+        makeAccountSession({
+          timezone: "Europe/Warsaw",
+          loginAt: "2026-01-01T12:00:00.000Z",
+        }),
+      ],
+    });
+
+    renderWithToast(<AccountPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Europe\/Warsaw/)).toBeTruthy();
+    });
+    expect(screen.getByTitle("Signer's local time")).toBeTruthy();
+  });
+
   it("shows the resolved country under the IP address for a session with one", async () => {
     mockLoadedAccount();
     mockFetchSessions.mockResolvedValue({
@@ -1260,6 +1315,7 @@ describe("AccountPage toasts", () => {
       expiresAt: "2026-01-02T00:00:00.000Z",
       authMethod: "local",
       stage: "active",
+      timezone: null,
       isCurrent: false,
     };
     mockLoadedAccount();
@@ -1294,6 +1350,7 @@ describe("AccountPage toasts", () => {
       expiresAt: "2026-01-02T00:00:00.000Z",
       authMethod: "local",
       stage: "active",
+      timezone: null,
       isCurrent: true,
     };
     const otherSession = {
@@ -1445,6 +1502,7 @@ describe("AccountPage profile: phone number", () => {
     mockPatchProfile.mockResolvedValueOnce({
       display_name: baseAccount.display_name,
       preferred_locale: baseAccount.preferred_locale,
+      preferred_time_format: baseAccount.preferred_time_format,
       phone_country_code: "+1",
       phone_number: "5551234",
     });
@@ -1476,6 +1534,7 @@ describe("AccountPage profile: phone number", () => {
     mockPatchProfile.mockResolvedValueOnce({
       display_name: baseAccount.display_name,
       preferred_locale: baseAccount.preferred_locale,
+      preferred_time_format: baseAccount.preferred_time_format,
       phone_country_code: "+48",
       phone_number: null,
     });
@@ -1579,6 +1638,16 @@ describe("AccountPage profile: account type", () => {
       expect(screen.getByRole("button", { name: /^Regional format,/ })).toBeTruthy();
     });
   });
+
+  it("shows a separate Time format select", async () => {
+    mockFetchAccount.mockResolvedValue(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^Time format,/ })).toBeTruthy();
+    });
+  });
 });
 
 const LINKED_ACCOUNT: AccountDto = {
@@ -1636,6 +1705,24 @@ describe("AccountPage profile: identity provider actions menu", () => {
     fireEvent.click(await screen.findByRole("button", { name: "SSO" }));
     expect(screen.getByRole("menuitem", { name: /Unlink SSO/ })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /Connect Authentik/ })).toBeTruthy();
+  });
+
+  it("positions the SSO menu with position:fixed so it does not inflate the Profile card header", async () => {
+    // Regression: without useDropdownMenu's panelStyle the panel stayed in document flow and
+    // stretched .at-card__header around Connect / Unlink (same fixed-panel pattern as
+    // UserMoreActionsMenu).
+    mockFetchAccount.mockResolvedValue({
+      ...baseAccount,
+      available_identity_providers: [{ id: "p1", display_name: "Authentik" }],
+    });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    renderWithToast(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "SSO" }));
+    const panel = screen.getByRole("menu");
+    expect(panel.style.position).toBe("fixed");
+    expect(panel.style.top).not.toBe("");
+    expect(panel.style.left).not.toBe("");
   });
 
   it("hides Connect items for a JIT SSO-only account with no local password, even when providers are available", async () => {

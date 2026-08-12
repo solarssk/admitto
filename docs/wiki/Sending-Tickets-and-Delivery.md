@@ -3,7 +3,7 @@
 > **Audience:** Event Managers
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -11,11 +11,11 @@ Choose the intended recipients for a ticket or named template, count them before
 
 ## Before you start
 
-Save and test the selected template. Review attendee pass status, email addresses, ticket types, and attendance values used by the recipient filter.
+Save and test the selected template. Review attendee pass status, email addresses, ticket types, and attendance values used by the recipient filter. Keep the Admitto **worker** running (`npm run worker` in development, or the compose `worker` service in deploy) so queued sends leave the queue.
 
 ## Steps
 
-1. Open **Communication**, select the template, and choose **Send email**. A selected-attendee send can also start from **Attendees**.
+1. Open **Communication**, then the **Send** tab, and select the template. A selected-attendee send can also start from **Attendees**.
 2. Choose a recipient filter.
 3. Select **Count recipients** and compare the count with your expectation.
 4. If the count is wrong, cancel and correct the filter or attendee data.
@@ -35,6 +35,7 @@ The batch completes with a recorded status for every attempted delivery. The del
 | No delivery for this template | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, or rejected attempts do not count as successful delivery. |
 | By attendance status | Attendees whose current attendance status matches the selected status. |
 | By ticket type | Attendees whose stored ticket type matches the selected configured type. |
+| Specific attendees | Search by name or email and pick individual attendees one at a time. Use this for a small, named group instead of a broad filter. |
 
 Custom-template bulk sends are recorded as resends. A recipient count is a dry run and sends nothing.
 

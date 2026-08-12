@@ -3,7 +3,7 @@
 > **Audience:** All staff
 > **Required role:** Any staff role
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 | Term | Meaning |
 |---|---|
@@ -26,5 +26,12 @@
 | Event item | A physical or tracked requirement, such as a badge or material, handled during check-in. |
 | Custom attendee field | Extra event-specific attendee information defined in **Requirements**. |
 | Archived event | A read-only completed event. Check-in and event mutations are disabled. |
+| SSO (single sign-on) | Staff sign in with an existing corporate account instead of a separate Admitto password. Admitto supports this through OIDC. |
+| OIDC | The sign-in protocol Admitto uses to connect to a corporate identity provider (for example Microsoft Entra ID, Okta, or Authentik) for SSO. Configured under Organisation settings → Identity. |
+| Identity provider (IdP) | The corporate system (Entra ID, Okta, Authentik, or similar) that verifies a staff member's identity for SSO and reports their group membership, which Admitto maps to roles. |
+| MFA / TOTP | Multi-factor authentication — a time-based one-time code from an authenticator app, required at sign-in for roles whose policy demands it, in addition to a password or SSO. |
+| ZTNA (Zero Trust Network Access) | A gateway placed in front of staff URLs that checks identity and device before a request ever reaches Admitto — a network-layer control, separate from and in addition to Admitto's own role-based access. Admitto has native support for **Cloudflare Access**, configured under Organisation settings → Identity. |
+| RBAC (role-based access control) | Admitto's own permission model — access is granted by role (Superadmin, Organisation Admin, Operator) and scope (instance, organisation, or event), independent of whether sign-in happens via a local password, SSO, or a ZTNA gateway. |
+| External service | A third-party API Admitto's server calls on the customer's behalf when a feature is enabled — for example address lookup, map tiles, or weather. See [Organisation Settings](Organisation-Settings) → External services. These never receive attendee personal data. |
 
 See [Roles and Permissions](Roles-and-Permissions) for the permission matrix and [Reference](Reference-and-Troubleshooting) for status references.

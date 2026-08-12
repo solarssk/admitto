@@ -11,7 +11,7 @@ import { Button, EmptyState, applyThemeVars } from "@admitto/ui";
 import { ApiError, fetchMe, fetchStaffTheme } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuthUser, RoleAssignment } from "../api/types.js";
-import { setPreferredLocale } from "../utils/locale-store.js";
+import { setPreferredLocale, setPreferredTimeFormat } from "../utils/locale-store.js";
 
 export interface AuthContextValue {
   user: AuthUser;
@@ -41,6 +41,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     try {
       const me = await fetchMe();
       setPreferredLocale(me.user.preferred_locale ?? undefined);
+      setPreferredTimeFormat(me.user.preferred_time_format);
       setUser({ ...me.user, mailer_status: me.mailer_status ?? null });
       setAssignments(me.assignments);
       setDeviceLabel(me.device_label ?? null);

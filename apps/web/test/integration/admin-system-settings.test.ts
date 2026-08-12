@@ -123,10 +123,11 @@ type SecurityDto = {
   trusted_device_days: SettingField<number>;
   mfa_required_roles: SettingField<string[]>;
   instance_url: SettingField<string | null>;
+  csp_trusted_origins: SettingField<string[]>;
 };
 
 describe("GET /api/admin/system-settings", () => {
-  it("returns all 7 keys with source=default on fresh DB", async () => {
+  it("returns all 8 keys with source=default on fresh DB", async () => {
     const res = await app.request("/api/admin/system-settings", {
       headers: { Cookie: superCookie },
     });
@@ -140,6 +141,8 @@ describe("GET /api/admin/system-settings", () => {
     expect(body.mfa_required_roles.source).toBe("default");
     expect(body.instance_url.source).toBe("default");
     expect(body.instance_url.value).toBeNull();
+    expect(body.csp_trusted_origins.source).toBe("default");
+    expect(body.csp_trusted_origins.value).toEqual([]);
     expect(typeof body.session_ttl_ms.value).toBe("number");
     expect(typeof body.session_idle_timeout_ms.value).toBe("number");
     expect(typeof body.operator_session_idle_timeout_ms.value).toBe("number");
@@ -616,6 +619,7 @@ describe("PATCH /api/admin/system-settings", () => {
         operator_session_ttl_ms: null,
         trusted_device_days: null,
         mfa_required_roles: null,
+        csp_trusted_origins: null,
       }),
     });
     expect(res.status).toBe(200);
@@ -624,6 +628,7 @@ describe("PATCH /api/admin/system-settings", () => {
     expect(body.operator_session_ttl_ms.source).toBe("default");
     expect(body.trusted_device_days.source).toBe("default");
     expect(body.mfa_required_roles.source).toBe("default");
+    expect(body.csp_trusted_origins.source).toBe("default");
   });
 
   it("updates instance_url and source becomes db", async () => {
@@ -700,6 +705,113 @@ describe("PATCH /api/admin/system-settings", () => {
     } finally {
       if (prev === undefined) delete process.env.BASE_URL;
       else process.env.BASE_URL = prev;
+    }
+  });
+
+  it("updates csp_trusted_origins and source becomes db", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ csp_trusted_origins: ["https://static.cloudflareinsights.com"] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.csp_trusted_origins.value).toEqual(["https://static.cloudflareinsights.com"]);
+    expect(body.csp_trusted_origins.source).toBe("db");
+  });
+
+  it.each([
+    ["'self'", ["'self'"]],
+    ["wildcard", ["*"]],
+    ["data:", ["data:"]],
+    ["blob:", ["blob:"]],
+    ["non-HTTPS", ["http://insecure.example.com"]],
+    ["trailing slash", ["https://example.com/"]],
+    ["path", ["https://example.com/beacon.js"]],
+    ["query string", ["https://example.com?x=1"]],
+    ["over the 10-item cap", Array.from({ length: 11 }, (_, i) => `https://example${i}.com`)],
+    ["duplicate entries", ["https://example.com", "https://example.com"]],
+  ])("rejects csp_trusted_origins with %s", async (_label, cspTrustedOrigins) => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ csp_trusted_origins: cspTrustedOrigins }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_error");
+  });
+
+  it("null csp_trusted_origins clears DB override and source reverts to default", async () => {
+    await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ csp_trusted_origins: ["https://example.com"] }),
+    });
+
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ csp_trusted_origins: null }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.csp_trusted_origins.source).toBe("default");
+    expect(body.csp_trusted_origins.value).toEqual([]);
+  });
+
+  it("env-locked csp_trusted_origins returns 400 when CSP_TRUSTED_ORIGINS is set", async () => {
+    const prev = process.env.CSP_TRUSTED_ORIGINS;
+    process.env.CSP_TRUSTED_ORIGINS = '["https://env.example.com"]';
+    try {
+      const res = await app.request("/api/admin/system-settings", {
+        method: "PATCH",
+        headers: {
+          Cookie: superCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ csp_trusted_origins: ["https://db.example.com"] }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; field: string };
+      expect(body.error).toBe("managed by environment");
+      expect(body.field).toBe("csp_trusted_origins");
+    } finally {
+      if (prev === undefined) delete process.env.CSP_TRUSTED_ORIGINS;
+      else process.env.CSP_TRUSTED_ORIGINS = prev;
+    }
+  });
+
+  it("GET shows source=env for csp_trusted_origins when CSP_TRUSTED_ORIGINS is set", async () => {
+    const prev = process.env.CSP_TRUSTED_ORIGINS;
+    process.env.CSP_TRUSTED_ORIGINS = '["https://env.example.com"]';
+    try {
+      const res = await app.request("/api/admin/system-settings", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as SecurityDto;
+      expect(body.csp_trusted_origins.source).toBe("env");
+      expect(body.csp_trusted_origins.value).toEqual(["https://env.example.com"]);
+    } finally {
+      if (prev === undefined) delete process.env.CSP_TRUSTED_ORIGINS;
+      else process.env.CSP_TRUSTED_ORIGINS = prev;
     }
   });
 });

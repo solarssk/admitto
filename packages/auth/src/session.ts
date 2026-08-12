@@ -25,6 +25,10 @@ export interface CreateSessionInput {
   ip?: string;
   userAgent?: string;
   deviceLabel?: string;
+  /** Signer's IANA timezone at login (browser-captured); null/omit when unknown. */
+  timezone?: string | null;
+  /** Which IdP this login came from, for RP-initiated logout. Ignored for authMethod "local". */
+  oidcProviderId?: string;
 }
 
 /** Active full session after cookie token validation. */
@@ -139,9 +143,11 @@ export async function createSession(
       token_hash,
       stage,
       auth_method: authMethod,
+      oidc_provider_id: authMethod === AUTH_METHOD.OIDC ? (input.oidcProviderId ?? null) : null,
       ip: input.ip ?? null,
       user_agent: input.userAgent ?? null,
       device_label: input.deviceLabel ? input.deviceLabel.slice(0, DEVICE_LABEL_MAX_LEN) : null,
+      timezone: input.timezone ?? null,
       last_seen_at: now,
       expires_at,
     },

@@ -10,6 +10,7 @@ import {
   revokeTrustedDeviceByToken,
   validateSession,
   validatePartialSession,
+  resolveOidcEndSessionRedirect,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -22,10 +23,12 @@ import {
   LOGIN_ERROR_CODE,
 } from "../login-page.js";
 import { createAuthPageScriptNonce } from "../auth-page-security.js";
+import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { loadLoginSsoProviders } from "./login-sso.js";
+import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
 function mfaPathWithNext(path: string, next?: string): string {
   if (!next) return path;
@@ -34,8 +37,14 @@ function mfaPathWithNext(path: string, next?: string): string {
 
 const LOGIN_ERROR = LOGIN_ERROR_CODE;
 
-function htmlResponse(c: Context, html: string, scriptNonce: string, status: 200 | 401 = 200): Response {
-  for (const [name, value] of Object.entries(getLoginPageSecurityHeaders(scriptNonce))) {
+function htmlResponse(
+  c: Context,
+  html: string,
+  scriptNonce: string,
+  status: 200 | 401 = 200,
+  trustedOrigins: readonly string[] = [],
+): Response {
+  for (const [name, value] of Object.entries(getLoginPageSecurityHeaders(scriptNonce, trustedOrigins))) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -68,8 +77,9 @@ export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Resp
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const errorParam = c.req.query("error") ?? undefined;
   const sso = await loadLoginSsoProviders(db);
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   const scriptNonce = createAuthPageScriptNonce();
-  return htmlResponse(c, renderLoginForm(scriptNonce, errorParam, next, sso), scriptNonce);
+  return htmlResponse(c, renderLoginForm(scriptNonce, errorParam, next, sso), scriptNonce, 200, trustedOrigins);
 }
 
 async function parseLoginForm(c: Context): Promise<Record<string, string>> {
@@ -100,10 +110,11 @@ export async function handlePostLogin(
   const rawNext = form["next"] ?? c.req.query("next");
   const next = resolveOptionalSafeRedirectPath(rawNext);
   const sso = await loadLoginSsoProviders(db);
+  const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
 
   if (!email || !password) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401);
+    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401, trustedOrigins);
   }
 
   const result = await login(db, {
@@ -112,6 +123,7 @@ export async function handlePostLogin(
     ip: resolveClientIp(c),
     userAgent: c.req.header("user-agent"),
     trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
+    timezone: parseOptionalClientTimezone(form["timezone"]),
   });
 
   if (!result.ok) {
@@ -119,7 +131,7 @@ export async function handlePostLogin(
       return c.text("Too many requests", 429);
     }
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401);
+    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401, trustedOrigins);
   }
 
   setSessionCookie(c, result.rawToken);
@@ -146,16 +158,32 @@ export async function handlePostLogin(
   return c.redirect(landing, 302);
 }
 
-/** POST /logout — revokes session, trusted device, and redirects to `/login`. */
-export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
+/**
+ * POST /logout (revokes session, trusted device, and redirects to `/login`, or the identity
+ * provider's own logout first, when applicable). `baseUrl` is null when Instance URL isn't
+ * configured yet - local logout must still succeed in that case, just without the IdP redirect
+ * (no safe `post_logout_redirect_uri` can be built without it).
+ */
+export async function handlePostLogout(c: Context, db: PrismaClient, baseUrl: string | null): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
   const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
   if (validated) {
     await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
   }
+  // Resolved before the local session is revoked below - same session row either way, just
+  // reading it while it's still the one the cookie names, not relying on ordering to matter.
+  // Failure here (e.g. a transient DB error looking up the provider) must not block local
+  // logout - the IdP redirect is a bonus, not a precondition for clearing this session.
+  const endSessionRedirect =
+    validated && baseUrl
+      ? await resolveOidcEndSessionRedirect(db, validated.session, baseUrl).catch((err) => {
+          console.error("resolve OIDC end-session redirect:", err instanceof Error ? err.message : "unknown");
+          return null;
+        })
+      : null;
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
   clearTrustedDeviceCookie(c);
-  return c.redirect("/login", 302);
+  return c.redirect(endSessionRedirect ?? "/login", 302);
 }

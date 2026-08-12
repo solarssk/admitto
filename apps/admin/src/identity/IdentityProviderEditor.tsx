@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, Input, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -25,6 +25,7 @@ import {
   newMappingId,
   validateMappings,
   validateProviderDraft,
+  withScopeForRole,
   type EditorMode,
   type FieldErrors,
   type MappingRow,
@@ -42,8 +43,10 @@ interface IdentityProviderEditorProps {
 
 type LoadState = "loading" | "ready" | "error" | "not_found";
 
-/** Map a loaded provider's mappings into editable repeater rows (with stable ids). */
-function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
+/** Map a loaded provider's mappings into editable repeater rows (with stable ids), exactly as
+ * stored - no self-heal. Used only to seed `baselineMappings` (see mappingsFromDetail below for
+ * why that must stay unhealed) - every other caller wants the healed version. */
+function rawMappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
   return detail.mappings.map((m) => ({
     id: newMappingId(),
     group: m.group,
@@ -51,6 +54,24 @@ function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
     scope_type: m.scope_type as MappingRow["scope_type"],
     scope_id: m.scope_id ?? "",
   }));
+}
+
+/** Map a loaded provider's mappings into editable repeater rows (with stable ids). Re-derives
+ * scope_type from role (withScopeForRole) so a mapping saved before role↔scope pairing was
+ * enforced self-heals on load instead of surfacing as an error with no way to fix it in the UI.
+ *
+ * Security note: callers MUST seed `baselineMappings` from `rawMappingsFromDetail`, not this
+ * function - never from the same healed array used for `mappings`. A stored `superadmin` row at
+ * a non-instance scope is inert under the app's exact-match scope model (nothing checks
+ * superadmin at organization/event scope), but healing rewrites it to `instance`, an
+ * immediately-live, fully-privileged grant - and `instance` scope needs no scope_id, so nothing
+ * else forces the operator to notice or interact with that row. If baseline were also healed,
+ * `mappingsEqual` would see no difference and the dirty-check/unsaved-changes guard would never
+ * fire, so an unrelated save (e.g. rotating the client secret) would silently promote that row to
+ * instance-wide superadmin with no visible change and no confirmation. Keeping baseline unhealed
+ * makes every self-heal show up as a pending change the operator must actively choose to save. */
+function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
+  return rawMappingsFromDetail(detail).map((row) => withScopeForRole(row));
 }
 
 /** Map repeater rows into the request body shape (scope_id null for instance scope). */
@@ -209,8 +230,10 @@ function clientSecretFieldLabel(mode: EditorMode, hasSecret: boolean): string {
   return hasSecret ? "New client secret" : "Client secret";
 }
 
-function clientSecretFieldHint(mode: EditorMode, hasSecret: boolean): string | undefined {
-  return mode === "edit" && hasSecret ? "Leave blank to keep the stored secret." : undefined;
+function clientSecretFieldHint(mode: EditorMode, hasSecret: boolean): string {
+  return mode === "edit" && hasSecret
+    ? "Leave blank to keep the stored secret."
+    : "From the same application registration as the Client ID above.";
 }
 
 function discoverButtonLabel(discovering: boolean): string {
@@ -256,6 +279,57 @@ function resolveEditorView(mode: EditorMode, loadState: LoadState): EditorView {
   return loadState;
 }
 
+interface OidcRedirectUriCalloutProps {
+  /** Exact callback from the provider API; `null` when no public base URL is resolvable. */
+  redirectUri: string | null;
+  onCopySuccess: () => void;
+  onCopyError: () => void;
+}
+
+/** Edit-mode Redirect URI: copyable once the server can resolve the public base URL. */
+function OidcRedirectUriCallout({
+  redirectUri,
+  onCopySuccess,
+  onCopyError,
+}: Readonly<OidcRedirectUriCalloutProps>) {
+  if (redirectUri === null) {
+    return (
+      <Notice variant="warning" role="status">
+        Set the Instance URL in Settings → General before you can copy the Redirect URI for this
+        provider.
+      </Notice>
+    );
+  }
+
+  const uri = redirectUri;
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(uri);
+      onCopySuccess();
+    } catch {
+      onCopyError();
+    }
+  }
+
+  return (
+    <div className="identity-editor__redirect">
+      <Input
+        label="Redirect URI"
+        value={uri}
+        disabled
+        readOnly
+        hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
+      />
+      <div className="identity-editor__redirect-actions">
+        <Button type="button" variant="secondary" size="sm" onClick={() => void handleCopy()}>
+          <i className="ti ti-copy" aria-hidden="true" /> Copy
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * OIDC identity provider editor (#266). Basics, Endpoints, Claims, and the SSO
  * login button label shipped in slice 3a; slice 3b adds the group→role mapping
@@ -288,6 +362,8 @@ export function IdentityProviderEditor({
   // and a Retry both re-fetch cleanly — no one-shot ref (which stranded #296 in
   // dev) and no ad-hoc AbortController on the Retry button (which leaked).
   const [loadTick, setLoadTick] = useState(0);
+  // Server-built callback URL (same resolveInstanceBaseUrl path as OIDC start/callback).
+  const [redirectUri, setRedirectUri] = useState<string | null>(null);
 
   // Latest resolvedProviderId for stale-response guards on button-triggered
   // async actions (Discover/Test). `load` is effect-driven and aborts on
@@ -335,11 +411,11 @@ export function IdentityProviderEditor({
         const nextDraft = draftFromDetail(detail);
         setDraft(nextDraft);
         setBaseline(nextDraft);
-        const nextMappings = mappingsFromDetail(detail);
-        setMappings(nextMappings);
-        setBaselineMappings(nextMappings);
+        setMappings(mappingsFromDetail(detail));
+        setBaselineMappings(rawMappingsFromDetail(detail));
         setMappingErrors([]);
         setHasSecret(detail.has_client_secret);
+        setRedirectUri(detail.redirect_uri);
         setLoadState("ready");
       } catch (err) {
         if (signal.aborted) return;
@@ -571,8 +647,9 @@ export function IdentityProviderEditor({
       if (result.provider) {
         const refreshedDraft = draftFromDetail(result.provider);
         setBaseline(refreshedDraft);
-        setBaselineMappings(mappingsFromDetail(result.provider));
+        setBaselineMappings(rawMappingsFromDetail(result.provider));
         setHasSecret(result.provider.has_client_secret);
+        setRedirectUri(result.provider.redirect_uri);
       } else {
         setBaseline((b) => ({
           ...b,
@@ -707,6 +784,7 @@ export function IdentityProviderEditor({
             value={draft.display_name}
             invalid={Boolean(errors.display_name)}
             error={errors.display_name}
+            hint="Shown on the 'Sign in with…' button."
             onChange={(e) => setDraft((d) => setField(d, "display_name", e.target.value))}
             placeholder="Google"
             required
@@ -716,6 +794,7 @@ export function IdentityProviderEditor({
             value={draft.issuer}
             invalid={Boolean(errors.issuer)}
             error={errors.issuer}
+            hint="The base URL only, not the /.well-known/openid-configuration document."
             onChange={(e) => setDraft((d) => setField(d, "issuer", e.target.value))}
             placeholder="https://accounts.google.com"
             required
@@ -725,6 +804,7 @@ export function IdentityProviderEditor({
             value={draft.client_id}
             invalid={Boolean(errors.client_id)}
             error={errors.client_id}
+            hint="From your identity provider's application registration."
             onChange={(e) => setDraft((d) => setField(d, "client_id", e.target.value))}
             required
           />
@@ -740,6 +820,20 @@ export function IdentityProviderEditor({
             required={mode === "create"}
           />
         </div>
+        {mode === "create" ? (
+          <p className="at-hint identity-editor__redirect-hint">
+            After the first save, reopen the provider and copy the Redirect URI from the edit form,
+            then register it at your identity provider. Pattern:{" "}
+            <code>https://&lt;Instance URL&gt;/api/auth/oidc/&lt;provider-id&gt;/callback</code>.
+            Set Instance URL under Organisation settings → General if it is missing.
+          </p>
+        ) : (
+          <OidcRedirectUriCallout
+            redirectUri={redirectUri}
+            onCopySuccess={() => addToast("Redirect URI copied to clipboard", "success")}
+            onCopyError={() => addToast("Could not copy Redirect URI.", "error")}
+          />
+        )}
       </Card>
 
       <Card
@@ -764,6 +858,7 @@ export function IdentityProviderEditor({
             value={draft.authorization_endpoint}
             invalid={Boolean(errors.authorization_endpoint)}
             error={errors.authorization_endpoint}
+            hint="Where users sign in and approve access. Usually filled by Discover."
             onChange={(e) => setDraft((d) => setField(d, "authorization_endpoint", e.target.value))}
             placeholder="https://accounts.google.com/o/oauth2/v2/auth"
           />
@@ -772,6 +867,7 @@ export function IdentityProviderEditor({
             value={draft.token_endpoint}
             invalid={Boolean(errors.token_endpoint)}
             error={errors.token_endpoint}
+            hint="Where Admitto exchanges the sign-in code for tokens."
             onChange={(e) => setDraft((d) => setField(d, "token_endpoint", e.target.value))}
             placeholder="https://oauth2.googleapis.com/token"
           />
@@ -780,6 +876,7 @@ export function IdentityProviderEditor({
             value={draft.jwks_uri}
             invalid={Boolean(errors.jwks_uri)}
             error={errors.jwks_uri}
+            hint="Public keys Admitto uses to verify token signatures."
             onChange={(e) => setDraft((d) => setField(d, "jwks_uri", e.target.value))}
             placeholder="https://www.googleapis.com/oauth2/v3/certs"
           />
@@ -788,6 +885,7 @@ export function IdentityProviderEditor({
             value={draft.userinfo_endpoint}
             invalid={Boolean(errors.userinfo_endpoint)}
             error={errors.userinfo_endpoint}
+            hint="Optional. Extra profile claims fetched after sign-in."
             onChange={(e) => setDraft((d) => setField(d, "userinfo_endpoint", e.target.value))}
             placeholder="https://openidconnect.googleapis.com/v1/userinfo"
           />
@@ -801,6 +899,7 @@ export function IdentityProviderEditor({
             value={draft.claim_email}
             invalid={Boolean(errors.claim_email)}
             error={errors.claim_email}
+            hint="Which token claim holds the user's email address."
             onChange={(e) => setDraft((d) => setField(d, "claim_email", e.target.value))}
             placeholder="email"
           />
@@ -818,6 +917,7 @@ export function IdentityProviderEditor({
             value={draft.claim_given_name}
             invalid={Boolean(errors.claim_given_name)}
             error={errors.claim_given_name}
+            hint="Only used when the Name claim above is absent."
             onChange={(e) => setDraft((d) => setField(d, "claim_given_name", e.target.value))}
             placeholder="given_name"
           />
@@ -826,6 +926,7 @@ export function IdentityProviderEditor({
             value={draft.claim_family_name}
             invalid={Boolean(errors.claim_family_name)}
             error={errors.claim_family_name}
+            hint="Only used when the Name claim above is absent."
             onChange={(e) => setDraft((d) => setField(d, "claim_family_name", e.target.value))}
             placeholder="family_name"
           />
@@ -834,6 +935,7 @@ export function IdentityProviderEditor({
             value={draft.claim_phone}
             invalid={Boolean(errors.claim_phone)}
             error={errors.claim_phone}
+            hint="Optional. Only applies if your provider sends one."
             onChange={(e) => setDraft((d) => setField(d, "claim_phone", e.target.value))}
             placeholder="phone_number"
           />
@@ -911,7 +1013,7 @@ export function IdentityProviderEditor({
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" aria-hidden="true" />
-      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide identity-modal__panel--identity-editor">
         <div ref={scrollRef} className="identity-modal__scroll">
           <IdentityModalHeader
             titleId={titleId}

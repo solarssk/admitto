@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, EmptyState, HintLabel, IconButton, Input, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, IconButton, Input, Notice, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
 import type { TicketTypeColor } from "@admitto/ui";
 import { ApiError, createTicketType, deleteTicketType, updateTicketType } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -31,7 +31,7 @@ function pluralSuffix(count: number): string {
 }
 
 const TICKET_TYPES_HINT =
-  "Used in the attendee form, CSV import, the attendees list, check-in, and reports.";
+  "Types used across attendees, check-in, and reports.";
 
 /** Click the current color to open a small swatch grid — same popover pattern as the app's other
  * menus (ExportMenu, ActionMenu): one clean chip that reveals choices on demand. */
@@ -139,18 +139,21 @@ function TicketTypeRow({
           disabled={disabled}
           onChange={(color) => onUpdate(type.id, { color })}
         />
-        <Input
-          ref={inputRef}
-          aria-label={`Ticket type label for ${type.label}`}
-          value={label}
-          disabled={disabled}
-          className="tt-row__label-input"
-          onChange={(e) => setLabel(e.target.value)}
-          onBlur={commitLabel}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          }}
-        />
+        <div className="tt-row__label-input">
+          <Input
+            ref={inputRef}
+            id={`ticket-type-label-${type.id}`}
+            name={`ticket-type-label-${type.id}`}
+            aria-label={`Ticket type label for ${type.label}`}
+            value={label}
+            disabled={disabled}
+            onChange={(e) => setLabel(e.target.value)}
+            onBlur={commitLabel}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+          />
+        </div>
       </div>
       <div className="tt-row__meta">
         <TicketTypeBadge label={type.label} color={type.color} />
@@ -160,6 +163,7 @@ function TicketTypeRow({
         <IconButton
           label={`Remove ${type.label}`}
           size="sm"
+          className="tt-row__delete"
           icon={<i className="ti ti-trash" aria-hidden="true" />}
           disabled={disabled}
           onClick={onRemove}
@@ -188,6 +192,7 @@ export function TicketTypesCard({
   const [deleteTarget, setDeleteTarget] = useState<TicketTypeDto | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBlockedByAttendees, setDeleteBlockedByAttendees] = useState(false);
   const disabled = event.status === "archived";
 
   // No per-row "mutating" disabled state here on purpose: PATCH (color/label) is idempotent and
@@ -242,6 +247,7 @@ export function TicketTypesCard({
     if (!deleteTarget) return;
     setDeleting(true);
     setDeleteError(null);
+    setDeleteBlockedByAttendees(false);
     try {
       await deleteTicketType(eventId, deleteTarget.id);
       setDeleteTarget(null);
@@ -251,7 +257,7 @@ export function TicketTypesCard({
       // "in use" case in particular is retryable once attendees are reassigned, without having to
       // find and re-click the same row's delete button again (CodeRabbit review).
       if (err instanceof ApiError && hasApiErrorCode(err, "type_in_use")) {
-        setDeleteError(`Can't remove "${deleteTarget.label}" because attendees still have this type.`);
+        setDeleteBlockedByAttendees(true);
       } else {
         setDeleteError(operatorApiErrorMessage(err, "Failed to remove ticket type."));
       }
@@ -331,8 +337,8 @@ export function TicketTypesCard({
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Remove ticket type"
-        message={`Remove "${deleteTarget?.label}"? This cannot be undone.`}
+        title={`Remove "${deleteTarget?.label}"?`}
+        message="This type will no longer be available for new attendee assignments."
         confirmLabel="Remove"
         confirmVariant="danger"
         loading={deleting}
@@ -340,9 +346,16 @@ export function TicketTypesCard({
         onCancel={() => {
           setDeleteTarget(null);
           setDeleteError(null);
+          setDeleteBlockedByAttendees(false);
         }}
         onConfirm={() => void handleDelete()}
-      />
+      >
+        {deleteBlockedByAttendees && (
+          <Notice variant="warning" role="alert">
+            This type is still assigned to attendees. Reassign them before removing it.
+          </Notice>
+        )}
+      </ConfirmDialog>
     </>
   );
 }

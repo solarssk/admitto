@@ -449,7 +449,8 @@ function itemStateTone(state: string): "ok" | "muted" {
 function isAttendeeFormDirty(form: AttendeeFormState | null, baseline: AttendeeFormState | null): boolean {
   if (form === null || baseline === null) return false;
   return (
-    form.name !== baseline.name ||
+    form.first_name !== baseline.first_name ||
+    form.last_name !== baseline.last_name ||
     form.email !== baseline.email ||
     form.company !== baseline.company ||
     form.department !== baseline.department ||
@@ -475,7 +476,7 @@ function buildTicketTypeOptions(
   orphanedTicketType: string | null,
   ticketTypes: TicketTypeDto[],
 ): { id: string; label: string }[] {
-  const options = [{ id: "", label: "-" }];
+  const options = [{ id: "", label: "No ticket type" }];
   if (orphanedTicketType) {
     options.push({ id: orphanedTicketType, label: `${orphanedTicketType} (not in catalog)` });
   }
@@ -999,7 +1000,8 @@ function buildAttendeePatch(
   attributeFields: CustomDataFieldDef[],
 ): UpdateAttendeePatch {
   const patch: UpdateAttendeePatch = {};
-  if (form.name !== detail.name) patch.name = form.name;
+  if (form.first_name !== (detail.first_name ?? "")) patch.first_name = form.first_name;
+  if (form.last_name !== (detail.last_name ?? "")) patch.last_name = form.last_name;
   if (form.email !== detail.email) patch.email = form.email;
   if (form.company !== (detail.company ?? "")) patch.company = form.company || null;
   if (form.department !== (detail.department ?? "")) patch.department = form.department || null;
@@ -1897,10 +1899,18 @@ export function AttendeeDetailPage() {
                   <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
                 )}
                 <Input
-                  label="Name"
+                  label="First name"
                   icon={<i className="ti ti-user" aria-hidden="true" />}
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  value={form.first_name}
+                  onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                  required
+                  {...NO_AUTOFILL_PROPS}
+                />
+                <Input
+                  label="Last name"
+                  icon={<i className="ti ti-user" aria-hidden="true" />}
+                  value={form.last_name}
+                  onChange={(e) => setForm({ ...form, last_name: e.target.value })}
                   required
                   {...NO_AUTOFILL_PROPS}
                 />

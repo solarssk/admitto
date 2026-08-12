@@ -18,11 +18,20 @@ function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-function formatDate(d: Date): string {
+export function formatDate(d: Date): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
+/** "18:00–22:00" range, or an open-ended "from"/"until" when only one side is set. */
+function formatEventHoursRange(start: string | null, end: string | null): string | null {
+  if (start && end) return `${start}–${end}`;
+  if (start) return `from ${start}`;
+  if (end) return `until ${end}`;
+  return null;
+}
+
 const CALENDAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>`;
+const CLOCK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`;
 const PIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
 /** Signpost: clearer than a house glyph for "Directions". */
 const DIRECTIONS_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v18"/><path d="M10 6h7l2 2-2 2h-7"/><path d="M10 14H5l-2 2 2 2h5"/></svg>`;
@@ -55,6 +64,12 @@ export type TicketPageOptions = {
   staticMapEnabled?: boolean;
   /** Event-day weather summary; omit or null to hide the weather block. */
   weather?: WeatherSummaryDto | null;
+  /** Href for the on-demand "Add to Apple Wallet" route (this ticket's own /wallet/apple). */
+  walletAppleHref?: string | null;
+  /** Href for the on-demand "Add to Google Wallet" route (this ticket's own /wallet/google). */
+  walletGoogleHref?: string | null;
+  /** Set when a wallet pass creation attempt just failed - shows a retry notice. */
+  walletError?: boolean;
 };
 
 /** Mask an internal ticket token for display, or fall back to a Mode B public ref. */
@@ -266,13 +281,86 @@ function renderGettingThereSection(parts: {
   return "";
 }
 
+/** Shared brand header + event/attendee block (open `ticket__body`); caller closes the div. */
+function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
+  const { attendee, event } = resolved;
+  const eventHoursText = formatEventHoursRange(event.eventHoursStart, event.eventHoursEnd);
+  return `<header class="ticket__top">
+      <div class="ticket__brand">
+        ${
+          event.logoUrl
+            ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
+            : `<img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>`
+        }
+      </div>
+      <small>Event ticket</small>
+    </header>
+    <div class="ticket__body">
+      <h1 class="ticket__event-name">${esc(event.title)}</h1>
+      <div class="ticket__meta">
+        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
+        ${eventHoursText ? `<span>${CLOCK_ICON}<span class="ticket__meta-text">${esc(eventHoursText)}</span></span>` : ""}
+        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
+      </div>
+      <div class="ticket__attendee">
+        <p class="ticket__attendee-name">${esc(attendee.name)}</p>
+        ${attendee.ticket_type ? `<span class="ticket__type">${esc(attendee.ticket_type)}</span>` : ""}
+      </div>`;
+}
+
+function ticketDocument(options: {
+  title: string;
+  styles: string;
+  articleInner: string;
+}): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${esc(options.title)}</title>
+  <style>${options.styles}</style>
+</head>
+<body class="ticket-page">
+  <article class="ticket">
+    ${options.articleInner}
+  </article>
+</body>
+</html>`;
+}
+
+/** Wallet badges and help text, or an empty string when the event has no wallet pass. */
+function renderWalletSection(options: TicketPageOptions): string {
+  if (!options.walletAppleHref && !options.walletGoogleHref) return "";
+
+  const errorHtml = options.walletError
+    ? `<p class="ticket__wallet-error" role="alert">Could not add this ticket to your wallet just now. Please try again.</p>`
+    : "";
+  const appleBadgeHtml = options.walletAppleHref
+    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref)}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet"></a></span>`
+    : "";
+  const googleBadgeHtml = options.walletGoogleHref
+    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref)}"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet"></a></span>`
+    : "";
+
+  return `${errorHtml}
+    <div class="ticket__wallets">
+      ${appleBadgeHtml}
+      ${googleBadgeHtml}
+    </div>
+    <details class="ticket__wallet-help">
+      <summary>How do I add this to my phone?</summary>
+      <p>Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.</p>
+    </details>`;
+}
+
 export function renderTicket(
   resolved: ResolvedTicket,
   qrDataUrl: string,
   theme?: BrandingTheme | null,
   options: TicketPageOptions = {},
 ): string {
-  const { attendee, event } = resolved;
+  const { event } = resolved;
   const styles = buildTicketPageStyles(theme);
   const mapReady = isMapReady(event);
   const showStaticMap = mapReady && options.staticMapEnabled !== false;
@@ -313,6 +401,7 @@ export function renderTicket(
     ? `<div class="ticket__travel-note"><h3>${ACCESSIBILITY_ICON}<span>Accessibility</span></h3><p>${esc(accessibilityText)}</p></div>`
     : "";
   const weatherHtml = renderTicketWeatherHtml(options.weather);
+  const walletHtml = renderWalletSection(options);
   // Order: map → map buttons → weather (then directions / accessibility).
   const gettingThereHtml = renderGettingThereSection({
     hasGettingThere,
@@ -324,90 +413,101 @@ export function renderTicket(
     accessibilityHtml,
   });
 
+  const shellOpen = renderTicketCardShellOpen(resolved);
+  const articleInner = `${shellOpen}
+      <div class="ticket__qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
+      ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
+    </div>
+    ${walletHtml ? `<div class="ticket__perf" role="presentation"></div>` : ""}
+    ${walletHtml}
+    ${gettingThereHtml}
+    <footer class="ticket__foot">Present this QR code at the entrance.</footer>`;
+
+  return ticketDocument({
+    title: `Ticket - ${event.title}`,
+    styles,
+    articleInner,
+  });
+}
+
+const PUBLIC_ERROR_404_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6 -6"/><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"/><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"/></svg>`;
+const PUBLIC_ERROR_500_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></svg>`;
+
+/** Shared branded shell for public HTML errors (404 and 500 share the same layout). */
+export function renderPublicErrorPage(options: {
+  statusCode: 404 | 500;
+  heading: string;
+  message: string;
+  theme?: BrandingTheme | null;
+}): string {
+  const styles = buildTicketPageStyles(options.theme);
+  const icon = options.statusCode === 404 ? PUBLIC_ERROR_404_ICON : PUBLIC_ERROR_500_ICON;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Ticket - ${esc(event.title)}</title>
+  <title>${esc(options.heading)}</title>
   <style>${styles}</style>
 </head>
 <body class="ticket-page">
   <article class="ticket">
     <header class="ticket__top">
       <div class="ticket__brand">
-        ${
-          event.logoUrl
-            ? `<img class="ticket__brand-logo" src="${esc(event.logoUrl)}" alt="${esc(event.title)}">`
-            : `<img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>`
-        }
+        <img class="ticket__brand-mark" src="/assets/admitto-mark.svg" width="30" height="30" alt=""><span>Admitto</span>
       </div>
-      <small>Event ticket</small>
     </header>
-    <div class="ticket__body">
-      <h1 class="ticket__event-name">${esc(event.title)}</h1>
-      <div class="ticket__meta">
-        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
-        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
+    <div class="ticket__body ticket__body--public-error">
+      <div class="at-public-error" role="status">
+        <span class="at-public-error__icon">${icon}</span>
+        <p class="at-public-error__code">${options.statusCode}</p>
+        <h1 class="at-public-error__heading">${esc(options.heading)}</h1>
+        <p class="at-public-error__message">${esc(options.message)}</p>
       </div>
-      <div class="ticket__attendee">
-        <p class="ticket__attendee-name">${esc(attendee.name)}</p>
-        ${attendee.ticket_type ? `<span class="ticket__type">${esc(attendee.ticket_type)}</span>` : ""}
-      </div>
-      <div class="ticket__qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
-      ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
     </div>
-    <div class="ticket__perf" role="presentation"></div>
-    <div class="ticket__wallets">
-      <span class="wallet-badge-frame"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet (coming soon)" aria-disabled="true" role="img"></span>
-      <span class="wallet-badge-frame"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet (coming soon)" aria-disabled="true" role="img"></span>
-    </div>
-    <details class="ticket__wallet-help">
-      <summary>How do I add this to my phone?</summary>
-      <p>Apple Wallet and Google Wallet are coming soon. The badges above are placeholders and are not tappable yet.</p>
-      <p>When wallet passes ship, you will add this ticket from those badges and find it later in Apple Wallet or Google Wallet.</p>
-    </details>
-    ${gettingThereHtml}
-    <footer class="ticket__foot">Present this QR code at the entrance.</footer>
   </article>
 </body>
 </html>`;
 }
 
-export function renderNotFound(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Ticket not found</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
-  <h1>Ticket not found</h1>
-  <p>This ticket link is invalid or has expired.</p>
-</body>
-</html>`;
+export function renderNotFound(theme?: BrandingTheme | null): string {
+  return renderPublicErrorPage({
+    statusCode: 404,
+    heading: "Not found",
+    message: "This link is invalid or the page no longer exists.",
+    theme,
+  });
 }
 
-export function renderServerError(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>Server error</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
-  <h1>Server error</h1>
-  <p>Unable to render this ticket right now. Please contact support.</p>
-</body>
-</html>`;
+export function renderServerError(theme?: BrandingTheme | null): string {
+  return renderPublicErrorPage({
+    statusCode: 500,
+    heading: "Something went wrong",
+    message: "Unable to load this page right now. Please try again later.",
+    theme,
+  });
 }
 
-export function renderRevoked(name: string, eventTitle: string, reason: "revoked" | "cancelled" = "revoked"): string {
+/** Revoked/cancelled pass: same ticket card shell, notice instead of QR / wallets / map. */
+export function renderRevoked(
+  resolved: ResolvedTicket,
+  theme?: BrandingTheme | null,
+  reason: "revoked" | "cancelled" = "revoked",
+): string {
   const heading = reason === "cancelled" ? "Ticket cancelled" : "Ticket revoked";
-  const message =
-    reason === "cancelled"
-      ? `${esc(name)}'s ticket for <strong>${esc(eventTitle)}</strong> has been cancelled.`
-      : `${esc(name)}'s ticket for <strong>${esc(eventTitle)}</strong> has been revoked.`;
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>${heading}</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:480px;margin:2rem auto;padding:0 1rem">
-  <h1>${heading}</h1>
-  <p>${message}</p>
-</body>
-</html>`;
+  const notice =
+    "This ticket is no longer valid for entry. If you believe this is a mistake, please contact the organisers.";
+  const styles = buildTicketPageStyles(theme);
+  const articleInner = `${renderTicketCardShellOpen(resolved)}
+      <div class="ticket__status-notice" role="status">
+        <h2>${heading}</h2>
+        <p>${esc(notice)}</p>
+      </div>
+    </div>`;
+
+  return ticketDocument({
+    title: heading,
+    styles,
+    articleInner,
+  });
 }

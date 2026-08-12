@@ -38,6 +38,8 @@ export interface DrainPendingDeliveriesResult {
   sent: number;
   failed: number;
   skipped: number;
+  /** Distinct event ids touched this tick, for the worker to announce over SSE (ADR 0044). */
+  eventIds: string[];
 }
 
 type SnapshotRow = {
@@ -240,7 +242,7 @@ export async function drainPendingDeliveries(
 ): Promise<DrainPendingDeliveriesResult> {
   const candidates = await claimDrainCandidates(prisma, options);
   if (candidates.length === 0) {
-    return { claimed: 0, sent: 0, failed: 0, skipped: 0 };
+    return { claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] };
   }
 
   const baseUrl = options.baseUrl ?? resolveBaseUrl(env);
@@ -280,5 +282,5 @@ export async function drainPendingDeliveries(
     }
   }
 
-  return { claimed: candidates.length, sent, failed, skipped };
+  return { claimed: candidates.length, sent, failed, skipped, eventIds: [...byEvent.keys()] };
 }

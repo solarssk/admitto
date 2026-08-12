@@ -8,6 +8,7 @@ import type {
   SetMailTemplateInput,
   TemplateFormat,
   TemplateScope,
+  UpdateMailTemplateMetadataInput,
 } from "./types.js";
 export { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 
@@ -149,6 +150,8 @@ export type CreatedMailTemplateRow = {
   id: string;
   name: string;
   label: string;
+  icon: string | null;
+  description: string | null;
   template_format: string;
   subject_template: string;
   body_template: string;
@@ -220,6 +223,45 @@ export async function setMailTemplate(
       body_template: input.body,
       template_format: input.format,
       compiled_html_template: compiledHtml,
+    },
+  });
+}
+
+export type MailTemplateMetadataRow = {
+  id: string;
+  name: string;
+  label: string;
+  icon: string | null;
+  description: string | null;
+  template_format: string;
+  subject_template: string;
+  updated_at: Date;
+};
+
+/** Update a template's identity fields only (label/icon/description) - no MJML compilation, no
+ * placeholder validation, since none of these fields ever appear in the rendered email. Caller
+ * already resolved `templateId` to a row this event/org may edit. */
+export async function updateMailTemplateMetadata(
+  templateId: string,
+  input: UpdateMailTemplateMetadataInput,
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<MailTemplateMetadataRow> {
+  return prisma.mailTemplate.update({
+    where: { id: templateId },
+    data: {
+      ...(input.label !== undefined ? { label: input.label } : {}),
+      ...(input.icon !== undefined ? { icon: input.icon } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      label: true,
+      icon: true,
+      description: true,
+      template_format: true,
+      subject_template: true,
+      updated_at: true,
     },
   });
 }

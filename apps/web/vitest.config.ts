@@ -4,6 +4,8 @@ import { vitestCoverage } from "../../vitest.coverage.ts";
 export default defineConfig({
   test: {
     coverage: vitestCoverage,
+    maxWorkers: 1,
+    fileParallelism: false,
     projects: ["./vitest.unit.config.ts", "./vitest.integration.config.ts"],
     // No sequence.concurrent here - it only affects tests *within* one file (and defaults to
     // off), so it never serialized these two projects. They already run one file at a time:

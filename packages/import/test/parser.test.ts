@@ -22,17 +22,16 @@ describe("parseAttendees — basic valid rows", () => {
     });
   });
 
-  it("accepts a single name column instead of first_name + last_name", () => {
+  it("rejects a single name column - first_name and last_name are always required", () => {
     const result = parseAttendees(`name,email\nJan Kowalski,jan@example.com`);
-    expect(result.validRows[0]).toMatchObject({ first_name: "Jan", last_name: "Kowalski" });
-    expect(result.invalidRows).toHaveLength(0);
+    expect(result.validRows).toHaveLength(0);
+    expect(result.invalidRows[0]).toMatchObject({ reason: "Both first_name and last_name are required" });
   });
 
-  it("warns and preserves a single-word name with an empty last name", () => {
-    const result = parseAttendees(`name,email\nCher,cher@example.com`);
-
-    expect(result.validRows[0]).toMatchObject({ first_name: "Cher", last_name: "" });
-    expect(result.warnings).toContain('Row 1: single-word name "Cher", last_name stored as empty string');
+  it("rejects a row missing last_name even when first_name is present", () => {
+    const result = parseAttendees(`${VALID_HEADER}\nCher,,cher@example.com`);
+    expect(result.validRows).toHaveLength(0);
+    expect(result.invalidRows[0]).toMatchObject({ reason: "Both first_name and last_name are required" });
   });
 
   it("normalises email to lower-case", () => {
@@ -70,6 +69,12 @@ describe("parseAttendees — header normalisation", () => {
   it("warns about unknown columns but still parses valid rows", () => {
     const result = parseAttendees(`first_name,last_name,email,unknown_col\nJan,K,jan@example.com,ignored`);
     expect(result.warnings.some((w) => w.includes("unknown_col"))).toBe(true);
+    expect(result.validRows).toHaveLength(1);
+  });
+
+  it("warns about a removed `name` column instead of silently discarding it (Codex review, PR792)", () => {
+    const result = parseAttendees(`name,first_name,last_name,email\nJan Kowalski,Jan,K,jan@example.com`);
+    expect(result.warnings.some((w) => w.includes('Unknown column ignored: "name"'))).toBe(true);
     expect(result.validRows).toHaveLength(1);
   });
 
@@ -186,7 +191,7 @@ describe("parseAttendees — invalid rows", () => {
   it("rejects a row with no name information at all", () => {
     const result = parseAttendees(`email\njan@example.com`);
     expect(result.invalidRows).toHaveLength(1);
-    expect(result.invalidRows[0]?.reason).toMatch(/missing name/i);
+    expect(result.invalidRows[0]?.reason).toBe("Both first_name and last_name are required");
   });
 });
 

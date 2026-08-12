@@ -12,6 +12,12 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("That email is already in use.");
   });
 
+  it("explains the bulk-send rate limit", () => {
+    expect(
+      operatorApiErrorMessage(new ApiError(429, "bulk_send_rate_limited", "bulk_send_rate_limited"), "Send failed."),
+    ).toBe("Bulk sends are limited to 3 requests every 10 minutes. Try again later.");
+  });
+
   it("prefers err.code over message when they differ", () => {
     expect(
       operatorApiErrorMessage(new ApiError(409, "ignored detail", "email_conflict"), "Failed."),
@@ -146,7 +152,13 @@ describe("operatorApiErrorMessage", () => {
         new ApiError(422, "mail_destination_unresolved", "mail_destination_unresolved"),
         "Resend failed.",
       ),
-    ).toMatch(/resolve the mail server/);
+    ).toMatch(/resolve the mail destination hostname/);
+    expect(
+      operatorApiErrorMessage(
+        new ApiError(422, "mail_secret_decryption_failed", "mail_secret_decryption_failed"),
+        "Could not test the SMTP connection.",
+      ),
+    ).toMatch(/could not be decrypted/);
     expect(
       operatorApiErrorMessage(new ApiError(500, "internal_error", "internal_error"), "Resend failed."),
     ).toMatch(/System logs/);
@@ -165,6 +177,9 @@ describe("operatorApiErrorMessage", () => {
     expect(
       operatorApiErrorMessage(new ApiError(400, "invalid_issuer", "invalid_issuer"), "Connection test failed."),
     ).toMatch(/HTTPS/);
+    expect(
+      operatorApiErrorMessage(new ApiError(400, "invalid_issuer", "invalid_issuer"), "Connection test failed."),
+    ).toMatch(/SSO_PRIVATE_DESTINATION_ALLOWLIST/);
     expect(
       operatorApiErrorMessage(new ApiError(400, "discovery_failed", "discovery_failed"), "Discovery failed."),
     ).toMatch(/OIDC discovery/);

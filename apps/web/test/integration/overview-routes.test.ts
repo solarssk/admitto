@@ -22,6 +22,7 @@ const EVENT_CAP = "evt-overview-capacity";
 const EVENT_MISSING = "evt-overview-missing";
 const EVENT_ACTIVITY = "evt-overview-activity";
 const EVENT_REVOKED_CHECKIN = "evt-overview-revoked-checkin";
+const EVENT_BOUNCE_RESOLUTION = "evt-overview-bounce-resolution";
 
 const EMAIL_SUPER = "overview-super@example.com";
 const EMAIL_ADMIN = "overview-admin@example.com";
@@ -43,6 +44,11 @@ const ATT_ACT_REVOKED = "att-overview-activity-revoked";
 const ATT_REVOKED_1 = "att-overview-revoked-checkin-1";
 const ATT_REVOKED_2 = "att-overview-revoked-checkin-2";
 
+// One attendee per bounce-resolution scenario - see countCurrentlyBouncedAttendees.
+const ATT_BOUNCE_RESOLVED_BY_RESEND = "att-overview-bounce-resolved-by-resend";
+const ATT_BOUNCE_DISMISSED = "att-overview-bounce-dismissed";
+const ATT_BOUNCE_REBOUNCED_AFTER_DISMISS = "att-overview-bounce-rebounced-after-dismiss";
+
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let superId: string;
@@ -63,6 +69,7 @@ async function seed(client: PrismaClient) {
     EVENT_CAP,
     EVENT_ACTIVITY,
     EVENT_REVOKED_CHECKIN,
+    EVENT_BOUNCE_RESOLUTION,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -153,6 +160,14 @@ async function seed(client: PrismaClient) {
         timezone: "UTC",
         organization_id: ORG_OV,
       },
+      {
+        id: EVENT_BOUNCE_RESOLUTION,
+        title: "Overview Bounce Resolution Event",
+        slug: "overview-bounce-resolution",
+        date: new Date("2027-04-01T12:00:00.000Z"),
+        timezone: "UTC",
+        organization_id: ORG_OV,
+      },
     ],
   });
 
@@ -161,6 +176,13 @@ async function seed(client: PrismaClient) {
       { event_id: EVENT_ACTIVITY, key: "standard", label: "Standard", color: "gray", sort_order: 0 },
       { event_id: EVENT_ACTIVITY, key: "vip", label: "VIP", color: "purple", sort_order: 1 },
       { event_id: EVENT_ACTIVITY, key: "press", label: "Press", color: "blue", sort_order: 2 },
+    ],
+  });
+
+  await client.eventItem.createMany({
+    data: [
+      { event_id: EVENT_ACTIVITY, key: "badge", label: "Badge" },
+      { event_id: EVENT_ACTIVITY, key: "giftbag", label: "Gift bag" },
     ],
   });
 
@@ -403,14 +425,47 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  await client.attendeeActionLog.create({
-    data: {
-      id: "log-overview-activity-import",
-      event_id: EVENT_ACTIVITY,
-      action_type: "attendees_imported",
-      created_at: new Date("2027-02-01T06:00:00.000Z"),
-      metadata: { filename: "activity-guests.csv", created: 3, updated: 1, skipped: 0 },
-    },
+  await client.attendeeActionLog.createMany({
+    data: [
+      {
+        id: "log-overview-activity-import",
+        event_id: EVENT_ACTIVITY,
+        action_type: "attendees_imported",
+        created_at: new Date("2027-02-01T06:00:00.000Z"),
+        metadata: { filename: "activity-guests.csv", created: 3, updated: 1, skipped: 0 },
+      },
+      {
+        id: "log-overview-activity-added",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_NONE,
+        action_type: "attendee_created_manual",
+        created_at: new Date("2027-02-01T11:00:00.000Z"),
+      },
+      {
+        id: "log-overview-activity-issued",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_STD_1,
+        action_type: "item_issued",
+        created_at: new Date("2027-02-01T09:30:00.000Z"),
+        metadata: { event_item_key: "badge", from_state: "pending", to_state: "issued" },
+      },
+      {
+        id: "log-overview-activity-returned",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_STD_2,
+        action_type: "item_returned",
+        created_at: new Date("2027-02-01T07:30:00.000Z"),
+        metadata: { event_item_key: "giftbag", from_state: "issued", to_state: "returned" },
+      },
+      {
+        id: "log-overview-activity-revoked",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_VIP_1,
+        action_type: "item_revoked",
+        created_at: new Date("2027-02-01T06:30:00.000Z"),
+        metadata: { event_item_key: "badge", from_state: "issued", to_state: "pending" },
+      },
+    ],
   });
 
   // Regression fixture for the "revoke all check-ins" bug: both attendees were checked in and
@@ -469,6 +524,86 @@ async function seed(client: PrismaClient) {
         checked_in_at: new Date("2027-03-01T09:35:00.000Z"),
         status: "UNDO",
         source: "admin_revoke",
+      },
+    ],
+  });
+
+  // Three attendees, one per countCurrentlyBouncedAttendees scenario - see the "currently
+  // bounced" describe block below for what each must resolve to.
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_BOUNCE_RESOLVED_BY_RESEND,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        email: "bounce-resolved-by-resend@example.com",
+        name: "Bounce Resolved By Resend",
+      },
+      {
+        id: ATT_BOUNCE_DISMISSED,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        email: "bounce-dismissed@example.com",
+        name: "Bounce Dismissed",
+        email_bounce_dismissed_at: new Date("2027-04-01T09:10:00.000Z"),
+      },
+      {
+        id: ATT_BOUNCE_REBOUNCED_AFTER_DISMISS,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        email: "bounce-rebounced-after-dismiss@example.com",
+        name: "Bounce Rebounced After Dismiss",
+        email_bounce_dismissed_at: new Date("2027-04-01T09:00:00.000Z"),
+      },
+    ],
+  });
+
+  await client.emailDelivery.createMany({
+    data: [
+      // Bounced, then a later successful resend - the latest row is what counts, so this
+      // attendee must NOT be in the currently-bounced count.
+      {
+        id: "del-bounce-resolved-1",
+        organization_id: ORG_OV,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        attendee_id: ATT_BOUNCE_RESOLVED_BY_RESEND,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        recipient_email: "bounce-resolved-by-resend@example.com",
+        created_at: new Date("2027-04-01T09:00:00.000Z"),
+      },
+      {
+        id: "del-bounce-resolved-2",
+        organization_id: ORG_OV,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        attendee_id: ATT_BOUNCE_RESOLVED_BY_RESEND,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        recipient_email: "bounce-resolved-by-resend@example.com",
+        created_at: new Date("2027-04-01T09:05:00.000Z"),
+      },
+      // Bounced, then dismissed after that bounce - must NOT be in the count.
+      {
+        id: "del-bounce-dismissed-1",
+        organization_id: ORG_OV,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        attendee_id: ATT_BOUNCE_DISMISSED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        recipient_email: "bounce-dismissed@example.com",
+        created_at: new Date("2027-04-01T09:00:00.000Z"),
+      },
+      // Dismissed, then bounced again afterwards - new information, must be back in the count.
+      {
+        id: "del-bounce-rebounced-1",
+        organization_id: ORG_OV,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        attendee_id: ATT_BOUNCE_REBOUNCED_AFTER_DISMISS,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        recipient_email: "bounce-rebounced-after-dismiss@example.com",
+        created_at: new Date("2027-04-01T09:10:00.000Z"),
       },
     ],
   });
@@ -643,6 +778,17 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     expect(body.email_queued).toBe(3);
   });
 
+  it("email_bounced counts the attendee's latest delivery, not every historically-bounced row", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_BOUNCE_RESOLUTION}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    // Only ATT_BOUNCE_REBOUNCED_AFTER_DISMISS's latest delivery is a live, undismissed bounce -
+    // the resolved-by-resend and dismissed-before-rebounce attendees are both excluded.
+    expect(body.email_bounced).toBe(1);
+  });
+
   it("returns capacity and attendee_count", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_CAP}/overview`, {
       headers: { Cookie: adminCookie },
@@ -715,7 +861,7 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     ]);
   });
 
-  it("returns recent_activity merged newest-first across check-ins, mail failures, and imports", async () => {
+  it("returns recent_activity merged newest-first across check-ins, mail failures, imports, attendee adds, and item issue/return", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_ACTIVITY}/overview`, {
       headers: { Cookie: adminCookie },
     });
@@ -723,15 +869,25 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     const body = (await res.json()) as EventOverviewResponse;
 
     expect(body.recent_activity.map((entry) => entry.occurred_at)).toEqual([
+      "2027-02-01T11:00:00.000Z",
       "2027-02-01T10:00:00.000Z",
+      "2027-02-01T09:30:00.000Z",
       "2027-02-01T09:00:00.000Z",
       "2027-02-01T08:30:00.000Z",
       "2027-02-01T08:00:00.000Z",
+      "2027-02-01T07:30:00.000Z",
       "2027-02-01T07:00:00.000Z",
+      "2027-02-01T06:30:00.000Z",
       "2027-02-01T06:00:00.000Z",
     ]);
 
-    const [checkin, bounced, , , failed, imported] = body.recent_activity;
+    const [added, checkin, issued, bounced, , , returned, failed, revoked, imported] = body.recent_activity;
+    expect(added).toMatchObject({
+      type: "attendee_added",
+      tone: "info",
+      attendee_id: ATT_ACT_NONE,
+      message: "added",
+    });
     expect(checkin).toMatchObject({
       type: "checkin",
       tone: "ok",
@@ -739,11 +895,23 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       attendee_id: ATT_ACT_VIP_1,
       message: "checked in",
     });
+    expect(issued).toMatchObject({
+      type: "item_issued",
+      tone: "ok",
+      attendee_id: ATT_ACT_STD_1,
+      message: "issued Badge",
+    });
     expect(bounced).toMatchObject({
       type: "mail_bounced",
       tone: "error",
       attendee_id: ATT_ACT_STD_1,
       message: "Ticket email bounced for bounced-guest@example.com",
+    });
+    expect(returned).toMatchObject({
+      type: "item_returned",
+      tone: "muted",
+      attendee_id: ATT_ACT_STD_2,
+      message: "returned Gift bag",
     });
     expect(failed).toMatchObject({
       type: "mail_failed",
@@ -751,14 +919,20 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       attendee_id: ATT_ACT_VIP_1,
       message: "Ticket email failed for failed-guest@example.com",
     });
+    expect(revoked).toMatchObject({
+      type: "item_revoked",
+      tone: "warn",
+      attendee_id: ATT_ACT_VIP_1,
+      message: "revoked Badge",
+    });
     expect(imported).toMatchObject({
       type: "import",
       tone: "muted",
       attendee_id: null,
       message: "4 attendees imported",
     });
-    // Length 6 (not 7) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
-    // check-in there would otherwise sort first, ahead of the 10:00 entry asserted above.
-    expect(body.recent_activity).toHaveLength(6);
+    // Length 10 (not 11) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
+    // check-in there would otherwise sort first, ahead of the 11:00 entry asserted above.
+    expect(body.recent_activity).toHaveLength(10);
   });
 });

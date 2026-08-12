@@ -12,9 +12,25 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./custom-data-reserved": {
+      "types": "./dist/custom-data-reserved.d.ts",
+      "default": "./dist/custom-data-reserved.js"
+    },
+    "./event-item-usability": {
+      "types": "./dist/event-item-usability.d.ts",
+      "default": "./dist/event-item-usability.js"
+    },
     "./attendees-export": {
       "types": "./dist/attendees-export.d.ts",
       "default": "./dist/attendees-export.js"
+    },
+    "./attendees-export-pdf": {
+      "types": "./dist/attendees-export-pdf.d.ts",
+      "default": "./dist/attendees-export-pdf.js"
+    },
+    "./attendees-export-xlsx": {
+      "types": "./dist/attendees-export-xlsx.d.ts",
+      "default": "./dist/attendees-export-xlsx.js"
     }
   },
   "scripts": {
@@ -29,11 +45,15 @@
     "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/mail-templates": "*",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.19.1",
     "qrcode": "^1.5.3"
   },
   "devDependencies": {
     "@prisma/client": "^7.9.1",
     "@types/node": "^24.0.0",
+    "@types/pdfkit": "^0.17.6",
     "@types/qrcode": "^1.5.5",
     "prisma": "^7.9.1",
     "typescript": "^7.0.2",
