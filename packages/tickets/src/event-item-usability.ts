@@ -2,7 +2,7 @@ import type { EventItemConfig } from "./types.js";
 
 /**
  * Single source of truth for "can the badge item actually back badge_at_entry
- * right now" — an item that's disabled, or has issue_on_checkin explicitly
+ * right now": an item that's disabled, or has issue_on_checkin explicitly
  * turned off, can't auto-issue at check-in. Used by both the admin API
  * (guarding/syncing badge_at_entry) and the admin SPA (disabling the toggle).
  *

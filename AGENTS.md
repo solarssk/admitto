@@ -176,7 +176,7 @@ loader). Use browser-safe subpaths only (e.g. `@admitto/mail-templates/placehold
 avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`).
 Type-only re-exports from the root remain OK when they stay `import type` / `export type`. A local
 build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been
-externalized for browser compatibility" warnings during the `vite build` step — do not ignore them.
+externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
 
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
