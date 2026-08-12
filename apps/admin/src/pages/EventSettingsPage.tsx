@@ -114,8 +114,7 @@ const WALLET_CARD_HINT = "Per-event Apple/Google Wallet pass configuration.";
 const WALLET_CARD_INTRO =
   "Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and template are specific to this event, nothing is shared with other events.";
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
-const WALLET_TEMPLATE_HINT =
-  "From the PassCreator dashboard: which pass design this event's attendees get. Leave blank to keep wallet disabled for this event.";
+const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
 const WALLET_FIELD_MAPPING_DEFAULT_DESC =
   "Using the default mapping: name → full name, eventDate → event date, eventHours → event hours, eventPlace → event location, ticketType → ticket type.";

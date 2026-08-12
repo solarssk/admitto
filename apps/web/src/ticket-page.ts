@@ -418,7 +418,7 @@ export function renderTicket(
       <div class="ticket__qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
       ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
     </div>
-    <div class="ticket__perf" role="presentation"></div>
+    ${walletHtml ? `<div class="ticket__perf" role="presentation"></div>` : ""}
     ${walletHtml}
     ${gettingThereHtml}
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>`;

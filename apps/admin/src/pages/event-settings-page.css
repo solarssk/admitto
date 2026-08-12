@@ -232,9 +232,19 @@
 
 /* Apple/Google Wallet toggle rows: a colored circular icon badge spanning both the
    label and description lines, matching the icon-badge pattern used in modal headers
-   (e.g. requirements.css .event-item-modal__title i) instead of a small inline glyph. */
+   (e.g. requirements.css .event-item-modal__title i) instead of a small inline glyph.
+   With 3 flex children (icon, text, switch), the inherited justify-content: space-between
+   would split the free space into two equal gaps - a huge icon-to-text gap as well as the
+   intended text-to-switch one. Let the text block grow instead, so the icon sits close to
+   its label and only the trailing gap (before the switch) absorbs the free space. */
 .wallet-platform-row {
   gap: var(--space-3);
+  justify-content: flex-start;
+}
+
+.wallet-platform-row .settings-row__text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .wallet-platform-row__icon {
