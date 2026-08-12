@@ -435,6 +435,61 @@ describe("renderTemplateTrustedForStorage", () => {
     expect(sent.html).toContain('href="https://example.com/t?a=1&amp;b=2"');
     expect(sent.html).not.toContain("{{ticket_url}}");
   });
+
+  it("leaves apple_wallet_url/google_wallet_url literal in frozen snapshot, same as ticket_url", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Ticket for {{first_name}}",
+        compiledHtml:
+          '<a href="{{apple_wallet_url}}">Apple</a><a href="{{google_wallet_url}}">Google</a>',
+      },
+      {
+        first_name: "Alice",
+        apple_wallet_url: "https://secret.example/t/SHOULD_NOT_PERSIST/wallet/apple",
+        google_wallet_url: "https://secret.example/t/SHOULD_NOT_PERSIST/wallet/google",
+      },
+    );
+    expect(frozen.html).toContain('href="{{apple_wallet_url}}"');
+    expect(frozen.html).toContain('href="{{google_wallet_url}}"');
+    expect(frozen.html).not.toContain("SHOULD_NOT_PERSIST");
+  });
+
+  it("materializeStoredDeliveryMessage applies wallet links at send time", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Hi",
+        compiledHtml: '<a href="{{apple_wallet_url}}">Apple</a><a href="{{google_wallet_url}}">Google</a>',
+      },
+      { first_name: "Bob" },
+    );
+    const sent = materializeStoredDeliveryMessage(frozen, {
+      ticket_url: "https://example.com/t/tok",
+      qr_image_url: "https://example.com/q/tok.png",
+      apple_wallet_url: "https://example.com/t/tok/wallet/apple",
+      google_wallet_url: "https://example.com/t/tok/wallet/google",
+    });
+    expect(sent.html).toContain('href="https://example.com/t/tok/wallet/apple"');
+    expect(sent.html).toContain('href="https://example.com/t/tok/wallet/google"');
+    expect(sent.html).not.toContain("{{apple_wallet_url}}");
+    expect(sent.html).not.toContain("{{google_wallet_url}}");
+  });
+
+  it("materializeStoredDeliveryMessage drops an empty (unconfigured) wallet URL's href attribute", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Hi",
+        compiledHtml: '<a href="{{apple_wallet_url}}">Apple</a>',
+      },
+      { first_name: "Bob" },
+    );
+    const sent = materializeStoredDeliveryMessage(frozen, {
+      ticket_url: "https://example.com/t/tok",
+      qr_image_url: "https://example.com/q/tok.png",
+      apple_wallet_url: "",
+      google_wallet_url: "",
+    });
+    expect(sent.html).not.toContain("href=");
+  });
 });
 
 describe("materializeStoredDeliveryMessageRedacted", () => {

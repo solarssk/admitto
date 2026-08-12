@@ -237,8 +237,8 @@ async function processAttendeeForSend({
       ...locationVars,
       logo_url: branding.logo_url,
       header_image_url: branding.header_image_url,
-      apple_wallet_url: "",
-      google_wallet_url: "",
+      // apple_wallet_url/google_wallet_url are deferred (STORAGE_DEFERRED_LINK_PLACEHOLDERS),
+      // same as ticket_url/qr_image_url - materialized later from `links` at actual delivery.
       download_page_url: "",
       ...customAssets.vars,
     },

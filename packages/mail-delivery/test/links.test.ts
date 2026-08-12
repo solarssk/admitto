@@ -2,7 +2,20 @@ import { describe, expect, it } from "vitest";
 import { buildAttendeeMailLinks } from "../src/links.js";
 
 const BASE = "https://tickets.example.com";
-const EVENT = { slug: "summer-gala" };
+const EVENT = {
+  slug: "summer-gala",
+  wallet_enabled: false,
+  wallet_template_id: null,
+  wallet_api_key_enc: null,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
+};
+const EVENT_WITH_WALLET = {
+  ...EVENT,
+  wallet_enabled: true,
+  wallet_template_id: "tmpl-1",
+  wallet_api_key_enc: "encrypted-key",
+};
 const PUBLIC_REF = "tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij";
 
 describe("buildAttendeeMailLinks", () => {
@@ -16,6 +29,49 @@ describe("buildAttendeeMailLinks", () => {
     expect(links.ticket_url).toBe(`${BASE}/t/tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij`);
     expect(links.qr_image_url).toBe(`${BASE}/q/tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij.png`);
     expect(links.ticket_url).not.toContain("att-1");
+    expect(links.apple_wallet_url).toBe("");
+    expect(links.google_wallet_url).toBe("");
+  });
+
+  it("Mode A — wallet URLs populated when the event has wallet configured", () => {
+    const links = buildAttendeeMailLinks(
+      { id: "att-1", public_ref: null, qr_payload: null, external_uuid: null },
+      EVENT_WITH_WALLET,
+      BASE,
+      "tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+    );
+    expect(links.apple_wallet_url).toBe(
+      `${BASE}/t/tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij/wallet/apple`,
+    );
+    expect(links.google_wallet_url).toBe(
+      `${BASE}/t/tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij/wallet/google`,
+    );
+  });
+
+  it("Mode A — omits a platform's wallet URL when only that platform is disabled", () => {
+    const links = buildAttendeeMailLinks(
+      { id: "att-1", public_ref: null, qr_payload: null, external_uuid: null },
+      { ...EVENT_WITH_WALLET, wallet_google_enabled: false },
+      BASE,
+      "tok_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+    );
+    expect(links.apple_wallet_url).not.toBe("");
+    expect(links.google_wallet_url).toBe("");
+  });
+
+  it("Mode B — wallet URL uses our own /t/:slug/a/:ref path, never the external ticket_url override", () => {
+    const links = buildAttendeeMailLinks(
+      {
+        id: "att-agency",
+        public_ref: PUBLIC_REF,
+        qr_payload: "https://agency.example.com/ticket/123",
+        external_uuid: null,
+      },
+      EVENT_WITH_WALLET,
+      BASE,
+    );
+    expect(links.ticket_url).toBe("https://agency.example.com/ticket/123");
+    expect(links.apple_wallet_url).toBe(`${BASE}/t/summer-gala/a/${PUBLIC_REF}/wallet/apple`);
   });
 
   it("Mode B — agency URL payload uses external ticket_url and hosted qr", () => {

@@ -22,8 +22,14 @@ import {
 } from "./errors.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
 
-/** Ticket link placeholders kept literal in DB snapshots — substituted only at send/retry. */
-export const STORAGE_DEFERRED_LINK_PLACEHOLDERS = new Set(["ticket_url", "qr_image_url"]);
+/** Ticket/wallet link placeholders kept literal in DB snapshots — substituted only at
+ * send/retry, once the attendee's real per-token URLs are known. */
+export const STORAGE_DEFERRED_LINK_PLACEHOLDERS = new Set([
+  "ticket_url",
+  "qr_image_url",
+  "apple_wallet_url",
+  "google_wallet_url",
+]);
 
 function resolveVarValue(name: string, vars: TemplateVars): string {
   const raw = vars[name as keyof TemplateVars];
@@ -182,15 +188,20 @@ function substituteHtmlPlaceholdersDeferred(
   });
 }
 
+type DeferredLinkVars = Pick<
+  TemplateVars,
+  "ticket_url" | "qr_image_url" | "apple_wallet_url" | "google_wallet_url"
+>;
+
 function applyDeferredLinkPlaceholders(
   text: string,
-  links: Pick<TemplateVars, "ticket_url" | "qr_image_url">,
+  links: DeferredLinkVars,
   mode: "html" | "subject",
   baseUrl?: string,
 ): string {
   return text.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
     if (!STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
-    const value = links[name as keyof Pick<TemplateVars, "ticket_url" | "qr_image_url">] ?? "";
+    const value = links[name as keyof DeferredLinkVars] ?? "";
     if (mode === "subject") {
       return formatSubjectPlaceholderValue(name, value, baseUrl);
     }
@@ -273,10 +284,10 @@ export function renderTemplateTrustedForStorage(
   return { subject, html };
 }
 
-/** Substitute deferred ticket link placeholders into a frozen delivery snapshot. */
+/** Substitute deferred ticket/wallet link placeholders into a frozen delivery snapshot. */
 export function materializeStoredDeliveryMessage(
   frozen: RenderedTemplate,
-  links: Pick<TemplateVars, "ticket_url" | "qr_image_url">,
+  links: DeferredLinkVars,
   options?: RenderOptions,
 ): RenderedTemplate {
   const baseUrl = options?.baseUrl;

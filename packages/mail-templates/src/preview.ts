@@ -60,6 +60,10 @@ export function sanitizeSampleLinksForTestSend(rendered: RenderedTemplate): Rend
     html: rendered.html
       .split(SAMPLE_QR_IMAGE_URL)
       .join(SAMPLE_QR_IMAGE_DATA_URI)
+      .split(SAMPLE_APPLE_WALLET_URL)
+      .join(SAMPLE_TICKET_HREF)
+      .split(SAMPLE_GOOGLE_WALLET_URL)
+      .join(SAMPLE_TICKET_HREF)
       .split(SAMPLE_TICKET_URL)
       .join(SAMPLE_TICKET_HREF),
   };
@@ -70,6 +74,8 @@ export function sanitizeSampleLinksForTestSend(rendered: RenderedTemplate): Rend
  * see `sanitizeSampleLinksForTestSend` below, which references these same literals. */
 const SAMPLE_TICKET_URL = "https://tickets.example.com/t/sample-token";
 const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
+const SAMPLE_APPLE_WALLET_URL = `${SAMPLE_TICKET_URL}/wallet/apple`;
+const SAMPLE_GOOGLE_WALLET_URL = `${SAMPLE_TICKET_URL}/wallet/google`;
 
 export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   first_name: "Alex",
@@ -89,8 +95,8 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   qr_image_url: SAMPLE_QR_IMAGE_URL,
   logo_url: "",
   header_image_url: "",
-  apple_wallet_url: "",
-  google_wallet_url: "",
+  apple_wallet_url: SAMPLE_APPLE_WALLET_URL,
+  google_wallet_url: SAMPLE_GOOGLE_WALLET_URL,
   download_page_url: "",
 };
 
