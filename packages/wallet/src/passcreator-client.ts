@@ -54,12 +54,14 @@ export class PassCreatorClient implements WalletPassProvider {
   private readonly apiKey: string;
   private readonly templateId: string;
   private readonly baseUrl: string;
+  private readonly fieldMapping?: Record<string, string>;
   private readonly fetchFn: FetchFn;
 
   constructor(config: PassCreatorConfig, fetchFn: FetchFn = fetch) {
     this.apiKey = config.apiKey;
     this.templateId = config.templateId;
     this.baseUrl = config.baseUrl ?? PASSCREATOR_DEFAULT_BASE_URL;
+    this.fieldMapping = config.fieldMapping;
     this.fetchFn = fetchFn;
   }
 
@@ -67,7 +69,7 @@ export class PassCreatorClient implements WalletPassProvider {
     const envelope = await this.request<PassCreatorPassData>(
       "POST",
       "/api/v3/pass?async=false",
-      { data: toPassCreatorData(input, this.templateId) },
+      { data: toPassCreatorData(input, this.templateId, this.fieldMapping) },
     );
     return toResult(envelope);
   }
@@ -76,7 +78,7 @@ export class PassCreatorClient implements WalletPassProvider {
     const envelope = await this.request<PassCreatorPassData>(
       "PATCH",
       `/api/v3/pass/${encodeURIComponent(providerPassId)}`,
-      { data: toPassCreatorData(input, this.templateId) },
+      { data: toPassCreatorData(input, this.templateId, this.fieldMapping) },
     );
     return toResult(envelope);
   }
@@ -87,6 +89,19 @@ export class PassCreatorClient implements WalletPassProvider {
 
   async restorePass(passUid: string): Promise<void> {
     await this.setVoided(passUid, false);
+  }
+
+  /**
+   * Probes the API key + template ID pair for "Test connection" (Event Settings -> Wallet).
+   * Uses the v2 template-read endpoint (v3 has no template-management operations - ADR 0041 §3),
+   * assumed to share v3's {success, data, errors} envelope shape pending live confirmation.
+   */
+  async describeTemplate(): Promise<{ name: string | null }> {
+    const data = await this.request<{ name?: string }>(
+      "GET",
+      `/api/v2/pass-template/${encodeURIComponent(this.templateId)}/describe`,
+    );
+    return { name: data.name ?? null };
   }
 
   async findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null> {

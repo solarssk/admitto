@@ -45,10 +45,14 @@ model Event {
   event_hours_end              String?
   // Per-event PassCreator config (ADR 0041): template + API key both live on the event, not the
   // organization - keeps a leaked/rotated key scoped to one event's logs instead of the instance.
+  wallet_enabled               Boolean                    @default(true)
   wallet_template_id           String?
   wallet_api_key_enc           String?
   wallet_apple_enabled         Boolean                    @default(true)
   wallet_google_enabled        Boolean                    @default(true)
+  // Admin-defined PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}).
+  // Null/empty = the built-in default mapping (name, eventDate, eventHours, eventPlace, ticketType).
+  wallet_field_mapping         Json?
   timezone                     String                     @default("UTC")
   capacity                     Int?
   logo_url                     String?

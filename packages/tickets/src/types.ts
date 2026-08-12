@@ -182,6 +182,9 @@ export type ResolvedTicket = {
     /** Optional 24h "HH:MM" event start/end time, shown as a range on the ticket. */
     eventHoursStart: string | null;
     eventHoursEnd: string | null;
+    /** Master switch for this event's wallet feature; off hides both platforms regardless of the
+     * per-platform switches below. */
+    walletEnabled: boolean;
     /** PassCreator template for this event's wallet passes; null disables wallet passes. */
     walletTemplateId: string | null;
     /** Encrypted PassCreator API key for this event; null disables wallet passes. Never sent to
@@ -189,6 +192,8 @@ export type ResolvedTicket = {
     walletApiKeyEnc: string | null;
     walletAppleEnabled: boolean;
     walletGoogleEnabled: boolean;
+    /** PassCreator field key -> Admitto placeholder token; null/empty uses the default mapping. */
+    walletFieldMapping: Record<string, string> | null;
     /** Short venue display name (`EventLocation.venue_name`). */
     location: string | null;
     logoUrl: string | null;

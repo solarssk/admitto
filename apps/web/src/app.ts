@@ -132,6 +132,7 @@ import {
   handleGetEventSettings,
   handlePatchEvent,
   handleExportEventPii,
+  handlePostEventWalletTest,
 } from "./admin/event-settings-routes.js";
 import {
   handleListEventAttendees,
@@ -628,10 +629,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
   /** Both the API key and the pass template belong to the event (ADR 0041). */
   function resolveWalletProvider(event: {
+    walletEnabled: boolean;
     walletTemplateId: string | null;
     walletApiKeyEnc: string | null;
+    walletFieldMapping: Record<string, string> | null;
   }): WalletPassProvider | null {
     if (options.walletPassProvider) return options.walletPassProvider;
+    if (!event.walletEnabled) return null;
     const templateId = event.walletTemplateId;
     if (!templateId || !event.walletApiKeyEnc) return null;
     let apiKey: string;
@@ -641,7 +645,12 @@ export function createApp(options: CreateAppOptions = {}) {
       console.error("wallet API key decrypt failed:", err);
       return null;
     }
-    return new PassCreatorClient({ apiKey, templateId, baseUrl: resolvePassCreatorBaseUrl() });
+    return new PassCreatorClient({
+      apiKey,
+      templateId,
+      baseUrl: resolvePassCreatorBaseUrl(),
+      fieldMapping: event.walletFieldMapping ?? undefined,
+    });
   }
 
   /** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
@@ -681,7 +690,9 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!isAdmittable(attendee.status as AttendeeStatus)) {
       return c.redirect(backHref, 302);
     }
-    const platformEnabled = platform === "apple" ? event.walletAppleEnabled : event.walletGoogleEnabled;
+    const platformEnabled =
+      event.walletEnabled &&
+      (platform === "apple" ? event.walletAppleEnabled : event.walletGoogleEnabled);
     if (!platformEnabled) {
       return c.redirect(backHref, 302);
     }
@@ -904,8 +915,9 @@ export function createApp(options: CreateAppOptions = {}) {
         : `/t/${internalToken}`;
     // No template configured for this event (Event settings -> Wallet, left blank) - the
     // /wallet/:platform routes would only redirect back with walletError=1, so don't offer them.
-    // Each platform is independently gated by its own Event settings -> Wallet toggle too.
-    const walletConfigured = resolvedForDisplay.event.walletTemplateId !== null;
+    // The master switch and each platform's own toggle independently gate visibility too.
+    const walletConfigured =
+      resolvedForDisplay.event.walletEnabled && resolvedForDisplay.event.walletTemplateId !== null;
     const appleWalletVisible = walletConfigured && resolvedForDisplay.event.walletAppleEnabled;
     const googleWalletVisible = walletConfigured && resolvedForDisplay.event.walletGoogleEnabled;
     return htmlWithSecurityHeaders(
@@ -981,6 +993,9 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handlePatchEvent(c, db)),
+  );
+  app.post("/api/admin/events/:eventId/wallet/test", jsonPostCsrf, staffAdminGate, (c) =>
+    handlePostEventWalletTest(c, db),
   );
   app.get("/api/admin/events/:eventId/mail-settings", staffAdminGate, (c) =>
     handleGetEventMailSettings(c, db),

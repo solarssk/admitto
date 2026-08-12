@@ -440,6 +440,26 @@ describe("On-demand wallet routes", () => {
     }
   });
 
+  it("hides both badges and both routes redirect without walletError when wallet_enabled is off", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_enabled: false } });
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}`);
+      const html = await res.text();
+      expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
+      expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
+
+      const appleRes = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+      expect(appleRes.status).toBe(302);
+      expect(appleRes.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}`);
+      expect(provider.createPass).not.toHaveBeenCalled();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_enabled: true } });
+    }
+  });
+
   it("hides only the Apple badge when wallet_apple_enabled is off", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);

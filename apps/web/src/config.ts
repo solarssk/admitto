@@ -179,26 +179,9 @@ export function validateOpsHealthBootConfig(env: EnvLike = process.env): void {
 }
 
 /**
- * PassCreator config from env vars (temporary - Event Settings → Wallet replaces this with
- * stored per-org/per-event config in a later PR). Returns null when unconfigured so callers can
- * fail soft (redirect with an error) instead of crashing boot.
- */
-export function resolvePassCreatorConfig(
-  env: EnvLike = process.env,
-): { apiKey: string; templateId: string; baseUrl?: string } | null {
-  const apiKey = env["PASSCREATOR_API_KEY"]?.trim();
-  const templateId = env["PASSCREATOR_TEMPLATE_ID"]?.trim();
-  if (!apiKey || !templateId) return null;
-  const rawBaseUrl = env["PASSCREATOR_BASE_URL"]?.trim();
-  const baseUrl = rawBaseUrl?.startsWith("https://") ? rawBaseUrl : undefined;
-  return { apiKey, templateId, ...(baseUrl ? { baseUrl } : {}) };
-}
-
-/**
- * PASSCREATOR_BASE_URL read independently of resolvePassCreatorConfig() above - that helper also
- * requires the legacy PASSCREATOR_TEMPLATE_ID, which a deployment using the per-event Template ID
- * field (Event.wallet_template_id) instead may not have set, silently dropping a custom base URL.
- * A non-HTTPS override is ignored (falls back to PassCreatorClient's own HTTPS default) rather than
+ * The API key and template are per-event now (Event.wallet_api_key_enc/wallet_template_id) -
+ * PASSCREATOR_BASE_URL is the only PassCreator setting still read from the environment. A
+ * non-HTTPS override is ignored (falls back to PassCreatorClient's own HTTPS default) rather than
  * sending the wallet API key over plaintext.
  */
 export function resolvePassCreatorBaseUrl(env: EnvLike = process.env): string | undefined {

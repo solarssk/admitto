@@ -4,7 +4,12 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
-import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
+import {
+  ADMITTABLE_STATUS_LIST,
+  REVOCABLE_ITEM_STATES,
+  writeAdminAuditLog,
+  parseWalletFieldMapping,
+} from "@admitto/tickets";
 import {
   InvalidHttpUrlError,
   logoCropFromDb,
@@ -18,7 +23,8 @@ import {
 } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
-import { encryptToString } from "@admitto/crypto";
+import { decryptFromString, encryptToString } from "@admitto/crypto";
+import { PassCreatorClient, WalletProviderError, WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet";
 import { z } from "zod";
 import {
   adminAuditFromContext,
@@ -29,6 +35,7 @@ import {
   requireEventId,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
+import { resolvePassCreatorBaseUrl } from "../config.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import {
@@ -72,10 +79,17 @@ const patchEventSchema = z
     timezone: timezoneField.optional(),
     event_hours_start: eventHoursField,
     event_hours_end: eventHoursField,
+    wallet_enabled: z.boolean().optional(),
     wallet_template_id: z.string().trim().max(200).nullish(),
     wallet_api_key: z.string().trim().max(512).nullish(),
     wallet_apple_enabled: z.boolean().optional(),
     wallet_google_enabled: z.boolean().optional(),
+    wallet_field_mapping: z
+      .record(
+        z.string().trim().min(1).max(60).regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+        z.enum(WALLET_MAPPING_PLACEHOLDERS),
+      )
+      .nullish(),
     logo_url: z.string().trim().max(2000).nullish(),
     logo_original_url: z.string().trim().max(2000).nullish(),
     logo_crop: logoCropSchema,
@@ -93,10 +107,12 @@ type EventSettingsRow = {
   timezone: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
+  wallet_enabled: boolean;
   wallet_template_id: string | null;
   wallet_api_key_enc: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_field_mapping: unknown;
   capacity: number | null;
   archived_at: Date | null;
   archived_by_timezone: string | null;
@@ -127,10 +143,12 @@ function serializeEventSettings(
     timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
     event_hours_start: event.event_hours_start,
     event_hours_end: event.event_hours_end,
+    wallet_enabled: event.wallet_enabled,
     wallet_template_id: event.wallet_template_id,
     wallet_api_key: { configured: event.wallet_api_key_enc != null },
     wallet_apple_enabled: event.wallet_apple_enabled,
     wallet_google_enabled: event.wallet_google_enabled,
+    wallet_field_mapping: parseWalletFieldMapping(event.wallet_field_mapping),
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
@@ -164,10 +182,12 @@ const EVENT_SETTINGS_SELECT = {
   timezone: true,
   event_hours_start: true,
   event_hours_end: true,
+  wallet_enabled: true,
   wallet_template_id: true,
   wallet_api_key_enc: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
+  wallet_field_mapping: true,
   capacity: true,
   archived_at: true,
   archived_by_timezone: true,
@@ -256,6 +276,87 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   return c.json(serializeEventSettings(event, deletability, revokeCounts));
 }
 
+const walletTestSchema = z.object({
+  apiKey: z.string().trim().max(512).optional(),
+  templateId: z.string().trim().min(1).max(200),
+});
+
+function walletTestErrorMessage(code: WalletProviderError["code"]): string {
+  switch (code) {
+    case "wallet_provider_unauthorized":
+      return "PassCreator rejected the API key.";
+    case "wallet_provider_not_found":
+      return "Template ID not found on this PassCreator account.";
+    case "wallet_provider_rate_limited":
+      return "PassCreator is rate-limiting this instance - try again shortly.";
+    case "wallet_provider_timeout":
+      return "Could not reach PassCreator.";
+    default:
+      return "PassCreator rejected the request.";
+  }
+}
+
+/**
+ * POST /api/admin/events/:eventId/wallet/test
+ * Probe the API key + template ID from a draft body (no persist). Empty/omitted apiKey falls
+ * back to the event's already-saved key.
+ */
+export async function handlePostEventWalletTest(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  if (!(await canManageInstance(db, c.get("auth").userId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  const parsed = walletTestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "validation_failed", details: parsed.error.flatten() }, 400);
+  }
+
+  let apiKey = parsed.data.apiKey;
+  if (!apiKey) {
+    const event = await db.event.findUnique({
+      where: { id: eventId },
+      select: { wallet_api_key_enc: true },
+    });
+    if (!event?.wallet_api_key_enc) {
+      return c.json({ ok: false, error: "An API key is required to test the connection." });
+    }
+    try {
+      apiKey = decryptFromString(event.wallet_api_key_enc);
+    } catch {
+      return c.json({ ok: false, error: "The saved API key could not be decrypted." });
+    }
+  }
+
+  const client = new PassCreatorClient({
+    apiKey,
+    templateId: parsed.data.templateId,
+    baseUrl: resolvePassCreatorBaseUrl(),
+  });
+  try {
+    const result = await client.describeTemplate();
+    return c.json({
+      ok: true,
+      message: result.name ? `Connected - template "${result.name}".` : "Connected to PassCreator.",
+    });
+  } catch (err) {
+    const message =
+      err instanceof WalletProviderError
+        ? walletTestErrorMessage(err.code)
+        : "Could not reach PassCreator.";
+    return c.json({ ok: false, error: message });
+  }
+}
+
 type PatchEventBody = z.infer<typeof patchEventSchema>;
 
 /** Maps the schema's basic (non-branding) fields onto Prisma update data. */
@@ -265,10 +366,12 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   timezone?: string;
   event_hours_start?: string | null;
   event_hours_end?: string | null;
+  wallet_enabled?: boolean;
   wallet_template_id?: string | null;
   wallet_api_key_enc?: string | null;
   wallet_apple_enabled?: boolean;
   wallet_google_enabled?: boolean;
+  wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
   capacity?: number | null;
 } {
   const data: ReturnType<typeof buildBasicFieldsPatch> = {};
@@ -277,6 +380,7 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   if (patch.timezone !== undefined) data.timezone = patch.timezone;
   if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
   if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
+  if (patch.wallet_enabled !== undefined) data.wallet_enabled = patch.wallet_enabled;
   if (patch.wallet_template_id !== undefined) data.wallet_template_id = patch.wallet_template_id;
   // Empty string clears the key; omit to keep the previous one.
   if (patch.wallet_api_key !== undefined) {
@@ -287,6 +391,10 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
   }
   if (patch.wallet_google_enabled !== undefined) {
     data.wallet_google_enabled = patch.wallet_google_enabled;
+  }
+  if (patch.wallet_field_mapping !== undefined) {
+    const mapping = patch.wallet_field_mapping;
+    data.wallet_field_mapping = mapping && Object.keys(mapping).length > 0 ? mapping : Prisma.JsonNull;
   }
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
@@ -385,10 +493,12 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   // superadmin-gated); assertEventManageAccess above also permits organisation admins, so it
   // does not by itself enforce that boundary for these fields.
   const patchesWallet =
+    patch.wallet_enabled !== undefined ||
     patch.wallet_template_id !== undefined ||
     patch.wallet_api_key !== undefined ||
     patch.wallet_apple_enabled !== undefined ||
-    patch.wallet_google_enabled !== undefined;
+    patch.wallet_google_enabled !== undefined ||
+    patch.wallet_field_mapping !== undefined;
   if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
   }
@@ -405,10 +515,12 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     timezone?: string;
     event_hours_start?: string | null;
     event_hours_end?: string | null;
+    wallet_enabled?: boolean;
     wallet_template_id?: string | null;
     wallet_api_key_enc?: string | null;
     wallet_apple_enabled?: boolean;
     wallet_google_enabled?: boolean;
+    wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     capacity?: number | null;
     logo_url?: string | null;
     logo_original_url?: string | null;

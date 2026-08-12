@@ -42,6 +42,16 @@ export function parseTicketAddressComponents(
   return components;
 }
 
+/** Best-effort read of Event.wallet_field_mapping JSON - never trust raw DB JSON blindly. */
+export function parseWalletFieldMapping(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim()) out[key] = v.trim();
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 /** Event logo, falling back to the organization's when the event has none set - null when
  * neither is configured (#419). Shared by both public ticket page resolvers (token-based
  * resolveTicket below, and apps/web's public_ref-based findAttendeeForEventRoute) so they can't
@@ -135,10 +145,12 @@ export function toResolved(
     event: {
       id: string; title: string; slug: string; date: Date; timezone: string;
       event_hours_start: string | null; event_hours_end: string | null;
+      wallet_enabled: boolean;
       wallet_template_id: string | null;
       wallet_api_key_enc: string | null;
       wallet_apple_enabled: boolean;
       wallet_google_enabled: boolean;
+      wallet_field_mapping: unknown;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
       organization: { logo_url: string | null; header_image_url: string | null };
@@ -168,10 +180,12 @@ export function toResolved(
       timezone: row.event.timezone || "UTC",
       eventHoursStart: row.event.event_hours_start,
       eventHoursEnd: row.event.event_hours_end,
+      walletEnabled: row.event.wallet_enabled,
       walletTemplateId: row.event.wallet_template_id,
       walletApiKeyEnc: row.event.wallet_api_key_enc,
       walletAppleEnabled: row.event.wallet_apple_enabled,
       walletGoogleEnabled: row.event.wallet_google_enabled,
+      walletFieldMapping: parseWalletFieldMapping(row.event.wallet_field_mapping),
       location: loc?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
       formattedAddress: loc?.formatted_address ?? null,

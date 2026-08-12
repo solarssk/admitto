@@ -210,6 +210,51 @@
   margin: 0;
 }
 
+/* Wallet tab: each platform gets its own bordered row (name + switch) instead of two bare
+   switches sitting directly under the API key field with no visual separation. */
+.wallet-platform-toggles {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.wallet-platform-toggles__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.wallet-platform-toggles__row + .wallet-platform-toggles__row {
+  border-top: 1px solid var(--border);
+}
+
+.wallet-platform-toggles__label {
+  font-weight: var(--fw-medium);
+}
+
+.wallet-field-mapping__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.wallet-field-mapping__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .wallet-field-mapping__row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Status card: three short items, so use three columns on wide screens
    instead of stacking them into a tall single column. */
 .settings-status-grid {

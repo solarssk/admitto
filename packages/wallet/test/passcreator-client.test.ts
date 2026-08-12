@@ -152,6 +152,54 @@ describe("PassCreatorClient.createPass", () => {
   });
 });
 
+describe("PassCreatorClient.describeTemplate", () => {
+  it("GETs the v2 template-describe endpoint and returns the template name", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/v2/pass-template/tmpl-1/describe");
+      expect(init?.method).toBe("GET");
+      return jsonResponse(200, { success: true, data: { name: "Cybersecurity Awareness" } });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.describeTemplate()).resolves.toEqual({ name: "Cybersecurity Awareness" });
+  });
+
+  it("returns a null name when the response omits it", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: {} }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.describeTemplate()).resolves.toEqual({ name: null });
+  });
+
+  it("throws wallet_provider_unauthorized on a bad key", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(401, { success: false, errors: ["Invalid API key"] }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.describeTemplate()).rejects.toMatchObject({
+      code: "wallet_provider_unauthorized",
+    });
+  });
+});
+
+describe("PassCreatorClient fieldMapping", () => {
+  it("passes the configured field mapping through to createPass's data payload", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      expect(body.data).toMatchObject({ attendeeFullName: "Jane Doe" });
+      expect(body.data).not.toHaveProperty("name");
+      return jsonResponse(200, {
+        success: true,
+        data: { identifier: "pass-1", iPhoneUri: "a", androidUri: "b" },
+      });
+    });
+    const client = new PassCreatorClient(
+      { ...CONFIG, fieldMapping: { attendeeFullName: "full_name" } },
+      fetchMock as unknown as typeof fetch,
+    );
+    await client.createPass(INPUT);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("PassCreatorClient config", () => {
   it("defaults baseUrl to the live PassCreator host when not configured", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {

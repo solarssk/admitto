@@ -1136,15 +1136,29 @@ async function weatherRow(
   return weatherLiveOkRow(label, config, endpoint, probe.latencyMs, checkedAt);
 }
 
-function plannedRow(id: string, label: string, summary: string): HealthCheckRow {
+/** Wallet (PassCreator) is configured per event (ADR 0041), not per instance - "ok" means at
+ * least one event currently has it fully turned on (enabled + template + API key). */
+async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthCheckRow> {
+  const configuredCount = await db.event.count({
+    where: {
+      wallet_enabled: true,
+      wallet_template_id: { not: null },
+      wallet_api_key_enc: { not: null },
+    },
+  });
+  const status = configuredCount > 0 ? "ok" : "not_configured";
   return {
-    id,
-    label,
-    status: "planned",
-    summary,
+    id: "wallet_passes",
+    label: "Wallet passes, PassCreator",
+    status,
+    summary:
+      configuredCount > 0
+        ? `Configured for ${configuredCount} event${configuredCount === 1 ? "" : "s"}`
+        : "Not configured for any event yet",
     details: detailsFromEntries([
-      ["status", "planned"],
-      ["availability", "later_release"],
+      ["status", status],
+      ["configured_events", String(configuredCount)],
+      ["last_checked", checkedAt],
     ]),
   };
 }
@@ -1479,12 +1493,25 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
     ]),
   };
 
+  const walletFallback: HealthCheckRow = {
+    id: "wallet_passes",
+    label: "Wallet passes, PassCreator",
+    status: "degraded",
+    summary: "Could not evaluate wallet configuration",
+    details: detailsFromEntries([
+      ["status", "degraded"],
+      ["reason", "lookup_failed"],
+      ["last_checked", checkedAt],
+    ]),
+  };
+
   const [
     setup,
     gauges,
     email,
     bounceIngest,
     backgroundWorker,
+    wallet,
     idpRows,
     cfAccess,
     address,
@@ -1500,6 +1527,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
       emailSendingRow(deps.db, env, checkedAt, live, probeMail, resolveOrgMailConfig),
       bounceIngestRow(deps.db, checkedAt, now, env).catch(() => bounceIngestFallback),
       backgroundWorkerRow(deps.db, checkedAt, now, env).catch(() => backgroundWorkerFallback),
+      walletRow(deps.db, checkedAt).catch(() => walletFallback),
       identityProviderRows(deps.db, live, checkedAt).catch(() => idpFallback),
       cloudflareAccessRow(deps.db, live, checkedAt).catch(() => cfFallback),
       addressLookupRow(deps.geocodingProvider, live, env, checkedAt).catch(() => addressFallback),
@@ -1535,11 +1563,7 @@ export async function collectAdminHealth(deps: CollectAdminHealthDeps): Promise<
   const externalChecks: HealthCheckRow[] = [
     email,
     bounceIngest,
-    plannedRow(
-      "wallet_passes",
-      "Wallet passes, PassCreator",
-      "Coming in v0.5 · Apple & Google Wallet",
-    ),
+    wallet,
     address,
     mapTilesRow(env, checkedAt),
     weather,
