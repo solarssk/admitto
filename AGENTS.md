@@ -177,12 +177,17 @@ lazy `communication` chunk) using `.add-attendee-modal__*` classes with no impor
 at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` — every consumer of
 a shared modal/component CSS file should show up importing it directly.
 
-**Do not import `@admitto/mail-templates` (package root) from `apps/admin`.** The barrel re-exports
-Prisma/mjml server modules; Vite can ship them into a lazy SPA chunk (`fileURLToPath is not a
-function` on Event Settings). Use browser-safe subpaths only (e.g.
-`@admitto/mail-templates/placeholders`). Same idea as avoiding `@admitto/auth`'s root entry for
-password helpers (`./constants`, `./password-strength`). Type-only re-exports from the root remain
-OK when they stay `import type` / `export type`.
+**Do not import `@admitto/mail-templates` or `@admitto/tickets` (package root) from `apps/admin`.**
+Both barrels re-export Prisma/node-only server modules (mjml/fs for mail-templates; Prisma,
+`node:crypto`, pdfkit for tickets); Vite can ship them into a lazy SPA chunk (`fileURLToPath is not
+a function` on Event Settings was the mail-templates incident; the tickets barrel separately pulled
+the entire `typescript` compiler into a lazy chunk via `htmlnano`→`cosmiconfig`'s optional TS-config
+loader). Use browser-safe subpaths only (e.g. `@admitto/mail-templates/placeholders`,
+`@admitto/tickets/custom-data-reserved`, `@admitto/tickets/event-item-usability`). Same idea as
+avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`).
+Type-only re-exports from the root remain OK when they stay `import type` / `export type`. A local
+build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been
+externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
 
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
