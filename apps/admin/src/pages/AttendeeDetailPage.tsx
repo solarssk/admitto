@@ -44,7 +44,7 @@ import {
 } from "../attendees/attendeeDetailForm.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { formatAdmissionDisplayParts, formatEventDateTime } from "../utils/event-dates.js";
+import { formatAdmissionDisplayParts, formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
 import {
   deriveAttendeeSource,
   getTimelineActor,
@@ -534,9 +534,10 @@ function WalletLinksMenu({
               className="more-actions-menu__item"
               onClick={() => void copyLink(appleUrl, "Apple Wallet")}
             >
-              <i className="ti ti-copy" aria-hidden="true" />
+              <i className="ti ti-brand-apple" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
                 <span>Copy Apple Wallet link</span>
+                <span className="more-actions-menu__item-hint">Install link for this attendee's pass</span>
               </span>
             </button>
           )}
@@ -547,9 +548,10 @@ function WalletLinksMenu({
               className="more-actions-menu__item"
               onClick={() => void copyLink(androidUrl, "Google Wallet")}
             >
-              <i className="ti ti-copy" aria-hidden="true" />
+              <i className="ti ti-brand-google" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
                 <span>Copy Google Wallet link</span>
+                <span className="more-actions-menu__item-hint">Install link for this attendee's pass</span>
               </span>
             </button>
           )}
@@ -792,11 +794,16 @@ function AttendeeOverviewTab({
         >
           {detail.wallet_pass ? (
             <div className="attendee-detail-readonly">
+              {/* None of these three moments has a captured actor/device timezone (issued_at is
+                  the attendee's own device, voided_at/last_synced_at don't persist one either) -
+                  viewer's own browser zone, matching viewerLocalTime's "no known actor zone"
+                  convention, not the event's timezone (which has no real relationship to any of
+                  these - PO review). */}
               {detail.wallet_pass.issued_at && (
                 <div className="attendee-detail-row">
                   <span>Added on</span>
                   <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.issued_at, event.timezone)}
+                    {formatEventDateTime(detail.wallet_pass.issued_at, getBrowserTimeZone())}
                   </span>
                 </div>
               )}
@@ -804,7 +811,7 @@ function AttendeeOverviewTab({
                 <div className="attendee-detail-row">
                   <span>Voided</span>
                   <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.voided_at, event.timezone)}
+                    {formatEventDateTime(detail.wallet_pass.voided_at, getBrowserTimeZone())}
                   </span>
                 </div>
               )}
@@ -812,7 +819,7 @@ function AttendeeOverviewTab({
                 <div className="attendee-detail-row">
                   <span>Last synced</span>
                   <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.last_synced_at, event.timezone)}
+                    {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
                   </span>
                 </div>
               )}
