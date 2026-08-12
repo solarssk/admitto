@@ -58,6 +58,7 @@ import {
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
+import { WalletStatusBadge } from "../attendees/walletStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
@@ -509,15 +510,6 @@ function mailTone(status: string | null): ChipTone {
   return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
 }
 
-function walletStatusLabel(pass: WalletPassActionDto | null): string {
-  if (!pass) return "Not added";
-  if (pass.status === "active") return "Added";
-  if (pass.status === "voided") return "Voided";
-  if (pass.status === "failed") return "Failed";
-  if (pass.status === "expired") return "Expired";
-  return "Pending";
-}
-
 function walletTone(pass: WalletPassActionDto | null): ChipTone {
   if (!pass) return "neutral";
   if (pass.status === "active") return "ok";
@@ -722,8 +714,32 @@ function AttendeeOverviewTab({
             <div className="attendee-detail-readonly">
               <div className="attendee-detail-row">
                 <span>Status</span>
-                <span>{walletStatusLabel(detail.wallet_pass)}</span>
+                <WalletStatusBadge status={detail.wallet_pass.status} />
               </div>
+              {detail.wallet_pass.apple_url && (
+                <div className="attendee-detail-row">
+                  <span>Apple Wallet</span>
+                  <a href={detail.wallet_pass.apple_url} target="_blank" rel="noreferrer">
+                    Open <i className="ti ti-external-link" aria-hidden="true" />
+                  </a>
+                </div>
+              )}
+              {detail.wallet_pass.android_url && (
+                <div className="attendee-detail-row">
+                  <span>Google Wallet</span>
+                  <a href={detail.wallet_pass.android_url} target="_blank" rel="noreferrer">
+                    Open <i className="ti ti-external-link" aria-hidden="true" />
+                  </a>
+                </div>
+              )}
+              {detail.wallet_pass.voided_at && (
+                <div className="attendee-detail-row">
+                  <span>Voided</span>
+                  <span className="mono">
+                    {formatEventDateTime(detail.wallet_pass.voided_at, event.timezone)}
+                  </span>
+                </div>
+              )}
               {detail.wallet_pass.last_synced_at && (
                 <div className="attendee-detail-row">
                   <span>Last synced</span>
@@ -1998,7 +2014,7 @@ export function AttendeeDetailPage() {
           </span>
           <div className="attendee-status-chip__body">
             <strong>Wallet</strong>
-            <span>{walletStatusLabel(detail.wallet_pass)}</span>
+            <WalletStatusBadge status={detail.wallet_pass?.status ?? null} />
           </div>
         </div>
       </div>
