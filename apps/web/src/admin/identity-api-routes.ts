@@ -412,6 +412,7 @@ export async function handleApiDiscoverProvider(
       token_endpoint: discovery.token_endpoint,
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? undefined,
+      end_session_endpoint: discovery.end_session_endpoint ?? undefined,
       enabled: provider.enabled,
     });
   } catch (err) {
@@ -447,6 +448,7 @@ export async function handleApiDiscoverProvider(
       token_endpoint: discovery.token_endpoint,
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+      end_session_endpoint: discovery.end_session_endpoint ?? null,
     },
     provider: refreshed ? await providerDetailDto(db, refreshed, injectedBaseUrl) : null,
   });
@@ -500,6 +502,7 @@ export async function handleApiDiscoverProviderPreview(c: Context): Promise<Resp
         token_endpoint: discovery.token_endpoint,
         jwks_uri: discovery.jwks_uri,
         userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+        end_session_endpoint: discovery.end_session_endpoint ?? null,
       },
     });
   } catch (err) {

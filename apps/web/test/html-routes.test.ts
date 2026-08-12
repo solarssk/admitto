@@ -14,6 +14,7 @@ vi.mock("@admitto/auth", async (importOriginal) => {
     revokeTrustedDeviceByToken: vi.fn(async () => {}),
     validateSession: vi.fn(),
     validatePartialSession: vi.fn(),
+    resolveOidcEndSessionRedirect: vi.fn(async () => null),
   };
 });
 
@@ -48,6 +49,7 @@ import {
   revokeTrustedDeviceByToken,
   validatePartialSession,
   validateSession,
+  resolveOidcEndSessionRedirect,
 } from "@admitto/auth";
 import { resolveStaffEntryPath } from "../src/setup-routes.js";
 import { resolvePostLoginRedirectForUser } from "../src/auth/post-login-redirect.js";
@@ -64,6 +66,7 @@ const mockValidateSession = vi.mocked(validateSession);
 const mockValidatePartial = vi.mocked(validatePartialSession);
 const mockRevokeSession = vi.mocked(revokeSession);
 const mockRevokeTrusted = vi.mocked(revokeTrustedDeviceByToken);
+const mockEndSessionRedirect = vi.mocked(resolveOidcEndSessionRedirect);
 const resolveEntry = vi.mocked(resolveStaffEntryPath);
 const resolveLanding = vi.mocked(resolvePostLoginRedirectForUser);
 const checkEmailLimit = vi.mocked(checkLoginEmailRateLimit);
@@ -73,7 +76,7 @@ function makeApp(db: PrismaClient = {} as PrismaClient): Hono {
   const app = new Hono();
   app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", (c) => handlePostLogin(c, db, store));
-  app.post("/logout", (c) => handlePostLogout(c, db));
+  app.post("/logout", (c) => handlePostLogout(c, db, "https://admitto.example.com"));
   return app;
 }
 
@@ -85,6 +88,7 @@ describe("html-routes", () => {
     checkEmailLimit.mockResolvedValue(true);
     mockValidateSession.mockResolvedValue(null);
     mockValidatePartial.mockResolvedValue(null);
+    mockEndSessionRedirect.mockResolvedValue(null);
   });
 
   it("redirects GET /login to /setup when staff entry is setup", async () => {
@@ -293,6 +297,29 @@ describe("html-routes", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login");
+    expect(mockLogout).toHaveBeenCalled();
+  });
+
+  it("redirects to the IdP's end_session_endpoint for an OIDC session, instead of /login directly", async () => {
+    mockValidatePartial.mockResolvedValue({
+      userId: "u1",
+      sessionId: "s1",
+      stage: "full",
+      session: { id: "s1", auth_method: "oidc", oidc_provider_id: "idp-1" },
+    } as unknown as Awaited<ReturnType<typeof validatePartialSession>>);
+    mockEndSessionRedirect.mockResolvedValue(
+      "https://idp.example.com/end-session?client_id=admitto&post_logout_redirect_uri=https%3A%2F%2Fadmitto.example.com%2Flogin",
+    );
+
+    const res = await makeApp().request("/logout", {
+      method: "POST",
+      headers: { Cookie: "admitto_session=tok" },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(
+      "https://idp.example.com/end-session?client_id=admitto&post_logout_redirect_uri=https%3A%2F%2Fadmitto.example.com%2Flogin",
+    );
     expect(mockLogout).toHaveBeenCalled();
   });
 });

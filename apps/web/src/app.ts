@@ -1691,7 +1691,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollDownloadCodes(c, db),
   );
-  app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
+  app.post("/logout", htmlPostCsrf, async (c) => handlePostLogout(c, db, await oidcPublicBaseUrl()));
   app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
   app.post("/change-password", htmlPostCsrf, requireChangePasswordSession, (c) =>
     handlePostChangePassword(c, db),

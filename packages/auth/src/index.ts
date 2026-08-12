@@ -261,6 +261,7 @@ export {
   type OidcLinkStepUpFailureReason,
 } from "./oidc/link-step-up.js";
 export { extractClaims } from "./oidc/claims.js";
+export { resolveOidcEndSessionRedirect } from "./oidc/end-session.js";
 export {
   exchangeAuthorizationCode,
   validateIdToken,

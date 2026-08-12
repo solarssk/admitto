@@ -7,6 +7,7 @@ export interface OidcDiscoveryDocument {
   token_endpoint: string;
   jwks_uri: string;
   userinfo_endpoint?: string;
+  end_session_endpoint?: string;
 }
 
 function normalizeIssuer(issuer: string): string {
@@ -37,11 +38,15 @@ export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryD
     throw new TypeError("OIDC discovery document missing required fields");
   }
   const userinfo = doc["userinfo_endpoint"];
+  const endSession = doc["end_session_endpoint"];
   assertSafeOidcFetchUrl(authorization_endpoint);
   assertSafeOidcFetchUrl(token_endpoint);
   assertSafeOidcFetchUrl(jwks_uri);
   if (typeof userinfo === "string") {
     assertSafeOidcFetchUrl(userinfo);
+  }
+  if (typeof endSession === "string") {
+    assertSafeOidcFetchUrl(endSession);
   }
   return {
     issuer: docIssuer,
@@ -49,6 +54,7 @@ export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryD
     token_endpoint,
     jwks_uri,
     userinfo_endpoint: typeof userinfo === "string" ? userinfo : undefined,
+    end_session_endpoint: typeof endSession === "string" ? endSession : undefined,
   };
 }
 

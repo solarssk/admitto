@@ -10,6 +10,7 @@ import {
   revokeTrustedDeviceByToken,
   validateSession,
   validatePartialSession,
+  resolveOidcEndSessionRedirect,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -158,15 +159,20 @@ export async function handlePostLogin(
 }
 
 /** POST /logout — revokes session, trusted device, and redirects to `/login`. */
-export async function handlePostLogout(c: Context, db: PrismaClient): Promise<Response> {
+export async function handlePostLogout(c: Context, db: PrismaClient, baseUrl: string): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
   const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
   if (validated) {
     await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
   }
+  // Resolved before the local session is revoked below - same session row either way, just
+  // reading it while it's still the one the cookie names, not relying on ordering to matter.
+  const endSessionRedirect = validated
+    ? await resolveOidcEndSessionRedirect(db, validated.session, baseUrl)
+    : null;
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
   clearTrustedDeviceCookie(c);
-  return c.redirect("/login", 302);
+  return c.redirect(endSessionRedirect ?? "/login", 302);
 }

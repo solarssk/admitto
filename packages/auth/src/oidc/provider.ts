@@ -15,6 +15,8 @@ export interface IdentityProviderInput {
   token_endpoint?: string;
   jwks_uri?: string;
   userinfo_endpoint?: string;
+  /** Discovery-only - no admin form field sets this directly, see resolveEndpoints. */
+  end_session_endpoint?: string;
   claim_email?: string;
   claim_name?: string;
   claim_groups?: string;
@@ -110,12 +112,14 @@ async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedE
     assertSafeOidcFetchUrl(input.token_endpoint);
     assertSafeOidcFetchUrl(input.jwks_uri);
     if (input.userinfo_endpoint) assertSafeOidcFetchUrl(input.userinfo_endpoint);
+    if (input.end_session_endpoint) assertSafeOidcFetchUrl(input.end_session_endpoint);
     return {
       issuer: input.issuer,
       authorization_endpoint: input.authorization_endpoint,
       token_endpoint: input.token_endpoint,
       jwks_uri: input.jwks_uri,
       userinfo_endpoint: input.userinfo_endpoint ?? null,
+      end_session_endpoint: input.end_session_endpoint ?? null,
     };
   }
   const discovery = await fetchOidcDiscovery(input.issuer);
@@ -125,11 +129,13 @@ async function resolveEndpoints(input: IdentityProviderInput): Promise<ResolvedE
     token_endpoint: input.token_endpoint ?? discovery.token_endpoint,
     jwks_uri: input.jwks_uri ?? discovery.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? discovery.userinfo_endpoint ?? null,
+    end_session_endpoint: input.end_session_endpoint ?? discovery.end_session_endpoint ?? null,
   };
   assertSafeOidcFetchUrl(endpoints.authorization_endpoint);
   assertSafeOidcFetchUrl(endpoints.token_endpoint);
   assertSafeOidcFetchUrl(endpoints.jwks_uri);
   if (endpoints.userinfo_endpoint) assertSafeOidcFetchUrl(endpoints.userinfo_endpoint);
+  if (endpoints.end_session_endpoint) assertSafeOidcFetchUrl(endpoints.end_session_endpoint);
   return endpoints;
 }
 
@@ -145,6 +151,7 @@ export interface ResolvedEndpoints {
   token_endpoint: string;
   jwks_uri: string;
   userinfo_endpoint: string | null;
+  end_session_endpoint: string | null;
 }
 
 /** Create provider record from pre-resolved endpoints (no outbound HTTP). */
@@ -164,6 +171,7 @@ export async function createIdentityProviderWithEndpoints(
       token_endpoint: endpoints.token_endpoint,
       jwks_uri: endpoints.jwks_uri,
       userinfo_endpoint: endpoints.userinfo_endpoint,
+      end_session_endpoint: endpoints.end_session_endpoint,
       claim_email: input.claim_email ?? "email",
       claim_name: input.claim_name ?? "name",
       claim_groups: input.claim_groups ?? "groups",
@@ -209,6 +217,7 @@ export async function updateIdentityProviderWithEndpoints(
       token_endpoint: endpoints.token_endpoint,
       jwks_uri: endpoints.jwks_uri,
       userinfo_endpoint: endpoints.userinfo_endpoint,
+      end_session_endpoint: endpoints.end_session_endpoint,
       claim_email: input.claim_email ?? existing.claim_email,
       claim_name: input.claim_name ?? existing.claim_name,
       claim_groups: input.claim_groups ?? existing.claim_groups,
@@ -240,6 +249,7 @@ export async function updateIdentityProvider(
     token_endpoint: input.token_endpoint ?? existing.token_endpoint,
     jwks_uri: input.jwks_uri ?? existing.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
+    end_session_endpoint: input.end_session_endpoint ?? existing.end_session_endpoint ?? undefined,
   });
 
   return updateIdentityProviderWithEndpoints(prisma, id, input, endpoints, existing);
@@ -371,6 +381,7 @@ export async function updateIdentityProviderWithMappings(
     token_endpoint: input.token_endpoint ?? existing.token_endpoint,
     jwks_uri: input.jwks_uri ?? existing.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
+    end_session_endpoint: input.end_session_endpoint ?? existing.end_session_endpoint ?? undefined,
   });
   return prisma.$transaction(async (tx) => {
     const provider = await updateIdentityProviderWithEndpoints(tx, id, input, endpoints, existing);
