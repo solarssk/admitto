@@ -237,6 +237,21 @@ export async function updateIdentityProviderWithEndpoints(
 }
 
 /**
+ * Explicit null must win over existing (a caller - handleApiDiscoverProvider - that just re-ran
+ * discovery and found no endpoint), not fall through to it like `??` would: only true omission
+ * (undefined, every other caller) means "preserve whatever is already stored." Shared by
+ * updateIdentityProvider and updateIdentityProviderWithMappings (SonarCloud duplication).
+ */
+function resolveEndSessionEndpointOnUpdate(
+  input: Pick<IdentityProviderInput, "end_session_endpoint">,
+  existing: Pick<IdentityProvider, "end_session_endpoint">,
+): string | null | undefined {
+  return input.end_session_endpoint === undefined
+    ? existing.end_session_endpoint ?? undefined
+    : input.end_session_endpoint;
+}
+
+/**
  * Update provider — omitted client_secret leaves existing encrypted value unchanged (mailer pattern).
  */
 export async function updateIdentityProvider(
@@ -252,13 +267,7 @@ export async function updateIdentityProvider(
     token_endpoint: input.token_endpoint ?? existing.token_endpoint,
     jwks_uri: input.jwks_uri ?? existing.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
-    // Explicit null must win over existing (a caller - handleApiDiscoverProvider - that just
-    // re-ran discovery and found no endpoint), not fall through to it like ?? would: only true
-    // omission (undefined, every other caller) means "preserve whatever is already stored."
-    end_session_endpoint:
-      input.end_session_endpoint === undefined
-        ? existing.end_session_endpoint ?? undefined
-        : input.end_session_endpoint,
+    end_session_endpoint: resolveEndSessionEndpointOnUpdate(input, existing),
   });
 
   return updateIdentityProviderWithEndpoints(prisma, id, input, endpoints, existing);
@@ -390,13 +399,7 @@ export async function updateIdentityProviderWithMappings(
     token_endpoint: input.token_endpoint ?? existing.token_endpoint,
     jwks_uri: input.jwks_uri ?? existing.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
-    // Explicit null must win over existing (a caller - handleApiDiscoverProvider - that just
-    // re-ran discovery and found no endpoint), not fall through to it like ?? would: only true
-    // omission (undefined, every other caller) means "preserve whatever is already stored."
-    end_session_endpoint:
-      input.end_session_endpoint === undefined
-        ? existing.end_session_endpoint ?? undefined
-        : input.end_session_endpoint,
+    end_session_endpoint: resolveEndSessionEndpointOnUpdate(input, existing),
   });
   return prisma.$transaction(async (tx) => {
     const provider = await updateIdentityProviderWithEndpoints(tx, id, input, endpoints, existing);
