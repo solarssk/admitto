@@ -116,10 +116,10 @@ const WALLET_CARD_INTRO =
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
-const WALLET_FIELD_MAPPING_DEFAULT_DESC =
+const WALLET_FIELD_MAPPING_HEADER_DESC =
+  "Optional. Overrides which PassCreator field key receives which attendee or event value.";
+const WALLET_FIELD_MAPPING_DEFAULT_NOTICE =
   "Using the default mapping: name → full name, eventDate → event date, eventHours → event hours, eventPlace → event location, ticketType → ticket type.";
-const WALLET_FIELD_MAPPING_CUSTOM_DESC =
-  "Overrides which PassCreator field key receives which attendee or event value.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -1437,11 +1437,7 @@ export function EventSettingsPage() {
                 <div className="settings-row wallet-field-mapping__header">
                   <div className="settings-row__text">
                     <strong>Field mapping</strong>
-                    <p>
-                      {form.walletFieldMapping.length === 0
-                        ? WALLET_FIELD_MAPPING_DEFAULT_DESC
-                        : WALLET_FIELD_MAPPING_CUSTOM_DESC}
-                    </p>
+                    <p>{WALLET_FIELD_MAPPING_HEADER_DESC}</p>
                   </div>
                   <Button
                     type="button"
@@ -1458,6 +1454,9 @@ export function EventSettingsPage() {
                     Add field
                   </Button>
                 </div>
+                {form.walletFieldMapping.length === 0 && (
+                  <Notice variant="info">{WALLET_FIELD_MAPPING_DEFAULT_NOTICE}</Notice>
+                )}
                 {form.walletFieldMapping.length > 0 &&
                   form.walletFieldMapping.map((row, index) => (
                     <div className="wallet-field-mapping__row" key={index}>
