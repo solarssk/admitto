@@ -27,4 +27,10 @@ describe("normalizeIssuerInput", () => {
       "https://idp.example.com/",
     );
   });
+
+  it("strips a stray trailing slash after the suffix (an easy extra keystroke when copying)", () => {
+    expect(normalizeIssuerInput("https://idp.example.com/.well-known/openid-configuration/")).toBe(
+      "https://idp.example.com/",
+    );
+  });
 });

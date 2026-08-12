@@ -10,7 +10,10 @@ export interface OidcDiscoveryDocument {
   end_session_endpoint?: string;
 }
 
-const WELL_KNOWN_SUFFIX = "/.well-known/openid-configuration";
+// Optional trailing slash after the suffix - a plausible extra keystroke when copying a
+// discovery URL - is stripped too, so it doesn't survive as a literal tail that fails the
+// exact-suffix match below.
+const WELL_KNOWN_SUFFIX_RE = /\/\.well-known\/openid-configuration\/?$/;
 
 /**
  * Strip an accidentally-pasted discovery document URL down to the bare issuer, and ensure a
@@ -21,9 +24,7 @@ const WELL_KNOWN_SUFFIX = "/.well-known/openid-configuration";
  */
 export function normalizeIssuerInput(issuer: string): string {
   const trimmed = issuer.trim();
-  const withoutWellKnown = trimmed.endsWith(WELL_KNOWN_SUFFIX)
-    ? trimmed.slice(0, -WELL_KNOWN_SUFFIX.length)
-    : trimmed;
+  const withoutWellKnown = trimmed.replace(WELL_KNOWN_SUFFIX_RE, "");
   return withoutWellKnown.endsWith("/") ? withoutWellKnown : `${withoutWellKnown}/`;
 }
 
