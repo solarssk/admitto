@@ -487,6 +487,78 @@ function WalletActionMenuItems({
   );
 }
 
+/** Small "..." menu in the Wallet card's header - copies the pass's Apple/Google install link to
+ * the clipboard rather than opening it (PO review: an admin has no reason to open the install
+ * page themselves, only to hand the link to someone else). Renders nothing once neither link
+ * exists yet (no wallet pass, or a provider that never returned one of the two). */
+function WalletLinksMenu({
+  appleUrl,
+  androidUrl,
+}: Readonly<{ appleUrl: string | null; androidUrl: string | null }>) {
+  const { addToast } = useToast();
+  const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
+    align: "end",
+  });
+
+  if (!appleUrl && !androidUrl) return null;
+
+  async function copyLink(url: string, label: string) {
+    setOpen(false);
+    try {
+      await navigator.clipboard.writeText(url);
+      addToast(`${label} link copied to clipboard`, "success");
+    } catch {
+      addToast("Could not copy. Clipboard access was blocked.", "error");
+    }
+  }
+
+  return (
+    <div className="more-actions-menu" ref={rootRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="at-iconbtn at-iconbtn--sm"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Wallet pass links"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <i className="ti ti-dots-vertical" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+          {appleUrl && (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              onClick={() => void copyLink(appleUrl, "Apple Wallet")}
+            >
+              <i className="ti ti-copy" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Copy Apple Wallet link</span>
+              </span>
+            </button>
+          )}
+          {androidUrl && (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item"
+              onClick={() => void copyLink(androidUrl, "Google Wallet")}
+            >
+              <i className="ti ti-copy" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Copy Google Wallet link</span>
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type ChipTone = "ok" | "warn" | "error" | "neutral";
 
 function passStatusTone(status: string): ChipTone {
@@ -709,27 +781,23 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        <Card title="Wallet">
+        <Card
+          title="Wallet"
+          actions={
+            <WalletLinksMenu
+              appleUrl={detail.wallet_pass?.apple_url ?? null}
+              androidUrl={detail.wallet_pass?.android_url ?? null}
+            />
+          }
+        >
           {detail.wallet_pass ? (
             <div className="attendee-detail-readonly">
-              <div className="attendee-detail-row">
-                <span>Status</span>
-                <WalletStatusBadge status={detail.wallet_pass.status} />
-              </div>
-              {detail.wallet_pass.apple_url && (
+              {detail.wallet_pass.issued_at && (
                 <div className="attendee-detail-row">
-                  <span>Apple Wallet</span>
-                  <a href={detail.wallet_pass.apple_url} target="_blank" rel="noreferrer">
-                    Open <i className="ti ti-external-link" aria-hidden="true" />
-                  </a>
-                </div>
-              )}
-              {detail.wallet_pass.android_url && (
-                <div className="attendee-detail-row">
-                  <span>Google Wallet</span>
-                  <a href={detail.wallet_pass.android_url} target="_blank" rel="noreferrer">
-                    Open <i className="ti ti-external-link" aria-hidden="true" />
-                  </a>
+                  <span>Added on</span>
+                  <span className="mono">
+                    {formatEventDateTime(detail.wallet_pass.issued_at, event.timezone)}
+                  </span>
                 </div>
               )}
               {detail.wallet_pass.voided_at && (

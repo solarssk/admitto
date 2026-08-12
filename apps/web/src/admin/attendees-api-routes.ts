@@ -108,6 +108,7 @@ const ATTENDEE_DETAIL_SELECT = {
   wallet_pass: {
     select: {
       status: true,
+      issued_at: true,
       voided_at: true,
       apple_url: true,
       android_url: true,
@@ -741,6 +742,7 @@ async function buildAttendeeDetailDto(
     rsvp_source: string | null;
     wallet_pass: {
       status: string;
+      issued_at: Date | null;
       voided_at: Date | null;
       apple_url: string | null;
       android_url: string | null;
@@ -2795,6 +2797,7 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
 
 type WalletPassActionDto = {
   status: WalletPassStatus;
+  issued_at: string | null;
   voided_at: string | null;
   apple_url: string | null;
   android_url: string | null;
@@ -2804,6 +2807,7 @@ type WalletPassActionDto = {
 
 function serializeWalletPassAction(pass: {
   status: string;
+  issued_at: Date | null;
   voided_at: Date | null;
   apple_url: string | null;
   android_url: string | null;
@@ -2812,6 +2816,7 @@ function serializeWalletPassAction(pass: {
 }): WalletPassActionDto {
   return {
     status: pass.status as WalletPassStatus,
+    issued_at: pass.issued_at ? pass.issued_at.toISOString() : null,
     voided_at: pass.voided_at ? pass.voided_at.toISOString() : null,
     apple_url: pass.apple_url,
     android_url: pass.android_url,

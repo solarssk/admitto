@@ -216,6 +216,7 @@ import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
 
 export interface WalletPassActionDto {
   status: WalletPassStatus;
+  issued_at: string | null;
   voided_at: string | null;
   apple_url: string | null;
   android_url: string | null;
