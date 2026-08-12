@@ -1147,14 +1147,16 @@ async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthChe
     },
   });
   const status = configuredCount > 0 ? "ok" : "not_configured";
+  const eventSuffix = configuredCount === 1 ? "" : "s";
+  const summary =
+    configuredCount > 0
+      ? `Configured for ${configuredCount} event${eventSuffix}`
+      : "Not configured for any event yet";
   return {
     id: "wallet_passes",
     label: "Wallet passes, PassCreator",
     status,
-    summary:
-      configuredCount > 0
-        ? `Configured for ${configuredCount} event${configuredCount === 1 ? "" : "s"}`
-        : "Not configured for any event yet",
+    summary,
     details: detailsFromEntries([
       ["status", status],
       ["configured_events", String(configuredCount)],

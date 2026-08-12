@@ -12,6 +12,7 @@ import {
   type WalletPassInput,
   type WalletPassProvider,
   type WalletPassResult,
+  type WalletProviderErrorCode,
 } from "@admitto/wallet";
 import { decryptFromString } from "@admitto/crypto";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl, type GeocodingProvider } from "@admitto/location";
@@ -780,6 +781,28 @@ export function createApp(options: CreateAppOptions = {}) {
       return { apple_url: result.appleUrl, android_url: result.androidUrl };
     }
 
+    /** Marks the pass "failed" after an unrecoverable createPass error - split out of
+     * createOrRecoverPass to keep its cognitive complexity under the SonarCloud threshold
+     * (S3776). Never throws: a DB error here must still land on the retry redirect below. */
+    async function markFailed(code: WalletProviderErrorCode): Promise<null> {
+      try {
+        await db.walletPass.upsert({
+          where: { attendee_id: attendee.id },
+          create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
+          update: { status: "failed", last_error_code: code },
+        });
+      } catch (upsertErr) {
+        console.error("walletPass upsert (failed) failed:", upsertErr);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_upsert_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+      }
+      return null;
+    }
+
     /**
      * A concurrent request for the same attendee can win the race and create the pass first -
      * PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recovers the
@@ -808,22 +831,7 @@ export function createApp(options: CreateAppOptions = {}) {
           message: "wallet_pass_create_failed",
           fields: { eventId: event.id, attendeeId: attendee.id, errorCode: code },
         });
-        try {
-          await db.walletPass.upsert({
-            where: { attendee_id: attendee.id },
-            create: { attendee_id: attendee.id, status: "failed", last_error_code: code },
-            update: { status: "failed", last_error_code: code },
-          });
-        } catch (upsertErr) {
-          console.error("walletPass upsert (failed) failed:", upsertErr);
-          recordSystemLog({
-            level: "error",
-            source: "api",
-            message: "wallet_pass_upsert_failed",
-            fields: { eventId: event.id, attendeeId: attendee.id },
-          });
-        }
-        return null;
+        return markFailed(code);
       }
     }
 

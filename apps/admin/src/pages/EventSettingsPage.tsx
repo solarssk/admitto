@@ -61,8 +61,10 @@ function formatActorStamp(iso: string, timezone: string | null | undefined): str
   return timezone ? formatEventDateTime(iso, timezone) : formatUtcDateTime(iso);
 }
 
-/** One editable row of the Wallet field mapping - PassCreator field key -> Admitto placeholder. */
-type WalletFieldMappingRow = { key: string; value: string };
+/** One editable row of the Wallet field mapping - PassCreator field key -> Admitto placeholder.
+ * `id` is a client-only React key, generated once per row (never sent to the server) - the
+ * server's own mapping shape is a plain key->placeholder record with no row identity. */
+type WalletFieldMappingRow = { id: string; key: string; value: string };
 
 type SettingsForm = {
   title: string;
@@ -180,6 +182,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     walletAppleEnabled: data.wallet_apple_enabled,
     walletGoogleEnabled: data.wallet_google_enabled,
     walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
+      id: crypto.randomUUID(),
       key,
       value,
     })),
@@ -202,17 +205,21 @@ function parseCapacityInput(raw: string): number | null {
   return n;
 }
 
-function buildSettingsPatch(form: SettingsForm, original: SettingsForm): SettingsPatch {
+/** Wallet-only slice of buildSettingsPatch, extracted to keep the main function's cognitive
+ * complexity under the SonarCloud threshold (S3776). */
+function buildWalletPatch(
+  form: SettingsForm,
+  original: SettingsForm,
+): Pick<
+  SettingsPatch,
+  | "wallet_enabled"
+  | "wallet_template_id"
+  | "wallet_api_key"
+  | "wallet_apple_enabled"
+  | "wallet_google_enabled"
+  | "wallet_field_mapping"
+> {
   const patch: SettingsPatch = {};
-  const title = form.title.trim();
-  if (title !== original.title.trim()) patch.title = title;
-  if (form.date !== original.date) patch.date = form.date;
-  if (form.eventHoursStart !== original.eventHoursStart) {
-    patch.event_hours_start = form.eventHoursStart.trim() || null;
-  }
-  if (form.eventHoursEnd !== original.eventHoursEnd) {
-    patch.event_hours_end = form.eventHoursEnd.trim() || null;
-  }
   if (form.walletEnabled !== original.walletEnabled) {
     patch.wallet_enabled = form.walletEnabled;
   }
@@ -238,20 +245,44 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
     }
     patch.wallet_field_mapping = Object.keys(mapping).length > 0 ? mapping : null;
   }
-  if (form.timezone !== original.timezone) patch.timezone = form.timezone;
-  if (form.capacity.trim() !== original.capacity.trim()) {
-    patch.capacity = parseCapacityInput(form.capacity);
-  }
+  return patch;
+}
+
+/** Logo-only slice of buildSettingsPatch, extracted for the same reason as buildWalletPatch. */
+function buildLogoPatch(
+  form: SettingsForm,
+  original: SettingsForm,
+): Pick<SettingsPatch, "logo_url" | "logo_original_url" | "logo_crop"> {
+  const patch: SettingsPatch = {};
   if (form.logoUrl !== original.logoUrl) patch.logo_url = form.logoUrl.trim() || null;
   if (form.logoOriginalUrl !== original.logoOriginalUrl) {
     patch.logo_original_url = form.logoOriginalUrl.trim() || null;
   }
-  const cropChanged = JSON.stringify(form.logoCrop) !== JSON.stringify(original.logoCrop);
-  if (cropChanged) patch.logo_crop = form.logoCrop;
+  if (JSON.stringify(form.logoCrop) !== JSON.stringify(original.logoCrop)) {
+    patch.logo_crop = form.logoCrop;
+  }
   // When display logo changes, always send original+crop together so the server stays consistent.
   if (patch.logo_url !== undefined) {
     patch.logo_original_url = form.logoOriginalUrl.trim() || null;
     patch.logo_crop = form.logoCrop;
+  }
+  return patch;
+}
+
+function buildSettingsPatch(form: SettingsForm, original: SettingsForm): SettingsPatch {
+  const patch: SettingsPatch = { ...buildWalletPatch(form, original), ...buildLogoPatch(form, original) };
+  const title = form.title.trim();
+  if (title !== original.title.trim()) patch.title = title;
+  if (form.date !== original.date) patch.date = form.date;
+  if (form.eventHoursStart !== original.eventHoursStart) {
+    patch.event_hours_start = form.eventHoursStart.trim() || null;
+  }
+  if (form.eventHoursEnd !== original.eventHoursEnd) {
+    patch.event_hours_end = form.eventHoursEnd.trim() || null;
+  }
+  if (form.timezone !== original.timezone) patch.timezone = form.timezone;
+  if (form.capacity.trim() !== original.capacity.trim()) {
+    patch.capacity = parseCapacityInput(form.capacity);
   }
   return patch;
 }
@@ -1447,7 +1478,10 @@ export function EventSettingsPage() {
                     onClick={() =>
                       setForm({
                         ...form,
-                        walletFieldMapping: [...form.walletFieldMapping, { key: "", value: "" }],
+                        walletFieldMapping: [
+                          ...form.walletFieldMapping,
+                          { id: crypto.randomUUID(), key: "", value: "" },
+                        ],
                       })
                     }
                   >
@@ -1459,7 +1493,7 @@ export function EventSettingsPage() {
                 )}
                 {form.walletFieldMapping.length > 0 &&
                   form.walletFieldMapping.map((row, index) => (
-                    <div className="wallet-field-mapping__row" key={index}>
+                    <div className="wallet-field-mapping__row" key={row.id}>
                       <SearchableSelect
                         id={`event-wallet-field-mapping-${index}`}
                         label="Value"

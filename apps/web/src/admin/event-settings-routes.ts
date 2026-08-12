@@ -86,7 +86,7 @@ const patchEventSchema = z
     wallet_google_enabled: z.boolean().optional(),
     wallet_field_mapping: z
       .record(
-        z.string().trim().min(1).max(60).regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+        z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
         z.enum(WALLET_MAPPING_PLACEHOLDERS),
       )
       .nullish(),
@@ -359,27 +359,19 @@ export async function handlePostEventWalletTest(c: Context, db: PrismaClient): P
 
 type PatchEventBody = z.infer<typeof patchEventSchema>;
 
-/** Maps the schema's basic (non-branding) fields onto Prisma update data. */
-function buildBasicFieldsPatch(patch: PatchEventBody): {
-  title?: string;
-  date?: Date;
-  timezone?: string;
-  event_hours_start?: string | null;
-  event_hours_end?: string | null;
+type WalletFieldsPatch = {
   wallet_enabled?: boolean;
   wallet_template_id?: string | null;
   wallet_api_key_enc?: string | null;
   wallet_apple_enabled?: boolean;
   wallet_google_enabled?: boolean;
   wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
-  capacity?: number | null;
-} {
-  const data: ReturnType<typeof buildBasicFieldsPatch> = {};
-  if (patch.title !== undefined) data.title = patch.title.trim();
-  if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
-  if (patch.timezone !== undefined) data.timezone = patch.timezone;
-  if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
-  if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
+};
+
+/** Wallet-only slice of buildBasicFieldsPatch, extracted to keep the main function's cognitive
+ * complexity under the SonarCloud threshold (S3776). */
+function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
+  const data: WalletFieldsPatch = {};
   if (patch.wallet_enabled !== undefined) data.wallet_enabled = patch.wallet_enabled;
   if (patch.wallet_template_id !== undefined) data.wallet_template_id = patch.wallet_template_id;
   // Empty string clears the key; omit to keep the previous one.
@@ -396,6 +388,24 @@ function buildBasicFieldsPatch(patch: PatchEventBody): {
     const mapping = patch.wallet_field_mapping;
     data.wallet_field_mapping = mapping && Object.keys(mapping).length > 0 ? mapping : Prisma.JsonNull;
   }
+  return data;
+}
+
+/** Maps the schema's basic (non-branding) fields onto Prisma update data. */
+function buildBasicFieldsPatch(patch: PatchEventBody): WalletFieldsPatch & {
+  title?: string;
+  date?: Date;
+  timezone?: string;
+  event_hours_start?: string | null;
+  event_hours_end?: string | null;
+  capacity?: number | null;
+} {
+  const data: ReturnType<typeof buildBasicFieldsPatch> = buildWalletFieldsPatch(patch);
+  if (patch.title !== undefined) data.title = patch.title.trim();
+  if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
+  if (patch.timezone !== undefined) data.timezone = patch.timezone;
+  if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
+  if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
 }
