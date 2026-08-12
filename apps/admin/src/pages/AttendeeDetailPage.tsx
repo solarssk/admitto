@@ -602,6 +602,15 @@ function walletRegistrationLabel(active: number | null, inactive: number | null)
   return "Not added";
 }
 
+/** PassCreator's firstDownloadedAt comes back as "YYYY-MM-DD HH:MM:SS" with no offset - confirmed
+ * UTC by cross-checking a live pass's raw value against PassCreator's own dashboard, which shows
+ * the same moment already converted to the viewer's local time (PO review, 2026-08-13). Appending
+ * "Z" makes it a real ISO instant so it can go through the same formatEventDateTime pipeline as
+ * every other wallet timestamp instead of being shown as an unparsed raw string. */
+function formatFirstDownloadedAt(raw: string, timezone: string): string {
+  return formatEventDateTime(`${raw.replace(" ", "T")}Z`, timezone);
+}
+
 function itemStateLabel(state: string): string {
   if (state === "issued") return "Issued";
   if (state === "returned") return "Returned";
@@ -822,20 +831,20 @@ function AttendeeOverviewTab({
                   )}
                 </span>
               </div>
+              {/* None of these timestamps has a captured actor/device timezone (issued_at is the
+                  attendee's own device; voided_at/last_synced_at/registration_checked_at are
+                  admin/worker actions with no persisted zone; first_downloaded_at is PassCreator's
+                  own UTC value, see formatFirstDownloadedAt) - viewer's own browser zone, matching
+                  viewerLocalTime's "no known actor zone" convention, not the event's timezone
+                  (which has no real relationship to any of these - PO review). */}
               {detail.wallet_pass.first_downloaded_at && (
                 <div className="attendee-detail-row">
                   <span>First downloaded</span>
-                  {/* Verbatim, not run through formatEventDateTime - PassCreator's docs don't
-                      state which timezone this string is in, so converting it would assert a
-                      zone we don't actually know (PO review). */}
-                  <span className="mono">{detail.wallet_pass.first_downloaded_at}</span>
+                  <span className="mono">
+                    {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at, getBrowserTimeZone())}
+                  </span>
                 </div>
               )}
-              {/* None of the remaining timestamps has a captured actor/device timezone (issued_at
-                  is the attendee's own device; voided_at/last_synced_at/registration_checked_at
-                  are admin/worker actions with no persisted zone) - viewer's own browser zone,
-                  matching viewerLocalTime's "no known actor zone" convention, not the event's
-                  timezone (which has no real relationship to any of these - PO review). */}
               {detail.wallet_pass.issued_at && (
                 <div className="attendee-detail-row">
                   <span>Pass created</span>
@@ -862,7 +871,7 @@ function AttendeeOverviewTab({
               )}
               {detail.wallet_pass.registration_checked_at && (
                 <div className="attendee-detail-row">
-                  <span>Registration checked</span>
+                  <span>Status last checked</span>
                   <span className="mono">
                     {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
                   </span>
