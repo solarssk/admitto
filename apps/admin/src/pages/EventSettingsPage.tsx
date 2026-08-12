@@ -166,8 +166,37 @@ const WALLET_PLACEHOLDER_LABELS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[num
   ticket_url: "Ticket/QR URL",
 };
 
+/** Groups the Value dropdown's options by category so the list is easier to scan - matches
+ * WALLET_MAPPING_PLACEHOLDERS' existing grouping order (attendee, event, notes, maps, address,
+ * ticket), just made visible with an icon per group instead of relying on option order alone. */
+const WALLET_PLACEHOLDER_ICONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string> = {
+  full_name: "user",
+  first_name: "user",
+  last_name: "user",
+  email: "user",
+  company: "user",
+  department: "user",
+  event_name: "calendar-event",
+  event_date: "calendar-event",
+  event_hours: "calendar-event",
+  event_location: "calendar-event",
+  directions_text: "notes",
+  accessibility_text: "notes",
+  google_maps_url: "map",
+  apple_maps_url: "map",
+  object_name: "map-pin",
+  street: "map-pin",
+  postcode: "map-pin",
+  city: "map-pin",
+  region: "map-pin",
+  country: "map-pin",
+  ticket_type: "ticket",
+  ticket_url: "ticket",
+};
+
 const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
   id,
+  icon: WALLET_PLACEHOLDER_ICONS[id],
   label: WALLET_PLACEHOLDER_LABELS[id],
 }));
 

@@ -949,6 +949,53 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("appends a new field mapping row at the end, not the middle, of an existing 7-row mapping", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: {
+        name: "full_name",
+        company: "company",
+        ticketQR: "ticket_url",
+        eventDate: "event_date",
+        eventHours: "event_hours",
+        ticketType: "ticket_type",
+        eventLocation: "event_location",
+      },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    const valueButtons = screen.getAllByRole("button", { name: "Value, none selected" });
+    expect(valueButtons).toHaveLength(1);
+    fireEvent.click(valueButtons[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Event name" }));
+
+    const keyInputs = screen.getAllByLabelText("PassCreator field key");
+    expect(keyInputs).toHaveLength(8);
+    fireEvent.change(keyInputs[7]!, { target: { value: "test" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalled();
+    });
+    const call = vi.mocked(patchEvent).mock.calls[0]![1] as { wallet_field_mapping?: Record<string, string> };
+    expect(Object.keys(call.wallet_field_mapping ?? {})).toEqual([
+      "name",
+      "company",
+      "ticketQR",
+      "eventDate",
+      "eventHours",
+      "ticketType",
+      "eventLocation",
+      "test",
+    ]);
+  });
+
   it("falls back to a generic success toast when Test connection reports no message", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
