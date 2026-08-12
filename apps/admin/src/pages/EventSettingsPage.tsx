@@ -1480,6 +1480,8 @@ export function EventSettingsPage() {
                         }
                       />
                       <Input
+                        id={`event-wallet-field-mapping-key-${index}`}
+                        name={`event-wallet-field-mapping-key-${index}`}
                         aria-label="PassCreator field key"
                         value={row.key}
                         disabled={isArchived || saving}

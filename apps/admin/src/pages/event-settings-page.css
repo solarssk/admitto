@@ -223,6 +223,9 @@
   align-items: center;
 }
 
+/* Same value as .wallet-field-mapping__row's own margin-top below, so the gap under the
+   header reads identically whether it's followed by the default-mapping notice or the
+   first custom row. */
 .wallet-field-mapping .at-notice {
   margin-top: var(--space-3);
 }
@@ -232,7 +235,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--space-2);
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 @media (max-width: 640px) {
