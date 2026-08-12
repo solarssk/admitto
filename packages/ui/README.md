@@ -31,6 +31,11 @@ The SPA must be built (or run via Vite) against `dist/`; hot reload in admin sti
 Self-hosted via `@fontsource` (`styles/tokens/fonts.css`) plus `@tabler/icons-webfont` for icons.
 No third-party CDN requests, no system-font fallback for these families.
 
+Everything below covers this package's own bundled UI fonts only. It does **not** apply to
+organisation-uploaded custom branding fonts (`apps/admin/src/settings/FontFamilyModal.tsx`,
+`uploadThemeFont`) — those accept whatever format the customer's own font file comes in
+(`.woff2`/`.woff`/`.ttf`/`.otf`), since Admitto doesn't control what format a customer supplies.
+
 | Family | Role | Weights | Script coverage shipped |
 |---|---|---|---|
 | Inter | Body text | 400, 400 italic, 500, 600, 700, 700 italic | Latin, Latin Extended, Cyrillic, Cyrillic Ext, Greek, Greek Ext, Vietnamese |
@@ -47,9 +52,10 @@ No third-party CDN requests, no system-font fallback for these families.
 
 Full UI-string translation (i18n) doesn't exist yet either — every visible label is a hardcoded English literal in JSX. `preferred_locale` only drives `Intl.DateTimeFormat`/`toLocaleString`-style formatting (enforced by `apps/admin/test/locale/locale-coverage.test.ts`), not text translation. RTL, non-Latin/CJK font coverage, and UI translation are one combined internationalization effort, planned as a dedicated initiative rather than incremental patches.
 
-**Format policy: woff2 only, no woff/truetype fallback.** `apps/admin` ships as a native ES module
-with no legacy bundle (no `@vitejs/plugin-legacy`, no `.browserslistrc`, `tsconfig` targets
-`ES2022`) — any browser old enough to need a woff/truetype fallback can't run the app's JS at all,
+**Format policy (this package's bundled fonts only): woff2 only, no woff/truetype fallback.**
+`apps/admin` ships as a native ES module with no legacy bundle (no `@vitejs/plugin-legacy`, no
+`.browserslistrc`, `tsconfig` targets `ES2022`) — any browser old enough to need a woff/truetype
+fallback can't run the app's JS at all,
 so those files are pure dead weight. `@tabler/icons-webfont`'s default CSS ships woff2+woff+ttf;
 `apps/admin/vite.config.ts` has a build plugin (`stripLegacyIconFontFallback`) that strips the
 woff/ttf fallback before Vite's CSS pipeline turns them into shipped assets (saves ~3.3MB).
