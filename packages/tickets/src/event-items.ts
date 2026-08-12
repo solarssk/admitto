@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db";
-import type { EventItemConfig } from "./types.js";
+
+export { isBadgeItemUsable } from "./event-item-usability.js";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -22,19 +23,6 @@ const DEFAULT_BADGE_ITEM = {
 
 /** Public constant for the structural "badge" item key — reuse instead of the "badge" literal. */
 export const BADGE_ITEM_KEY = DEFAULT_BADGE_ITEM.key;
-
-/**
- * Single source of truth for "can the badge item actually back badge_at_entry
- * right now" — an item that's disabled, or has issue_on_checkin explicitly
- * turned off, can't auto-issue at check-in. Used by both the admin API
- * (guarding/syncing badge_at_entry) and the admin SPA (disabling the toggle).
- */
-export function isBadgeItemUsable(
-  enabled: boolean,
-  config: Pick<EventItemConfig, "issue_on_checkin"> | null | undefined,
-): boolean {
-  return enabled && config?.issue_on_checkin !== false;
-}
 
 /** Matches migration SQL id: `ei_` + first 24 hex chars of md5(eventId:key). */
 function defaultEventItemId(eventId: string, key: string): string {

@@ -110,6 +110,17 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
+**Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** — the
+app's JS already requires a browser new enough that woff2 is a given, so older formats are pure
+dead weight in the package-shipped CSS (Tabler icons, `@fontsource` text fonts). This does **not**
+apply to organisation-uploaded custom branding fonts (`FontFamilyModal.tsx`, `uploadThemeFont`) —
+those accept whatever format the customer's own font file comes in
+(`woff2`/`woff`/`ttf`/`otf`, see `FONT_FILE_RE`), and we don't control that. See
+[packages/ui/README.md](packages/ui/README.md) "Fonts" for the full reasoning, what's currently
+shipped vs. stripped, script/locale coverage gaps (Arabic, CJK, RTL), and why the same fix doesn't
+mechanically extend to `@fontsource` text fonts (CSS `@import` bypasses Vite's plugin hooks — don't
+re-attempt that approach without reading why it failed first).
+
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
 
 **Before push / claiming CI will pass:** run the **full package test suite** for every workspace
@@ -166,12 +177,17 @@ lazy `communication` chunk) using `.add-attendee-modal__*` classes with no impor
 at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` — every consumer of
 a shared modal/component CSS file should show up importing it directly.
 
-**Do not import `@admitto/mail-templates` (package root) from `apps/admin`.** The barrel re-exports
-Prisma/mjml server modules; Vite can ship them into a lazy SPA chunk (`fileURLToPath is not a
-function` on Event Settings). Use browser-safe subpaths only (e.g.
-`@admitto/mail-templates/placeholders`). Same idea as avoiding `@admitto/auth`'s root entry for
-password helpers (`./constants`, `./password-strength`). Type-only re-exports from the root remain
-OK when they stay `import type` / `export type`.
+**Do not import `@admitto/mail-templates` or `@admitto/tickets` (package root) from `apps/admin`.**
+Both barrels re-export Prisma/node-only server modules (mjml/fs for mail-templates; Prisma,
+`node:crypto`, pdfkit for tickets); Vite can ship them into a lazy SPA chunk (`fileURLToPath is not
+a function` on Event Settings was the mail-templates incident; the tickets barrel separately pulled
+the entire `typescript` compiler into a lazy chunk via `htmlnano`→`cosmiconfig`'s optional TS-config
+loader). Use browser-safe subpaths only (e.g. `@admitto/mail-templates/placeholders`,
+`@admitto/tickets/custom-data-reserved`, `@admitto/tickets/event-item-usability`). Same idea as
+avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`).
+Type-only re-exports from the root remain OK when they stay `import type` / `export type`. A local
+build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been
+externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
 
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,

@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { resolveMailConfig, setMailSettings } from "@admitto/mailer-config";
+import { MailConfigError, resolveMailConfig, setMailSettings } from "@admitto/mailer-config";
 import { generateToken } from "@admitto/tickets";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveAttendeeMailLinks } from "../src/links.js";
@@ -365,5 +365,26 @@ describe("drainPendingDeliveries branch coverage", () => {
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
     expect(row.error).toContain("mailer boom");
+  });
+
+  it("marks claimed rows failed with a clear message when the stored mail secret cannot be decrypted", async () => {
+    await enqueueOne();
+    vi.mocked(resolveMailConfig).mockRejectedValueOnce(
+      new MailConfigError(
+        "mail_secret_decryption_failed",
+        "A stored mail secret could not be decrypted. The encryption key may have changed, or the stored value is corrupted.",
+      ),
+    );
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    expect(row.status).toBe("failed");
+    expect(row.error).toContain("could not be decrypted");
   });
 });

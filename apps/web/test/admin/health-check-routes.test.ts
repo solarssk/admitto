@@ -3,6 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
+import { MailConfigError } from "@admitto/mailer-config";
 
 const { writeFileMock, setRealWriteFile, restoreWriteFile } = vi.hoisted(() => {
   const writeFileMock = vi.fn();
@@ -81,10 +82,10 @@ vi.mock("../../src/admin/admin-build-meta.js", () => ({
   adminDistCandidates: vi.fn(() => []),
 }));
 vi.mock("../../src/admin/instance-org.js", () => ({ resolveInstanceOrganizationId }));
-vi.mock("@admitto/mailer-config", () => ({
-  describeMailConfigForOrg,
-  resolveMailConfigForOrg,
-}));
+vi.mock("@admitto/mailer-config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/mailer-config")>();
+  return { ...actual, describeMailConfigForOrg, resolveMailConfigForOrg };
+});
 vi.mock("../../src/weather/weather-org-settings.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/weather/weather-org-settings.js")>();
   return {
@@ -1343,6 +1344,30 @@ describe("collectAdminHealth", () => {
     expect(liveResolveFail.groups[1]!.checks.find((c) => c.id === "email_sending")?.status).toBe(
       "degraded",
     );
+
+    describeMailConfigForOrg.mockResolvedValue({
+      provider: { value: "smtp", source: "organization", locked: false },
+    });
+    resolveMailConfigForOrg.mockRejectedValueOnce(
+      new MailConfigError(
+        "mail_secret_decryption_failed",
+        "A stored mail secret could not be decrypted.",
+      ),
+    );
+    const liveDecryptFail = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+      live: true,
+      probeMail: vi.fn(),
+    });
+    const decryptCheck = liveDecryptFail.groups[1]!.checks.find((c) => c.id === "email_sending");
+    expect(decryptCheck?.status).toBe("degraded");
+    expect(decryptCheck?.summary).toBe("Mail secret could not be decrypted");
+    expect(
+      decryptCheck?.details.some(
+        (d) => d.key === "reason" && d.value === "mail_secret_decryption_failed",
+      ),
+    ).toBe(true);
 
     describeMailConfigForOrg.mockResolvedValueOnce({
       provider: { value: "powerautomate", source: "organization", locked: false },

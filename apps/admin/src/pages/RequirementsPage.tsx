@@ -10,7 +10,7 @@ import {
   updateEventItem,
   updateOpsConfig,
 } from "../api/client.js";
-import { isBadgeItemUsable } from "@admitto/tickets";
+import { isBadgeItemUsable } from "@admitto/tickets/event-item-usability";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto, EventDto, EventItemDto, OpsConfigDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
