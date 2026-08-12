@@ -25,6 +25,7 @@ import {
   newMappingId,
   validateMappings,
   validateProviderDraft,
+  withScopeForRole,
   type EditorMode,
   type FieldErrors,
   type MappingRow,
@@ -42,8 +43,10 @@ interface IdentityProviderEditorProps {
 
 type LoadState = "loading" | "ready" | "error" | "not_found";
 
-/** Map a loaded provider's mappings into editable repeater rows (with stable ids). */
-function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
+/** Map a loaded provider's mappings into editable repeater rows (with stable ids), exactly as
+ * stored - no self-heal. Used only to seed `baselineMappings` (see mappingsFromDetail below for
+ * why that must stay unhealed) - every other caller wants the healed version. */
+function rawMappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
   return detail.mappings.map((m) => ({
     id: newMappingId(),
     group: m.group,
@@ -51,6 +54,24 @@ function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
     scope_type: m.scope_type as MappingRow["scope_type"],
     scope_id: m.scope_id ?? "",
   }));
+}
+
+/** Map a loaded provider's mappings into editable repeater rows (with stable ids). Re-derives
+ * scope_type from role (withScopeForRole) so a mapping saved before role↔scope pairing was
+ * enforced self-heals on load instead of surfacing as an error with no way to fix it in the UI.
+ *
+ * Security note: callers MUST seed `baselineMappings` from `rawMappingsFromDetail`, not this
+ * function - never from the same healed array used for `mappings`. A stored `superadmin` row at
+ * a non-instance scope is inert under the app's exact-match scope model (nothing checks
+ * superadmin at organization/event scope), but healing rewrites it to `instance`, an
+ * immediately-live, fully-privileged grant - and `instance` scope needs no scope_id, so nothing
+ * else forces the operator to notice or interact with that row. If baseline were also healed,
+ * `mappingsEqual` would see no difference and the dirty-check/unsaved-changes guard would never
+ * fire, so an unrelated save (e.g. rotating the client secret) would silently promote that row to
+ * instance-wide superadmin with no visible change and no confirmation. Keeping baseline unhealed
+ * makes every self-heal show up as a pending change the operator must actively choose to save. */
+function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
+  return rawMappingsFromDetail(detail).map((row) => withScopeForRole(row));
 }
 
 /** Map repeater rows into the request body shape (scope_id null for instance scope). */
@@ -388,9 +409,8 @@ export function IdentityProviderEditor({
         const nextDraft = draftFromDetail(detail);
         setDraft(nextDraft);
         setBaseline(nextDraft);
-        const nextMappings = mappingsFromDetail(detail);
-        setMappings(nextMappings);
-        setBaselineMappings(nextMappings);
+        setMappings(mappingsFromDetail(detail));
+        setBaselineMappings(rawMappingsFromDetail(detail));
         setMappingErrors([]);
         setHasSecret(detail.has_client_secret);
         setRedirectUri(detail.redirect_uri);
@@ -625,7 +645,7 @@ export function IdentityProviderEditor({
       if (result.provider) {
         const refreshedDraft = draftFromDetail(result.provider);
         setBaseline(refreshedDraft);
-        setBaselineMappings(mappingsFromDetail(result.provider));
+        setBaselineMappings(rawMappingsFromDetail(result.provider));
         setHasSecret(result.provider.has_client_secret);
         setRedirectUri(result.provider.redirect_uri);
       } else {
@@ -980,7 +1000,7 @@ export function IdentityProviderEditor({
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" aria-hidden="true" />
-      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide identity-modal__panel--identity-editor">
         <div ref={scrollRef} className="identity-modal__scroll">
           <IdentityModalHeader
             titleId={titleId}

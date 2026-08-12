@@ -386,6 +386,20 @@ describe("identity providers API — update", () => {
     expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "validation_failed" });
   });
 
+  it("rejects a mapping whose scope_type doesn't match its role, even with a scope_id present", async () => {
+    const res = await json(`/api/admin/identity/providers/${PROVIDER_ID}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        display_name: "API Test IdP (renamed)",
+        issuer: "https://idp-api-test.example.com/",
+        client_id: "api-test-client",
+        mappings: [{ group: "admins", role: "admin", scope_type: "instance" }],
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "validation_failed" });
+  });
+
   it("omitting login_button_label preserves the stored label; null clears it", async () => {
     await prisma.identityProvider.update({
       where: { id: PROVIDER_ID },

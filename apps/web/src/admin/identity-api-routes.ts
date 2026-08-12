@@ -39,6 +39,15 @@ import { resolveOidcRedirectUri } from "./oidc-redirect-uri.js";
 const MAPPING_ROLE = z.enum(["superadmin", "admin", "operator"]);
 const MAPPING_SCOPE = z.enum(["instance", "organization", "event"]);
 
+// Same pairing enforced at write time in validateGroupRoleMappingInput (packages/auth) - kept
+// here too so a mismatched pair is rejected as a normal 400 validation error instead of falling
+// through to that function's generic save_failed 500.
+const MAPPING_ROLE_SCOPE: Record<z.infer<typeof MAPPING_ROLE>, z.infer<typeof MAPPING_SCOPE>> = {
+  superadmin: "instance",
+  admin: "organization",
+  operator: "event",
+};
+
 const mappingSchema = z
   .object({
     group: z.string().trim().min(1).max(200),
@@ -51,7 +60,11 @@ const mappingSchema = z
       m.scope_type === "instance" ||
       (typeof m.scope_id === "string" && m.scope_id.trim().length > 0),
     { message: "scope_id is required for organization/event scoped mappings", path: ["scope_id"] },
-  );
+  )
+  .refine((m) => m.scope_type === MAPPING_ROLE_SCOPE[m.role], {
+    message: "scope_type must match the role (superadmin: instance, admin: organization, operator: event)",
+    path: ["scope_type"],
+  });
 
 const providerBodySchema = z.strictObject({
   display_name: z.string().trim().min(1).max(200),

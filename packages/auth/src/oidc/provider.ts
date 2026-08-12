@@ -328,6 +328,15 @@ export interface GroupRoleMappingInput {
 const ALLOWED_MAPPING_ROLES = new Set(["superadmin", "admin", "operator"]);
 const ALLOWED_MAPPING_SCOPE_TYPES = new Set(["instance", "organization", "event"]);
 
+/** The only scope each role can hold - same pairing the admin SPA's mapping repeater derives
+ * scope from (identityProviderValidation.ts's scopeForRole) and UserEditModal.tsx's direct role
+ * grants already enforce; kept here too since this function is the actual write-time gate. */
+const MAPPING_ROLE_SCOPE: Record<string, string> = {
+  superadmin: "instance",
+  admin: "organization",
+  operator: "event",
+};
+
 /** Reject mapping rows that would fail RoleAssignment CHECK constraints at login time. */
 export function validateGroupRoleMappingInput(mapping: GroupRoleMappingInput): void {
   const group = mapping.group.trim();
@@ -342,6 +351,11 @@ export function validateGroupRoleMappingInput(mapping: GroupRoleMappingInput): v
   if (!ALLOWED_MAPPING_SCOPE_TYPES.has(mapping.scope_type)) {
     throw new Error(
       `Invalid scope_type "${mapping.scope_type}"; must be one of: instance, organization, event`,
+    );
+  }
+  if (mapping.scope_type !== MAPPING_ROLE_SCOPE[mapping.role]) {
+    throw new Error(
+      `Invalid scope_type "${mapping.scope_type}" for role "${mapping.role}"; ${mapping.role} mappings must use ${MAPPING_ROLE_SCOPE[mapping.role]} scope`,
     );
   }
   mappingStorageScopeId(mapping.scope_type, mapping.scope_id);
