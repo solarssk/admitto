@@ -51,7 +51,7 @@ import type {
   EventMailSettingsResponse,
   EventBounceIngestSettingsResponse,
   SaveEventBounceIngestSettingsBody,
-  BounceIngestTestResponse,
+  ConnectionTestResponse,
   BounceIngestRunResponse,
   MailSmtpProbeResponse,
   SaveMailSettingsBody,
@@ -1714,12 +1714,12 @@ export async function saveEventBounceIngestSettings(
 
 export async function testEventBounceIngestConnection(
   eventId: string,
-): Promise<BounceIngestTestResponse> {
+): Promise<ConnectionTestResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/bounce-ingest-settings/test`,
     jsonPostInit({}),
   );
-  return parseJson<BounceIngestTestResponse>(res);
+  return parseJson<ConnectionTestResponse>(res);
 }
 
 export async function runEventBounceIngestCheck(
@@ -1839,12 +1839,12 @@ export async function testMapsConnection(
 export async function testWalletConnection(
   eventId: string,
   body: { apiKey?: string; templateId: string },
-): Promise<BounceIngestTestResponse> {
+): Promise<ConnectionTestResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/wallet/test`,
     jsonPostInit(body),
   );
-  return parseJson<BounceIngestTestResponse>(res);
+  return parseJson<ConnectionTestResponse>(res);
 }
 
 export async function fetchSessions(
