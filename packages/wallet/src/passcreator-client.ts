@@ -185,6 +185,11 @@ export class PassCreatorClient implements WalletPassProvider {
           method,
           headers: {
             Authorization: this.apiKey,
+            // Some other loaded module's own `undici` import can desync global fetch's gzip
+            // auto-decompression within this process (observed with @admitto/auth's OIDC fetch
+            // wrapper); asking PassCreator not to compress sidesteps it rather than depending on
+            // decompression working correctly for every caller of this client.
+            "Accept-Encoding": "identity",
             ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
           },
           body: body !== undefined ? JSON.stringify(body) : undefined,
