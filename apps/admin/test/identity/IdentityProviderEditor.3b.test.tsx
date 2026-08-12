@@ -723,7 +723,11 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
       await router.navigate("/admin/settings/identity/providers");
     });
 
-    expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
+    // waitFor, not a direct assertion: the confirm() call happens from a useEffect reacting to
+    // the blocker's own state transition (see IdentityProviderEditor.tsx), one render tick after
+    // navigate() itself resolves - the same reason every other confirmSpy assertion in this file
+    // and IdentityProviderEditor.test.tsx already retries here instead of asserting immediately.
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
     confirmSpy.mockRestore();
   });
 });
