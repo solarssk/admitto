@@ -1,8 +1,7 @@
 /**
  * Domain types for a wallet pass, neutral to any concrete provider (ADR 0009). Field names are
- * Admitto's own — mapping to a provider's actual API field names (e.g. PassCreator's
- * `name`/`eventDate`/`eventHours`/`eventPlace`/`ticketType`) happens in that provider's adapter,
- * never here.
+ * Admitto's own - mapping to a provider's actual API field names happens in that provider's
+ * adapter (its own admin-defined field mapping, no default vocabulary), never here.
  */
 export interface WalletPassInput {
   attendeeName: string;
@@ -28,10 +27,10 @@ export interface WalletPassInput {
   ticketTypeLabel: string;
   /** Stable idempotency key, e.g. "admitto:{eventId}:{attendeeId}". */
   userProvidedId: string;
-  /** The exact same QR payload the ticket page's own QR code encodes (ticket URL for an internal
-   * attendee, the raw agency payload otherwise) - without this, PassCreator's template default
-   * (its own auto-generated pass UID) ends up on the pass instead, so scanning the wallet pass at
-   * check-in would not match the attendee's real ticket. */
+  /** The exact same QR payload the ticket page's own QR code encodes (the raw internal token for
+   * an internal attendee, the raw agency payload otherwise - never a full URL) - without this,
+   * PassCreator's template default (its own auto-generated pass UID) ends up on the pass instead,
+   * so scanning the wallet pass at check-in would not match the attendee's real ticket. */
   barcodeValue: string;
 }
 
