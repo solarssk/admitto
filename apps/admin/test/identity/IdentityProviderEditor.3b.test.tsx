@@ -660,6 +660,33 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
       scope_id: "org-9",
     });
   });
+
+  it("marks the form dirty as soon as a stored superadmin mapping self-heals to instance scope, so an unrelated save can't silently promote it (security regression)", async () => {
+    // A stored superadmin row at a non-instance scope is inert under the app's exact-match scope
+    // model (nothing checks superadmin outside instance scope) - but self-healing rewrites it to
+    // instance, an immediately-live, fully-privileged grant, with no scope_id field to force the
+    // operator to notice. baselineMappings must NOT also be healed, or this becomes invisible.
+    const legacyDetail = {
+      ...validDetail,
+      mappings: [{ group: "execs", role: "superadmin", scope_type: "organization", scope_id: "org-777" }],
+    };
+    mockFetch.mockResolvedValueOnce(legacyDetail);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await screen.findByDisplayValue("execs");
+    // Confirm the row actually displays the healed (instance) scope.
+    expect(screen.getByRole("button", { name: /^Scope, instance/ })).toBeTruthy();
+
+    // Navigate away (router-level, exercising the same useBlocker a real in-app link would)
+    // without touching anything else in the form.
+    await act(async () => {
+      await router.navigate("/admin/settings/identity/providers");
+    });
+
+    expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
+    confirmSpy.mockRestore();
+  });
 });
 
 describe("IdentityProviderEditor — create with a mapping", () => {
