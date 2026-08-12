@@ -440,24 +440,6 @@
       "summary": "Comma-separated exact hostnames/IPs allowed to resolve to private addresses in production (self-hosted LAN MTA). Set on app and worker."
     },
     {
-      "name": "PASSCREATOR_API_KEY",
-      "group": "wallet",
-      "boot": "optional",
-      "consumers": ["app"],
-      "secret": true,
-      "ui": "none",
-      "summary": "PassCreator API key for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_TEMPLATE_ID; a later settings screen will replace this temporary environment configuration."
-    },
-    {
-      "name": "PASSCREATOR_TEMPLATE_ID",
-      "group": "wallet",
-      "boot": "optional",
-      "consumers": ["app"],
-      "secret": false,
-      "ui": "none",
-      "summary": "PassCreator template ID for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_API_KEY; a later settings screen will replace this temporary environment configuration."
-    },
-    {
       "name": "PASSCREATOR_BASE_URL",
       "group": "wallet",
       "boot": "optional",

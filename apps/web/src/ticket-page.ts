@@ -329,6 +329,31 @@ function ticketDocument(options: {
 </html>`;
 }
 
+/** Wallet badges and help text, or an empty string when the event has no wallet pass. */
+function renderWalletSection(options: TicketPageOptions): string {
+  if (!options.walletAppleHref && !options.walletGoogleHref) return "";
+
+  const errorHtml = options.walletError
+    ? `<p class="ticket__wallet-error" role="alert">Could not add this ticket to your wallet just now. Please try again.</p>`
+    : "";
+  const appleBadgeHtml = options.walletAppleHref
+    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref)}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet"></a></span>`
+    : "";
+  const googleBadgeHtml = options.walletGoogleHref
+    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref)}"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet"></a></span>`
+    : "";
+
+  return `${errorHtml}
+    <div class="ticket__wallets">
+      ${appleBadgeHtml}
+      ${googleBadgeHtml}
+    </div>
+    <details class="ticket__wallet-help">
+      <summary>How do I add this to my phone?</summary>
+      <p>Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.</p>
+    </details>`;
+}
+
 export function renderTicket(
   resolved: ResolvedTicket,
   qrDataUrl: string,
@@ -376,6 +401,7 @@ export function renderTicket(
     ? `<div class="ticket__travel-note"><h3>${ACCESSIBILITY_ICON}<span>Accessibility</span></h3><p>${esc(accessibilityText)}</p></div>`
     : "";
   const weatherHtml = renderTicketWeatherHtml(options.weather);
+  const walletHtml = renderWalletSection(options);
   // Order: map → map buttons → weather (then directions / accessibility).
   const gettingThereHtml = renderGettingThereSection({
     hasGettingThere,
@@ -392,16 +418,8 @@ export function renderTicket(
       <div class="ticket__qr"><img src="${qrDataUrl}" alt="QR code for ticket entry"></div>
       ${options.displayToken ? `<p class="ticket__token">${esc(options.displayToken)}</p>` : ""}
     </div>
-    <div class="ticket__perf" role="presentation"></div>
-    ${options.walletError ? `<p class="ticket__wallet-error" role="alert">Could not add this ticket to your wallet just now. Please try again.</p>` : ""}
-    <div class="ticket__wallets">
-      <span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref ?? "")}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet"></a></span>
-      <span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref ?? "")}"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet"></a></span>
-    </div>
-    <details class="ticket__wallet-help">
-      <summary>How do I add this to my phone?</summary>
-      <p>Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.</p>
-    </details>
+    ${walletHtml ? `<div class="ticket__perf" role="presentation"></div>` : ""}
+    ${walletHtml}
     ${gettingThereHtml}
     <footer class="ticket__foot">Present this QR code at the entrance.</footer>`;
 

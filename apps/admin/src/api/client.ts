@@ -51,7 +51,7 @@ import type {
   EventMailSettingsResponse,
   EventBounceIngestSettingsResponse,
   SaveEventBounceIngestSettingsBody,
-  BounceIngestTestResponse,
+  ConnectionTestResponse,
   BounceIngestRunResponse,
   MailSmtpProbeResponse,
   SaveMailSettingsBody,
@@ -479,6 +479,12 @@ export async function patchEvent(
     timezone: string;
     event_hours_start: string | null;
     event_hours_end: string | null;
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key: string | null;
+    wallet_apple_enabled: boolean;
+    wallet_google_enabled: boolean;
+    wallet_field_mapping: Record<string, string> | null;
     location: string | null;
     capacity: number | null;
     logo_url: string | null;
@@ -1708,12 +1714,12 @@ export async function saveEventBounceIngestSettings(
 
 export async function testEventBounceIngestConnection(
   eventId: string,
-): Promise<BounceIngestTestResponse> {
+): Promise<ConnectionTestResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/bounce-ingest-settings/test`,
     jsonPostInit({}),
   );
-  return parseJson<BounceIngestTestResponse>(res);
+  return parseJson<ConnectionTestResponse>(res);
 }
 
 export async function runEventBounceIngestCheck(
@@ -1826,6 +1832,19 @@ export async function testMapsConnection(
 ): Promise<ExternalServicesConnectionTestResponse> {
   const res = await fetch("/api/admin/external-services/maps/test", jsonPostInit(body));
   return parseJson<ExternalServicesConnectionTestResponse>(res);
+}
+
+/** Probe an event's PassCreator API key + Template ID from a draft body (no persist). Empty/
+ * omitted apiKey falls back to the event's already-saved key. */
+export async function testWalletConnection(
+  eventId: string,
+  body: { apiKey?: string; templateId: string },
+): Promise<ConnectionTestResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet/test`,
+    jsonPostInit(body),
+  );
+  return parseJson<ConnectionTestResponse>(res);
 }
 
 export async function fetchSessions(

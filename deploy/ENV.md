@@ -100,8 +100,6 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `PASSCREATOR_API_KEY` | optional | app | none | yes | PassCreator API key for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_TEMPLATE_ID; a later settings screen will replace this temporary environment configuration. |
-| `PASSCREATOR_TEMPLATE_ID` | optional | app | none | no | PassCreator template ID for on-demand Apple and Google Wallet passes. Configure together with PASSCREATOR_API_KEY; a later settings screen will replace this temporary environment configuration. |
 | `PASSCREATOR_BASE_URL` | optional | app | none | no | Optional PassCreator API base URL. Defaults to the provider's production URL; use only for a compatible PassCreator endpoint. |
 
 ## Background worker
@@ -188,4 +186,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 100 distinct keys seen in scan (tests excluded)._
+_Last generated from 98 distinct keys seen in scan (tests excluded)._

@@ -20,6 +20,7 @@
   color: var(--text-primary);
   font: inherit;
   cursor: pointer;
+  transition: opacity var(--dur-fast, 120ms) var(--ease-out, ease-out);
 }
 
 .searchable-select__trigger:disabled {

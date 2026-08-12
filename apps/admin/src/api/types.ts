@@ -868,7 +868,9 @@ export interface SaveEventBounceIngestSettingsBody {
   enabled?: boolean;
 }
 
-export interface BounceIngestTestResponse {
+/** Shared shape for every "test this connection" endpoint (bounce ingest, SMTP probe, Wallet,
+ * external services) - named for the response contract, not any one caller's domain. */
+export interface ConnectionTestResponse {
   ok: boolean;
   message?: string;
   error?: string;
@@ -883,7 +885,7 @@ export interface BounceIngestRunResponse {
 }
 
 /** SMTP connection probe (nodemailer verify, no send) — org or event dedicated SMTP. */
-export type MailSmtpProbeResponse = BounceIngestTestResponse;
+export type MailSmtpProbeResponse = ConnectionTestResponse;
 
 export interface SaveMailSettingsBody {
   /** Omit = unchanged; `""` clears stored provider (Not configured). */
@@ -1087,7 +1089,7 @@ export interface MapsConnectionTestBody {
   geocodingBaseUrl: string;
 }
 
-export type ExternalServicesConnectionTestResponse = BounceIngestTestResponse & {
+export type ExternalServicesConnectionTestResponse = ConnectionTestResponse & {
   latency_ms?: number;
 };
 

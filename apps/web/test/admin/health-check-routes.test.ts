@@ -383,6 +383,9 @@ function healthDb(overrides: Record<string, unknown> = {}): PrismaClient {
         hostname: "test-worker",
       }),
     },
+    event: {
+      count: vi.fn().mockResolvedValue(0),
+    },
     ...overrides,
   } as unknown as PrismaClient;
 }
@@ -440,12 +443,12 @@ describe("collectAdminHealth", () => {
       summary: "Not configured",
     });
     expect(external.find((c) => c.id === "email_sending")?.label).toBe("Email sending, SMTP");
-    expect(external.find((c) => c.id === "wallet_passes")?.status).toBe("planned");
+    expect(external.find((c) => c.id === "wallet_passes")?.status).toBe("not_configured");
     expect(external.find((c) => c.id === "wallet_passes")?.label).toBe(
       "Wallet passes, PassCreator",
     );
     expect(external.find((c) => c.id === "wallet_passes")?.summary).toBe(
-      "Coming in v0.5 · Apple & Google Wallet",
+      "Not configured for any event yet",
     );
     expect(external.find((c) => c.id === "address_lookup")?.label).toBe(
       "Address lookup, Nominatim",
@@ -1051,6 +1054,66 @@ describe("collectAdminHealth", () => {
     expect(encryption?.status).toBe("not_configured");
     expect(encryption?.summary).toBe("Optional in development");
     expect(report.overall).toBe("ok");
+  });
+
+  it("reports wallet as ok when at least one event has it fully configured", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count: vi.fn().mockResolvedValue(2) } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    expect(wallet?.status).toBe("ok");
+    expect(wallet?.summary).toBe("Configured for 2 events");
+    expect(report.overall).toBe("ok");
+  });
+
+  it("uses singular 'event' in the wallet summary when exactly one event is configured", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count: vi.fn().mockResolvedValue(1) } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    expect(wallet?.summary).toBe("Configured for 1 event");
+  });
+
+  it("reports wallet as degraded when the event lookup fails", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count: vi.fn().mockRejectedValue(new Error("db down")) } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    expect(wallet?.status).toBe("degraded");
+    expect(wallet?.summary).toBe("Could not evaluate wallet configuration");
   });
 
   it("keeps returning a report when individual collectors reject", async () => {

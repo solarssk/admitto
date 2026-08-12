@@ -13,6 +13,18 @@ export type EventSettingsDto = {
   /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
   event_hours_start: string | null;
   event_hours_end: string | null;
+  /** Master switch for this event's wallet feature - off hides both platform buttons regardless
+   * of the per-platform switches below. */
+  wallet_enabled: boolean;
+  /** PassCreator template for this event's wallet passes (ADR 0041); null = wallet not configured. */
+  wallet_template_id: string | null;
+  /** Per-event PassCreator API key - never returned in clear text. */
+  wallet_api_key: { configured: boolean };
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
+  /** PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}). No default
+   * mapping - null/empty means nothing beyond the QR code is sent to PassCreator. */
+  wallet_field_mapping: Record<string, string> | null;
   capacity: number | null;
   status: "active" | "archived";
   /** Null unless status is "archived". */

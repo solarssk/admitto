@@ -31,6 +31,7 @@
 
 - [QR Tickets](QR-Tickets)
 - [Pass Statuses](Pass-Statuses)
+- [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)
 
 **Communication**
 

@@ -36,6 +36,8 @@ Event settings are organised into tabs. Each card that needs saving (Basic infor
 7. Review **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. Logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add image**. Enter a normal image name; Admitto creates the `{{variable}}` for templates.
 8. Return to **Overview** and confirm that the event now shows the intended state.
 
+Superadmins can set the PassCreator **API key** and **Template ID** on **Wallet**, both stored specific to this event. Use **Test connection** to check the key and template against PassCreator before saving. A header switch turns the whole feature on or off for the event; independent **Apple Wallet** and **Google Wallet** switches turn off either platform without clearing the API key or template - useful when only one platform is ready, or to pause one temporarily. **Field mapping** assigns each selected attendee/event value to the matching PassCreator template property key - there is no default mapping, so every value shown on the pass, including the attendee's name, must be mapped explicitly. A correctly entered API key and Template ID are not enough on their own - the PassCreator template itself needs matching fields set up first, see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup). PassCreator API keys inherit the permissions of the account that created them, not a fixed scope to one template - for real isolation between events, use a dedicated PassCreator service user whose own permissions are limited to that event's template.
+
 Tab inventory:
 
 | Tab | Who | Purpose |
@@ -45,7 +47,7 @@ Tab inventory:
 | Ticket types | Organisation Admin | Event ticket-type catalog |
 | Images | Organisation Admin | Logo, header, mail image assets |
 | Mailing | Superadmin | Event mail transport and bounce detection |
-| Wallet | Planned | Not part of the current event workflow |
+| Wallet | Superadmin | Per-event PassCreator API key, template, and Apple/Google toggles |
 | Integrations | Superadmin | Inbound tokens and related integrations |
 | Danger zone | Organisation Admin (Archive/Delete: Superadmin) | Bulk revoke and lifecycle actions |
 
@@ -90,3 +92,4 @@ Changes to the event title, date, event hours, time zone, capacity, or images be
 - [Requirements and Fulfilment](Requirements-and-Fulfilment)
 - [Reports and Archiving](Reports-and-Archiving)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
+- [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)

@@ -7,6 +7,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
+import { PassCreatorClient } from "@admitto/wallet";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -173,6 +174,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_SET } });
   await prisma.event.update({
     where: { id: EVENT_SET },
@@ -923,6 +925,455 @@ describe("PATCH /api/admin/events/:eventId", () => {
         data: original,
       });
     }
+  });
+
+  it("updates wallet_template_id and clears it with null (superadmin)", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { event: { wallet_template_id: string | null } };
+    expect(setBody.event.wallet_template_id).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as { event: { wallet_template_id: string | null } };
+    expect(clearBody.event.wallet_template_id).toBeNull();
+  });
+
+  it("returns 403 when an organisation admin tries to patch wallet_template_id", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_template_id).toBeNull();
+  });
+
+  it("sets and clears the per-event wallet API key (superadmin)", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: "secret-key" }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { event: { wallet_api_key: { configured: boolean } } };
+    expect(setBody.event.wallet_api_key.configured).toBe(true);
+    const stored = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(stored.wallet_api_key_enc).not.toBeNull();
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as {
+      event: { wallet_api_key: { configured: boolean } };
+    };
+    expect(clearBody.event.wallet_api_key.configured).toBe(false);
+  });
+
+  it("returns 403 when an organisation admin tries to patch the wallet API key", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: "secret-key" }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_api_key_enc).toBeNull();
+  });
+
+  it("toggles wallet_apple_enabled and wallet_google_enabled independently (superadmin)", async () => {
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_apple_enabled: false }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        event: { wallet_apple_enabled: boolean; wallet_google_enabled: boolean };
+      };
+      expect(body.event.wallet_apple_enabled).toBe(false);
+      expect(body.event.wallet_google_enabled).toBe(true);
+
+      const googleRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_google_enabled: false }),
+      });
+      expect(googleRes.status).toBe(200);
+      const googleBody = (await googleRes.json()) as {
+        event: { wallet_apple_enabled: boolean; wallet_google_enabled: boolean };
+      };
+      expect(googleBody.event.wallet_apple_enabled).toBe(false);
+      expect(googleBody.event.wallet_google_enabled).toBe(false);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_apple_enabled: true, wallet_google_enabled: true },
+      });
+    }
+  });
+
+  it("returns 403 when an organisation admin tries to toggle wallet_google_enabled", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_google_enabled: false }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_google_enabled).toBe(true);
+  });
+
+  it("toggles the wallet_enabled master switch (superadmin)", async () => {
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_enabled: false }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { event: { wallet_enabled: boolean } };
+      expect(body.event.wallet_enabled).toBe(false);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_enabled: true } });
+    }
+  });
+
+  it("returns 403 when an organisation admin tries to toggle wallet_enabled", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_enabled: false }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_enabled).toBe(true);
+  });
+
+  it("sets and clears the wallet field mapping (superadmin)", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { attendeeName: "full_name" } }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as {
+      event: { wallet_field_mapping: Record<string, string> | null };
+    };
+    expect(setBody.event.wallet_field_mapping).toEqual({ attendeeName: "full_name" });
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as {
+      event: { wallet_field_mapping: Record<string, string> | null };
+    };
+    expect(clearBody.event.wallet_field_mapping).toBeNull();
+  });
+
+  it("rejects a wallet field mapping value outside the known placeholder list", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { name: "not_a_real_placeholder" } }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 when an organisation admin tries to patch the wallet field mapping", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { name: "full_name" } }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_field_mapping).toBeNull();
+  });
+
+  it("POST /wallet/test succeeds with a draft API key and reports the template name", async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      expect(String(url)).toContain("/api/v2/pass-template/tmpl-probe/describe");
+      return new Response(JSON.stringify({ success: true, data: { name: "Gala Pass" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "draft-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message: string };
+    expect(body.ok).toBe(true);
+    expect(body.message).toContain("Gala Pass");
+  });
+
+  it("POST /wallet/test succeeds with a generic message when PassCreator reports no template name", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: true, data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "draft-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message: string };
+    expect(body.ok).toBe(true);
+    expect(body.message).toBe("Connected to PassCreator.");
+  });
+
+  it("POST /wallet/test reports failure when PassCreator rejects the key", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["bad key"] }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "wrong-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("rejected the API key");
+  });
+
+  it("POST /wallet/test requires an API key when none is saved and none is drafted", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("API key is required");
+  });
+
+  it("POST /wallet/test falls back to the event's saved API key when none is drafted", async () => {
+    try {
+      const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_api_key: "saved-key" }),
+      });
+      expect(setRes.status).toBe(200);
+
+      const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+        expect((init?.headers as Record<string, string>).Authorization).toBe("saved-key");
+        return new Response(JSON.stringify({ success: true, data: { name: "Gala Pass" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId: "tmpl-probe" }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; message: string };
+      expect(body.ok).toBe(true);
+      expect(body.message).toContain("Gala Pass");
+    } finally {
+      await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_api_key: null }),
+      });
+    }
+  });
+
+  it("POST /wallet/test reports 'not found' when the template ID doesn't exist", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["no such template"] }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "missing-template" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("Template ID not found");
+  });
+
+  it("POST /wallet/test reports rate limiting when PassCreator returns 429 on every retry", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["slow down"] }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("rate-limiting");
+  }, 15000);
+
+  it("POST /wallet/test reports a generic rejection for an unmapped PassCreator error", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["boom"] }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("PassCreator rejected the request.");
+  });
+
+  it("POST /wallet/test returns validation_failed when templateId is missing", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("POST /wallet/test reports a decrypt failure for a corrupted saved API key", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: { wallet_api_key_enc: "not-valid-ciphertext" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId: "tmpl-probe" }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("could not be decrypted");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_api_key_enc: null } });
+    }
+  });
+
+  it("POST /wallet/test reports a generic failure when the network request itself fails", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("fetch failed");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("Could not reach PassCreator");
+  });
+
+  it("POST /wallet/test reports a generic rejection when the client throws something other than WalletProviderError", async () => {
+    // PassCreatorClient itself always wraps failures in WalletProviderError (fetch errors, non-
+    // JSON bodies, HTTP error statuses) - the ternary's other branch only guards against a truly
+    // unexpected throw, which needs a direct spy to reach.
+    vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockRejectedValueOnce(
+      new TypeError("unexpected"),
+    );
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("Could not reach PassCreator.");
+  });
+
+  it("POST /wallet/test returns 400 on invalid JSON", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /wallet/test returns 403 for a non-superadmin", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "x", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /wallet/test returns 403 event_archived for an archived event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "x", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("event_archived");
   });
 
   it("returns 400 when slug is sent (strict schema)", async () => {
