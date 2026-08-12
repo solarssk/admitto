@@ -18,7 +18,6 @@ import {
   getBrandingTheme,
   SESSION_STAGE,
   sweepExpiredOidcAuthStates,
-  InstanceUrlRequiredError,
 } from "@admitto/auth";
 import {
   resolveTicket,
@@ -356,6 +355,7 @@ import {
   handleApiUpdateCfAccess,
   handleApiTestCfAccess,
 } from "./admin/identity-api-routes.js";
+import { resolveOidcPublicBaseUrlOrNull } from "./admin/oidc-redirect-uri.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
@@ -1599,18 +1599,6 @@ export function createApp(options: CreateAppOptions = {}) {
     return resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl);
   }
 
-  // Same resolution, but for a caller that must still complete when Instance URL isn't
-  // configured yet - unlike the OIDC start/callback/link flows above (which genuinely cannot
-  // proceed without an exact base URL), logout must never fail just because that setting is
-  // missing. Matches the null-on-InstanceUrlRequiredError convention in oidc-redirect-uri.ts.
-  async function oidcPublicBaseUrlOrNull(): Promise<string | null> {
-    try {
-      return await oidcPublicBaseUrl();
-    } catch (err) {
-      if (err instanceof InstanceUrlRequiredError) return null;
-      throw err;
-    }
-  }
 
   app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, async (c) =>
     handleOidcStart(c, db, await oidcPublicBaseUrl()),
@@ -1709,7 +1697,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollDownloadCodes(c, db),
   );
-  app.post("/logout", htmlPostCsrf, async (c) => handlePostLogout(c, db, await oidcPublicBaseUrlOrNull()));
+  app.post("/logout", htmlPostCsrf, async (c) =>
+    handlePostLogout(c, db, await resolveOidcPublicBaseUrlOrNull(db, mailInjectedBaseUrl)),
+  );
   app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
   app.post("/change-password", htmlPostCsrf, requireChangePasswordSession, (c) =>
     handlePostChangePassword(c, db),

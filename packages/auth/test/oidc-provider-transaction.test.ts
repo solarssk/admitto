@@ -280,4 +280,42 @@ describe("OIDC provider save — end_session_endpoint clear vs preserve", () => 
     };
     expect(call.data.end_session_endpoint).toBe("https://idp.example.com/end-session");
   });
+
+  // Same tri-state merge, duplicated in updateIdentityProviderWithMappings (the path the admin
+  // editor's own Save button uses, wrapped in a $transaction) - not exercised by the two tests
+  // above, which only cover the plain updateIdentityProvider a bare discover POST calls.
+  function mockPrismaForUpdateWithMappings() {
+    const identityProvider = {
+      findUniqueOrThrow: vi.fn(async () => existingProvider),
+      update: vi.fn(async () => existingProvider),
+    };
+    return {
+      $transaction: vi.fn(async (fn: (inner: { identityProvider: typeof identityProvider; oidcGroupRoleMapping: unknown }) => Promise<unknown>) =>
+        fn({ identityProvider, oidcGroupRoleMapping: { deleteMany: vi.fn(), createMany: vi.fn() } }),
+      ),
+      identityProvider,
+    } as unknown as PrismaClient & { identityProvider: typeof identityProvider };
+  }
+
+  it("clears a stored end_session_endpoint via updateIdentityProviderWithMappings too", async () => {
+    const prisma = mockPrismaForUpdateWithMappings();
+
+    await updateIdentityProviderWithMappings(prisma, "prov-1", { ...discoveredInput, end_session_endpoint: null }, []);
+
+    const call = vi.mocked(prisma.identityProvider.update).mock.calls[0]![0] as {
+      data: { end_session_endpoint: string | null };
+    };
+    expect(call.data.end_session_endpoint).toBeNull();
+  });
+
+  it("preserves a stored end_session_endpoint via updateIdentityProviderWithMappings when omitted", async () => {
+    const prisma = mockPrismaForUpdateWithMappings();
+
+    await updateIdentityProviderWithMappings(prisma, "prov-1", { ...discoveredInput }, []);
+
+    const call = vi.mocked(prisma.identityProvider.update).mock.calls[0]![0] as {
+      data: { end_session_endpoint: string | null };
+    };
+    expect(call.data.end_session_endpoint).toBe("https://idp.example.com/end-session");
+  });
 });

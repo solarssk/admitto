@@ -16,3 +16,20 @@ export async function resolveOidcRedirectUri(
     throw err;
   }
 }
+
+/**
+ * Same resolution, but for a caller that must still complete when Instance URL isn't configured
+ * yet - unlike OIDC start/callback/link (which genuinely cannot proceed without an exact base
+ * URL), logout must never fail just because that setting is missing.
+ */
+export async function resolveOidcPublicBaseUrlOrNull(
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<string | null> {
+  try {
+    return await resolveInstanceBaseUrl(db, process.env, injectedBaseUrl);
+  } catch (err) {
+    if (err instanceof InstanceUrlRequiredError) return null;
+    throw err;
+  }
+}
