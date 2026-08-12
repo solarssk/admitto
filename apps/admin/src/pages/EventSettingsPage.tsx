@@ -1607,6 +1607,8 @@ export function EventSettingsPage() {
                       />
                       <Button
                         type="button"
+                        id={`event-wallet-field-mapping-remove-${row.id}`}
+                        name={`event-wallet-field-mapping-remove-${row.id}`}
                         variant="secondary"
                         disabled={isArchived || saving}
                         aria-label="Remove field"
