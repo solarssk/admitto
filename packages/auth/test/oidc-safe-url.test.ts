@@ -127,6 +127,29 @@ describe("fetchOidcDiscovery SSRF guard", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("inserts the slash a bare issuer is missing before appending .well-known, without storing it", async () => {
+    // A bare issuer's own trailing slash is added only to build this request URL - it must not
+    // replace the issuer's last path segment (what new URL(relative, base) would do without it).
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        issuer: "http://127.0.0.1:9999",
+        authorization_endpoint: "http://127.0.0.1:9999/authorize",
+        token_endpoint: "http://127.0.0.1:9999/token",
+        jwks_uri: "http://127.0.0.1:9999/jwks",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchOidcDiscovery("http://127.0.0.1:9999");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:9999/.well-known/openid-configuration",
+      expect.anything(),
+    );
+  });
+
   it("carries end_session_endpoint through when the document advertises one", async () => {
     vi.stubGlobal(
       "fetch",
