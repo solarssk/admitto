@@ -110,6 +110,17 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
+**Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** — the
+app's JS already requires a browser new enough that woff2 is a given, so older formats are pure
+dead weight in the package-shipped CSS (Tabler icons, `@fontsource` text fonts). This does **not**
+apply to organisation-uploaded custom branding fonts (`FontFamilyModal.tsx`, `uploadThemeFont`) —
+those accept whatever format the customer's own font file comes in
+(`woff2`/`woff`/`ttf`/`otf`, see `FONT_FILE_RE`), and we don't control that. See
+[packages/ui/README.md](packages/ui/README.md) "Fonts" for the full reasoning, what's currently
+shipped vs. stripped, script/locale coverage gaps (Arabic, CJK, RTL), and why the same fix doesn't
+mechanically extend to `@fontsource` text fonts (CSS `@import` bypasses Vite's plugin hooks — don't
+re-attempt that approach without reading why it failed first).
+
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
 
 **Before push / claiming CI will pass:** run the **full package test suite** for every workspace

@@ -14,8 +14,34 @@ function emitBuildMeta(): Plugin {
   };
 }
 
+/**
+ * @tabler/icons-webfont's stylesheet declares its @font-face with woff2 + woff + truetype
+ * fallbacks. This app ships as a native ES module with no legacy bundle (see
+ * packages/ui/README.md "Fonts") - every browser that can run it already supports woff2, and a
+ * browser's own within-@font-face format() fallback already skips woff/truetype in favor of
+ * woff2, so those files are never actually fetched at runtime. But Vite's CSS asset pipeline
+ * still discovers and copies every url() it finds, runtime-unreachable or not, so they were
+ * shipping ~3.3MB of dead weight into dist regardless. Stripping the two fallback url()s here -
+ * before Vite's CSS pipeline resolves them into assets - keeps them out of the build entirely.
+ */
+function stripLegacyIconFontFallback(): Plugin {
+  const FALLBACK_SRC = /,url\([^)]*\.woff\?[^)]*\)\s*format\("woff"\),url\([^)]*\.ttf\?[^)]*\)\s*format\("truetype"\)/;
+  return {
+    name: "admitto-strip-legacy-icon-font-fallback",
+    // Must run before Vite's own `vite:css` plugin resolves `url()` references into emitted
+    // assets, or the woff/truetype files are already discovered and copied by the time this
+    // transform sees the CSS.
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.includes("@tabler/icons-webfont") || !id.endsWith(".css")) return null;
+      if (!FALLBACK_SRC.test(code)) return null;
+      return code.replace(FALLBACK_SRC, "");
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), emitBuildMeta()],
+  plugins: [react(), emitBuildMeta(), stripLegacyIconFontFallback()],
   base: "/",
   define: {
     __APP_VERSION__: JSON.stringify(resolveAppVersion()),

@@ -1,5 +1,7 @@
 import type { Context } from "hono";
 import { describe, expect, it, vi } from "vitest";
+import { MailConfigError } from "@admitto/mailer-config";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import {
   handleSmtpConnectionProbe,
   MAIL_PROVIDER_UNCONFIGURED,
@@ -54,6 +56,28 @@ describe("handleSmtpConnectionProbe", () => {
         onProbed: vi.fn(),
       }),
     ).rejects.toThrow("db down");
+  });
+
+  it("returns a 422 with the stable error code when a stored mail secret cannot be decrypted", async () => {
+    resetSystemLogBufferForTest();
+    const onProbed = vi.fn();
+    const res = await handleSmtpConnectionProbe(fakeContext(), {
+      resolveConfig: async () => {
+        throw new MailConfigError(
+          "mail_secret_decryption_failed",
+          "A stored mail secret could not be decrypted.",
+        );
+      },
+      logPrefix: "[test] smtp probe",
+      onProbed,
+    });
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ ok: false, error: "mail_secret_decryption_failed" });
+    expect(onProbed).not.toHaveBeenCalled();
+
+    const logs = querySystemLogs();
+    expect(logs.some((l) => l.message === "mail_secret_decryption_failed")).toBe(true);
   });
 
   it("returns 400 when the resolved provider is not SMTP", async () => {
