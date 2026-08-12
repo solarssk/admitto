@@ -996,6 +996,44 @@ describe("EventSettingsPage tabs", () => {
     ]);
   });
 
+  it("excludes a value already picked by another field mapping row from the Value dropdown", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "full_name", company: "company" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    const valueButtons = screen.getAllByRole("button", { name: "Value, none selected" });
+    fireEvent.click(valueButtons[0]!);
+
+    expect(screen.queryByRole("button", { name: "Attendee full name" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Attendee company" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Event name" })).toBeTruthy();
+  });
+
+  it("still shows a row's own already-selected value in its own dropdown", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "full_name", company: "company" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Value, Attendee full name" }));
+    const options = within(screen.getByRole("list", { name: "Value" })).getAllByRole("button", {
+      name: "Attendee full name",
+    });
+    expect(options).toHaveLength(1);
+  });
+
   it("falls back to a generic success toast when Test connection reports no message", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,

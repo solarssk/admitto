@@ -1543,17 +1543,28 @@ export function EventSettingsPage() {
                   <Notice variant="warning">{WALLET_FIELD_MAPPING_EMPTY_NOTICE}</Notice>
                 )}
                 {form.walletFieldMapping.length > 0 &&
-                  form.walletFieldMapping.map((row, index) => (
+                  form.walletFieldMapping.map((row, index) => {
+                    // Options already picked by a *different* row are excluded, not just
+                    // visually flagged - two rows both sending the same source value under
+                    // different PassCreator keys is never intentional and only invites the kind
+                    // of mismatched-row confusion this field mapping list has already caused.
+                    const usedByOtherRows = new Set(
+                      form.walletFieldMapping.filter((r) => r.id !== row.id).map((r) => r.value),
+                    );
+                    const availableOptions = WALLET_PLACEHOLDER_OPTIONS.filter(
+                      (o) => o.id === row.value || !usedByOtherRows.has(o.id),
+                    );
+                    return (
                     <div className="wallet-field-mapping__row" key={row.id}>
                       <SearchableSelect
-                        id={`event-wallet-field-mapping-${index}`}
+                        id={`event-wallet-field-mapping-${row.id}`}
                         label="Value"
                         placeholder="Select value…"
                         searchPlaceholder="Search values…"
                         emptyLabel="No values found"
                         showLabel={false}
                         value={row.value}
-                        options={WALLET_PLACEHOLDER_OPTIONS}
+                        options={availableOptions}
                         disabled={isArchived || saving}
                         onChange={(value) =>
                           setForm({
@@ -1565,8 +1576,8 @@ export function EventSettingsPage() {
                         }
                       />
                       <Input
-                        id={`event-wallet-field-mapping-key-${index}`}
-                        name={`event-wallet-field-mapping-key-${index}`}
+                        id={`event-wallet-field-mapping-key-${row.id}`}
+                        name={`event-wallet-field-mapping-key-${row.id}`}
                         aria-label="PassCreator field key"
                         value={row.key}
                         disabled={isArchived || saving}
@@ -1595,7 +1606,8 @@ export function EventSettingsPage() {
                         icon={<i className="ti ti-trash" aria-hidden="true" />}
                       />
                     </div>
-                  ))}
+                    );
+                  })}
               </div>
             </div>
           </Card>
