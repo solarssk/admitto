@@ -39,6 +39,7 @@ function stubProvider(): WalletPassProvider & {
     updatePass: vi.fn(),
     voidPass: vi.fn(),
     restorePass: vi.fn(),
+    deletePass: vi.fn(),
     findByUserProvidedId: vi.fn(async () => null),
   };
 }

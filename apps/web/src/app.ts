@@ -7,15 +7,13 @@ import { Prisma, prisma as defaultPrisma, type PrismaClient, type AttendeeStatus
 import { recordTicketViewed } from "@admitto/mail-delivery";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
 import {
-  PassCreatorClient,
   WalletProviderError,
   type WalletPassInput,
   type WalletPassProvider,
   type WalletPassResult,
   type WalletProviderErrorCode,
 } from "@admitto/wallet";
-import { decryptFromString } from "@admitto/crypto";
-import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl, type GeocodingProvider } from "@admitto/location";
+import type { GeocodingProvider } from "@admitto/location";
 import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   resolveTicket,
@@ -23,10 +21,8 @@ import {
   buildQrPayload,
   isAdmittable,
   hashToken,
-  loadEventTicketTypes,
 } from "@admitto/tickets";
 import {
-  formatDate,
   getTicketPageSecurityHeaders,
   renderTicket,
   renderNotFound,
@@ -48,10 +44,11 @@ import {
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
 import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
+import { resolveWalletProvider } from "./wallet-provider.js";
+import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 import {
   resolveCheckinToken,
   resolveAllowCheckinBearer,
-  resolvePassCreatorBaseUrl,
   validateCheckinBootConfig,
   resolveOpsHealthTokenOption,
   validateOpsHealthBootConfig,
@@ -152,6 +149,9 @@ import {
   handleExportSelectedAttendees,
   handleRevokeAttendeeCheckIn,
   handleRevokeAttendeeItem,
+  handleVoidAttendeeWalletPass,
+  handleRestoreAttendeeWalletPass,
+  handleReissueAttendeeWalletPass,
   handleAddAttendeeNote,
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
@@ -612,25 +612,6 @@ export function createApp(options: CreateAppOptions = {}) {
     console.error("OidcAuthState sweep failed:", err);
   });
 
-  // ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
-  // resolve it for attendee-facing display; fail open to the raw key on any lookup error, same as
-  // ticketTypeBadge.tsx's resolver (Codex review, batch 04 / #351).
-  async function resolveTicketPageDisplay(
-    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
-  ): Promise<NonNullable<Awaited<ReturnType<typeof resolveTicket>>>> {
-    const { attendee, event } = resolved;
-    if (!attendee.ticket_type) return resolved;
-    try {
-      const catalog = await loadEventTicketTypes(db, event.id);
-      const found = catalog.find((t) => t.key === attendee.ticket_type);
-      if (!found) return resolved;
-      return { ...resolved, attendee: { ...attendee, ticket_type: found.label } };
-    } catch (err) {
-      console.error("loadEventTicketTypes failed for ticket page:", err);
-      return resolved;
-    }
-  }
-
   async function loadOptionalBrandingTheme() {
     try {
       return await getBrandingTheme(db);
@@ -648,77 +629,6 @@ export function createApp(options: CreateAppOptions = {}) {
     const theme = options.loadTheme === false ? null : await loadOptionalBrandingTheme();
     const html = status === 404 ? renderNotFound(theme) : renderServerError(theme);
     return htmlWithSecurityHeaders(c, html, status, theme);
-  }
-
-  /** Both the API key and the pass template belong to the event (ADR 0041). */
-  function resolveWalletProvider(event: {
-    walletEnabled: boolean;
-    walletTemplateId: string | null;
-    walletApiKeyEnc: string | null;
-    walletFieldMapping: Record<string, string> | null;
-  }): WalletPassProvider | null {
-    if (options.walletPassProvider) return options.walletPassProvider;
-    if (!event.walletEnabled) return null;
-    const templateId = event.walletTemplateId;
-    if (!templateId || !event.walletApiKeyEnc) return null;
-    let apiKey: string;
-    try {
-      apiKey = decryptFromString(event.walletApiKeyEnc);
-    } catch (err) {
-      console.error("wallet API key decrypt failed:", err);
-      return null;
-    }
-    return new PassCreatorClient({
-      apiKey,
-      templateId,
-      baseUrl: resolvePassCreatorBaseUrl(),
-      fieldMapping: event.walletFieldMapping ?? undefined,
-    });
-  }
-
-  /** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
-  function formatEventHours(event: { eventHoursStart: string | null; eventHoursEnd: string | null }): string | undefined {
-    if (!event.eventHoursStart || !event.eventHoursEnd) return undefined;
-    return `${event.eventHoursStart}-${event.eventHoursEnd}`;
-  }
-
-  async function buildWalletPassInput(
-    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
-    qrPayload: string,
-  ): Promise<WalletPassInput> {
-    const display = await resolveTicketPageDisplay(resolved);
-    const { attendee, event } = display;
-    const mapLabel = event.location ?? event.formattedAddress ?? undefined;
-    const mapReady = isMapReady(event);
-    return {
-      attendeeName: attendee.name,
-      attendeeFirstNameLabel: attendee.first_name || undefined,
-      attendeeLastNameLabel: attendee.last_name || undefined,
-      attendeeEmailLabel: attendee.email || undefined,
-      attendeeCompanyLabel: attendee.company || undefined,
-      attendeeDepartmentLabel: attendee.department || undefined,
-      eventNameLabel: event.title,
-      eventDateLabel: formatDate(event.date),
-      eventHoursLabel: formatEventHours(event),
-      eventLocationLabel: event.location || undefined,
-      directionsTextLabel: event.directionsText || undefined,
-      accessibilityTextLabel: event.accessibilityText || undefined,
-      googleMapsUrlLabel: mapReady
-        ? resolveGoogleMapsUrl(event.latitude!, event.longitude!, mapLabel, event.googleMapsUrlOverride)
-        : undefined,
-      appleMapsUrlLabel: mapReady
-        ? resolveAppleMapsUrl(event.latitude!, event.longitude!, mapLabel, event.appleMapsUrlOverride)
-        : undefined,
-      addressObjectNameLabel: event.addressComponents?.object_name || undefined,
-      addressStreetLabel: event.addressComponents?.street || undefined,
-      addressPostcodeLabel: event.addressComponents?.postcode || undefined,
-      addressCityLabel: event.addressComponents?.city || undefined,
-      addressRegionLabel: event.addressComponents?.region || undefined,
-      addressCountryLabel: event.addressComponents?.country || undefined,
-      ticketTypeLabel: attendee.ticket_type || "General",
-      userProvidedId: `admitto:${event.id}:${attendee.id}`,
-      barcodeValue: qrPayload,
-    };
   }
 
   /**
@@ -744,7 +654,7 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!platformEnabled) {
       return c.redirect(backHref, 302);
     }
-    const walletProvider = resolveWalletProvider(event);
+    const walletProvider = resolveWalletProvider(event, options.walletPassProvider);
     if (!walletProvider) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
@@ -874,7 +784,8 @@ export function createApp(options: CreateAppOptions = {}) {
     if (existing?.status === "active") {
       providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
     } else {
-      const input = await buildWalletPassInput(resolved, qrPayload);
+      const display = await resolveTicketPageDisplay(db, resolved);
+      const input = buildWalletPassInput(display, qrPayload);
       const created = await createOrRecoverPass(input);
       if (!created) return c.redirect(`${backHref}?walletError=1`, 302);
       providerUrls = created;
@@ -905,7 +816,7 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch {
         theme = null;
       }
-      const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
+      const resolvedForDisplay = await resolveTicketPageDisplay(db, resolved);
       return htmlWithSecurityHeaders(
         c,
         renderRevoked(resolvedForDisplay, theme, reason),
@@ -943,7 +854,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
     const theme = await loadOptionalBrandingTheme();
 
-    const resolvedForDisplay = await resolveTicketPageDisplay(resolved);
+    const resolvedForDisplay = await resolveTicketPageDisplay(db, resolved);
     const displayToken = resolveDisplayToken(internalToken, agencyPublicRef);
 
     const mapTiles = resolveMapTileConfig();
@@ -1342,6 +1253,24 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleRevokeAttendeeCheckIn(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/void",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleVoidAttendeeWalletPass(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/restore",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleRestoreAttendeeWalletPass(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/reissue",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleReissueAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke",

@@ -13,6 +13,11 @@ import {
 } from "@admitto/mail-delivery";
 import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus } from "@admitto/db/status";
+import type { WalletPassStatus } from "@admitto/db/status";
+import { decryptFromString } from "@admitto/crypto";
+import { WalletProviderError, type WalletPassProvider } from "@admitto/wallet";
+import { resolveWalletProvider } from "../wallet-provider.js";
+import { resolveTicketPageDisplay, buildWalletPassInput } from "../wallet-pass-input.js";
 import {
   loadEventCustomDataFields,
   buildCustomDataFromInput,
@@ -50,6 +55,8 @@ import {
   ADMITTABLE_STATUS_LIST,
   IllegalItemTransitionError,
   loadEventTicketTypes,
+  parseWalletFieldMapping,
+  resolveTicket,
   assertTicketTypeInCatalog,
   UnknownTicketTypeError,
   acquireEventTicketTypesLock,
@@ -98,6 +105,16 @@ const ATTENDEE_DETAIL_SELECT = {
   rsvp_status: true,
   rsvp_updated_at: true,
   rsvp_source: true,
+  wallet_pass: {
+    select: {
+      status: true,
+      voided_at: true,
+      apple_url: true,
+      android_url: true,
+      last_synced_at: true,
+      last_error_code: true,
+    },
+  },
 } as const;
 
 const RSVP_STATUSES = ATTENDEE_EXPORT_RSVP_STATUSES;
@@ -303,6 +320,7 @@ export type AttendeeDetailDto = {
   rsvp_status: RsvpStatus;
   rsvp_updated_at: string | null;
   rsvp_source: string | null;
+  wallet_pass: WalletPassActionDto | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
@@ -721,6 +739,14 @@ async function buildAttendeeDetailDto(
     rsvp_status: string;
     rsvp_updated_at: Date | null;
     rsvp_source: string | null;
+    wallet_pass: {
+      status: string;
+      voided_at: Date | null;
+      apple_url: string | null;
+      android_url: string | null;
+      last_synced_at: Date | null;
+      last_error_code: string | null;
+    } | null;
   },
   notesPage = 1,
 ): Promise<AttendeeDetailDto> {
@@ -750,6 +776,7 @@ async function buildAttendeeDetailDto(
     rsvp_status: row.rsvp_status as RsvpStatus,
     rsvp_updated_at: row.rsvp_updated_at ? row.rsvp_updated_at.toISOString() : null,
     rsvp_source: row.rsvp_source,
+    wallet_pass: row.wallet_pass ? serializeWalletPassAction(row.wallet_pass) : null,
     custom_data: row.custom_data ?? null,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,
@@ -1609,6 +1636,64 @@ async function writeAttendeeLifecycleAuditLog(
   });
 }
 
+/** Best-effort GDPR erasure of the given attendees' wallet passes at the provider (e.g.
+ * PassCreator). Runs ahead of the DB transaction below - an external network call has no place
+ * inside a Prisma transaction - and never blocks attendee erasure: a provider failure here is
+ * logged and local erasure proceeds regardless, same posture as the other best-effort external
+ * calls in this file. The `attendee: { event_id: eventId }` relation filter keeps this correctly
+ * scoped even before the caller's own event-ownership check has run - an id belonging to a
+ * different event simply matches no row. No-op when wallet is unconfigured or none of the given
+ * attendees has a WalletPass row with a known provider_pass_id yet. */
+async function deleteWalletPassesBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: readonly string[],
+): Promise<void> {
+  const [event, passes] = await Promise.all([
+    db.event.findUnique({
+      where: { id: eventId },
+      select: {
+        wallet_enabled: true,
+        wallet_template_id: true,
+        wallet_api_key_enc: true,
+        wallet_field_mapping: true,
+      },
+    }),
+    db.walletPass.findMany({
+      where: {
+        attendee_id: { in: attendeeIds as string[] },
+        provider_pass_id: { not: null },
+        attendee: { event_id: eventId },
+      },
+      select: { attendee_id: true, provider_pass_id: true },
+    }),
+  ]);
+  if (!event || passes.length === 0) return;
+
+  const provider = resolveWalletProvider({
+    walletEnabled: event.wallet_enabled,
+    walletTemplateId: event.wallet_template_id,
+    walletApiKeyEnc: event.wallet_api_key_enc,
+    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+  });
+  if (!provider) return;
+
+  for (const batch of chunk(passes, BULK_CHECKIN_CONCURRENCY)) {
+    const settled = await Promise.allSettled(batch.map((pass) => provider.deletePass(pass.provider_pass_id!)));
+    for (const [index, outcome] of settled.entries()) {
+      if (outcome.status === "rejected") {
+        console.error("wallet pass delete (erasure) failed:", outcome.reason);
+        recordSystemLog({
+          level: "error",
+          source: "admin",
+          message: "wallet_pass_erasure_delete_failed",
+          fields: { eventId, attendeeId: batch[index]!.attendee_id },
+        });
+      }
+    }
+  }
+}
+
 /** DELETE /api/admin/events/:eventId/attendees/:id — GDPR erasure path. */
 export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -1620,6 +1705,8 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
 
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
+
+  await deleteWalletPassesBestEffort(db, eventId, [attendeeId]);
 
   const result = await db.$transaction(async (tx) => {
     const existing = await tx.attendee.findUnique({
@@ -1706,6 +1793,8 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
   }
   const parsed = bulkDeleteAttendeesBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  await deleteWalletPassesBestEffort(db, eventId, parsed.data.attendeeIds);
 
   const deletedCount = await db.$transaction(async (tx) => {
     const owned = await tx.attendee.findMany({
@@ -2702,6 +2791,206 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
     // reuse the same 409 mapping instead of falling through to a raw 500.
     return itemTransitionErrorResponse(c, err, "handleRevokeAttendeeCheckIn");
   }
+}
+
+type WalletPassActionDto = {
+  status: WalletPassStatus;
+  voided_at: string | null;
+  apple_url: string | null;
+  android_url: string | null;
+  last_synced_at: string | null;
+  last_error_code: string | null;
+};
+
+function serializeWalletPassAction(pass: {
+  status: string;
+  voided_at: Date | null;
+  apple_url: string | null;
+  android_url: string | null;
+  last_synced_at: Date | null;
+  last_error_code: string | null;
+}): WalletPassActionDto {
+  return {
+    status: pass.status as WalletPassStatus,
+    voided_at: pass.voided_at ? pass.voided_at.toISOString() : null,
+    apple_url: pass.apple_url,
+    android_url: pass.android_url,
+    last_synced_at: pass.last_synced_at ? pass.last_synced_at.toISOString() : null,
+    last_error_code: pass.last_error_code,
+  };
+}
+
+/** A provider call failed (network, auth, rejected by PassCreator, ...) - surface the machine
+ * code, same convention as the rest of the admin API (AGENTS.md "Admin API errors in the UI"),
+ * for the frontend to map through operatorApiErrorMessage rather than showing a raw message. */
+function walletProviderErrorResponse(c: Context, err: unknown, logContext: string): Response {
+  const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
+  console.error(`${logContext} failed:`, err);
+  return c.json({ error: code }, 502);
+}
+
+/** Shared preamble for the three wallet lifecycle actions below (void/restore/reissue): validates
+ * params/access, loads the attendee's existing WalletPass id and the event's configured provider.
+ * Every action requires an already-issued pass (created by the on-demand "Add to Wallet" flow) -
+ * there is nothing to void/restore/reissue otherwise. */
+async function loadWalletActionContext(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+): Promise<
+  | Response
+  | {
+      attendeeId: string;
+      qrPayload: string | null;
+      externalUuid: string | null;
+      tokenEnc: string | null;
+      providerPassId: string;
+      provider: WalletPassProvider;
+    }
+> {
+  const attendeeIdOrRes = requireAttendeeId(c);
+  if (attendeeIdOrRes instanceof Response) return attendeeIdOrRes;
+  const attendeeId = attendeeIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const [attendee, event] = await Promise.all([
+    db.attendee.findUnique({
+      where: { id: attendeeId },
+      select: {
+        event_id: true,
+        qr_payload: true,
+        external_uuid: true,
+        token_enc: true,
+        wallet_pass: { select: { provider_pass_id: true } },
+      },
+    }),
+    db.event.findUnique({
+      where: { id: eventId },
+      select: {
+        wallet_enabled: true,
+        wallet_template_id: true,
+        wallet_api_key_enc: true,
+        wallet_field_mapping: true,
+      },
+    }),
+  ]);
+  if (!attendee || attendee.event_id !== eventId) return c.json({ error: "forbidden" }, 403);
+  if (!event) return c.json({ error: "forbidden" }, 403);
+  if (!attendee.wallet_pass?.provider_pass_id) return c.json({ error: "no_wallet_pass" }, 404);
+
+  const provider = resolveWalletProvider({
+    walletEnabled: event.wallet_enabled,
+    walletTemplateId: event.wallet_template_id,
+    walletApiKeyEnc: event.wallet_api_key_enc,
+    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+  });
+  if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
+
+  return {
+    attendeeId,
+    qrPayload: attendee.qr_payload,
+    externalUuid: attendee.external_uuid,
+    tokenEnc: attendee.token_enc,
+    providerPassId: attendee.wallet_pass.provider_pass_id,
+    provider,
+  };
+}
+
+/** POST /api/admin/events/:eventId/attendees/:id/wallet/void */
+export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const ctx = await loadWalletActionContext(c, db, eventId);
+  if (ctx instanceof Response) return ctx;
+
+  try {
+    await ctx.provider.voidPass(ctx.providerPassId);
+  } catch (err) {
+    return walletProviderErrorResponse(c, err, "handleVoidAttendeeWalletPass");
+  }
+
+  const updated = await db.walletPass.update({
+    where: { attendee_id: ctx.attendeeId },
+    data: { status: "voided", voided_at: new Date(), last_error_code: null },
+  });
+  return c.json(serializeWalletPassAction(updated));
+}
+
+/** POST /api/admin/events/:eventId/attendees/:id/wallet/restore */
+export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const ctx = await loadWalletActionContext(c, db, eventId);
+  if (ctx instanceof Response) return ctx;
+
+  try {
+    await ctx.provider.restorePass(ctx.providerPassId);
+  } catch (err) {
+    return walletProviderErrorResponse(c, err, "handleRestoreAttendeeWalletPass");
+  }
+
+  const updated = await db.walletPass.update({
+    where: { attendee_id: ctx.attendeeId },
+    data: { status: "active", voided_at: null, last_error_code: null },
+  });
+  return c.json(serializeWalletPassAction(updated));
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/wallet/reissue — pushes the attendee's current
+ * name/ticket type/event details to the provider via updatePass (PATCH, not delete+recreate,
+ * which trips a known PassCreator 402 bug). The barcode value is recovered from the attendee's
+ * own existing identifier (agency qr_payload/external_uuid, or the decrypted internal token) and
+ * reused as-is - reissue must never mint a new one, or the pass's barcode stops matching the
+ * attendee's actual ticket.
+ */
+export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const ctx = await loadWalletActionContext(c, db, eventId);
+  if (ctx instanceof Response) return ctx;
+
+  const scanned =
+    ctx.qrPayload ?? ctx.externalUuid ?? (ctx.tokenEnc ? decryptFromString(ctx.tokenEnc) : null);
+  if (!scanned) return c.json({ error: "attendee_not_issued" }, 409);
+
+  const resolved = await resolveTicket(scanned, db, { eventId });
+  if (!resolved) return c.json({ error: "attendee_not_issued" }, 409);
+
+  const display = await resolveTicketPageDisplay(db, resolved);
+  const input = buildWalletPassInput(display, scanned);
+
+  let result;
+  try {
+    result = await ctx.provider.updatePass(ctx.providerPassId, input);
+  } catch (err) {
+    await db.walletPass.update({
+      where: { attendee_id: ctx.attendeeId },
+      data: { last_error_code: err instanceof WalletProviderError ? err.code : "wallet_provider_rejected" },
+    });
+    return walletProviderErrorResponse(c, err, "handleReissueAttendeeWalletPass");
+  }
+
+  const updated = await db.walletPass.update({
+    where: { attendee_id: ctx.attendeeId },
+    data: {
+      download_url: result.downloadUrl,
+      apple_url: result.appleUrl,
+      android_url: result.androidUrl,
+      status: "active",
+      last_error_code: null,
+      last_synced_at: new Date(),
+    },
+  });
+  return c.json(serializeWalletPassAction(updated));
 }
 
 /**
