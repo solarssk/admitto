@@ -18,7 +18,7 @@ import {
   testCfAccessConnection,
   testOidcConnection,
 } from "@admitto/auth";
-import { describeMailConfigForOrg, resolveMailConfigForOrg } from "@admitto/mailer-config";
+import { describeMailConfigForOrg, MailConfigError, resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { probeMailTransport, type MailProbeResult } from "@admitto/mailer";
 import {
   evaluateBounceIngestHealth,
@@ -666,7 +666,24 @@ async function emailSendingRow(
         ["last_checked", checkedAt],
       ]),
     };
-  } catch {
+  } catch (err) {
+    // Only resolveOrgMailConfig() (live check only) decrypts stored secrets, so this is
+    // always a definitive, actionable problem rather than a transient lookup failure —
+    // call it out instead of the generic "Could not read mail settings" below.
+    if (err instanceof MailConfigError) {
+      return {
+        id: "email_sending",
+        label: "Email sending",
+        status: "degraded",
+        summary: "Mail secret could not be decrypted",
+        details: detailsFromEntries([
+          ["status", "degraded"],
+          ["configured", "yes"],
+          ["reason", err.code],
+          ["last_checked", checkedAt],
+        ]),
+      };
+    }
     // Passive: env mail still counts as configured when org lookup fails.
     // Live: do not greenwash — effective config could not be resolved/probed.
     if (
