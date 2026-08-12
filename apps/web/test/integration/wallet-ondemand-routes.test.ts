@@ -57,6 +57,21 @@ async function seedWalletFixture(client: PrismaClient): Promise<void> {
       event_hours_start: "18:00",
       event_hours_end: "22:00",
       wallet_template_id: "tmpl-wallet-gala",
+      location_details: {
+        create: {
+          venue_name: "Grand Hall",
+          latitude: 52.2297,
+          longitude: 21.0122,
+          address_components: {
+            object_name: "Grand Hall",
+            street: "Main 1",
+            postcode: "00-001",
+            city: "Warsaw",
+            region: "Mazovia",
+            country: "Poland",
+          },
+        },
+      },
     },
   });
   await client.attendee.create({
@@ -75,6 +90,10 @@ async function seedWalletFixture(client: PrismaClient): Promise<void> {
       event_id: EVENT_ID,
       email: "modea@example.com",
       name: "Mode A Guest",
+      first_name: "Mode",
+      last_name: "Guest",
+      company: "Acme",
+      department: "Engineering",
       token_hash: hashToken(MODE_A_TOKEN),
       token_enc: encryptToString(MODE_A_TOKEN),
       status: "registered",
@@ -134,7 +153,22 @@ describe("On-demand wallet routes", () => {
     expect(provider.createPass).toHaveBeenCalledWith(
       expect.objectContaining({
         attendeeName: "Mode A Guest",
+        attendeeFirstNameLabel: "Mode",
+        attendeeLastNameLabel: "Guest",
+        attendeeEmailLabel: "modea@example.com",
+        attendeeCompanyLabel: "Acme",
+        attendeeDepartmentLabel: "Engineering",
+        eventNameLabel: "Wallet Gala",
         eventHoursLabel: "18:00-22:00",
+        directionsTextLabel: undefined,
+        googleMapsUrlLabel: expect.stringContaining("google.com"),
+        appleMapsUrlLabel: expect.stringContaining("apple.com"),
+        addressObjectNameLabel: "Grand Hall",
+        addressStreetLabel: "Main 1",
+        addressPostcodeLabel: "00-001",
+        addressCityLabel: "Warsaw",
+        addressRegionLabel: "Mazovia",
+        addressCountryLabel: "Poland",
         userProvidedId: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
       }),
     );

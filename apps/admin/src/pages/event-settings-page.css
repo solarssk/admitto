@@ -210,30 +210,6 @@
   margin: 0;
 }
 
-/* Wallet tab: each platform gets its own bordered row (name + switch) instead of two bare
-   switches sitting directly under the API key field with no visual separation. */
-.wallet-platform-toggles {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.wallet-platform-toggles__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-}
-
-.wallet-platform-toggles__row + .wallet-platform-toggles__row {
-  border-top: 1px solid var(--border);
-}
-
-.wallet-platform-toggles__label {
-  font-weight: var(--fw-medium);
-}
-
 .wallet-field-mapping__header {
   display: flex;
   align-items: center;

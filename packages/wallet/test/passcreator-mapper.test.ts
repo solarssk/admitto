@@ -50,4 +50,65 @@ describe("toPassCreatorData", () => {
     const data = toPassCreatorData(baseInput, "tmpl-1", {});
     expect(data.name).toBe("Alice Admin");
   });
+
+  it("maps the expanded placeholder vocabulary (name parts, event/address, maps links)", () => {
+    const data = toPassCreatorData(
+      {
+        ...baseInput,
+        attendeeFirstNameLabel: "Alice",
+        attendeeLastNameLabel: "Admin",
+        attendeeEmailLabel: "alice@example.com",
+        attendeeCompanyLabel: "Acme",
+        attendeeDepartmentLabel: "Engineering",
+        eventNameLabel: "Launch Event",
+        directionsTextLabel: "Enter via the north gate.",
+        accessibilityTextLabel: "Step-free access.",
+        googleMapsUrlLabel: "https://maps.google.com/?q=1,2",
+        appleMapsUrlLabel: "https://maps.apple.com/?ll=1,2",
+        addressObjectNameLabel: "Test Arena",
+        addressStreetLabel: "Main 1",
+        addressPostcodeLabel: "00-001",
+        addressCityLabel: "Warsaw",
+        addressRegionLabel: "Mazovia",
+        addressCountryLabel: "Poland",
+      },
+      "tmpl-1",
+      {
+        first: "first_name",
+        last: "last_name",
+        mail: "email",
+        org: "company",
+        dept: "department",
+        name: "event_name",
+        directions: "directions_text",
+        access: "accessibility_text",
+        gmaps: "google_maps_url",
+        amaps: "apple_maps_url",
+        venue: "object_name",
+        street: "street",
+        zip: "postcode",
+        city: "city",
+        region: "region",
+        country: "country",
+      },
+    );
+    expect(data).toMatchObject({
+      first: "Alice",
+      last: "Admin",
+      mail: "alice@example.com",
+      org: "Acme",
+      dept: "Engineering",
+      name: "Launch Event",
+      directions: "Enter via the north gate.",
+      access: "Step-free access.",
+      gmaps: "https://maps.google.com/?q=1,2",
+      amaps: "https://maps.apple.com/?ll=1,2",
+      venue: "Test Arena",
+      street: "Main 1",
+      zip: "00-001",
+      city: "Warsaw",
+      region: "Mazovia",
+      country: "Poland",
+    });
+  });
 });

@@ -14,12 +14,8 @@ import {
   type WalletPassResult,
 } from "@admitto/wallet";
 import { decryptFromString } from "@admitto/crypto";
-import type { GeocodingProvider } from "@admitto/location";
-import {
-  getBrandingTheme,
-  SESSION_STAGE,
-  sweepExpiredOidcAuthStates,
-} from "@admitto/auth";
+import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl, type GeocodingProvider } from "@admitto/location";
+import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
 import {
   resolveTicket,
   generateQrPng,
@@ -664,11 +660,33 @@ export function createApp(options: CreateAppOptions = {}) {
   ): Promise<WalletPassInput> {
     const display = await resolveTicketPageDisplay(resolved);
     const { attendee, event } = display;
+    const mapLabel = event.location ?? event.formattedAddress ?? undefined;
+    const mapReady = isMapReady(event);
     return {
       attendeeName: attendee.name,
+      attendeeFirstNameLabel: attendee.first_name || undefined,
+      attendeeLastNameLabel: attendee.last_name || undefined,
+      attendeeEmailLabel: attendee.email || undefined,
+      attendeeCompanyLabel: attendee.company || undefined,
+      attendeeDepartmentLabel: attendee.department || undefined,
+      eventNameLabel: event.title,
       eventDateLabel: formatDate(event.date),
       eventHoursLabel: formatEventHours(event),
       eventLocationLabel: event.location || undefined,
+      directionsTextLabel: event.directionsText || undefined,
+      accessibilityTextLabel: event.accessibilityText || undefined,
+      googleMapsUrlLabel: mapReady
+        ? resolveGoogleMapsUrl(event.latitude!, event.longitude!, mapLabel, event.googleMapsUrlOverride)
+        : undefined,
+      appleMapsUrlLabel: mapReady
+        ? resolveAppleMapsUrl(event.latitude!, event.longitude!, mapLabel, event.appleMapsUrlOverride)
+        : undefined,
+      addressObjectNameLabel: event.addressComponents?.object_name || undefined,
+      addressStreetLabel: event.addressComponents?.street || undefined,
+      addressPostcodeLabel: event.addressComponents?.postcode || undefined,
+      addressCityLabel: event.addressComponents?.city || undefined,
+      addressRegionLabel: event.addressComponents?.region || undefined,
+      addressCountryLabel: event.addressComponents?.country || undefined,
       ticketTypeLabel: attendee.ticket_type || "General",
       userProvidedId: `admitto:${event.id}:${attendee.id}`,
     };

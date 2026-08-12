@@ -33,7 +33,8 @@ import {
   type EventBounceIngestPanelHandle,
 } from "../settings/EventBounceIngestPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
-import { SettingsFooter, NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { SettingsFooter, NO_AUTOFILL_PROPS, SecretFieldRow } from "../settings/mailTransportFormParts.js";
+import type { SecretEditMode } from "../settings/mailSettingsValidation.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -70,8 +71,7 @@ type SettingsForm = {
   eventHoursEnd: string;
   walletEnabled: boolean;
   walletTemplateId: string;
-  walletApiKeyDraft: string;
-  walletClearApiKey: boolean;
+  walletApiKeyEdit: { mode: SecretEditMode; value: string };
   walletAppleEnabled: boolean;
   walletGoogleEnabled: boolean;
   walletFieldMapping: WalletFieldMappingRow[];
@@ -110,6 +110,12 @@ const STATUS_HINT = "Current event status and ownership.";
 const EVENT_LOGO_HINT =
   "Overrides the organisation logo for this event.";
 const DANGER_ZONE_HINT = "Actions that change event data or availability.";
+const WALLET_CARD_HINT =
+  "Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and template are specific to this event, nothing is shared with other events.";
+const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
+const WALLET_TEMPLATE_HINT =
+  "From the PassCreator dashboard: which pass design this event's attendees get. Leave blank to keep wallet disabled for this event.";
+const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -129,15 +135,27 @@ function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
 
-function walletApiKeyPlaceholder(configured: boolean): string {
-  return configured ? "••••••••" : "Optional";
-}
-
 const WALLET_PLACEHOLDER_LABELS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string> = {
   full_name: "Attendee full name",
+  first_name: "Attendee first name",
+  last_name: "Attendee last name",
+  email: "Attendee email",
+  company: "Attendee company",
+  department: "Attendee department",
+  event_name: "Event name",
   event_date: "Event date",
   event_hours: "Event hours",
   event_location: "Event location",
+  directions_text: "Directions",
+  accessibility_text: "Accessibility notes",
+  google_maps_url: "Google Maps URL",
+  apple_maps_url: "Apple Maps URL",
+  object_name: "Venue name",
+  street: "Street address",
+  postcode: "Postal code",
+  city: "City",
+  region: "Region",
+  country: "Country",
   ticket_type: "Ticket type",
 };
 
@@ -154,8 +172,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     eventHoursEnd: data.event_hours_end ?? "",
     walletEnabled: data.wallet_enabled,
     walletTemplateId: data.wallet_template_id ?? "",
-    walletApiKeyDraft: "",
-    walletClearApiKey: false,
+    walletApiKeyEdit: { mode: "idle", value: "" },
     walletAppleEnabled: data.wallet_apple_enabled,
     walletGoogleEnabled: data.wallet_google_enabled,
     walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
@@ -198,10 +215,10 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   if (form.walletTemplateId !== original.walletTemplateId) {
     patch.wallet_template_id = form.walletTemplateId.trim() || null;
   }
-  if (form.walletClearApiKey) {
+  if (form.walletApiKeyEdit.mode === "clear") {
     patch.wallet_api_key = null;
-  } else if (form.walletApiKeyDraft.trim()) {
-    patch.wallet_api_key = form.walletApiKeyDraft.trim();
+  } else if (form.walletApiKeyEdit.mode === "replace" && form.walletApiKeyEdit.value.trim()) {
+    patch.wallet_api_key = form.walletApiKeyEdit.value.trim();
   }
   if (form.walletAppleEnabled !== original.walletAppleEnabled) {
     patch.wallet_apple_enabled = form.walletAppleEnabled;
@@ -840,7 +857,9 @@ export function EventSettingsPage() {
     try {
       const result = await testWalletConnection(eventId, {
         templateId,
-        ...(form.walletApiKeyDraft.trim() ? { apiKey: form.walletApiKeyDraft.trim() } : {}),
+        ...(form.walletApiKeyEdit.mode === "replace" && form.walletApiKeyEdit.value.trim()
+          ? { apiKey: form.walletApiKeyEdit.value.trim() }
+          : {}),
       });
       addToast(
         result.ok ? (result.message ?? "Connected.") : (result.error ?? "Could not reach PassCreator."),
@@ -1300,7 +1319,7 @@ export function EventSettingsPage() {
       {isSa && (
         <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
           <Card
-            title="Wallet"
+            title={<HintLabel hint={WALLET_CARD_HINT}>Wallet</HintLabel>}
             className="event-settings-card"
             actions={
               <Switch
@@ -1312,180 +1331,187 @@ export function EventSettingsPage() {
               />
             }
           >
-            <div className="settings-field-stack">
-              <p className="settings-card-intro">
-                Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and
-                template are specific to this event, nothing is shared with other events.
-              </p>
-              <div className="settings-field-group">
-                <div className="external-provider-and-test">
-                  <SearchableSelect
-                    id="event-wallet-provider"
-                    label="Provider"
-                    placeholder="Select provider…"
-                    searchPlaceholder="Search providers…"
-                    emptyLabel="No providers found"
-                    showLabel
-                    value="passcreator"
-                    options={[{ id: "passcreator", label: "PassCreator" }]}
-                    disabled
-                    onChange={() => {}}
+            <div className="settings-card-stack">
+              <div className="mail-transport-section">
+                <div className="mail-field-row">
+                  <div className="at-field">
+                    <span className="at-label">
+                      <HintLabel hint={WALLET_PROVIDER_HINT}>Provider</HintLabel>
+                    </span>
+                    <div className="external-provider-and-test">
+                      <SearchableSelect
+                        id="event-wallet-provider"
+                        label="Provider"
+                        placeholder="Select provider…"
+                        searchPlaceholder="Search providers…"
+                        emptyLabel="No providers found"
+                        showLabel={false}
+                        value="passcreator"
+                        options={[{ id: "passcreator", label: "PassCreator" }]}
+                        disabled
+                        onChange={() => {}}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={walletTesting || saving || !form.walletTemplateId.trim()}
+                        onClick={() => void handleTestWallet()}
+                        icon={<i className="ti ti-plug" aria-hidden="true" />}
+                      >
+                        {walletTesting ? "Testing…" : "Test connection"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div className="mail-field-row">
+                  <div className="at-field mail-secret-field">
+                    <span className="at-label">
+                      <HintLabel hint={WALLET_API_KEY_HINT}>API key</HintLabel>
+                    </span>
+                    <SecretFieldRow
+                      label="API key"
+                      field={{
+                        set: event?.wallet_api_key?.configured ?? false,
+                        masked: event?.wallet_api_key?.configured ? "••••" : null,
+                        source: "db",
+                        locked: false,
+                      }}
+                      edit={form.walletApiKeyEdit}
+                      disabled={isArchived || saving}
+                      onReplace={() =>
+                        setForm({ ...form, walletApiKeyEdit: { mode: "replace", value: "" } })
+                      }
+                      onClear={() => setForm({ ...form, walletApiKeyEdit: { mode: "clear", value: "" } })}
+                      onValueChange={(value) =>
+                        setForm({ ...form, walletApiKeyEdit: { mode: "replace", value } })
+                      }
+                      onCancel={() => setForm({ ...form, walletApiKeyEdit: { mode: "idle", value: "" } })}
+                    />
+                  </div>
+                </div>
+                <div className="mail-field-row">
+                  <div className="at-field">
+                    <span className="at-label">
+                      <HintLabel hint={WALLET_TEMPLATE_HINT}>Template ID</HintLabel>
+                    </span>
+                    <Input
+                      id="event-wallet-template-id"
+                      value={form.walletTemplateId}
+                      disabled={isArchived || saving}
+                      placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                      {...NO_AUTOFILL_PROPS}
+                      onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="smtp-connection-tls-pair">
+                <div className="settings-row smtp-connection-tls-row">
+                  <div className="settings-row__text">
+                    <strong>
+                      <i className="ti ti-brand-apple" aria-hidden="true" /> Apple Wallet
+                    </strong>
+                    <p>Shows the Add to Apple Wallet button on this event's tickets.</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-apple-enabled"
+                    aria-label="Apple Wallet"
+                    checked={form.walletAppleEnabled}
+                    disabled={isArchived || saving}
+                    onChange={(e) => setForm({ ...form, walletAppleEnabled: e.target.checked })}
                   />
+                </div>
+                <div className="settings-row smtp-connection-tls-row">
+                  <div className="settings-row__text">
+                    <strong>
+                      <i className="ti ti-brand-google" aria-hidden="true" /> Google Wallet
+                    </strong>
+                    <p>Shows the Add to Google Wallet button on this event's tickets.</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-google-enabled"
+                    aria-label="Google Wallet"
+                    checked={form.walletGoogleEnabled}
+                    disabled={isArchived || saving}
+                    onChange={(e) => setForm({ ...form, walletGoogleEnabled: e.target.checked })}
+                  />
+                </div>
+              </div>
+              <div className="wallet-field-mapping">
+                <div className="wallet-field-mapping__header">
+                  <HintLabel hint="Optional. Overrides which PassCreator field key gets which attendee/event value. Leave empty to use the default mapping (name, event date, event hours, event place, ticket type).">
+                    Field mapping
+                  </HintLabel>
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={walletTesting || saving || !form.walletTemplateId.trim()}
-                    onClick={() => void handleTestWallet()}
-                    icon={<i className="ti ti-plug" aria-hidden="true" />}
+                    size="sm"
+                    disabled={isArchived || saving}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        walletFieldMapping: [...form.walletFieldMapping, { key: "", value: "" }],
+                      })
+                    }
                   >
-                    {walletTesting ? "Testing…" : "Test connection"}
+                    Add field
                   </Button>
                 </div>
-                <div className="settings-field-row">
-                  <Input
-                    label="Template ID"
-                    value={form.walletTemplateId}
-                    disabled={isArchived || saving}
-                    placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-                    hint="From the PassCreator dashboard: which pass design this event's attendees get. Leave blank to keep wallet disabled for this event."
-                    {...NO_AUTOFILL_PROPS}
-                    onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
-                  />
-                  <div className="at-field mail-secret-field">
-                    <span className="at-label">API key</span>
-                    <Input
-                      type="text"
-                      id="event-wallet-api-key"
-                      name="wallet-event-api-key"
-                      value={form.walletApiKeyDraft}
-                      disabled={isArchived || saving || form.walletClearApiKey}
-                      placeholder={walletApiKeyPlaceholder(event?.wallet_api_key?.configured ?? false)}
-                      {...NO_AUTOFILL_PROPS}
-                      onChange={(e) =>
-                        setForm({ ...form, walletApiKeyDraft: e.target.value, walletClearApiKey: false })
-                      }
-                    />
-                    <p className="at-hint">From the PassCreator dashboard, under API Keys.</p>
-                    {event?.wallet_api_key?.configured && (
-                      <label className="form-check" style={{ marginTop: "var(--space-2)" }}>
-                        <input
-                          type="checkbox"
-                          checked={form.walletClearApiKey}
-                          disabled={isArchived || saving}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              walletClearApiKey: e.target.checked,
-                              walletApiKeyDraft: e.target.checked ? "" : form.walletApiKeyDraft,
-                            })
-                          }
-                        />
-                        <span>Clear API key</span>
-                      </label>
-                    )}
-                  </div>
-                </div>
-                <div className="wallet-platform-toggles">
-                  <div className="wallet-platform-toggles__row">
-                    <span className="wallet-platform-toggles__label">Apple Wallet</span>
-                    <Switch
-                      id="event-wallet-apple-enabled"
-                      aria-label="Apple Wallet"
-                      checked={form.walletAppleEnabled}
-                      disabled={isArchived || saving}
-                      onChange={(e) => setForm({ ...form, walletAppleEnabled: e.target.checked })}
-                    />
-                  </div>
-                  <div className="wallet-platform-toggles__row">
-                    <span className="wallet-platform-toggles__label">Google Wallet</span>
-                    <Switch
-                      id="event-wallet-google-enabled"
-                      aria-label="Google Wallet"
-                      checked={form.walletGoogleEnabled}
-                      disabled={isArchived || saving}
-                      onChange={(e) => setForm({ ...form, walletGoogleEnabled: e.target.checked })}
-                    />
-                  </div>
-                </div>
-                <p className="at-hint">
-                  Turn a platform off to hide its button on tickets without clearing the API key or
-                  template.
-                </p>
-                <div className="wallet-field-mapping">
-                  <div className="wallet-field-mapping__header">
-                    <HintLabel hint="Optional. Overrides which PassCreator field key gets which attendee/event value. Leave empty to use the default mapping (name, event date, event hours, event place, ticket type).">
-                      Field mapping
-                    </HintLabel>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={isArchived || saving}
-                      onClick={() =>
-                        setForm({
-                          ...form,
-                          walletFieldMapping: [...form.walletFieldMapping, { key: "", value: "" }],
-                        })
-                      }
-                    >
-                      Add field
-                    </Button>
-                  </div>
-                  {form.walletFieldMapping.length === 0 ? (
-                    <p className="at-hint">Using the default mapping.</p>
-                  ) : (
-                    form.walletFieldMapping.map((row, index) => (
-                      <div className="wallet-field-mapping__row" key={index}>
-                        <Input
-                          aria-label="PassCreator field key"
-                          value={row.key}
-                          disabled={isArchived || saving}
-                          placeholder="PassCreator field key"
-                          {...NO_AUTOFILL_PROPS}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              walletFieldMapping: form.walletFieldMapping.map((r, i) =>
-                                i === index ? { ...r, key: e.target.value } : r,
-                              ),
-                            })
-                          }
-                        />
-                        <SearchableSelect
-                          id={`event-wallet-field-mapping-${index}`}
-                          label="Value"
-                          placeholder="Select value…"
-                          searchPlaceholder="Search values…"
-                          emptyLabel="No values found"
-                          showLabel={false}
-                          value={row.value}
-                          options={WALLET_PLACEHOLDER_OPTIONS}
-                          disabled={isArchived || saving}
-                          onChange={(value) =>
-                            setForm({
-                              ...form,
-                              walletFieldMapping: form.walletFieldMapping.map((r, i) =>
-                                i === index ? { ...r, value } : r,
-                              ),
-                            })
-                          }
-                        />
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          disabled={isArchived || saving}
-                          aria-label="Remove field"
-                          onClick={() =>
-                            setForm({
-                              ...form,
-                              walletFieldMapping: form.walletFieldMapping.filter((_, i) => i !== index),
-                            })
-                          }
-                          icon={<i className="ti ti-trash" aria-hidden="true" />}
-                        />
-                      </div>
-                    ))
-                  )}
-                </div>
+                {form.walletFieldMapping.length === 0 ? (
+                  <p className="at-hint">Using the default mapping.</p>
+                ) : (
+                  form.walletFieldMapping.map((row, index) => (
+                    <div className="wallet-field-mapping__row" key={index}>
+                      <SearchableSelect
+                        id={`event-wallet-field-mapping-${index}`}
+                        label="Value"
+                        placeholder="Select value…"
+                        searchPlaceholder="Search values…"
+                        emptyLabel="No values found"
+                        showLabel={false}
+                        value={row.value}
+                        options={WALLET_PLACEHOLDER_OPTIONS}
+                        disabled={isArchived || saving}
+                        onChange={(value) =>
+                          setForm({
+                            ...form,
+                            walletFieldMapping: form.walletFieldMapping.map((r, i) =>
+                              i === index ? { ...r, value } : r,
+                            ),
+                          })
+                        }
+                      />
+                      <Input
+                        aria-label="PassCreator field key"
+                        value={row.key}
+                        disabled={isArchived || saving}
+                        placeholder="PassCreator field key"
+                        {...NO_AUTOFILL_PROPS}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            walletFieldMapping: form.walletFieldMapping.map((r, i) =>
+                              i === index ? { ...r, key: e.target.value } : r,
+                            ),
+                          })
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={isArchived || saving}
+                        aria-label="Remove field"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            walletFieldMapping: form.walletFieldMapping.filter((_, i) => i !== index),
+                          })
+                        }
+                        icon={<i className="ti ti-trash" aria-hidden="true" />}
+                      />
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </Card>

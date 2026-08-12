@@ -166,6 +166,10 @@ export type ResolvedTicket = {
     event_id: string;
     email: string;
     name: string;
+    first_name: string | null;
+    last_name: string | null;
+    company: string | null;
+    department: string | null;
     status: string;
     token_hash: string | null;
     qr_payload: string | null;

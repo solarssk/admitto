@@ -6,9 +6,25 @@
  */
 export interface WalletPassInput {
   attendeeName: string;
+  attendeeFirstNameLabel?: string;
+  attendeeLastNameLabel?: string;
+  attendeeEmailLabel?: string;
+  attendeeCompanyLabel?: string;
+  attendeeDepartmentLabel?: string;
+  eventNameLabel?: string;
   eventDateLabel: string;
   eventHoursLabel?: string;
   eventLocationLabel?: string;
+  directionsTextLabel?: string;
+  accessibilityTextLabel?: string;
+  googleMapsUrlLabel?: string;
+  appleMapsUrlLabel?: string;
+  addressObjectNameLabel?: string;
+  addressStreetLabel?: string;
+  addressPostcodeLabel?: string;
+  addressCityLabel?: string;
+  addressRegionLabel?: string;
+  addressCountryLabel?: string;
   ticketTypeLabel: string;
   /** Stable idempotency key, e.g. "admitto:{eventId}:{attendeeId}". */
   userProvidedId: string;

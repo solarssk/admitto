@@ -140,6 +140,8 @@ type LocationDetailsForTicket = {
 export function toResolved(
   row: {
     id: string; event_id: string; email: string; name: string; status: string;
+    first_name: string | null; last_name: string | null;
+    company: string | null; department: string | null;
     token_hash: string | null; qr_payload: string | null; external_uuid: string | null;
     ticket_type: string | null;
     event: {
@@ -166,6 +168,10 @@ export function toResolved(
       event_id: row.event_id,
       email: row.email,
       name: row.name,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      company: row.company,
+      department: row.department,
       status: row.status,
       token_hash: row.token_hash,
       qr_payload: row.qr_payload,

@@ -769,7 +769,9 @@ describe("EventSettingsPage tabs", () => {
     renderSettings();
     await screen.findByRole("tab", { name: "Wallet" });
     fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
-    expect(await screen.findByLabelText("Template ID")).toBeTruthy();
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
   });
 
   it("saves the wallet Template ID through the event patch", async () => {
@@ -778,9 +780,13 @@ describe("EventSettingsPage tabs", () => {
       event: { ...activeEvent, wallet_template_id: "tmpl-1" },
     });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    await screen.findByLabelText("Template ID");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
 
-    fireEvent.change(screen.getByLabelText("Template ID"), { target: { value: "tmpl-1" } });
+    fireEvent.change(document.getElementById("event-wallet-template-id") as HTMLInputElement, {
+      target: { value: "tmpl-1" },
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -797,9 +803,13 @@ describe("EventSettingsPage tabs", () => {
       event: { ...activeEvent, wallet_template_id: null },
     });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    await screen.findByLabelText("Template ID");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
 
-    fireEvent.change(screen.getByLabelText("Template ID"), { target: { value: "" } });
+    fireEvent.change(document.getElementById("event-wallet-template-id") as HTMLInputElement, {
+      target: { value: "" },
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -810,7 +820,9 @@ describe("EventSettingsPage tabs", () => {
   it("shows the provider selector and Apple/Google toggles on the Wallet tab", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    await screen.findByLabelText("Template ID");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
 
     expect(screen.getByText("PassCreator")).toBeTruthy();
     expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
@@ -827,10 +839,12 @@ describe("EventSettingsPage tabs", () => {
       event: { ...activeEvent, wallet_api_key: { configured: true }, wallet_apple_enabled: false },
     });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    await screen.findByLabelText("Template ID");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
 
-    const apiKeyInput = document.getElementById("event-wallet-api-key") as HTMLInputElement;
-    fireEvent.change(apiKeyInput, { target: { value: "pc-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "pc-secret" } });
     fireEvent.click(screen.getByLabelText("Apple Wallet"));
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
@@ -930,7 +944,9 @@ describe("EventSettingsPage tabs", () => {
   it("deep links directly into a non-default tab via ?tab=", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    expect(await screen.findByLabelText("Template ID")).toBeTruthy();
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
     expect(screen.getByRole("tab", { name: "Wallet" }).getAttribute("aria-selected")).toBe("true");
   });
 });
