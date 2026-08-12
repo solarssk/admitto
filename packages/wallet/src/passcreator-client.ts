@@ -7,6 +7,15 @@ import { toPassCreatorData } from "./passcreator-mapper.js";
 /** Injectable fetch (for tests without real network). Defaults to global fetch. */
 export type FetchFn = typeof fetch;
 
+/** The 4 pass-lifecycle webhook events Admitto subscribes to and handles
+ * (developer.passcreator.com/en/webhooks/pass-hooks) - pass_created/pass_updated exist too but
+ * aren't subscribed, since we already know about creates/updates ourselves (we initiated them). */
+export type PassCreatorWebhookEventType =
+  | "first_pushnotification_registered"
+  | "pushnotification_registered"
+  | "pushnotification_unregistered"
+  | "pass_voided";
+
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 500;
 
@@ -116,6 +125,47 @@ export class PassCreatorClient implements WalletPassProvider {
       `/api/v2/pass-template/${encodeURIComponent(this.templateId)}/describe`,
     );
     return { name: data.name ?? null };
+  }
+
+  /** PEM-formatted public key used to verify a signed webhook payload
+   * (developer.passcreator.com/en/signatures/verify-a-signature). Response shape is not confirmed
+   * by a concrete documented example - could be raw PEM text, or PEM wrapped in the usual
+   * {success, data, errors} envelope (as `data` directly or `data.publicKey`) like every other
+   * endpoint. Handles all three defensively rather than assuming one; needs live confirmation,
+   * see the wallet webhook task list. */
+  async getWebhookPublicKey(): Promise<string> {
+    const res = await this.requestRaw("GET", "/api/hook/publickey");
+    const text = await res.text();
+    if (!res.ok) throw this.toProviderError(res.status);
+    const trimmed = text.trim();
+    // JSON envelope first - a raw-PEM response never starts with "{", so this only matches the
+    // envelope case, not a JSON-encoded string that happens to contain a PEM block somewhere.
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        const data = (parsed as { data?: unknown }).data;
+        const pem = typeof data === "string" ? data : (data as { publicKey?: string } | undefined)?.publicKey;
+        if (typeof pem === "string" && pem.includes("-----BEGIN PUBLIC KEY-----")) return pem.trim();
+      } catch {
+        // Fall through to the error below.
+      }
+    } else if (trimmed.startsWith("-----BEGIN PUBLIC KEY-----")) {
+      return trimmed;
+    }
+    throw this.toProviderError(502, ["Public key missing or unrecognized shape in response"]);
+  }
+
+  /** Subscribes `targetUrl` to receive one webhook event type for this template
+   * (developer.passcreator.com/en/webhooks/webhook-endpoints). Call once per event type - the
+   * endpoint doesn't document a way to subscribe to several at once. Idempotent to call again with
+   * the same targetUrl/event (re-subscribing doesn't create a duplicate per the docs' unsubscribe
+   * counterpart matching by targetUrl). */
+  async subscribeWebhook(targetUrl: string, event: PassCreatorWebhookEventType): Promise<void> {
+    await this.request(
+      "POST",
+      `/api/hook/subscribe/${encodeURIComponent(this.templateId)}`,
+      { target_url: targetUrl, event, signPayload: true, retryEnabled: true },
+    );
   }
 
   async findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null> {

@@ -177,6 +177,59 @@ describe("PassCreatorClient.describeTemplate", () => {
   });
 });
 
+describe("PassCreatorClient.getWebhookPublicKey", () => {
+  it("GETs the public-key endpoint and returns raw PEM text as-is", async () => {
+    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/hook/publickey");
+      expect(init?.method).toBe("GET");
+      return new Response(pem, { status: 200, headers: { "Content-Type": "text/plain" } });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
+  });
+
+  it("also accepts the PEM wrapped in the standard {success, data} envelope", async () => {
+    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: pem }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
+  });
+
+  it("also accepts the PEM nested at data.publicKey", async () => {
+    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: { publicKey: pem } }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
+  });
+
+  it("throws when the response doesn't contain a recognizable PEM key", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: {} }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.getWebhookPublicKey()).rejects.toBeInstanceOf(WalletProviderError);
+  });
+});
+
+describe("PassCreatorClient.subscribeWebhook", () => {
+  it("POSTs to /api/hook/subscribe/:templateId with the event, signPayload, and retryEnabled", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/hook/subscribe/tmpl-1");
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(init?.body as string)).toEqual({
+        target_url: "https://admitto.example.com/api/webhooks/passcreator",
+        event: "pushnotification_registered",
+        signPayload: true,
+        retryEnabled: true,
+      });
+      return jsonResponse(201, { success: true, data: {} });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(
+      client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pushnotification_registered"),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("PassCreatorClient fieldMapping", () => {
   it("passes the configured field mapping through to createPass's data payload", async () => {
     const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
