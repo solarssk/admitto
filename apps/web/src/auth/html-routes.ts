@@ -159,7 +159,7 @@ export async function handlePostLogin(
 }
 
 /**
- * POST /logout — revokes session, trusted device, and redirects to `/login` (or the identity
+ * POST /logout (revokes session, trusted device, and redirects to `/login`, or the identity
  * provider's own logout first, when applicable). `baseUrl` is null when Instance URL isn't
  * configured yet - local logout must still succeed in that case, just without the IdP redirect
  * (no safe `post_logout_redirect_uri` can be built without it).
@@ -173,8 +173,15 @@ export async function handlePostLogout(c: Context, db: PrismaClient, baseUrl: st
   }
   // Resolved before the local session is revoked below - same session row either way, just
   // reading it while it's still the one the cookie names, not relying on ordering to matter.
+  // Failure here (e.g. a transient DB error looking up the provider) must not block local
+  // logout - the IdP redirect is a bonus, not a precondition for clearing this session.
   const endSessionRedirect =
-    validated && baseUrl ? await resolveOidcEndSessionRedirect(db, validated.session, baseUrl) : null;
+    validated && baseUrl
+      ? await resolveOidcEndSessionRedirect(db, validated.session, baseUrl).catch((err) => {
+          console.error("resolve OIDC end-session redirect:", err instanceof Error ? err.message : "unknown");
+          return null;
+        })
+      : null;
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
   clearTrustedDeviceCookie(c);

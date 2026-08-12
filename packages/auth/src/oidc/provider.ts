@@ -15,8 +15,11 @@ export interface IdentityProviderInput {
   token_endpoint?: string;
   jwks_uri?: string;
   userinfo_endpoint?: string;
-  /** Discovery-only - no admin form field sets this directly, see resolveEndpoints. */
-  end_session_endpoint?: string;
+  /** Discovery-only - no admin form field sets this directly, see resolveEndpoints.
+   * Tri-state: undefined preserves whatever is already stored (the normal save path never
+   * touches this field at all); explicit null clears it (post-discovery, when the provider no
+   * longer advertises one - see updateIdentityProvider/updateIdentityProviderWithMappings). */
+  end_session_endpoint?: string | null;
   claim_email?: string;
   claim_name?: string;
   claim_groups?: string;
@@ -249,7 +252,13 @@ export async function updateIdentityProvider(
     token_endpoint: input.token_endpoint ?? existing.token_endpoint,
     jwks_uri: input.jwks_uri ?? existing.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
-    end_session_endpoint: input.end_session_endpoint ?? existing.end_session_endpoint ?? undefined,
+    // Explicit null must win over existing (a caller - handleApiDiscoverProvider - that just
+    // re-ran discovery and found no endpoint), not fall through to it like ?? would: only true
+    // omission (undefined, every other caller) means "preserve whatever is already stored."
+    end_session_endpoint:
+      input.end_session_endpoint === undefined
+        ? existing.end_session_endpoint ?? undefined
+        : input.end_session_endpoint,
   });
 
   return updateIdentityProviderWithEndpoints(prisma, id, input, endpoints, existing);
@@ -381,7 +390,13 @@ export async function updateIdentityProviderWithMappings(
     token_endpoint: input.token_endpoint ?? existing.token_endpoint,
     jwks_uri: input.jwks_uri ?? existing.jwks_uri,
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
-    end_session_endpoint: input.end_session_endpoint ?? existing.end_session_endpoint ?? undefined,
+    // Explicit null must win over existing (a caller - handleApiDiscoverProvider - that just
+    // re-ran discovery and found no endpoint), not fall through to it like ?? would: only true
+    // omission (undefined, every other caller) means "preserve whatever is already stored."
+    end_session_endpoint:
+      input.end_session_endpoint === undefined
+        ? existing.end_session_endpoint ?? undefined
+        : input.end_session_endpoint,
   });
   return prisma.$transaction(async (tx) => {
     const provider = await updateIdentityProviderWithEndpoints(tx, id, input, endpoints, existing);

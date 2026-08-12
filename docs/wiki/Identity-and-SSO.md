@@ -89,7 +89,7 @@ A local password always keeps working as a fallback (unless the account has no l
    If your identity provider validates post-logout redirect targets (most do), also register
    `https://<your-instance-url>/login` there, alongside the callback URI. Admitto's **Log out**
    redirects through the identity provider's own logout when it advertises one via discovery, then
-   back to that address — without this registered, the provider will refuse the redirect and the
+   back to that address; without this registered, the provider will refuse the redirect and the
    user lands on a provider-side error instead of back at Admitto.
 5. Use **Discover** (fills the endpoint fields automatically from the Issuer URL) and **Test
    connection** before finishing configuration.
@@ -125,11 +125,13 @@ The test account can sign in through the configured provider and receives only t
 ## Important decisions
 
 - OIDC and local sign-in are separate authentication methods.
-- An account created automatically on someone's first OIDC sign-in has no local password at all —
-  for that account, OIDC is the only way in until an admin sets one, or they set one themselves,
-  e.g. when unlinking SSO from **My account**.
+- An account created automatically on someone's first OIDC sign-in has no local password at all,
+  so unlinking SSO from **My account** requires proving identity first (TOTP, or an existing
+  password). An account with neither cannot self-service unlink; it is directed to ask a
+  superadmin, who can set a new password for it from Users and roles → the account's **Unlink
+  identity provider** action.
 - Signing out ends the session at the identity provider too, when it advertised a logout endpoint
-  during **Discover**. If it didn't (or the provider was configured before this existed — re-run
+  during **Discover**. If it didn't (or the provider was configured before this existed, re-run
   **Discover** to pick it up), signing out only ends the local Admitto session, same as before.
 - A group mapping can add or remove scoped roles on later sign-ins. Manual assignments are not treated as provider-owned grants.
 - A signed-in user's display name and phone number re-sync from the provider on every sign-in. A superadmin's own manual edit to either field in Users and Roles Administration takes priority and is not overwritten by a later sign-in.

@@ -324,6 +324,25 @@ describe("html-routes", () => {
     expect(mockLogout).toHaveBeenCalled();
   });
 
+  it("still completes local logout when resolving the OIDC end-session redirect fails (e.g. a transient DB error)", async () => {
+    mockValidatePartial.mockResolvedValue({
+      userId: "u1",
+      sessionId: "s1",
+      stage: "full",
+      session: { id: "s1", auth_method: "oidc", oidc_provider_id: "idp-1" },
+    } as unknown as Awaited<ReturnType<typeof validatePartialSession>>);
+    mockEndSessionRedirect.mockRejectedValue(new Error("boom"));
+
+    const res = await makeApp().request("/logout", {
+      method: "POST",
+      headers: { Cookie: "admitto_session=tok" },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+    expect(mockLogout).toHaveBeenCalled();
+  });
+
   it("still revokes the session and redirects to /login when baseUrl is null (Instance URL not configured yet), even for an OIDC session", async () => {
     mockValidatePartial.mockResolvedValue({
       userId: "u1",
