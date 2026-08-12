@@ -879,7 +879,7 @@ function AttendeeOverviewTab({
               )}
               {detail.wallet_pass.registration_checked_at && (
                 <div className="attendee-detail-row">
-                  <span>Wallet status as of</span>
+                  <span>Last system status update</span>
                   <span className="mono">
                     {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
                   </span>
