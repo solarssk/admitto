@@ -251,14 +251,12 @@ function resolveEndSessionEndpointOnUpdate(
     : input.end_session_endpoint;
 }
 
-/**
- * Update provider — omitted client_secret leaves existing encrypted value unchanged (mailer pattern).
- */
-export async function updateIdentityProvider(
+/** Shared by updateIdentityProvider and updateIdentityProviderWithMappings (SonarCloud duplication). */
+async function resolveExistingAndEndpoints(
   prisma: PrismaClient | Prisma.TransactionClient,
   id: string,
   input: IdentityProviderInput,
-): Promise<IdentityProvider> {
+): Promise<{ existing: IdentityProvider; endpoints: ResolvedEndpoints }> {
   const existing = await prisma.identityProvider.findUniqueOrThrow({ where: { id } });
   const endpoints = await resolveEndpoints({
     ...input,
@@ -269,7 +267,18 @@ export async function updateIdentityProvider(
     userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
     end_session_endpoint: resolveEndSessionEndpointOnUpdate(input, existing),
   });
+  return { existing, endpoints };
+}
 
+/**
+ * Update provider — omitted client_secret leaves existing encrypted value unchanged (mailer pattern).
+ */
+export async function updateIdentityProvider(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  id: string,
+  input: IdentityProviderInput,
+): Promise<IdentityProvider> {
+  const { existing, endpoints } = await resolveExistingAndEndpoints(prisma, id, input);
   return updateIdentityProviderWithEndpoints(prisma, id, input, endpoints, existing);
 }
 
@@ -391,16 +400,7 @@ export async function updateIdentityProviderWithMappings(
   input: IdentityProviderInput,
   mappings: GroupRoleMappingInput[],
 ): Promise<IdentityProvider> {
-  const existing = await prisma.identityProvider.findUniqueOrThrow({ where: { id } });
-  const endpoints = await resolveEndpoints({
-    ...input,
-    issuer: input.issuer || existing.issuer,
-    authorization_endpoint: input.authorization_endpoint ?? existing.authorization_endpoint,
-    token_endpoint: input.token_endpoint ?? existing.token_endpoint,
-    jwks_uri: input.jwks_uri ?? existing.jwks_uri,
-    userinfo_endpoint: input.userinfo_endpoint ?? existing.userinfo_endpoint ?? undefined,
-    end_session_endpoint: resolveEndSessionEndpointOnUpdate(input, existing),
-  });
+  const { existing, endpoints } = await resolveExistingAndEndpoints(prisma, id, input);
   return prisma.$transaction(async (tx) => {
     const provider = await updateIdentityProviderWithEndpoints(tx, id, input, endpoints, existing);
     await replaceProviderGroupMappings(tx, provider.id, mappings);
