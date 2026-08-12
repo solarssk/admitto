@@ -91,9 +91,8 @@ describe("looksLikeInternalToken", () => {
 });
 
 describe("buildQrPayload", () => {
-  it("builds internal QR payload from base URL and token", () => {
-    expect(buildQrPayload("internal", { baseUrl: "https://example.com/", token: "TOKEN" }))
-      .toBe("https://example.com/t/TOKEN");
+  it("returns the raw internal token, not a URL", () => {
+    expect(buildQrPayload("internal", { token: "TOKEN" })).toBe("TOKEN");
   });
 
   it("returns agency payload verbatim", () => {

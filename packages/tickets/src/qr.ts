@@ -1,5 +1,4 @@
 import QRCode from "qrcode";
-import { buildTicketUrl } from "./url.js";
 
 /** Generate a PNG QR code for the given payload. Returns a Buffer. */
 export async function generateQrPng(payload: string): Promise<Buffer> {
@@ -7,20 +6,20 @@ export async function generateQrPng(payload: string): Promise<Buffer> {
 }
 
 /**
- * Build the QR payload string:
- *   Mode A — ticket URL (https://<host>/t/<token>), camera-friendly.
+ * Build the QR/barcode payload string:
+ *   Mode A — the raw internal token, not a URL. Only Admitto's own scanners (check-in,
+ *   resolveTicket) ever read this value, so there's no benefit to it being independently
+ *   openable, and a shorter payload scans more reliably than a full URL would.
  *   Mode B — original agency qr_payload verbatim.
  */
-export function buildQrPayload(mode: "internal", params: { baseUrl: string; token: string }): string;
+export function buildQrPayload(mode: "internal", params: { token: string }): string;
 export function buildQrPayload(mode: "agency", params: { agencyPayload: string }): string;
 export function buildQrPayload(
   mode: "internal" | "agency",
-  params: { baseUrl: string; token: string } | { agencyPayload: string },
+  params: { token: string } | { agencyPayload: string },
 ): string {
   if (mode === "internal") {
-    const internal = params as { baseUrl: string; token: string };
-    return buildTicketUrl(internal.baseUrl, internal.token);
+    return (params as { token: string }).token;
   }
-  const agency = params as { agencyPayload: string };
-  return agency.agencyPayload;
+  return (params as { agencyPayload: string }).agencyPayload;
 }

@@ -732,7 +732,7 @@ export function createApp(options: CreateAppOptions = {}) {
         console.error(`Internal attendee ${attendee.id} missing token for wallet QR`);
         return c.redirect(`${backHref}?walletError=1`, 302);
       }
-      qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
+      qrPayload = buildQrPayload("internal", { token: internalToken });
     } else {
       const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
       if (!agencyPayload) {
@@ -906,7 +906,7 @@ export function createApp(options: CreateAppOptions = {}) {
         console.error(`Internal attendee ${attendee.id} missing token for ticket page QR`);
         return renderPublicHtmlError(c, 500);
       }
-      qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
+      qrPayload = buildQrPayload("internal", { token: internalToken });
     } else {
       const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
       if (!agencyPayload) {
@@ -2043,7 +2043,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
     try {
       const png = await generateQrPng(
-        buildQrPayload("internal", { baseUrl, token }),
+        buildQrPayload("internal", { token }),
       );
       c.header("Content-Type", "image/png");
       c.header("Cache-Control", "private, max-age=300");

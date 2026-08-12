@@ -201,7 +201,7 @@ describe("On-demand wallet routes", () => {
         addressRegionLabel: "Mazovia",
         addressCountryLabel: "Poland",
         userProvidedId: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
-        barcodeValue: `https://tickets.example.com/t/${MODE_A_TOKEN}`,
+        barcodeValue: MODE_A_TOKEN,
       }),
     );
 
@@ -245,7 +245,7 @@ describe("On-demand wallet routes", () => {
         addressStreetLabel: undefined,
         eventLocationLabel: undefined,
         userProvidedId: `admitto:${EVENT_ID_NO_LOCATION}:${ATTENDEE_NO_LOCATION_ID}`,
-        barcodeValue: `https://tickets.example.com/t/${NO_LOCATION_TOKEN}`,
+        barcodeValue: NO_LOCATION_TOKEN,
       }),
     );
   });
