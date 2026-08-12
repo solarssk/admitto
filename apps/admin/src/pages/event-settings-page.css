@@ -210,11 +210,10 @@
   margin: 0;
 }
 
+/* Overrides .settings-row's default flex-start so "Add field" centers against the
+   full two-line label+description block, not just the first line. */
 .wallet-field-mapping__header {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
 }
 
 .wallet-field-mapping__row {
@@ -229,6 +228,26 @@
   .wallet-field-mapping__row {
     grid-template-columns: 1fr;
   }
+}
+
+/* Apple/Google Wallet toggle rows: a colored circular icon badge spanning both the
+   label and description lines, matching the icon-badge pattern used in modal headers
+   (e.g. requirements.css .event-item-modal__title i) instead of a small inline glyph. */
+.wallet-platform-row {
+  gap: var(--space-3);
+}
+
+.wallet-platform-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1.25rem;
 }
 
 /* Status card: three short items, so use three columns on wide screens

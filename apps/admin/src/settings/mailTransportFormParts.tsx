@@ -198,6 +198,7 @@ export function makeSecretHandlers(
 
 export function SecretFieldRow({
   label,
+  hint,
   field,
   edit,
   onReplace,
@@ -207,6 +208,8 @@ export function SecretFieldRow({
   disabled = false,
 }: Readonly<{
   label: string;
+  /** Optional visible hint below the field, same placement/styling as Input's own `hint` prop. */
+  hint?: string;
   field: MailSecretFieldDto;
   edit: SecretEdits[keyof SecretEdits];
   onReplace: () => void;
@@ -316,6 +319,7 @@ export function SecretFieldRow({
             </>
           )}
         </div>
+        {hint && <span className="at-hint">{hint}</span>}
       </div>
     </div>
   );

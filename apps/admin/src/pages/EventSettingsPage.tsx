@@ -110,12 +110,17 @@ const STATUS_HINT = "Current event status and ownership.";
 const EVENT_LOGO_HINT =
   "Overrides the organisation logo for this event.";
 const DANGER_ZONE_HINT = "Actions that change event data or availability.";
-const WALLET_CARD_HINT =
+const WALLET_CARD_HINT = "Per-event Apple/Google Wallet pass configuration.";
+const WALLET_CARD_INTRO =
   "Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and template are specific to this event, nothing is shared with other events.";
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
 const WALLET_TEMPLATE_HINT =
   "From the PassCreator dashboard: which pass design this event's attendees get. Leave blank to keep wallet disabled for this event.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
+const WALLET_FIELD_MAPPING_DEFAULT_DESC =
+  "Using the default mapping: name → full name, eventDate → event date, eventHours → event hours, eventPlace → event location, ticketType → ticket type.";
+const WALLET_FIELD_MAPPING_CUSTOM_DESC =
+  "Overrides which PassCreator field key receives which attendee or event value.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -1332,6 +1337,7 @@ export function EventSettingsPage() {
             }
           >
             <div className="settings-card-stack">
+              <p className="settings-card-intro">{WALLET_CARD_INTRO}</p>
               <div className="mail-transport-section">
                 <div className="mail-field-row">
                   <div className="at-field">
@@ -1363,54 +1369,44 @@ export function EventSettingsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="mail-field-row">
-                  <div className="at-field mail-secret-field">
-                    <span className="at-label">
-                      <HintLabel hint={WALLET_API_KEY_HINT}>API key</HintLabel>
-                    </span>
-                    <SecretFieldRow
-                      label="API key"
-                      field={{
-                        set: event?.wallet_api_key?.configured ?? false,
-                        masked: event?.wallet_api_key?.configured ? "••••" : null,
-                        source: "db",
-                        locked: false,
-                      }}
-                      edit={form.walletApiKeyEdit}
-                      disabled={isArchived || saving}
-                      onReplace={() =>
-                        setForm({ ...form, walletApiKeyEdit: { mode: "replace", value: "" } })
-                      }
-                      onClear={() => setForm({ ...form, walletApiKeyEdit: { mode: "clear", value: "" } })}
-                      onValueChange={(value) =>
-                        setForm({ ...form, walletApiKeyEdit: { mode: "replace", value } })
-                      }
-                      onCancel={() => setForm({ ...form, walletApiKeyEdit: { mode: "idle", value: "" } })}
-                    />
-                  </div>
-                </div>
-                <div className="mail-field-row">
-                  <div className="at-field">
-                    <span className="at-label">
-                      <HintLabel hint={WALLET_TEMPLATE_HINT}>Template ID</HintLabel>
-                    </span>
-                    <Input
-                      id="event-wallet-template-id"
-                      value={form.walletTemplateId}
-                      disabled={isArchived || saving}
-                      placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-                      {...NO_AUTOFILL_PROPS}
-                      onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
-                    />
-                  </div>
-                </div>
+                <SecretFieldRow
+                  label="API key"
+                  hint={WALLET_API_KEY_HINT}
+                  field={{
+                    set: event?.wallet_api_key?.configured ?? false,
+                    masked: event?.wallet_api_key?.configured ? "••••" : null,
+                    source: "db",
+                    locked: false,
+                  }}
+                  edit={form.walletApiKeyEdit}
+                  disabled={isArchived || saving}
+                  onReplace={() =>
+                    setForm({ ...form, walletApiKeyEdit: { mode: "replace", value: "" } })
+                  }
+                  onClear={() => setForm({ ...form, walletApiKeyEdit: { mode: "clear", value: "" } })}
+                  onValueChange={(value) =>
+                    setForm({ ...form, walletApiKeyEdit: { mode: "replace", value } })
+                  }
+                  onCancel={() => setForm({ ...form, walletApiKeyEdit: { mode: "idle", value: "" } })}
+                />
+                <Input
+                  id="event-wallet-template-id"
+                  label="Template ID"
+                  value={form.walletTemplateId}
+                  disabled={isArchived || saving}
+                  placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                  hint={WALLET_TEMPLATE_HINT}
+                  {...NO_AUTOFILL_PROPS}
+                  onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
+                />
               </div>
               <div className="smtp-connection-tls-pair">
-                <div className="settings-row smtp-connection-tls-row">
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <span className="wallet-platform-row__icon">
+                    <i className="ti ti-brand-apple" aria-hidden="true" />
+                  </span>
                   <div className="settings-row__text">
-                    <strong>
-                      <i className="ti ti-brand-apple" aria-hidden="true" /> Apple Wallet
-                    </strong>
+                    <strong>Apple Wallet</strong>
                     <p>Shows the Add to Apple Wallet button on this event's tickets.</p>
                   </div>
                   <Switch
@@ -1421,11 +1417,12 @@ export function EventSettingsPage() {
                     onChange={(e) => setForm({ ...form, walletAppleEnabled: e.target.checked })}
                   />
                 </div>
-                <div className="settings-row smtp-connection-tls-row">
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <span className="wallet-platform-row__icon">
+                    <i className="ti ti-brand-google" aria-hidden="true" />
+                  </span>
                   <div className="settings-row__text">
-                    <strong>
-                      <i className="ti ti-brand-google" aria-hidden="true" /> Google Wallet
-                    </strong>
+                    <strong>Google Wallet</strong>
                     <p>Shows the Add to Google Wallet button on this event's tickets.</p>
                   </div>
                   <Switch
@@ -1438,10 +1435,15 @@ export function EventSettingsPage() {
                 </div>
               </div>
               <div className="wallet-field-mapping">
-                <div className="wallet-field-mapping__header">
-                  <HintLabel hint="Optional. Overrides which PassCreator field key gets which attendee/event value. Leave empty to use the default mapping (name, event date, event hours, event place, ticket type).">
-                    Field mapping
-                  </HintLabel>
+                <div className="settings-row wallet-field-mapping__header">
+                  <div className="settings-row__text">
+                    <strong>Field mapping</strong>
+                    <p>
+                      {form.walletFieldMapping.length === 0
+                        ? WALLET_FIELD_MAPPING_DEFAULT_DESC
+                        : WALLET_FIELD_MAPPING_CUSTOM_DESC}
+                    </p>
+                  </div>
                   <Button
                     type="button"
                     variant="secondary"
@@ -1457,9 +1459,7 @@ export function EventSettingsPage() {
                     Add field
                   </Button>
                 </div>
-                {form.walletFieldMapping.length === 0 ? (
-                  <p className="at-hint">Using the default mapping.</p>
-                ) : (
+                {form.walletFieldMapping.length > 0 &&
                   form.walletFieldMapping.map((row, index) => (
                     <div className="wallet-field-mapping__row" key={index}>
                       <SearchableSelect
@@ -1510,8 +1510,7 @@ export function EventSettingsPage() {
                         icon={<i className="ti ti-trash" aria-hidden="true" />}
                       />
                     </div>
-                  ))
-                )}
+                  ))}
               </div>
             </div>
           </Card>
