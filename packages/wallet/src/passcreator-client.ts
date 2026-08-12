@@ -145,25 +145,26 @@ export class PassCreatorClient implements WalletPassProvider {
   /** Shared by findByUserProvidedId and getRegistrationStatus - same search endpoint, different
    * fields of the same row.
    *
-   * PassCreator's search-by-userProvidedId has been observed (live, 2026-08-12) returning a
-   * DIFFERENT pass than the one queried for - same template, wrong attendee, reproduced
-   * deterministically across repeat calls and a fresh process, while a direct fetch by
-   * identifier for the same pass was correct. Root cause is on PassCreator's side (their search
-   * index, not caching - repeat calls all agreed on the same wrong answer). Since this method
-   * feeds both duplicate-detection and per-attendee registration data, silently trusting a
-   * mismatched row would leak one attendee's wallet status onto another attendee's card - so the
-   * row's own echoed userProvidedId is checked against what was actually queried, and anything
-   * else is treated as no-match rather than returned. */
+   * Root cause confirmed live, 2026-08-13: GET /api/v3/pass?userProvidedId=X does NOT filter by
+   * X at all - it returns every pass under the account/template (same "count" regardless of which
+   * userProvidedId is queried), newest-created first. Blindly trusting `rows[0]` (the original
+   * implementation) therefore returned whichever pass was most recently created, not the one
+   * actually queried for - it only looked correct in early testing because the queried pass
+   * happened to also be the newest one at the time. Fixed by scanning the full (unfiltered) array
+   * for the row whose own echoed userProvidedId actually matches the query, instead of assuming
+   * position 0 is correct. Still a real PassCreator-side bug worth reporting (the parameter should
+   * filter, and a large account's full pass list could exceed a single page's results - see the
+   * search bug report), but this is the correct client-side handling regardless of whether/when
+   * they fix it. */
   private async searchByUserProvidedId(userProvidedId: string): Promise<PassCreatorSearchRow | null> {
     const rows = await this.request<PassCreatorSearchRow[]>(
       "GET",
       `/api/v3/pass?userProvidedId=${encodeURIComponent(userProvidedId)}`,
     );
-    const row = rows[0] ?? null;
-    if (!row) return null;
-    if (row.userProvidedId !== userProvidedId) {
+    const row = rows.find((r) => r.userProvidedId === userProvidedId);
+    if (!row) {
       console.error(
-        `PassCreator search returned a mismatched pass: queried userProvidedId=${userProvidedId}, got identifier=${row.identifier} userProvidedId=${row.userProvidedId ?? "(missing)"}`,
+        `PassCreator search returned no row matching userProvidedId=${userProvidedId} (received ${rows.length} unfiltered row(s))`,
       );
       return null;
     }

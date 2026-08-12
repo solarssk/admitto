@@ -347,7 +347,7 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
     expect(result).toMatchObject({ appleUrl: "", androidUrl: "" });
   });
 
-  it("treats a row whose echoed userProvidedId doesn't match the query as no match (PassCreator search mismatch, live 2026-08-12)", async () => {
+  it("returns null and logs when no row in the (unfiltered) response matches the query (PassCreator search doesn't actually filter by userProvidedId, live 2026-08-13)", async () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const fetchMock = vi.fn(async () =>
       jsonResponse(200, {
@@ -358,8 +358,24 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.findByUserProvidedId("admitto:event1:attendee1");
     expect(result).toBeNull();
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("mismatched pass"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("no row matching"));
     consoleErrorSpy.mockRestore();
+  });
+
+  it("finds the matching row even when it isn't first in the (unfiltered) response - GET /api/v3/pass?userProvidedId=X returns every pass under the template regardless of X, newest first, not just X's own pass (live 2026-08-13)", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [
+          { identifier: "pass-newest", userProvidedId: "admitto:event1:someone-else", linkToPassPage: "https://pc.test/p/newest" },
+          { identifier: "pass-1", userProvidedId: "admitto:event1:attendee1", linkToPassPage: "https://pc.test/p/pass-1" },
+          { identifier: "pass-oldest", userProvidedId: "admitto:event1:yet-another", linkToPassPage: "https://pc.test/p/oldest" },
+        ],
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.findByUserProvidedId("admitto:event1:attendee1");
+    expect(result?.providerPassId).toBe("pass-1");
   });
 });
 
@@ -419,7 +435,7 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
     });
   });
 
-  it("treats a row whose echoed userProvidedId doesn't match the query as no match (PassCreator search mismatch, live 2026-08-12)", async () => {
+  it("returns null and logs when no row in the (unfiltered) response matches the query (PassCreator search doesn't actually filter by userProvidedId, live 2026-08-13)", async () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const fetchMock = vi.fn(async () =>
       jsonResponse(200, {
@@ -436,7 +452,22 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.getRegistrationStatus("admitto:event1:attendee1");
     expect(result).toBeNull();
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("mismatched pass"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("no row matching"));
     consoleErrorSpy.mockRestore();
+  });
+
+  it("finds the matching row even when it isn't first in the (unfiltered) response (live 2026-08-13)", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [
+          { identifier: "pass-newest", userProvidedId: "admitto:event1:someone-else", noOfActiveRegistrationsGoogleWallet: 9 },
+          { identifier: "pass-1", userProvidedId: "admitto:event1:attendee1", noOfActiveRegistrationsGoogleWallet: 1 },
+        ],
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
+    expect(result?.googleActiveRegistrations).toBe(1);
   });
 });
