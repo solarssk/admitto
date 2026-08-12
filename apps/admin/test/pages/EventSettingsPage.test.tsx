@@ -995,6 +995,57 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByRole("button", { name: "Set" })).toBeTruthy();
   });
 
+  it("does not flag unsaved changes from clicking Set on the API key alone (no value typed)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "real-value" } });
+    expect(await screen.findByText("Unsaved changes")).toBeTruthy();
+  });
+
+  it("blocks Test connection with a clear message while the API key is queued for clearing", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /API key will be cleared on save/,
+      );
+    });
+    expect(testWalletConnection).not.toHaveBeenCalled();
+  });
+
+  it("disables Test connection on an archived event", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    renderSettings("/admin/events/evt-2/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(screen.getByRole("button", { name: "Test connection" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
+
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();

@@ -119,7 +119,7 @@ const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass prov
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
-  "Optional. Overrides which PassCreator field key receives which attendee or event value.";
+  "Optional. Replaces the default mapping entirely - add every field your template needs, not just the ones you want to change.";
 const WALLET_FIELD_MAPPING_DEFAULT_NOTICE =
   "Using the default mapping: name → full name, eventDate → event date, eventHours → event hours, eventPlace → event location, ticketType → ticket type.";
 
@@ -784,8 +784,23 @@ export function EventSettingsPage() {
     [setSearchParams, isSa],
   );
 
-  const dirty =
-    form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
+  // Derived from buildSettingsPatch's own result, not a raw form/original diff - an in-progress
+  // secret edit (e.g. clicking "Set" on the wallet API key without typing a value) changes
+  // form.walletApiKeyEdit.mode without producing anything buildSettingsPatch would actually send.
+  // A raw JSON diff flagged the page dirty in that state forever: Save's own "nothing to send"
+  // early return (below) never resets form/original, so the unsaved-changes banner, the
+  // beforeunload warning, and the navigation blocker never cleared.
+  // buildSettingsPatch can throw mid-typing (e.g. an invalid capacity value) - this runs on every
+  // render, not just on Save, so a thrown validation error must not crash the page. Fail safe:
+  // treat "couldn't tell" as dirty, same as the raw diff this replaced would have.
+  let dirty = false;
+  if (form !== null && original !== null) {
+    try {
+      dirty = Object.keys(buildSettingsPatch(form, original)).length > 0;
+    } catch {
+      dirty = true;
+    }
+  }
   // Combines the General form's own dirty state with the Mail and Location tabs' — navigating
   // away or running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits, pending secret replacements, or a pending pin move
@@ -886,6 +901,10 @@ export function EventSettingsPage() {
     const templateId = form.walletTemplateId.trim();
     if (!templateId) {
       addToast("Enter a Template ID before testing the connection.", "error");
+      return;
+    }
+    if (form.walletApiKeyEdit.mode === "clear") {
+      addToast("The API key will be cleared on save - set a new one to test the connection.", "error");
       return;
     }
     setWalletTesting(true);
@@ -1390,7 +1409,9 @@ export function EventSettingsPage() {
                       <Button
                         type="button"
                         variant="secondary"
-                        disabled={walletTesting || saving || !form.walletTemplateId.trim()}
+                        disabled={
+                          isArchived || walletTesting || saving || !form.walletTemplateId.trim()
+                        }
                         onClick={() => void handleTestWallet()}
                         icon={<i className="ti ti-plug" aria-hidden="true" />}
                       >

@@ -1235,6 +1235,17 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(res.status).toBe(403);
   });
 
+  it("POST /wallet/test returns 403 event_archived for an archived event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "x", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("event_archived");
+  });
+
   it("returns 400 when slug is sent (strict schema)", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",

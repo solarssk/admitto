@@ -1020,8 +1020,11 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     guardArchivedEvent((c) => handlePatchEvent(c, db)),
   );
-  app.post("/api/admin/events/:eventId/wallet/test", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostEventWalletTest(c, db),
+  app.post(
+    "/api/admin/events/:eventId/wallet/test",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handlePostEventWalletTest(c, db)),
   );
   app.get("/api/admin/events/:eventId/mail-settings", staffAdminGate, (c) =>
     handleGetEventMailSettings(c, db),

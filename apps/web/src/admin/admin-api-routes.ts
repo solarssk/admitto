@@ -66,7 +66,6 @@ type EventJsonRow = {
   timezone: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
-  wallet_template_id: string | null;
   location: string | null;
   has_coordinates?: boolean;
   map_latitude?: number | null;
@@ -123,7 +122,6 @@ export function serializeEventDto(
     timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
     event_hours_start: event.event_hours_start,
     event_hours_end: event.event_hours_end,
-    wallet_template_id: event.wallet_template_id,
     location: event.location,
     has_coordinates: event.has_coordinates === true,
     map_preview_path: mapPreviewPath,

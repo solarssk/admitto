@@ -50,8 +50,6 @@ export interface EventDto {
   /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
   event_hours_start: string | null;
   event_hours_end: string | null;
-  /** PassCreator template for this event's wallet passes (ADR 0041); null = wallet not configured. */
-  wallet_template_id: string | null;
   location: string | null;
   /** True when EventLocation has both latitude and longitude. */
   has_coordinates?: boolean;
