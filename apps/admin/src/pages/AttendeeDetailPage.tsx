@@ -604,11 +604,15 @@ function walletRegistrationLabel(active: number | null, inactive: number | null)
 
 /** PassCreator's firstDownloadedAt comes back as "YYYY-MM-DD HH:MM:SS" with no offset - confirmed
  * UTC by cross-checking a live pass's raw value against PassCreator's own dashboard, which shows
- * the same moment already converted to the viewer's local time (PO review, 2026-08-13). Appending
- * "Z" makes it a real ISO instant so it can go through the same formatEventDateTime pipeline as
- * every other wallet timestamp instead of being shown as an unparsed raw string. */
-function formatFirstDownloadedAt(raw: string, timezone: string): string {
-  return formatEventDateTime(`${raw.replace(" ", "T")}Z`, timezone);
+ * the same moment already converted to the viewer's local time (PO review, 2026-08-13). Shown in
+ * UTC, not the viewer's browser zone (unlike issued_at/voided_at/etc below) - this is the
+ * ATTENDEE's own action on their own device, in a timezone we have no way to know (PassCreator's
+ * API doesn't expose it), so converting to the admin's own zone would misrepresent it as the
+ * admin's or the attendee's local time when it's neither (PO review). Appending "Z" makes it a
+ * real ISO instant so it can go through the same formatEventDateTime pipeline as every other
+ * wallet timestamp instead of being shown as an unparsed raw string. */
+function formatFirstDownloadedAt(raw: string): string {
+  return formatEventDateTime(`${raw.replace(" ", "T")}Z`, "UTC");
 }
 
 function itemStateLabel(state: string): string {
@@ -841,7 +845,7 @@ function AttendeeOverviewTab({
                 <div className="attendee-detail-row">
                   <span>First downloaded</span>
                   <span className="mono">
-                    {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at, getBrowserTimeZone())}
+                    {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at)}
                   </span>
                 </div>
               )}
