@@ -949,7 +949,7 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
-  it("appends a new field mapping row at the end, not the middle, of an existing 7-row mapping", async () => {
+  it("saves a newly added field mapping row last, regardless of where it displays", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       wallet_template_id: "tmpl-1",
@@ -974,9 +974,13 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(valueButtons[0]!);
     fireEvent.click(screen.getByRole("button", { name: "Event name" }));
 
-    const keyInputs = screen.getAllByLabelText("PassCreator field key");
-    expect(keyInputs).toHaveLength(8);
-    fireEvent.change(keyInputs[7]!, { target: { value: "test" } });
+    // Rows display grouped by category (event_name sorts among the other event fields, not at
+    // the DOM's tail), so the new row's own key input is found by proximity to its now-selected
+    // "Event name" trigger, not by raw position.
+    const eventNameTrigger = screen.getByRole("button", { name: "Value, Event name" });
+    const newRow = eventNameTrigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const newRowKeyInput = within(newRow).getByLabelText("PassCreator field key");
+    fireEvent.change(newRowKeyInput, { target: { value: "test" } });
 
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
@@ -993,6 +997,27 @@ describe("EventSettingsPage tabs", () => {
       "ticketType",
       "eventLocation",
       "test",
+    ]);
+  });
+
+  it("displays field mapping rows grouped by category, not insertion order", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      // Inserted ticket type, then attendee name, then event date - category order puts
+      // attendee first, then event, then ticket, regardless of this insertion order.
+      wallet_field_mapping: { ticketType: "ticket_type", name: "full_name", eventDate: "event_date" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const triggers = screen.getAllByRole("button", { name: /^Value, / });
+    expect(triggers.map((el) => el.getAttribute("aria-label"))).toEqual([
+      "Value, Attendee full name",
+      "Value, Event date",
+      "Value, Ticket type",
     ]);
   });
 

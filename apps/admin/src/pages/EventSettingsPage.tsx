@@ -200,6 +200,19 @@ const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
   label: WALLET_PLACEHOLDER_LABELS[id],
 }));
 
+/** Renders field mapping rows grouped by category (attendee, event, notes, maps, address,
+ * ticket - WALLET_MAPPING_PLACEHOLDERS' own order) instead of insertion order, so a row's
+ * position is always determined by what it's mapped to, never by editing history. A row with no
+ * value picked yet (freshly added) sorts last, since it has no category to group under. Returns
+ * a new array - never mutates the form state array itself. */
+function sortWalletFieldMappingByCategory(rows: WalletFieldMappingRow[]): WalletFieldMappingRow[] {
+  const categoryRank = (value: string): number => {
+    const index = WALLET_MAPPING_PLACEHOLDERS.indexOf(value as (typeof WALLET_MAPPING_PLACEHOLDERS)[number]);
+    return index === -1 ? WALLET_MAPPING_PLACEHOLDERS.length : index;
+  };
+  return [...rows].sort((a, b) => categoryRank(a.value) - categoryRank(b.value));
+}
+
 function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
@@ -1543,7 +1556,7 @@ export function EventSettingsPage() {
                   <Notice variant="warning">{WALLET_FIELD_MAPPING_EMPTY_NOTICE}</Notice>
                 )}
                 {form.walletFieldMapping.length > 0 &&
-                  form.walletFieldMapping.map((row, index) => {
+                  sortWalletFieldMappingByCategory(form.walletFieldMapping).map((row) => {
                     // Options already picked by a *different* row are excluded, not just
                     // visually flagged - two rows both sending the same source value under
                     // different PassCreator keys is never intentional and only invites the kind
@@ -1569,8 +1582,8 @@ export function EventSettingsPage() {
                         onChange={(value) =>
                           setForm({
                             ...form,
-                            walletFieldMapping: form.walletFieldMapping.map((r, i) =>
-                              i === index ? { ...r, value } : r,
+                            walletFieldMapping: form.walletFieldMapping.map((r) =>
+                              r.id === row.id ? { ...r, value } : r,
                             ),
                           })
                         }
@@ -1586,8 +1599,8 @@ export function EventSettingsPage() {
                         onChange={(e) =>
                           setForm({
                             ...form,
-                            walletFieldMapping: form.walletFieldMapping.map((r, i) =>
-                              i === index ? { ...r, key: e.target.value } : r,
+                            walletFieldMapping: form.walletFieldMapping.map((r) =>
+                              r.id === row.id ? { ...r, key: e.target.value } : r,
                             ),
                           })
                         }
@@ -1600,7 +1613,7 @@ export function EventSettingsPage() {
                         onClick={() =>
                           setForm({
                             ...form,
-                            walletFieldMapping: form.walletFieldMapping.filter((_, i) => i !== index),
+                            walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
                           })
                         }
                         icon={<i className="ti ti-trash" aria-hidden="true" />}
