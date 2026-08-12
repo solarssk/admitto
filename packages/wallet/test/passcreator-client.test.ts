@@ -296,6 +296,7 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
         data: [
           {
             identifier: "pass-1",
+            userProvidedId: "admitto:event1:attendee1",
             linkToPassPage: "https://pc.test/p/pass-1",
             iPhoneUri: "a",
             androidUri: "b",
@@ -319,12 +320,33 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(200, {
         success: true,
-        data: [{ identifier: "pass-1", linkToPassPage: "https://pc.test/p/pass-1" }],
+        data: [
+          {
+            identifier: "pass-1",
+            userProvidedId: "admitto:event1:attendee1",
+            linkToPassPage: "https://pc.test/p/pass-1",
+          },
+        ],
       }),
     );
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.findByUserProvidedId("admitto:event1:attendee1");
     expect(result).toMatchObject({ appleUrl: "", androidUrl: "" });
+  });
+
+  it("treats a row whose echoed userProvidedId doesn't match the query as no match (PassCreator search mismatch, live 2026-08-12)", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [{ identifier: "pass-wrong-attendee", userProvidedId: "admitto:event1:someone-else" }],
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.findByUserProvidedId("admitto:event1:attendee1");
+    expect(result).toBeNull();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("mismatched pass"));
+    consoleErrorSpy.mockRestore();
   });
 });
 
@@ -338,6 +360,7 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
         data: [
           {
             identifier: "pass-1",
+            userProvidedId: "admitto:event1:attendee1",
             noOfActiveRegistrationsAppleWallet: 1,
             noOfInactiveRegistrationsAppleWallet: 0,
             noOfActiveRegistrationsGoogleWallet: 0,
@@ -367,7 +390,10 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
 
   it("defaults missing count fields to 0 and firstDownloadedAt to null", async () => {
     const fetchMock = vi.fn(async () =>
-      jsonResponse(200, { success: true, data: [{ identifier: "pass-1" }] }),
+      jsonResponse(200, {
+        success: true,
+        data: [{ identifier: "pass-1", userProvidedId: "admitto:event1:attendee1" }],
+      }),
     );
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.getRegistrationStatus("admitto:event1:attendee1");
@@ -378,5 +404,26 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
       googleInactiveRegistrations: 0,
       firstDownloadedAt: null,
     });
+  });
+
+  it("treats a row whose echoed userProvidedId doesn't match the query as no match (PassCreator search mismatch, live 2026-08-12)", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [
+          {
+            identifier: "pass-wrong-attendee",
+            userProvidedId: "admitto:event1:someone-else",
+            noOfActiveRegistrationsGoogleWallet: 1,
+          },
+        ],
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
+    expect(result).toBeNull();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("mismatched pass"));
+    consoleErrorSpy.mockRestore();
   });
 });

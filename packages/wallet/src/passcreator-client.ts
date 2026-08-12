@@ -25,6 +25,7 @@ type PassCreatorPassData = {
 
 type PassCreatorSearchRow = {
   identifier: string;
+  userProvidedId?: string;
   downloadPage?: string;
   linkToPassPage?: string;
   iPhoneUri?: string;
@@ -142,13 +143,31 @@ export class PassCreatorClient implements WalletPassProvider {
   }
 
   /** Shared by findByUserProvidedId and getRegistrationStatus - same search endpoint, different
-   * fields of the same row. */
+   * fields of the same row.
+   *
+   * PassCreator's search-by-userProvidedId has been observed (live, 2026-08-12) returning a
+   * DIFFERENT pass than the one queried for - same template, wrong attendee, reproduced
+   * deterministically across repeat calls and a fresh process, while a direct fetch by
+   * identifier for the same pass was correct. Root cause is on PassCreator's side (their search
+   * index, not caching - repeat calls all agreed on the same wrong answer). Since this method
+   * feeds both duplicate-detection and per-attendee registration data, silently trusting a
+   * mismatched row would leak one attendee's wallet status onto another attendee's card - so the
+   * row's own echoed userProvidedId is checked against what was actually queried, and anything
+   * else is treated as no-match rather than returned. */
   private async searchByUserProvidedId(userProvidedId: string): Promise<PassCreatorSearchRow | null> {
     const rows = await this.request<PassCreatorSearchRow[]>(
       "GET",
       `/api/v3/pass?userProvidedId=${encodeURIComponent(userProvidedId)}`,
     );
-    return rows[0] ?? null;
+    const row = rows[0] ?? null;
+    if (!row) return null;
+    if (row.userProvidedId !== userProvidedId) {
+      console.error(
+        `PassCreator search returned a mismatched pass: queried userProvidedId=${userProvidedId}, got identifier=${row.identifier} userProvidedId=${row.userProvidedId ?? "(missing)"}`,
+      );
+      return null;
+    }
+    return row;
   }
 
   /** Void/restore uses a separate, non-v3 endpoint (ADR 0041 §3) and returns 204, no body. */
