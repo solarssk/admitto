@@ -473,10 +473,9 @@ async function verifySelfUnlinkProof(
  *   keep IdP-managed access that a future group sync would otherwise revoke. An admin has to
  *   remove the grant (or the group membership) first.
  *
- * `new_password` is still always required, for the same reason the admin route requires it: a
- * JIT-provisioned SSO user's `password_hash` is an unknown placeholder, so there's no reliable
- * way to tell "already has a real local password" from "SSO-only" - always setting a new one in
- * the same transaction is the only safe option.
+ * `new_password` is still always required, same as the admin route: unlinking SSO always means
+ * consciously picking the local password this account will use going forward, whether or not one
+ * already existed - not silently reusing whatever was there before.
  */
 export async function handleDeleteAccountExternalIdentity(
   c: Context,

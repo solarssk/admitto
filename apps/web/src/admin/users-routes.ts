@@ -1011,11 +1011,9 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
 }
 
 /** DELETE /api/admin/users/:id/external-identity — unlink SSO, forcing local-password sign-in
- * from then on. A JIT-provisioned SSO user's password_hash is a random placeholder nobody knows
- * (see resolve-user.ts), and this route has no stored signal to tell that case apart from a user
- * who already has a real local password. So a new password is always required here and set in
- * the same transaction as the unlink - unlinking without one would silently lock the target out
- * with no working sign-in method at all. */
+ * from then on. A new password is always required and set in the same transaction as the unlink,
+ * whether or not the target already had a real local one - unlinking without one would silently
+ * lock the target out with no working sign-in method at all. */
 export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaClient): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
