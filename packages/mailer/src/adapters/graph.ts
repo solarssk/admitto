@@ -62,6 +62,9 @@ export class GraphAdapter implements MailerAdapter {
           client_secret: this.config.clientSecret,
           scope: "https://graph.microsoft.com/.default",
         }),
+        // A 307/308 redirect preserves method + body, which would replay client_secret against
+        // an unintended host - refuse to follow one rather than leaking it.
+        redirect: "error",
         // Match OIDC connection tests so hung token endpoints cannot stall live health.
         signal: AbortSignal.timeout(15_000),
       });
@@ -141,6 +144,9 @@ export class GraphAdapter implements MailerAdapter {
           message: graphMessage,
           saveToSentItems: this.config.saveToSentItems,
         }),
+        // Same reasoning as the token request above: a 307/308 would replay the bearer token
+        // and message body against an unintended host.
+        redirect: "error",
       });
 
       if (res.status === 202) {

@@ -123,7 +123,7 @@ describe("isAllowedDeclaredTileSize", () => {
 describe("renderStaticMapPng content-length accept path", () => {
   it("reads the body when Content-Length is present and within the cap", async () => {
     const tile = await solidTilePng({ r: 40, g: 50, b: 60 });
-    const fetchFn = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+    const fetchFn = vi.fn().mockImplementation(async (_input: string | URL, init?: RequestInit) => {
       // Works around a Node process bug where an unrelated undici import elsewhere corrupts
       // global fetch's gzip decompression over HTTP/2 - see NO_COMPRESSION_HEADERS' doc comment.
       expect(init?.headers).toMatchObject({ "Accept-Encoding": "identity" });

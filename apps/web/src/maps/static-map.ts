@@ -4,7 +4,7 @@
  * them with sharp, and burns a bottom-right attribution credit into the PNG (tickets and mail
  * have no separate HTML credit under the image). `MAP_TILE_URL` is operator-editable at
  * runtime (Organisation Settings → External services), so production tile fetches re-resolve
- * and pin each hop's connection via `withPinnedFetch` — same pattern and same reason as
+ * and pin each hop's connection via `withPinnedFetch`, same pattern and same reason as
  * open-meteo-client.ts / nominatim-provider.ts.
  */
 import { createHash } from "node:crypto";
