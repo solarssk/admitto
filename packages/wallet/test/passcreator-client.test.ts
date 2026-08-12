@@ -259,6 +259,32 @@ describe("PassCreatorClient void/restore", () => {
   });
 });
 
+describe("PassCreatorClient.deletePass", () => {
+  it("DELETEs the v3 pass endpoint", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/v3/pass/pass-1");
+      expect(init?.method).toBe("DELETE");
+      return new Response(null, { status: 204 });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.deletePass("pass-1")).resolves.toBeUndefined();
+  });
+
+  it("treats a 404 (already gone) as success", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.deletePass("already-gone")).resolves.toBeUndefined();
+  });
+
+  it("throws on other failures (e.g. unauthorized)", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.deletePass("pass-1")).rejects.toMatchObject({
+      code: "wallet_provider_unauthorized",
+    });
+  });
+});
+
 describe("PassCreatorClient.findByUserProvidedId", () => {
   it("returns the mapped result when found", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {

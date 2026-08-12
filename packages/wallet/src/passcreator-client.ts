@@ -91,6 +91,14 @@ export class PassCreatorClient implements WalletPassProvider {
     await this.setVoided(passUid, false);
   }
 
+  /** Idempotent (ADR 0041 §3): a pass already gone (404) counts as deleted, not an error. */
+  async deletePass(providerPassId: string): Promise<void> {
+    const res = await this.requestRaw("DELETE", `/api/v3/pass/${encodeURIComponent(providerPassId)}`);
+    if (!res.ok && res.status !== 404) {
+      throw this.toProviderError(res.status);
+    }
+  }
+
   /**
    * Probes the API key + template ID pair for "Test connection" (Event Settings -> Wallet).
    * Uses the v2 template-read endpoint (v3 has no template-management operations - ADR 0041 §3),

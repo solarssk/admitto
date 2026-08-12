@@ -11,5 +11,8 @@ export interface WalletPassProvider {
   updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult>;
   voidPass(passUid: string): Promise<void>;
   restorePass(passUid: string): Promise<void>;
+  /** Permanently removes the pass from the provider (e.g. GDPR/DSAR erasure) - idempotent, a
+   * pass that's already gone (404) is treated as success. */
+  deletePass(providerPassId: string): Promise<void>;
   findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null>;
 }
