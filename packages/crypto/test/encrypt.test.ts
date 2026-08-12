@@ -116,6 +116,39 @@ describe("encryptToString / decryptFromString", () => {
     parsed.ciphertext = raw.toString("base64");
     expect(() => decryptFromString(JSON.stringify(parsed))).toThrow(CryptoDecryptionError);
   });
+
+  it("normalizes invalid JSON into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString("not json at all {");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+    expect((caught as CryptoDecryptionError).code).toBe("decryption_failed");
+  });
+
+  it("normalizes a malformed payload shape into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString(JSON.stringify({ notAnEncryptedPayload: true }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+    expect((caught as CryptoDecryptionError).code).toBe("decryption_failed");
+  });
+
+  it("normalizes an unsupported keyVersion into CryptoDecryptionError", () => {
+    const payload = encrypt("secret");
+    let caught: unknown;
+    try {
+      decryptFromString(JSON.stringify({ ...payload, keyVersion: 99 }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+  });
 });
 
 describe("fail-fast — missing ENCRYPTION_KEY", () => {

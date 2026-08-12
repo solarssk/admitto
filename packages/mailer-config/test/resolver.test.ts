@@ -334,7 +334,7 @@ describe("resolveMailConfig — stored secret cannot be decrypted", () => {
       },
       prisma,
     );
-    // Corrupt the stored ciphertext so it fails AES-GCM authentication at read time —
+    // Corrupt the stored ciphertext so it fails AES-GCM authentication at read time:
     // simulates a rotated/mismatched ENCRYPTION_KEY or a tampered/corrupted DB value.
     const row = await prisma.mailSettings.findUniqueOrThrow({
       where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-r4" } },

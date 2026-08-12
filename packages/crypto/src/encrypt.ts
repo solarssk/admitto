@@ -86,9 +86,20 @@ export function encryptToString(plaintext: string): string {
 }
 
 export function decryptFromString(s: string): string {
-  const parsed: unknown = JSON.parse(s);
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error("Invalid encrypted payload: expected JSON object");
+  try {
+    const parsed: unknown = JSON.parse(s);
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("Invalid encrypted payload: expected JSON object");
+    }
+    return decrypt(parsed as EncryptedData);
+  } catch (err) {
+    // decrypt() already throws CryptoDecryptionError for AES-GCM failures - pass it through
+    // unchanged. Everything else here (invalid JSON, wrong shape, unsupported keyVersion) is
+    // also "this stored ciphertext cannot be read back", so normalize it the same way instead
+    // of leaking a JSON SyntaxError / plain Error past callers that branch on the typed error.
+    if (err instanceof CryptoDecryptionError) throw err;
+    throw new CryptoDecryptionError(
+      "Stored ciphertext is malformed or in an unsupported format and cannot be decrypted.",
+    );
   }
-  return decrypt(parsed as EncryptedData);
 }
