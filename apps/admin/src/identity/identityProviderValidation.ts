@@ -203,6 +203,16 @@ export type MappingScope = "instance" | "organization" | "event";
 export const MAPPING_ROLES: MappingRole[] = ["superadmin", "admin", "operator"];
 export const MAPPING_SCOPES: MappingScope[] = ["instance", "organization", "event"];
 
+/** The only scope each role can hold - operator is always event-scoped, admin always
+ * organization-scoped, superadmin always instance-scoped (same model UserEditModal.tsx's
+ * isRoleScopeReady already encodes for direct role grants). Scope is never chosen
+ * independently in the mapping repeater; it's always derived from the selected role. */
+export function scopeForRole(role: MappingRole): MappingScope {
+  if (role === "operator") return "event";
+  if (role === "admin") return "organization";
+  return "instance";
+}
+
 export interface MappingRow {
   /** Stable client-side id for repeater keys; never sent to the server
    * (mappingsToBody strips it). Lets React keep focus/cursor on the right row
@@ -212,6 +222,17 @@ export interface MappingRow {
   role: MappingRole;
   scope_type: MappingScope;
   scope_id: string;
+}
+
+/** Re-derive scope_type from role, clearing scope_id whenever the scope actually changes - an
+ * organization id is never a valid event id or vice versa, so it can't just carry over between
+ * two non-instance scopes either. Call whenever role changes and when a row is loaded from the
+ * server, so a mapping saved before this was enforced self-heals instead of surfacing as an
+ * error the operator can no longer fix through an independent scope picker. */
+export function withScopeForRole(row: MappingRow): MappingRow {
+  const scope_type = scopeForRole(row.role);
+  if (scope_type === row.scope_type) return row;
+  return { ...row, scope_type, scope_id: "" };
 }
 
 export interface MappingRowError {
@@ -234,7 +255,8 @@ export function newMappingId(): string {
 }
 
 export function emptyMappingRow(): MappingRow {
-  return { id: newMappingId(), group: "", role: "operator", scope_type: "instance", scope_id: "" };
+  const role: MappingRole = "operator";
+  return { id: newMappingId(), group: "", role, scope_type: scopeForRole(role), scope_id: "" };
 }
 
 /** Validate one mapping row. `scope_id` is required for organization/event scopes. */
@@ -247,9 +269,10 @@ export function validateMappingRow(row: MappingRow): MappingRowError {
   }
   if (!MAPPING_ROLES.includes(row.role)) {
     errors.role = "Pick a role.";
-  }
-  if (!MAPPING_SCOPES.includes(row.scope_type)) {
+  } else if (!MAPPING_SCOPES.includes(row.scope_type)) {
     errors.scope_type = "Pick a scope.";
+  } else if (row.scope_type !== scopeForRole(row.role)) {
+    errors.scope_type = `${row.role} mappings must use ${scopeForRole(row.role)} scope.`;
   }
   if (row.scope_type !== "instance") {
     if (row.scope_id.trim().length < 1) {

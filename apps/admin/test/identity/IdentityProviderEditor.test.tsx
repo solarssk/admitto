@@ -82,7 +82,7 @@ const validDetail = {
   claim_phone: "phone_number",
   enabled: true,
   login_button_label: "Continue with Google",
-  mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
+  mappings: [{ group: "admins", role: "admin", scope_type: "organization", scope_id: "org-1" }],
   redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
 };
 
@@ -224,7 +224,7 @@ describe("IdentityProviderEditor — edit", () => {
     });
     const body = mockUpdate.mock.calls[0][1];
     expect(body.client_secret).toBeUndefined();
-    expect(body.mappings).toEqual([{ group: "admins", role: "admin", scope_type: "instance", scope_id: null }]);
+    expect(body.mappings).toEqual([{ group: "admins", role: "admin", scope_type: "organization", scope_id: "org-1" }]);
     expect(body.login_button_label).toBe("Continue with Google");
   });
 

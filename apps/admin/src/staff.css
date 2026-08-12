@@ -3172,35 +3172,44 @@
   font-size: var(--fs-sm);
 }
 
-/* Flex, not grid: a row with no Organization/Event ID field (instance scope)
-   simply has one fewer cell, and the rest stretch to fill the freed space
-   instead of leaving a placeholder-shaped gap. */
+/* Grid, not flex: explicit columns so the row settles at one even width per
+   field instead of flex-wrap breaking wherever content happens to overflow.
+   Two column counts (with/without the Organization/Event ID cell) rather than
+   one fixed template with an item missing, so Group/Role/Scope still widen to
+   fill the row on instance-scope mappings instead of leaving a placeholder-
+   shaped gap where the ID field would have been. Remove is always the last
+   column in both templates. */
 .identity-mappings__row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(160px, 1.3fr) minmax(120px, 1fr) minmax(100px, 0.8fr) auto;
   align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
 
+.identity-mappings__row--with-scope-id {
+  grid-template-columns: minmax(150px, 1.2fr) minmax(110px, 0.9fr) minmax(90px, 0.7fr) minmax(120px, 0.9fr) auto;
+}
+
 .identity-mappings__row:last-of-type {
   border-bottom: 0;
 }
 
-.identity-mappings__cell {
-  flex: 1 1 0;
-  min-width: 130px;
-}
-
-.identity-mappings__cell--group {
-  flex: 1.2 1 0;
-}
-
 .identity-mappings__remove {
-  flex: none;
   display: flex;
   align-items: flex-end;
+}
+
+@media (max-width: 640px) {
+  .identity-mappings__row,
+  .identity-mappings__row--with-scope-id {
+    grid-template-columns: 1fr;
+  }
+
+  .identity-mappings__remove {
+    justify-content: flex-end;
+  }
 }
 
 .identity-mappings__remove .at-btn:hover:not(:disabled) {

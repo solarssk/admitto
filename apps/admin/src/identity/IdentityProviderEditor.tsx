@@ -25,6 +25,7 @@ import {
   newMappingId,
   validateMappings,
   validateProviderDraft,
+  withScopeForRole,
   type EditorMode,
   type FieldErrors,
   type MappingRow,
@@ -42,15 +43,19 @@ interface IdentityProviderEditorProps {
 
 type LoadState = "loading" | "ready" | "error" | "not_found";
 
-/** Map a loaded provider's mappings into editable repeater rows (with stable ids). */
+/** Map a loaded provider's mappings into editable repeater rows (with stable ids). Re-derives
+ * scope_type from role (withScopeForRole) so a mapping saved before role↔scope pairing was
+ * enforced self-heals on load instead of surfacing as an error with no way to fix it in the UI. */
 function mappingsFromDetail(detail: ProviderDetailDto): MappingRow[] {
-  return detail.mappings.map((m) => ({
-    id: newMappingId(),
-    group: m.group,
-    role: m.role as MappingRow["role"],
-    scope_type: m.scope_type as MappingRow["scope_type"],
-    scope_id: m.scope_id ?? "",
-  }));
+  return detail.mappings.map((m) =>
+    withScopeForRole({
+      id: newMappingId(),
+      group: m.group,
+      role: m.role as MappingRow["role"],
+      scope_type: m.scope_type as MappingRow["scope_type"],
+      scope_id: m.scope_id ?? "",
+    }),
+  );
 }
 
 /** Map repeater rows into the request body shape (scope_id null for instance scope). */

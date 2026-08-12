@@ -94,7 +94,9 @@ A local password always keeps working as a fallback (unless the account has no l
 5. Use **Discover** (fills the endpoint fields automatically from the Issuer URL) and **Test
    connection** before finishing configuration.
 6. Configure group-to-role mappings only after confirming the provider's group claim. This is
-   what turns "member of the `IT-Admins` group in Entra ID" into "Superadmin in Admitto."
+   what turns "member of the `IT-Admins` group in Entra ID" into "Superadmin in Admitto." Each
+   role always applies at one fixed level, shown next to it and not separately chosen: Superadmin
+   is instance-wide, Admin needs an Organization ID, Operator needs an Event ID.
 7. Save the provider and test sign-in with a non-critical account, in the separate Superadmin
    session mentioned above, not the one you're using to configure this.
 
