@@ -14,7 +14,7 @@ import {
   validatePartialSession,
   promoteSessionToFull,
 } from "../src/session.js";
-import { SESSION_STAGE, SESSION_IDLE_TIMEOUT_OPERATOR_MS } from "../src/constants.js";
+import { SESSION_STAGE, SESSION_IDLE_TIMEOUT_OPERATOR_MS, AUTH_METHOD } from "../src/constants.js";
 import {
   canPerformCheckIn,
   canManageEvent,
@@ -41,6 +41,7 @@ const USER_SUPER = "user-super-auth";
 const USER_ADMIN_A = "user-admin-a-auth";
 const USER_OP_A = "user-op-a-auth";
 const USER_INACTIVE = "user-inactive-auth";
+const IDP_A = "idp-session-auth";
 
 let prisma: PrismaClient;
 
@@ -113,6 +114,18 @@ beforeAll(async () => {
       },
     });
   }
+
+  await prisma.identityProvider.create({
+    data: {
+      id: IDP_A,
+      issuer: "https://idp.example.test/",
+      client_id: "session-test-client",
+      authorization_endpoint: "https://idp.example.test/authorize",
+      token_endpoint: "https://idp.example.test/token",
+      jwks_uri: "https://idp.example.test/jwks",
+      display_name: "Test IdP",
+    },
+  });
 });
 
 afterAll(async () => {
@@ -217,6 +230,27 @@ describe("session", () => {
     const { rawToken } = await createSession(prisma, { userId: USER_OP_A });
     const validated = await validateSession(prisma, rawToken);
     expect(validated?.userId).toBe(USER_OP_A);
+  });
+
+  it("records oidc_provider_id on an OIDC session", async () => {
+    const { session } = await createSession(prisma, {
+      userId: USER_OP_A,
+      authMethod: AUTH_METHOD.OIDC,
+      oidcProviderId: IDP_A,
+    });
+    expect(session.oidc_provider_id).toBe(IDP_A);
+  });
+
+  it("leaves oidc_provider_id null for an OIDC session created without one, and for a local session even when passed one", async () => {
+    const oidcNoProvider = await createSession(prisma, { userId: USER_OP_A, authMethod: AUTH_METHOD.OIDC });
+    expect(oidcNoProvider.session.oidc_provider_id).toBeNull();
+
+    // authMethod defaults to "local" - oidcProviderId is documented as ignored outside OIDC.
+    const localWithProvider = await createSession(prisma, {
+      userId: USER_OP_A,
+      oidcProviderId: IDP_A,
+    });
+    expect(localWithProvider.session.oidc_provider_id).toBeNull();
   });
 
   it("rejects expired session", async () => {

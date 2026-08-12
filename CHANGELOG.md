@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Users & roles: **Reset password** and **Reset two-factor** are now disabled for staff accounts signed in through an identity provider, in both the menu and the API, since resetting a password on an SSO-managed account previously created a working local sign-in path alongside the identity provider link with no warning shown.
+- **Log out now also ends the session at the identity provider**, when it advertises a logout endpoint via discovery, instead of only clearing the local Admitto session. Previously the identity provider's session (and any other application sharing it) stayed signed in, so a fresh SSO login could silently succeed without re-authenticating. Existing OIDC providers pick this up the next time **Discover** is run.
 
 ## [0.4.14] - 2026-08-11
 

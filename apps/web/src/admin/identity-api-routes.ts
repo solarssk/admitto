@@ -412,6 +412,12 @@ export async function handleApiDiscoverProvider(
       token_endpoint: discovery.token_endpoint,
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? undefined,
+      // Explicit null, not undefined: this persists immediately (unlike the discover-preview
+      // paths below, which only fill the draft form), so it must be able to clear a stored
+      // endpoint the provider no longer advertises - undefined here would mean "preserve
+      // existing" a layer down (updateIdentityProvider's own existing.end_session_endpoint
+      // fallback), silently keeping a stale logout redirect target forever.
+      end_session_endpoint: discovery.end_session_endpoint ?? null,
       enabled: provider.enabled,
     });
   } catch (err) {
@@ -447,6 +453,7 @@ export async function handleApiDiscoverProvider(
       token_endpoint: discovery.token_endpoint,
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+      end_session_endpoint: discovery.end_session_endpoint ?? null,
     },
     provider: refreshed ? await providerDetailDto(db, refreshed, injectedBaseUrl) : null,
   });
@@ -500,6 +507,7 @@ export async function handleApiDiscoverProviderPreview(c: Context): Promise<Resp
         token_endpoint: discovery.token_endpoint,
         jwks_uri: discovery.jwks_uri,
         userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+        end_session_endpoint: discovery.end_session_endpoint ?? null,
       },
     });
   } catch (err) {

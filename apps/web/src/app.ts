@@ -14,7 +14,11 @@ import {
   type WalletPassResult,
 } from "@admitto/wallet";
 import type { GeocodingProvider } from "@admitto/location";
-import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
+import {
+  getBrandingTheme,
+  SESSION_STAGE,
+  sweepExpiredOidcAuthStates,
+} from "@admitto/auth";
 import {
   resolveTicket,
   generateQrPng,
@@ -351,6 +355,7 @@ import {
   handleApiUpdateCfAccess,
   handleApiTestCfAccess,
 } from "./admin/identity-api-routes.js";
+import { resolveOidcPublicBaseUrlOrNull } from "./admin/oidc-redirect-uri.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
@@ -1594,6 +1599,7 @@ export function createApp(options: CreateAppOptions = {}) {
     return resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl);
   }
 
+
   app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, async (c) =>
     handleOidcStart(c, db, await oidcPublicBaseUrl()),
   );
@@ -1691,7 +1697,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollDownloadCodes(c, db),
   );
-  app.post("/logout", htmlPostCsrf, (c) => handlePostLogout(c, db));
+  app.post("/logout", htmlPostCsrf, async (c) =>
+    handlePostLogout(c, db, await resolveOidcPublicBaseUrlOrNull(db, mailInjectedBaseUrl)),
+  );
   app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
   app.post("/change-password", htmlPostCsrf, requireChangePasswordSession, (c) =>
     handlePostChangePassword(c, db),

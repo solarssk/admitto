@@ -684,6 +684,11 @@ model Session {
   stage        String    @default("full")
   // local | oidc — IdP-authenticated sessions skip local TOTP policy (prompt 16b).
   auth_method  String    @default("local")
+  // Which IdP this OIDC session came from - null for local sessions. Read at logout to look up
+  // end_session_endpoint (RP-initiated logout); SetNull on provider delete so removing an IdP
+  // config just drops that one signal instead of destroying otherwise-valid sessions.
+  oidc_provider_id String?
+  oidc_provider     IdentityProvider? @relation(fields: [oidc_provider_id], references: [id], onDelete: SetNull)
   // Optional UI context only — not an authorization source (ADR 0011).
   scope        String?
   device_label String?
@@ -776,6 +781,11 @@ model IdentityProvider {
   token_endpoint         String
   jwks_uri               String
   userinfo_endpoint      String?
+  // RP-initiated logout (OIDC end session). Discovery-only - never hand-entered in the admin
+  // form, same value the "Discover" action already reads and validates for the other endpoints.
+  // Null means this IdP didn't advertise one (or was never (re)discovered after this field was
+  // added) - logout then just falls back to clearing the local session, same as before.
+  end_session_endpoint   String?
   claim_email            String   @default("email")
   claim_name             String   @default("name")
   claim_groups           String   @default("groups")
@@ -794,6 +804,7 @@ model IdentityProvider {
   group_role_mappings OidcGroupRoleMapping[]
   oidc_role_grants    OidcRoleGrant[]
   oidc_auth_states    OidcAuthState[]
+  sessions            Session[]
 
   @@unique([issuer, client_id])
 }

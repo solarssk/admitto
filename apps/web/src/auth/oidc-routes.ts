@@ -177,6 +177,7 @@ async function finalizeOidcLogin(
       userId,
       stage: SESSION_STAGE.FULL,
       authMethod: AUTH_METHOD.OIDC,
+      oidcProviderId: provider.id,
       ip: resolveClientIp(c),
       userAgent: c.req.header("user-agent"),
       timezone: consumed.timezone,

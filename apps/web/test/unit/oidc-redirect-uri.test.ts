@@ -7,7 +7,7 @@ vi.mock("../../src/instance-base-url.js", () => ({
 }));
 
 import { resolveInstanceBaseUrl } from "../../src/instance-base-url.js";
-import { resolveOidcRedirectUri } from "../../src/admin/oidc-redirect-uri.js";
+import { resolveOidcRedirectUri, resolveOidcPublicBaseUrlOrNull } from "../../src/admin/oidc-redirect-uri.js";
 
 const mockResolve = vi.mocked(resolveInstanceBaseUrl);
 
@@ -40,5 +40,24 @@ describe("resolveOidcRedirectUri", () => {
   it("rethrows unexpected resolution errors", async () => {
     mockResolve.mockRejectedValueOnce(new Error("db down"));
     await expect(resolveOidcRedirectUri({} as PrismaClient, "prov4")).rejects.toThrow("db down");
+  });
+});
+
+describe("resolveOidcPublicBaseUrlOrNull", () => {
+  it("returns the resolved base URL", async () => {
+    mockResolve.mockResolvedValueOnce("https://tickets.example.com/");
+    await expect(resolveOidcPublicBaseUrlOrNull({} as PrismaClient)).resolves.toBe(
+      "https://tickets.example.com/",
+    );
+  });
+
+  it("returns null when Instance URL is required but missing (logout must still complete)", async () => {
+    mockResolve.mockRejectedValueOnce(new InstanceUrlRequiredError());
+    await expect(resolveOidcPublicBaseUrlOrNull({} as PrismaClient)).resolves.toBeNull();
+  });
+
+  it("rethrows unexpected resolution errors", async () => {
+    mockResolve.mockRejectedValueOnce(new Error("db down"));
+    await expect(resolveOidcPublicBaseUrlOrNull({} as PrismaClient)).rejects.toThrow("db down");
   });
 });

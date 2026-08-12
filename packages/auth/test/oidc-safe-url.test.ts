@@ -126,6 +126,47 @@ describe("fetchOidcDiscovery SSRF guard", () => {
     await expect(fetchOidcDiscovery("http://127.0.0.1:9999/")).rejects.toBeInstanceOf(TypeError);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it("carries end_session_endpoint through when the document advertises one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+          userinfo_endpoint: "http://127.0.0.1:9999/userinfo",
+          end_session_endpoint: "http://127.0.0.1:9999/end-session",
+        }),
+      }),
+    );
+
+    const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/");
+    expect(doc.end_session_endpoint).toBe("http://127.0.0.1:9999/end-session");
+    expect(doc.userinfo_endpoint).toBe("http://127.0.0.1:9999/userinfo");
+  });
+
+  it("resolves end_session_endpoint to undefined when the document doesn't advertise one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/");
+    expect(doc.end_session_endpoint).toBeUndefined();
+  });
 });
 
 describe("assertSafeOidcFetchUrlResolved", () => {
