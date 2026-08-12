@@ -159,6 +159,12 @@ const activeEvent = {
   header_image_url: null,
   resolved_logo_url: null,
   resolved_header_image_url: null,
+  wallet_enabled: false,
+  wallet_template_id: null as string | null,
+  wallet_api_key: { configured: false },
+  wallet_apple_enabled: false,
+  wallet_google_enabled: false,
+  wallet_field_mapping: null as Record<string, string> | null,
 };
 
 const archivedEvent = {

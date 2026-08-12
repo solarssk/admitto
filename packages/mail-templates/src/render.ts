@@ -22,7 +22,7 @@ import {
 } from "./errors.js";
 import type { RenderedTemplate, TemplateVars } from "./types.js";
 
-/** Ticket/wallet link placeholders kept literal in DB snapshots — substituted only at
+/** Ticket/wallet link placeholders kept literal in DB snapshots - substituted only at
  * send/retry, once the attendee's real per-token URLs are known. */
 export const STORAGE_DEFERRED_LINK_PLACEHOLDERS = new Set([
   "ticket_url",

@@ -101,5 +101,8 @@ export function toPassCreatorData(
     const value = values[placeholder];
     if (value) custom[key] = value;
   }
-  return { ...base, ...custom };
+  // base last: an admin's own field-mapping key (e.g. accidentally named "userProvidedId" or
+  // "barcodeValue" after PassCreator's own API vocabulary) must never override the provider-
+  // controlled identity/QR fields - those decide idempotency and which pass the barcode matches.
+  return { ...custom, ...base };
 }

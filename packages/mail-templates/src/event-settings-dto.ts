@@ -22,8 +22,8 @@ export type EventSettingsDto = {
   wallet_api_key: { configured: boolean };
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
-  /** PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}). Null/empty
-   * uses the built-in default mapping. */
+  /** PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}). No default
+   * mapping - null/empty means nothing beyond the QR code is sent to PassCreator. */
   wallet_field_mapping: Record<string, string> | null;
   capacity: number | null;
   status: "active" | "archived";

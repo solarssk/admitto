@@ -418,6 +418,34 @@ function htmlWithSecurityHeaders(
   return c.html(html, status);
 }
 
+/** Shared internal-token-vs-agency-payload branching for the ticket page and the wallet redirect
+ * handler - split out of both callers to keep their own cognitive complexity under the SonarCloud
+ * threshold (S3776), same reasoning as createApp's own markFailed extraction. Module scope (not a
+ * createApp closure) since it captures nothing from there - SonarCloud S7721. `onMissing` builds
+ * each caller's own error response (a redirect for the wallet handler, a rendered error page for
+ * the ticket page). */
+async function resolveQrPayloadOrRespond(
+  resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+  internalToken: string | undefined,
+  logContext: string,
+  onMissing: () => Response | Promise<Response>,
+): Promise<string | Response> {
+  const { attendee } = resolved;
+  if (resolved.mode === "internal") {
+    if (!internalToken) {
+      console.error(`Internal attendee ${attendee.id} missing token for ${logContext}`);
+      return onMissing();
+    }
+    return buildQrPayload("internal", { token: internalToken });
+  }
+  const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
+  if (!agencyPayload) {
+    console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
+    return onMissing();
+  }
+  return buildQrPayload("agency", { agencyPayload });
+}
+
 /** Build the Admitto Hono app (public tickets, auth, check-in API, operator HTML). */
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
@@ -693,33 +721,6 @@ export function createApp(options: CreateAppOptions = {}) {
     };
   }
 
-  /** Shared internal-token-vs-agency-payload branching for the ticket page and the wallet
-   * redirect handler - split out of both callers to keep their own cognitive complexity under
-   * the SonarCloud threshold (S3776), same reasoning as markFailed's own extraction below.
-   * `onMissing` builds each caller's own error response (a redirect for the wallet handler, a
-   * rendered error page for the ticket page). */
-  async function resolveQrPayloadOrRespond(
-    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
-    internalToken: string | undefined,
-    logContext: string,
-    onMissing: () => Response | Promise<Response>,
-  ): Promise<string | Response> {
-    const { attendee } = resolved;
-    if (resolved.mode === "internal") {
-      if (!internalToken) {
-        console.error(`Internal attendee ${attendee.id} missing token for ${logContext}`);
-        return onMissing();
-      }
-      return buildQrPayload("internal", { token: internalToken });
-    }
-    const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
-    if (!agencyPayload) {
-      console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-      return onMissing();
-    }
-    return buildQrPayload("agency", { agencyPayload });
-  }
-
   /**
    * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
    * provider URL. Never a bare 500 - failures redirect back to the ticket page with a retry
@@ -963,11 +964,15 @@ export function createApp(options: CreateAppOptions = {}) {
       route === "/t/:eventSlug/a/:ref"
         ? `/t/${resolvedForDisplay.event.slug}/a/${agencyPublicRef}`
         : `/t/${internalToken}`;
-    // No template configured for this event (Event settings -> Wallet, left blank) - the
-    // /wallet/:platform routes would only redirect back with walletError=1, so don't offer them.
-    // The master switch and each platform's own toggle independently gate visibility too.
+    // No template or API key configured for this event yet (Event settings -> Wallet) - the
+    // /wallet/:platform routes would only redirect back with walletError=1 (resolveWalletProvider
+    // returns null without both), so don't offer them. The master switch and each platform's own
+    // toggle independently gate visibility too. `options.walletPassProvider` is the same test-only
+    // injection escape hatch resolveWalletProvider itself checks first.
     const walletConfigured =
-      resolvedForDisplay.event.walletEnabled && resolvedForDisplay.event.walletTemplateId !== null;
+      resolvedForDisplay.event.walletEnabled &&
+      resolvedForDisplay.event.walletTemplateId !== null &&
+      (options.walletPassProvider !== undefined || resolvedForDisplay.event.walletApiKeyEnc !== null);
     const appleWalletVisible = walletConfigured && resolvedForDisplay.event.walletAppleEnabled;
     const googleWalletVisible = walletConfigured && resolvedForDisplay.event.walletGoogleEnabled;
     return htmlWithSecurityHeaders(

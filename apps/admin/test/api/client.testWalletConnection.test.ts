@@ -25,6 +25,18 @@ describe("testWalletConnection", () => {
     expect(result).toEqual(body);
   });
 
+  it("omits apiKey from the body entirely when the caller doesn't supply one", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWalletConnection("evt-1", { templateId: "tmpl-1" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/wallet/test",
+      expect.objectContaining({ body: JSON.stringify({ templateId: "tmpl-1" }) }),
+    );
+  });
+
   it("surfaces API errors from testWalletConnection", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

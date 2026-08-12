@@ -229,7 +229,7 @@ function computeWalletPlaceholderPreview(
   const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
   if (attendeeHint) return attendeeHint;
   if (id === "event_name") return form.title;
-  if (id === "event_date") return formatWalletDatePreview(form.date);
+  if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_hours") {
     return form.eventHoursStart && form.eventHoursEnd
       ? `${form.eventHoursStart}-${form.eventHoursEnd}`
@@ -358,6 +358,28 @@ function buildWalletFieldMappingPatch(rows: WalletFieldMappingRow[]): Record<str
     if (key && row.value) mapping[key] = row.value;
   }
   return Object.keys(mapping).length > 0 ? mapping : null;
+}
+
+/** buildWalletFieldMappingPatch silently drops a row with a value but no key, and lets a later
+ * row's key overwrite an earlier one - both intentional (a half-filled-in row shouldn't block
+ * saving the rest), but neither has any other signal. Surfaced here so the Wallet tab's own
+ * SettingsFooter can show it instead of the row just quietly not being there after "Event
+ * settings saved". */
+function computeWalletFieldMappingErrors(rows: WalletFieldMappingRow[]): string[] {
+  const errors: string[] = [];
+  const keyCounts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (row.value && !key) {
+      const label = WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value)?.label ?? row.value;
+      errors.push(`"${label}" has no PassCreator field key - this row won't be saved.`);
+    }
+    if (key) keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+  }
+  for (const [key, count] of keyCounts) {
+    if (count > 1) errors.push(`The key "${key}" is used by more than one row - only the last one will be saved.`);
+  }
+  return errors;
 }
 
 /** Logo-only slice of buildSettingsPatch, extracted for the same reason as buildWalletPatch. */
@@ -1732,7 +1754,7 @@ export function EventSettingsPage() {
           </Card>
           {!isArchived && (
             <SettingsFooter
-              validationErrors={[]}
+              validationErrors={computeWalletFieldMappingErrors(form.walletFieldMapping)}
               validationErrorsRef={basicValidationErrorsRef}
               hasUnsavedChanges={dirty}
               saving={saving}

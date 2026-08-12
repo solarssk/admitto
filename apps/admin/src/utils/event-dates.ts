@@ -38,8 +38,10 @@ export function formatEventCalendarDate(iso: string): string {
  * viewer's own preference. Pinned to UTC since `Event.date` is stored as a UTC calendar day (see
  * `formatEventCalendarDate` above) - avoids an off-by-one-day flip from the admin's own timezone.
  */
-export function formatWalletDatePreview(isoDate: string): string {
-  return new Date(`${isoDate}T00:00:00Z`).toLocaleDateString("en-GB", {
+export function formatWalletDatePreview(isoDate: string): string | null {
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString("en-GB", {
     day: "numeric",
     month: "long",
     year: "numeric",

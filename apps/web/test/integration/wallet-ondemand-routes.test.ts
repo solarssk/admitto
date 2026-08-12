@@ -648,9 +648,11 @@ describe("On-demand wallet routes", () => {
       data: { wallet_api_key_enc: encryptToString("real-test-key") },
     });
 
+    let sentUrl: string | URL | null = null;
+    let sentAuth: string | undefined;
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-      expect(String(url)).toContain("/api/v3/pass");
-      expect((init?.headers as Record<string, string>).Authorization).toBe("real-test-key");
+      sentUrl = url;
+      sentAuth = (init?.headers as Record<string, string>).Authorization;
       return new Response(
         JSON.stringify({
           success: true,
@@ -666,6 +668,8 @@ describe("On-demand wallet routes", () => {
       expect(res.status).toBe(302);
       expect(res.headers.get("location")).toBe("https://pc.test/real/apple");
       expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(sentUrl)).toContain("/api/v3/pass");
+      expect(sentAuth).toBe("real-test-key");
     } finally {
       await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_api_key_enc: null } });
     }
@@ -686,9 +690,9 @@ describe("On-demand wallet routes", () => {
       },
     });
 
+    const sentBodies: Array<{ data: Record<string, unknown> }> = [];
     const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as { data: Record<string, unknown> };
-      expect(body.data.full_name).toBe("Mode A Guest");
+      sentBodies.push(JSON.parse(String(init?.body)) as { data: Record<string, unknown> });
       return new Response(
         JSON.stringify({
           success: true,
@@ -702,7 +706,14 @@ describe("On-demand wallet routes", () => {
     try {
       const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
       expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("https://pc.test/real2/apple");
       expect(fetchMock).toHaveBeenCalledTimes(1);
+      // wallet_field_mapping's key is the PassCreator field name ("attendeeFullName"), not the
+      // Admitto placeholder it maps from ("full_name") - this assertion silently checked the
+      // wrong key while it lived inside the mock (any failure there was swallowed into a generic
+      // provider-error redirect the outer status/location assertions couldn't tell apart from
+      // success), and only surfaced once moved out here.
+      expect(sentBodies[0]?.data.attendeeFullName).toBe("Mode A Guest");
     } finally {
       await prisma.event.update({
         where: { id: EVENT_ID },
