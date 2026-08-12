@@ -305,6 +305,10 @@ export interface AttendeeDetailDto {
   rsvp_source: string | null;
   rsvp_updated_at: string | null;
   wallet_pass: WalletPassActionDto | null;
+  /** On-demand wallet install links (same routes the ticket page's own buttons use) - available
+   * whether or not wallet_pass exists yet, null when wallet isn't configured for this event. */
+  wallet_apple_link: string | null;
+  wallet_google_link: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];

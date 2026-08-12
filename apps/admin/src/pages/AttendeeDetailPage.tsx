@@ -814,8 +814,8 @@ function AttendeeOverviewTab({
           title="Wallet"
           actions={
             <WalletLinksMenu
-              appleUrl={detail.wallet_pass?.apple_url ?? null}
-              androidUrl={detail.wallet_pass?.android_url ?? null}
+              appleUrl={detail.wallet_apple_link}
+              androidUrl={detail.wallet_google_link}
             />
           }
         >

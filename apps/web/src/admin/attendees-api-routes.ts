@@ -6,6 +6,7 @@ import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
   resendTicketEmail,
+  resolveAttendeeMailLinks,
   sendTicketEmails,
   toDeliveryDto,
   type DeliveryDto,
@@ -68,6 +69,7 @@ import {
   buildAttendeesExportArtifact,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
+import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "../instance-base-url.js";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -327,6 +329,13 @@ export type AttendeeDetailDto = {
   rsvp_updated_at: string | null;
   rsvp_source: string | null;
   wallet_pass: WalletPassActionDto | null;
+  /** Same on-demand /t/.../wallet/:platform redirect routes the ticket page's own buttons and
+   * ticket emails use (create-or-reuse the pass, then 302 to the provider) - null when wallet
+   * isn't configured/enabled for this event or platform, or the instance URL isn't set yet. Works
+   * whether or not wallet_pass exists yet, unlike wallet_pass's own apple_url/android_url (only
+   * populated after a pass has actually been created) - PO review, 2026-08-13. */
+  wallet_apple_link: string | null;
+  wallet_google_link: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
@@ -723,6 +732,29 @@ function serializeAttendeeRow(
   };
 }
 
+/** Same on-demand wallet routes the ticket page's own buttons and ticket emails use
+ * (buildAttendeeMailLinks) - works whether or not a WalletPass row exists yet, unlike
+ * wallet_pass.apple_url/android_url which are only populated after a pass has actually been
+ * created (PO review, 2026-08-13: admin had no way to copy a wallet link for an attendee who
+ * hadn't added their pass yet). Null for either platform when wallet isn't configured/enabled
+ * for this event, the instance URL isn't set yet, or the attendee is missing whatever identifier
+ * (public_ref / plaintext token) that platform's route needs - never a hard failure, since these
+ * links are a convenience on top of the rest of the attendee detail page, not a requirement of it. */
+async function resolveAttendeeWalletLinksForDto(
+  db: PrismaClient,
+  attendeeId: string,
+): Promise<{ apple: string | null; google: string | null }> {
+  try {
+    const baseUrl = await resolveInstanceBaseUrl(db, process.env);
+    const links = await resolveAttendeeMailLinks(attendeeId, db, baseUrl);
+    return { apple: links.apple_wallet_url || null, google: links.google_wallet_url || null };
+  } catch (err) {
+    if (err instanceof InstanceUrlRequiredError) return { apple: null, google: null };
+    console.error("resolveAttendeeWalletLinksForDto failed:", err);
+    return { apple: null, google: null };
+  }
+}
+
 /** Build attendee detail DTO including delivery log and activity. */
 async function buildAttendeeDetailDto(
   db: PrismaClient,
@@ -763,11 +795,12 @@ async function buildAttendeeDetailDto(
   },
   notesPage = 1,
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, action_log, event_items, notes] = await Promise.all([
+  const [deliveriesResult, action_log, event_items, notes, walletLinks] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id),
     loadAttendeeItemsSummary(db, eventId, row.id),
     loadAttendeeNotes(db, eventId, row.id, notesPage),
+    resolveAttendeeWalletLinksForDto(db, row.id),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -790,6 +823,8 @@ async function buildAttendeeDetailDto(
     rsvp_updated_at: row.rsvp_updated_at ? row.rsvp_updated_at.toISOString() : null,
     rsvp_source: row.rsvp_source,
     wallet_pass: row.wallet_pass ? serializeWalletPassAction(row.wallet_pass) : null,
+    wallet_apple_link: walletLinks.apple,
+    wallet_google_link: walletLinks.google,
     custom_data: row.custom_data ?? null,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,

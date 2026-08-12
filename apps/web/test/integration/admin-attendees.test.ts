@@ -1379,6 +1379,43 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(updateSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe("wallet_apple_link / wallet_google_link on GET detail", () => {
+    it("returns on-demand wallet links even when the attendee has never added a pass (PO review, 2026-08-13)", async () => {
+      const attendeeId = "att-wallet-links-none";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT);
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`,
+        { headers: { Cookie: adminCookie } },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        wallet_pass: unknown;
+        wallet_apple_link: string | null;
+        wallet_google_link: string | null;
+      };
+      expect(body.wallet_pass).toBeNull();
+      expect(body.wallet_apple_link).toMatch(/\/wallet\/apple$/);
+      expect(body.wallet_google_link).toMatch(/\/wallet\/google$/);
+    });
+
+    it("returns null links when the event's wallet isn't configured", async () => {
+      const attendeeId = "att-wallet-links-unconfigured";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT_UNCONFIGURED);
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/${attendeeId}`,
+        { headers: { Cookie: adminCookie } },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { wallet_apple_link: string | null; wallet_google_link: string | null };
+      expect(body.wallet_apple_link).toBeNull();
+      expect(body.wallet_google_link).toBeNull();
+    });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
