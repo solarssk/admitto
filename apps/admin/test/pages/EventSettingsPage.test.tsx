@@ -63,6 +63,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     searchGeocoding: vi.fn(),
     reverseGeocoding: vi.fn(),
     fetchTimezoneForCoordinates: vi.fn(),
+    testWalletConnection: vi.fn(),
   };
 });
 
@@ -121,6 +122,7 @@ import {
   reverseGeocoding,
   saveEventLocation,
   searchGeocoding,
+  testWalletConnection,
   unarchiveEvent,
   updateTicketType,
   uploadEventBrandingFile,
@@ -854,6 +856,143 @@ describe("EventSettingsPage tabs", () => {
         wallet_apple_enabled: false,
       });
     });
+  });
+
+  it("saves the master Wallet toggle, Google Wallet toggle, and a cleared API key", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_enabled: true,
+      wallet_google_enabled: true,
+      wallet_api_key: { configured: true },
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_enabled: false, wallet_google_enabled: false },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(document.getElementById("event-wallet-enabled") as HTMLInputElement);
+    fireEvent.click(screen.getByLabelText("Google Wallet"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        wallet_enabled: false,
+        wallet_google_enabled: false,
+        wallet_api_key: null,
+      });
+    });
+  });
+
+  it("adds, edits, and removes a field mapping row, saving the resulting mapping", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_field_mapping: { attendeeFullName: "full_name" } },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    expect(screen.getAllByLabelText("PassCreator field key")).toHaveLength(2);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove field" })[0]!);
+    const keyInputs = screen.getAllByLabelText("PassCreator field key");
+    expect(keyInputs).toHaveLength(1);
+    fireEvent.change(keyInputs[0]!, { target: { value: "attendeeFullName" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Value, none selected" }));
+    fireEvent.click(screen.getByRole("button", { name: "Attendee full name" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        wallet_field_mapping: { attendeeFullName: "full_name" },
+      });
+    });
+  });
+
+  it("shows the returned message on a successful Test connection", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({
+      ok: true,
+      message: 'Connected - template "Gala Pass".',
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(testWalletConnection).toHaveBeenCalledWith("evt-1", { templateId: "tmpl-1" });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Gala Pass/);
+    });
+  });
+
+  it("shows the API's error message on a failed Test connection, including a replaced key", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({
+      ok: false,
+      error: "Invalid API key.",
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "new-key" } });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(testWalletConnection).toHaveBeenCalledWith("evt-1", {
+        templateId: "tmpl-1",
+        apiKey: "new-key",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Invalid API key/);
+    });
+  });
+
+  it("shows a fallback toast when Test connection throws, and Cancel discards an in-progress key edit", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockRejectedValueOnce(new Error("network down"));
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Could not test the wallet connection/,
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "abandoned" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Set" })).toBeTruthy();
   });
 
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {

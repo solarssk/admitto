@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { parseTicketAddressComponents, toResolved } from "../src/resolve.js";
+import { parseTicketAddressComponents, parseWalletFieldMapping, toResolved } from "../src/resolve.js";
+
+describe("parseWalletFieldMapping", () => {
+  it("returns null for non-objects, arrays, and empty maps", () => {
+    expect(parseWalletFieldMapping(null)).toBeNull();
+    expect(parseWalletFieldMapping("x")).toBeNull();
+    expect(parseWalletFieldMapping([])).toBeNull();
+    expect(parseWalletFieldMapping({})).toBeNull();
+  });
+
+  it("trims string values and drops non-string / blank entries", () => {
+    expect(
+      parseWalletFieldMapping({
+        name: " full_name ",
+        eventDate: "event_date",
+        blank: "   ",
+        wrongType: 42,
+      }),
+    ).toEqual({ name: "full_name", eventDate: "event_date" });
+  });
+});
 
 describe("parseTicketAddressComponents", () => {
   it("returns null for non-objects and empty grids", () => {

@@ -18,6 +18,9 @@ const ATTENDEE_AGENCY_ID = "attendee-wallet-agency";
 const ATTENDEE_MODE_A_ID = "attendee-wallet-mode-a";
 const ATTENDEE_REVOKED_ID = "attendee-wallet-revoked";
 const REVOKED_TOKEN = generateToken();
+const EVENT_ID_NO_LOCATION = "evt-wallet-no-location";
+const ATTENDEE_NO_LOCATION_ID = "attendee-wallet-no-location";
+const NO_LOCATION_TOKEN = generateToken();
 
 let prisma: PrismaClient;
 
@@ -44,6 +47,10 @@ async function seedWalletFixture(client: PrismaClient): Promise<void> {
   await client.walletPass.deleteMany({ where: { attendee: { event_id: EVENT_ID } } });
   await client.attendee.deleteMany({ where: { event_id: EVENT_ID } });
   await client.event.deleteMany({ where: { id: EVENT_ID } });
+  // Must run before the organization delete below - both events share ORG_ID via a foreign key.
+  await client.walletPass.deleteMany({ where: { attendee: { event_id: EVENT_ID_NO_LOCATION } } });
+  await client.attendee.deleteMany({ where: { event_id: EVENT_ID_NO_LOCATION } });
+  await client.event.deleteMany({ where: { id: EVENT_ID_NO_LOCATION } });
   await client.organization.deleteMany({ where: { id: ORG_ID } });
 
   await client.organization.create({ data: { id: ORG_ID, name: "Org", slug: "wallet-org" } });
@@ -110,6 +117,28 @@ async function seedWalletFixture(client: PrismaClient): Promise<void> {
       status: "revoked",
     },
   });
+
+  await client.event.create({
+    data: {
+      id: EVENT_ID_NO_LOCATION,
+      title: "Wallet Gala (no venue)",
+      slug: "wallet-gala-no-location",
+      date: new Date("2026-09-01"),
+      organization_id: ORG_ID,
+      wallet_template_id: "tmpl-wallet-gala",
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: ATTENDEE_NO_LOCATION_ID,
+      event_id: EVENT_ID_NO_LOCATION,
+      email: "noloc@example.com",
+      name: "No Location Guest",
+      token_hash: hashToken(NO_LOCATION_TOKEN),
+      token_enc: encryptToString(NO_LOCATION_TOKEN),
+      status: "registered",
+    },
+  });
 }
 
 beforeAll(async () => {
@@ -124,6 +153,7 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks();
   await prisma.walletPass.deleteMany({ where: { attendee: { event_id: EVENT_ID } } });
+  await prisma.walletPass.deleteMany({ where: { attendee: { event_id: EVENT_ID_NO_LOCATION } } });
 });
 
 afterAll(async () => {
@@ -176,6 +206,25 @@ describe("On-demand wallet routes", () => {
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.status).toBe("active");
     expect(saved?.apple_url).toBe("https://pc.test/apple/x");
+  });
+
+  it("Mode A apple, event with no venue: omits Maps links and address fields", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${NO_LOCATION_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(provider.createPass).toHaveBeenCalledWith(
+      expect.objectContaining({
+        googleMapsUrlLabel: undefined,
+        appleMapsUrlLabel: undefined,
+        addressObjectNameLabel: undefined,
+        addressStreetLabel: undefined,
+        eventLocationLabel: undefined,
+        userProvidedId: `admitto:${EVENT_ID_NO_LOCATION}:${ATTENDEE_NO_LOCATION_ID}`,
+      }),
+    );
   });
 
   it("Mode A google: redirects to androidUrl", async () => {

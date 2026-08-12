@@ -1146,6 +1146,86 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.error).toContain("API key is required");
   });
 
+  it("POST /wallet/test falls back to the event's saved API key when none is drafted", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: "saved-key" }),
+    });
+    expect(setRes.status).toBe(200);
+
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string>).Authorization).toBe("saved-key");
+      return new Response(JSON.stringify({ success: true, data: { name: "Gala Pass" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message: string };
+    expect(body.ok).toBe(true);
+    expect(body.message).toContain("Gala Pass");
+
+    await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: null }),
+    });
+  });
+
+  it("POST /wallet/test reports 'not found' when the template ID doesn't exist", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["no such template"] }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "missing-template" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("Template ID not found");
+  });
+
+  it("POST /wallet/test reports a generic failure when the network request itself fails", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("fetch failed");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("Could not reach PassCreator");
+  });
+
+  it("POST /wallet/test returns 400 on invalid JSON", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("POST /wallet/test returns 403 for a non-superadmin", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
       method: "POST",
