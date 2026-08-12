@@ -79,6 +79,8 @@ const CODE_MESSAGES: Record<string, string> = {
     "The mail destination host resolves to a private address. Add it to MAIL_PRIVATE_DESTINATION_ALLOWLIST (app and worker), or use a public destination. Local labs can set ALLOW_PRIVATE_MAIL_DESTINATIONS=true when NODE_ENV is not production.",
   mail_destination_unresolved:
     "Could not resolve the mail destination hostname. Check Mail settings.",
+  mail_secret_decryption_failed:
+    "Stored mail credentials could not be decrypted. Re-enter the password or secret in Mail settings and save.",
   mappings_required: "Role mappings are required before enabling this provider.",
   no_local_password: "Password is managed by your identity provider.",
   not_admitted: "This attendee isn't currently checked in.",

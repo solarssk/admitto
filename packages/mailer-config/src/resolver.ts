@@ -1,10 +1,26 @@
-import { decryptFromString } from "@admitto/crypto";
+import { decryptFromString, CryptoDecryptionError } from "@admitto/crypto";
 import { parseMailerConfig, safeParseMailerConfig, type MailerConfig } from "@admitto/mailer";
 import type { PrismaClient, MailSettings } from "@admitto/db";
 import { rawMailFieldsFromEnv } from "./envFields.js";
 import { enforceAllowedFromDomain } from "./senderPolicy.js";
 
 type Row = MailSettings | null;
+
+export type MailConfigErrorCode = "mail_secret_decryption_failed";
+
+/** Thrown when a stored mail secret (SMTP password, Graph client secret, Power Automate key)
+ * cannot be decrypted - wrong/rotated ENCRYPTION_KEY or corrupted ciphertext. Wraps
+ * {@link CryptoDecryptionError} so callers can branch on a mail-domain code without depending
+ * on @admitto/crypto directly. */
+export class MailConfigError extends Error {
+  readonly code: MailConfigErrorCode;
+
+  constructor(code: MailConfigErrorCode, message: string) {
+    super(message);
+    this.name = "MailConfigError";
+    this.code = code;
+  }
+}
 
 /** Pick first non-null/undefined value from a list. */
 function first<T>(...values: (T | null | undefined)[]): T | undefined {
@@ -30,7 +46,17 @@ function firstLazy<T>(...loaders: Array<() => T | null | undefined>): T | undefi
 
 function maybeDecrypt(enc: string | null | undefined): string | undefined {
   if (!enc) return undefined;
-  return decryptFromString(enc);
+  try {
+    return decryptFromString(enc);
+  } catch (err) {
+    if (err instanceof CryptoDecryptionError) {
+      throw new MailConfigError(
+        "mail_secret_decryption_failed",
+        "A stored mail secret could not be decrypted. The encryption key may have changed, or the stored value is corrupted.",
+      );
+    }
+    throw err;
+  }
 }
 
 /**

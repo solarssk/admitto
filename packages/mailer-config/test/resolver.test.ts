@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { lookup } from "node:dns/promises";
 import { createMailer, parseMailerConfig } from "@admitto/mailer";
 import { setMailSettings } from "../src/mailSettings.js";
-import { resolveMailConfig, resolveMailConfigForOrg } from "../src/resolver.js";
+import { MailConfigError, resolveMailConfig, resolveMailConfigForOrg } from "../src/resolver.js";
 import { resetDb } from "./resetDb.js";
 
 vi.mock("node:dns/promises", () => ({
@@ -305,5 +305,62 @@ describe("resolveMailConfigForOrg — org-scoped instance settings", () => {
     await expect(resolveMailConfigForOrg("org-r", prisma, {})).rejects.toThrow(
       /allowed from domain/i,
     );
+  });
+});
+
+describe("resolveMailConfig — stored secret cannot be decrypted", () => {
+  beforeAll(async () => {
+    await prisma.organization.create({
+      data: { id: "org-r4", name: "Resolver Org 4", slug: "resolver-org-4" },
+    });
+    await prisma.event.create({
+      data: {
+        id: "evt-r4",
+        organization_id: "org-r4",
+        title: "Resolver Event 4",
+        slug: "resolver-event-4",
+        date: new Date("2026-09-01"),
+      },
+    });
+    await setMailSettings(
+      { scopeType: "organization", scopeId: "org-r4" },
+      {
+        provider: "smtp",
+        host: "smtp.org4.example.com",
+        port: 587,
+        user: "org4@example.com",
+        fromAddress: "org4@example.com",
+        smtpPassword: "org4-pass",
+      },
+      prisma,
+    );
+    // Corrupt the stored ciphertext so it fails AES-GCM authentication at read time —
+    // simulates a rotated/mismatched ENCRYPTION_KEY or a tampered/corrupted DB value.
+    const row = await prisma.mailSettings.findUniqueOrThrow({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-r4" } },
+    });
+    const encoded = JSON.parse(row.smtp_password_enc!) as { ciphertext: string };
+    const raw = Buffer.from(encoded.ciphertext, "base64");
+    raw[0] ^= 0xff;
+    encoded.ciphertext = raw.toString("base64");
+    await prisma.mailSettings.update({
+      where: { scope_type_scope_id: { scope_type: "organization", scope_id: "org-r4" } },
+      data: { smtp_password_enc: JSON.stringify(encoded) },
+    });
+  });
+
+  it("resolveMailConfigForOrg throws MailConfigError with a stable code", async () => {
+    let caught: unknown;
+    try {
+      await resolveMailConfigForOrg("org-r4", prisma, {});
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MailConfigError);
+    expect((caught as MailConfigError).code).toBe("mail_secret_decryption_failed");
+  });
+
+  it("resolveMailConfig (event-scoped, falling back to the org row) throws the same typed error", async () => {
+    await expect(resolveMailConfig("evt-r4", prisma, {})).rejects.toBeInstanceOf(MailConfigError);
   });
 });

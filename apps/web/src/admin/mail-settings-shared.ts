@@ -6,7 +6,13 @@
  */
 import { z } from "zod";
 import type { Context } from "hono";
-import type { ConfigDescriptor, FieldDescriptor, FieldSource, MailSettingsInput } from "@admitto/mailer-config";
+import {
+  MailConfigError,
+  type ConfigDescriptor,
+  type FieldDescriptor,
+  type FieldSource,
+  type MailSettingsInput,
+} from "@admitto/mailer-config";
 import {
   isSendSuccess,
   MailDestinationError,
@@ -181,6 +187,12 @@ export function isProductionEnv(env: NodeJS.ProcessEnv): boolean {
 
 export const MAIL_PROVIDER_UNCONFIGURED = "Cannot resolve mail provider";
 
+/** Admin-facing text for `MailConfigError` "mail_secret_decryption_failed" - shown directly
+ * in the POST /test response body (probe uses the machine code instead; see
+ * handleSmtpConnectionProbe and apps/admin's operator-api-error.ts CODE_MESSAGES). */
+export const MAIL_SECRET_DECRYPTION_FAILED_MESSAGE =
+  "Stored mail credentials could not be decrypted. Re-enter the password or secret in Mail settings and save.";
+
 /** Maps a `resolveMailConfig()` "no provider configured" error to a 422 JSON response;
  * returns null for any other error so the caller can rethrow it unchanged. */
 export function mailNotConfiguredResponse(c: Context, err: unknown): Response | null {
@@ -290,12 +302,16 @@ export async function runTransportTest(
     if (message) {
       console.error(`${logPrefix} failed`);
     }
-    if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
+    let event = "mail_test_failed";
+    if (err instanceof MailConfigError && err.code === "mail_secret_decryption_failed") {
+      errorMessage = MAIL_SECRET_DECRYPTION_FAILED_MESSAGE;
+      event = "mail_secret_decryption_failed";
+    } else if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
       errorMessage = "mail transport not configured";
     } else {
       errorMessage = transportTestErrorForAdmin(message);
     }
-    emitSystemLog("mail", "error", "mail_test_failed", { context: logPrefix, error: errorMessage });
+    emitSystemLog("mail", "error", event, { context: logPrefix, error: errorMessage });
   }
 
   return { resultStatus, errorMessage, resultProvider, resultProviderMessageId, resultRetryable };
@@ -405,6 +421,11 @@ export async function handleSmtpConnectionProbe(
     const message = err instanceof Error ? err.message : undefined;
     if (message?.includes(MAIL_PROVIDER_UNCONFIGURED)) {
       return c.json({ ok: false, error: "mail transport not configured" }, 400);
+    }
+    if (err instanceof MailConfigError && err.code === "mail_secret_decryption_failed") {
+      console.error(`${args.logPrefix} failed`);
+      emitSystemLog("mail", "error", "mail_secret_decryption_failed", { context: args.logPrefix });
+      return c.json({ ok: false, error: err.code }, 422);
     }
     throw err;
   }
