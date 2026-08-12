@@ -229,6 +229,19 @@ describe("PassCreatorClient.updatePass", () => {
     const result = await client.updatePass("pass-1", INPUT);
     expect(result.providerPassId).toBe("pass-1");
   });
+
+  it("sends enforceUniqueUserProvidedId: false, not true (live 2026-08-13: PassCreator rejects an update with 400 'not unique' when this is true, since the id is always already owned by the pass being updated)", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string);
+      expect(body.data.enforceUniqueUserProvidedId).toBe(false);
+      return jsonResponse(200, {
+        success: true,
+        data: { identifier: "pass-1", iPhoneUri: "a", androidUri: "b" },
+      });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await client.updatePass("pass-1", INPUT);
+  });
 });
 
 describe("PassCreatorClient void/restore", () => {

@@ -75,7 +75,7 @@ export class PassCreatorClient implements WalletPassProvider {
     const envelope = await this.request<PassCreatorPassData>(
       "POST",
       "/api/v3/pass?async=false",
-      { data: toPassCreatorData(input, this.templateId, this.fieldMapping) },
+      { data: toPassCreatorData(input, this.templateId, this.fieldMapping, true) },
     );
     return toResult(envelope);
   }
@@ -84,7 +84,7 @@ export class PassCreatorClient implements WalletPassProvider {
     const envelope = await this.request<PassCreatorPassData>(
       "PATCH",
       `/api/v3/pass/${encodeURIComponent(providerPassId)}`,
-      { data: toPassCreatorData(input, this.templateId, this.fieldMapping) },
+      { data: toPassCreatorData(input, this.templateId, this.fieldMapping, false) },
     );
     return toResult(envelope);
   }
