@@ -1077,6 +1077,25 @@ describe("collectAdminHealth", () => {
     expect(report.overall).toBe("ok");
   });
 
+  it("uses singular 'event' in the wallet summary when exactly one event is configured", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb({ event: { count: vi.fn().mockResolvedValue(1) } }),
+      rateLimitStore: {} as never,
+    });
+
+    const wallet = report.groups[1]!.checks.find((c) => c.id === "wallet_passes");
+    expect(wallet?.summary).toBe("Configured for 1 event");
+  });
+
   it("reports wallet as degraded when the event lookup fails", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({

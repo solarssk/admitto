@@ -530,6 +530,24 @@ describe("On-demand wallet routes", () => {
     expect(html).not.toContain("aria-disabled");
   });
 
+  it("hides the wallet badges on the ticket page when no API key is saved (real provider resolution, not injected)", async () => {
+    // makeApp()'s stubProvider injection (options.walletPassProvider) bypasses the real
+    // wallet_api_key_enc check entirely - every other test in this file uses it, so this is the
+    // only one that exercises walletConfigured's actual DB-driven API-key branch.
+    const app = createApp({
+      prisma,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: createRateLimitStore(),
+      skipCheckinBootValidation: true,
+    });
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_api_key_enc: null } });
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}`);
+    const html = await res.text();
+    expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
+    expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
+  });
+
   it("hides the wallet badges on the ticket page when the event has no template configured", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);

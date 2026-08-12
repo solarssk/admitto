@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Outlet, Route, Routes } from "react-router";
+import { resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
@@ -1101,6 +1102,159 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.mouseEnter(hintTrigger);
 
     expect(screen.getByRole("tooltip").textContent).toBe(activeEvent.title);
+  });
+
+  it("shows the event's real Location-tab values in field mapping row tooltips", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      venue_name: "Congress Hall",
+      directions_text: "Enter via the north gate.",
+      accessibility_text: "Step-free access from the car park.",
+      address_components: {
+        object_name: "Congress Hall",
+        street: "Main Street 1",
+        postcode: "00-001",
+        city: "Warsaw",
+        region: "Mazowieckie",
+        country: "Poland",
+      },
+    });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { directions: "directions_text", access: "accessibility_text", city: "city" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      // Leave every other row's hint first - a previous hover in this same waitFor loop (or an
+      // earlier hoverTooltipOf call) never got a matching mouseLeave, so without this two
+      // tooltips can be open at once and getByRole("tooltip") finds more than one match.
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    await waitFor(() => {
+      expect(hoverTooltipOf("Directions").textContent).toBe("Enter via the north gate.");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Accessibility notes").textContent).toBe(
+        "Step-free access from the car park.",
+      );
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("City").textContent).toBe("Warsaw");
+    });
+  });
+
+  it("shows a not-set fallback for location tooltips before the Location tab has anything saved", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { directions: "directions_text" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Directions" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe(
+        "Not set for this event - this field won't be sent.",
+      );
+    });
+  });
+
+  it("shows the real Google/Apple Maps links in field mapping row tooltips", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      venue_name: "Congress Hall",
+      latitude: 52.2297,
+      longitude: 21.0122,
+    });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { gmaps: "google_maps_url", amaps: "apple_maps_url" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      // Leave every other row's hint first - a previous hover in this same waitFor loop (or an
+      // earlier hoverTooltipOf call) never got a matching mouseLeave, so without this two
+      // tooltips can be open at once and getByRole("tooltip") finds more than one match.
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    await waitFor(() => {
+      expect(hoverTooltipOf("Google Maps URL").textContent).toBe(
+        resolveGoogleMapsUrl(52.2297, 21.0122, "Congress Hall", null),
+      );
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Apple Maps URL").textContent).toBe(
+        resolveAppleMapsUrl(52.2297, 21.0122, "Congress Hall", null),
+      );
+    });
+  });
+
+  it("falls back to the raw mapping value in the incomplete-row warning when it matches no known placeholder", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      // "stale_placeholder" doesn't exist in WALLET_MAPPING_PLACEHOLDERS (e.g. left over from an
+      // older vocabulary) - the key is blank, so this row triggers the incomplete-row warning.
+      wallet_field_mapping: { "": "stale_placeholder" } as unknown as Record<string, string>,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(
+      screen.getByText('"stale_placeholder" has no PassCreator field key - this row won\'t be saved.'),
+    ).toBeTruthy();
+  });
+
+  it("warns when two field mapping rows share the same PassCreator field key", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { company: "company", " company ": "department" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(
+      screen.getByText('The key "company" is used by more than one row - only the last one will be saved.'),
+    ).toBeTruthy();
   });
 
   it("keeps a field mapping row's hint icon decorative until a value is picked", async () => {

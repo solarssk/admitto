@@ -7,6 +7,7 @@ import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
+import { PassCreatorClient } from "@admitto/wallet";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -1325,6 +1326,25 @@ describe("PATCH /api/admin/events/:eventId", () => {
     const body = (await res.json()) as { ok: boolean; error: string };
     expect(body.ok).toBe(false);
     expect(body.error).toContain("Could not reach PassCreator");
+  });
+
+  it("POST /wallet/test reports a generic rejection when the client throws something other than WalletProviderError", async () => {
+    // PassCreatorClient itself always wraps failures in WalletProviderError (fetch errors, non-
+    // JSON bodies, HTTP error statuses) - the ternary's other branch only guards against a truly
+    // unexpected throw, which needs a direct spy to reach.
+    vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockRejectedValueOnce(
+      new TypeError("unexpected"),
+    );
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("Could not reach PassCreator.");
   });
 
   it("POST /wallet/test returns 400 on invalid JSON", async () => {
