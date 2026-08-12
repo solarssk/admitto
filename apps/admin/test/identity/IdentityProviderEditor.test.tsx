@@ -144,6 +144,24 @@ describe("IdentityProviderEditor — edit loading", () => {
   });
 });
 
+describe("IdentityProviderEditor — field hints", () => {
+  it("warns against pasting the .well-known discovery URL into Issuer URL", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create provider" })).toBeTruthy();
+    });
+    expect(screen.getByText(/not the \/\.well-known\/openid-configuration document/)).toBeTruthy();
+  });
+
+  it("hints the Client secret field even in create mode, where there's no stored secret to preserve", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Create provider" })).toBeTruthy();
+    });
+    expect(screen.getByText("From the same application registration as the Client ID above.")).toBeTruthy();
+  });
+});
+
 describe("IdentityProviderEditor — create", () => {
   it("blocks submit and shows validation errors when required fields are empty", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");

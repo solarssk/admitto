@@ -10,13 +10,26 @@ export interface OidcDiscoveryDocument {
   end_session_endpoint?: string;
 }
 
-function normalizeIssuer(issuer: string): string {
-  return issuer.endsWith("/") ? issuer : `${issuer}/`;
+const WELL_KNOWN_SUFFIX = "/.well-known/openid-configuration";
+
+/**
+ * Strip an accidentally-pasted discovery document URL down to the bare issuer, and ensure a
+ * trailing slash. Many other apps' OIDC setup docs have operators copy the full
+ * `.well-known/openid-configuration` URL; Admitto's issuer must be the bare value (it's compared
+ * verbatim against every token's `iss` claim - token.ts), and appending `.well-known/...` to an
+ * already-suffixed issuer 404s instead of discovering anything.
+ */
+export function normalizeIssuerInput(issuer: string): string {
+  const trimmed = issuer.trim();
+  const withoutWellKnown = trimmed.endsWith(WELL_KNOWN_SUFFIX)
+    ? trimmed.slice(0, -WELL_KNOWN_SUFFIX.length)
+    : trimmed;
+  return withoutWellKnown.endsWith("/") ? withoutWellKnown : `${withoutWellKnown}/`;
 }
 
 /** Fetch and parse OIDC discovery document. */
 export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryDocument> {
-  const base = normalizeIssuer(issuer);
+  const base = normalizeIssuerInput(issuer);
   assertSafeOidcFetchUrl(base);
   const url = new URL(".well-known/openid-configuration", base).toString();
   assertSafeOidcFetchUrl(url);
