@@ -1099,8 +1099,17 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
     return c.json(passwordTooCommonJsonBody(), 400);
   }
 
-  const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
+  });
   if (!user) return c.json({ error: "not_found" }, 404);
+  // An SSO-managed account signs in via its identity provider, not a local password - setting
+  // one here would silently open a second, unmonitored sign-in path alongside SSO. Unlink the
+  // identity provider first (DELETE .../external-identity) if the account needs to go local.
+  if (user.external_identities.length > 0) {
+    return c.json({ code: "cannot_reset_password_sso_managed" }, 409);
+  }
 
   const hash = await hashPassword(newPassword);
   const orgId = await resolveInstanceOrganizationId(db);

@@ -1265,6 +1265,33 @@ describe("POST /api/admin/users/:id/reset-password", () => {
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("password_too_common");
   });
+
+  it("returns 409 cannot_reset_password_sso_managed and leaves the hash untouched for an SSO-managed account", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-reset-password@example.com", password_hash: null },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-reset-password-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/reset-password`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("cannot_reset_password_sso_managed");
+
+      const user = await prisma.user.findUnique({ where: { id: created.id } });
+      expect(user?.password_hash).toBeNull();
+      expect(user?.must_change_password).toBe(false);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
 });
 
 describe("staff-accountability System logs", () => {

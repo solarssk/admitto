@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Organisation Settings → Security: superadmins can now allow specific third-party `https://` origins to run script, send data, and (on sign-in pages) render an embedded widget, for example an analytics/monitoring beacon like Cloudflare Web Analytics or a login challenge widget like Cloudflare Turnstile, without weakening the Content-Security-Policy for anything else.
 
+### Security
+- Users & roles: **Reset password** and **Reset two-factor** are now disabled for staff accounts signed in through an identity provider, in both the menu and the API, since resetting a password on an SSO-managed account previously created a working local sign-in path alongside the identity provider link with no warning shown.
+
 ## [0.4.14] - 2026-08-11
 
 ### Added

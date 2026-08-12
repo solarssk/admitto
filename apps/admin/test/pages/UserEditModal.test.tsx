@@ -924,6 +924,24 @@ describe("UserEditModal sign-in security", () => {
     expect(screen.getByRole("menuitem", { name: /Unlink identity provider/ })).toHaveProperty("disabled", true);
   });
 
+  it("disables reset password and reset two-factor for SSO-managed accounts", async () => {
+    renderModal({ has_sso: true });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    expect(screen.getByRole("menuitem", { name: /Reset password/ })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("menuitem", { name: /Reset two-factor/ })).toHaveProperty("disabled", true);
+  });
+
+  it("keeps reset password and reset two-factor enabled for local accounts", async () => {
+    renderModal({ has_sso: false });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    expect(screen.getByRole("menuitem", { name: /Reset password/ })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("menuitem", { name: /Reset two-factor/ })).toHaveProperty("disabled", false);
+  });
+
   it("shows up to 3 recent successful logins with location", async () => {
     mockFetchSecurityAuditLog.mockResolvedValue({
       entries: [
