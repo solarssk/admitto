@@ -222,6 +222,14 @@ export interface WalletPassActionDto {
   android_url: string | null;
   last_synced_at: string | null;
   last_error_code: string | null;
+  apple_active_registrations: number | null;
+  apple_inactive_registrations: number | null;
+  google_active_registrations: number | null;
+  google_inactive_registrations: number | null;
+  /** Provider-reported string, deliberately not a Date - PassCreator's docs don't state which
+   * timezone this is in, so it's shown verbatim rather than converted. */
+  first_downloaded_at: string | null;
+  registration_checked_at: string | null;
 }
 
 export interface AttendeeRowDto {

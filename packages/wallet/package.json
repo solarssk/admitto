@@ -7,6 +7,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
+  "dependencies": {
+    "@admitto/crypto": "*",
+    "@admitto/db": "*"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

@@ -8,6 +8,7 @@ import { recordTicketViewed } from "@admitto/mail-delivery";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
 import {
   WalletProviderError,
+  resolveWalletProvider,
   type WalletPassInput,
   type WalletPassProvider,
   type WalletPassResult,
@@ -44,7 +45,6 @@ import {
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
 import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
-import { resolveWalletProvider } from "./wallet-provider.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 import {
   resolveCheckinToken,

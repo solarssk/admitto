@@ -4,3 +4,11 @@ export type { WalletPassProvider } from "./provider.js";
 export { PassCreatorClient, type FetchFn } from "./passcreator-client.js";
 export { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
 export { WALLET_MAPPING_PLACEHOLDERS } from "./passcreator-mapper.js";
+export { resolveWalletProvider } from "./resolve-provider.js";
+export type { WalletPassRegistrationStatus } from "./types.js";
+export {
+  runWalletRegistrationSync,
+  WALLET_SYNC_BATCH_LIMIT,
+  WALLET_SYNC_STALE_MS,
+  type WalletRegistrationSyncResult,
+} from "./registration-sync.js";

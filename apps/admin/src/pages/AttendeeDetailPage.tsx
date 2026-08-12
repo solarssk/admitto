@@ -592,6 +592,16 @@ function walletTone(pass: WalletPassActionDto | null): ChipTone {
   return "neutral";
 }
 
+/** Apple/Google registration counts as PassCreator itself reports them (refreshed periodically by
+ * the wallet_sync worker job, apps/cli - never on a request path). `null` counts mean the worker
+ * hasn't checked yet, not "confirmed zero" - distinct from a confirmed 0. */
+function walletRegistrationLabel(active: number | null, inactive: number | null): string {
+  if (active === null && inactive === null) return "Not checked yet";
+  if ((active ?? 0) > 0) return (active ?? 0) > 1 ? `Registered (${active} devices)` : "Registered";
+  if ((inactive ?? 0) > 0) return "Unregistered";
+  return "Not added";
+}
+
 function itemStateLabel(state: string): string {
   if (state === "issued") return "Issued";
   if (state === "returned") return "Returned";
@@ -794,14 +804,41 @@ function AttendeeOverviewTab({
         >
           {detail.wallet_pass ? (
             <div className="attendee-detail-readonly">
-              {/* None of these three moments has a captured actor/device timezone (issued_at is
-                  the attendee's own device, voided_at/last_synced_at don't persist one either) -
-                  viewer's own browser zone, matching viewerLocalTime's "no known actor zone"
-                  convention, not the event's timezone (which has no real relationship to any of
-                  these - PO review). */}
+              <div className="attendee-detail-row">
+                <span>Apple Wallet</span>
+                <span>
+                  {walletRegistrationLabel(
+                    detail.wallet_pass.apple_active_registrations,
+                    detail.wallet_pass.apple_inactive_registrations,
+                  )}
+                </span>
+              </div>
+              <div className="attendee-detail-row">
+                <span>Google Wallet</span>
+                <span>
+                  {walletRegistrationLabel(
+                    detail.wallet_pass.google_active_registrations,
+                    detail.wallet_pass.google_inactive_registrations,
+                  )}
+                </span>
+              </div>
+              {detail.wallet_pass.first_downloaded_at && (
+                <div className="attendee-detail-row">
+                  <span>First downloaded</span>
+                  {/* Verbatim, not run through formatEventDateTime - PassCreator's docs don't
+                      state which timezone this string is in, so converting it would assert a
+                      zone we don't actually know (PO review). */}
+                  <span className="mono">{detail.wallet_pass.first_downloaded_at}</span>
+                </div>
+              )}
+              {/* None of the remaining timestamps has a captured actor/device timezone (issued_at
+                  is the attendee's own device; voided_at/last_synced_at/registration_checked_at
+                  are admin/worker actions with no persisted zone) - viewer's own browser zone,
+                  matching viewerLocalTime's "no known actor zone" convention, not the event's
+                  timezone (which has no real relationship to any of these - PO review). */}
               {detail.wallet_pass.issued_at && (
                 <div className="attendee-detail-row">
-                  <span>Added on</span>
+                  <span>Pass created</span>
                   <span className="mono">
                     {formatEventDateTime(detail.wallet_pass.issued_at, getBrowserTimeZone())}
                   </span>
@@ -817,9 +854,17 @@ function AttendeeOverviewTab({
               )}
               {detail.wallet_pass.last_synced_at && (
                 <div className="attendee-detail-row">
-                  <span>Last synced</span>
+                  <span>Last reissued</span>
                   <span className="mono">
                     {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
+                  </span>
+                </div>
+              )}
+              {detail.wallet_pass.registration_checked_at && (
+                <div className="attendee-detail-row">
+                  <span>Registration checked</span>
+                  <span className="mono">
+                    {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
                   </span>
                 </div>
               )}

@@ -323,6 +323,20 @@ model WalletPass {
   issued_at DateTime?
   voided_at DateTime?
 
+  // Registration status as PassCreator itself sees it (GET /api/v3/pass?userProvidedId=...),
+  // refreshed periodically by the wallet-sync worker job - best-effort, a PassCreator outage or
+  // rate limit just leaves these stale rather than blocking anything else. Active/inactive are
+  // PassCreator's own device-registration counts per platform, not derived locally.
+  apple_active_registrations    Int?
+  apple_inactive_registrations  Int?
+  google_active_registrations   Int?
+  google_inactive_registrations Int?
+  // String, not DateTime: PassCreator's docs don't state which timezone this is in (no UTC
+  // offset/Z in any example) - stored and displayed verbatim rather than parsed, so we never
+  // assert a timezone we don't actually know.
+  first_downloaded_at     String?
+  registration_checked_at DateTime?
+
   // Legacy/native-provider seam (ADR 0009 §3) - nullable, unused while provider = passcreator.
   pass_type_id  String?
   serial_number String?

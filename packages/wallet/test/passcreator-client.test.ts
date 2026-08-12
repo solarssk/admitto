@@ -327,3 +327,56 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
     expect(result).toMatchObject({ appleUrl: "", androidUrl: "" });
   });
 });
+
+describe("PassCreatorClient.getRegistrationStatus", () => {
+  it("maps the search row's registration counts and firstDownloadedAt", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/v3/pass?userProvidedId=admitto%3Aevent1%3Aattendee1");
+      expect(init?.method).toBe("GET");
+      return jsonResponse(200, {
+        success: true,
+        data: [
+          {
+            identifier: "pass-1",
+            noOfActiveRegistrationsAppleWallet: 1,
+            noOfInactiveRegistrationsAppleWallet: 0,
+            noOfActiveRegistrationsGoogleWallet: 0,
+            noOfInactiveRegistrationsGoogleWallet: 1,
+            firstDownloadedAt: "2026-08-01 10:00:00",
+          },
+        ],
+      });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
+    expect(result).toEqual({
+      appleActiveRegistrations: 1,
+      appleInactiveRegistrations: 0,
+      googleActiveRegistrations: 0,
+      googleInactiveRegistrations: 1,
+      firstDownloadedAt: "2026-08-01 10:00:00",
+    });
+  });
+
+  it("returns null when no pass matches", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: [] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.getRegistrationStatus("admitto:event1:nobody");
+    expect(result).toBeNull();
+  });
+
+  it("defaults missing count fields to 0 and firstDownloadedAt to null", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { success: true, data: [{ identifier: "pass-1" }] }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
+    expect(result).toEqual({
+      appleActiveRegistrations: 0,
+      appleInactiveRegistrations: 0,
+      googleActiveRegistrations: 0,
+      googleInactiveRegistrations: 0,
+      firstDownloadedAt: null,
+    });
+  });
+});

@@ -15,8 +15,7 @@ import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus } from "@admitto/db/status";
 import type { WalletPassStatus } from "@admitto/db/status";
 import { decryptFromString } from "@admitto/crypto";
-import { WalletProviderError, type WalletPassProvider } from "@admitto/wallet";
-import { resolveWalletProvider } from "../wallet-provider.js";
+import { WalletProviderError, resolveWalletProvider, type WalletPassProvider } from "@admitto/wallet";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "../wallet-pass-input.js";
 import {
   loadEventCustomDataFields,
@@ -114,6 +113,12 @@ const ATTENDEE_DETAIL_SELECT = {
       android_url: true,
       last_synced_at: true,
       last_error_code: true,
+      apple_active_registrations: true,
+      apple_inactive_registrations: true,
+      google_active_registrations: true,
+      google_inactive_registrations: true,
+      first_downloaded_at: true,
+      registration_checked_at: true,
     },
   },
 } as const;
@@ -748,6 +753,12 @@ async function buildAttendeeDetailDto(
       android_url: string | null;
       last_synced_at: Date | null;
       last_error_code: string | null;
+      apple_active_registrations: number | null;
+      apple_inactive_registrations: number | null;
+      google_active_registrations: number | null;
+      google_inactive_registrations: number | null;
+      first_downloaded_at: string | null;
+      registration_checked_at: Date | null;
     } | null;
   },
   notesPage = 1,
@@ -2803,6 +2814,14 @@ type WalletPassActionDto = {
   android_url: string | null;
   last_synced_at: string | null;
   last_error_code: string | null;
+  apple_active_registrations: number | null;
+  apple_inactive_registrations: number | null;
+  google_active_registrations: number | null;
+  google_inactive_registrations: number | null;
+  /** Provider-reported string, deliberately not parsed to a Date - see the schema comment on
+   * WalletPass.first_downloaded_at for why (unconfirmed timezone). */
+  first_downloaded_at: string | null;
+  registration_checked_at: string | null;
 };
 
 function serializeWalletPassAction(pass: {
@@ -2813,6 +2832,12 @@ function serializeWalletPassAction(pass: {
   android_url: string | null;
   last_synced_at: Date | null;
   last_error_code: string | null;
+  apple_active_registrations: number | null;
+  apple_inactive_registrations: number | null;
+  google_active_registrations: number | null;
+  google_inactive_registrations: number | null;
+  first_downloaded_at: string | null;
+  registration_checked_at: Date | null;
 }): WalletPassActionDto {
   return {
     status: pass.status as WalletPassStatus,
@@ -2822,6 +2847,12 @@ function serializeWalletPassAction(pass: {
     android_url: pass.android_url,
     last_synced_at: pass.last_synced_at ? pass.last_synced_at.toISOString() : null,
     last_error_code: pass.last_error_code,
+    apple_active_registrations: pass.apple_active_registrations,
+    apple_inactive_registrations: pass.apple_inactive_registrations,
+    google_active_registrations: pass.google_active_registrations,
+    google_inactive_registrations: pass.google_inactive_registrations,
+    first_downloaded_at: pass.first_downloaded_at,
+    registration_checked_at: pass.registration_checked_at ? pass.registration_checked_at.toISOString() : null,
   };
 }
 

@@ -34,5 +34,15 @@ export function createStubWalletProvider(): WalletPassProvider {
     async findByUserProvidedId(userProvidedId) {
       return passes.get(userProvidedId) ?? null;
     },
+    async getRegistrationStatus(userProvidedId) {
+      if (!passes.has(userProvidedId)) return null;
+      return {
+        appleActiveRegistrations: 0,
+        appleInactiveRegistrations: 0,
+        googleActiveRegistrations: 0,
+        googleInactiveRegistrations: 0,
+        firstDownloadedAt: null,
+      };
+    },
   };
 }

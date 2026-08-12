@@ -1,5 +1,5 @@
 import { WalletProviderError } from "./types.js";
-import type { WalletPassInput, WalletPassResult } from "./types.js";
+import type { WalletPassInput, WalletPassRegistrationStatus, WalletPassResult } from "./types.js";
 import type { WalletPassProvider } from "./provider.js";
 import { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
 import { toPassCreatorData } from "./passcreator-mapper.js";
@@ -29,6 +29,11 @@ type PassCreatorSearchRow = {
   linkToPassPage?: string;
   iPhoneUri?: string;
   androidUri?: string;
+  noOfActiveRegistrationsAppleWallet?: number;
+  noOfInactiveRegistrationsAppleWallet?: number;
+  noOfActiveRegistrationsGoogleWallet?: number;
+  noOfInactiveRegistrationsGoogleWallet?: number;
+  firstDownloadedAt?: string | null;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -113,11 +118,7 @@ export class PassCreatorClient implements WalletPassProvider {
   }
 
   async findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null> {
-    const rows = await this.request<PassCreatorSearchRow[]>(
-      "GET",
-      `/api/v3/pass?userProvidedId=${encodeURIComponent(userProvidedId)}`,
-    );
-    const row = rows[0];
+    const row = await this.searchByUserProvidedId(userProvidedId);
     if (!row) return null;
     return {
       providerPassId: row.identifier,
@@ -125,6 +126,29 @@ export class PassCreatorClient implements WalletPassProvider {
       appleUrl: row.iPhoneUri ?? "",
       androidUrl: row.androidUri ?? "",
     };
+  }
+
+  /** Polled by the wallet-sync worker job (apps/cli), not on any request path. */
+  async getRegistrationStatus(userProvidedId: string): Promise<WalletPassRegistrationStatus | null> {
+    const row = await this.searchByUserProvidedId(userProvidedId);
+    if (!row) return null;
+    return {
+      appleActiveRegistrations: row.noOfActiveRegistrationsAppleWallet ?? 0,
+      appleInactiveRegistrations: row.noOfInactiveRegistrationsAppleWallet ?? 0,
+      googleActiveRegistrations: row.noOfActiveRegistrationsGoogleWallet ?? 0,
+      googleInactiveRegistrations: row.noOfInactiveRegistrationsGoogleWallet ?? 0,
+      firstDownloadedAt: row.firstDownloadedAt ?? null,
+    };
+  }
+
+  /** Shared by findByUserProvidedId and getRegistrationStatus - same search endpoint, different
+   * fields of the same row. */
+  private async searchByUserProvidedId(userProvidedId: string): Promise<PassCreatorSearchRow | null> {
+    const rows = await this.request<PassCreatorSearchRow[]>(
+      "GET",
+      `/api/v3/pass?userProvidedId=${encodeURIComponent(userProvidedId)}`,
+    );
+    return rows[0] ?? null;
   }
 
   /** Void/restore uses a separate, non-v3 endpoint (ADR 0041 §3) and returns 204, no body. */
