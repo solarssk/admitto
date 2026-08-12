@@ -3014,6 +3014,14 @@
   width: min(720px, 100%);
 }
 
+/* The mapping repeater's row (Group/Role/Scope/[Organization or Event]) is the widest content
+   in any --wide panel - at 720px its columns sit at their minmax() floor with almost no slack.
+   A dedicated modifier (rather than raising --wide itself) keeps CfAccessEditor, the class's
+   other consumer, at its existing width. */
+.identity-modal__panel--identity-editor {
+  width: min(880px, 100%);
+}
+
 .identity-modal__scroll {
   overflow: auto;
   /* Without this, scrolling past the panel's own end with a trackpad
@@ -3202,12 +3210,17 @@
 }
 
 @media (max-width: 640px) {
+  /* Two columns, not one: Group+Role pair on the first row, Scope+[Organization or Event] (when
+     present) on the second - a full single-column stack (PO report) wastes width phones already
+     have. Remove always spans both columns below (odd item count in the 3-field/instance-scope
+     case) instead of stranding it alone next to Scope. */
   .identity-mappings__row,
   .identity-mappings__row--with-scope-id {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .identity-mappings__remove {
+    grid-column: 1 / -1;
     justify-content: flex-end;
   }
 }

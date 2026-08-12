@@ -14,6 +14,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchIdentityProvider: vi.fn(),
     createIdentityProvider: vi.fn(),
     updateIdentityProvider: vi.fn(),
+    fetchAdminEvents: vi.fn(),
+    fetchAdminOrganizations: vi.fn(),
   };
 });
 
@@ -21,11 +23,18 @@ import {
   fetchIdentityProvider,
   createIdentityProvider,
   updateIdentityProvider,
+  fetchAdminEvents,
+  fetchAdminOrganizations,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchIdentityProvider);
 const mockCreate = vi.mocked(createIdentityProvider);
 const mockUpdate = vi.mocked(updateIdentityProvider);
+// This suite never exercises the mapping repeater's event/organization pickers directly - just
+// give them a stable, empty resolution so the repeater's own fetch-on-mount doesn't reject
+// unhandled in every test here (clearAllMocks in afterEach clears call history, not this).
+vi.mocked(fetchAdminEvents).mockResolvedValue([]);
+vi.mocked(fetchAdminOrganizations).mockResolvedValue([]);
 
 function renderEditorAt(path: string) {
   // createMemoryRouter + RouterProvider (not the component <MemoryRouter>) so the

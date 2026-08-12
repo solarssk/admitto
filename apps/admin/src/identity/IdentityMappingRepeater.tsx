@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { Button, Input } from "@admitto/ui";
-import { SearchableSelect } from "../components/SearchableSelect.js";
+import { fetchAdminEvents, fetchAdminOrganizations } from "../api/client.js";
+import { SearchableSelect, type SearchableSelectOption } from "../components/SearchableSelect.js";
 import {
   MAPPING_ROLES,
   withScopeForRole,
@@ -21,6 +23,29 @@ export function IdentityMappingRepeater({
   errors,
   onChange,
 }: Readonly<IdentityMappingRepeaterProps>) {
+  const [events, setEvents] = useState<SearchableSelectOption[]>([]);
+  const [organizations, setOrganizations] = useState<SearchableSelectOption[]>([]);
+  const [scopeOptionsLoading, setScopeOptionsLoading] = useState(true);
+
+  // Populates the Event/Organization pickers below with real, existing rows - scope_id used to
+  // be a free-text field with no existence check (validateMappingRow only checks length), so a
+  // typo silently saved a mapping that could never match any real user's grant. Failure here
+  // degrades to an empty picker (still usable via the current-value fallback option below), not
+  // a blocked modal - this list is a convenience, not a save-blocking dependency.
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.all([fetchAdminEvents({ signal: controller.signal }), fetchAdminOrganizations(controller.signal)])
+      .then(([eventList, organizationList]) => {
+        setEvents(eventList.map((e) => ({ id: e.id, label: e.title, icon: "calendar-event" })));
+        setOrganizations(organizationList.map((o) => ({ id: o.id, label: o.name, icon: "building" })));
+      })
+      .catch(() => {
+        /* picker still works via the current-value fallback option; Save is unaffected */
+      })
+      .finally(() => setScopeOptionsLoading(false));
+    return () => controller.abort();
+  }, []);
+
   const updateRow = (index: number, patch: Partial<MappingRow>) => {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   };
@@ -113,16 +138,47 @@ export function IdentityMappingRepeater({
                 <span id={scopeErrorId} className="at-hint at-hint--error">{rowError.scope_type}</span>
               )}
             </div>
-            {needsScopeId && (
-              <Input
-                label={row.scope_type === "organization" ? "Organization ID" : "Event ID"}
-                value={row.scope_id}
-                invalid={Boolean(rowError.scope_id)}
-                error={rowError.scope_id}
-                onChange={(e) => updateRow(index, { scope_id: e.target.value })}
-                placeholder={row.scope_type === "organization" ? "org-uuid" : "event-uuid"}
-              />
-            )}
+            {needsScopeId && (() => {
+              const isOrg = row.scope_type === "organization";
+              const fieldLabel = isOrg ? "Organization" : "Event";
+              const scopeIdOptions = isOrg ? organizations : events;
+              const currentKnown = !row.scope_id || scopeIdOptions.some((o) => o.id === row.scope_id);
+              const scopeIdErrorId = rowError.scope_id
+                ? `identity-mapping-scope-id-${row.id}-error`
+                : undefined;
+              return (
+                <div>
+                  <div className="at-field">
+                    <label className="at-label" htmlFor={`identity-mapping-scope-id-${row.id}`}>
+                      {fieldLabel}
+                    </label>
+                    <SearchableSelect
+                      id={`identity-mapping-scope-id-${row.id}`}
+                      label={fieldLabel}
+                      placeholder={`Select ${fieldLabel.toLowerCase()}…`}
+                      searchPlaceholder={`Search ${fieldLabel.toLowerCase()}s…`}
+                      emptyLabel={
+                        scopeOptionsLoading ? "Loading…" : `No ${fieldLabel.toLowerCase()}s found`
+                      }
+                      showLabel={false}
+                      value={row.scope_id}
+                      invalid={Boolean(rowError.scope_id)}
+                      describedBy={scopeIdErrorId}
+                      options={[
+                        ...(currentKnown ? [] : [{ id: row.scope_id, label: `${row.scope_id} (not found)` }]),
+                        ...scopeIdOptions,
+                      ]}
+                      onChange={(id) => updateRow(index, { scope_id: id })}
+                    />
+                  </div>
+                  {rowError.scope_id && (
+                    <span id={scopeIdErrorId} className="at-hint at-hint--error">
+                      {rowError.scope_id}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
             <div className="identity-mappings__remove">
               <Button
                 type="button"

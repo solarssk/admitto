@@ -1000,7 +1000,7 @@ export function IdentityProviderEditor({
   return createPortal(
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" aria-hidden="true" />
-      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide identity-modal__panel--identity-editor">
         <div ref={scrollRef} className="identity-modal__scroll">
           <IdentityModalHeader
             titleId={titleId}
