@@ -1,4 +1,4 @@
-import { filterCustomDataAttributeFields } from "@admitto/tickets";
+import { filterCustomDataAttributeFields } from "@admitto/tickets/custom-data-reserved";
 import { fetchEventCustomFields } from "../api/client.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 
