@@ -26,22 +26,26 @@ describe("toPassCreatorData", () => {
     expect(data.barcodeSource).toBe("https://tickets.example.com/t/tok-1");
   });
 
-  it("includes eventHours and eventPlace when both labels are provided", () => {
+  it("sends only base fields (templateId, userProvidedId, barcodeValue) when fieldMapping is omitted", () => {
     const data = toPassCreatorData(
       { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },
       "tmpl-1",
     );
-    expect(data.eventHours).toBe("18:00-22:00");
-    expect(data.eventPlace).toBe("Test Venue");
+    expect(data).toEqual({
+      templateId: "tmpl-1",
+      userProvidedId: "admitto:evt-1:att-1",
+      enforceUniqueUserProvidedId: true,
+      barcodeValue: "https://tickets.example.com/t/tok-1",
+    });
   });
 
-  it("omits eventHours and eventPlace when both labels are absent", () => {
-    const data = toPassCreatorData(baseInput, "tmpl-1");
-    expect(data).not.toHaveProperty("eventHours");
-    expect(data).not.toHaveProperty("eventPlace");
+  it("sends only base fields when fieldMapping is an empty object", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1", {});
+    expect(data).not.toHaveProperty("name");
+    expect(data).not.toHaveProperty("eventDate");
   });
 
-  it("uses an admin field mapping instead of the default keys when provided", () => {
+  it("sends exactly the fields listed in fieldMapping, nothing more", () => {
     const data = toPassCreatorData(
       { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },
       "tmpl-1",
@@ -55,16 +59,23 @@ describe("toPassCreatorData", () => {
     });
     expect(data).not.toHaveProperty("name");
     expect(data).not.toHaveProperty("eventDate");
+    expect(data).not.toHaveProperty("eventHours");
+    expect(data).not.toHaveProperty("eventPlace");
+  });
+
+  it("includes a mapped field's value when the corresponding label is set", () => {
+    const data = toPassCreatorData(
+      { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },
+      "tmpl-1",
+      { hours: "event_hours", place: "event_location" },
+    );
+    expect(data.hours).toBe("18:00-22:00");
+    expect(data.place).toBe("Test Venue");
   });
 
   it("drops a mapped field whose source value is unset", () => {
     const data = toPassCreatorData(baseInput, "tmpl-1", { hours: "event_hours" });
     expect(data).not.toHaveProperty("hours");
-  });
-
-  it("falls back to the default mapping when fieldMapping is empty", () => {
-    const data = toPassCreatorData(baseInput, "tmpl-1", {});
-    expect(data.name).toBe("Alice Admin");
   });
 
   it("maps the expanded placeholder vocabulary (name parts, event/address, maps links)", () => {

@@ -119,9 +119,9 @@ const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass prov
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
-  "Optional. Replaces the default mapping entirely - add every field your template needs, not just the ones you want to change.";
-const WALLET_FIELD_MAPPING_DEFAULT_NOTICE =
-  "Using the default mapping: name → full name, eventDate → event date, eventHours → event hours, eventPlace → event location, ticketType → ticket type.";
+  "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
+const WALLET_FIELD_MAPPING_EMPTY_NOTICE =
+  "No fields mapped yet - only the QR code is sent to PassCreator. Add a field for each value your template should show (name, event date, ticket type, and so on).";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -1511,7 +1511,7 @@ export function EventSettingsPage() {
                   </Button>
                 </div>
                 {form.walletFieldMapping.length === 0 && (
-                  <Notice variant="info">{WALLET_FIELD_MAPPING_DEFAULT_NOTICE}</Notice>
+                  <Notice variant="warning">{WALLET_FIELD_MAPPING_EMPTY_NOTICE}</Notice>
                 )}
                 {form.walletFieldMapping.length > 0 &&
                   form.walletFieldMapping.map((row, index) => (

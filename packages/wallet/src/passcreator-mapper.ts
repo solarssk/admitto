@@ -72,9 +72,11 @@ function walletPlaceholderValues(input: WalletPassInput): Record<string, string 
  * `data` object, not as siblings — `_ops/PASSCREATOR-INTEGRATION-DOCS.md`'s
  * example (siblings) does not match the real API.
  *
- * Custom template fields default to `name`/`eventDate`/`eventHours`/`eventPlace`/`ticketType`
- * (ADR 0041 §3a, this specific template's keys) - an admin can override which PassCreator key
- * gets which value via `fieldMapping` (Event Settings -> Wallet) for a different template.
+ * No default field mapping: PassCreator templates don't share a common set of Additional
+ * Property names, so guessing keys like `name`/`eventDate` only ever matched one specific
+ * template and silently sent nothing for every other one. An admin maps every field their
+ * template's Additional Properties expect via `fieldMapping` (Event Settings -> Wallet) -
+ * nothing beyond `base` is sent when it's empty.
  */
 export function toPassCreatorData(
   input: WalletPassInput,
@@ -91,21 +93,13 @@ export function toPassCreatorData(
     // does not match any real Admitto ticket.
     barcodeValue: input.barcodeValue,
   };
-  if (fieldMapping && Object.keys(fieldMapping).length > 0) {
-    const values = walletPlaceholderValues(input);
-    const custom: Record<string, unknown> = {};
-    for (const [key, placeholder] of Object.entries(fieldMapping)) {
-      const value = values[placeholder];
-      if (value) custom[key] = value;
-    }
-    return { ...base, ...custom };
+  if (!fieldMapping) return base;
+
+  const values = walletPlaceholderValues(input);
+  const custom: Record<string, unknown> = {};
+  for (const [key, placeholder] of Object.entries(fieldMapping)) {
+    const value = values[placeholder];
+    if (value) custom[key] = value;
   }
-  return {
-    ...base,
-    name: input.attendeeName,
-    eventDate: input.eventDateLabel,
-    ...(input.eventHoursLabel ? { eventHours: input.eventHoursLabel } : {}),
-    ...(input.eventLocationLabel ? { eventPlace: input.eventLocationLabel } : {}),
-    ticketType: input.ticketTypeLabel,
-  };
+  return { ...base, ...custom };
 }

@@ -17,14 +17,9 @@ Have a PassCreator account with a pass template already created for the event, a
 
 1. Open the PassCreator dashboard, then **Templates** and the event's template.
 2. Open **Editor**, then **Design & Content → Additional Properties** (also labelled **Personalization**).
-3. Add one custom field per value the pass should show. Use these exact names to match Event Settings → Wallet's default field mapping:
-   - `name` - attendee full name
-   - `eventDate` - event date
-   - `eventHours` - event hours
-   - `eventPlace` - event location
-   - `ticketType` - ticket type
-4. If Event Settings → Wallet's **Field mapping** uses different PassCreator field keys, add a custom field with that exact key instead - the property name must match the field mapping key character for character.
-5. Save each new property. PassCreator generates a placeholder token for it, shown next to the field (for example `{eventDate}`).
+3. Add one custom field per value the pass should show, choosing any property name you want (for example `attendeeName`, `eventDate`, `ticketKind`) - Admitto has no built-in default names, so what you type here is what you'll map to in step 4.
+4. In Admitto, open the event's **Event settings → Wallet** tab. Under **Field mapping**, add one row per property from step 3: pick what value it should hold (for example "Attendee full name"), and type the exact same property name from step 3 as the key. Nothing beyond the QR code is sent to PassCreator until it's mapped here - there is no default to fall back on.
+5. Back in PassCreator, save each new property. PassCreator generates a placeholder token for it, shown next to the field (for example `{eventDate}`).
 6. Open **Design & Content → Frontfields** (or Secondary/Auxiliary fields, depending on where the value should appear on the card).
 7. For each field on the card, set its **Value** to the generated placeholder token from step 5 (for example `{eventDate}`), not the plain field name typed as text.
 8. Save the template. PassCreator warns "Non-existent placeholders" if a token doesn't match a registered property - resolve every warning before saving.
@@ -39,8 +34,8 @@ The Apple Wallet and Google Wallet pass shows the attendee's name, the event dat
 
 - PassCreator only substitutes a value into a card field when that field's Value box holds the property's generated placeholder token. Typing the plain field name as text (no braces) does nothing - PassCreator prints it exactly as typed.
 - A property must be registered as an Additional Property on that specific template before it can be referenced anywhere on that template. Nothing in Admitto or PassCreator does this automatically; it is a manual, per-template step.
-- Admitto's default field mapping (name, eventDate, eventHours, eventPlace, ticketType) only works once a template has these five properties registered under those exact names. A template cloned or created without them needs this setup even if Admitto's own settings look correctly configured.
-- Changing Event Settings → Wallet's **Field mapping** to custom keys means registering matching Additional Properties under those same keys in PassCreator - the two must stay in sync.
+- Admitto has no built-in default field mapping. An event with an empty **Field mapping** sends nothing beyond the QR code to PassCreator - every value shown on the pass, including the attendee's name, must be mapped explicitly. This is deliberate: different templates use different property names, so a guessed default would only ever match one specific template and silently send nothing for every other one.
+- Event Settings → Wallet's **Field mapping** and the template's Additional Properties must stay in sync by hand - the mapping's key must match a registered property's name character for character.
 - The pass's Barcode Value is separate from Additional Properties field substitution. Admitto always sends the attendee's real ticket/QR URL as a dedicated API value, but a template's Barcode Value box only uses it when it's explicitly bound to a registered Additional Property (step 9) - PassCreator's own default for this box is the pass's internal ID, not the ticket URL, and there is no automatic way to point it at Admitto's value without this step.
 
 ## What changes after this action
@@ -49,9 +44,10 @@ New and reissued wallet passes for this event's attendees show real data. Passes
 
 ## Common problems
 
-- **PassCreator shows a "Non-existent placeholders" warning when saving:** the placeholder token used in a Value box doesn't match any registered Additional Property on this template. Add the missing property (steps 3-5) or fix the token's spelling.
+- **PassCreator shows a "Non-existent placeholders" warning when saving:** the placeholder token used in a Value box doesn't match any registered Additional Property on this template. Add the missing property (steps 3, 5) or fix the token's spelling.
+- **A field is registered in PassCreator and shows a real value on other passes, but this one field stays blank or shows "no value given":** the Field mapping row for it is missing in Admitto (step 4) - a property existing in PassCreator does nothing on its own, Admitto only sends a value for a property once it's mapped. Check Event Settings → Wallet's Field mapping list for a row with that exact key.
 - **The card still shows a literal field name like `eventPlace` after adding the property:** the Value box still has the plain field name typed as text - replace it with the generated placeholder token (step 7), don't leave both.
-- **Test connection succeeds in Admitto but the pass still shows blank or wrong fields:** Test connection only checks that the API key and Template ID are valid and reachable - it does not check that Additional Properties are registered or that Value boxes reference them correctly.
+- **Test connection succeeds in Admitto but the pass still shows blank or wrong fields:** Test connection only checks that the API key and Template ID are valid and reachable - it does not check that Additional Properties are registered, that Field mapping rows exist for them, or that Value boxes reference them correctly.
 - **Scanning the wallet pass at check-in doesn't find the attendee, or the QR looks different from the ticket page's QR:** the template's Barcode Value box is still bound to `{userProvidedId}` (PassCreator's own pass identifier) instead of the ticket URL - see step 9.
 
 ## Related pages
