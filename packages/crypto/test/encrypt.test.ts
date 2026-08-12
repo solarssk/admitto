@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { decrypt, decryptFromString, encrypt, encryptToString } from "../src/encrypt.js";
+import { CryptoDecryptionError, decrypt, decryptFromString, encrypt, encryptToString } from "../src/encrypt.js";
 import { _resetKeyCache } from "../src/key.js";
 
 // Key is set by vitest.config.ts env (ENCRYPTION_KEY + NODE_ENV=test).
@@ -66,6 +66,29 @@ describe("encrypt / decrypt — tamper detection", () => {
     expect(() => decrypt(tampered)).toThrow();
   });
 
+  it("throws a CryptoDecryptionError (not the raw Node crypto message) on modified ciphertext", () => {
+    const payload = encrypt("secret");
+    const raw = Buffer.from(payload.ciphertext, "base64");
+    raw[0] ^= 0xff;
+    const tampered = { ...payload, ciphertext: raw.toString("base64") };
+    let caught: unknown;
+    try {
+      decrypt(tampered);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+    expect((caught as CryptoDecryptionError).code).toBe("decryption_failed");
+    expect((caught as CryptoDecryptionError).message).not.toMatch(/authenticate data/i);
+  });
+
+  it("throws a CryptoDecryptionError when decrypting with the wrong key", () => {
+    const payload = encrypt("secret");
+    process.env["ENCRYPTION_KEY"] = Buffer.alloc(32, 0x42).toString("base64");
+    _resetKeyCache();
+    expect(() => decrypt(payload)).toThrow(CryptoDecryptionError);
+  });
+
   it("throws on invalid iv length before decipher", () => {
     const payload = encrypt("secret");
     const tampered = { ...payload, iv: Buffer.alloc(8).toString("base64") };
@@ -83,6 +106,68 @@ describe("encryptToString / decryptFromString", () => {
   it("round-trips through JSON string", () => {
     const plain = "raw-ticket-token-abc123";
     expect(decryptFromString(encryptToString(plain))).toBe(plain);
+  });
+
+  it("propagates CryptoDecryptionError on corrupted ciphertext", () => {
+    const s = encryptToString("raw-ticket-token-abc123");
+    const parsed = JSON.parse(s) as { ciphertext: string };
+    const raw = Buffer.from(parsed.ciphertext, "base64");
+    raw[0] ^= 0xff;
+    parsed.ciphertext = raw.toString("base64");
+    expect(() => decryptFromString(JSON.stringify(parsed))).toThrow(CryptoDecryptionError);
+  });
+
+  it("normalizes invalid JSON into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString("not json at all {");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+    expect((caught as CryptoDecryptionError).code).toBe("decryption_failed");
+  });
+
+  it("normalizes a malformed payload shape into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString(JSON.stringify({ notAnEncryptedPayload: true }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+    expect((caught as CryptoDecryptionError).code).toBe("decryption_failed");
+  });
+
+  it("normalizes a falsy-but-valid-JSON payload (null) into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString("null");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+  });
+
+  it("normalizes a non-object JSON payload (string) into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString(JSON.stringify("just a string"));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+  });
+
+  it("normalizes an unsupported keyVersion into CryptoDecryptionError", () => {
+    const payload = encrypt("secret");
+    let caught: unknown;
+    try {
+      decryptFromString(JSON.stringify({ ...payload, keyVersion: 99 }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
   });
 });
 

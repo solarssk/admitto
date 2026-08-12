@@ -154,6 +154,12 @@ describe("operatorApiErrorMessage", () => {
       ),
     ).toMatch(/resolve the mail destination hostname/);
     expect(
+      operatorApiErrorMessage(
+        new ApiError(422, "mail_secret_decryption_failed", "mail_secret_decryption_failed"),
+        "Could not test the SMTP connection.",
+      ),
+    ).toMatch(/could not be decrypted/);
+    expect(
       operatorApiErrorMessage(new ApiError(500, "internal_error", "internal_error"), "Resend failed."),
     ).toMatch(/System logs/);
     expect(
