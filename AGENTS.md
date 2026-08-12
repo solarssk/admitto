@@ -110,19 +110,12 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
-**Font formats (`apps/admin`): woff2 only, no woff/truetype fallback.** `apps/admin` ships as a
-native ES module with no legacy bundle (no `@vitejs/plugin-legacy`, no `.browserslistrc`, `tsconfig`
-targets `ES2022`, and the compiled output already uses syntax like `??=` directly) — any browser
-old enough to need a woff/truetype fallback can't parse or execute the app's JS in the first place,
-so those files are pure dead weight (confirmed: ~3.3MB from `@tabler/icons-webfont`'s woff+ttf
-alone, stripped via the `stripLegacyIconFontFallback` Vite plugin in `apps/admin/vite.config.ts`).
-When adding a new self-hosted font (icon font or text font), prefer a source that ships woff2 only,
-or add a build-time strip like the existing plugin if the vendor package doesn't offer one — don't
-just import the vendor's default multi-format CSS as-is. `@fontsource` text fonts (Inter, Manrope,
-Space Grotesk, IBM Plex Sans) still ship woff2+woff pairs per language subset as of this writing;
-left as-is because trimming there also means deciding which language subsets (cyrillic, vietnamese,
-greek, ...) are actually needed for attendee names — a product call, not a mechanical one, and not
-yet made.
+**Font formats (`apps/admin`): woff2 only, no woff/truetype fallback** — the app's JS already
+requires a browser new enough that woff2 is a given, so older formats are pure dead weight. See
+[packages/ui/README.md](packages/ui/README.md) "Fonts" for the full reasoning, what's currently
+shipped vs. stripped, script/locale coverage gaps (Arabic, CJK, RTL), and why the same fix doesn't
+mechanically extend to `@fontsource` text fonts (CSS `@import` bypasses Vite's plugin hooks — don't
+re-attempt that approach without reading why it failed first).
 
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
 
