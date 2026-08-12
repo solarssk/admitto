@@ -254,12 +254,12 @@
   margin-top: var(--space-3);
 }
 
-/* Vertically centers the small info icon against the taller Value/Key/Remove controls beside it
-   (the row's own align-items: start otherwise pins it to their top edge) - same cursor: help
-   convention as .security-field-warning-trigger for an icon-only tooltip trigger. */
-.wallet-field-mapping__hint {
-  align-self: center;
-  color: var(--text-muted);
+/* Hint icon renders with the same at-btn/at-btn--secondary classes as the Remove button beside
+   it (same box, height, border, hover state) - but it never does anything on click, so cursor:
+   help replaces at-btn's own pointer to signal "hover for info", not "click me". The compound
+   selector wins over at-btn's own single-class cursor rule regardless of stylesheet load order
+   (same trick as .settings-row.wallet-field-mapping__header above). */
+.at-btn.wallet-field-mapping__hint {
   cursor: help;
 }
 

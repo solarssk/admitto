@@ -14,6 +14,7 @@ import {
   archiveEvent,
   deleteEvent,
   exportEventPii,
+  fetchEventLocation,
   fetchEventSettings,
   fetchTicketTypes,
   patchEvent,
@@ -24,8 +25,9 @@ import {
   uploadEventBrandingFile,
 } from "../api/client.js";
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet";
+import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
+import type { EventLocationDto, EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import {
@@ -46,7 +48,7 @@ import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime, formatUtcDateTime, formatWalletDatePreview } from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -194,42 +196,72 @@ const WALLET_PLACEHOLDER_ICONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[numb
   ticket_url: "ticket",
 };
 
-/** What each placeholder actually resolves to at send time (apps/web/src/app.ts's own
- * buildWalletPassInput) - shown in the Field mapping row's hint icon so an admin doesn't have to
- * guess what a row will put on the pass. "Not sent if..." callouts mirror toPassCreatorData's own
- * `if (value) custom[key] = value` - a falsy value is omitted from the PassCreator payload
- * entirely, not sent as an empty string. */
-const WALLET_PLACEHOLDER_DESCRIPTIONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string> = {
-  full_name: "The attendee's full name.",
-  first_name: "The attendee's first name only. Not sent if the attendee has no first name on file.",
-  last_name: "The attendee's last name only. Not sent if the attendee has no last name on file.",
-  email: "The attendee's email address. Not sent if the attendee has no email on file.",
-  company: "The attendee's company. Not sent if not set.",
-  department: "The attendee's department. Not sent if not set.",
-  event_name: "This event's name.",
-  event_date: "This event's date, formatted the same way as the ticket page.",
-  event_hours: 'This event\'s hours, e.g. "18:00-22:00". Not sent if the event has no hours set.',
-  event_location: "This event's location text. Not sent if not set.",
-  directions_text: "This event's directions text. Not sent if not set.",
-  accessibility_text: "This event's accessibility notes. Not sent if not set.",
-  google_maps_url: "A Google Maps link to the event location. Not sent if the event has no coordinates.",
-  apple_maps_url: "An Apple Maps link to the event location. Not sent if the event has no coordinates.",
-  object_name: "The venue name from the event's address. Not sent if not set.",
-  street: "The street from the event's address. Not sent if not set.",
-  postcode: "The postal code from the event's address. Not sent if not set.",
-  city: "The city from the event's address. Not sent if not set.",
-  region: "The region from the event's address. Not sent if not set.",
-  country: "The country from the event's address. Not sent if not set.",
-  ticket_type: 'The attendee\'s ticket type, e.g. "VIP". Defaults to "General" if none is set.',
-  ticket_url: "The same value encoded in the ticket's QR code and barcode.",
-};
-
 const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
   id,
   icon: WALLET_PLACEHOLDER_ICONS[id],
   label: WALLET_PLACEHOLDER_LABELS[id],
-  description: WALLET_PLACEHOLDER_DESCRIPTIONS[id],
 }));
+
+/** Placeholders whose real value depends on which attendee gets the pass, not on the event alone
+ * - there's no single "value for this event" to preview on this page. */
+const WALLET_ATTENDEE_SCOPED_HINTS: Partial<Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string>> = {
+  full_name: "e.g. Jan Kowalski",
+  first_name: "e.g. Jan",
+  last_name: "e.g. Kowalski",
+  email: "e.g. jan.kowalski@example.com",
+  company: "e.g. Acme Sp. z o.o.",
+  department: "e.g. Marketing",
+  ticket_type: "e.g. VIP",
+  ticket_url: "e.g. 8f14e45fceea167a5a36",
+};
+
+const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.";
+
+/** The real value a field mapping row's hint icon shows on hover - what this specific event
+ * would actually send for the selected placeholder right now (apps/web/src/app.ts's own
+ * buildWalletPassInput), not a generic description of the field. `location` is `undefined` while
+ * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
+function computeWalletPlaceholderPreview(
+  id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
+  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd">,
+  location: EventLocationDto | null | undefined,
+): string {
+  const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
+  if (attendeeHint) return attendeeHint;
+  if (id === "event_name") return form.title;
+  if (id === "event_date") return formatWalletDatePreview(form.date);
+  if (id === "event_hours") {
+    return form.eventHoursStart && form.eventHoursEnd
+      ? `${form.eventHoursStart}-${form.eventHoursEnd}`
+      : WALLET_VALUE_NOT_SET;
+  }
+  if (location === undefined) return "Loading…";
+  switch (id) {
+    case "event_location":
+      return location?.venue_name || WALLET_VALUE_NOT_SET;
+    case "directions_text":
+      return location?.directions_text || WALLET_VALUE_NOT_SET;
+    case "accessibility_text":
+      return location?.accessibility_text || WALLET_VALUE_NOT_SET;
+    case "google_maps_url":
+    case "apple_maps_url": {
+      if (!location || !isMapReady(location)) return WALLET_VALUE_NOT_SET;
+      const label = location.venue_name ?? location.formatted_address ?? undefined;
+      return id === "google_maps_url"
+        ? resolveGoogleMapsUrl(location.latitude!, location.longitude!, label, location.google_maps_url_override)
+        : resolveAppleMapsUrl(location.latitude!, location.longitude!, label, location.apple_maps_url_override);
+    }
+    case "object_name":
+    case "street":
+    case "postcode":
+    case "city":
+    case "region":
+    case "country":
+      return location?.address_components?.[id] || WALLET_VALUE_NOT_SET;
+    default:
+      return WALLET_VALUE_NOT_SET;
+  }
+}
 
 /** Renders field mapping rows grouped by category (attendee, event, notes, maps, address,
  * ticket - WALLET_MAPPING_PLACEHOLDERS' own order) instead of insertion order, so a row's
@@ -848,6 +880,27 @@ export function EventSettingsPage() {
       setVisitedTabs((prev) => addVisitedTab(prev, target));
     }
   }, [searchParams, tab, isSa]);
+
+  // Read-only preview data for the Wallet tab's field mapping hint icons (computeWalletPlaceholder
+  // Preview) - the event's own Location tab data, fetched independently of LocationSettingsPanel
+  // (which owns the editable copy) so opening Wallet alone doesn't require visiting Location
+  // first. Fetched once, only once the Wallet tab is actually visited - undefined stays "loading"
+  // rather than a misleading "not set" for the brief window before this resolves.
+  const [walletLocationPreview, setWalletLocationPreview] = useState<EventLocationDto | null | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!eventId || !visitedTabs.has("wallet") || walletLocationPreview !== undefined) return;
+    const controller = new AbortController();
+    fetchEventLocation(eventId, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) setWalletLocationPreview(data);
+      })
+      .catch(() => {
+        /* preview-only: a failed fetch just leaves hint icons showing "Loading…" */
+      });
+    return () => controller.abort();
+  }, [eventId, visitedTabs, walletLocationPreview]);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -1599,6 +1652,9 @@ export function EventSettingsPage() {
                       (o) => o.id === row.value || !usedByOtherRows.has(o.id),
                     );
                     const selectedOption = WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value);
+                    const hintPreview = selectedOption
+                      ? computeWalletPlaceholderPreview(selectedOption.id, form, walletLocationPreview)
+                      : undefined;
                     return (
                     <div className="wallet-field-mapping__row" key={row.id}>
                       <SearchableSelect
@@ -1637,11 +1693,14 @@ export function EventSettingsPage() {
                           })
                         }
                       />
-                      <Tooltip content={selectedOption?.description} className="wallet-field-mapping__hint">
+                      <Tooltip
+                        content={hintPreview}
+                        className="at-btn at-btn--secondary wallet-field-mapping__hint"
+                      >
                         {selectedOption ? (
-                          <i className="ti ti-info-circle" aria-label={selectedOption.description} />
+                          <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
                         ) : (
-                          <i className="ti ti-info-circle" aria-hidden="true" />
+                          <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
                         )}
                       </Tooltip>
                       <Button

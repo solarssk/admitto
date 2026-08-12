@@ -1075,7 +1075,26 @@ describe("EventSettingsPage tabs", () => {
     const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
     fireEvent.mouseEnter(hintTrigger);
 
-    expect(screen.getByRole("tooltip").textContent).toBe("The attendee's full name.");
+    expect(screen.getByRole("tooltip").textContent).toBe("e.g. Jan Kowalski");
+  });
+
+  it("shows the event's own real value in a field mapping row's hover tooltip", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "event_name" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Event name" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    expect(screen.getByRole("tooltip").textContent).toBe(activeEvent.title);
   });
 
   it("keeps a field mapping row's hint icon decorative until a value is picked", async () => {
