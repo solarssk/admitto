@@ -12,6 +12,7 @@ const INPUT: WalletPassInput = {
   eventLocationLabel: "Test Venue",
   ticketTypeLabel: "General",
   userProvidedId: "admitto:event1:attendee1",
+  barcodeValue: "https://tickets.example.com/t/tok-jane",
 };
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -32,6 +33,7 @@ describe("PassCreatorClient.createPass", () => {
         templateId: "tmpl-1",
         userProvidedId: "admitto:event1:attendee1",
         enforceUniqueUserProvidedId: true,
+        barcodeValue: "https://tickets.example.com/t/tok-jane",
         name: "Jane Doe",
         eventDate: "12 August 2026",
         eventHours: "18:00-22:00",

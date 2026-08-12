@@ -200,6 +200,7 @@ describe("On-demand wallet routes", () => {
         addressRegionLabel: "Mazovia",
         addressCountryLabel: "Poland",
         userProvidedId: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        barcodeValue: `https://tickets.example.com/t/${MODE_A_TOKEN}`,
       }),
     );
 
@@ -223,6 +224,7 @@ describe("On-demand wallet routes", () => {
         addressStreetLabel: undefined,
         eventLocationLabel: undefined,
         userProvidedId: `admitto:${EVENT_ID_NO_LOCATION}:${ATTENDEE_NO_LOCATION_ID}`,
+        barcodeValue: `https://tickets.example.com/t/${NO_LOCATION_TOKEN}`,
       }),
     );
   });
@@ -247,6 +249,10 @@ describe("On-demand wallet routes", () => {
     expect(appleRes.status).toBe(302);
     expect(appleRes.headers.get("location")).toBe("https://pc.test/apple/x");
     expect(provider.createPass).toHaveBeenCalledTimes(1);
+    // Agency mode: barcodeValue is the raw agency payload verbatim, not an internal ticket URL.
+    expect(provider.createPass).toHaveBeenCalledWith(
+      expect.objectContaining({ barcodeValue: "WALLET-AGENCY-PAYLOAD" }),
+    );
 
     const googleRes = await app.request(`/t/${EVENT_SLUG}/a/${PUBLIC_REF}/wallet/google`, {
       redirect: "manual",

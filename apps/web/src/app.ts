@@ -658,6 +658,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   async function buildWalletPassInput(
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+    qrPayload: string,
   ): Promise<WalletPassInput> {
     const display = await resolveTicketPageDisplay(resolved);
     const { attendee, event } = display;
@@ -690,6 +691,7 @@ export function createApp(options: CreateAppOptions = {}) {
       addressCountryLabel: event.addressComponents?.country || undefined,
       ticketTypeLabel: attendee.ticket_type || "General",
       userProvidedId: `admitto:${event.id}:${attendee.id}`,
+      barcodeValue: qrPayload,
     };
   }
 
@@ -703,6 +705,7 @@ export function createApp(options: CreateAppOptions = {}) {
     resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
     platform: "apple" | "google",
     backHref: string,
+    internalToken?: string,
   ): Promise<Response> {
     const { attendee, event } = resolved;
 
@@ -720,6 +723,24 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
     const provider: WalletPassProvider = walletProvider;
+
+    // Same QR payload the attendee's own ticket page encodes - the wallet pass's barcode must
+    // match it exactly, or scanning the wallet pass at check-in won't resolve to this attendee.
+    let qrPayload: string;
+    if (resolved.mode === "internal") {
+      if (!internalToken) {
+        console.error(`Internal attendee ${attendee.id} missing token for wallet QR`);
+        return c.redirect(`${backHref}?walletError=1`, 302);
+      }
+      qrPayload = buildQrPayload("internal", { baseUrl, token: internalToken });
+    } else {
+      const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
+      if (!agencyPayload) {
+        console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
+        return c.redirect(`${backHref}?walletError=1`, 302);
+      }
+      qrPayload = buildQrPayload("agency", { agencyPayload });
+    }
 
     let existing: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
     try {
@@ -838,7 +859,7 @@ export function createApp(options: CreateAppOptions = {}) {
     if (existing?.status === "active") {
       providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
     } else {
-      const input = await buildWalletPassInput(resolved);
+      const input = await buildWalletPassInput(resolved, qrPayload);
       const created = await createOrRecoverPass(input);
       if (!created) return c.redirect(`${backHref}?walletError=1`, 302);
       providerUrls = created;
@@ -1927,7 +1948,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const resolved = await resolveTicketOrError(c, token, "/t/:token/wallet/:platform");
       if (resolved instanceof Response) return resolved;
       if (!resolved) return renderPublicHtmlError(c, 404);
-      return handleWalletRedirect(c, resolved, platform, `/t/${token}`);
+      return handleWalletRedirect(c, resolved, platform, `/t/${token}`, token);
     });
   }
 

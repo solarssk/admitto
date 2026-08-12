@@ -16,6 +16,7 @@ describe("@admitto/wallet", () => {
       eventDateLabel: "12 August 2026",
       ticketTypeLabel: "General",
       userProvidedId: "admitto:event1:attendee1",
+      barcodeValue: "https://tickets.example.com/t/tok-jane",
     });
     expect(created.providerPassId).toBe("stub-admitto:event1:attendee1");
 

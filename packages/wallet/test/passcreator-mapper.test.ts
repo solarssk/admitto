@@ -7,9 +7,20 @@ const baseInput: WalletPassInput = {
   eventDateLabel: "2026-08-10",
   ticketTypeLabel: "VIP",
   userProvidedId: "admitto:evt-1:att-1",
+  barcodeValue: "https://tickets.example.com/t/tok-1",
 };
 
 describe("toPassCreatorData", () => {
+  it("always includes barcodeValue, matching the ticket page's own QR payload", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1");
+    expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
+  });
+
+  it("includes barcodeValue even when a custom field mapping is used", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1", { attendeeFullName: "full_name" });
+    expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
+  });
+
   it("includes eventHours and eventPlace when both labels are provided", () => {
     const data = toPassCreatorData(
       { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },

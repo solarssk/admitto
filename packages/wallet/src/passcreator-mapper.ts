@@ -78,6 +78,11 @@ export function toPassCreatorData(
     templateId,
     userProvidedId: input.userProvidedId,
     enforceUniqueUserProvidedId: true,
+    // Top-level API field (not a template Additional Property, not part of fieldMapping) that
+    // controls the pass's actual scanned barcode content - without it PassCreator falls back to
+    // its own template-configured default (typically its own auto-generated pass UID), which
+    // does not match any real Admitto ticket.
+    barcodeValue: input.barcodeValue,
   };
   if (fieldMapping && Object.keys(fieldMapping).length > 0) {
     const values = walletPlaceholderValues(input);

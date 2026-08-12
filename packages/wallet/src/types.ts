@@ -28,6 +28,11 @@ export interface WalletPassInput {
   ticketTypeLabel: string;
   /** Stable idempotency key, e.g. "admitto:{eventId}:{attendeeId}". */
   userProvidedId: string;
+  /** The exact same QR payload the ticket page's own QR code encodes (ticket URL for an internal
+   * attendee, the raw agency payload otherwise) - without this, PassCreator's template default
+   * (its own auto-generated pass UID) ends up on the pass instead, so scanning the wallet pass at
+   * check-in would not match the attendee's real ticket. */
+  barcodeValue: string;
 }
 
 export interface WalletPassResult {
