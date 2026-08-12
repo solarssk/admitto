@@ -131,6 +131,39 @@ describe("IdentityMappingRepeater scope_id picker", () => {
     expect(screen.getByRole("button", { name: /^Event, evt-deleted \(not found\)/ })).toBeTruthy();
   });
 
+  it("shows the real name for a saved scope_id that does match a fetched event", async () => {
+    render(
+      <IdentityMappingRepeater
+        rows={[row({ role: "operator", scope_type: "event", scope_id: "evt-1" })]}
+        errors={[{}]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    // A known, still-valid stored id resolves to its real name, not the "(not found)" fallback -
+    // the other branch of the same currentKnown check exercised above.
+    expect(await screen.findByRole("button", { name: "Event, Spring Summit" })).toBeTruthy();
+  });
+
+  it("shows a loading placeholder while the events/organizations fetch is still in flight", async () => {
+    let resolveEvents!: (events: EventDto[]) => void;
+    mockFetchEvents.mockReturnValueOnce(new Promise((resolve) => (resolveEvents = resolve)));
+
+    render(
+      <IdentityMappingRepeater
+        rows={[row({ role: "operator", scope_type: "event", scope_id: "" })]}
+        errors={[{}]}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Event,/ }));
+    expect(await screen.findByText("Loading…")).toBeTruthy();
+
+    resolveEvents([FIXTURE_EVENT]);
+    expect(await screen.findByRole("button", { name: "Spring Summit" })).toBeTruthy();
+  });
+
   it("points the scope_id picker's aria-describedby at its error text", () => {
     const errors: MappingRowError[] = [{ scope_id: "Scope ID is required for this scope." }];
     render(
