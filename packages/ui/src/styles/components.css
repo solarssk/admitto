@@ -13,7 +13,7 @@
   height: var(--control-h); padding: 0 var(--pad-control-x);
   border-radius: var(--radius); border: var(--border-width) solid transparent;
   text-decoration: none;
-  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 }
 .at-btn:hover { text-decoration: none; }
 .at-btn:focus-visible { outline: none; box-shadow: var(--ring); }
@@ -113,7 +113,7 @@
   height: var(--control-h); padding: 0 var(--pad-control-x);
   background: var(--surface-card); border: var(--border-width) solid var(--border-strong);
   border-radius: var(--radius); width: 100%;
-  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .at-input[type="password"] { padding-right: 2.25rem; }
 .at-textarea { height: auto; padding: var(--space-2) var(--pad-control-x); line-height: var(--lh-normal); resize: vertical; font-family: var(--font-mono); font-size: var(--fs-mono); }
