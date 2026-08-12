@@ -210,10 +210,21 @@
   margin: 0;
 }
 
+/* Separates this subsection from the Apple/Google toggle pair above it, the same way
+   .settings-row's own border-bottom separates rows within a list. */
+.wallet-field-mapping {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
 /* Overrides .settings-row's default flex-start so "Add field" centers against the
    full two-line label+description block, not just the first line. */
 .wallet-field-mapping__header {
   align-items: center;
+}
+
+.wallet-field-mapping .at-notice {
+  margin-top: var(--space-3);
 }
 
 .wallet-field-mapping__row {
