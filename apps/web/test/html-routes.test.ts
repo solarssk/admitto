@@ -77,6 +77,7 @@ function makeApp(db: PrismaClient = {} as PrismaClient): Hono {
   app.get("/login", (c) => handleGetLogin(c, db));
   app.post("/login", (c) => handlePostLogin(c, db, store));
   app.post("/logout", (c) => handlePostLogout(c, db, "https://admitto.example.com"));
+  app.post("/logout-no-base-url", (c) => handlePostLogout(c, db, null));
   return app;
 }
 
@@ -321,5 +322,26 @@ describe("html-routes", () => {
       "https://idp.example.com/end-session?client_id=admitto&post_logout_redirect_uri=https%3A%2F%2Fadmitto.example.com%2Flogin",
     );
     expect(mockLogout).toHaveBeenCalled();
+  });
+
+  it("still revokes the session and redirects to /login when baseUrl is null (Instance URL not configured yet), even for an OIDC session", async () => {
+    mockValidatePartial.mockResolvedValue({
+      userId: "u1",
+      sessionId: "s1",
+      stage: "full",
+      session: { id: "s1", auth_method: "oidc", oidc_provider_id: "idp-1" },
+    } as unknown as Awaited<ReturnType<typeof validatePartialSession>>);
+
+    const res = await makeApp().request("/logout-no-base-url", {
+      method: "POST",
+      headers: { Cookie: "admitto_session=tok" },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+    expect(mockLogout).toHaveBeenCalled();
+    // Never even attempts to resolve an end-session redirect without a base URL to build
+    // post_logout_redirect_uri from - there's no safe value to send the IdP.
+    expect(mockEndSessionRedirect).not.toHaveBeenCalled();
   });
 });

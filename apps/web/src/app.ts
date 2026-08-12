@@ -14,7 +14,12 @@ import {
   type WalletPassResult,
 } from "@admitto/wallet";
 import type { GeocodingProvider } from "@admitto/location";
-import { getBrandingTheme, SESSION_STAGE, sweepExpiredOidcAuthStates } from "@admitto/auth";
+import {
+  getBrandingTheme,
+  SESSION_STAGE,
+  sweepExpiredOidcAuthStates,
+  InstanceUrlRequiredError,
+} from "@admitto/auth";
 import {
   resolveTicket,
   generateQrPng,
@@ -1594,6 +1599,19 @@ export function createApp(options: CreateAppOptions = {}) {
     return resolveInstanceBaseUrl(db, process.env, mailInjectedBaseUrl);
   }
 
+  // Same resolution, but for a caller that must still complete when Instance URL isn't
+  // configured yet - unlike the OIDC start/callback/link flows above (which genuinely cannot
+  // proceed without an exact base URL), logout must never fail just because that setting is
+  // missing. Matches the null-on-InstanceUrlRequiredError convention in oidc-redirect-uri.ts.
+  async function oidcPublicBaseUrlOrNull(): Promise<string | null> {
+    try {
+      return await oidcPublicBaseUrl();
+    } catch (err) {
+      if (err instanceof InstanceUrlRequiredError) return null;
+      throw err;
+    }
+  }
+
   app.get("/api/auth/oidc/:providerId/start", oidcAuthRateLimit, async (c) =>
     handleOidcStart(c, db, await oidcPublicBaseUrl()),
   );
@@ -1691,7 +1709,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/mfa/enroll/download-codes", htmlPostCsrf, requirePartialSessionHtml, (c) =>
     handlePostMfaEnrollDownloadCodes(c, db),
   );
-  app.post("/logout", htmlPostCsrf, async (c) => handlePostLogout(c, db, await oidcPublicBaseUrl()));
+  app.post("/logout", htmlPostCsrf, async (c) => handlePostLogout(c, db, await oidcPublicBaseUrlOrNull()));
   app.get("/change-password", requireChangePasswordSession, (c) => handleGetChangePassword(c, db));
   app.post("/change-password", htmlPostCsrf, requireChangePasswordSession, (c) =>
     handlePostChangePassword(c, db),
