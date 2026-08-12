@@ -205,6 +205,62 @@ describe("TicketTypesCard", () => {
     expect(screen.queryByLabelText("New ticket type label")).toBeNull();
   });
 
+  it("commits the draft on Enter directly, without relying on blur", async () => {
+    vi.mocked(createTicketType).mockResolvedValueOnce({
+      id: "tt-new",
+      key: "staff",
+      label: "Staff",
+      color: "blue",
+      sort_order: 1,
+      attendee_count: 0,
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(createTicketType).toHaveBeenCalledWith("evt-1", { label: "Staff", color: "blue" }),
+    );
+  });
+
+  it("does not commit when focus moves to the color swatch, and creates with the color actually picked (CodeRabbit review)", async () => {
+    vi.mocked(createTicketType).mockResolvedValueOnce({
+      id: "tt-new",
+      key: "staff",
+      label: "Staff",
+      color: "green",
+      sort_order: 1,
+      attendee_count: 0,
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    const { onChanged } = renderCard([vipType]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+
+    // Moving focus from the label to the swatch toggle - still inside the draft row - must not
+    // commit with whatever color was set at that moment.
+    const swatchButton = screen.getByRole("button", { name: "Color: Blue" });
+    fireEvent.blur(input, { relatedTarget: swatchButton });
+    expect(createTicketType).not.toHaveBeenCalled();
+
+    fireEvent.click(swatchButton);
+    fireEvent.click(screen.getByRole("button", { name: "Green" }));
+
+    // Focus now genuinely leaves the row.
+    fireEvent.blur(swatchButton, { relatedTarget: null });
+
+    await waitFor(() =>
+      expect(createTicketType).toHaveBeenCalledWith("evt-1", { label: "Staff", color: "green" }),
+    );
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("cancels the draft without calling createTicketType when blurred empty", () => {
     renderCard([vipType]);
 

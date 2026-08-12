@@ -203,7 +203,19 @@ function DraftTicketTypeRow({
   }
 
   return (
-    <div className="tt-row">
+    <div
+      className="tt-row"
+      onBlur={(e) => {
+        // Commit only once focus actually leaves the whole row - clicking the color swatch (or a
+        // color inside its popover) blurs the label input first, and committing right then would
+        // create the type with whatever `color` was still set at that moment (the "blue" default,
+        // if the admin clicked the swatch before typing a color choice) instead of the one they
+        // were about to pick (CodeRabbit review).
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          void commit();
+        }
+      }}
+    >
       <div className="tt-row__identity">
         <ColorSwatchPicker color={color} disabled={disabled} onChange={setColor} />
         <div className="tt-row__label-input">
@@ -216,9 +228,11 @@ function DraftTicketTypeRow({
             value={label}
             disabled={disabled}
             onChange={(e) => setLabel(e.target.value)}
-            onBlur={() => void commit()}
             onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void commit();
+              }
               if (e.key === "Escape") onCancel();
             }}
           />
