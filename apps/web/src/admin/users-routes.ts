@@ -968,8 +968,20 @@ export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Prom
   const id = c.req.param("id") ?? "";
   if (!id) return c.json({ error: "user id required" }, 400);
 
-  const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
+  });
   if (!user) return c.json({ error: "not_found" }, 404);
+  // TOTP is a local-login concept (IdP-authenticated sessions skip local MFA policy entirely -
+  // Session.auth_method), but a hybrid account (SSO-linked with a real fallback local password
+  // and confirmed TOTP - see account-routes.ts's self-service password/unlink flows) still relies
+  // on it for that local path. Resetting it here would silently drop that account's local sign-in
+  // from password+TOTP to password-only, the same unmonitored weakening the reset-password guard
+  // above exists to prevent.
+  if (user.external_identities.length > 0) {
+    return c.json({ code: "cannot_reset_mfa_sso_managed" }, 409);
+  }
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);

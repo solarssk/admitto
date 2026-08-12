@@ -22,6 +22,8 @@ const CODE_MESSAGES: Record<string, string> = {
   cannot_deactivate_self: "You cannot deactivate your own account.",
   cannot_delete_self: "You cannot delete your own account.",
   cannot_remove_own_role: "You cannot remove your own role assignment. Ask another superadmin.",
+  cannot_reset_mfa_sso_managed:
+    "This account is managed by an identity provider. Unlink it first to reset local two-factor authentication.",
   cannot_reset_password_sso_managed:
     "This account is managed by an identity provider and has no local password to reset.",
   cannot_unlink_own_sso: "You cannot unlink SSO from your own account. Ask another superadmin.",
