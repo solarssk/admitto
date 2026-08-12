@@ -49,7 +49,6 @@ import {
 } from "./maps/static-map-route.js";
 import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
 import {
-  resolveBaseUrl,
   resolveCheckinToken,
   resolveAllowCheckinBearer,
   resolvePassCreatorBaseUrl,
@@ -423,7 +422,6 @@ function htmlWithSecurityHeaders(
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
   const mailInjectedBaseUrl = options.baseUrl;
-  const baseUrl = options.baseUrl ?? resolveBaseUrl();
   const allowCheckinBearer = options.allowCheckinBearer ?? resolveAllowCheckinBearer();
   const checkinToken =
     options.checkinToken !== undefined ? options.checkinToken : resolveCheckinToken();
@@ -695,6 +693,33 @@ export function createApp(options: CreateAppOptions = {}) {
     };
   }
 
+  /** Shared internal-token-vs-agency-payload branching for the ticket page and the wallet
+   * redirect handler - split out of both callers to keep their own cognitive complexity under
+   * the SonarCloud threshold (S3776), same reasoning as markFailed's own extraction below.
+   * `onMissing` builds each caller's own error response (a redirect for the wallet handler, a
+   * rendered error page for the ticket page). */
+  async function resolveQrPayloadOrRespond(
+    resolved: NonNullable<Awaited<ReturnType<typeof resolveTicket>>>,
+    internalToken: string | undefined,
+    logContext: string,
+    onMissing: () => Response | Promise<Response>,
+  ): Promise<string | Response> {
+    const { attendee } = resolved;
+    if (resolved.mode === "internal") {
+      if (!internalToken) {
+        console.error(`Internal attendee ${attendee.id} missing token for ${logContext}`);
+        return onMissing();
+      }
+      return buildQrPayload("internal", { token: internalToken });
+    }
+    const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
+    if (!agencyPayload) {
+      console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
+      return onMissing();
+    }
+    return buildQrPayload("agency", { agencyPayload });
+  }
+
   /**
    * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
    * provider URL. Never a bare 500 - failures redirect back to the ticket page with a retry
@@ -726,21 +751,10 @@ export function createApp(options: CreateAppOptions = {}) {
 
     // Same QR payload the attendee's own ticket page encodes - the wallet pass's barcode must
     // match it exactly, or scanning the wallet pass at check-in won't resolve to this attendee.
-    let qrPayload: string;
-    if (resolved.mode === "internal") {
-      if (!internalToken) {
-        console.error(`Internal attendee ${attendee.id} missing token for wallet QR`);
-        return c.redirect(`${backHref}?walletError=1`, 302);
-      }
-      qrPayload = buildQrPayload("internal", { token: internalToken });
-    } else {
-      const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
-      if (!agencyPayload) {
-        console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-        return c.redirect(`${backHref}?walletError=1`, 302);
-      }
-      qrPayload = buildQrPayload("agency", { agencyPayload });
-    }
+    const qrPayload = await resolveQrPayloadOrRespond(resolved, internalToken, "wallet QR", () =>
+      c.redirect(`${backHref}?walletError=1`, 302),
+    );
+    if (typeof qrPayload !== "string") return qrPayload;
 
     let existing: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
     try {
@@ -900,21 +914,10 @@ export function createApp(options: CreateAppOptions = {}) {
       );
     }
 
-    let qrPayload: string;
-    if (resolved.mode === "internal") {
-      if (!internalToken) {
-        console.error(`Internal attendee ${attendee.id} missing token for ticket page QR`);
-        return renderPublicHtmlError(c, 500);
-      }
-      qrPayload = buildQrPayload("internal", { token: internalToken });
-    } else {
-      const agencyPayload = attendee.qr_payload ?? attendee.external_uuid;
-      if (!agencyPayload) {
-        console.error(`Agency attendee ${attendee.id} has neither qr_payload nor external_uuid`);
-        return renderPublicHtmlError(c, 500);
-      }
-      qrPayload = buildQrPayload("agency", { agencyPayload });
-    }
+    const qrPayload = await resolveQrPayloadOrRespond(resolved, internalToken, "ticket page QR", () =>
+      renderPublicHtmlError(c, 500),
+    );
+    if (typeof qrPayload !== "string") return qrPayload;
 
     let qrDataUrl: string;
     try {

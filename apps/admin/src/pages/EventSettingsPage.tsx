@@ -344,14 +344,20 @@ function buildWalletPatch(
     patch.wallet_google_enabled = form.walletGoogleEnabled;
   }
   if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
-    const mapping: Record<string, string> = {};
-    for (const row of form.walletFieldMapping) {
-      const key = row.key.trim();
-      if (key && row.value) mapping[key] = row.value;
-    }
-    patch.wallet_field_mapping = Object.keys(mapping).length > 0 ? mapping : null;
+    patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
   }
   return patch;
+}
+
+/** Extracted out of buildWalletPatch to keep its own cognitive complexity under the SonarCloud
+ * threshold (S3776, same reasoning as this file's other buildXPatch helpers). */
+function buildWalletFieldMappingPatch(rows: WalletFieldMappingRow[]): Record<string, string> | null {
+  const mapping: Record<string, string> = {};
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (key && row.value) mapping[key] = row.value;
+  }
+  return Object.keys(mapping).length > 0 ? mapping : null;
 }
 
 /** Logo-only slice of buildSettingsPatch, extracted for the same reason as buildWalletPatch. */
