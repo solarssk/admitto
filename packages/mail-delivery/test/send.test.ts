@@ -819,7 +819,7 @@ describe("retryDelivery", () => {
       },
       prisma,
     );
-    // Corrupt the stored ciphertext so it fails AES-GCM authentication at read time —
+    // Corrupt the stored ciphertext so it fails AES-GCM authentication at read time:
     // simulates a rotated/mismatched ENCRYPTION_KEY or a tampered/corrupted DB value.
     const settingsRow = await prisma.mailSettings.findUniqueOrThrow({
       where: {
@@ -875,5 +875,58 @@ describe("retryDelivery", () => {
     const updated = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
     expect(updated.attempts).toBe(2);
     expect(updated.error).toContain("could not be decrypted");
+  });
+
+  it("rethrows non-MailConfigError failures from resolveMailConfig/createMailer", async () => {
+    await prisma.organization.create({
+      data: { id: "org-retry-unconfigured", name: "Retry Unconfigured Org", slug: "retry-unconfigured-org" },
+    });
+    await prisma.event.create({
+      data: {
+        id: "evt-retry-unconfigured",
+        organization_id: "org-retry-unconfigured",
+        title: "Retry Unconfigured Event",
+        slug: "retry-unconfigured-event",
+        date: new Date("2026-09-01"),
+      },
+    });
+    // No MailSettings row for this org/event at all - resolveMailConfig throws a plain
+    // Error ("Cannot resolve mail provider"), not a MailConfigError. retryDelivery must
+    // propagate it unchanged instead of swallowing it into an { ok: false } result.
+
+    const token = "tok_retry_unconfig_abcdefghijklmnopqrstuvwxyz";
+    await prisma.attendee.create({
+      data: {
+        id: "att-retry-unconfigured",
+        event_id: "evt-retry-unconfigured",
+        email: "retry-unconfigured@example.com",
+        name: "Retry Unconfigured",
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+    });
+
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-retry-unconfigured",
+        event_id: "evt-retry-unconfigured",
+        attendee_id: "att-retry-unconfigured",
+        purpose: "initial",
+        provider: "smtp",
+        status: "failed",
+        retryable: true,
+        attempts: 1,
+        recipient_email: "retry-unconfigured@example.com",
+        rendered_subject: "S",
+        rendered_html: "<p>x</p>",
+      },
+    });
+
+    await expect(
+      retryDelivery(delivery.id, prisma, { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" }),
+    ).rejects.toThrow(/Cannot resolve mail provider/);
+
+    const untouched = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    expect(untouched.attempts).toBe(1);
   });
 });

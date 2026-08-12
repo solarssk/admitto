@@ -1,4 +1,4 @@
-import { decryptFromString, CryptoDecryptionError } from "@admitto/crypto";
+import { decryptFromString } from "@admitto/crypto";
 import { parseMailerConfig, safeParseMailerConfig, type MailerConfig } from "@admitto/mailer";
 import type { PrismaClient, MailSettings } from "@admitto/db";
 import { rawMailFieldsFromEnv } from "./envFields.js";
@@ -10,8 +10,8 @@ export type MailConfigErrorCode = "mail_secret_decryption_failed";
 
 /** Thrown when a stored mail secret (SMTP password, Graph client secret, Power Automate key)
  * cannot be decrypted - wrong/rotated ENCRYPTION_KEY or corrupted ciphertext. Wraps
- * {@link CryptoDecryptionError} so callers can branch on a mail-domain code without depending
- * on @admitto/crypto directly. */
+ * @admitto/crypto's CryptoDecryptionError so callers can branch on a mail-domain code without
+ * depending on @admitto/crypto directly. */
 export class MailConfigError extends Error {
   readonly code: MailConfigErrorCode;
 
@@ -48,14 +48,14 @@ function maybeDecrypt(enc: string | null | undefined): string | undefined {
   if (!enc) return undefined;
   try {
     return decryptFromString(enc);
-  } catch (err) {
-    if (err instanceof CryptoDecryptionError) {
-      throw new MailConfigError(
-        "mail_secret_decryption_failed",
-        "A stored mail secret could not be decrypted. The encryption key may have changed, or the stored value is corrupted.",
-      );
-    }
-    throw err;
+  } catch {
+    // decryptFromString() normalizes every failure mode (bad key, tampered ciphertext,
+    // malformed stored JSON) into CryptoDecryptionError - there is no other exception type
+    // to distinguish here, so every catch is "this stored secret can't be read back".
+    throw new MailConfigError(
+      "mail_secret_decryption_failed",
+      "A stored mail secret could not be decrypted. The encryption key may have changed, or the stored value is corrupted.",
+    );
   }
 }
 

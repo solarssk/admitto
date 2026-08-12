@@ -139,6 +139,26 @@ describe("encryptToString / decryptFromString", () => {
     expect((caught as CryptoDecryptionError).code).toBe("decryption_failed");
   });
 
+  it("normalizes a falsy-but-valid-JSON payload (null) into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString("null");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+  });
+
+  it("normalizes a non-object JSON payload (string) into CryptoDecryptionError", () => {
+    let caught: unknown;
+    try {
+      decryptFromString(JSON.stringify("just a string"));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CryptoDecryptionError);
+  });
+
   it("normalizes an unsupported keyVersion into CryptoDecryptionError", () => {
     const payload = encrypt("secret");
     let caught: unknown;
