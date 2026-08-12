@@ -145,26 +145,27 @@ export class PassCreatorClient implements WalletPassProvider {
   /** Shared by findByUserProvidedId and getRegistrationStatus - same search endpoint, different
    * fields of the same row.
    *
-   * Root cause confirmed live, 2026-08-13: GET /api/v3/pass?userProvidedId=X does NOT filter by
-   * X at all - it returns every pass under the account/template (same "count" regardless of which
-   * userProvidedId is queried), newest-created first. Blindly trusting `rows[0]` (the original
-   * implementation) therefore returned whichever pass was most recently created, not the one
-   * actually queried for - it only looked correct in early testing because the queried pass
-   * happened to also be the newest one at the time. Fixed by scanning the full (unfiltered) array
-   * for the row whose own echoed userProvidedId actually matches the query, instead of assuming
-   * position 0 is correct. Still a real PassCreator-side bug worth reporting (the parameter should
-   * filter, and a large account's full pass list could exceed a single page's results - see the
-   * search bug report), but this is the correct client-side handling regardless of whether/when
-   * they fix it. */
+   * Uses the documented Query Language (developer.passcreator.com/en/api/v3/query-language) via
+   * the base64url-encoded `query` parameter, not the plain `?userProvidedId=` shorthand - live
+   * testing (2026-08-13) found that shorthand does NOT filter at all (it returns every pass under
+   * the account/template regardless of the value queried, newest-created first - `rows[0]` was
+   * silently wrong for anything but the single most-recently-created pass). The query-language
+   * `equals` filter was verified live to correctly return exactly one matching row
+   * (resultsTotal: 1) regardless of how many other passes exist, so it scales correctly instead of
+   * depending on the true match happening to land within whatever page a naive list call returns.
+   * The row's own echoed userProvidedId is still checked against the query as defense in depth,
+   * not because the filter is expected to misbehave. */
   private async searchByUserProvidedId(userProvidedId: string): Promise<PassCreatorSearchRow | null> {
-    const rows = await this.request<PassCreatorSearchRow[]>(
-      "GET",
-      `/api/v3/pass?userProvidedId=${encodeURIComponent(userProvidedId)}`,
-    );
+    const query = {
+      templateId: this.templateId,
+      groups: [[{ field: "userProvidedId", operator: "equals", value: [userProvidedId] }]],
+    };
+    const encoded = Buffer.from(JSON.stringify(query)).toString("base64url");
+    const rows = await this.request<PassCreatorSearchRow[]>("GET", `/api/v3/pass?query=${encoded}`);
     const row = rows.find((r) => r.userProvidedId === userProvidedId);
     if (!row) {
       console.error(
-        `PassCreator search returned no row matching userProvidedId=${userProvidedId} (received ${rows.length} unfiltered row(s))`,
+        `PassCreator query-language search returned no row matching userProvidedId=${userProvidedId} (received ${rows.length} row(s))`,
       );
       return null;
     }

@@ -302,7 +302,7 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
   it("returns the mapped result when found", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {
       expect(url).toBe(
-        "https://pc.test/api/v3/pass?userProvidedId=admitto%3Aevent1%3Aattendee1",
+        "https://pc.test/api/v3/pass?query=eyJ0ZW1wbGF0ZUlkIjoidG1wbC0xIiwiZ3JvdXBzIjpbW3siZmllbGQiOiJ1c2VyUHJvdmlkZWRJZCIsIm9wZXJhdG9yIjoiZXF1YWxzIiwidmFsdWUiOlsiYWRtaXR0bzpldmVudDE6YXR0ZW5kZWUxIl19XV19",
       );
       return jsonResponse(200, {
         success: true,
@@ -382,7 +382,9 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
 describe("PassCreatorClient.getRegistrationStatus", () => {
   it("maps the search row's registration counts and firstDownloadedAt", async () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
-      expect(url).toBe("https://pc.test/api/v3/pass?userProvidedId=admitto%3Aevent1%3Aattendee1");
+      expect(url).toBe(
+        "https://pc.test/api/v3/pass?query=eyJ0ZW1wbGF0ZUlkIjoidG1wbC0xIiwiZ3JvdXBzIjpbW3siZmllbGQiOiJ1c2VyUHJvdmlkZWRJZCIsIm9wZXJhdG9yIjoiZXF1YWxzIiwidmFsdWUiOlsiYWRtaXR0bzpldmVudDE6YXR0ZW5kZWUxIl19XV19",
+      );
       expect(init?.method).toBe("GET");
       return jsonResponse(200, {
         success: true,
