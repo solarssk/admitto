@@ -91,6 +91,13 @@ function unlinkSsoTooltip(hasSso: boolean, isSelf: boolean): string | undefined 
   return undefined;
 }
 
+/** Reset password and Reset two-factor both act on local sign-in, which an SSO-managed account
+ * doesn't have - see "Unlink identity provider" above for the flow that actually applies here. */
+function ssoManagedTooltip(hasSso: boolean): string | undefined {
+  if (hasSso) return "Managed by your identity provider.";
+  return undefined;
+}
+
 /** Whose access the role-type-change warning is about to remove. isSelf can never be true in
  * practice: this label only renders while isRoleTypeChange is true, and the Role select itself
  * is disabled whenever isSelf is true - see resolveRoleActionTitle's own comment above. */
@@ -160,12 +167,16 @@ function UserMoreActionsMenu({
             icon="refresh"
             label="Reset two-factor"
             hint="Clear two-factor authentication"
+            disabled={user.has_sso}
+            tooltip={ssoManagedTooltip(user.has_sso)}
             onClick={pick(onResetMfa)}
           />
           <MoreActionsMenuItem
             icon="key"
             label="Reset password"
             hint="Set a new temporary password"
+            disabled={user.has_sso}
+            tooltip={ssoManagedTooltip(user.has_sso)}
             onClick={pick(onResetPassword)}
           />
           <MoreActionsMenuItem
