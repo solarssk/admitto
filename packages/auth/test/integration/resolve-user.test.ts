@@ -93,6 +93,24 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
     expect(roles).toHaveLength(0);
   });
 
+  it("JIT creates user with no local password, at essentially the same instant its identity is linked", async () => {
+    const result = await resolveOrCreateUserFromExternalIdentity(
+      prisma,
+      provider,
+      "jit-subject-no-password",
+      { email: "jit-no-password@example.com" },
+    );
+    expect(result.user.password_hash).toBeNull();
+
+    const identity = await prisma.externalIdentity.findUniqueOrThrow({
+      where: { provider_id_subject: { provider_id: provider.id, subject: "jit-subject-no-password" } },
+    });
+    // Same transaction, back to back, no I/O in between - well within the backfill script's
+    // 5s tolerance (see packages/db/src/backfill-jit-password-hash.ts), but not necessarily
+    // byte-identical (Prisma's driver-adapter engine doesn't freeze `now()` per-transaction).
+    expect(Math.abs(identity.linked_at.getTime() - result.user.created_at.getTime())).toBeLessThan(1000);
+  });
+
   it("rejects anonymous email match to existing account", async () => {
     await expect(
       resolveOrCreateUserFromExternalIdentity(prisma, provider, "takeover-subject", {

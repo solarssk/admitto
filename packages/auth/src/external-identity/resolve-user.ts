@@ -52,11 +52,13 @@ async function createJitUser(
     }
   }
 
-  const password_hash = await hashPassword(randomBytes(32).toString("hex"));
   return tx.user.create({
     data: {
       email,
-      password_hash,
+      // No local password to speak of yet - this account signs in via the identity provider.
+      // verifyPasswordOrDummy already runs constant-time dummy work for a null hash, so this
+      // costs nothing on the login-timing front that the old random-value hash was buying.
+      password_hash: null,
       display_name: claims.name ?? null,
       // Raw IdP value as-is (e.g. E.164 "+14155552671") - no attempt to split it into
       // phone_country_code + phone_number, same "no library for an internal-only field"

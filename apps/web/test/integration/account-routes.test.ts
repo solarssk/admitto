@@ -150,6 +150,23 @@ describe("GET /api/account", () => {
     expect(body).not.toHaveProperty("password_hash");
   });
 
+  it("returns has_local_password: false for an SSO-linked account with no local password", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "account-get-no-password-subject", user_id: oidcUserId },
+    });
+    const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
+
+    const res = await app.request("/api/account", {
+      headers: { Cookie: `admitto_session=${oidcSession.rawToken}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.has_local_password).toBe(false);
+
+    await prisma.session.delete({ where: { id: oidcSession.session.id } });
+    await prisma.externalIdentity.deleteMany({ where: { user_id: oidcUserId } });
+  });
+
   it("resolves an event-scoped role's scope_id to the event's title", async () => {
     const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
     const body = (await res.json()) as { roles: Array<{ scope_type: string; scope_id: string | null; scope_label: string | null }> };
@@ -1276,6 +1293,25 @@ describe("DELETE /api/account/external-identity", () => {
       body: JSON.stringify({ new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("returns 400 insufficient_verification for an SSO-only account with no local password and no TOTP, and the identity survives", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-no-proof-subject", user_id: oidcUserId },
+    });
+    const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: `admitto_session=${oidcSession.rawToken}`, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("insufficient_verification");
+    expect(await prisma.externalIdentity.count({ where: { user_id: oidcUserId } })).toBe(1);
+
+    await prisma.session.delete({ where: { id: oidcSession.session.id } });
+    await prisma.externalIdentity.deleteMany({ where: { user_id: oidcUserId } });
   });
 });
 
