@@ -108,7 +108,7 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
     // Same transaction, back to back, no I/O in between - well within the backfill script's
     // 5s tolerance (see packages/db/src/backfill-jit-password-hash.ts), but not necessarily
     // byte-identical (Prisma's driver-adapter engine doesn't freeze `now()` per-transaction).
-    expect(Math.abs(identity.linked_at.getTime() - result.user.created_at.getTime())).toBeLessThan(1000);
+    expect(Math.abs(identity.linked_at.getTime() - result.user.created_at.getTime())).toBeLessThan(5_000);
   });
 
   it("rejects anonymous email match to existing account", async () => {

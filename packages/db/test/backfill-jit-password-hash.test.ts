@@ -199,7 +199,14 @@ describe("backfillJitPasswordHash", () => {
   });
 
   it("is idempotent on a second run", async () => {
+    const user = await makeJitUser({ passwordHash: "placeholder-hash-idempotent" });
+
     const first = await backfillJitPasswordHash(prisma);
-    expect(first.updated).toBe(0);
+    expect(first.updated).toBeGreaterThanOrEqual(1);
+    const afterFirst = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(afterFirst.password_hash).toBeNull();
+
+    const second = await backfillJitPasswordHash(prisma);
+    expect(second.updated).toBe(0);
   });
 });
