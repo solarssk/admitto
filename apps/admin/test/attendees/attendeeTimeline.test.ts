@@ -316,6 +316,77 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
     ).toBe("Company: Old Co → -");
   });
 
+  it("resolves ticket_type from/to keys to the catalog's current labels, not the raw immutable key", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["ticket_type"],
+            field_changes: { ticket_type: { from: "standard", to: "vip" } },
+          },
+        }),
+        [],
+        [],
+        [
+          { id: "tt-1", key: "standard", label: "Standard", color: "gray", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
+          { id: "tt-2", key: "vip", label: "VIP", color: "purple", sort_order: 1, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
+        ],
+      ),
+    ).toBe("Ticket type: Standard → VIP");
+  });
+
+  it("falls back to the raw ticket_type key when it's no longer in the catalog (type since deleted)", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["ticket_type"],
+            field_changes: { ticket_type: { from: "standard", to: "new_type" } },
+          },
+        }),
+        [],
+        [],
+        [{ id: "tt-1", key: "standard", label: "Standard", color: "gray", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" }],
+      ),
+    ).toBe("Ticket type: Standard → new_type");
+  });
+
+  it("falls back to the raw ticket_type key on the from-side too, independently of the to-side lookup", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["ticket_type"],
+            field_changes: { ticket_type: { from: "deleted_type", to: "vip" } },
+          },
+        }),
+        [],
+        [],
+        [{ id: "tt-2", key: "vip", label: "VIP", color: "purple", sort_order: 1, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" }],
+      ),
+    ).toBe("Ticket type: deleted_type → VIP");
+  });
+
+  it("shows a dash for a null ticket_type side without resolving it against the catalog (Codecov review)", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "attendee_edited",
+          metadata: {
+            fields: ["ticket_type"],
+            field_changes: { ticket_type: { from: null, to: "vip" } },
+          },
+        }),
+        [],
+        [],
+        [{ id: "tt-2", key: "vip", label: "VIP", color: "purple", sort_order: 1, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" }],
+      ),
+    ).toBe("Ticket type: - → VIP");
+  });
+
   it("falls back to the field name alone for a malformed field_changes shape, instead of throwing (Codecov review, fieldValueChange defensive branches)", () => {
     // field_changes itself isn't an object.
     expect(

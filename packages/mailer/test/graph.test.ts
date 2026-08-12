@@ -66,6 +66,11 @@ describe("GraphAdapter", () => {
       "https://graph.microsoft.com/v1.0/users/events%40example.com/sendMail",
     );
     expect(sendCall.init.headers.authorization).toBe("Bearer tok-abc");
+    // Works around a Node process bug where an unrelated undici import elsewhere corrupts
+    // global fetch's gzip decompression over HTTP/2 - see NO_COMPRESSION_HEADERS' doc comment.
+    expect(sendCall.init.headers["Accept-Encoding"]).toBe("identity");
+    const tokenCall = calls.find((c) => c.url.includes("/oauth2/v2.0/token"))!;
+    expect(tokenCall.init.headers["Accept-Encoding"]).toBe("identity");
     const body = JSON.parse(sendCall.init.body);
     expect(body.saveToSentItems).toBe(true);
     expect(body.message.subject).toBe("Ticket");

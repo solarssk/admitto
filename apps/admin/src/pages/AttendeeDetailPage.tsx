@@ -1026,11 +1026,13 @@ function AttendeeActivityTab({
   actionLog,
   attributeFields,
   eventItems,
+  ticketTypes,
   event,
 }: Readonly<{
   actionLog: AttendeeDetailDto["action_log"];
   attributeFields: CustomDataFieldDef[];
   eventItems: AttendeeDetailDto["event_items"];
+  ticketTypes: TicketTypeDto[];
   event: EventDto;
 }>) {
   return (
@@ -1044,7 +1046,7 @@ function AttendeeActivityTab({
       ) : (
         <ul className="at-timeline">
           {actionLog.map((entry) => {
-            const detailText = getTimelineDetail(entry, attributeFields, eventItems);
+            const detailText = getTimelineDetail(entry, attributeFields, eventItems, ticketTypes);
             return (
               <li key={entry.id} className="at-tl-item">
                 <div className={`at-tl-dot at-tl-dot--${getTimelineTone(entry)}`}>
@@ -2182,6 +2184,7 @@ export function AttendeeDetailPage() {
           actionLog={detail.action_log}
           attributeFields={attributeFields}
           eventItems={eventItems}
+          ticketTypes={ticketTypes}
           event={event}
         />
       )}
