@@ -223,6 +223,16 @@
   align-items: center;
 }
 
+/* Overrides the generic .settings-row mobile column-stack (staff.css) so "Add field" stays
+   beside the label+description on narrow screens instead of dropping onto its own line below
+   them, matching the Security panel's "Manage origins" row and .smtp-connection-tls-row. The
+   compound selector (two classes, same element - see the className on this row) outweighs the
+   generic single-class .settings-row rule regardless of which stylesheet loads later. */
+.settings-row.wallet-field-mapping__header {
+  flex-direction: row;
+  align-items: center;
+}
+
 /* Same value as .wallet-field-mapping__row's own margin-top below, so the gap under the
    header reads identically whether it's followed by the default-mapping notice or the
    first custom row. */
