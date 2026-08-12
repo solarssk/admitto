@@ -3200,6 +3200,16 @@
   grid-template-columns: minmax(150px, 1.2fr) minmax(110px, 0.9fr) minmax(90px, 0.7fr) minmax(120px, 0.9fr) auto;
 }
 
+/* A grid item's default auto-minimum is its content's min-content size, not 0 - without this, a
+   long Event/Organization name (or Group value) refuses to shrink below that intrinsic width and
+   blows out its column past the track's own sizing (confirmed visually: the mobile 1fr/1fr
+   columns below held their track width but the *content* still overflowed the panel edge until
+   this was added). The searchable-select trigger's own ellipsis (searchable-select.css) only gets
+   a chance to truncate once its ancestor chain actually permits shrinking that far. */
+.identity-mappings__row > * {
+  min-width: 0;
+}
+
 .identity-mappings__row:last-of-type {
   border-bottom: 0;
 }
