@@ -38,14 +38,14 @@ describe("wallet webhook rate limit", () => {
 
     // Each request uses a distinct, attacker-controlled eventId - the per-event check alone would
     // never trip (every id sees at most one request), which is exactly the gap being closed here.
-    for (let i = 0; i < 600; i++) {
+    for (let i = 0; i < WALLET_WEBHOOK_IP_MAX; i++) {
       const res = await app.request(`/api/wallet/webhook/passcreator/fake-event-${i}`, {
         method: "POST",
       });
       expect(res.status).toBe(200);
     }
 
-    const limited = await app.request("/api/wallet/webhook/passcreator/fake-event-600", {
+    const limited = await app.request(`/api/wallet/webhook/passcreator/fake-event-${WALLET_WEBHOOK_IP_MAX}`, {
       method: "POST",
     });
     expect(limited.status).toBe(429);
