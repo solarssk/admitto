@@ -158,15 +158,33 @@ export class PassCreatorClient implements WalletPassProvider {
 
   /** Subscribes `targetUrl` to receive one webhook event type for this template
    * (developer.passcreator.com/en/webhooks/webhook-endpoints). Call once per event type - the
-   * endpoint doesn't document a way to subscribe to several at once. Idempotent to call again with
-   * the same targetUrl/event (re-subscribing doesn't create a duplicate per the docs' unsubscribe
-   * counterpart matching by targetUrl). */
+   * endpoint doesn't document a way to subscribe to several at once. NOT idempotent: PassCreator
+   * creates a separate subscription entry per call, even for an identical (templateId, targetUrl,
+   * event) triple - callers must check listWebhooks() first, this endpoint won't dedupe for them. */
   async subscribeWebhook(targetUrl: string, event: PassCreatorWebhookEventType): Promise<void> {
     await this.request(
       "POST",
       `/api/hook/subscribe/${encodeURIComponent(this.templateId)}`,
       { target_url: targetUrl, event, signPayload: true, retryEnabled: true },
     );
+  }
+
+  /** Every currently active webhook subscription across the whole PassCreator account
+   * (developer.passcreator.com/en/webhooks/webhook-endpoints "List Active Hooks") - not scoped to
+   * this client's own templateId, so callers must filter by passTemplate themselves. Used to check
+   * for an existing (passTemplate, targetUrl, event) subscription before calling subscribeWebhook,
+   * since that endpoint creates a duplicate rather than deduping. */
+  async listWebhooks(): Promise<
+    { targetUrl: string | null; event: string; passTemplate: string | null }[]
+  > {
+    const rows = await this.request<
+      { target_url?: string | null; event?: string; pass_template?: string | null }[]
+    >("GET", "/api/hook/list");
+    return rows.map((row) => ({
+      targetUrl: row.target_url ?? null,
+      event: row.event ?? "",
+      passTemplate: row.pass_template ?? null,
+    }));
   }
 
   async findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null> {

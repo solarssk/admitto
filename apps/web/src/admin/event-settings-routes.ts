@@ -525,12 +525,33 @@ async function subscribeWalletWebhooksBestEffort(
     baseUrl: resolvePassCreatorBaseUrl(),
   });
   const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+
+  // subscribeWebhook creates a fresh subscription entry every call, even for an identical
+  // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
+  // function runs on) would otherwise accumulate a duplicate subscription per save, each
+  // delivering its own redundant webhook call forever after. Listing is itself best-effort: if it
+  // fails, fall back to the old blind-subscribe behavior rather than skipping subscription
+  // entirely - a few duplicate subscriptions are a lesser problem than none at all.
+  let alreadySubscribed: Set<string>;
+  try {
+    const existing = await client.listWebhooks();
+    alreadySubscribed = new Set(
+      existing
+        .filter((hook) => hook.passTemplate === updated.wallet_template_id && hook.targetUrl === targetUrl)
+        .map((hook) => hook.event),
+    );
+  } catch (err) {
+    console.error("wallet webhook subscribe: listWebhooks failed, subscribing unconditionally:", err);
+    alreadySubscribed = new Set();
+  }
+  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter((event) => !alreadySubscribed.has(event));
+
   const settled = await Promise.allSettled(
-    WALLET_WEBHOOK_EVENT_TYPES.map((event) => client.subscribeWebhook(targetUrl, event)),
+    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrl, event)),
   );
   settled.forEach((outcome, index) => {
     if (outcome.status !== "rejected") return;
-    const event = WALLET_WEBHOOK_EVENT_TYPES[index];
+    const event = eventTypesToSubscribe[index];
     console.error(`wallet webhook subscribe (${event}) failed:`, outcome.reason);
     recordSystemLog({
       level: "error",

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, resolveInstanceBaseUrl, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
@@ -1206,6 +1206,107 @@ describe("PATCH /api/admin/events/:eventId", () => {
         expect(updateSpy).not.toHaveBeenCalled();
       } finally {
         updateSpy.mockRestore();
+      }
+    });
+  });
+
+  describe("webhook subscription on wallet-config save", () => {
+    const SUB_EVENT = "evt-event-settings-wallet-sub";
+
+    beforeAll(async () => {
+      await prisma.event.create({
+        data: {
+          id: SUB_EVENT,
+          title: "Webhook Sub Gala",
+          slug: "webhook-sub-gala",
+          date: new Date("2026-09-01"),
+          organization_id: ORG_SET,
+          wallet_template_id: "tmpl-sub",
+          wallet_api_key_enc: encryptToString("sub-api-key"),
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.event.deleteMany({ where: { id: SUB_EVENT } });
+    });
+
+    it("subscribes to all 4 webhook event types when none already exist", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+        const subscribedEvents = subscribeSpy.mock.calls.map((call) => call[1]).sort();
+        expect(subscribedEvents).toEqual(
+          [
+            "first_pushnotification_registered",
+            "pass_voided",
+            "pushnotification_registered",
+            "pushnotification_unregistered",
+          ].sort(),
+        );
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("skips event types that already have a matching subscription (no duplicate)", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        // Different template - must not count as "already subscribed" for this event's template.
+        { targetUrl, event: "pushnotification_registered", passTemplate: "some-other-template" },
+      ]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(3);
+        });
+        const subscribedEvents = subscribeSpy.mock.calls.map((call) => call[1]).sort();
+        expect(subscribedEvents).toEqual(
+          ["first_pushnotification_registered", "pushnotification_registered", "pushnotification_unregistered"].sort(),
+        );
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("falls back to subscribing unconditionally when listWebhooks itself fails", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("down"));
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
       }
     });
   });
