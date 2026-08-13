@@ -1,0 +1,10 @@
+title = "Admitto gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic test fixtures that match secret-shaped regexes but carry no real credential"
+paths = [
+  '''apps/admin/test/account/AccountPage\.test\.tsx''',
+]

@@ -351,6 +351,8 @@ model WalletPass {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
+  // Partial index on registration_sync_attempted_at (wallet-sync candidate selection) lives in
+  // migration SQL — not expressible via @@index.
   @@unique([provider, provider_pass_id])
   @@unique([provider, user_provided_id])
 }

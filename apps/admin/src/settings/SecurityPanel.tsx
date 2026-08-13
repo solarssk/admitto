@@ -74,6 +74,7 @@ function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
 }
 
 interface SecurityNumericRowProps {
+  id: string;
   label: string;
   description: string;
   value: string;
@@ -87,6 +88,7 @@ interface SecurityNumericRowProps {
 }
 
 function SecurityNumericRow({
+  id,
   label,
   description,
   value,
@@ -117,6 +119,7 @@ function SecurityNumericRow({
             {warningMessage ? <SecurityFieldWarning message={warningMessage} /> : null}
           </div>
           <Input
+            id={id}
             aria-label={label}
             type="number"
             min={min}
@@ -262,6 +265,7 @@ export function SecurityPanel() {
           <p className="settings-card-intro">{SECURITY_CARD_INTRO}</p>
           <div className="mail-transport-section security-settings-rows">
           <SecurityNumericRow
+            id="security-session-ttl-hours"
             label="Admin session maximum lifetime (hours)"
             description="Hard cap for admin and superadmin sessions, even if the user stays active. Allowed range: 1–720 hours."
             value={draft.sessionTtlH}
@@ -278,6 +282,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            id="security-session-idle-minutes"
             label="Admin session inactivity timeout (minutes)"
             description="Sign out admins and superadmins after this long without activity. Allowed range: 5–240 minutes."
             value={draft.sessionIdleM}
@@ -294,6 +299,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            id="security-operator-ttl-hours"
             label="Operator session maximum lifetime (hours)"
             description="Hard cap for operator (check-in) sessions, even if the station stays active. Allowed range: 1–168 hours."
             value={draft.opTtlH}
@@ -310,6 +316,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            id="security-operator-idle-minutes"
             label="Operator session inactivity timeout (minutes)"
             description="Sign out operators after this long without activity at the check-in station. Allowed range: 5–480 minutes."
             value={draft.opIdleM}
@@ -326,6 +333,7 @@ export function SecurityPanel() {
           />
 
           <SecurityNumericRow
+            id="security-trusted-device-days"
             label="Remember device duration (days)"
             description='How long a trusted device can skip the authenticator app. Set 0 to turn off "remember this device". Allowed range: 0–90 days.'
             value={draft.trustedDays}
