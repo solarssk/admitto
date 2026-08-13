@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-13
+
 ### Added
 
 - My account: staff can choose 12-hour (AM/PM), 24-hour, or browser-default time input independently from their regional date format.
@@ -941,7 +943,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.4.14...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/solarssk/admitto/compare/v0.4.14...v0.5.0
 [0.4.14]: https://github.com/solarssk/admitto/compare/v0.4.13...v0.4.14
 [0.4.13]: https://github.com/solarssk/admitto/compare/v0.4.12...v0.4.13
 [0.4.12]: https://github.com/solarssk/admitto/compare/v0.4.11...v0.4.12
