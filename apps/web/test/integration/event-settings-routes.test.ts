@@ -1208,6 +1208,32 @@ describe("PATCH /api/admin/events/:eventId", () => {
         updateSpy.mockRestore();
       }
     });
+
+    it("still saves the field change (200) when the background push itself fails", async () => {
+      const updateSpy = vi
+        .spyOn(PassCreatorClient.prototype, "updatePass")
+        .mockRejectedValue(new Error("provider outage"));
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (renamed again)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { event: { title: string } };
+        expect(body.event.title).toBe("Wallet Push Gala (renamed again)");
+        // The failed push is still attempted in the background - poll for it, then confirm the
+        // save itself (already committed before the push even started) was never rolled back.
+        await vi.waitFor(() => {
+          expect(updateSpy).toHaveBeenCalledTimes(1);
+        });
+        const event = await prisma.event.findUnique({ where: { id: PUSH_EVENT } });
+        expect(event?.title).toBe("Wallet Push Gala (renamed again)");
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
   });
 
   describe("webhook subscription on wallet-config save", () => {
