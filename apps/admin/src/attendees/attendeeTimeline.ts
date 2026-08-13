@@ -117,6 +117,7 @@ const TONE_BY_ACTION: Record<string, TimelineTone> = {
   wallet_pass_voided: "error",
   wallet_pass_restored: "ok",
   wallet_pass_reissued: "ok",
+  wallet_pass_deleted: "error",
 };
 
 /** rsvp_status_changed varies by the change's own target status rather than a fixed per-action
@@ -165,6 +166,7 @@ export function getTimelineIcon(actionType: string): string {
     wallet_pass_voided: "wallet-off",
     wallet_pass_restored: "refresh",
     wallet_pass_reissued: "refresh-dot",
+    wallet_pass_deleted: "trash",
   };
   return icons[actionType] ?? "history";
 }
@@ -225,6 +227,8 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Wallet pass restored";
     case "wallet_pass_reissued":
       return "Wallet pass updated";
+    case "wallet_pass_deleted":
+      return "Wallet pass deleted";
     case "scan_preview":
       return "Scan preview";
     default:
