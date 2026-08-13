@@ -70,7 +70,7 @@ describe("AttendeesTable pass status badge", () => {
     render(<AttendeesTable {...tableProps} items={[{ ...baseRow, status: "confirmed" }]} />);
 
     // rsvp_status and status are both "confirmed" on baseRow but render in separate
-    // columns (#366) — two independent "Confirmed" badges, not a single shared one.
+    // columns (#366) - two independent "Confirmed" badges, not a single shared one.
     expect(within(screen.getByRole("table")).getAllByText("Confirmed")).toHaveLength(2);
   });
 

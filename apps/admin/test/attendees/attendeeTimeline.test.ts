@@ -509,6 +509,17 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
     ).toBe("Voided → Added");
   });
 
+  it("falls back to the raw status text for an inherited-property-shaped previous_status (prototype pollution guard)", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "wallet_pass_voided",
+          metadata: { previous_status: "toString" },
+        }),
+      ),
+    ).toBe("toString → Voided");
+  });
+
   it("returns an empty string for wallet_pass_reissued (no status change worth diffing)", () => {
     expect(
       getTimelineDetail(
