@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Organisation settings → Security and Mail: the session-lifetime/timeout number fields and the SMTP/Graph/Power Automate/wallet secret fields now have a stable `id`, so browser password managers and accessibility tools can associate each field with its label instead of treating it as anonymous.
 - The small map on the public ticket page and its "© OpenStreetMap contributors" credit could render as blank boxes instead of readable text in the packaged app image, because the container had no fonts installed at all for the server-side map renderer to draw with.
 - Event settings → Wallet: registering the PassCreator webhook subscriptions on save no longer logs a false failure and falls back to re-subscribing unconditionally on every save. PassCreator's hook endpoints return success without matching the response shape used elsewhere in its API, so a working subscription was being misread as an error.
 - Wallet pass registration status (Registered/Unregistered on the Attendees list and Attendee Detail) now updates correctly from PassCreator's webhook deliveries. The delivered payload's device-registration fields don't match the shape assumed during development, so live updates were silently ignored in favor of the slower periodic background refresh.
