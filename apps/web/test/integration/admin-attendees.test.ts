@@ -1284,6 +1284,26 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(res.status).toBe(403);
       expect(voidSpy).not.toHaveBeenCalled();
     });
+
+    it("returns 403 when the event is archived", async () => {
+      const attendeeId = "att-wallet-action-void-archived";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: new Date() } });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/void`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+        expect(res.status).toBe(403);
+        const body = (await res.json()) as { code: string };
+        expect(body.code).toBe("event_archived");
+        expect(voidSpy).not.toHaveBeenCalled();
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("active");
+      } finally {
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
+      }
+    });
   });
 
   describe("restore", () => {
@@ -1570,6 +1590,30 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { voided: number; skipped: number; errored: number };
       expect(body).toEqual({ voided: 1, skipped: 0, errored: 1 });
+    });
+
+    it("returns 403 when the event is archived", async () => {
+      const attendeeId = "att-bulk-wallet-void-archived";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: new Date() } });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+        expect(res.status).toBe(403);
+        const body = (await res.json()) as { code: string };
+        expect(body.code).toBe("event_archived");
+        expect(voidSpy).not.toHaveBeenCalled();
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("active");
+      } finally {
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
+      }
     });
   });
 
