@@ -3,7 +3,8 @@
  *
  *   admitto worker
  *
- * Jobs: mail_delivery drain, import/export AdminJobs, bounce ingest, wallet_sync, retention.
+ * Jobs: mail_delivery drain, import/export/wallet_push AdminJobs, bounce ingest, wallet_sync,
+ * retention.
  */
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
@@ -27,6 +28,7 @@ import { getDefaultStorage } from "@admitto/storage";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
 import { runWalletRegistrationSync } from "./wallet-sync.js";
+import { drainWalletPushJobs } from "./wallet-push-jobs.js";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
 import { openWorkerNotifyClient, type WorkerNotifyClient } from "./worker-notify.js";
@@ -130,6 +132,22 @@ async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Pr
   }
 }
 
+/** Refreshes the worker heartbeat every 60s while `fn` runs. import/export/wallet_push each have
+ * a stale-running budget (15/15/30 min) well past the 5-minute heartbeat-stale floor tuned for a
+ * typical short drain (see packages/db/src/worker-heartbeat.ts) - a big one can legitimately
+ * outlast that floor and would otherwise show as a dead worker in Health mid-drain (bot review).
+ * Timer is always cleared before returning, success or failure. */
+async function withHeartbeatRefresh<T>(db: PrismaClient, jobName: string, fn: () => Promise<T>): Promise<T> {
+  const timer = setInterval(() => {
+    touchWorkerHeartbeat(db).catch((err) => log(jobName, `heartbeat refresh failed: ${errMessage(err)}`));
+  }, 60_000);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 /** @returns true when a job was claimed this tick - the drain takes one at a time, so another
  * may already be waiting behind it. */
 async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
@@ -140,10 +158,9 @@ async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
-    const result = await drainImportJobs(db, getDefaultStorage(), {
-      limit: 1,
-      heartbeatStaleMs,
-    });
+    const result = await withHeartbeatRefresh(db, "import", () =>
+      drainImportJobs(db, getDefaultStorage(), { limit: 1, heartbeatStaleMs }),
+    );
     if (result.claimed === 0 && result.reclaimed === 0 && result.healed === 0) {
       log("import", "idle");
       return false;
@@ -168,10 +185,9 @@ async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
-    const result = await drainExportJobs(db, getDefaultStorage(), {
-      limit: 1,
-      heartbeatStaleMs,
-    });
+    const result = await withHeartbeatRefresh(db, "export", () =>
+      drainExportJobs(db, getDefaultStorage(), { limit: 1, heartbeatStaleMs }),
+    );
     if (result.claimed === 0 && result.reclaimed === 0) {
       log("export", "idle");
       return false;
@@ -183,6 +199,32 @@ async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
     return result.claimed > 0;
   } finally {
     await locks.release("export");
+  }
+}
+
+/** @returns true when a job was claimed this tick - same one-at-a-time reasoning as import/export. */
+async function runWalletPushJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
+  const acquired = await locks.tryAcquire("wallet_push");
+  if (!acquired) {
+    log("wallet_push", "skipped (lock held)");
+    return false;
+  }
+  try {
+    const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
+    const result = await withHeartbeatRefresh(db, "wallet_push", () =>
+      drainWalletPushJobs(db, { limit: 1, heartbeatStaleMs }),
+    );
+    if (result.claimed === 0 && result.reclaimed === 0) {
+      log("wallet_push", "idle");
+      return false;
+    }
+    log(
+      "wallet_push",
+      `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed} reclaimed=${result.reclaimed}`,
+    );
+    return result.claimed > 0;
+  } finally {
+    await locks.release("wallet_push");
   }
 }
 
@@ -272,10 +314,11 @@ export async function runWorkerTick(
   );
   // Independent advisory locks per job type, so one slow drain (e.g. a big mail_delivery
   // batch) cannot delay another's turn (e.g. export) within the same tick.
-  const [mailHasMore, importHasMore, exportHasMore] = await Promise.all([
+  const [mailHasMore, importHasMore, exportHasMore, walletPushHasMore] = await Promise.all([
     runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks), false),
     runJobSafely("import", () => runImportJob(db, locks), false),
     runJobSafely("export", () => runExportJob(db, locks), false),
+    runJobSafely("wallet_push", () => runWalletPushJob(db, locks), false),
     runJobSafely("bounce", () => runBounceJob(db, locks), undefined),
     runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks), undefined),
   ]);
@@ -301,7 +344,7 @@ export async function runWorkerTick(
     undefined,
   );
 
-  return mailHasMore || importHasMore || exportHasMore;
+  return mailHasMore || importHasMore || exportHasMore || walletPushHasMore;
 }
 
 /**
@@ -331,7 +374,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
 
   log(
     "heartbeat",
-    `starting tick=${tickSeconds}s host=${osHostname()} notify=${notify ? "on" : "off"} (mail_delivery + import + export + bounce + wallet_sync + retention)`,
+    `starting tick=${tickSeconds}s host=${osHostname()} notify=${notify ? "on" : "off"} (mail_delivery + import + export + wallet_push + bounce + wallet_sync + retention)`,
   );
 
   try {

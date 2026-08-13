@@ -30,6 +30,7 @@ const EXPECTED_POLICIES: Record<
   "admin:geocoding-timezone": { windowMs: [60_000], max: [60], checks: 1 },
   "admin:import-commit": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:import-job-status": { windowMs: [60_000], max: [120], checks: 1 },
+  "admin:wallet-push-job-status": { windowMs: [60_000], max: [120], checks: 1 },
   "admin:template-preview": { windowMs: [60_000], max: [20], checks: 1 },
   "admin:resend": { windowMs: [60_000, 3_600_000], max: [5, 30], checks: 2 },
   "admin:resend-bulk": { windowMs: [600_000], max: [3], checks: 1 },

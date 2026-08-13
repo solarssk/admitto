@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.
+
 ### Changed
 
 - Attendee export/import and mail sending now start almost immediately after you trigger them, instead of waiting up to a minute for the background worker's next scheduled check.
@@ -19,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event settings → Wallet: registering the PassCreator webhook subscriptions on save no longer logs a false failure and falls back to re-subscribing unconditionally on every save. PassCreator's hook endpoints return success without matching the response shape used elsewhere in its API, so a working subscription was being misread as an error.
 - Wallet pass registration status (Registered/Unregistered on the Attendees list and Attendee Detail) now updates correctly from PassCreator's webhook deliveries. The delivered payload's device-registration fields don't match the shape assumed during development, so live updates were silently ignored in favor of the slower periodic background refresh.
 - Attendee Detail → Delivery history: on narrow screens, a long subject or recipient address could squeeze the row down until the message text disappeared entirely, or overlap the timestamp, instead of cleanly wrapping the timestamp onto its own line underneath.
+- Settings → Health could show the background worker as unresponsive during a large attendee import, export, or wallet pass push, even though it was still actively working - the worker's liveness signal was only refreshed before and after one of those runs, not while it was still in progress.
 
 ## [0.5.0] - 2026-08-13
 

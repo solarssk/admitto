@@ -39,7 +39,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Check in** without scanning
    - **Revoke check-in**, **Revoke items**, or **Revoke pass**
    - **Void wallet pass**, **Push updates**, or **Delete wallet pass** (only enabled when the selection includes at least one attendee who added a pass)
-   - **Change ticket type** or **Change attendance status**
+   - **Change ticket type** (also pushes the new type to any already-issued wallet passes in the selection, in the background) or **Change attendance status**
    - **Export** the selection as CSV
    - **Delete** selected attendees (GDPR erasure; confirmation with a delay)
 3. Confirm when Admitto asks, then verify the list and a sample detail page.
@@ -71,7 +71,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 
 ## What changes after this action
 
-Saved attendee details become available to templates, ticket rendering, filters, exports, and check-in. A pass-state change can immediately affect whether the ticket can be admitted. Deletion removes the attendee from the event permanently.
+Saved attendee details become available to templates, ticket rendering, filters, exports, and check-in. A pass-state change can immediately affect whether the ticket can be admitted. Deletion removes the attendee from the event permanently. A bulk ticket type change reports the wallet push outcome in a toast once it finishes; a pass that could not be reached stays on its previous ticket type until you retry with **Push updates**.
 
 ## Common problems
 

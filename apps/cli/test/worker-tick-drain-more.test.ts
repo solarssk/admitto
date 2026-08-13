@@ -12,6 +12,7 @@ const DEFAULT_MAIL_DRAIN_LIMIT = 50;
 const drainPendingDeliveries = vi.fn();
 const drainImportJobs = vi.fn();
 const drainExportJobs = vi.fn();
+const drainWalletPushJobs = vi.fn();
 const ingestBounces = vi.fn(async () => ({
   eventsProcessed: 0,
   messagesSeen: 0,
@@ -49,6 +50,7 @@ vi.mock("../src/lib/sse-publish.js", () => ({
   publishActivityChanged: vi.fn(async () => undefined),
 }));
 vi.mock("../src/commands/export-jobs.js", () => ({ drainExportJobs }));
+vi.mock("../src/commands/wallet-push-jobs.js", () => ({ drainWalletPushJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
@@ -73,6 +75,7 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
     drainPendingDeliveries.mockReset();
     drainImportJobs.mockReset();
     drainExportJobs.mockReset();
+    drainWalletPushJobs.mockReset();
     drainPendingDeliveries.mockResolvedValue({
       claimed: 0,
       sent: 0,
@@ -89,6 +92,7 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
       eventIds: [],
     });
     drainExportJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
+    drainWalletPushJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
   });
 
   it("signals more when mail_delivery fills its batch limit", async () => {
@@ -127,6 +131,11 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
 
   it("signals more when export claims a job, even though it only ever takes one", async () => {
     drainExportJobs.mockResolvedValue({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("signals more when wallet_push claims a job, even though it only ever takes one", async () => {
+    drainWalletPushJobs.mockResolvedValue({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
     await expect(tick()).resolves.toBe(true);
   });
 

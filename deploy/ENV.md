@@ -112,6 +112,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `ADMITTO_INTERNAL_URL` | optional | worker | none | no | Optional alternate internal app URL used by worker integrations (compose sets http://app:3000). |
 | `IMPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail import AdminJobs stuck in running after this many ms (default 15 minutes). |
 | `EXPORT_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail export AdminJobs stuck in running after this many ms (default 15 minutes). |
+| `WALLET_PUSH_JOB_STALE_RUNNING_MS` | optional | worker | none | no | Fail wallet_push AdminJobs stuck in running after this many ms (default 30 minutes). |
 
 ## Ops / health / logging
 
@@ -186,4 +187,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 98 distinct keys seen in scan (tests excluded)._
+_Last generated from 99 distinct keys seen in scan (tests excluded)._

@@ -1,10 +1,20 @@
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassInput } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
-import { loadEventTicketTypes, type resolveTicket } from "@admitto/tickets";
-import { formatDate } from "./ticket-page.js";
+import { loadEventTicketTypes } from "./ticket-types.js";
+import type { resolveTicket } from "./resolve.js";
 
 type ResolvedTicket = NonNullable<Awaited<ReturnType<typeof resolveTicket>>>;
+
+/** "long month" en-GB style, e.g. "24 September 2026" - shared by the ticket page and wallet
+ * pass content (now rendered from two different processes, apps/web and the apps/cli worker) so
+ * both show the event date identically. Explicit UTC (bot review) rather than relying on the
+ * two processes sharing a host TZ - parseEventDateInput already anchors a date-only input at
+ * noon UTC specifically so this never crosses a day boundary for any real deployment, but pinning
+ * it here too means that stays true even if that anchoring ever changes. */
+export function formatDate(d: Date): string {
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+}
 
 /**
  * ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -

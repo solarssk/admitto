@@ -949,6 +949,10 @@ model AdminJob {
   updated_count   Int?
   skipped_count   Int?
   invalid_count   Int?
+  // Generic live-progress counter (wallet_push and any future job type that wants one) -
+  // import/export don't use these, they still write all counts once at completion.
+  progress_total  Int?
+  progress_done   Int?
   error           String?      @db.Text
   result_json     Json?
   created_at      DateTime     @default(now())
