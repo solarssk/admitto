@@ -77,16 +77,23 @@ function walletPlaceholderValues(input: WalletPassInput): Record<string, string 
  * template and silently sent nothing for every other one. An admin maps every field their
  * template's Additional Properties expect via `fieldMapping` (Event Settings -> Wallet) -
  * nothing beyond `base` is sent when it's empty.
+ *
+ * `enforceUnique` must be true only for create (reject if some OTHER pass already owns this
+ * userProvidedId) and false for update (per PassCreator's own docs, `enforceUniqueUserProvidedId:
+ * true` rejects with 400 "already used within your account" - on an update the id being sent is
+ * always already used, by the very pass being updated, so leaving this true unconditionally broke
+ * every reissue with a false "not unique" error - found live, 2026-08-13).
  */
 export function toPassCreatorData(
   input: WalletPassInput,
   templateId: string,
-  fieldMapping?: Record<string, string>,
+  fieldMapping: Record<string, string> | undefined,
+  enforceUnique: boolean,
 ): Record<string, unknown> {
   const base = {
     templateId,
     userProvidedId: input.userProvidedId,
-    enforceUniqueUserProvidedId: true,
+    enforceUniqueUserProvidedId: enforceUnique,
     // Top-level API field (not a template Additional Property, not part of fieldMapping) that
     // controls the pass's actual scanned barcode content - without it PassCreator falls back to
     // its own template-configured default (typically its own auto-generated pass UID), which

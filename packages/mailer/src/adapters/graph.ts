@@ -11,7 +11,7 @@ import { logMailSent, rejectedSendResult } from "../adapterUtils.js";
 import { validateMailMessage } from "../validation.js";
 import type { FetchFn, MailMessage, MailerAdapter, SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { redactEmail } from "@admitto/shared";
+import { NO_COMPRESSION_HEADERS, redactEmail } from "@admitto/shared";
 
 /**
  * Microsoft Graph — app-only send (client credentials flow).
@@ -55,13 +55,16 @@ export class GraphAdapter implements MailerAdapter {
     try {
       res = await this.fetchFn(`${this.authority}/oauth2/v2.0/token`, {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
+        headers: { "content-type": "application/x-www-form-urlencoded", ...NO_COMPRESSION_HEADERS },
         body: new URLSearchParams({
           grant_type: "client_credentials",
           client_id: this.config.clientId,
           client_secret: this.config.clientSecret,
           scope: "https://graph.microsoft.com/.default",
         }),
+        // A 307/308 redirect preserves method + body, which would replay client_secret against
+        // an unintended host - refuse to follow one rather than leaking it.
+        redirect: "error",
         // Match OIDC connection tests so hung token endpoints cannot stall live health.
         signal: AbortSignal.timeout(15_000),
       });
@@ -135,11 +138,15 @@ export class GraphAdapter implements MailerAdapter {
         headers: {
           authorization: `Bearer ${tokenResult.token}`,
           "content-type": "application/json",
+          ...NO_COMPRESSION_HEADERS,
         },
         body: JSON.stringify({
           message: graphMessage,
           saveToSentItems: this.config.saveToSentItems,
         }),
+        // Same reasoning as the token request above: a 307/308 would replay the bearer token
+        // and message body against an unintended host.
+        redirect: "error",
       });
 
       if (res.status === 202) {

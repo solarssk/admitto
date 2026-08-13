@@ -197,6 +197,7 @@ export function makeSecretHandlers(
 }
 
 export function SecretFieldRow({
+  id,
   label,
   hint,
   field,
@@ -207,6 +208,7 @@ export function SecretFieldRow({
   onCancel,
   disabled = false,
 }: Readonly<{
+  id: string;
   label: string;
   /** Optional visible hint below the field, same placement/styling as Input's own `hint` prop. */
   hint?: string;
@@ -242,6 +244,7 @@ export function SecretFieldRow({
           {editing && !confirmed && (
             <>
               <Input
+                id={id}
                 type="password"
                 aria-label={label}
                 aria-describedby={hint ? hintId : undefined}
@@ -549,6 +552,7 @@ export function SmtpConnectionCard({
           />
           <div className="smtp-connection-password-and-test">
             <SecretFieldRow
+              id="mail-smtp-password"
               label="Password"
               field={smtpPasswordField}
               edit={smtpPasswordEdit}
@@ -795,6 +799,7 @@ export function GraphCard({
             placeholder="00000000-0000-0000-0000-000000000000"
           />
           <SecretFieldRow
+            id="mail-graph-client-secret"
             label="Client secret"
             field={graphClientSecretField}
             edit={graphClientSecretEdit}
@@ -840,6 +845,7 @@ export function PowerAutomateCard({
         <p className="settings-card-intro">{POWER_AUTOMATE_CARD_INTRO}</p>
         <div className="mail-transport-section">
         <SecretFieldRow
+          id="mail-power-automate-url"
           label="Flow URL"
           field={powerAutomateUrlField}
           edit={powerAutomateUrlEdit}
@@ -847,6 +853,7 @@ export function PowerAutomateCard({
           {...makeSecretHandlers("powerAutomateUrl", updateSecrets)}
         />
         <SecretFieldRow
+          id="mail-power-automate-key"
           label="Flow key"
           field={powerAutomateKeyField}
           edit={powerAutomateKeyEdit}

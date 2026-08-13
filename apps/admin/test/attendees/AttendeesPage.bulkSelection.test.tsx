@@ -15,6 +15,9 @@ const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
 const bulkRevokeCheckIn = vi.fn();
 const bulkRevokePass = vi.fn();
+const bulkVoidWalletPass = vi.fn();
+const bulkReissueWalletPass = vi.fn();
+const bulkDeleteWalletPass = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const bulkChangeRsvpStatus = vi.fn();
 const exportSelectedAttendees = vi.fn();
@@ -117,6 +120,9 @@ vi.mock("../../src/api/client.js", () => ({
   bulkCheckInAttendees: (...args: unknown[]) => bulkCheckInAttendees(...args),
   bulkRevokeCheckIn: (...args: unknown[]) => bulkRevokeCheckIn(...args),
   bulkRevokePass: (...args: unknown[]) => bulkRevokePass(...args),
+  bulkVoidWalletPass: (...args: unknown[]) => bulkVoidWalletPass(...args),
+  bulkReissueWalletPass: (...args: unknown[]) => bulkReissueWalletPass(...args),
+  bulkDeleteWalletPass: (...args: unknown[]) => bulkDeleteWalletPass(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -154,9 +160,11 @@ function bulkBar() {
   return within(bar as HTMLElement);
 }
 
-/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first. */
+/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first.
+ * The accessible name concatenates the label and hint text, so a plain prefix match on "Delete"
+ * also catches "Delete wallet pass" - excluded via the lookahead. */
 function openAndArmDeleteDialog() {
-  return openMenuItemAndArmDialog(/^Delete/);
+  return openMenuItemAndArmDialog(/^Delete(?! wallet)/);
 }
 
 /** Opens the "More actions" menu, then clicks the given menu item and returns the confirm dialog. */
@@ -921,6 +929,201 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(bulkRevokePass).not.toHaveBeenCalled();
+  });
+});
+
+/** A row with a WalletPass, so canBulkWallet (AttendeesTable) is true and the Void/Push
+ * updates/Delete wallet menu items aren't disabled - makeRow's own default omits wallet_status,
+ * so its default rows never exercise that gate at all. */
+function walletRow(id: string, name: string): AttendeeRowDto {
+  return {
+    ...makeRow(id, name),
+    wallet_status: {
+      apple_active_registrations: 1,
+      apple_inactive_registrations: 0,
+      google_active_registrations: 0,
+      google_inactive_registrations: 0,
+    },
+  };
+}
+
+describe("AttendeesPage bulk wallet actions (#879)", () => {
+  const walletA = walletRow("att-1", "Jane Doe");
+  const walletB = walletRow("att-2", "John Smith");
+
+  it("voids the wallet pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkVoidWalletPass.mockResolvedValue({ voided: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void" }));
+
+    await waitFor(() => {
+      expect(bulkVoidWalletPass).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 wallet pass voided.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("toasts that nobody had a pass to void when the whole selection is skipped", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkVoidWalletPass.mockResolvedValue({ voided: 0, skipped: 1, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "None of the selected attendees had a pass to void - no pass, or already voided.",
+        "info",
+      );
+    });
+  });
+
+  it("pushes updates to the wallet pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkReissueWalletPass.mockResolvedValue({ reissued: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Push updates/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => {
+      expect(bulkReissueWalletPass).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 wallet pass updated.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("deletes the wallet pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkDeleteWalletPass.mockResolvedValue({ deleted: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Delete wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(bulkDeleteWalletPass).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 wallet pass deleted.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("disables the wallet menu items with a tooltip when nothing in the selection has a wallet pass", async () => {
+    const noPassRow = { ...rowA, wallet_status: null };
+    fetchEventAttendees.mockResolvedValue({ items: [noPassRow, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /^Void wallet pass/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("None of the selected attendees have added a wallet pass.");
+  });
+
+  it("Cancel closes the bulk-wallet-void dialog without calling bulkVoidWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkVoidWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the bulk-wallet-reissue dialog without calling bulkReissueWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Push updates/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkReissueWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the bulk-wallet-delete dialog without calling bulkDeleteWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Delete wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkDeleteWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("toasts a mixed no-success error instead of the all-skipped info message when errored > 0", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkVoidWalletPass.mockResolvedValue({ voided: 0, skipped: 1, errored: 1 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "No wallet passes voided (1 had no pass, or it was already voided, 1 failed unexpectedly).",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(
+      "None of the selected attendees had a pass to void - no pass, or already voided.",
+      "info",
+    );
   });
 });
 

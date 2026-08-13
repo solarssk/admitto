@@ -7,6 +7,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
+  "dependencies": {
+    "@admitto/crypto": "*",
+    "@admitto/db": "*",
+    "@admitto/shared": "*"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -16,6 +21,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build -w @admitto/shared",
+    "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
   },

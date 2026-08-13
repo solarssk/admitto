@@ -4,9 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia } from "../test-utils.js";
-import type { AttendeeDetailDto, AttendeeRowDto } from "../../src/api/types.js";
+import type { AttendeeRowDto } from "../../src/api/types.js";
 
-const updateAttendee = vi.fn();
 const fetchEventAttendees = vi.fn();
 const exportAttendees = vi.fn();
 const bulkResendTickets = vi.fn();
@@ -27,14 +26,8 @@ const sampleRow: AttendeeRowDto = {
   updated_at: "2026-06-01T10:00:00.000Z",
   last_mail_status: "sent",
   rsvp_status: "confirmed",
-};
-
-const otherRow: AttendeeRowDto = {
-  ...sampleRow,
-  id: "att-2",
-  name: "John Smith",
-  email: "john@example.com",
-  updated_at: "2026-06-01T10:00:00.000Z",
+  has_issued_items: false,
+  wallet_status: null,
 };
 
 let listResponse = {
@@ -80,28 +73,6 @@ function mockFetchEventAttendees() {
       );
     });
   });
-}
-
-function asDetail(row: AttendeeRowDto, patch: Partial<AttendeeDetailDto> = {}): AttendeeDetailDto {
-  return {
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    company: row.company,
-    department: row.department,
-    ticket_type: row.ticket_type,
-    status: row.status,
-    check_in_status: row.check_in_status,
-    admitted_at: row.admitted_at,
-    updated_at: row.updated_at,
-    rsvp_status: row.rsvp_status,
-    rsvp_updated_at: null,
-    rsvp_source: null,
-    custom_data: null,
-    deliveries: [],
-    action_log: [],
-    ...patch,
-  };
 }
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
@@ -173,7 +144,6 @@ vi.mock("../../src/api/client.js", () => ({
   bulkResendTickets: (...args: unknown[]) => bulkResendTickets(...args),
   fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
   sendEventBulk: vi.fn(),
-  updateAttendee: (...args: unknown[]) => updateAttendee(...args),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -204,22 +174,9 @@ function renderPage() {
   );
 }
 
-function findRowByName(name: string) {
-  const row = screen.getAllByRole("row").find((candidate) => within(candidate).queryByText(name));
-  if (!row) {
-    throw new Error(`Row not found for ${name}`);
-  }
-  return within(row);
-}
-
-function tableActions() {
-  return within(screen.getByRole("table"));
-}
-
 beforeEach(() => {
   addToast.mockClear();
   reportApiError.mockClear();
-  updateAttendee.mockReset();
   fetchEventAttendees.mockReset();
   bulkResendTickets.mockReset();
   fetchBulkSendStatus.mockReset();
@@ -244,289 +201,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("AttendeesPage revoke/restore", () => {
-  it("confirms revoke, merges PATCH response into the row, and shows restore action", async () => {
-    updateAttendee.mockResolvedValue(
-      asDetail(sampleRow, {
-        status: "revoked",
-        updated_at: "2026-06-01T10:01:00.000Z",
-      }),
-    );
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-    });
-
-    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-
-    await waitFor(() => {
-      expect(updateAttendee).toHaveBeenCalledWith("evt-1", "att-1", {
-        status: "revoked",
-        expected_updated_at: sampleRow.updated_at,
-      });
-      expect(addToast).toHaveBeenCalledWith("Pass revoked", "success");
-      expect(screen.getByText("Revoked")).toBeTruthy();
-      expect(tableActions().getByRole("button", { name: "Restore pass" })).toBeTruthy();
-      expect(tableActions().queryByRole("button", { name: "Revoke pass" })).toBeNull();
-    });
-  });
-
-  it("restores without confirm dialog, merges response, and uses refreshed updated_at next time", async () => {
-    const revokedRow = { ...sampleRow, status: "revoked" as const };
-    setListItems([revokedRow]);
-
-    updateAttendee
-      .mockResolvedValueOnce(
-        asDetail(revokedRow, {
-          status: "registered",
-          updated_at: "2026-06-01T10:01:00.000Z",
-        }),
-      )
-      .mockResolvedValueOnce(
-        asDetail(sampleRow, {
-          status: "revoked",
-          updated_at: "2026-06-01T10:02:00.000Z",
-        }),
-      );
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Restore pass" })).toBeTruthy();
-    });
-
-    fireEvent.click(tableActions().getByRole("button", { name: "Restore pass" }));
-
-    await waitFor(() => {
-      expect(updateAttendee).toHaveBeenNthCalledWith(1, "evt-1", "att-1", {
-        status: "registered",
-        expected_updated_at: revokedRow.updated_at,
-      });
-      expect(addToast).toHaveBeenCalledWith("Pass restored", "success");
-      expect(screen.queryByText("Revoked")).toBeNull();
-    });
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-    });
-    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-
-    await waitFor(() => {
-      expect(updateAttendee).toHaveBeenNthCalledWith(2, "evt-1", "att-1", {
-        status: "revoked",
-        expected_updated_at: "2026-06-01T10:01:00.000Z",
-      });
-    });
-  });
-
-  it("updates only the targeted row when multiple attendees are listed", async () => {
-    setListItems([sampleRow, otherRow]);
-    updateAttendee.mockResolvedValue(
-      asDetail(sampleRow, {
-        status: "revoked",
-        updated_at: "2026-06-01T10:01:00.000Z",
-      }),
-    );
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "Revoke pass" })).toHaveLength(2);
-    });
-
-    fireEvent.click(findRowByName("Jane Doe").getByRole("button", { name: "Revoke pass" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-
-    await waitFor(() => {
-      expect(findRowByName("Jane Doe").getByText("Revoked")).toBeTruthy();
-      expect(findRowByName("Jane Doe").getByRole("button", { name: "Restore pass" })).toBeTruthy();
-      expect(findRowByName("John Smith").getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-      expect(findRowByName("John Smith").queryByRole("button", { name: "Restore pass" })).toBeNull();
-    });
-  });
-
-  it("reloads the list on stale_write conflict", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    updateAttendee.mockRejectedValue(new ApiError(409, "stale_write", "stale_write"));
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-    });
-    const callsBeforeConflict = fetchEventAttendees.mock.calls.length;
-
-    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-
-    await waitFor(() => {
-      expect(updateAttendee).toHaveBeenCalledWith("evt-1", "att-1", {
-        status: "revoked",
-        expected_updated_at: sampleRow.updated_at,
-      });
-      expect(addToast).toHaveBeenCalledWith(
-        "Someone else updated this attendee. Reloading list.",
-        "warning",
-      );
-      expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(callsBeforeConflict);
-      expect(screen.queryByRole("dialog", { name: "Revoke pass?" })).toBeNull();
-    });
-  });
-
-  it("restores without confirm dialog and toasts event_full on capacity error", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    const revokedRow = { ...sampleRow, status: "revoked" as const };
-    setListItems([revokedRow]);
-    updateAttendee.mockRejectedValue(new ApiError(409, "event_full", "event_full"));
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
-
-    await waitFor(() => {
-      expect(updateAttendee).toHaveBeenCalledWith("evt-1", "att-1", {
-        status: "registered",
-        expected_updated_at: revokedRow.updated_at,
-      });
-      expect(addToast).toHaveBeenCalledWith(
-        "Event is at capacity. Pass cannot be restored.",
-        "error",
-      );
-    });
-  });
-
-  it("keeps an unknown 409 revoke conflict in the confirmation dialog", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    updateAttendee.mockRejectedValue(new ApiError(409, "unexpected_conflict", "unexpected_conflict"));
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-    });
-    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-
-    await waitFor(() => {
-      expect(reportApiError).toHaveBeenCalledWith(409);
-      expect(within(dialog).getByText("Could not update pass status.")).toBeTruthy();
-    });
-    expect(addToast).not.toHaveBeenCalledWith("Could not update pass status.", "error");
-  });
-
-  it("toasts an unknown 409 restore conflict because no confirmation dialog is open", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    const revokedRow = { ...sampleRow, status: "revoked" as const };
-    setListItems([revokedRow]);
-    updateAttendee.mockRejectedValue(new ApiError(409, "unexpected_conflict", "unexpected_conflict"));
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
-
-    await waitFor(() => {
-      expect(reportApiError).toHaveBeenCalledWith(409);
-      expect(addToast).toHaveBeenCalledWith("Could not update pass status.", "error");
-    });
-  });
-
-  it("redirects to login when restoring a pass returns 401", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    const revokedRow = { ...sampleRow, status: "revoked" as const };
-    setListItems([revokedRow]);
-    updateAttendee.mockRejectedValue(new ApiError(401, "unauthorized"));
-    const assignSpy = vi.fn();
-    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { pathname: "/admin/events/evt-1/attendees", assign: assignSpy },
-    });
-    try {
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Restore pass" })).toBeTruthy();
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
-
-      await waitFor(() => {
-        expect(assignSpy).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Fattendees");
-        expect(reportApiError).toHaveBeenCalledWith(401);
-      });
-    } finally {
-      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
-    }
-  });
-
-  it("disables the in-flight row action until the PATCH settles", async () => {
-    const revokedRow = { ...sampleRow, status: "revoked" as const };
-    setListItems([revokedRow]);
-
-    let resolveUpdate: (value: AttendeeDetailDto) => void = () => undefined;
-    updateAttendee.mockImplementation(
-      () =>
-        new Promise<AttendeeDetailDto>((resolve) => {
-          resolveUpdate = resolve;
-        }),
-    );
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Restore pass" })).toBeTruthy();
-    });
-
-    fireEvent.click(tableActions().getByRole("button", { name: "Restore pass" }));
-
-    await waitFor(() => {
-      expect((tableActions().getByRole("button", { name: "Restore pass" }) as HTMLButtonElement).disabled).toBe(true);
-    });
-
-    resolveUpdate(
-      asDetail(revokedRow, {
-        status: "registered",
-        updated_at: "2026-06-01T10:01:00.000Z",
-      }),
-    );
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-    });
-  });
-
-  it("closes revoke dialog on cancel without calling updateAttendee", async () => {
-    renderPage();
-
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-    });
-
-    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Revoke pass?" })).toBeNull();
-    });
-    expect(updateAttendee).not.toHaveBeenCalled();
-  });
-
+describe("AttendeesPage export and header Send tickets", () => {
   it("toasts operator-safe export failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     exportAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -539,36 +214,6 @@ describe("AttendeesPage revoke/restore", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /^XLSX/ }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Request failed.", "error");
-    });
-  });
-
-  it("shows operator-safe revoke pass failure in dialog", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    updateAttendee.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderPage();
-    await waitFor(() => {
-      expect(tableActions().getByRole("button", { name: "Revoke pass" })).toBeTruthy();
-    });
-    fireEvent.click(tableActions().getByRole("button", { name: "Revoke pass" }));
-    const dialog = screen.getByRole("dialog", { name: "Revoke pass?" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
-    await waitFor(() => {
-      expect(within(dialog).getByText(/Could not update pass status/)).toBeTruthy();
-    });
-  });
-
-  it("toasts operator-safe restore failure without dialog", async () => {
-    const { ApiError } = await import("../../src/api/client.js");
-    const revokedRow = { ...sampleRow, status: "revoked" as const };
-    setListItems([revokedRow]);
-    updateAttendee.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderPage();
-    await waitFor(() => {
-      expect(findRowByName("Jane Doe").getByRole("button", { name: "Restore pass" })).toBeTruthy();
-    });
-    fireEvent.click(findRowByName("Jane Doe").getByRole("button", { name: "Restore pass" }));
-    await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Could not update pass status.", "error");
     });
   });
 

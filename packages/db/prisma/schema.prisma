@@ -323,6 +323,25 @@ model WalletPass {
   issued_at DateTime?
   voided_at DateTime?
 
+  // Registration status as PassCreator itself sees it (GET /api/v3/pass?userProvidedId=...),
+  // refreshed periodically by the wallet-sync worker job - best-effort, a PassCreator outage or
+  // rate limit just leaves these stale rather than blocking anything else. Active/inactive are
+  // PassCreator's own device-registration counts per platform, not derived locally.
+  apple_active_registrations     Int?
+  apple_inactive_registrations   Int?
+  google_active_registrations    Int?
+  google_inactive_registrations  Int?
+  // String, not DateTime: PassCreator's docs don't state which timezone this is in (no UTC
+  // offset/Z in any example) - stored and displayed verbatim rather than parsed, so we never
+  // assert a timezone we don't actually know.
+  first_downloaded_at            String?
+  // Last genuinely successful check only - a failed/skipped attempt does NOT bump this, so it
+  // stays a trustworthy "last known good" for the UI. registration_sync_attempted_at is the
+  // separate scheduling marker (see registration-sync.ts) that also advances on failure, so a
+  // persistently-failing row still backs off instead of starving every other candidate.
+  registration_checked_at        DateTime?
+  registration_sync_attempted_at DateTime?
+
   // Legacy/native-provider seam (ADR 0009 §3) - nullable, unused while provider = passcreator.
   pass_type_id  String?
   serial_number String?
@@ -332,6 +351,8 @@ model WalletPass {
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
 
+  // Partial index on registration_sync_attempted_at (wallet-sync candidate selection) lives in
+  // migration SQL — not expressible via @@index.
   @@unique([provider, provider_pass_id])
   @@unique([provider, user_provided_id])
 }
@@ -686,31 +707,31 @@ model User {
 }
 
 model Session {
-  id           String    @id @default(cuid())
-  user_id      String
-  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  token_hash   String    @unique
+  id               String            @id @default(cuid())
+  user_id          String
+  user             User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  token_hash       String            @unique
   // full | mfa_pending | enrollment_required | backup_codes_required — only full grants protected routes (ADR 0011).
-  stage        String    @default("full")
+  stage            String            @default("full")
   // local | oidc — IdP-authenticated sessions skip local TOTP policy (prompt 16b).
-  auth_method  String    @default("local")
+  auth_method      String            @default("local")
   // Which IdP this OIDC session came from - null for local sessions. Read at logout to look up
   // end_session_endpoint (RP-initiated logout); SetNull on provider delete so removing an IdP
   // config just drops that one signal instead of destroying otherwise-valid sessions.
   oidc_provider_id String?
-  oidc_provider     IdentityProvider? @relation(fields: [oidc_provider_id], references: [id], onDelete: SetNull)
+  oidc_provider    IdentityProvider? @relation(fields: [oidc_provider_id], references: [id], onDelete: SetNull)
   // Optional UI context only — not an authorization source (ADR 0011).
-  scope        String?
-  device_label String?
-  ip           String?
-  user_agent   String?
+  scope            String?
+  device_label     String?
+  ip               String?
+  user_agent       String?
   // Signer's IANA timezone at login time — null when captured outside a browser request
   // (no JS, older sessions). Mirrors AdminAuditLog.actor_timezone.
-  timezone     String?
-  created_at   DateTime  @default(now())
-  last_seen_at DateTime  @default(now())
-  expires_at   DateTime
-  revoked_at   DateTime?
+  timezone         String?
+  created_at       DateTime          @default(now())
+  last_seen_at     DateTime          @default(now())
+  expires_at       DateTime
+  revoked_at       DateTime?
 
   @@index([user_id])
   @@index([expires_at])
