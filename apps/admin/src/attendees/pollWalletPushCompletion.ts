@@ -1,5 +1,5 @@
 import type { ToastVariant } from "@admitto/ui";
-import { fetchWalletPushJobStatus } from "../api/client.js";
+import { fetchWalletPushJobStatus, type WalletPushJobStatusResponse } from "../api/client.js";
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
@@ -32,6 +32,29 @@ export type PollWalletPushCompletionOptions = {
   signal: AbortSignal;
 };
 
+/** The success-toast branch of pollWalletPushCompletion, split out to keep that function's own
+ * cognitive complexity under SonarCloud's threshold (bot review) and to build the "N skipped"
+ * note as a plain variable instead of a template literal nested inside another one. */
+function toastWalletPushSucceeded(
+  status: WalletPushJobStatusResponse,
+  addToast: (message: string, variant?: ToastVariant) => void,
+): void {
+  const reissued = status.reissued ?? 0;
+  const skipped = status.skipped ?? 0;
+  const errored = status.errored ?? 0;
+
+  if (errored > 0) {
+    addToast(`Wallet pass update: ${reissued} updated, ${errored} failed.`, "warning");
+    return;
+  }
+  if (reissued === 0) {
+    addToast("Wallet pass update finished - nothing needed pushing.", "info");
+    return;
+  }
+  const skippedNote = skipped > 0 ? ` (${skipped} skipped)` : "";
+  addToast(`${reissued} wallet ${reissued === 1 ? "pass" : "passes"} updated${skippedNote}.`, "success");
+}
+
 /** Poll a wallet_push job until it reaches a terminal state, then toast the outcome. Same
  * shape as pollBulkSendCompletion (sibling file) - a large push is rate-limited by PassCreator
  * itself (ADR 0041 §3, 600 req/min), not something a longer wait here would speed up, so a job
@@ -51,19 +74,7 @@ export async function pollWalletPushCompletion(
       if (signal.aborted) return;
       const status = await fetchWalletPushJobStatus(eventId, jobId, signal);
       if (status.status === "succeeded") {
-        const reissued = status.reissued ?? 0;
-        const skipped = status.skipped ?? 0;
-        const errored = status.errored ?? 0;
-        if (reissued === 0 && errored === 0) {
-          addToast("Wallet pass update finished - nothing needed pushing.", "info");
-        } else if (errored === 0) {
-          addToast(
-            `${reissued} wallet ${reissued === 1 ? "pass" : "passes"} updated${skipped > 0 ? ` (${skipped} skipped)` : ""}.`,
-            "success",
-          );
-        } else {
-          addToast(`Wallet pass update: ${reissued} updated, ${errored} failed.`, "warning");
-        }
+        toastWalletPushSucceeded(status, addToast);
         return;
       }
       if (status.status === "failed") {

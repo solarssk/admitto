@@ -26,40 +26,20 @@ describe("pollWalletPushCompletion", () => {
     fetchWalletPushJobStatus.mockReset();
   });
 
-  it("toasts success with a count when the job succeeds with no errors", async () => {
+  it.each([
+    [2, 0, "2 wallet passes updated."],
+    [1, 0, "1 wallet pass updated."],
+    [2, 3, "2 wallet passes updated (3 skipped)."],
+  ])("toasts success for reissued=%i skipped=%i", async (reissued, skipped, expected) => {
     const addToast = vi.fn();
     const ac = new AbortController();
     fetchWalletPushJobStatus.mockResolvedValueOnce(
-      baseStatus({ status: "succeeded", reissued: 2, skipped: 0, errored: 0 }),
+      baseStatus({ status: "succeeded", reissued, skipped, errored: 0 }),
     );
 
     await pollWalletPushCompletion("evt-1", "job-1", addToast, { maxAttempts: 3, signal: ac.signal });
 
-    expect(addToast).toHaveBeenCalledWith("2 wallet passes updated.", "success");
-  });
-
-  it("uses singular phrasing for exactly one reissued pass", async () => {
-    const addToast = vi.fn();
-    const ac = new AbortController();
-    fetchWalletPushJobStatus.mockResolvedValueOnce(
-      baseStatus({ status: "succeeded", reissued: 1, skipped: 0, errored: 0 }),
-    );
-
-    await pollWalletPushCompletion("evt-1", "job-1", addToast, { maxAttempts: 3, signal: ac.signal });
-
-    expect(addToast).toHaveBeenCalledWith("1 wallet pass updated.", "success");
-  });
-
-  it("appends a skipped note when some targets had no active pass", async () => {
-    const addToast = vi.fn();
-    const ac = new AbortController();
-    fetchWalletPushJobStatus.mockResolvedValueOnce(
-      baseStatus({ status: "succeeded", reissued: 2, skipped: 3, errored: 0 }),
-    );
-
-    await pollWalletPushCompletion("evt-1", "job-1", addToast, { maxAttempts: 3, signal: ac.signal });
-
-    expect(addToast).toHaveBeenCalledWith("2 wallet passes updated (3 skipped).", "success");
+    expect(addToast).toHaveBeenCalledWith(expected, "success");
   });
 
   it("toasts info when nothing needed pushing", async () => {

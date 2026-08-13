@@ -2202,11 +2202,19 @@ export async function handleBulkTicketTypeEventAttendees(
     // this write actually changed is a candidate; enqueueWalletPushJob itself re-checks which
     // ones still have an active WalletPass and no-ops entirely when none do. Outside the
     // transaction above: job creation doesn't need atomicity with the ticket_type write, and an
-    // event lookup failure here must not roll back a change that already committed.
+    // event lookup failure here must not roll back a change that already committed. Caught
+    // separately from the transaction (bot review): the ticket_type write already succeeded at
+    // this point, so a transient failure here must still report that success, not a blanket 500 -
+    // a 500 would make the operator retry, find every row already at the target type (zero
+    // updatedIds on the retry), and silently never get a replacement wallet push queued.
     let walletPushJobId: string | null = null;
-    const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
-    if (event) {
-      walletPushJobId = await enqueueWalletPushJob(db, c, eventId, event.organization_id, updatedIds);
+    try {
+      const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+      if (event) {
+        walletPushJobId = await enqueueWalletPushJob(db, c, eventId, event.organization_id, updatedIds);
+      }
+    } catch (enqueueErr) {
+      console.error("handleBulkTicketTypeEventAttendees: wallet push enqueue failed:", enqueueErr);
     }
 
     return c.json({ ...counts, walletPushJobId });

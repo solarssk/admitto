@@ -6022,6 +6022,34 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     }
   });
 
+  it("still reports the successful ticket-type change when wallet push enqueueing fails (bot review)", async () => {
+    const id = "att-bulk-tt-enqueue-fails";
+    await seedTyped([id], "standard");
+    const spy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("db exploded"));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await postBulkType(EVENT_A, { attendeeIds: [id], ticket_type: "vip" });
+
+      // The ticket_type transaction already committed by the time enqueueWalletPushJob runs - a
+      // transient failure there must not turn into a whole-request 500. That would send the
+      // operator into a retry that finds every row already at the target type (zero updatedIds),
+      // so no replacement wallet push job would ever get queued either.
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        updatedCount: 1,
+        alreadySetCount: 0,
+        conflictCount: 0,
+        walletPushJobId: null,
+      });
+
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id }, select: { ticket_type: true } });
+      expect(after.ticket_type).toBe("vip");
+    } finally {
+      spy.mockRestore();
+      consoleSpy.mockRestore();
+    }
+  });
+
   it("does not clobber a row a concurrent single-attendee PATCH changed mid-transaction, and logs no fabricated 'from' for it (code review, PR #569)", async () => {
     const raced = "att-bulk-tt-race-victim";
     const safe = "att-bulk-tt-race-safe";
