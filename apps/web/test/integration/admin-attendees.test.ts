@@ -1332,6 +1332,40 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(audit).not.toBeNull();
       expect(audit!.metadata).toMatchObject({ previous_status: "voided" });
     });
+
+    it("returns 502 with the provider's error code when the provider call fails, without changing local status", async () => {
+      const attendeeId = "att-wallet-action-restore-fail";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: { status: "voided", voided_at: new Date() },
+      });
+      restoreSpy.mockRejectedValueOnce(new WalletProviderError("wallet_provider_unauthorized", "bad key"));
+
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/restore`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(502);
+        expect(await res.json()).toEqual({ error: "wallet_provider_unauthorized" });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("voided");
+        expect(
+          await prisma.attendeeActionLog.count({
+            where: { attendee_id: attendeeId, action_type: "wallet_pass_restored" },
+          }),
+        ).toBe(0);
+      } finally {
+        // Unlike the rest of this describe block (which leaves rows for afterAll to sweep up),
+        // this test's fixture must not linger past this point - the "wallet_status on GET list"
+        // block below fetches the default (unfiltered, 25-per-page) attendee list and expects its
+        // own single seeded attendee to still be on page 1.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
   });
 
   describe("reissue", () => {
@@ -1466,6 +1500,49 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 
       expect(res.status).toBe(409);
       expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it("returns 502 and records the provider's error code as last_error_code when updatePass fails", async () => {
+      const attendeeId = "att-wallet-action-reissue-fail";
+      const token = generateToken();
+      await prisma.attendee.create({
+        data: {
+          id: attendeeId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${attendeeId}@example.com`,
+          name: "Wallet Reissue Fail",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: { attendee_id: attendeeId, provider: "passcreator", provider_pass_id: `pc-${attendeeId}`, status: "active" },
+      });
+      updateSpy.mockRejectedValueOnce(new WalletProviderError("wallet_provider_unauthorized", "bad key"));
+
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(502);
+        expect(await res.json()).toEqual({ error: "wallet_provider_unauthorized" });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("active");
+        expect(row?.last_error_code).toBe("wallet_provider_unauthorized");
+        expect(
+          await prisma.attendeeActionLog.count({
+            where: { attendee_id: attendeeId, action_type: "wallet_pass_reissued" },
+          }),
+        ).toBe(0);
+      } finally {
+        // Same reasoning as the restore-failure test above: keep this describe's total
+        // WALLET_ACTION_EVENT attendee count from drifting past what the later
+        // "wallet_status on GET list" block's unfiltered (25-per-page) list call expects.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
     });
   });
 
@@ -1613,6 +1690,53 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         expect(row?.status).toBe("active");
       } finally {
         await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
+      }
+    });
+
+    it("returns 400 without touching the provider when the request body isn't valid JSON", async () => {
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: "not json",
+        },
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "invalid json" });
+      expect(voidSpy).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 and records a failure when loading the selection's wallet passes throws", async () => {
+      const attendeeId = "att-bulk-wallet-void-server-error";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      resetSystemLogBufferForTest();
+      const spy = vi.spyOn(prisma.walletPass, "findMany").mockRejectedValueOnce(new Error("db down"));
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ error: "server error" });
+        expect(voidSpy).not.toHaveBeenCalled();
+        const [entry] = querySystemLogs({ source: "admin", search: "bulk_attendee_action_failed" });
+        expect(entry).toMatchObject({
+          fields: { eventId: WALLET_ACTION_EVENT, attendeeCount: 1, action: "wallet_void" },
+        });
+      } finally {
+        spy.mockRestore();
+        // Same reasoning as the restore/reissue-failure tests above: keep this describe's total
+        // WALLET_ACTION_EVENT attendee count from drifting past what the later
+        // "wallet_status on GET list" block's unfiltered (25-per-page) list call expects.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
       }
     });
   });
@@ -1944,6 +2068,30 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 
       expect(res.status).toBe(200);
       expect(voidSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not fail the parent request when the provider call fails during the cascade (best-effort)", async () => {
+      const attendeeId = "att-wallet-status-cascade-provider-fail";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      const before = await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } });
+      voidSpy.mockRejectedValueOnce(new Error("provider down"));
+      resetSystemLogBufferForTest();
+
+      const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "revoked", expected_updated_at: before.updated_at.toISOString() }),
+      });
+
+      expect(res.status).toBe(200);
+      const attendee = await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } });
+      expect(attendee.status).toBe("revoked");
+      const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(pass?.status).toBe("active");
+      const [entry] = querySystemLogs({ source: "admin", search: "wallet_pass_status_cascade_failed" });
+      expect(entry).toMatchObject({
+        fields: { eventId: WALLET_ACTION_EVENT, attendeeId, statusChange: "revoked" },
+      });
     });
   });
 });
