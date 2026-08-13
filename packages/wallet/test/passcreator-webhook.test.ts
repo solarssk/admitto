@@ -192,7 +192,7 @@ describe("applyWebhookUpdate", () => {
     db.walletPass.update.mockResolvedValueOnce({});
     const result = await applyWebhookUpdate(db as never, {
       userProvidedId: "admitto:evt-1:att-1",
-      operatingSystem: "Android",
+      operatingSystem: "AndroidGooglePay",
       noOfActivePasses: 1,
       noOfInactivePasses: 0,
     });
@@ -224,6 +224,34 @@ describe("applyWebhookUpdate", () => {
     const call = db.walletPass.update.mock.calls[0]?.[0];
     expect(call.data).not.toHaveProperty("google_active_registrations");
     expect(call.data).not.toHaveProperty("google_inactive_registrations");
+  });
+
+  it("maps operatingSystem: AndroidGooglePay to the google_* columns (confirmed live 2026-08-13)", async () => {
+    const db = makeDb();
+    db.walletPass.update.mockResolvedValueOnce({});
+    await applyWebhookUpdate(db as never, {
+      identifier: "pc-2",
+      operatingSystem: "AndroidGooglePay",
+      noOfActivePasses: 1,
+      noOfInactivePasses: 0,
+    });
+    expect(db.walletPass.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ google_active_registrations: 1, google_inactive_registrations: 0 }),
+      }),
+    );
+    const call = db.walletPass.update.mock.calls[0]?.[0];
+    expect(call.data).not.toHaveProperty("apple_active_registrations");
+    expect(call.data).not.toHaveProperty("apple_inactive_registrations");
+  });
+
+  it("leaves both apple_* and google_* columns untouched when operatingSystem is a bare 'Android' - PassCreator's real value is 'AndroidGooglePay'", async () => {
+    const db = makeDb();
+    db.walletPass.update.mockResolvedValueOnce({});
+    await applyWebhookUpdate(db as never, { identifier: "pc-1", operatingSystem: "Android", noOfActivePasses: 1 });
+    const call = db.walletPass.update.mock.calls[0]?.[0];
+    expect(call.data).not.toHaveProperty("apple_active_registrations");
+    expect(call.data).not.toHaveProperty("google_active_registrations");
   });
 
   it("leaves both apple_* and google_* columns untouched when operatingSystem is absent - can't tell which platform the counts belong to", async () => {

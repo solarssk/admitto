@@ -32,10 +32,11 @@ export interface PassCreatorWebhookEnvelope {
  * noOfActiveRegistrationsAppleWallet/...GoogleWallet fields (packages/wallet/src/passcreator-
  * client.ts) - the webhook fires per specific device/platform event and reports that platform's
  * own counts, not a global split across both. `operatingSystem` names which of the two platforms
- * this delivery's counts belong to; only "iOS" has been observed live, but "iPadOS"/"macOS" count
- * as the same Apple platform (Wallet runs on all three). "Android" is the assumed (unconfirmed)
- * Google counterpart. Anything else - absent, empty, a typo - is left untouched rather than
- * guessed, since guessing wrong would silently corrupt the other platform's columns. */
+ * this delivery's counts belong to - confirmed live 2026-08-13 as exactly "iOS" (Apple) and
+ * "AndroidGooglePay" (Google); NOT the bare "Android" earlier assumed. "iPadOS"/"macOS" are
+ * additionally treated as Apple (Wallet runs on all three) even though only "iOS" itself has been
+ * observed. Anything else - absent, empty, a typo - is left untouched rather than guessed, since
+ * guessing wrong would silently corrupt the other platform's columns. */
 export interface PassCreatorWebhookData {
   identifier?: string;
   userProvidedId?: string;
@@ -135,23 +136,22 @@ function webhookMatchWhere(data: PassCreatorWebhookData): Prisma.WalletPassWhere
   return null;
 }
 
-// operatingSystem names which platform's counts this delivery carries (confirmed live
-// 2026-08-13: "iOS" for Apple Wallet events). Apple Wallet also runs on iPadOS (effectively the
-// same OS as iOS) and on Apple Silicon Macs, so any Apple-family label counts as Apple, not just
-// the literal "iOS" string - "Android" is the only recognized Google signal (assumed, unconfirmed
-// - this event type is APNs device registration, which Google Wallet has no equivalent of, so it
-// may never actually appear here). Without a recognized value we can't tell which pair of
-// apple_*/google_* columns noOfActivePasses/noOfInactivePasses belongs to, so both stay untouched
-// rather than guessing - covers the field being absent as well as a genuinely unrecognized label
-// (empty string, a typo). Split out from applyWebhookUpdate to keep its cognitive complexity
-// within SonarCloud's threshold.
+// operatingSystem names which platform's counts this delivery carries. Confirmed live 2026-08-13
+// on two separate deliveries: "iOS" (Apple) and "AndroidGooglePay" (Google) - PassCreator's own
+// enum label, not the device's literal OS name (hence not just "Android"). "iPadOS"/"macOS" are
+// additionally recognized as Apple (Wallet runs on all three) even though only "iOS" itself has
+// been observed. Without a recognized value we can't tell which pair of apple_*/google_* columns
+// noOfActivePasses/noOfInactivePasses belongs to, so both stay untouched rather than guessing -
+// covers the field being absent as well as a genuinely unrecognized label. Split out from
+// applyWebhookUpdate to keep its cognitive complexity within SonarCloud's threshold.
 const APPLE_OPERATING_SYSTEMS = new Set(["ios", "ipados", "macos"]);
+const GOOGLE_OPERATING_SYSTEMS = new Set(["androidgooglepay"]);
 
 function applyRegistrationCounts(updateData: Prisma.WalletPassUpdateInput, data: PassCreatorWebhookData): void {
   if (data.operatingSystem === undefined) return;
   const os = data.operatingSystem.toLowerCase();
   const isApple = APPLE_OPERATING_SYSTEMS.has(os);
-  if (!isApple && os !== "android") return;
+  if (!isApple && !GOOGLE_OPERATING_SYSTEMS.has(os)) return;
   if (data.noOfActivePasses !== undefined) {
     if (isApple) updateData.apple_active_registrations = data.noOfActivePasses;
     else updateData.google_active_registrations = data.noOfActivePasses;
