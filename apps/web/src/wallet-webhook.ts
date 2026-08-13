@@ -116,6 +116,14 @@ export async function handlePassCreatorWebhook(
     }
   }
 
-  await applyWebhookUpdate(db, data);
+  // Success is otherwise silent (a bare 200) - this is the only positive signal in System Logs
+  // that a delivery actually reached us, verified, and either found or missed its WalletPass row.
+  // Grep System Logs for "wallet_webhook_" during live setup: signature/key/mismatch warnings mean
+  // delivery arrived but was rejected before this point; neither this nor those appearing at all
+  // means PassCreator isn't reaching this URL (subscription/network problem, not a signature one).
+  const { matched } = await applyWebhookUpdate(db, data);
+  emitSystemLog("api", "info", matched ? "wallet_webhook_applied" : "wallet_webhook_unmatched", {
+    eventId,
+  });
   return c.body(null, 200);
 }

@@ -3,7 +3,7 @@ import { generateKeyPairSync, createSign } from "node:crypto";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
-import { resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -183,6 +183,23 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(row?.apple_active_registrations).toBe(1);
     expect(row?.first_downloaded_at).toBe("2026-08-01 10:00:00");
     expect(row?.registration_checked_at).not.toBeNull();
+    expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(1);
+  });
+
+  it("logs wallet_webhook_unmatched (not applied) for a validly signed delivery whose pass no longer exists", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const body = signedRequest({ identifier: "pc-does-not-exist", voided: true });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(200);
+    expect(querySystemLogs({ search: "wallet_webhook_unmatched" })).toHaveLength(1);
+    expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(0);
   });
 
   it("applies a voided:true payload as a status transition", async () => {
