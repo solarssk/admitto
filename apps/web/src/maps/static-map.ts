@@ -2,12 +2,19 @@
  * Server-side static map PNG compositor for the public ticket / mail `{{event_map_url}}`.
  * Fetches raster tiles from the configured `MAP_TILE_URL` (never from the request), stitches
  * them with sharp, and burns a bottom-right attribution credit into the PNG (tickets and mail
- * have no separate HTML credit under the image).
+ * have no separate HTML credit under the image). `MAP_TILE_URL` is operator-editable at
+ * runtime (Organisation Settings → External services), so production tile fetches re-resolve
+ * and pin each hop's connection via `withPinnedFetch`, same pattern and same reason as
+ * open-meteo-client.ts / nominatim-provider.ts.
  */
 import { createHash } from "node:crypto";
+import { withPinnedFetch } from "@admitto/mailer";
+import { NO_COMPRESSION_HEADERS } from "@admitto/shared";
 import {
+  awaitWithAbortSignal,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
+  resolveSafeHostname,
   unbracketHostname,
 } from "@admitto/shared/ssrf-guard";
 import sharp, { type OverlayOptions } from "sharp";
@@ -313,10 +320,36 @@ async function nextTileRedirectUrl(response: Response, current: string): Promise
   }
 }
 
+type TileHopResult = { kind: "redirect"; url: string } | { kind: "final"; png: Buffer };
+
+/** Classifies one tile response: follow a 3xx, reject a bad status/body, or decode the final PNG. */
+async function handleTileResponse(
+  response: Response,
+  current: string,
+  image: typeof sharp,
+): Promise<TileHopResult> {
+  if (response.status >= 300 && response.status < 400) {
+    return { kind: "redirect", url: await nextTileRedirectUrl(response, current) };
+  }
+
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${redactTileUrlForLogs(current)}`);
+  }
+
+  const body = await readTileBodyCapped(response, MAX_TILE_BYTES, current);
+  if (!bufferLooksLikePng(body)) {
+    throw new StaticMapRenderError(`Tile is not a PNG: ${redactTileUrlForLogs(current)}`);
+  }
+  return { kind: "final", png: await normalizeTilePngToCompositorSize(body, current, image) };
+}
+
 async function fetchTilePng(
   url: string,
   userAgent: string,
-  fetchFn: typeof fetch,
+  /** Test-only override (unpinned, calls the bare fetch it's given). Production omits this
+   * and pins each hop's connection instead - see the module doc comment above. */
+  fetchFn: typeof fetch | undefined,
   timeoutMs: number,
   /** Aborts the whole render attempt so sibling tiles stop when Promise.all fails. */
   attemptSignal?: AbortSignal,
@@ -330,35 +363,42 @@ async function fetchTilePng(
       ? AbortSignal.any([AbortSignal.timeout(timeoutMs), attemptSignal])
       : AbortSignal.timeout(timeoutMs);
 
-    let response: Response;
+    const headers = {
+      "User-Agent": userAgent,
+      Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
+      ...NO_COMPRESSION_HEADERS,
+    };
+
+    let result: TileHopResult;
     try {
-      response = await fetchFn(current, {
-        headers: {
-          "User-Agent": userAgent,
-          Accept: "image/png,image/*;q=0.8,*/*;q=0.5",
-        },
-        redirect: "manual",
-        signal,
-      });
+      if (fetchFn) {
+        const response = await fetchFn(current, { headers, redirect: "manual", signal });
+        result = await handleTileResponse(response, current, image);
+      } else {
+        // No test override: pin the connection to a freshly re-resolved, SSRF-validated
+        // address so a DNS-rebound tile host can't be reached at connect time even though it
+        // passed the config-time check. `redirect: "manual"` because each hop is re-validated
+        // by assertSafeTileFetchUrl above before it is ever fetched.
+        const hostname = unbracketHostname(new URL(current).hostname);
+        const records = await awaitWithAbortSignal(resolveSafeHostname(hostname), signal);
+        result = await withPinnedFetch(
+          current,
+          hostname,
+          records,
+          { headers, redirect: "manual", signal },
+          (response) => handleTileResponse(response, current, image),
+        );
+      }
     } catch (err) {
+      if (err instanceof StaticMapRenderError) throw err;
       throw new StaticMapRenderError(`Tile fetch failed: ${redactTileUrlForLogs(current)}`, err);
     }
 
-    if (response.status >= 300 && response.status < 400) {
-      current = await nextTileRedirectUrl(response, current);
+    if (result.kind === "redirect") {
+      current = result.url;
       continue;
     }
-
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw new StaticMapRenderError(`Tile HTTP ${response.status}: ${redactTileUrlForLogs(current)}`);
-    }
-
-    const body = await readTileBodyCapped(response, MAX_TILE_BYTES, current);
-    if (!bufferLooksLikePng(body)) {
-      throw new StaticMapRenderError(`Tile is not a PNG: ${redactTileUrlForLogs(current)}`);
-    }
-    return normalizeTilePngToCompositorSize(body, current, image);
+    return result.png;
   }
 
   throw new StaticMapRenderError(`Too many tile redirects: ${redactTileUrlForLogs(url)}`);
@@ -417,7 +457,7 @@ export async function renderStaticMapPng(
   const width = req.width ?? STATIC_MAP_WIDTH;
   const height = req.height ?? STATIC_MAP_HEIGHT;
   const zoom = clampZoom(req.zoom, options.tileConfig.maxZoom);
-  const fetchFn = options.fetchFn ?? fetch;
+  const fetchFn = options.fetchFn;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TILE_TIMEOUT_MS;
   const image = options.imagePipeline ?? sharp;
 

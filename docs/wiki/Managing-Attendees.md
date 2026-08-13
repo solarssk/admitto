@@ -38,6 +38,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Send tickets**
    - **Check in** without scanning
    - **Revoke check-in**, **Revoke items**, or **Revoke pass**
+   - **Void wallet pass**, **Push updates**, or **Delete wallet pass** (only enabled when the selection includes at least one attendee who added a pass)
    - **Change ticket type** or **Change attendance status**
    - **Export** the selection as CSV
    - **Delete** selected attendees (GDPR erasure; confirmation with a delay)
@@ -50,7 +51,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
 4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes.
 5. Delivery history supports **View sent message** (rendered mail with ticket link redacted) and **View delivery details**.
-6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds **Revoke items** and **Delete attendee** (typed confirmation for GDPR erasure). **Restore pass** asks for confirmation before applying.
+6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds **Revoke items**, **Delete attendee** (typed confirmation for GDPR erasure), and, once the attendee has added a wallet pass, **Void wallet pass**, **Push updates**, and **Delete wallet pass**. **Restore pass** asks for confirmation before applying. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
 
 Use [Importing Attendees](Importing-Attendees) for a prepared list rather than adding many records one by one.
 
@@ -65,6 +66,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - Use notes only for event work that belongs on the attendee record.
 - Change a pass state only when the event's authorised process requires it.
 - **Delete attendee** permanently erases that person's event record for GDPR. Prefer revoke or status corrections when the person should stay in history.
+- **Delete wallet pass** permanently removes the pass record at the provider, so it stops receiving updates - it does **not** remove the pass from the attendee's phone (Apple/Google Wallet gives no third party a way to do that; only the attendee can). It also does not affect check-in - use **Revoke pass** to block entry. The attendee would need to add a new pass from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action

@@ -3,7 +3,7 @@
  *
  *   admitto worker
  *
- * Jobs: mail_delivery drain, import/export AdminJobs, bounce ingest, retention.
+ * Jobs: mail_delivery drain, import/export AdminJobs, bounce ingest, wallet_sync, retention.
  */
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
@@ -25,6 +25,7 @@ import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
+import { runWalletRegistrationSync } from "./wallet-sync.js";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
 import {
@@ -168,6 +169,30 @@ async function runBounceJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
 }
 
+/** Best-effort refresh of each wallet pass's device-registration status from PassCreator - a
+ * quiet background maintenance job like retention, not a user-visible-progress one like mail
+ * delivery, so it doesn't publish an SSE activity nudge on completion. */
+async function runWalletSyncJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+  const acquired = await locks.tryAcquire("wallet_sync");
+  if (!acquired) {
+    log("wallet_sync", "skipped (lock held)");
+    return;
+  }
+  try {
+    const result = await runWalletRegistrationSync(db);
+    if (result.checked === 0 && result.skippedNoProvider === 0) {
+      log("wallet_sync", "idle");
+      return;
+    }
+    log(
+      "wallet_sync",
+      `ok checked=${result.checked} updated=${result.updated} skippedNoProvider=${result.skippedNoProvider} failed=${result.failed}`,
+    );
+  } finally {
+    await locks.release("wallet_sync");
+  }
+}
+
 /** @returns true when this process held the lock and finished retention work. */
 async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
   const acquired = await locks.tryAcquire("retention");
@@ -206,6 +231,7 @@ async function runWorkerTick(
   await runJobSafely("import", () => runImportJob(db, locks));
   await runJobSafely("export", () => runExportJob(db, locks));
   await runJobSafely("bounce", () => runBounceJob(db, locks));
+  await runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks));
 
   if (retentionIsDue(schedule, Date.now())) {
     try {
@@ -251,7 +277,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
 
   log(
     "heartbeat",
-    `starting tick=${tickSeconds}s host=${osHostname()} (mail_delivery + import + export + bounce + retention)`,
+    `starting tick=${tickSeconds}s host=${osHostname()} (mail_delivery + import + export + bounce + wallet_sync + retention)`,
   );
 
   try {

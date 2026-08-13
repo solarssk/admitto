@@ -4,6 +4,7 @@
  * https://api.met.no/weatherapi/locationforecast/2.0/documentation
  */
 
+import { NO_COMPRESSION_HEADERS } from "@admitto/shared";
 import { MET_NO_FORECAST_BASE_URL } from "./config.js";
 import { WeatherProviderError } from "./open-meteo-client.js";
 import type { DayForecast } from "./types.js";
@@ -191,6 +192,7 @@ export class MetNoClient {
         headers: {
           Accept: "application/json",
           "User-Agent": this.userAgent,
+          ...NO_COMPRESSION_HEADERS,
         },
         redirect: "error",
         signal: AbortSignal.timeout(this.timeoutMs),
