@@ -59,10 +59,6 @@ import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
-/** Brief "don't act on reflex" pause for the CardPickerDialog Apply
- * button (bulk change ticket type / change attendance status) — a misclick on a large batch
- * would otherwise overwrite everyone's ticket type or RSVP status in one shot with no
- * confirmation at all (code review on #569). */
 
 function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
