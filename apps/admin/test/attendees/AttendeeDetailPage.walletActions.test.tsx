@@ -416,6 +416,49 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
     });
   });
 
+  describe("Wallet status chip tone", () => {
+    // rsvp_status is "confirmed" and pass status isn't "revoked" on baseDetail's own defaults, so
+    // "warn"/wallet-specific tones can only come from the Wallet chip in these two fixtures -
+    // avoids ambiguity with the Card titled "Wallet" elsewhere on the page, which also matches a
+    // plain getByText("Wallet") query.
+    it("shows a warn tone for an expired pass", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "expired" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(document.querySelector(".attendee-status-chip__icon--warn")).toBeTruthy();
+    });
+
+    it("shows a neutral tone for a pass status with no dedicated mapping", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "pending" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      const icons = document.querySelectorAll(".attendee-status-chip__icon--neutral");
+      expect(icons.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("First downloaded (formatFirstDownloadedAt)", () => {
+    it("formats a well-shaped provider timestamp in UTC", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ first_downloaded_at: "2026-08-01 10:00:00" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      const row = screen.getByText("First downloaded").closest(".attendee-detail-row");
+      expect(row?.textContent).toContain("2026");
+    });
+
+    it("falls back to the raw provider string when it doesn't match the expected shape", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ first_downloaded_at: "not-a-timestamp" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      const row = screen.getByText("First downloaded").closest(".attendee-detail-row");
+      expect(row?.textContent).toContain("not-a-timestamp");
+    });
+  });
+
   describe("Wallet pass links menu", () => {
     it("renders nothing when neither an Apple nor a Google Wallet link exists yet", async () => {
       mockLoad(baseDetail({ wallet_apple_link: null, wallet_google_link: null }));
