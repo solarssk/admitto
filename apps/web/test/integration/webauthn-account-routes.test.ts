@@ -133,7 +133,12 @@ afterAll(async () => {
 });
 
 interface BeginResponseBody {
-  options: { challenge: string; rp: { id: string; name: string }; authenticatorSelection?: { residentKey?: string; authenticatorAttachment?: string } };
+  options: {
+    challenge: string;
+    rp: { id: string; name: string };
+    authenticatorSelection?: { residentKey?: string; authenticatorAttachment?: string };
+    hints?: string[];
+  };
 }
 
 async function beginRegistration(cookie: string, attachment: "platform" | "cross-platform") {
@@ -176,13 +181,18 @@ describe("POST /api/account/mfa/webauthn/register/begin", () => {
   it("requests a resident (discoverable) credential for a passkey", async () => {
     const { body } = await beginRegistration(userCookie, "platform");
     expect(body.options.authenticatorSelection?.residentKey).toBe("required");
-    expect(body.options.authenticatorSelection?.authenticatorAttachment).toBe("platform");
+    // Non-binding hint only - no hard authenticatorAttachment filter (see beginWebauthnRegistration
+    // in packages/auth), so a synced/vault-backed authenticator (e.g. a password manager browser
+    // extension) can still complete the ceremony even if it doesn't self-identify as "platform".
+    expect(body.options.authenticatorSelection?.authenticatorAttachment).toBeUndefined();
+    expect(body.options.hints).toEqual(["client-device"]);
   });
 
   it("discourages a resident credential for a security key", async () => {
     const { body } = await beginRegistration(userCookie, "cross-platform");
     expect(body.options.authenticatorSelection?.residentKey).toBe("discouraged");
-    expect(body.options.authenticatorSelection?.authenticatorAttachment).toBe("cross-platform");
+    expect(body.options.authenticatorSelection?.authenticatorAttachment).toBeUndefined();
+    expect(body.options.hints).toEqual(["security-key"]);
   });
 
   it("returns 400 no_local_password for an OIDC-only account", async () => {
