@@ -243,7 +243,7 @@ describe("applyWebhookUpdate", () => {
     await applyWebhookUpdate(db as never, payload);
     expect(db.walletPass.update).toHaveBeenCalledTimes(2);
     const [firstCall, secondCall] = db.walletPass.update.mock.calls;
-    expect(firstCall[0].data.apple_active_registrations).toBe(2);
-    expect(secondCall[0].data.apple_active_registrations).toBe(2);
+    expect(firstCall?.[0].data.apple_active_registrations).toBe(2);
+    expect(secondCall?.[0].data.apple_active_registrations).toBe(2);
   });
 });
