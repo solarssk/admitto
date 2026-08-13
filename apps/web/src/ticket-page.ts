@@ -7,6 +7,7 @@ import {
   resolveAppleMapsUrl,
   resolveGoogleMapsUrl,
 } from "@admitto/location";
+import { renderAdmittoFaviconLink } from "./favicon.js";
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 import { weatherCodeInfo } from "./weather/weather-codes.js";
 import type { WeatherSummaryDto } from "./weather/types.js";
@@ -143,6 +144,7 @@ export function getTicketPageSecurityHeaders(
       `default-src 'none'; style-src 'unsafe-inline'; img-src ${imgSrc}; script-src 'none'; connect-src 'none'; font-src ${fontSrc}; object-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
+    "X-Robots-Tag": "noindex, nofollow",
   };
 }
 
@@ -319,6 +321,7 @@ function ticketDocument(options: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${esc(options.title)}</title>
+  ${renderAdmittoFaviconLink()}
   <style>${options.styles}</style>
 </head>
 <body class="ticket-page">
@@ -448,6 +451,7 @@ export function renderPublicErrorPage(options: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${esc(options.heading)}</title>
+  ${renderAdmittoFaviconLink()}
   <style>${styles}</style>
 </head>
 <body class="ticket-page">

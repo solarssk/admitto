@@ -67,6 +67,7 @@ import {
   handleGetFaviconIco,
   handleGetFaviconSvg,
 } from "./favicon.js";
+import { handleGetRobotsTxt } from "./robots.js";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -992,6 +993,7 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
+  app.get("/robots.txt", handleGetRobotsTxt);
   app.get("/favicon.svg", handleGetFaviconSvg);
   app.get("/favicon-32.png", handleGetFavicon32Png);
   app.get("/favicon.ico", handleGetFaviconIco);
@@ -1839,6 +1841,7 @@ export function createApp(options: CreateAppOptions = {}) {
     c.header("Content-Type", ct);
     c.header("Cache-Control", "public, max-age=86400");
     c.header("X-Content-Type-Options", "nosniff");
+    c.header("X-Robots-Tag", "noindex, nofollow");
     return c.body(new Uint8Array(buf));
   });
   app.get("/vendor/tabler-icons/*", serveTablerIcons);
@@ -1874,6 +1877,7 @@ export function createApp(options: CreateAppOptions = {}) {
     // Placeholders use a short max-age so a tile CDN recovery is visible within minutes.
     c.header("Cache-Control", staticMapCacheControl(result.placeholder));
     c.header("X-Content-Type-Options", "nosniff");
+    c.header("X-Robots-Tag", "noindex, nofollow");
     return c.body(new Uint8Array(result.png), 200);
   });
 
@@ -2013,6 +2017,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const png = await generateQrPng(buildQrPayload("agency", { agencyPayload }));
       c.header("Content-Type", "image/png");
       c.header("Cache-Control", "private, max-age=300");
+      c.header("X-Robots-Tag", "noindex, nofollow");
       return c.body(new Uint8Array(png), 200);
     } catch {
       emitSystemLog("api", "error", "qr_png_generation_failed", {
@@ -2055,6 +2060,7 @@ export function createApp(options: CreateAppOptions = {}) {
       );
       c.header("Content-Type", "image/png");
       c.header("Cache-Control", "private, max-age=300");
+      c.header("X-Robots-Tag", "noindex, nofollow");
       return c.body(new Uint8Array(png), 200);
     } catch {
       emitSystemLog("api", "error", "qr_png_generation_failed", {
