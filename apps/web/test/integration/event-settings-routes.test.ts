@@ -1234,6 +1234,47 @@ describe("PATCH /api/admin/events/:eventId", () => {
         updateSpy.mockRestore();
       }
     });
+
+    it("still saves the field change (200) via the top-level catch when pushWalletUpdatesBestEffort itself throws before its internal per-attendee handling", async () => {
+      resetSystemLogBufferForTest();
+      // Forcing db.walletPass.findMany (the function's very first DB call, before its own
+      // internal Promise.allSettled safety net around each attendee) to reject is the only way
+      // to reach the top-level `.catch` in handlePatchEvent - a per-attendee PassCreator failure
+      // (covered above) is already caught internally and never gets here.
+      const findManySpy = vi
+        .spyOn(prisma.walletPass, "findMany")
+        .mockRejectedValueOnce(new Error("db down"));
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (db down)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { event: { title: string } };
+        expect(body.event.title).toBe("Wallet Push Gala (db down)");
+
+        await vi.waitFor(() => {
+          const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+          expect(entry).toBeDefined();
+        });
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_event_change_push_failed",
+        });
+        // No attendeeId here (unlike the internal per-attendee failure logged above) - proof this
+        // came from the top-level catch, not the function's own Promise.allSettled loop.
+        expect(entry?.fields).toEqual({ eventId: PUSH_EVENT });
+
+        const event = await prisma.event.findUnique({ where: { id: PUSH_EVENT } });
+        expect(event?.title).toBe("Wallet Push Gala (db down)");
+      } finally {
+        findManySpy.mockRestore();
+      }
+    });
   });
 
   describe("webhook subscription on wallet-config save", () => {
@@ -1333,6 +1374,95 @@ describe("PATCH /api/admin/events/:eventId", () => {
       } finally {
         listSpy.mockRestore();
         subscribeSpy.mockRestore();
+      }
+    });
+
+    it("logs a per-event failure but still subscribes the other event types when exactly one subscribeWebhook call rejects", async () => {
+      resetSystemLogBufferForTest();
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "subscribeWebhook")
+        .mockImplementation(async (_targetUrl: string, event: string) => {
+          if (event === "pass_voided") throw new Error("subscribe failed for pass_voided");
+        });
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(subscribeSpy).toHaveBeenCalledTimes(4);
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_webhook_subscribe_failed" });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_webhook_subscribe_failed",
+          fields: { eventId: SUB_EVENT, event: "pass_voided" },
+        });
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("does not attempt any webhook calls when the saved API key fails to decrypt (corrupted ciphertext)", async () => {
+      await prisma.event.update({
+        where: { id: SUB_EVENT },
+        data: { wallet_api_key_enc: "not-valid-ciphertext" },
+      });
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks");
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook");
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(listSpy).not.toHaveBeenCalled();
+        expect(subscribeSpy).not.toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.event.update({
+          where: { id: SUB_EVENT },
+          data: { wallet_api_key_enc: encryptToString("sub-api-key") },
+        });
+      }
+    });
+
+    it("does not attempt any webhook calls when the instance base URL cannot be resolved", async () => {
+      const originalBaseUrl = process.env.BASE_URL;
+      // With BASE_URL unset, resolveInstanceBaseUrl falls through to the DB-persisted
+      // instance_url setting - a malformed value there (trailing slash) makes that lookup
+      // throw for real, without needing to mock the auth package's exported function.
+      delete process.env.BASE_URL;
+      await prisma.systemSettings.upsert({
+        where: { key: "instance_url" },
+        create: { key: "instance_url", value_json: JSON.stringify("https://bad.example.com/") },
+        update: { value_json: JSON.stringify("https://bad.example.com/") },
+      });
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks");
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook");
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(listSpy).not.toHaveBeenCalled();
+        expect(subscribeSpy).not.toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
+        if (originalBaseUrl !== undefined) process.env.BASE_URL = originalBaseUrl;
       }
     });
   });
