@@ -1169,10 +1169,17 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
 
         expect(res.status).toBe(200);
-        expect(updateSpy).toHaveBeenCalledTimes(1);
+        // The push runs in the background, deliberately not awaited by the response above (a
+        // large event's fan-out must never hold the settings save open) - poll instead of
+        // asserting immediately after the request resolves.
+        await vi.waitFor(() => {
+          expect(updateSpy).toHaveBeenCalledTimes(1);
+        });
         expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${PUSH_ATTENDEE}`);
-        const pass = await prisma.walletPass.findUnique({ where: { attendee_id: PUSH_ATTENDEE } });
-        expect(pass?.apple_url).toBe("https://pc.test/apple/pushed");
+        await vi.waitFor(async () => {
+          const pass = await prisma.walletPass.findUnique({ where: { attendee_id: PUSH_ATTENDEE } });
+          expect(pass?.apple_url).toBe("https://pc.test/apple/pushed");
+        });
       } finally {
         updateSpy.mockRestore();
       }
@@ -1192,6 +1199,10 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
 
         expect(res.status).toBe(200);
+        // Nothing to poll for here - changedFields never includes capacity, so
+        // pushWalletUpdatesBestEffort returns before ever touching the provider, background or
+        // not. A short settle still guards against a false pass from a same-tick race.
+        await new Promise((resolve) => setTimeout(resolve, 50));
         expect(updateSpy).not.toHaveBeenCalled();
       } finally {
         updateSpy.mockRestore();

@@ -737,7 +737,23 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     if (patchesWallet) {
       await subscribeWalletWebhooksBestEffort(db, eventId, updated);
     }
-    await pushWalletUpdatesBestEffort(db, eventId, changedFields, updated, audit);
+    // Deliberately NOT awaited: on an event with hundreds/thousands of already-issued passes,
+    // this fans out one PassCreator call per attendee - awaiting it here would hold the response
+    // open long enough to risk a client-side timeout even though the settings change above has
+    // already committed. Runs in the background of this same process instead; the .catch keeps a
+    // failure here from ever becoming an unhandled promise rejection. Already best-effort by
+    // design (see the function's own doc comment) - a push lost to a mid-flight process restart
+    // self-heals the same way a PassCreator outage already does, on the next relevant save or a
+    // manual reissue.
+    pushWalletUpdatesBestEffort(db, eventId, changedFields, updated, audit).catch((err) => {
+      console.error("wallet event-change push failed (top-level):", err);
+      recordSystemLog({
+        level: "error",
+        source: "admin",
+        message: "wallet_event_change_push_failed",
+        fields: { eventId },
+      });
+    });
 
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);
