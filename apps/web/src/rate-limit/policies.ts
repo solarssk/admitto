@@ -159,6 +159,32 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** PassCreator webhook deliveries. Two checks (both must pass): per-event, since PassCreator's
+   * own servers (not the attendee's browser) are the caller and retryEnabled means one event's
+   * bursts must not throttle another's; and per-IP, since :eventId is an unauthenticated,
+   * caller-controlled path segment - without this second check, rotating fake event ids gets a
+   * fresh 120-request allowance every time and the per-event check alone bounds nothing. The IP
+   * ceiling is deliberately generous (matches PassCreator's own documented 600 req/min outbound
+   * limit, ADR 0041 §3) so a real instance's legitimate multi-event traffic from PassCreator's
+   * servers is never the thing that trips it. */
+  "wallet:webhook": {
+    checks: [
+      {
+        keyOf: (c) => `wallet:webhook:event:${c.req.param("eventId") ?? "unknown"}`,
+        windowMs: 60_000,
+        max: 120,
+        onExceeded: (c) => c.body(null, 429),
+        logOnExceeded: { scope: "wallet_webhook" },
+      },
+      {
+        keyOf: (c) => `wallet:webhook:ip:${resolveClientIp(c)}`,
+        windowMs: 60_000,
+        max: 600,
+        onExceeded: (c) => c.body(null, 429),
+        logOnExceeded: { scope: "wallet_webhook" },
+      },
+    ],
+  },
   "auth:oidc": {
     checks: [
       {

@@ -41,6 +41,20 @@ export interface WalletPassResult {
   androidUrl: string;
 }
 
+/** Device-registration status as the provider itself reports it - not derived locally, and only
+ * meaningful some time after createPass/updatePass (the attendee has to have actually opened the
+ * install link on their device first). */
+export interface WalletPassRegistrationStatus {
+  appleActiveRegistrations: number;
+  appleInactiveRegistrations: number;
+  googleActiveRegistrations: number;
+  googleInactiveRegistrations: number;
+  /** When the pass file was first downloaded - provider-reported, timezone unconfirmed (not
+   * documented as UTC or otherwise), so callers must treat this as an opaque instant rather than
+   * converting it to a specific zone. */
+  firstDownloadedAt: string | null;
+}
+
 export type WalletProviderErrorCode =
   | "wallet_provider_unauthorized"
   | "wallet_provider_rate_limited"

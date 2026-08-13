@@ -8,6 +8,8 @@
   "types": "./dist/index.d.ts",
   "sideEffects": false,
   "dependencies": {
+    "@admitto/crypto": "*",
+    "@admitto/db": "*",
     "@admitto/shared": "*"
   },
   "exports": {

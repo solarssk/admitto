@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, Tooltip } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -23,6 +23,7 @@ import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
+import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
@@ -41,9 +42,7 @@ function AttendeesTableSkeleton() {
             <th>Attendance</th>
             <th>Mail</th>
             <th>Check-in</th>
-            <th className="attendees-table-v2__actions-col" aria-label="Actions">
-              <span className="sr-only">Actions</span>
-            </th>
+            <th>Wallet</th>
           </tr>
         </thead>
         <tbody>
@@ -166,81 +165,6 @@ function MobileSortControl({
   );
 }
 
-/** Revoke/Restore pass icon buttons for one row — shared by the desktop table row and the
- * mobile card, which otherwise duplicated this exact block with only their `reasonId` suffix
- * differing (`row.id` vs `card-${row.id}`, so ArchivedGuard's `aria-describedby` id stays
- * unique between the two layouts if both ever render at once, e.g. mid-breakpoint-resize). */
-function PassActionButtons({
-  row,
-  event,
-  reasonIdSuffix,
-  passActionBusyIds,
-  onRevokePass,
-  onRestorePass,
-}: Readonly<{
-  row: AttendeeRowDto;
-  event: ArchivedGuardEvent;
-  reasonIdSuffix: string;
-  passActionBusyIds: ReadonlySet<string>;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
-}>) {
-  return (
-    <>
-      {row.status === "revoked" && onRestorePass ? (
-        <ArchivedGuard
-          event={event}
-          reasonId={`restore-pass-reason-${reasonIdSuffix}`}
-          disabled={passActionBusyIds.has(row.id)}
-        >
-          {(guard) => {
-            const button = (
-              <IconButton
-                label="Restore pass"
-                icon={<i className="ti ti-refresh" aria-hidden="true" />}
-                size="sm"
-                {...guard}
-                onClick={() => onRestorePass(row)}
-              />
-            );
-            return guard.disabled ? (
-              button
-            ) : (
-              <Tooltip content="Restore pass. Re-enable check-in for this attendee.">{button}</Tooltip>
-            );
-          }}
-        </ArchivedGuard>
-      ) : null}
-      {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
-        <ArchivedGuard
-          event={event}
-          reasonId={`revoke-pass-reason-${reasonIdSuffix}`}
-          disabled={passActionBusyIds.has(row.id)}
-        >
-          {(guard) => {
-            const button = (
-              <IconButton
-                label="Revoke pass"
-                icon={<i className="ti ti-ban" aria-hidden="true" />}
-                size="sm"
-                {...guard}
-                onClick={() => onRevokePass(row)}
-              />
-            );
-            return guard.disabled ? (
-              button
-            ) : (
-              <Tooltip content="Revoke pass. They cannot check in until the pass is restored.">
-                {button}
-              </Tooltip>
-            );
-          }}
-        </ArchivedGuard>
-      ) : null}
-    </>
-  );
-}
-
 /** Renders as two stacked lines ("Today" / "14:32"), mirroring the two-line
  * name/email cell next to it — null when the attendee hasn't checked in. */
 function CheckInCell({
@@ -293,9 +217,6 @@ export interface AttendeesTableProps {
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
   onViewAttendee: (id: string) => void;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
-  passActionBusyIds?: ReadonlySet<string>;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   selectedIds: ReadonlySet<string>;
@@ -320,6 +241,12 @@ export interface AttendeesTableProps {
   bulkRevokeItemsBusy: boolean;
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
+  onBulkVoidWallet: () => void;
+  bulkVoidWalletBusy: boolean;
+  onBulkReissueWallet: () => void;
+  bulkReissueWalletBusy: boolean;
+  onBulkDeleteWallet: () => void;
+  bulkDeleteWalletBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -332,10 +259,6 @@ interface AttendeeCardProps {
   onView: () => void;
   ticketTypes: TicketTypeDto[];
   eventTimezone: string;
-  event: ArchivedGuardEvent;
-  passActionBusyIds: ReadonlySet<string>;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
 }
 
 /** One attendee as a card — the < 768px equivalent of a table row: same data, same actions. */
@@ -346,10 +269,6 @@ function AttendeeCard({
   onView,
   ticketTypes,
   eventTimezone,
-  event,
-  passActionBusyIds,
-  onRevokePass,
-  onRestorePass,
 }: Readonly<AttendeeCardProps>) {
   return (
     <div className={`attendees-card${selected ? " attendees-card--selected" : ""}`}>
@@ -380,27 +299,16 @@ function AttendeeCard({
         ) : (
           <span className="attendee-readonly">Not checked in</span>
         )}
-        <div className="attendees-card__actions">
-          <Tooltip content="View attendee profile">
-            <IconButton
-              label="View attendee"
-              icon={<i className="ti ti-eye" aria-hidden="true" />}
-              size="sm"
-              onClick={onView}
-            />
-          </Tooltip>
-          <PassActionButtons
-            row={row}
-            event={event}
-            reasonIdSuffix={`card-${row.id}`}
-            passActionBusyIds={passActionBusyIds}
-            onRevokePass={onRevokePass}
-            onRestorePass={onRestorePass}
-          />
-        </div>
+        <WalletColumnCell status={row.wallet_status} />
       </div>
     </div>
   );
+}
+
+/** "N attendee"/"N attendees" - factored out of BulkMoreActionsMenu's many menu-item hints (each
+ * inline ternary counted toward that function's own cognitive complexity, Sonar S3776). */
+function attendeeCount(n: number): string {
+  return `${n} attendee${n === 1 ? "" : "s"}`;
 }
 
 /** Mobile "Send tickets" menu item's disabled-title (Sonar S3358: was a nested ternary). */
@@ -424,6 +332,14 @@ function bulkRevokeCheckInTooltip(archived: boolean, canRevokeCheckIn: boolean):
 function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): string | undefined {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (!canRevokePass) return "The selected attendees' passes are already revoked or cancelled.";
+  return undefined;
+}
+
+/** "Void wallet pass"/"Reissue wallet pass" menu items' shared disabled-title - both are no-ops
+ * once nothing in the selection has a WalletPass row at all. */
+function bulkWalletTooltip(archived: boolean, canBulkWallet: boolean): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (!canBulkWallet) return "None of the selected attendees have added a wallet pass.";
   return undefined;
 }
 
@@ -465,7 +381,7 @@ function BulkSendTicketsMenuItem({
     <MoreActionsMenuItem
       icon="send"
       label={bulkSendBusy ? "Sending…" : "Send tickets"}
-      hint={`Email tickets to ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+      hint={`Email tickets to ${attendeeCount(selectedCount)}`}
       disabled={archived || bulkSendBusy || !canBulkSend}
       tooltip={bulkSendTicketsTooltip(archived, canBulkSend)}
       onClick={onClick}
@@ -508,6 +424,14 @@ function BulkMoreActionsMenu({
   bulkRevokePassBusy,
   canRevokePass,
   revokablePassCount,
+  onBulkVoidWallet,
+  bulkVoidWalletBusy,
+  onBulkReissueWallet,
+  bulkReissueWalletBusy,
+  onBulkDeleteWallet,
+  bulkDeleteWalletBusy,
+  canBulkWallet,
+  walletPassCount,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -546,6 +470,16 @@ function BulkMoreActionsMenu({
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
   revokablePassCount: number;
+  onBulkVoidWallet: () => void;
+  bulkVoidWalletBusy: boolean;
+  onBulkReissueWallet: () => void;
+  bulkReissueWalletBusy: boolean;
+  onBulkDeleteWallet: () => void;
+  bulkDeleteWalletBusy: boolean;
+  /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
+   * act on (may still include an already-voided pass for Void, resolved server-side). */
+  canBulkWallet: boolean;
+  walletPassCount: number;
   onDelete: () => void;
 }>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
@@ -590,7 +524,7 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="download"
             label="Export selected"
-            hint={`CSV of ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+            hint={`CSV of ${attendeeCount(selectedCount)}`}
             disabled={exportBusy}
             onClick={() => {
               setOpen(false);
@@ -625,7 +559,7 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="calendar-event"
             label="Change attendance status"
-            hint={`Set for ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+            hint={`Set for ${attendeeCount(selectedCount)}`}
             disabled={archived}
             tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
             onClick={() => {
@@ -644,7 +578,7 @@ function BulkMoreActionsMenu({
             icon="qrcode-off"
             variant="warning"
             label={bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}
-            hint={`Undo check-in for ${revokableCheckInCount} attendee${revokableCheckInCount === 1 ? "" : "s"}`}
+            hint={`Undo check-in for ${attendeeCount(revokableCheckInCount)}`}
             disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
             tooltip={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
             onClick={() => {
@@ -662,7 +596,7 @@ function BulkMoreActionsMenu({
             icon="package"
             variant="warning"
             label={bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}
-            hint={`Reset all issued items for ${revokableItemsCount} attendee${revokableItemsCount === 1 ? "" : "s"}`}
+            hint={`Reset all issued items for ${attendeeCount(revokableItemsCount)}`}
             disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
             tooltip={bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems)}
             onClick={() => {
@@ -684,12 +618,54 @@ function BulkMoreActionsMenu({
             icon="ban"
             variant="danger"
             label={bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}
-            hint={`Block check-in for ${revokablePassCount} attendee${revokablePassCount === 1 ? "" : "s"}`}
+            hint={`Block check-in for ${attendeeCount(revokablePassCount)}`}
             disabled={archived || bulkRevokePassBusy || !canRevokePass}
             tooltip={bulkRevokePassTooltip(archived, canRevokePass)}
             onClick={() => {
               setOpen(false);
               onBulkRevokePass();
+            }}
+          />
+          {/* Disabled once nothing in the selection has a WalletPass row at all - a mixed
+           * selection stays enabled, same "nothing to do" gate as the actions above. The exact
+           * count can still include an already-voided pass (skipped server-side and reported in
+           * the result toast) - the row list doesn't carry that finer status. */}
+          <MoreActionsMenuItem
+            icon="wallet-off"
+            variant="warning"
+            label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
+            hint={`Show as invalid in their wallet for ${attendeeCount(walletPassCount)}`}
+            disabled={archived || bulkVoidWalletBusy || !canBulkWallet}
+            tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+            onClick={() => {
+              setOpen(false);
+              onBulkVoidWallet();
+            }}
+          />
+          <MoreActionsMenuItem
+            icon="refresh-dot"
+            label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
+            hint={`Push the latest details for ${attendeeCount(walletPassCount)}`}
+            disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
+            tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+            onClick={() => {
+              setOpen(false);
+              onBulkReissueWallet();
+            }}
+          />
+          {/* Irreversible - removes the pass at the provider entirely, distinct from Void above
+           * (which just marks it invalid while leaving it installed). Same "nothing to do" gate
+           * as Void/Reissue. */}
+          <MoreActionsMenuItem
+            icon="trash"
+            variant="danger"
+            label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
+            hint={`Permanently deletes the pass record for ${attendeeCount(walletPassCount)}`}
+            disabled={archived || bulkDeleteWalletBusy || !canBulkWallet}
+            tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+            onClick={() => {
+              setOpen(false);
+              onBulkDeleteWallet();
             }}
           />
           <hr className="more-actions-menu__divider" />
@@ -699,7 +675,7 @@ function BulkMoreActionsMenu({
             icon="trash"
             variant="danger"
             label="Delete"
-            hint={`Permanently remove ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+            hint={`Permanently remove ${attendeeCount(selectedCount)}`}
             onClick={() => {
               setOpen(false);
               onDelete();
@@ -770,6 +746,14 @@ function BulkBar({
   bulkRevokePassBusy,
   canRevokePass,
   revokablePassCount,
+  onBulkVoidWallet,
+  bulkVoidWalletBusy,
+  onBulkReissueWallet,
+  bulkReissueWalletBusy,
+  onBulkDeleteWallet,
+  bulkDeleteWalletBusy,
+  canBulkWallet,
+  walletPassCount,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -807,6 +791,14 @@ function BulkBar({
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
   revokablePassCount: number;
+  onBulkVoidWallet: () => void;
+  bulkVoidWalletBusy: boolean;
+  onBulkReissueWallet: () => void;
+  bulkReissueWalletBusy: boolean;
+  onBulkDeleteWallet: () => void;
+  bulkDeleteWalletBusy: boolean;
+  canBulkWallet: boolean;
+  walletPassCount: number;
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
@@ -905,6 +897,14 @@ function BulkBar({
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={canRevokePass}
           revokablePassCount={revokablePassCount}
+          onBulkVoidWallet={onBulkVoidWallet}
+          bulkVoidWalletBusy={bulkVoidWalletBusy}
+          onBulkReissueWallet={onBulkReissueWallet}
+          bulkReissueWalletBusy={bulkReissueWalletBusy}
+          onBulkDeleteWallet={onBulkDeleteWallet}
+          bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+          canBulkWallet={canBulkWallet}
+          walletPassCount={walletPassCount}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1092,10 +1092,6 @@ function AttendeesListContent({
   onSortChange,
   ticketTypes,
   eventTimezone,
-  event,
-  passActionBusyIds,
-  onRevokePass,
-  onRestorePass,
 }: Readonly<{
   loading: boolean;
   hasLoadedOnce: boolean;
@@ -1111,10 +1107,6 @@ function AttendeesListContent({
   onSortChange: (column: AttendeeSortBy) => void;
   ticketTypes: TicketTypeDto[];
   eventTimezone: string;
-  event: ArchivedGuardEvent;
-  passActionBusyIds: ReadonlySet<string>;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
 }>): ReactNode {
   // Only the very first load ever (never-loaded, items always [] at that point) gets the
   // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
@@ -1166,10 +1158,6 @@ function AttendeesListContent({
             onView={() => onViewAttendee(row.id)}
             ticketTypes={ticketTypes}
             eventTimezone={eventTimezone}
-            event={event}
-            passActionBusyIds={passActionBusyIds}
-            onRevokePass={onRevokePass}
-            onRestorePass={onRestorePass}
           />
         ))}
       </div>
@@ -1205,9 +1193,7 @@ function AttendeesListContent({
               sortDir={sortDir}
               onSortChange={onSortChange}
             />
-            <th className="attendees-table-v2__actions-col" aria-label="Actions">
-              <span className="sr-only">Actions</span>
-            </th>
+            <th>Wallet</th>
           </tr>
         </thead>
         <tbody>
@@ -1259,24 +1245,7 @@ function AttendeesListContent({
                 <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
               </td>
               <td>
-                <div className="attendees-table-v2__actions">
-                  <Tooltip content="View attendee profile">
-                    <IconButton
-                      label="View attendee"
-                      icon={<i className="ti ti-eye" aria-hidden="true" />}
-                      size="sm"
-                      onClick={() => onViewAttendee(row.id)}
-                    />
-                  </Tooltip>
-                  <PassActionButtons
-                    row={row}
-                    event={event}
-                    reasonIdSuffix={row.id}
-                    passActionBusyIds={passActionBusyIds}
-                    onRevokePass={onRevokePass}
-                    onRestorePass={onRestorePass}
-                  />
-                </div>
+                <WalletColumnCell status={row.wallet_status} />
               </td>
             </tr>
           ))}
@@ -1326,9 +1295,6 @@ export function AttendeesTable({
   sortDir,
   onSortChange,
   onViewAttendee,
-  onRevokePass,
-  onRestorePass,
-  passActionBusyIds = new Set(),
   onPageChange,
   onPageSizeChange,
   selectedIds,
@@ -1353,6 +1319,12 @@ export function AttendeesTable({
   bulkRevokeItemsBusy,
   onBulkRevokePass,
   bulkRevokePassBusy,
+  onBulkVoidWallet,
+  bulkVoidWalletBusy,
+  onBulkReissueWallet,
+  bulkReissueWalletBusy,
+  onBulkDeleteWallet,
+  bulkDeleteWalletBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1409,6 +1381,12 @@ export function AttendeesTable({
   const activeSelectedPassCount = selectedRows.filter(
     (row) => row.status !== "cancelled" && row.status !== "revoked",
   ).length;
+  // "Void wallet pass"/"Reissue wallet pass" are no-ops once nothing in the selection has ever
+  // added a wallet pass - the row list only knows whether a WalletPass row exists at all, not
+  // its exact provider status (active vs already-voided), so an already-voided pass still
+  // counts here and is skipped server-side instead (reported in the result toast).
+  const walletPassCount = selectedRows.filter((row) => row.wallet_status !== null).length;
+  const canBulkWallet = walletPassCount > 0;
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // this text on and off faster than it can register as loading — show it only once the
   // fetch has genuinely taken a moment. isInitialLoad itself (not the delayed derivative)
@@ -1452,6 +1430,14 @@ export function AttendeesTable({
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={anySelectedPassActive}
           revokablePassCount={activeSelectedPassCount}
+          onBulkVoidWallet={onBulkVoidWallet}
+          bulkVoidWalletBusy={bulkVoidWalletBusy}
+          onBulkReissueWallet={onBulkReissueWallet}
+          bulkReissueWalletBusy={bulkReissueWalletBusy}
+          onBulkDeleteWallet={onBulkDeleteWallet}
+          bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+          canBulkWallet={canBulkWallet}
+          walletPassCount={walletPassCount}
           onBulkDelete={onBulkDelete}
         />
       ) : (
@@ -1490,10 +1476,6 @@ export function AttendeesTable({
         onSortChange={onSortChange}
         ticketTypes={ticketTypes}
         eventTimezone={eventTimezone}
-        event={event}
-        passActionBusyIds={passActionBusyIds}
-        onRevokePass={onRevokePass}
-        onRestorePass={onRestorePass}
       />
       <div className="attendees-table-foot">
         <div className="attendees-table-foot__summary">

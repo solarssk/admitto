@@ -14,6 +14,7 @@ const EXPECTED_POLICIES: Record<
   "ops:healthz": { windowMs: [60_000], max: [120], checks: 1 },
   "ops:readyz": { windowMs: [60_000], max: [10], checks: 1 },
   "ops:system-logs": { windowMs: [60_000], max: [120], checks: 1 },
+  "wallet:webhook": { windowMs: [60_000, 60_000], max: [120, 600], checks: 2 },
   "auth:oidc": { windowMs: [60_000], max: [20], checks: 1 },
   "auth:login-ip": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },

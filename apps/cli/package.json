@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "precli": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/storage && npm run build -w @admitto/cli",
+    "precli": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/wallet && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/storage && npm run build -w @admitto/cli",
     "precoverage": "npm run precli",
     "cli": "node dist/index.js",
     "test": "vitest run",
@@ -25,6 +25,7 @@
     "@admitto/shared": "*",
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
+    "@admitto/wallet": "*",
     "pg": "^8.16.0",
     "redis": "^6.1.0"
   },
