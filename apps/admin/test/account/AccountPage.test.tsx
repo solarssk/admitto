@@ -151,7 +151,7 @@ const FAKE_REGISTRATION_RESPONSE: any = {
   type: "public-key",
   clientExtensionResults: {},
   response: {
-    clientDataJSON: "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIn0",
+    clientDataJSON: "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIn0", // gitleaks:allow - base64 WebAuthn clientDataJSON fixture, not a secret
     attestationObject: "o2NmbXRk",
   },
 };
