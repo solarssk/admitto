@@ -11,7 +11,12 @@ function PlatformIcon({
   return (
     <Tooltip content={label}>
       <i
-        role="img"
+        // Tabler icon font glyph (CSS content, no bitmap/vector to swap for a real <img>) - the
+        // Sonar-preferred native tag doesn't exist for this case. role="img" + aria-label is the
+        // standard accessible-icon-font pattern; without it screen readers announce nothing here,
+        // since the wrapping Tooltip only shows a hover/focus bubble and isn't aria-describedby
+        // wired to this trigger.
+        role="img" // NOSONAR — no native tag conveys "img" semantics for a font-glyph icon
         className={`ti ${iconClass} attendees-table-v2__wallet-icon${
           active ? " attendees-table-v2__wallet-icon--active" : ""
         }`}

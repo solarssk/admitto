@@ -41,7 +41,7 @@ function formatPassStatus(value: unknown): string {
 
 function formatWalletPassStatus(value: unknown): string {
   const key = String(value);
-  if (Object.prototype.hasOwnProperty.call(WALLET_STATUS_LABELS, key)) {
+  if (Object.hasOwn(WALLET_STATUS_LABELS, key)) {
     return WALLET_STATUS_LABELS[key as WalletPassStatus];
   }
   return key;

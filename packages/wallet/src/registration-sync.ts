@@ -52,8 +52,8 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
   if (row.user_provided_id) {
     try {
       status = await provider.getRegistrationStatus(row.user_provided_id);
-    } catch (caught) {
-      err = caught;
+    } catch (error_) {
+      err = error_;
     }
   }
   await db.walletPass.update({
