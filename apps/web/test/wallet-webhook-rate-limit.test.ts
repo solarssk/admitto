@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
-import { rateLimit } from "../src/rate-limit/policies.js";
+import { RATE_POLICIES, rateLimit } from "../src/rate-limit/policies.js";
 
 function makeWebhookApp(store: InMemoryRateLimitStore) {
   const app = new Hono();
@@ -12,6 +12,11 @@ function makeWebhookApp(store: InMemoryRateLimitStore) {
   );
   return app;
 }
+
+// The per-IP ceiling is deliberately the larger of wallet:webhook's checks (see its own doc
+// comment in policies.ts) - deriving it this way instead of hardcoding keeps this test correct if
+// the policy's numbers ever change.
+const WALLET_WEBHOOK_IP_MAX = Math.max(...RATE_POLICIES["wallet:webhook"].checks.map((check) => check.max));
 
 describe("wallet webhook rate limit", () => {
   it("returns 429 after 120 deliveries per event per minute", async () => {
@@ -33,14 +38,14 @@ describe("wallet webhook rate limit", () => {
 
     // Each request uses a distinct, attacker-controlled eventId - the per-event check alone would
     // never trip (every id sees at most one request), which is exactly the gap being closed here.
-    for (let i = 0; i < 600; i++) {
+    for (let i = 0; i < WALLET_WEBHOOK_IP_MAX; i++) {
       const res = await app.request(`/api/wallet/webhook/passcreator/fake-event-${i}`, {
         method: "POST",
       });
       expect(res.status).toBe(200);
     }
 
-    const limited = await app.request("/api/wallet/webhook/passcreator/fake-event-600", {
+    const limited = await app.request(`/api/wallet/webhook/passcreator/fake-event-${WALLET_WEBHOOK_IP_MAX}`, {
       method: "POST",
     });
     expect(limited.status).toBe(429);
