@@ -26,6 +26,7 @@ import {
   fetchAttendeeDetail,
   fetchTicketTypes,
   reissueWalletPass,
+  deleteWalletPass,
   resendTicket,
   restoreWalletPass,
   revokeAttendeeCheckIn,
@@ -91,7 +92,7 @@ import "../attendees/attendees.css";
 
 type TabId = "overview" | "activity" | "notes";
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
-type ActiveWalletAction = "void" | "restore" | "reissue" | null;
+type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | null;
 
 /** Secondary actions that don't need their own header button - Resend ticket always, plus Edit
  * once folded in here below the mobile breakpoint (see `showEdit`) and Revoke check-in/items/pass
@@ -126,6 +127,7 @@ function MoreActionsMenu({
   onVoidWallet,
   onRestoreWallet,
   onReissueWallet,
+  onDeleteWallet,
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
@@ -152,6 +154,7 @@ function MoreActionsMenu({
   onVoidWallet: () => void;
   onRestoreWallet: () => void;
   onReissueWallet: () => void;
+  onDeleteWallet: () => void;
 }>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -274,6 +277,10 @@ function MoreActionsMenu({
                 onReissue={() => {
                   setOpen(false);
                   onReissueWallet();
+                }}
+                onDelete={() => {
+                  setOpen(false);
+                  onDeleteWallet();
                 }}
               />
             </>
@@ -424,6 +431,7 @@ function WalletActionMenuItems({
   onVoid,
   onRestore,
   onReissue,
+  onDelete,
 }: Readonly<{
   event: ArchivedGuardEvent;
   walletPass: WalletPassActionDto | null;
@@ -431,6 +439,7 @@ function WalletActionMenuItems({
   onVoid: () => void;
   onRestore: () => void;
   onReissue: () => void;
+  onDelete: () => void;
 }>) {
   if (!walletPass || (walletPass.status !== "active" && walletPass.status !== "voided")) return null;
 
@@ -480,6 +489,23 @@ function WalletActionMenuItems({
             <span className="more-actions-menu__item-text">
               <span>Reissue wallet pass</span>
               <span className="more-actions-menu__item-hint">Push the current name/ticket type/event details</span>
+            </span>
+          </button>
+        )}
+      </ArchivedGuard>
+      <ArchivedGuard event={event} reasonId="delete-wallet-pass-reason-menu" disabled={walletBusy}>
+        {(guard) => (
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item more-actions-menu__item--danger"
+            {...guard}
+            onClick={onDelete}
+          >
+            <i className="ti ti-trash" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Delete wallet pass</span>
+              <span className="more-actions-menu__item-hint">Permanently remove it from Apple/Google Wallet</span>
             </span>
           </button>
         )}
@@ -1848,6 +1874,27 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Permanently removes the pass at the provider - distinct from void, which leaves it
+   * installed but marked invalid. Irreversible; a later "Add to Wallet" click starts fresh. */
+  async function handleWalletDelete() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setWalletBusy(true);
+    setWalletError(null);
+    try {
+      await deleteWalletPass(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      setActiveWalletAction(null);
+      addToast("Wallet pass deleted.", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      setWalletError(operatorApiErrorMessage(err, "Could not delete the wallet pass."));
+    } finally {
+      if (isStillSelected(target)) setWalletBusy(false);
+    }
+  }
+
   /** Adds a staff note from the Notes tab - same AttendeeNote model as check-in's note
    * composer, so the response's full detail DTO (incl. the new note) replaces local state
    * directly, matching handlePassStatusChange's toast-on-success / inline-error-on-failure split. */
@@ -2075,6 +2122,10 @@ export function AttendeeDetailPage() {
               onReissueWallet={() => {
                 setWalletError(null);
                 setActiveWalletAction("reissue");
+              }}
+              onDeleteWallet={() => {
+                setWalletError(null);
+                setActiveWalletAction("delete");
               }}
             />
             <Button variant="secondary" onClick={handleBack}>
@@ -2541,6 +2592,23 @@ export function AttendeeDetailPage() {
         loading={walletBusy}
         errorMessage={walletError ?? undefined}
         onConfirm={() => void handleWalletReissue()}
+        onCancel={() => {
+          if (!walletBusy) {
+            setActiveWalletAction(null);
+            setWalletError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={activeWalletAction === "delete"}
+        title="Delete wallet pass?"
+        message={`Permanently removes ${detail.name}'s pass from Apple/Google Wallet. This cannot be undone - they would need to add it again from their ticket page.`}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={walletBusy}
+        errorMessage={walletError ?? undefined}
+        onConfirm={() => void handleWalletDelete()}
         onCancel={() => {
           if (!walletBusy) {
             setActiveWalletAction(null);

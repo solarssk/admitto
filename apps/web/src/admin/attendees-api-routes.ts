@@ -3218,6 +3218,40 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
 }
 
 /**
+ * POST /api/admin/events/:eventId/attendees/:id/wallet/delete — permanently removes the pass at
+ * the provider, distinct from void (which leaves the pass installed but marked invalid). The
+ * WalletPass row itself is deleted rather than updated, so the attendee reads as never having
+ * added a pass - a later "Add to Wallet" click creates a fresh one. Irreversible; the frontend
+ * gates this behind its own confirm dialog.
+ */
+export async function handleDeleteAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const ctx = await loadWalletActionContext(c, db, eventId);
+  if (ctx instanceof Response) return ctx;
+
+  try {
+    await ctx.provider.deletePass(ctx.providerPassId);
+  } catch (err) {
+    return walletProviderErrorResponse(c, err, "handleDeleteAttendeeWalletPass");
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.walletPass.delete({ where: { attendee_id: ctx.attendeeId } });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: ctx.attendeeId,
+      action_type: "wallet_pass_deleted",
+      audit: adminAuditFromContext(c),
+      metadata: { previous_status: ctx.previousStatus },
+    });
+  });
+  return c.json({ deleted: true });
+}
+
+/**
  * POST /api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke
  * Admin/superadmin only (assertEventManageAccess) — resets an already-handed-out
  * item back to "pending" so it can be issued again ("cofnąć to że się to

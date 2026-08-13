@@ -1123,6 +1123,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   let voidSpy: ReturnType<typeof vi.spyOn>;
   let restoreSpy: ReturnType<typeof vi.spyOn>;
   let updateSpy: ReturnType<typeof vi.spyOn>;
+  let deleteSpy: ReturnType<typeof vi.spyOn>;
 
   beforeAll(async () => {
     await prisma.event.create({
@@ -1161,6 +1162,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   beforeEach(() => {
     voidSpy = vi.spyOn(PassCreatorClient.prototype, "voidPass").mockClear().mockResolvedValue(undefined);
     restoreSpy = vi.spyOn(PassCreatorClient.prototype, "restorePass").mockClear().mockResolvedValue(undefined);
+    deleteSpy = vi.spyOn(PassCreatorClient.prototype, "deletePass").mockClear().mockResolvedValue(undefined);
     updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockClear().mockResolvedValue({
       providerPassId: "pc-default",
       downloadUrl: "https://pc.test/p/default",
@@ -1377,6 +1379,58 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 
       expect(res.status).toBe(409);
       expect(updateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("delete", () => {
+    it("deletes the pass at the provider and removes the local WalletPass row", async () => {
+      const attendeeId = "att-wallet-action-delete";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/delete`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+
+      expect(res.status).toBe(200);
+      expect(deleteSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
+      const body = (await res.json()) as { deleted: boolean };
+      expect(body.deleted).toBe(true);
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(row).toBeNull();
+
+      const audit = await prisma.attendeeActionLog.findFirst({
+        where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_deleted" },
+      });
+      expect(audit).not.toBeNull();
+    });
+
+    it("returns 404 and does not call the provider when the attendee has no wallet pass", async () => {
+      const attendeeId = "att-wallet-action-delete-none";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT);
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/delete`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+
+      expect(res.status).toBe(404);
+      expect(deleteSpy).not.toHaveBeenCalled();
+    });
+
+    it("leaves the WalletPass row untouched when the provider call fails", async () => {
+      const attendeeId = "att-wallet-action-delete-fail";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      deleteSpy.mockRejectedValueOnce(new Error("network down"));
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/delete`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(row).not.toBeNull();
     });
   });
 

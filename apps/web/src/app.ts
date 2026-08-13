@@ -153,6 +153,7 @@ import {
   handleVoidAttendeeWalletPass,
   handleRestoreAttendeeWalletPass,
   handleReissueAttendeeWalletPass,
+  handleDeleteAttendeeWalletPass,
   handleAddAttendeeNote,
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
@@ -1273,6 +1274,12 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleReissueAttendeeWalletPass(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/delete",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleDeleteAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke",
