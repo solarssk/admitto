@@ -199,7 +199,8 @@ describe("AttendeesPage archived lockdown", () => {
     const moreActionsButton = within(bar).getByRole("button", { name: "More actions" });
     expect((moreActionsButton as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(moreActionsButton);
-    const deleteItem = within(bar).getByRole("menuitem", { name: /^Delete/ });
+    // Not a bare "Delete" prefix - that also matches "Delete wallet pass" below it.
+    const deleteItem = within(bar).getByRole("menuitem", { name: /^Delete(?! wallet)/ });
     expect((deleteItem as HTMLButtonElement).disabled).toBe(false);
     // Undoing a check-in on an event that's already over doesn't make sense either (matches
     // bulk check-in above) - disabled even though the selection has someone to revoke.

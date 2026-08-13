@@ -19,6 +19,7 @@ import {
   bulkRevokePass,
   bulkVoidWalletPass,
   bulkReissueWalletPass,
+  bulkDeleteWalletPass,
   bulkDeleteAttendees,
   bulkResendTickets,
   bulkRevokeItems,
@@ -252,6 +253,32 @@ function notifyBulkReissueWalletResult(
   }
 
   addToast(`No wallet passes reissued${noteSuffix}.`, "error");
+}
+
+function notifyBulkDeleteWalletResult(
+  result: { deleted: number; skipped: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { deleted, skipped, errored } = result;
+  const notes: string[] = [];
+  if (skipped > 0) notes.push(`${skipped} had no pass to delete`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (deleted > 0) {
+    addToast(
+      `${deleted} wallet ${deleted === 1 ? "pass" : "passes"} deleted${noteSuffix}.`,
+      errored > 0 ? "warning" : "success",
+    );
+    return;
+  }
+
+  if (skipped > 0 && errored === 0) {
+    addToast("None of the selected attendees had a wallet pass to delete.", "info");
+    return;
+  }
+
+  addToast(`No wallet passes deleted${noteSuffix}.`, "error");
 }
 
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
@@ -915,6 +942,9 @@ export function AttendeesPage() {
   const [bulkReissueWalletBusy, setBulkReissueWalletBusy] = useState(false);
   const [bulkReissueWalletConfirmOpen, setBulkReissueWalletConfirmOpen] = useState(false);
   const [bulkReissueWalletError, setBulkReissueWalletError] = useState<string | null>(null);
+  const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
+  const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
+  const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   // Lets the debounce timer below compare against the *currently committed* search value
@@ -1454,6 +1484,30 @@ export function AttendeesPage() {
       },
     });
 
+  /** Bulk "Delete wallet pass" for an explicit subset of selected attendees - same effect as the
+   * attendee detail page's single "Delete wallet pass" action, run once per selected attendee.
+   * Irreversible; an attendee with no wallet pass is left untouched server-side and counted
+   * separately, not treated as a failure. */
+  const handleBulkDeleteWalletSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkDeleteWalletBusy,
+      setError: setBulkDeleteWalletError,
+      addToast,
+      apiErrorFallback: "Delete wallet pass failed.",
+      genericFallback: "Failed to delete wallet passes.",
+      action: (id) => bulkDeleteWalletPass(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkDeleteWalletResult(result, addToast);
+        setBulkDeleteWalletConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
   const isUnfilteredEmpty =
     total === 0 &&
     !searchQuery &&
@@ -1648,6 +1702,11 @@ export function AttendeesPage() {
           setBulkReissueWalletConfirmOpen(true);
         }}
         bulkReissueWalletBusy={bulkReissueWalletBusy}
+        onBulkDeleteWallet={() => {
+          setBulkDeleteWalletError(null);
+          setBulkDeleteWalletConfirmOpen(true);
+        }}
+        bulkDeleteWalletBusy={bulkDeleteWalletBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -1811,7 +1870,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={bulkVoidWalletConfirmOpen}
         title={`Void the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
-        message="Their pass stays installed on their phone but shows as invalid in Apple/Google Wallet. Attendees with no pass, or one already voided, are left untouched."
+        message="Their pass stays installed on their phone but shows as invalid in their wallet. Attendees with no pass, or one already voided, are left untouched."
         errorMessage={bulkVoidWalletError}
         confirmLabel="Void"
         confirmVariant="danger"
@@ -1838,6 +1897,23 @@ export function AttendeesPage() {
           if (!bulkReissueWalletBusy) {
             setBulkReissueWalletConfirmOpen(false);
             setBulkReissueWalletError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteWalletConfirmOpen}
+        title={`Delete the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
+        message="Permanently removes each attendee's pass from their wallet. This cannot be undone - they would need to add it again from their ticket page. Attendees with no pass are left untouched."
+        errorMessage={bulkDeleteWalletError}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={bulkDeleteWalletBusy}
+        onConfirm={() => void handleBulkDeleteWalletSelected()}
+        onCancel={() => {
+          if (!bulkDeleteWalletBusy) {
+            setBulkDeleteWalletConfirmOpen(false);
+            setBulkDeleteWalletError(null);
           }
         }}
       />

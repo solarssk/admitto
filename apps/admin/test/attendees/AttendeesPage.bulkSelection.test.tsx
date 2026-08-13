@@ -154,9 +154,11 @@ function bulkBar() {
   return within(bar as HTMLElement);
 }
 
-/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first. */
+/** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first.
+ * The accessible name concatenates the label and hint text, so a plain prefix match on "Delete"
+ * also catches "Delete wallet pass" - excluded via the lookahead. */
 function openAndArmDeleteDialog() {
-  return openMenuItemAndArmDialog(/^Delete/);
+  return openMenuItemAndArmDialog(/^Delete(?! wallet)/);
 }
 
 /** Opens the "More actions" menu, then clicks the given menu item and returns the confirm dialog. */

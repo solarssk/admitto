@@ -29,6 +29,7 @@ import type {
   BulkRevokePassResponse,
   BulkWalletVoidResponse,
   BulkWalletReissueResponse,
+  BulkWalletDeleteResponse,
   WalletPassActionDto,
   EventItemDto,
   EventItemsListResponse,
@@ -1077,6 +1078,20 @@ export async function bulkReissueWalletPass(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<BulkWalletReissueResponse>(res);
+}
+
+/** Admin/superadmin-only: permanently remove the wallet pass for every selected attendee that has
+ * one at the provider - irreversible, gated behind its own confirm dialog. Attendees with no pass
+ * are skipped. */
+export async function bulkDeleteWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletDeleteResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-delete`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletDeleteResponse>(res);
 }
 
 export async function resendTicket(

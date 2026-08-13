@@ -1551,6 +1551,74 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
   });
 
+  describe("bulk-wallet-delete", () => {
+    it("deletes every wallet pass in the selection at the provider and locally, skipping the rest", async () => {
+      const withPassId = "att-bulk-wallet-delete-with-pass";
+      const noPassId = "att-bulk-wallet-delete-none";
+      await seedActionAttendee(withPassId, WALLET_ACTION_EVENT, { withPass: true });
+      await seedActionAttendee(noPassId, WALLET_ACTION_EVENT);
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-delete`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [withPassId, noPassId] }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { deleted: number; skipped: number; errored: number };
+      expect(body).toEqual({ deleted: 1, skipped: 1, errored: 0 });
+      expect(deleteSpy).toHaveBeenCalledTimes(1);
+      expect(deleteSpy).toHaveBeenCalledWith(`pc-${withPassId}`);
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: withPassId } });
+      expect(row).toBeNull();
+    });
+
+    it("returns 409 without calling the provider when the event's wallet isn't configured", async () => {
+      const attendeeId = "att-bulk-wallet-delete-unconfigured";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT_UNCONFIGURED, { withPass: true });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-wallet-delete`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [attendeeId] }),
+        },
+      );
+
+      expect(res.status).toBe(409);
+      expect(deleteSpy).not.toHaveBeenCalled();
+    });
+
+    it("counts a per-attendee provider failure as errored without failing the whole batch", async () => {
+      const okId = "att-bulk-wallet-delete-ok";
+      const failId = "att-bulk-wallet-delete-fail";
+      await seedActionAttendee(okId, WALLET_ACTION_EVENT, { withPass: true });
+      await seedActionAttendee(failId, WALLET_ACTION_EVENT, { withPass: true });
+      deleteSpy.mockImplementation(async (providerPassId: string) => {
+        if (providerPassId === `pc-${failId}`) throw new Error("network down");
+      });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-delete`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [okId, failId] }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { deleted: number; skipped: number; errored: number };
+      expect(body).toEqual({ deleted: 1, skipped: 0, errored: 1 });
+      const failRow = await prisma.walletPass.findUnique({ where: { attendee_id: failId } });
+      expect(failRow).not.toBeNull();
+    });
+  });
+
   describe("wallet_apple_link / wallet_google_link on GET detail", () => {
     it("returns on-demand wallet links even when the attendee has never added a pass (PO review, 2026-08-13)", async () => {
       const attendeeId = "att-wallet-links-none";

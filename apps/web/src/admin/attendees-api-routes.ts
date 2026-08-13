@@ -2280,7 +2280,8 @@ type BulkAttendeeAction =
   | "revoke_items"
   | "revoke_pass"
   | "wallet_void"
-  | "wallet_reissue";
+  | "wallet_reissue"
+  | "wallet_delete";
 type BulkFailureTarget = { attendeeId: string } | { attendeeCount: number };
 
 /** Record a bounded failure signal for a staff-triggered bulk operation. The selected attendee
@@ -2918,6 +2919,88 @@ export async function handleBulkReissueAttendeeWalletPass(c: Context, db: Prisma
   } catch (err) {
     console.error("bulk wallet reissue failed:", err);
     recordBulkAttendeeActionFailure(c, eventId, "wallet_reissue", {
+      attendeeCount: parsed.data.attendeeIds.length,
+    });
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
+/** Permanently removes one attendee's wallet pass at the provider and deletes the WalletPass row,
+ * same core logic as handleDeleteAttendeeWalletPass's single-attendee path - the attendee reads as
+ * never having added a pass afterward. */
+async function deleteOneWalletPass(
+  db: PrismaClient,
+  eventId: string,
+  target: { attendeeId: string; providerPassId: string },
+  provider: WalletPassProvider,
+  audit: OpsAuditContext,
+): Promise<"deleted"> {
+  await provider.deletePass(target.providerPassId);
+  await db.$transaction(async (tx) => {
+    await tx.walletPass.delete({ where: { attendee_id: target.attendeeId } });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: target.attendeeId,
+      action_type: "wallet_pass_deleted",
+      audit,
+      metadata: { bulk: true },
+    });
+  });
+  return "deleted";
+}
+
+/** POST /api/admin/events/:eventId/attendees/bulk-wallet-delete — permanently remove the wallet
+ * pass for a selection of attendees at once, from the Attendees list's row-selection bulk bar.
+ * Same owned-id/chunked-Promise.allSettled shape as the sibling bulk endpoints; attendees with no
+ * WalletPass row count as skipped rather than errored. Irreversible, gated behind its own confirm
+ * dialog on the frontend. */
+export async function handleBulkDeleteAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkWalletAttendeesBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  const counts = { deleted: 0, skipped: 0, errored: 0 };
+  try {
+    const provider = await resolveEventWalletProviderForBulk(db, eventId);
+    if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
+
+    const targets = await loadBulkWalletTargets(db, eventId, parsed.data.attendeeIds);
+    counts.skipped = parsed.data.attendeeIds.length - targets.length;
+
+    const audit = adminAuditFromContext(c);
+    for (const batch of chunk(targets, BULK_CHECKIN_CONCURRENCY)) {
+      const settled = await Promise.allSettled(
+        batch.map((target) => deleteOneWalletPass(db, eventId, target, provider, audit)),
+      );
+      for (const [index, outcome] of settled.entries()) {
+        if (outcome.status === "rejected") {
+          console.error("bulk wallet delete: deleteOneWalletPass failed:", outcome.reason);
+          recordBulkAttendeeActionFailure(c, eventId, "wallet_delete", {
+            attendeeId: batch[index]!.attendeeId,
+          });
+          counts.errored += 1;
+          continue;
+        }
+        counts[outcome.value] += 1;
+      }
+    }
+
+    return c.json(counts);
+  } catch (err) {
+    console.error("bulk wallet delete failed:", err);
+    recordBulkAttendeeActionFailure(c, eventId, "wallet_delete", {
       attendeeCount: parsed.data.attendeeIds.length,
     });
     return c.json({ error: "server error" }, 500);

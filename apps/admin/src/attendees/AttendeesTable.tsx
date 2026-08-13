@@ -245,6 +245,8 @@ export interface AttendeesTableProps {
   bulkVoidWalletBusy: boolean;
   onBulkReissueWallet: () => void;
   bulkReissueWalletBusy: boolean;
+  onBulkDeleteWallet: () => void;
+  bulkDeleteWalletBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -420,6 +422,8 @@ function BulkMoreActionsMenu({
   bulkVoidWalletBusy,
   onBulkReissueWallet,
   bulkReissueWalletBusy,
+  onBulkDeleteWallet,
+  bulkDeleteWalletBusy,
   canBulkWallet,
   walletPassCount,
   onDelete,
@@ -464,6 +468,8 @@ function BulkMoreActionsMenu({
   bulkVoidWalletBusy: boolean;
   onBulkReissueWallet: () => void;
   bulkReissueWalletBusy: boolean;
+  onBulkDeleteWallet: () => void;
+  bulkDeleteWalletBusy: boolean;
   /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
    * act on (may still include an already-voided pass for Void, resolved server-side). */
   canBulkWallet: boolean;
@@ -622,7 +628,7 @@ function BulkMoreActionsMenu({
             icon="wallet-off"
             variant="warning"
             label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
-            hint={`Show as invalid in Apple/Google Wallet for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            hint={`Show as invalid in their wallet for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
             disabled={archived || bulkVoidWalletBusy || !canBulkWallet}
             tooltip={bulkWalletTooltip(archived, canBulkWallet)}
             onClick={() => {
@@ -639,6 +645,21 @@ function BulkMoreActionsMenu({
             onClick={() => {
               setOpen(false);
               onBulkReissueWallet();
+            }}
+          />
+          {/* Irreversible - removes the pass at the provider entirely, distinct from Void above
+           * (which just marks it invalid while leaving it installed). Same "nothing to do" gate
+           * as Void/Reissue. */}
+          <MoreActionsMenuItem
+            icon="trash"
+            variant="danger"
+            label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
+            hint={`Permanently remove from their wallet for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            disabled={archived || bulkDeleteWalletBusy || !canBulkWallet}
+            tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+            onClick={() => {
+              setOpen(false);
+              onBulkDeleteWallet();
             }}
           />
           <hr className="more-actions-menu__divider" />
@@ -723,6 +744,8 @@ function BulkBar({
   bulkVoidWalletBusy,
   onBulkReissueWallet,
   bulkReissueWalletBusy,
+  onBulkDeleteWallet,
+  bulkDeleteWalletBusy,
   canBulkWallet,
   walletPassCount,
   onBulkDelete,
@@ -766,6 +789,8 @@ function BulkBar({
   bulkVoidWalletBusy: boolean;
   onBulkReissueWallet: () => void;
   bulkReissueWalletBusy: boolean;
+  onBulkDeleteWallet: () => void;
+  bulkDeleteWalletBusy: boolean;
   canBulkWallet: boolean;
   walletPassCount: number;
   onBulkDelete: () => void;
@@ -870,6 +895,8 @@ function BulkBar({
           bulkVoidWalletBusy={bulkVoidWalletBusy}
           onBulkReissueWallet={onBulkReissueWallet}
           bulkReissueWalletBusy={bulkReissueWalletBusy}
+          onBulkDeleteWallet={onBulkDeleteWallet}
+          bulkDeleteWalletBusy={bulkDeleteWalletBusy}
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           onDelete={onBulkDelete}
@@ -1290,6 +1317,8 @@ export function AttendeesTable({
   bulkVoidWalletBusy,
   onBulkReissueWallet,
   bulkReissueWalletBusy,
+  onBulkDeleteWallet,
+  bulkDeleteWalletBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1399,6 +1428,8 @@ export function AttendeesTable({
           bulkVoidWalletBusy={bulkVoidWalletBusy}
           onBulkReissueWallet={onBulkReissueWallet}
           bulkReissueWalletBusy={bulkReissueWalletBusy}
+          onBulkDeleteWallet={onBulkDeleteWallet}
+          bulkDeleteWalletBusy={bulkDeleteWalletBusy}
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           onBulkDelete={onBulkDelete}
