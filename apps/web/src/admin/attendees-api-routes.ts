@@ -2809,8 +2809,9 @@ export async function handleBulkVoidAttendeeWalletPass(c: Context, db: PrismaCli
 
 /** Rebuilds one attendee's wallet pass from their current data, same core logic as
  * handleReissueAttendeeWalletPass's single-attendee path. Attendees with no resolvable ticket
- * (never issued) count as skipped, matching that route's 409. */
-async function reissueOneWalletPass(
+ * (never issued) count as skipped, matching that route's 409. Exported for reuse by
+ * event-settings-routes.ts's own best-effort push when an event's wallet-relevant fields change. */
+export async function reissueOneWalletPass(
   db: PrismaClient,
   eventId: string,
   target: { attendeeId: string; providerPassId: string },

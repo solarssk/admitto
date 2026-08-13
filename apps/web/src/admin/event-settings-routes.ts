@@ -28,7 +28,9 @@ import {
   PassCreatorClient,
   WalletProviderError,
   WALLET_MAPPING_PLACEHOLDERS,
+  resolveWalletProvider,
   type PassCreatorWebhookEventType,
+  type WalletPassProvider,
 } from "@admitto/wallet";
 import { z } from "zod";
 import {
@@ -42,6 +44,7 @@ import {
 } from "./admin-helpers.js";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { resolveInstanceBaseUrl } from "../instance-base-url.js";
+import { reissueOneWalletPass } from "./attendees-api-routes.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import {
@@ -538,6 +541,92 @@ async function subscribeWalletWebhooksBestEffort(
   });
 }
 
+/** Event fields that can appear in a wallet pass via WALLET_MAPPING_PLACEHOLDERS (event name,
+ * hours, date, location) - only these are worth an automatic push to every already-issued pass.
+ * A patch that touches only, say, capacity or branding never reaches pushWalletUpdatesBestEffort
+ * below. */
+const WALLET_RELEVANT_EVENT_FIELDS: ReadonlySet<string> = new Set([
+  "title",
+  "date",
+  "timezone",
+  "event_hours_start",
+  "event_hours_end",
+]);
+
+/** Same six-liner as attendees-api-routes.ts's own local chunk - duplicated rather than shared
+ * across these two files for the same reason noted there (trivial, dependency-free). */
+function chunkWalletTargets<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+const WALLET_PUSH_CONCURRENCY = 10;
+
+/** Best-effort: pushes every already-issued active wallet pass's name/ticket type/event details
+ * fresh whenever a save changes one of WALLET_RELEVANT_EVENT_FIELDS above (PO report, 2026-08-13:
+ * "the system already knows the wallet is on, so when hours/name change in Event Settings it
+ * should quietly update the wallets too" - previously nothing pushed to already-issued passes
+ * until an admin manually reissued each one). Reuses reissueOneWalletPass, the exact same
+ * per-attendee logic the bulk-wallet-reissue endpoint already uses - a genuine data push, not
+ * the webhook (re-)subscription subscribeWalletWebhooksBestEffort above handles. Runs after the
+ * settings transaction has committed; a PassCreator outage or bad key here never fails the save,
+ * and an attendee whose ticket can't be resolved is simply left with a stale pass until a manual
+ * reissue or the next relevant settings change retries this. */
+async function pushWalletUpdatesBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  changedFields: readonly string[],
+  updated: {
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key_enc: string | null;
+    wallet_field_mapping: unknown;
+  },
+  audit: ReturnType<typeof adminAuditFromContext>,
+): Promise<void> {
+  if (!changedFields.some((field) => WALLET_RELEVANT_EVENT_FIELDS.has(field))) return;
+  if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
+
+  const provider: WalletPassProvider | null = resolveWalletProvider({
+    walletEnabled: updated.wallet_enabled,
+    walletTemplateId: updated.wallet_template_id,
+    walletApiKeyEnc: updated.wallet_api_key_enc,
+    walletFieldMapping: parseWalletFieldMapping(updated.wallet_field_mapping),
+  });
+  if (!provider) return;
+
+  const targets = await db.walletPass.findMany({
+    where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: eventId } },
+    select: { attendee_id: true, provider_pass_id: true },
+  });
+  if (targets.length === 0) return;
+
+  for (const batch of chunkWalletTargets(targets, WALLET_PUSH_CONCURRENCY)) {
+    const settled = await Promise.allSettled(
+      batch.map((row) =>
+        reissueOneWalletPass(
+          db,
+          eventId,
+          { attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! },
+          provider,
+          audit,
+        ),
+      ),
+    );
+    settled.forEach((outcome, index) => {
+      if (outcome.status !== "rejected") return;
+      console.error("wallet event-change push failed:", outcome.reason);
+      recordSystemLog({
+        level: "error",
+        source: "admin",
+        message: "wallet_event_change_push_failed",
+        fields: { eventId, attendeeId: batch[index]!.attendee_id },
+      });
+    });
+  }
+}
+
 /** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -648,6 +737,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     if (patchesWallet) {
       await subscribeWalletWebhooksBestEffort(db, eventId, updated);
     }
+    await pushWalletUpdatesBestEffort(db, eventId, changedFields, updated, audit);
 
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);

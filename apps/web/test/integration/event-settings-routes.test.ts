@@ -1110,6 +1110,95 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(row.wallet_field_mapping).toBeNull();
   });
 
+  describe("auto-push to already-issued wallet passes on save", () => {
+    const PUSH_EVENT = "evt-event-settings-wallet-push";
+    const PUSH_ATTENDEE = "att-event-settings-wallet-push";
+
+    beforeAll(async () => {
+      const token = generateToken();
+      await prisma.event.create({
+        data: {
+          id: PUSH_EVENT,
+          title: "Wallet Push Gala",
+          slug: "wallet-push-gala",
+          date: new Date("2026-09-01"),
+          organization_id: ORG_SET,
+          wallet_template_id: "tmpl-push",
+          wallet_api_key_enc: encryptToString("push-api-key"),
+        },
+      });
+      await prisma.attendee.create({
+        data: {
+          id: PUSH_ATTENDEE,
+          event_id: PUSH_EVENT,
+          email: "wallet-push@example.com",
+          name: "Wallet Push Guest",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: {
+          attendee_id: PUSH_ATTENDEE,
+          provider: "passcreator",
+          provider_pass_id: `pc-${PUSH_ATTENDEE}`,
+          status: "active",
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.walletPass.deleteMany({ where: { attendee_id: PUSH_ATTENDEE } });
+      await prisma.attendee.deleteMany({ where: { id: PUSH_ATTENDEE } });
+      await prisma.event.deleteMany({ where: { id: PUSH_EVENT } });
+    });
+
+    it("pushes the already-issued pass fresh when a wallet-relevant field (title) changes", async () => {
+      const updateSpy = vi
+        .spyOn(PassCreatorClient.prototype, "updatePass")
+        .mockResolvedValue({
+          providerPassId: `pc-${PUSH_ATTENDEE}`,
+          appleUrl: "https://pc.test/apple/pushed",
+          androidUrl: "https://pc.test/android/pushed",
+        });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (renamed)" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+        expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${PUSH_ATTENDEE}`);
+        const pass = await prisma.walletPass.findUnique({ where: { attendee_id: PUSH_ATTENDEE } });
+        expect(pass?.apple_url).toBe("https://pc.test/apple/pushed");
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("does not push when only an unrelated field (capacity) changes", async () => {
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: `pc-${PUSH_ATTENDEE}`,
+        appleUrl: "https://pc.test/apple/unexpected",
+        androidUrl: "https://pc.test/android/unexpected",
+      });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ capacity: 500 }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+  });
+
   it("POST /wallet/test succeeds with a draft API key and reports the template name", async () => {
     const fetchMock = vi.fn(async (url: string | URL) => {
       expect(String(url)).toContain("/api/v2/pass-template/tmpl-probe/describe");
