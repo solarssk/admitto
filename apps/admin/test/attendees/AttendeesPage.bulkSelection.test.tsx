@@ -1038,6 +1038,21 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
   });
 
+  it("disables the wallet menu items with a tooltip when nothing in the selection has a wallet pass", async () => {
+    const noPassRow = { ...rowA, wallet_status: null };
+    fetchEventAttendees.mockResolvedValue({ items: [noPassRow, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /^Void wallet pass/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("None of the selected attendees have added a wallet pass.");
+  });
+
   it("Cancel closes the bulk-wallet-void dialog without calling bulkVoidWalletPass", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
 
@@ -1052,6 +1067,63 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(bulkVoidWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the bulk-wallet-reissue dialog without calling bulkReissueWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Push updates/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkReissueWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the bulk-wallet-delete dialog without calling bulkDeleteWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Delete wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkDeleteWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("toasts a mixed no-success error instead of the all-skipped info message when errored > 0", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkVoidWalletPass.mockResolvedValue({ voided: 0, skipped: 1, errored: 1 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "No wallet passes voided (1 had no pass, or it was already voided, 1 failed unexpectedly).",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(
+      "None of the selected attendees had a pass to void - no pass, or already voided.",
+      "info",
+    );
   });
 });
 

@@ -101,6 +101,7 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["wallet_pass_voided", "Wallet pass voided"],
     ["wallet_pass_restored", "Wallet pass restored"],
     ["wallet_pass_reissued", "Wallet pass updated"],
+    ["wallet_pass_deleted", "Wallet pass deleted"],
     ["scan_preview", "Scan preview"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineLabel(labelEntry(actionType))).toBe(expected);
@@ -507,6 +508,17 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
         }),
       ),
     ).toBe("Voided → Added");
+  });
+
+  it("shows no transition detail for wallet_pass_voided when metadata has no previous_status", () => {
+    expect(
+      getTimelineDetail(
+        entry({
+          action_type: "wallet_pass_voided",
+          metadata: {},
+        }),
+      ),
+    ).toBe("");
   });
 
   it("falls back to the raw status text for an inherited-property-shaped previous_status (prototype pollution guard)", () => {

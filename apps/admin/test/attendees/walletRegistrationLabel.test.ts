@@ -25,4 +25,12 @@ describe("walletRegistrationLabel", () => {
   it("prefers active over inactive when both are nonzero", () => {
     expect(walletRegistrationLabel(2, 5)).toBe("Registered (2 devices)");
   });
+
+  it("treats a null active count as zero when inactive is a confirmed number", () => {
+    expect(walletRegistrationLabel(null, 2)).toBe("Unregistered");
+  });
+
+  it("treats a null inactive count as zero when active is a confirmed number", () => {
+    expect(walletRegistrationLabel(1, null)).toBe("Registered");
+  });
 });

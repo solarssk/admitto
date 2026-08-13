@@ -356,6 +356,25 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 when validly signed signedData parses to something other than a JSON object", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    // Envelope-level parsing (parseWebhookEnvelope) only requires signedData/signature to be
+    // strings - it doesn't look inside signedData. Signature verification passes here (it's a
+    // real signature over this exact string), so this exercises parseWebhookData's own
+    // `typeof raw !== "object"` rejection, distinct from the malformed-envelope case above.
+    const signedData = JSON.stringify("not an object");
+    const body = { signedData, signature: signP256(signedData, keyPair.privateKey) };
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(400);
+  });
+
   it("returns 502 when the public key fetch fails", async () => {
     const provider = stubProvider(keyPair.publicKey);
     provider.getWebhookPublicKey.mockRejectedValueOnce(new Error("upstream down"));
