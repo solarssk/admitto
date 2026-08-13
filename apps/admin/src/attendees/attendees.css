@@ -800,16 +800,35 @@
 }
 
 @media (max-width: 1100px) {
-  /* Side column is narrow: keep icon + body on the first line, tuck time under the subject. */
+  /* Side column is narrow: keep icon + body on the first line, tuck time under the subject.
+   * Explicit grid (not flex-wrap + order + margin) - that combination let the line-break point
+   * depend on subject/email text length, so a long "to" address could keep everything on one
+   * flex line and crush .attendee-delivery__body to near-zero width instead of wrapping. Named
+   * areas always place each part on its own row regardless of content length. */
   .attendee-delivery {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "icon body menu"
+      ".    time time";
+    column-gap: 10px;
     row-gap: 4px;
   }
 
+  .attendee-delivery__icon-tip {
+    grid-area: icon;
+  }
+
+  .attendee-delivery__body {
+    grid-area: body;
+  }
+
   .attendee-delivery__time {
-    flex: 1 1 auto;
-    order: 5;
-    margin-left: 38px;
+    grid-area: time;
+  }
+
+  .attendee-delivery .delivery-row-menu {
+    grid-area: menu;
   }
 }
 
