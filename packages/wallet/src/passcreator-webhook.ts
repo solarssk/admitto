@@ -133,6 +133,24 @@ function webhookMatchWhere(data: PassCreatorWebhookData): Prisma.WalletPassWhere
   return null;
 }
 
+// operatingSystem names which platform's counts this delivery carries (confirmed live
+// 2026-08-13: "iOS" for Apple Wallet events) - without it we can't tell which pair of
+// apple_*/google_* columns noOfActivePasses/noOfInactivePasses belongs to, so both stay
+// untouched rather than guessing. Split out from applyWebhookUpdate to keep its cognitive
+// complexity within SonarCloud's threshold.
+function applyRegistrationCounts(updateData: Prisma.WalletPassUpdateInput, data: PassCreatorWebhookData): void {
+  if (data.operatingSystem === undefined) return;
+  const isApple = data.operatingSystem.toLowerCase() === "ios";
+  if (data.noOfActivePasses !== undefined) {
+    if (isApple) updateData.apple_active_registrations = data.noOfActivePasses;
+    else updateData.google_active_registrations = data.noOfActivePasses;
+  }
+  if (data.noOfInactivePasses !== undefined) {
+    if (isApple) updateData.apple_inactive_registrations = data.noOfInactivePasses;
+    else updateData.google_inactive_registrations = data.noOfInactivePasses;
+  }
+}
+
 export async function applyWebhookUpdate(
   db: PrismaClient,
   data: PassCreatorWebhookData,
@@ -141,21 +159,7 @@ export async function applyWebhookUpdate(
   if (!where) return { matched: false };
 
   const updateData: Prisma.WalletPassUpdateInput = { registration_checked_at: new Date() };
-  // operatingSystem names which platform's counts this delivery carries (confirmed live
-  // 2026-08-13: "iOS" for Apple Wallet events) - without it we can't tell which pair of
-  // apple_*/google_* columns noOfActivePasses/noOfInactivePasses belongs to, so both stay
-  // untouched rather than guessing.
-  if (data.operatingSystem !== undefined) {
-    const isApple = data.operatingSystem.toLowerCase() === "ios";
-    if (data.noOfActivePasses !== undefined) {
-      if (isApple) updateData.apple_active_registrations = data.noOfActivePasses;
-      else updateData.google_active_registrations = data.noOfActivePasses;
-    }
-    if (data.noOfInactivePasses !== undefined) {
-      if (isApple) updateData.apple_inactive_registrations = data.noOfInactivePasses;
-      else updateData.google_inactive_registrations = data.noOfInactivePasses;
-    }
-  }
+  applyRegistrationCounts(updateData, data);
   if (data.firstDownloadedAt !== undefined) {
     updateData.first_downloaded_at = data.firstDownloadedAt;
   }
