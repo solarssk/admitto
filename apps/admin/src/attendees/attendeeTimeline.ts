@@ -224,7 +224,7 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "wallet_pass_restored":
       return "Wallet pass restored";
     case "wallet_pass_reissued":
-      return "Wallet pass reissued";
+      return "Wallet pass updated";
     case "scan_preview":
       return "Scan preview";
     default:

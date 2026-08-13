@@ -100,7 +100,7 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["pass_restored", "Pass restored"],
     ["wallet_pass_voided", "Wallet pass voided"],
     ["wallet_pass_restored", "Wallet pass restored"],
-    ["wallet_pass_reissued", "Wallet pass reissued"],
+    ["wallet_pass_reissued", "Wallet pass updated"],
     ["scan_preview", "Scan preview"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineLabel(labelEntry(actionType))).toBe(expected);

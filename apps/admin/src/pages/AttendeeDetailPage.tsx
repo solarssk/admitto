@@ -487,8 +487,8 @@ function WalletActionMenuItems({
           <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onReissue}>
             <i className="ti ti-refresh-dot" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
-              <span>Reissue wallet pass</span>
-              <span className="more-actions-menu__item-hint">Push the current name/ticket type/event details</span>
+              <span>Push updates</span>
+              <span className="more-actions-menu__item-hint">Push the latest details to their wallet pass</span>
             </span>
           </button>
         )}
@@ -884,7 +884,7 @@ function AttendeeOverviewTab({
               )}
               {detail.wallet_pass.last_synced_at && (
                 <div className="attendee-detail-row">
-                  <span>Last reissued</span>
+                  <span>Last updated</span>
                   <span className="mono">
                     {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
                   </span>
@@ -1865,10 +1865,10 @@ export function AttendeeDetailPage() {
       if (!isStillSelected(target)) return;
       await loadDetail();
       setActiveWalletAction(null);
-      addToast("Wallet pass reissued.", "success");
+      addToast("Wallet pass updated.", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setWalletError(operatorApiErrorMessage(err, "Could not reissue the wallet pass."));
+      setWalletError(operatorApiErrorMessage(err, "Could not push updates to the wallet pass."));
     } finally {
       if (isStillSelected(target)) setWalletBusy(false);
     }
@@ -2585,9 +2585,9 @@ export function AttendeeDetailPage() {
 
       <ConfirmDialog
         open={activeWalletAction === "reissue"}
-        title="Reissue wallet pass?"
+        title="Push updates to their wallet pass?"
         message={`Pushes ${detail.name}'s current name, ticket type, and event details to their already-installed wallet pass.`}
-        confirmLabel="Reissue"
+        confirmLabel="Push updates"
         confirmVariant="primary"
         loading={walletBusy}
         errorMessage={walletError ?? undefined}

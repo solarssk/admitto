@@ -638,8 +638,8 @@ function BulkMoreActionsMenu({
           />
           <MoreActionsMenuItem
             icon="refresh-dot"
-            label={bulkReissueWalletBusy ? "Reissuing wallet passes…" : "Reissue wallet pass"}
-            hint={`Push current name/ticket type/event details for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
+            hint={`Push the latest details for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
             disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
             tooltip={bulkWalletTooltip(archived, canBulkWallet)}
             onClick={() => {

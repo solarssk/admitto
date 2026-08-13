@@ -235,24 +235,24 @@ function notifyBulkReissueWalletResult(
 ) {
   const { reissued, skipped, errored } = result;
   const notes: string[] = [];
-  if (skipped > 0) notes.push(`${skipped} had no pass to reissue`);
+  if (skipped > 0) notes.push(`${skipped} had no pass to update`);
   if (errored > 0) notes.push(`${errored} failed unexpectedly`);
   const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 
   if (reissued > 0) {
     addToast(
-      `${reissued} wallet ${reissued === 1 ? "pass" : "passes"} reissued${noteSuffix}.`,
+      `${reissued} wallet ${reissued === 1 ? "pass" : "passes"} updated${noteSuffix}.`,
       errored > 0 ? "warning" : "success",
     );
     return;
   }
 
   if (skipped > 0 && errored === 0) {
-    addToast("None of the selected attendees had a wallet pass to reissue.", "info");
+    addToast("None of the selected attendees had a wallet pass to update.", "info");
     return;
   }
 
-  addToast(`No wallet passes reissued${noteSuffix}.`, "error");
+  addToast(`No wallet passes updated${noteSuffix}.`, "error");
 }
 
 function notifyBulkDeleteWalletResult(
@@ -1473,8 +1473,8 @@ export function AttendeesPage() {
       setBusy: setBulkReissueWalletBusy,
       setError: setBulkReissueWalletError,
       addToast,
-      apiErrorFallback: "Reissue wallet pass failed.",
-      genericFallback: "Failed to reissue wallet passes.",
+      apiErrorFallback: "Push updates failed.",
+      genericFallback: "Failed to push updates to wallet passes.",
       action: (id) => bulkReissueWalletPass(id, [...selectedIds]),
       onSuccess: (result) => {
         notifyBulkReissueWalletResult(result, addToast);
@@ -1886,10 +1886,10 @@ export function AttendeesPage() {
 
       <ConfirmDialog
         open={bulkReissueWalletConfirmOpen}
-        title={`Reissue the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
+        title={`Push updates to the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
         message="Pushes each attendee's current name, ticket type, and event details to their already-installed wallet pass. Attendees with no pass are left untouched."
         errorMessage={bulkReissueWalletError}
-        confirmLabel="Reissue"
+        confirmLabel="Push updates"
         confirmVariant="primary"
         loading={bulkReissueWalletBusy}
         onConfirm={() => void handleBulkReissueWalletSelected()}
