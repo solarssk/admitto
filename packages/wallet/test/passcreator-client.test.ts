@@ -228,6 +228,90 @@ describe("PassCreatorClient.subscribeWebhook", () => {
       client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pushnotification_registered"),
     ).resolves.toBeUndefined();
   });
+
+  it("succeeds on a 201 whose body doesn't match the v3 {success,data} envelope (live-observed 2026-08-13)", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(201, { id: "hook-1" }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(
+      client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pass_voided"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("throws on a non-2xx status", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(401, { success: false }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(
+      client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pass_voided"),
+    ).rejects.toBeInstanceOf(WalletProviderError);
+  });
+
+  it("throws on a 2xx status whose body explicitly reports success: false (CodeRabbit review)", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) =>
+      jsonResponse(200, { success: false, errors: ["event already subscribed"] }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(
+      client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pass_voided"),
+    ).rejects.toBeInstanceOf(WalletProviderError);
+  });
+});
+
+describe("PassCreatorClient.listWebhooks", () => {
+  it("parses a bare array response (live-observed shape, 2026-08-13)", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) =>
+      jsonResponse(200, [
+        { target_url: "https://admitto.example.com/hook", event: "pass_voided", pass_template: "tmpl-1" },
+      ]),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.listWebhooks()).resolves.toEqual([
+      { targetUrl: "https://admitto.example.com/hook", event: "pass_voided", passTemplate: "tmpl-1" },
+    ]);
+  });
+
+  it("parses a v3-style {data: [...]} wrapper", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) =>
+      jsonResponse(200, { success: true, data: [{ target_url: "https://a.test/hook", event: "pass_voided" }] }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.listWebhooks()).resolves.toEqual([
+      { targetUrl: "https://a.test/hook", event: "pass_voided", passTemplate: null },
+    ]);
+  });
+
+  it("returns an empty list for an unrecognized-but-successful body instead of throwing", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(200, { ok: true }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.listWebhooks()).resolves.toEqual([]);
+  });
+
+  it("still throws when the body explicitly reports success: false", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(200, { success: false, errors: ["nope"] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.listWebhooks()).rejects.toBeInstanceOf(WalletProviderError);
+  });
+
+  it("throws on a non-2xx status", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(500, {}));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.listWebhooks()).rejects.toBeInstanceOf(WalletProviderError);
+  });
+
+  it("throws a WalletProviderError instead of crashing when success: false carries a non-array errors field (CodeRabbit review)", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(200, { success: false, errors: "nope" }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.listWebhooks()).rejects.toBeInstanceOf(WalletProviderError);
+  });
+
+  it("skips a null row and defaults non-string fields instead of crashing (CodeRabbit review)", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) =>
+      jsonResponse(200, [null, { target_url: 42, event: "pass_voided", pass_template: null }]),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.listWebhooks()).resolves.toEqual([
+      { targetUrl: null, event: "pass_voided", passTemplate: null },
+    ]);
+  });
 });
 
 describe("PassCreatorClient fieldMapping", () => {
