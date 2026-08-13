@@ -15,6 +15,7 @@ import {
   resolveSecurityAuditLogRetentionDays,
 } from "@admitto/auth";
 import {
+  DEFAULT_MAIL_DRAIN_LIMIT,
   drainPendingDeliveries,
   ingestBounces,
   nullifyDeliverySnapshots,
@@ -58,11 +59,12 @@ function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-async function runJobSafely(job: string, run: () => Promise<void>): Promise<void> {
+async function runJobSafely<T>(job: string, run: () => Promise<T>, fallback: T): Promise<T> {
   try {
-    await run();
+    return await run();
   } catch (err) {
     log(job, `FAILED ${errMessage(err)}`);
+    return fallback;
   }
 }
 
@@ -97,35 +99,44 @@ async function resolveWorkerBaseUrl(db: PrismaClient): Promise<string | undefine
   }
 }
 
-async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+/** @returns true when this tick's drain filled its batch limit, so more rows likely remain. */
+async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
   const acquired = await locks.tryAcquire("mail_delivery");
   if (!acquired) {
     log("mail_delivery", "skipped (lock held)");
-    return;
+    return false;
   }
   try {
     const baseUrl = await resolveWorkerBaseUrl(db);
-    if (!baseUrl) return;
-    const result = await drainPendingDeliveries(db, process.env, {}, { baseUrl });
+    if (!baseUrl) return false;
+    const result = await drainPendingDeliveries(
+      db,
+      process.env,
+      {},
+      { baseUrl, limit: DEFAULT_MAIL_DRAIN_LIMIT },
+    );
     if (result.claimed === 0) {
       log("mail_delivery", "idle");
-      return;
+      return false;
     }
     log(
       "mail_delivery",
       `ok claimed=${result.claimed} sent=${result.sent} failed=${result.failed} skipped=${result.skipped}`,
     );
     await publishActivityChanged(result.eventIds);
+    return result.claimed >= DEFAULT_MAIL_DRAIN_LIMIT;
   } finally {
     await locks.release("mail_delivery");
   }
 }
 
-async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+/** @returns true when a job was claimed this tick - the drain takes one at a time, so another
+ * may already be waiting behind it. */
+async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
   const acquired = await locks.tryAcquire("import");
   if (!acquired) {
     log("import", "skipped (lock held)");
-    return;
+    return false;
   }
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
@@ -135,23 +146,25 @@ async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
     });
     if (result.claimed === 0 && result.reclaimed === 0 && result.healed === 0) {
       log("import", "idle");
-      return;
+      return false;
     }
     log(
       "import",
       `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed} reclaimed=${result.reclaimed} healed=${result.healed}`,
     );
     await publishActivityChanged(result.eventIds);
+    return result.claimed > 0;
   } finally {
     await locks.release("import");
   }
 }
 
-async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
+/** @returns true when a job was claimed this tick - same one-at-a-time reasoning as import. */
+async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
   const acquired = await locks.tryAcquire("export");
   if (!acquired) {
     log("export", "skipped (lock held)");
-    return;
+    return false;
   }
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
@@ -161,12 +174,13 @@ async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
     });
     if (result.claimed === 0 && result.reclaimed === 0) {
       log("export", "idle");
-      return;
+      return false;
     }
     log(
       "export",
       `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed} reclaimed=${result.reclaimed}`,
     );
+    return result.claimed > 0;
   } finally {
     await locks.release("export");
   }
@@ -238,23 +252,32 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
   }
 }
 
+/**
+ * @returns true when a drain hit its per-tick batch limit (mail_delivery) or claimed a job at
+ * all (import/export claim one at a time) - a backlog larger than one tick's capacity, which
+ * the caller should keep draining immediately rather than waiting for the next wake/tick.
+ */
 export async function runWorkerTick(
   db: PrismaClient,
   locks: WorkerLockClient,
   schedule: RetentionSchedule,
-): Promise<void> {
-  await runJobSafely("heartbeat", async () => {
-    await touchWorkerHeartbeat(db);
-    log("heartbeat", "ok");
-  });
+): Promise<boolean> {
+  await runJobSafely(
+    "heartbeat",
+    async () => {
+      await touchWorkerHeartbeat(db);
+      log("heartbeat", "ok");
+    },
+    undefined,
+  );
   // Independent advisory locks per job type, so one slow drain (e.g. a big mail_delivery
   // batch) cannot delay another's turn (e.g. export) within the same tick.
-  await Promise.all([
-    runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks)),
-    runJobSafely("import", () => runImportJob(db, locks)),
-    runJobSafely("export", () => runExportJob(db, locks)),
-    runJobSafely("bounce", () => runBounceJob(db, locks)),
-    runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks)),
+  const [mailHasMore, importHasMore, exportHasMore] = await Promise.all([
+    runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks), false),
+    runJobSafely("import", () => runImportJob(db, locks), false),
+    runJobSafely("export", () => runExportJob(db, locks), false),
+    runJobSafely("bounce", () => runBounceJob(db, locks), undefined),
+    runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks), undefined),
   ]);
 
   if (retentionIsDue(schedule, Date.now())) {
@@ -270,9 +293,15 @@ export async function runWorkerTick(
   }
 
   // Refresh after long drains so Health does not mark the worker stale mid-tick.
-  await runJobSafely("heartbeat", async () => {
-    await touchWorkerHeartbeat(db);
-  });
+  await runJobSafely(
+    "heartbeat",
+    async () => {
+      await touchWorkerHeartbeat(db);
+    },
+    undefined,
+  );
+
+  return mailHasMore || importHasMore || exportHasMore;
 }
 
 /**
@@ -308,8 +337,12 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   try {
     // Each tick is awaited fully before sleep; SIGTERM during a tick finishes the tick, then exits.
     while (!signal.stopped) {
-      await runWorkerTick(db, locks, retention);
+      const mightHaveMore = await runWorkerTick(db, locks, retention);
       if (signal.stopped) break;
+      // A batch bigger than one tick's per-type limit (e.g. mail sent to hundreds of
+      // attendees at once) - keep draining immediately instead of waiting for the next
+      // wake/tick, since the burst's notifications already collapsed into one wake.
+      if (mightHaveMore) continue;
       notify = await ensureNotifyClient(databaseUrl, notify);
       if (notify) {
         await notify.waitForWakeOrTimeout(tickMs, signal);

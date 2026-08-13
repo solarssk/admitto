@@ -37,6 +37,7 @@ vi.mock("@admitto/auth", () => ({
 }));
 
 vi.mock("@admitto/mail-delivery", () => ({
+  DEFAULT_MAIL_DRAIN_LIMIT: 50,
   drainPendingDeliveries,
   ingestBounces,
   nullifyDeliverySnapshots: vi.fn(async () => ({ deliveries: 0 })),
@@ -131,6 +132,38 @@ describe("runWorker", () => {
 
     expect(logSpy.mock.calls.some((c) => String(c[0]).includes("notify=off"))).toBe(true);
     logSpy.mockRestore();
+  });
+
+  it("skips the wait and drains again immediately when a tick reports a backlog", async () => {
+    process.env["DATABASE_URL"] = "postgresql://example/db";
+
+    const notifyClient = {
+      isAlive: vi.fn(() => true),
+      waitForWakeOrTimeout: vi.fn(async (_ms: number, signal: { stopped: boolean }) => {
+        signal.stopped = true;
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    openWorkerNotifyClient.mockReset();
+    openWorkerNotifyClient.mockResolvedValue(notifyClient);
+    openWorkerLockClient.mockClear();
+    drainPendingDeliveries.mockClear();
+
+    // First tick claims a full batch (mail_delivery's limit) - the loop must go straight into
+    // a second tick without waiting. The second tick's base mock (claimed: 0) is idle, so it
+    // falls through to waitForWakeOrTimeout, which stops the loop.
+    drainPendingDeliveries.mockResolvedValueOnce({
+      claimed: 50,
+      sent: 50,
+      failed: 0,
+      skipped: 0,
+      eventIds: ["evt1"],
+    });
+
+    await runWorker({} as never);
+
+    expect(drainPendingDeliveries).toHaveBeenCalledTimes(2);
+    expect(notifyClient.waitForWakeOrTimeout).toHaveBeenCalledOnce();
   });
 
   it("falls back to the plain sleep poll once a tick completes with no notify client", async () => {
