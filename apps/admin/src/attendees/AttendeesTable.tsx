@@ -567,6 +567,7 @@ function BulkMoreActionsMenu({
               onChangeRsvpStatus();
             }}
           />
+          <hr className="more-actions-menu__divider" />
           {/* Desktop already has a direct "Check in" button in the bulk bar, but no direct
            * revoke button anywhere — this menu is the only place for the reverse action, at
            * every screen size, unlike Send tickets above which is mobile-only (PO review, #522
@@ -626,6 +627,7 @@ function BulkMoreActionsMenu({
               onBulkRevokePass();
             }}
           />
+          <hr className="more-actions-menu__divider" />
           {/* Disabled once nothing in the selection has a WalletPass row at all - a mixed
            * selection stays enabled, same "nothing to do" gate as the actions above. The exact
            * count can still include an already-voided pass (skipped server-side and reported in
