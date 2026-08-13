@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Attendee export/import and mail sending now start almost immediately after you trigger them, instead of waiting up to a minute for the background worker's next scheduled check.
+
 ### Fixed
 
 - Organisation settings → Security and Mail: the session-lifetime/timeout number fields and the SMTP/Graph/Power Automate/wallet secret fields now have a stable `id`, so browser password managers and accessibility tools can associate each field with its label instead of treating it as anonymous.
