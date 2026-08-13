@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Event settings → Wallet: registering the PassCreator webhook subscriptions on save no longer logs a false failure and falls back to re-subscribing unconditionally on every save. PassCreator's hook endpoints return success without matching the response shape used elsewhere in its API, so a working subscription was being misread as an error.
+
 ## [0.5.0] - 2026-08-13
 
 ### Added
