@@ -437,10 +437,17 @@ export function AccountPage() {
   const [addPasskeyLabel, setAddPasskeyLabel] = useState("");
   const [addingPasskey, setAddingPasskey] = useState(false);
   const [addPasskeyError, setAddPasskeyError] = useState<string | null>(null);
+  // Non-null only when this passkey was the account's first-ever confirmed MFA method, so the
+  // server minted a fresh batch of backup codes as a side effect - the only plaintext copy ever
+  // shown. Kept separate from addPasskeyError/addingPasskey since registration has already
+  // succeeded server-side by the time these are shown; the dialog stays open only to force
+  // saving them, not to retry anything.
+  const [addPasskeyBackupCodes, setAddPasskeyBackupCodes] = useState<string[] | null>(null);
   const [addSecurityKeyOpen, setAddSecurityKeyOpen] = useState(false);
   const [addSecurityKeyLabel, setAddSecurityKeyLabel] = useState("");
   const [addingSecurityKey, setAddingSecurityKey] = useState(false);
   const [addSecurityKeyError, setAddSecurityKeyError] = useState<string | null>(null);
+  const [addSecurityKeyBackupCodes, setAddSecurityKeyBackupCodes] = useState<string[] | null>(null);
   const [managePasskeysOpen, setManagePasskeysOpen] = useState(false);
   const [manageSecurityKeysOpen, setManageSecurityKeysOpen] = useState(false);
   const [removeCredentialTarget, setRemoveCredentialTarget] = useState<AccountMfaMethodDto | null>(null);
@@ -817,7 +824,7 @@ export function AccountPage() {
             {credentials.length > 0 ? `${credentials.length} registered` : "Not configured"}
           </span>
         </div>
-        {canAdd && (
+        {(canAdd || credentials.length > 0) && (
           <div className="account-mfa-method__action">
             {credentials.length > 0 ? (
               <Button
@@ -1395,6 +1402,9 @@ export function AccountPage() {
             setRemoveTotpCodeRequired(false);
             addToast("Authenticator app removed.", "success");
             await loadAccount();
+            // A step-up code (when required) is a backup code as well as a TOTP code - refresh
+            // the remaining count shown on the Backup codes row in case that's what was used.
+            await loadBackupCodesStatus();
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
               setRemoveTotpCodeRequired(true);
@@ -1740,26 +1750,42 @@ export function AccountPage() {
         open={addPasskeyOpen}
         icon={<i className="ti ti-fingerprint" aria-hidden="true" />}
         title="Add passkey"
-        message="Give this passkey a name so you can recognize it later."
+        message={
+          addPasskeyBackupCodes
+            ? "Passkey added. Save these backup codes — you'll need one if you ever lose access to this passkey."
+            : "Give this passkey a name so you can recognize it later."
+        }
         confirmLabel="Add"
         confirmVariant="primary"
+        cancelLabel={addPasskeyBackupCodes ? "Close" : "Cancel"}
         loading={addingPasskey}
         errorMessage={addPasskeyError ?? undefined}
-        disableConfirm={!addPasskeyLabel.trim()}
+        disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim()}
         onConfirm={async () => {
           setAddingPasskey(true);
           setAddPasskeyError(null);
           try {
             const { options } = await beginWebauthnRegistration({ attachment: "platform" });
             const response = await startRegistration({ optionsJSON: options });
-            await finishWebauthnRegistration({ attachment: "platform", label: addPasskeyLabel.trim(), response });
-            setAddPasskeyOpen(false);
-            setAddPasskeyLabel("");
+            const { backupCodes } = await finishWebauthnRegistration({
+              attachment: "platform",
+              label: addPasskeyLabel.trim(),
+              response,
+            });
             addToast("Passkey added.", "success");
             await loadAccount();
             // See the matching comment on the TOTP confirm handler above - a first-ever
             // confirmed MFA method mints backup codes as a side effect.
             await loadBackupCodesStatus();
+            if (backupCodes.length > 0) {
+              // The only plaintext copy ever shown - keep the dialog open until the user
+              // confirms they've saved them, same pattern as regenerateBackupCodes below.
+              setBackupCodesSaved(false);
+              setAddPasskeyBackupCodes(backupCodes);
+            } else {
+              setAddPasskeyOpen(false);
+              setAddPasskeyLabel("");
+            }
           } catch (err) {
             setAddPasskeyError(
               err instanceof ApiError
@@ -1771,49 +1797,68 @@ export function AccountPage() {
           }
         }}
         onCancel={() => {
-          if (!addingPasskey) {
-            setAddPasskeyOpen(false);
-            setAddPasskeyLabel("");
-            setAddPasskeyError(null);
-          }
+          if (addingPasskey) return;
+          if (addPasskeyBackupCodes && !backupCodesSaved) return;
+          setAddPasskeyOpen(false);
+          setAddPasskeyLabel("");
+          setAddPasskeyError(null);
+          setAddPasskeyBackupCodes(null);
         }}
       >
-        <Input
-          id="account-add-passkey-label"
-          label="Name"
-          placeholder="e.g. MacBook Touch ID"
-          autoComplete="off"
-          maxLength={120}
-          value={addPasskeyLabel}
-          disabled={addingPasskey}
-          onChange={(e) => setAddPasskeyLabel(e.target.value)}
-        />
+        {addPasskeyBackupCodes ? (
+          renderBackupCodesSection(addPasskeyBackupCodes, false)
+        ) : (
+          <Input
+            id="account-add-passkey-label"
+            label="Name"
+            placeholder="e.g. MacBook Touch ID"
+            autoComplete="off"
+            maxLength={120}
+            value={addPasskeyLabel}
+            disabled={addingPasskey}
+            onChange={(e) => setAddPasskeyLabel(e.target.value)}
+          />
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
         open={addSecurityKeyOpen}
         icon={<i className="ti ti-key" aria-hidden="true" />}
         title="Add security key"
-        message="Give this security key a name so you can recognize it later."
+        message={
+          addSecurityKeyBackupCodes
+            ? "Security key added. Save these backup codes — you'll need one if you ever lose access to this security key."
+            : "Give this security key a name so you can recognize it later."
+        }
         confirmLabel="Add"
         confirmVariant="primary"
+        cancelLabel={addSecurityKeyBackupCodes ? "Close" : "Cancel"}
         loading={addingSecurityKey}
         errorMessage={addSecurityKeyError ?? undefined}
-        disableConfirm={!addSecurityKeyLabel.trim()}
+        disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim()}
         onConfirm={async () => {
           setAddingSecurityKey(true);
           setAddSecurityKeyError(null);
           try {
             const { options } = await beginWebauthnRegistration({ attachment: "cross-platform" });
             const response = await startRegistration({ optionsJSON: options });
-            await finishWebauthnRegistration({ attachment: "cross-platform", label: addSecurityKeyLabel.trim(), response });
-            setAddSecurityKeyOpen(false);
-            setAddSecurityKeyLabel("");
+            const { backupCodes } = await finishWebauthnRegistration({
+              attachment: "cross-platform",
+              label: addSecurityKeyLabel.trim(),
+              response,
+            });
             addToast("Security key added.", "success");
             await loadAccount();
             // See the matching comment on the TOTP confirm handler above - a first-ever
             // confirmed MFA method mints backup codes as a side effect.
             await loadBackupCodesStatus();
+            if (backupCodes.length > 0) {
+              setBackupCodesSaved(false);
+              setAddSecurityKeyBackupCodes(backupCodes);
+            } else {
+              setAddSecurityKeyOpen(false);
+              setAddSecurityKeyLabel("");
+            }
           } catch (err) {
             setAddSecurityKeyError(
               err instanceof ApiError
@@ -1825,23 +1870,28 @@ export function AccountPage() {
           }
         }}
         onCancel={() => {
-          if (!addingSecurityKey) {
-            setAddSecurityKeyOpen(false);
-            setAddSecurityKeyLabel("");
-            setAddSecurityKeyError(null);
-          }
+          if (addingSecurityKey) return;
+          if (addSecurityKeyBackupCodes && !backupCodesSaved) return;
+          setAddSecurityKeyOpen(false);
+          setAddSecurityKeyLabel("");
+          setAddSecurityKeyError(null);
+          setAddSecurityKeyBackupCodes(null);
         }}
       >
-        <Input
-          id="account-add-security-key-label"
-          label="Name"
-          placeholder="e.g. YubiKey 5C"
-          autoComplete="off"
-          maxLength={120}
-          value={addSecurityKeyLabel}
-          disabled={addingSecurityKey}
-          onChange={(e) => setAddSecurityKeyLabel(e.target.value)}
-        />
+        {addSecurityKeyBackupCodes ? (
+          renderBackupCodesSection(addSecurityKeyBackupCodes, false)
+        ) : (
+          <Input
+            id="account-add-security-key-label"
+            label="Name"
+            placeholder="e.g. YubiKey 5C"
+            autoComplete="off"
+            maxLength={120}
+            value={addSecurityKeyLabel}
+            disabled={addingSecurityKey}
+            onChange={(e) => setAddSecurityKeyLabel(e.target.value)}
+          />
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -1870,6 +1920,9 @@ export function AccountPage() {
             setRemoveCredentialCodeRequired(false);
             addToast(`${removedLabel} removed.`, "success");
             await loadAccount();
+            // Same reasoning as the TOTP-removal handler above - a step-up code here can be a
+            // backup code too.
+            await loadBackupCodesStatus();
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
               setRemoveCredentialCodeRequired(true);

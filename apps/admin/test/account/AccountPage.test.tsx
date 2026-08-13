@@ -2373,6 +2373,43 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
   });
 
+  it("shows and requires saving the first-ever batch of backup codes when adding a passkey", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce(baseAccount)
+      .mockResolvedValueOnce({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
+    mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
+    const codes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `NEW-CODE-${i}`);
+    mockFinishWebauthnRegistration.mockResolvedValueOnce({ ok: true, id: "cred-1", backupCodes: codes });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "MacBook Touch ID" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Passkey added\./);
+    });
+    // Toasting/confirming the passkey doesn't close the dialog - the backup codes still need
+    // to be saved first, same as first-time TOTP setup.
+    expect(within(dialog).getByText(`Backup codes: save all ${codes.length}, shown once`)).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Add" }).hasAttribute("disabled")).toBe(true);
+
+    // Cannot dismiss (even via the backdrop) until the checkbox is checked.
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Add passkey" })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByLabelText("I've saved my backup codes"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("adds a security key end to end", async () => {
     mockFetchAccount
       .mockResolvedValueOnce(baseAccount)
@@ -2405,6 +2442,42 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       label: "YubiKey 5C",
       response: FAKE_REGISTRATION_RESPONSE,
     });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows and requires saving the first-ever batch of backup codes when adding a security key", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce(baseAccount)
+      .mockResolvedValueOnce({
+        ...baseAccount,
+        mfa_methods: [makeWebauthnMethod({ attachment: "cross-platform" })],
+      });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
+    mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
+    const codes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `NEW-CODE-${i}`);
+    mockFinishWebauthnRegistration.mockResolvedValueOnce({ ok: true, id: "cred-2", backupCodes: codes });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Security key added\./);
+    });
+    expect(within(dialog).getByText(`Backup codes: save all ${codes.length}, shown once`)).toBeTruthy();
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Add security key" })).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByLabelText("I've saved my backup codes"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -2807,6 +2880,46 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", "123456");
   });
 
+  it("refreshes the backup codes status after removing a credential with a step-up code", async () => {
+    const account: AccountDto = {
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod(),
+      ],
+    };
+    mockFetchAccount.mockResolvedValue(account);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus
+      .mockResolvedValueOnce({ total: 10, remaining: 10 })
+      .mockResolvedValueOnce({ total: 10, remaining: 9 });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockDeleteWebauthnCredential
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => {
+      expect(within(dialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    });
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "a-backup-code" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("shows an inline error for a non-step-up credential removal failure", async () => {
     mockLoadedAccount({
       ...baseAccount,
@@ -2982,6 +3095,21 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     ).toBeTruthy();
   });
 
+  it("keeps Manage available for an already-registered passkey even when webauthn is disabled for the instance", async () => {
+    mockLoadedAccount({
+      ...baseAccount,
+      webauthn_enabled: false,
+      mfa_methods: [makeWebauthnMethod()],
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    // Add is still gone - only removal/inspection of what's already registered stays available.
+    expect(screen.queryAllByRole("button", { name: "Add" })).toHaveLength(0);
+  });
+
   it("hides Add passkey/Add security key when the account has no local password", async () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: false, webauthn_enabled: true, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
@@ -3092,6 +3220,39 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
     expect(mockDeleteAccountTotp).toHaveBeenLastCalledWith("123456");
+  });
+
+  it("refreshes the backup codes status after removing TOTP with a step-up code", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount
+      .mockResolvedValueOnce(totpEnrolledAccount)
+      .mockResolvedValueOnce(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus
+      .mockResolvedValueOnce({ total: 10, remaining: 10 })
+      .mockResolvedValueOnce({ total: 10, remaining: 9 });
+    mockDeleteAccountTotp
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(totpRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage authenticator app" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => {
+      expect(within(dialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    });
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "a-backup-code" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("shows an inline error for a non-step-up removal failure", async () => {
