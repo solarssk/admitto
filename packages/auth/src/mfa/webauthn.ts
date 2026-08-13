@@ -70,7 +70,6 @@ export async function beginWebauthnRegistration(
         transports: toTransports(c.webauthn_transports),
       })),
     authenticatorSelection: {
-      authenticatorAttachment: attachment,
       // Passkeys must be discoverable (resident) to earn the name and sync across a password
       // manager/iCloud Keychain. Security keys don't need it — we always pass an explicit
       // `allowCredentials` list at assertion time (never usernameless login), so preferring
@@ -80,7 +79,18 @@ export async function beginWebauthnRegistration(
       // Ask, don't require — mirrors how a TOTP code alone already counts as the second factor.
       userVerification: "preferred",
     },
+    // Non-binding UI ordering hint (WebAuthn Level 3 `hints`, Chrome/Edge 128+) rather than a
+    // hard `authenticatorAttachment` filter: a synced/vault-backed authenticator from a
+    // third-party password manager extension doesn't always self-identify as "platform", and
+    // whether it should is an open dispute (github.com/bitwarden/clients/issues/6963) - a hard
+    // requirement there can outright block the ceremony instead of just de-prioritizing it in
+    // the picker.
+    preferredAuthenticatorType: attachment === "platform" ? "localDevice" : "securityKey",
   });
+  // @simplewebauthn/server sets `authenticatorSelection.authenticatorAttachment` itself as a
+  // backwards-compatibility side effect of `preferredAuthenticatorType` above - strip it back
+  // out, otherwise it reintroduces the exact hard block this whole change exists to avoid.
+  delete options.authenticatorSelection?.authenticatorAttachment;
 
   return { options, challenge: options.challenge };
 }
