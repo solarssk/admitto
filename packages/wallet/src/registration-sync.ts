@@ -38,11 +38,14 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-/** Always stamps registration_checked_at, even when the provider call itself fails - otherwise a
- * persistently-failing row (revoked key, provider outage) never advances past this batch's
- * oldest-first ordering and starves every other candidate, in this event and every other, from
- * ever being re-checked again. Still rejects on failure so the caller's Promise.allSettled counts
- * it as `failed`, matching its existing contract - only the DB write changes shape. */
+/** Always stamps registration_sync_attempted_at, even when the provider call itself fails -
+ * otherwise a persistently-failing row (revoked key, provider outage) never advances past this
+ * batch's oldest-first ordering and starves every other candidate, in this event and every
+ * other, from ever being re-checked again. registration_checked_at only advances on a genuine
+ * successful read, so it stays a trustworthy "last known good" for the UI instead of being
+ * conflated with a mere retry-backoff timestamp. Still rejects on failure so the caller's
+ * Promise.allSettled counts it as `failed`, matching its existing contract - only the DB write
+ * changes shape. */
 async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: CandidateRow): Promise<void> {
   let status: Awaited<ReturnType<WalletPassProvider["getRegistrationStatus"]>> | null = null;
   let err: unknown;
@@ -56,7 +59,7 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
   await db.walletPass.update({
     where: { attendee_id: row.attendee_id },
     data: err
-      ? { registration_checked_at: new Date() }
+      ? { registration_sync_attempted_at: new Date() }
       : {
           apple_active_registrations: status?.appleActiveRegistrations ?? null,
           apple_inactive_registrations: status?.appleInactiveRegistrations ?? null,
@@ -64,6 +67,7 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
           google_inactive_registrations: status?.googleInactiveRegistrations ?? null,
           first_downloaded_at: status?.firstDownloadedAt ?? null,
           registration_checked_at: new Date(),
+          registration_sync_attempted_at: new Date(),
         },
   });
   if (err) throw err;
@@ -71,9 +75,10 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
 
 /** Resolves one event's provider and syncs its rows, mutating `result` in place - split out of
  * runWalletRegistrationSync to keep its own cognitive complexity under the SonarCloud threshold
- * (S3776). Rows for an event with no resolvable provider still get registration_checked_at
+ * (S3776). Rows for an event with no resolvable provider still get registration_sync_attempted_at
  * bumped (same starvation reasoning as syncOne's own failure path above) instead of being
- * silently left null forever. */
+ * silently left null forever - registration_checked_at is untouched, since no read actually
+ * happened. */
 async function syncEventBucket(
   db: PrismaClient,
   event: CandidateRow["attendee"]["event"],
@@ -92,7 +97,7 @@ async function syncEventBucket(
     result.skippedNoProvider += rows.length;
     await db.walletPass.updateMany({
       where: { attendee_id: { in: rows.map((row) => row.attendee_id) } },
-      data: { registration_checked_at: new Date() },
+      data: { registration_sync_attempted_at: new Date() },
     });
     return;
   }
@@ -112,15 +117,18 @@ async function syncEventBucket(
  * PassCreator (GET /api/v3/pass?userProvidedId=...) - never called on a request path, only from
  * the `wallet_sync` worker job (apps/cli). Picks up passes that are active or voided (voiding
  * only flips PassCreator's own `voided` flag - it doesn't unregister the device, so a voided pass
- * can still be genuinely registered) whose `registration_checked_at` is missing or older than
- * WALLET_SYNC_STALE_MS, oldest-first, capped at WALLET_SYNC_BATCH_LIMIT per call so one tick can't
- * run unbounded - the rest simply wait for the next tick. Groups candidates by event so each
- * event's provider (and its one API-key decrypt) is resolved once, not once per pass. A
+ * can still be genuinely registered) whose `registration_sync_attempted_at` is missing or older
+ * than WALLET_SYNC_STALE_MS, oldest-first, capped at WALLET_SYNC_BATCH_LIMIT per call so one tick
+ * can't run unbounded - the rest simply wait for the next tick. Groups candidates by event so
+ * each event's provider (and its one API-key decrypt) is resolved once, not once per pass. A
  * getRegistrationStatus failure for one pass (provider outage, revoked key, ...) is caught and
  * counted as `failed` rather than aborting the whole batch - its registration counts are left
- * alone, but registration_checked_at is still bumped so it backs off for WALLET_SYNC_STALE_MS
- * like a successful check would, instead of permanently monopolizing every future batch's
- * oldest-first selection (same reasoning applies to an entire event with no resolvable provider).
+ * alone, but registration_sync_attempted_at is still bumped so it backs off for
+ * WALLET_SYNC_STALE_MS instead of permanently monopolizing every future batch's oldest-first
+ * selection (same reasoning applies to an entire event with no resolvable provider).
+ * registration_checked_at, read separately by the admin UI, only advances on an actual successful
+ * read - it is never used for this scheduling decision, so a failing row's UI-facing "last known
+ * good" timestamp doesn't silently drift forward while it keeps failing.
  */
 export async function runWalletRegistrationSync(
   db: PrismaClient,
@@ -132,7 +140,10 @@ export async function runWalletRegistrationSync(
       status: { in: ["active", "voided"] },
       provider_pass_id: { not: null },
       user_provided_id: { not: null },
-      OR: [{ registration_checked_at: null }, { registration_checked_at: { lt: staleBefore } }],
+      OR: [
+        { registration_sync_attempted_at: null },
+        { registration_sync_attempted_at: { lt: staleBefore } },
+      ],
     },
     select: {
       attendee_id: true,
@@ -151,7 +162,7 @@ export async function runWalletRegistrationSync(
       },
     },
     take: WALLET_SYNC_BATCH_LIMIT,
-    orderBy: { registration_checked_at: { sort: "asc", nulls: "first" } },
+    orderBy: { registration_sync_attempted_at: { sort: "asc", nulls: "first" } },
   });
 
   const result: WalletRegistrationSyncResult = {

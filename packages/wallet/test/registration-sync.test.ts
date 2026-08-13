@@ -76,7 +76,7 @@ describe("runWalletRegistrationSync", () => {
     expect(result).toEqual({ checked: 2, updated: 2, skippedNoProvider: 0, failed: 0 });
   });
 
-  it("counts passes as skippedNoProvider when the event has no resolvable provider, still bumping registration_checked_at so they don't starve future batches", async () => {
+  it("counts passes as skippedNoProvider when the event has no resolvable provider, bumping registration_sync_attempted_at (not registration_checked_at) so they don't starve future batches", async () => {
     const db = makeDb([row(), row({ attendee_id: "att-2", user_provided_id: "admitto:evt-1:att-2" })]);
     mockResolveWalletProvider.mockReturnValue(null);
 
@@ -85,7 +85,7 @@ describe("runWalletRegistrationSync", () => {
     expect(db.walletPass.update).not.toHaveBeenCalled();
     expect(db.walletPass.updateMany).toHaveBeenCalledWith({
       where: { attendee_id: { in: ["att-1", "att-2"] } },
-      data: { registration_checked_at: expect.any(Date) },
+      data: { registration_sync_attempted_at: expect.any(Date) },
     });
     expect(result).toEqual({ checked: 0, updated: 0, skippedNoProvider: 2, failed: 0 });
   });
@@ -104,7 +104,7 @@ describe("runWalletRegistrationSync", () => {
     expect(result).toEqual({ checked: 2, updated: 1, skippedNoProvider: 0, failed: 1 });
   });
 
-  it("still bumps registration_checked_at on a failed row (only) - otherwise it would starve every future batch", async () => {
+  it("bumps registration_sync_attempted_at (only) on a failed row, leaving registration_checked_at untouched so the UI's last-known-good time doesn't drift on a failing retry", async () => {
     const db = makeDb([row()]);
     const getRegistrationStatus = vi.fn().mockRejectedValueOnce(new Error("network down"));
     mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
@@ -113,7 +113,7 @@ describe("runWalletRegistrationSync", () => {
 
     expect(db.walletPass.update).toHaveBeenCalledWith({
       where: { attendee_id: "att-1" },
-      data: { registration_checked_at: expect.any(Date) },
+      data: { registration_sync_attempted_at: expect.any(Date) },
     });
   });
 
@@ -142,7 +142,7 @@ describe("runWalletRegistrationSync", () => {
     expect(mockResolveWalletProvider).toHaveBeenCalledTimes(2);
   });
 
-  it("writes all-null registration fields (but still stamps registration_checked_at) when the provider returns no match", async () => {
+  it("writes all-null registration fields (but still stamps both registration_checked_at and registration_sync_attempted_at) when the provider returns no match", async () => {
     const db = makeDb([row()]);
     const getRegistrationStatus = vi.fn(async () => null);
     mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
@@ -153,15 +153,21 @@ describe("runWalletRegistrationSync", () => {
     expect(call.data.apple_active_registrations).toBeNull();
     expect(call.data.first_downloaded_at).toBeNull();
     expect(call.data.registration_checked_at).toBeInstanceOf(Date);
+    expect(call.data.registration_sync_attempted_at).toBeInstanceOf(Date);
   });
 
-  it("queries only active/voided passes with a known provider_pass_id, capped at WALLET_SYNC_BATCH_LIMIT", async () => {
+  it("queries only active/voided passes with a known provider_pass_id, capped at WALLET_SYNC_BATCH_LIMIT, staleness keyed off registration_sync_attempted_at", async () => {
     const db = makeDb([]);
     await runWalletRegistrationSync(db, 1_000_000);
 
     const args = db.walletPass.findMany.mock.calls[0][0];
     expect(args.where.status).toEqual({ in: ["active", "voided"] });
     expect(args.where.provider_pass_id).toEqual({ not: null });
+    expect(args.where.OR).toEqual([
+      { registration_sync_attempted_at: null },
+      { registration_sync_attempted_at: { lt: expect.any(Date) } },
+    ]);
+    expect(args.orderBy).toEqual({ registration_sync_attempted_at: { sort: "asc", nulls: "first" } });
     expect(args.take).toBe(WALLET_SYNC_BATCH_LIMIT);
   });
 });
