@@ -132,6 +132,22 @@ async function runMailDeliveryJob(db: PrismaClient, locks: WorkerLockClient): Pr
   }
 }
 
+/** Refreshes the worker heartbeat every 60s while `fn` runs. import/export/wallet_push each have
+ * a stale-running budget (15/15/30 min) well past the 5-minute heartbeat-stale floor tuned for a
+ * typical short drain (see packages/db/src/worker-heartbeat.ts) - a big one can legitimately
+ * outlast that floor and would otherwise show as a dead worker in Health mid-drain (bot review).
+ * Timer is always cleared before returning, success or failure. */
+async function withHeartbeatRefresh<T>(db: PrismaClient, jobName: string, fn: () => Promise<T>): Promise<T> {
+  const timer = setInterval(() => {
+    touchWorkerHeartbeat(db).catch((err) => log(jobName, `heartbeat refresh failed: ${errMessage(err)}`));
+  }, 60_000);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 /** @returns true when a job was claimed this tick - the drain takes one at a time, so another
  * may already be waiting behind it. */
 async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
@@ -142,10 +158,9 @@ async function runImportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
-    const result = await drainImportJobs(db, getDefaultStorage(), {
-      limit: 1,
-      heartbeatStaleMs,
-    });
+    const result = await withHeartbeatRefresh(db, "import", () =>
+      drainImportJobs(db, getDefaultStorage(), { limit: 1, heartbeatStaleMs }),
+    );
     if (result.claimed === 0 && result.reclaimed === 0 && result.healed === 0) {
       log("import", "idle");
       return false;
@@ -170,10 +185,9 @@ async function runExportJob(db: PrismaClient, locks: WorkerLockClient): Promise<
   }
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
-    const result = await drainExportJobs(db, getDefaultStorage(), {
-      limit: 1,
-      heartbeatStaleMs,
-    });
+    const result = await withHeartbeatRefresh(db, "export", () =>
+      drainExportJobs(db, getDefaultStorage(), { limit: 1, heartbeatStaleMs }),
+    );
     if (result.claimed === 0 && result.reclaimed === 0) {
       log("export", "idle");
       return false;
@@ -195,16 +209,11 @@ async function runWalletPushJob(db: PrismaClient, locks: WorkerLockClient): Prom
     log("wallet_push", "skipped (lock held)");
     return false;
   }
-  // A big push can genuinely run past the 5-minute heartbeat-stale floor (tuned for shorter
-  // import/export drains, see packages/db/src/worker-heartbeat.ts) - refresh it periodically
-  // while this drain is in flight so Health doesn't read a legitimately busy worker as dead
-  // (bot review). Well under that floor; cleared before the lock is released either way.
-  const heartbeatTimer = setInterval(() => {
-    touchWorkerHeartbeat(db).catch((err) => log("wallet_push", `heartbeat refresh failed: ${errMessage(err)}`));
-  }, 60_000);
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
-    const result = await drainWalletPushJobs(db, { limit: 1, heartbeatStaleMs });
+    const result = await withHeartbeatRefresh(db, "wallet_push", () =>
+      drainWalletPushJobs(db, { limit: 1, heartbeatStaleMs }),
+    );
     if (result.claimed === 0 && result.reclaimed === 0) {
       log("wallet_push", "idle");
       return false;
@@ -215,7 +224,6 @@ async function runWalletPushJob(db: PrismaClient, locks: WorkerLockClient): Prom
     );
     return result.claimed > 0;
   } finally {
-    clearInterval(heartbeatTimer);
     await locks.release("wallet_push");
   }
 }
