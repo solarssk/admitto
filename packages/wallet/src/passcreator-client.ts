@@ -74,9 +74,17 @@ export class PassCreatorClient implements WalletPassProvider {
   private readonly fetchFn: FetchFn;
 
   constructor(config: PassCreatorConfig, fetchFn: FetchFn = fetch) {
+    const baseUrl = config.baseUrl ?? PASSCREATOR_DEFAULT_BASE_URL;
+    // Defense in depth: every application caller already resolves baseUrl through a path that
+    // rejects a non-HTTPS override (resolvePassCreatorBaseUrl in apps/web/src/config.ts), but this
+    // client sends the API key in a plain Authorization header - a future caller (or a test) that
+    // skips that resolver must not be able to leak the key over plaintext by construction.
+    if (!baseUrl.startsWith("https://")) {
+      throw new Error(`PassCreatorClient: baseUrl must be HTTPS, got "${baseUrl}"`);
+    }
     this.apiKey = config.apiKey;
     this.templateId = config.templateId;
-    this.baseUrl = config.baseUrl ?? PASSCREATOR_DEFAULT_BASE_URL;
+    this.baseUrl = baseUrl;
     this.fieldMapping = config.fieldMapping;
     this.fetchFn = fetchFn;
   }

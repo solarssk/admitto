@@ -266,6 +266,12 @@ describe("PassCreatorClient config", () => {
     await client.createPass(INPUT);
     expect(fetchMock).toHaveBeenCalled();
   });
+
+  it("rejects a non-HTTPS baseUrl override at construction, before any request is sent", () => {
+    expect(
+      () => new PassCreatorClient({ apiKey: "test-key", templateId: "tmpl-1", baseUrl: "http://pc.test" }),
+    ).toThrow(/HTTPS/);
+  });
 });
 
 describe("PassCreatorClient.updatePass", () => {
