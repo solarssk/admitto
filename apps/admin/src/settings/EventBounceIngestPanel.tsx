@@ -552,6 +552,7 @@ export const EventBounceIngestPanel = forwardRef<
                     onChange={(e) => setDraft((d) => ({ ...d, imapUsername: e.target.value }))}
                   />
                   <SecretFieldRow
+                    id="bounce-ingest-password"
                     label="Password"
                     field={passwordField}
                     edit={secrets.smtpPassword}

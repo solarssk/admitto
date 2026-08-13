@@ -1576,6 +1576,7 @@ export function EventSettingsPage() {
                   </div>
                 </div>
                 <SecretFieldRow
+                  id="event-wallet-api-key"
                   label="API key"
                   hint={WALLET_API_KEY_HINT}
                   field={{
