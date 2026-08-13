@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync, createSign } from "node:crypto";
+import { Prisma } from "@admitto/db";
 import {
   applyWebhookUpdate,
   parseAdmittoUserProvidedId,
@@ -7,6 +8,13 @@ import {
   parseWebhookEnvelope,
   verifyWebhookSignature,
 } from "../src/passcreator-webhook.js";
+
+function recordNotFoundError(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError("Record to update not found", {
+    code: "P2025",
+    clientVersion: "test",
+  });
+}
 
 function signP256(data: string, privateKeyPem: string): string {
   const signer = createSign("SHA256");
@@ -194,9 +202,17 @@ describe("applyWebhookUpdate", () => {
 
   it("returns matched: false (not throw) when no WalletPass row matches (Prisma P2025)", async () => {
     const db = makeDb();
-    db.walletPass.update.mockRejectedValueOnce(new Error("Record to update not found"));
+    db.walletPass.update.mockRejectedValueOnce(recordNotFoundError());
     const result = await applyWebhookUpdate(db as never, { identifier: "pc-gone" });
     expect(result).toEqual({ matched: false });
+  });
+
+  it("propagates a non-P2025 failure instead of silently reporting matched: false", async () => {
+    const db = makeDb();
+    db.walletPass.update.mockRejectedValueOnce(new Error("connection terminated unexpectedly"));
+    await expect(applyWebhookUpdate(db as never, { identifier: "pc-1" })).rejects.toThrow(
+      "connection terminated unexpectedly",
+    );
   });
 
   it("sets status: voided and voided_at when voided: true", async () => {

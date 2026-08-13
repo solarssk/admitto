@@ -1,5 +1,6 @@
 import { createVerify } from "node:crypto";
-import type { Prisma, PrismaClient } from "@admitto/db";
+import { Prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 
 /**
  * Outer envelope PassCreator posts to a subscribed webhook when `signPayload: true` was set at
@@ -120,15 +121,21 @@ export function parseAdmittoUserProvidedId(userProvidedId: string): { eventId: s
  * same delivery twice (PassCreator's retryEnabled: true can redeliver) has no different effect
  * than processing it once.
  */
+function webhookMatchWhere(data: PassCreatorWebhookData): Prisma.WalletPassWhereUniqueInput | null {
+  if (data.userProvidedId) {
+    return { provider_user_provided_id: { provider: "passcreator", user_provided_id: data.userProvidedId } };
+  }
+  if (data.identifier) {
+    return { provider_provider_pass_id: { provider: "passcreator", provider_pass_id: data.identifier } };
+  }
+  return null;
+}
+
 export async function applyWebhookUpdate(
   db: PrismaClient,
   data: PassCreatorWebhookData,
 ): Promise<{ matched: boolean }> {
-  const where: Prisma.WalletPassWhereUniqueInput | null = data.userProvidedId
-    ? { provider_user_provided_id: { provider: "passcreator", user_provided_id: data.userProvidedId } }
-    : data.identifier
-      ? { provider_provider_pass_id: { provider: "passcreator", provider_pass_id: data.identifier } }
-      : null;
+  const where = webhookMatchWhere(data);
   if (!where) return { matched: false };
 
   const updateData: Prisma.WalletPassUpdateInput = { registration_checked_at: new Date() };
@@ -158,9 +165,15 @@ export async function applyWebhookUpdate(
   try {
     await db.walletPass.update({ where, data: updateData });
     return { matched: true };
-  } catch {
-    // Prisma throws (P2025) when the where clause matches no row - not an error worth surfacing,
-    // the pass may have been erased since PassCreator queued this delivery.
-    return { matched: false };
+  } catch (err) {
+    // P2025 ("record to update not found") is the only expected failure here - the pass may have
+    // been erased since PassCreator queued this delivery, not an error worth surfacing. Anything
+    // else (a transient DB outage, a timeout) must propagate: the caller returns a bare 200 for a
+    // matched:false result either way, and PassCreator's own retry mechanism only redelivers on a
+    // non-2xx response - swallowing a real failure here would silently drop the update for good.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return { matched: false };
+    }
+    throw err;
   }
 }
