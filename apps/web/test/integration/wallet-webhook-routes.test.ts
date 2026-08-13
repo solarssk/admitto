@@ -187,7 +187,8 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     const body = signedRequest({
       identifier: "pc-webhook-1",
       userProvidedId: USER_PROVIDED_ID,
-      noOfActiveRegistrationsAppleWallet: 1,
+      operatingSystem: "iOS",
+      noOfActivePasses: 1,
       firstDownloadedAt: "2026-08-01 10:00:00",
     });
 

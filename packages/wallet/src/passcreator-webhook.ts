@@ -8,28 +8,39 @@ import type { PrismaClient } from "@admitto/db";
  * signed as-is (the exact string bytes, not a re-serialization of parsed JSON) - verify it BEFORE
  * calling JSON.parse on it, and never trust the parsed contents until verification succeeds.
  *
- * UNCONFIRMED (2026-08-13): docs show this signature scheme for API responses in general, not a
- * concrete example of a webhook delivery body specifically - the exact field names here, and
- * whether there is a separate discriminator field for which of the 4 subscribed events this is,
- * needs confirming against a real delivery before this is trusted in production (see the wallet
- * webhook task list / bug report companion doc).
+ * CONFIRMED LIVE (2026-08-13, pushnotification_unregistered delivery): the top-level POST body is
+ * the full pass row itself (identifier, userProvidedId, operatingSystem, noOfActivePasses,
+ * noOfInactivePasses, the template's own custom field keys, ...) with `signature`/`signedData`
+ * appended - `signedData` re-serializes that same body (itself carrying its own nested
+ * signature/signedData one level deeper; only the outer level needs verifying/parsing, the deeper
+ * nesting is presumably an artifact of PassCreator's own delivery-log rendering, not something we
+ * need to walk). Confirms the {signedData, signature} envelope shape assumed here. Still
+ * UNCONFIRMED: the exact shape of a pass_voided delivery (whether `voided` is a top-level boolean
+ * or something else) and of first_pushnotification_registered (whether firstDownloadedAt appears
+ * there) - only pushnotification_unregistered has been observed live so far.
  */
 export interface PassCreatorWebhookEnvelope {
   signedData: string;
   signature: string;
 }
 
-/** Fields observed on PassCreator search-result rows (packages/wallet/src/passcreator-client.ts)
- * that a webhook delivery's signedData is expected to carry a subset of - deliberately permissive
- * (all optional) since we apply whatever's present rather than requiring an exact shape. */
+/** Fields read from a webhook delivery's (verified) signedData - deliberately permissive (all
+ * optional) since we apply whatever's present rather than requiring an exact shape.
+ *
+ * `noOfActivePasses`/`noOfInactivePasses` + `operatingSystem` (confirmed live 2026-08-13) is a
+ * DIFFERENT shape than the v3 search endpoint's per-platform
+ * noOfActiveRegistrationsAppleWallet/...GoogleWallet fields (packages/wallet/src/passcreator-
+ * client.ts) - the webhook fires per specific device/platform event and reports that platform's
+ * own counts, not a global split across both. `operatingSystem` names which of the two platforms
+ * this delivery's counts belong to; only "iOS" has been observed live, "Android" is assumed for
+ * everything else since Admitto only ever issues Apple/Google passes. */
 export interface PassCreatorWebhookData {
   identifier?: string;
   userProvidedId?: string;
   voided?: boolean;
-  noOfActiveRegistrationsAppleWallet?: number;
-  noOfInactiveRegistrationsAppleWallet?: number;
-  noOfActiveRegistrationsGoogleWallet?: number;
-  noOfInactiveRegistrationsGoogleWallet?: number;
+  operatingSystem?: string;
+  noOfActivePasses?: number;
+  noOfInactivePasses?: number;
   firstDownloadedAt?: string | null;
 }
 
@@ -80,18 +91,9 @@ export function parseWebhookData(signedData: string): PassCreatorWebhookData | n
   if (typeof r["identifier"] === "string") data.identifier = r["identifier"];
   if (typeof r["userProvidedId"] === "string") data.userProvidedId = r["userProvidedId"];
   if (typeof r["voided"] === "boolean") data.voided = r["voided"];
-  if (typeof r["noOfActiveRegistrationsAppleWallet"] === "number") {
-    data.noOfActiveRegistrationsAppleWallet = r["noOfActiveRegistrationsAppleWallet"];
-  }
-  if (typeof r["noOfInactiveRegistrationsAppleWallet"] === "number") {
-    data.noOfInactiveRegistrationsAppleWallet = r["noOfInactiveRegistrationsAppleWallet"];
-  }
-  if (typeof r["noOfActiveRegistrationsGoogleWallet"] === "number") {
-    data.noOfActiveRegistrationsGoogleWallet = r["noOfActiveRegistrationsGoogleWallet"];
-  }
-  if (typeof r["noOfInactiveRegistrationsGoogleWallet"] === "number") {
-    data.noOfInactiveRegistrationsGoogleWallet = r["noOfInactiveRegistrationsGoogleWallet"];
-  }
+  if (typeof r["operatingSystem"] === "string") data.operatingSystem = r["operatingSystem"];
+  if (typeof r["noOfActivePasses"] === "number") data.noOfActivePasses = r["noOfActivePasses"];
+  if (typeof r["noOfInactivePasses"] === "number") data.noOfInactivePasses = r["noOfInactivePasses"];
   if (typeof r["firstDownloadedAt"] === "string" || r["firstDownloadedAt"] === null) {
     data.firstDownloadedAt = r["firstDownloadedAt"] as string | null;
   }
@@ -139,17 +141,20 @@ export async function applyWebhookUpdate(
   if (!where) return { matched: false };
 
   const updateData: Prisma.WalletPassUpdateInput = { registration_checked_at: new Date() };
-  if (data.noOfActiveRegistrationsAppleWallet !== undefined) {
-    updateData.apple_active_registrations = data.noOfActiveRegistrationsAppleWallet;
-  }
-  if (data.noOfInactiveRegistrationsAppleWallet !== undefined) {
-    updateData.apple_inactive_registrations = data.noOfInactiveRegistrationsAppleWallet;
-  }
-  if (data.noOfActiveRegistrationsGoogleWallet !== undefined) {
-    updateData.google_active_registrations = data.noOfActiveRegistrationsGoogleWallet;
-  }
-  if (data.noOfInactiveRegistrationsGoogleWallet !== undefined) {
-    updateData.google_inactive_registrations = data.noOfInactiveRegistrationsGoogleWallet;
+  // operatingSystem names which platform's counts this delivery carries (confirmed live
+  // 2026-08-13: "iOS" for Apple Wallet events) - without it we can't tell which pair of
+  // apple_*/google_* columns noOfActivePasses/noOfInactivePasses belongs to, so both stay
+  // untouched rather than guessing.
+  if (data.operatingSystem !== undefined) {
+    const isApple = data.operatingSystem.toLowerCase() === "ios";
+    if (data.noOfActivePasses !== undefined) {
+      if (isApple) updateData.apple_active_registrations = data.noOfActivePasses;
+      else updateData.google_active_registrations = data.noOfActivePasses;
+    }
+    if (data.noOfInactivePasses !== undefined) {
+      if (isApple) updateData.apple_inactive_registrations = data.noOfInactivePasses;
+      else updateData.google_inactive_registrations = data.noOfInactivePasses;
+    }
   }
   if (data.firstDownloadedAt !== undefined) {
     updateData.first_downloaded_at = data.firstDownloadedAt;

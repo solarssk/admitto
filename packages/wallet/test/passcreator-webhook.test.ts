@@ -102,10 +102,9 @@ describe("parseWebhookData", () => {
         identifier: "pass-1",
         userProvidedId: "admitto:evt-1:att-1",
         voided: false,
-        noOfActiveRegistrationsAppleWallet: 1,
-        noOfInactiveRegistrationsAppleWallet: 0,
-        noOfActiveRegistrationsGoogleWallet: 0,
-        noOfInactiveRegistrationsGoogleWallet: 0,
+        operatingSystem: "iOS",
+        noOfActivePasses: 1,
+        noOfInactivePasses: 0,
         firstDownloadedAt: "2026-08-13 10:00:00",
         somethingUnrecognized: "ignored",
       }),
@@ -114,11 +113,36 @@ describe("parseWebhookData", () => {
       identifier: "pass-1",
       userProvidedId: "admitto:evt-1:att-1",
       voided: false,
-      noOfActiveRegistrationsAppleWallet: 1,
-      noOfInactiveRegistrationsAppleWallet: 0,
-      noOfActiveRegistrationsGoogleWallet: 0,
-      noOfInactiveRegistrationsGoogleWallet: 0,
+      operatingSystem: "iOS",
+      noOfActivePasses: 1,
+      noOfInactivePasses: 0,
       firstDownloadedAt: "2026-08-13 10:00:00",
+    });
+  });
+
+  it("extracts the exact field set confirmed on a live pushnotification_unregistered delivery (2026-08-13)", () => {
+    // Trimmed to the fields parseWebhookData actually reads - the real payload also carries
+    // buyer*/device*/passTemplateGuid/genericProperties/etc. that we deliberately ignore, plus a
+    // recursively self-nested signedData/signature pair that's presumably a PassCreator delivery-
+    // log rendering artifact, not part of what's parsed here.
+    const data = parseWebhookData(
+      JSON.stringify({
+        uniqueIdentifier: "apdvqjfes1bgoc71136a7dd12769122",
+        operatingSystem: "iOS",
+        passTemplate: "Cybersecurity Awareness Month 2026",
+        userProvidedId: "admitto:evt-1:att-1",
+        noOfActivePasses: 0,
+        noOfInactivePasses: 2,
+        identifier: "753135e7-5558-48a9-b955-33c09cc1ae37",
+        deviceOperatingSystem: "",
+      }),
+    );
+    expect(data).toEqual({
+      operatingSystem: "iOS",
+      userProvidedId: "admitto:evt-1:att-1",
+      noOfActivePasses: 0,
+      noOfInactivePasses: 2,
+      identifier: "753135e7-5558-48a9-b955-33c09cc1ae37",
     });
   });
 
@@ -168,8 +192,9 @@ describe("applyWebhookUpdate", () => {
     db.walletPass.update.mockResolvedValueOnce({});
     const result = await applyWebhookUpdate(db as never, {
       userProvidedId: "admitto:evt-1:att-1",
-      noOfActiveRegistrationsGoogleWallet: 1,
-      noOfInactiveRegistrationsGoogleWallet: 0,
+      operatingSystem: "Android",
+      noOfActivePasses: 1,
+      noOfInactivePasses: 0,
     });
     expect(result).toEqual({ matched: true });
     expect(db.walletPass.update).toHaveBeenCalledWith({
@@ -180,6 +205,34 @@ describe("applyWebhookUpdate", () => {
         registration_checked_at: expect.any(Date),
       }),
     });
+  });
+
+  it("maps operatingSystem: iOS to the apple_* columns (confirmed live 2026-08-13)", async () => {
+    const db = makeDb();
+    db.walletPass.update.mockResolvedValueOnce({});
+    await applyWebhookUpdate(db as never, {
+      identifier: "pc-1",
+      operatingSystem: "iOS",
+      noOfActivePasses: 0,
+      noOfInactivePasses: 2,
+    });
+    expect(db.walletPass.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ apple_active_registrations: 0, apple_inactive_registrations: 2 }),
+      }),
+    );
+    const call = db.walletPass.update.mock.calls[0]?.[0];
+    expect(call.data).not.toHaveProperty("google_active_registrations");
+    expect(call.data).not.toHaveProperty("google_inactive_registrations");
+  });
+
+  it("leaves both apple_* and google_* columns untouched when operatingSystem is absent - can't tell which platform the counts belong to", async () => {
+    const db = makeDb();
+    db.walletPass.update.mockResolvedValueOnce({});
+    await applyWebhookUpdate(db as never, { identifier: "pc-1", noOfActivePasses: 1, noOfInactivePasses: 0 });
+    const call = db.walletPass.update.mock.calls[0]?.[0];
+    expect(call.data).not.toHaveProperty("apple_active_registrations");
+    expect(call.data).not.toHaveProperty("google_active_registrations");
   });
 
   it("falls back to identifier (provider_pass_id) when userProvidedId is absent", async () => {
@@ -238,7 +291,7 @@ describe("applyWebhookUpdate", () => {
   it("processing the same delivery twice is idempotent - same final field values either way", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValue({});
-    const payload = { identifier: "pc-1", noOfActiveRegistrationsAppleWallet: 2 };
+    const payload = { identifier: "pc-1", operatingSystem: "iOS", noOfActivePasses: 2 };
     await applyWebhookUpdate(db as never, payload);
     await applyWebhookUpdate(db as never, payload);
     expect(db.walletPass.update).toHaveBeenCalledTimes(2);
