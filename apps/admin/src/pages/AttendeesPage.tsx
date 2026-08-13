@@ -209,7 +209,7 @@ function notifyBulkVoidWalletResult(
 ) {
   const { voided, skipped, errored } = result;
   const notes: string[] = [];
-  if (skipped > 0) notes.push(`${skipped} had no pass to void`);
+  if (skipped > 0) notes.push(`${skipped} had no pass, or it was already voided`);
   if (errored > 0) notes.push(`${errored} failed unexpectedly`);
   const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 
@@ -222,7 +222,7 @@ function notifyBulkVoidWalletResult(
   }
 
   if (skipped > 0 && errored === 0) {
-    addToast("None of the selected attendees had a wallet pass to void.", "info");
+    addToast("None of the selected attendees had a pass to void - no pass, or already voided.", "info");
     return;
   }
 
