@@ -629,7 +629,12 @@ function walletTone(pass: WalletPassActionDto | null): ChipTone {
  * real ISO instant so it can go through the same formatEventDateTime pipeline as every other
  * wallet timestamp instead of being shown as an unparsed raw string. */
 function formatFirstDownloadedAt(raw: string): string {
-  return formatEventDateTime(`${raw.replace(" ", "T")}Z`, "UTC");
+  const iso = `${raw.replace(" ", "T")}Z`;
+  // A value that doesn't match the expected "YYYY-MM-DD HH:MM:SS" shape (already has an offset,
+  // uses a different separator, ...) would otherwise silently become an Invalid Date with no
+  // fallback - show the raw provider string instead of that.
+  if (Number.isNaN(new Date(iso).getTime())) return raw;
+  return formatEventDateTime(iso, "UTC");
 }
 
 function itemStateLabel(state: string): string {
