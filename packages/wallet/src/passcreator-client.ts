@@ -51,6 +51,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Narrows an `errors` field of unknown shape (from a body we deliberately parse without a fixed
+ * schema - see subscribeWebhook/listWebhooks below) down to the string[] toProviderError expects,
+ * rather than trusting it and letting a non-array value (e.g. a bare string) throw inside
+ * `.join()` instead of surfacing the intended WalletProviderError. */
+function extractErrorStrings(errors: unknown): string[] | undefined {
+  return Array.isArray(errors) ? errors.filter((error): error is string => typeof error === "string") : undefined;
+}
+
 function toResult(data: PassCreatorPassData): WalletPassResult {
   return {
     providerPassId: data.identifier,
@@ -173,7 +181,9 @@ export class PassCreatorClient implements WalletPassProvider {
    * Uses requestRaw + res.ok (like setVoided/deletePass below), not the shared request() helper -
    * live testing (2026-08-13) found this endpoint returns HTTP 201 with a body that doesn't match
    * the v3 {success,data,errors} envelope request() requires, so every call looked like a failure
-   * to us even though PassCreator's own dashboard confirmed the subscription was created. */
+   * to us even though PassCreator's own dashboard confirmed the subscription was created. Still
+   * checks the body for an explicit `success: false` - a 2xx status alone doesn't rule out a
+   * logical failure PassCreator reported in the body (CodeRabbit review). */
   async subscribeWebhook(targetUrl: string, event: PassCreatorWebhookEventType): Promise<void> {
     const res = await this.requestRaw(
       "POST",
@@ -182,6 +192,10 @@ export class PassCreatorClient implements WalletPassProvider {
     );
     if (!res.ok) {
       throw this.toProviderError(res.status);
+    }
+    const body: unknown = await res.json().catch(() => null);
+    if (body && typeof body === "object" && (body as { success?: unknown }).success === false) {
+      throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
     }
   }
 
@@ -207,18 +221,21 @@ export class PassCreatorClient implements WalletPassProvider {
     }
     const body: unknown = await res.json().catch(() => null);
     if (body && typeof body === "object" && (body as { success?: unknown }).success === false) {
-      throw this.toProviderError(res.status, (body as { errors?: string[] }).errors);
+      throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
     }
     const data =
       body && typeof body === "object" && "data" in body ? (body as { data: unknown }).data : body;
     const rows = Array.isArray(data) ? data : [];
-    return (rows as { target_url?: string | null; event?: string; pass_template?: string | null }[]).map(
-      (row) => ({
-        targetUrl: row.target_url ?? null,
-        event: row.event ?? "",
-        passTemplate: row.pass_template ?? null,
-      }),
-    );
+    // Each row is also of unknown shape - a row that isn't an object (or is missing a field) must
+    // fall back to a default rather than throw, same reasoning as the success:false check above
+    // (CodeRabbit review).
+    return rows
+      .filter((row): row is Record<string, unknown> => row !== null && typeof row === "object")
+      .map((row) => ({
+        targetUrl: typeof row.target_url === "string" ? row.target_url : null,
+        event: typeof row.event === "string" ? row.event : "",
+        passTemplate: typeof row.pass_template === "string" ? row.pass_template : null,
+      }));
   }
 
   async findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null> {
