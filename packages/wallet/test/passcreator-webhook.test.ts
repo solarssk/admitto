@@ -235,12 +235,24 @@ describe("applyWebhookUpdate", () => {
     expect(call.data).not.toHaveProperty("google_active_registrations");
   });
 
+  it.each(["iPadOS", "macOS"])(
+    "maps operatingSystem: %s to the apple_* columns - Wallet runs on all Apple platforms, not just iOS",
+    async (operatingSystem) => {
+      const db = makeDb();
+      db.walletPass.update.mockResolvedValueOnce({});
+      await applyWebhookUpdate(db as never, { identifier: "pc-1", operatingSystem, noOfActivePasses: 1 });
+      const call = db.walletPass.update.mock.calls[0]?.[0];
+      expect(call.data).toMatchObject({ apple_active_registrations: 1 });
+      expect(call.data).not.toHaveProperty("google_active_registrations");
+    },
+  );
+
   it("leaves both apple_* and google_* columns untouched when operatingSystem is an unrecognized value - never guess platform from a value we don't understand", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
     await applyWebhookUpdate(db as never, {
       identifier: "pc-1",
-      operatingSystem: "iPadOS",
+      operatingSystem: "webOS",
       noOfActivePasses: 1,
       noOfInactivePasses: 0,
     });
