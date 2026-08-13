@@ -66,7 +66,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - Use notes only for event work that belongs on the attendee record.
 - Change a pass state only when the event's authorised process requires it.
 - **Delete attendee** permanently erases that person's event record for GDPR. Prefer revoke or status corrections when the person should stay in history.
-- **Delete wallet pass** permanently removes the pass at the provider; the attendee would need to add it again from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
+- **Delete wallet pass** permanently removes the pass record at the provider, so it stops receiving updates - it does **not** remove the pass from the attendee's phone (Apple/Google Wallet gives no third party a way to do that; only the attendee can). It also does not affect check-in - use **Revoke pass** to block entry. The attendee would need to add a new pass from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action

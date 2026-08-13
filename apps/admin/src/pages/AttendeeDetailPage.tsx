@@ -505,7 +505,7 @@ function WalletActionMenuItems({
             <i className="ti ti-trash" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
               <span>Delete wallet pass</span>
-              <span className="more-actions-menu__item-hint">Permanently remove it from their wallet</span>
+              <span className="more-actions-menu__item-hint">Permanently removes the record - not from their phone</span>
             </span>
           </button>
         )}
@@ -2603,7 +2603,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "delete"}
         title="Delete wallet pass?"
-        message={`Permanently removes ${detail.name}'s pass from their wallet. This cannot be undone - they would need to add it again from their ticket page.`}
+        message={`Permanently deletes ${detail.name}'s pass record at the provider - it stops receiving updates, but Apple/Google Wallet has no way for us to remove it from their phone; only they can do that. Check-in isn't affected - use Revoke pass to block entry. They'd need to add it again from their ticket page for a fresh pass.`}
         confirmLabel="Delete"
         confirmVariant="danger"
         loading={walletBusy}
