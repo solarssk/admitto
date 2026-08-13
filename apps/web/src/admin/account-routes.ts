@@ -24,6 +24,9 @@ import {
   finishWebauthnRegistration,
   listWebauthnCredentials,
   removeWebauthnCredential,
+  removeTotpMethod,
+  getBackupRecoveryCodesStatus,
+  regenerateBackupRecoveryCodes,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import { stashWebauthnChallenge, consumeWebauthnChallenge } from "../auth/webauthn-challenge-cache.js";
@@ -1138,4 +1141,123 @@ export async function handleDeleteAccountWebauthnCredential(
   if (!gated.ok) return gated.response;
   if (!gated.value) return c.json({ error: "not found" }, 404);
   return c.json({ ok: true });
+}
+
+/**
+ * DELETE /api/account/mfa/totp — remove TOTP only, leaving WebAuthn credentials and backup
+ * recovery codes untouched. Requires the same TOTP/recovery-code step-up as removing a WebAuthn
+ * credential (`handleDeleteAccountWebauthnCredential`) — password alone must not be able to strip
+ * a confirmed method from an MFA-required account.
+ */
+export async function handleDeleteAccountTotp(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
+
+  // Same optional-body convention as handleDeleteAccountWebauthnCredential: an empty/unparsable
+  // body defaults to `{}` rather than 400, since most calls won't need step-up at all.
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-totp-remove" },
+    async (tx, orgId, audit) => {
+      const removed = await removeTotpMethod(tx, userId);
+      if (removed) {
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: audit.operator ?? userId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          timezone: audit.timezone,
+          actionType: "account_mfa_totp_removed",
+        });
+      }
+      return removed;
+    },
+  );
+
+  if (!gated.ok) return gated.response;
+  if (!gated.value) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
+}
+
+/** GET /api/account/mfa/backup-codes — how many codes remain in the current batch. Read-only,
+ * same tier as `handleGetAccountWebauthnCredentials` (no step-up). */
+export async function handleGetAccountBackupCodesStatus(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const userId = c.get("auth").userId;
+  const status = await getBackupRecoveryCodesStatus(db, userId);
+  return c.json({ total: status.total, remaining: status.remaining });
+}
+
+/**
+ * POST /api/account/mfa/backup-codes/regenerate — invalidate the current batch and mint a fresh
+ * one, returned once as plaintext. Requires the same TOTP/recovery-code step-up as the other
+ * sensitive MFA actions in this file — it invalidates the user's existing saved codes, a real
+ * consequence.
+ */
+export async function handlePostAccountRegenerateBackupCodes(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
+
+  // Same optional-body convention as handleDeleteAccountWebauthnCredential: this action has no
+  // other fields, only an optional step-up code.
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    {
+      userId,
+      currentSessionId,
+      rawCode: parsed.data.code,
+      rateLimitAction: "account-backup-codes-regenerate",
+    },
+    async (tx, orgId, audit) => {
+      const { codes } = await regenerateBackupRecoveryCodes(tx, userId);
+      // Always audited, unlike credential removal — this call always has an effect (a fresh
+      // batch replaces the old one) even when the old batch was already fully consumed.
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "account_mfa_backup_codes_regenerated",
+      });
+      return codes;
+    },
+  );
+
+  if (!gated.ok) return gated.response;
+  return c.json({ ok: true, codes: gated.value });
 }

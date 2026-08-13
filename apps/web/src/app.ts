@@ -335,6 +335,9 @@ import {
   handlePostAccountWebauthnRegisterFinish,
   handleGetAccountWebauthnCredentials,
   handleDeleteAccountWebauthnCredential,
+  handleDeleteAccountTotp,
+  handleGetAccountBackupCodesStatus,
+  handlePostAccountRegenerateBackupCodes,
 } from "./admin/account-routes.js";
 import {
   handleGetSystemSettings,
@@ -1699,6 +1702,19 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.delete("/api/account/mfa/webauthn/:credentialId", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
     handleDeleteAccountWebauthnCredential(c, db, rateLimitStore),
+  );
+  app.delete("/api/account/mfa/totp", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handleDeleteAccountTotp(c, db, rateLimitStore),
+  );
+  app.get("/api/account/mfa/backup-codes", requireSession, (c) =>
+    handleGetAccountBackupCodesStatus(c, db),
+  );
+  app.post(
+    "/api/account/mfa/backup-codes/regenerate",
+    jsonPostCsrf,
+    loginRateLimitJson,
+    requireSession,
+    (c) => handlePostAccountRegenerateBackupCodes(c, db, rateLimitStore),
   );
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));

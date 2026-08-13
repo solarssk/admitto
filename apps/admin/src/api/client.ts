@@ -104,6 +104,13 @@ import type {
   ConfirmMfaTotpBody,
   ResetMfaBody,
   ResetMfaResponse,
+  WebauthnRegisterBeginBody,
+  WebauthnRegisterBeginResponse,
+  WebauthnRegisterFinishBody,
+  WebauthnRegisterFinishResponse,
+  WebauthnCredentialsResponse,
+  BackupCodesStatusResponse,
+  RegenerateBackupCodesResponse,
   IdentityProvidersListResponse,
   ToggleProviderResponse,
   CfAccessSummaryDto,
@@ -2294,6 +2301,46 @@ export async function confirmMfaTotp(body: ConfirmMfaTotpBody): Promise<{ ok: tr
 export async function resetMfa(body: ResetMfaBody): Promise<ResetMfaResponse> {
   const res = await fetch("/api/account/mfa/reset", jsonPostInit(body));
   return parseJson<ResetMfaResponse>(res);
+}
+
+export async function beginWebauthnRegistration(body: WebauthnRegisterBeginBody): Promise<WebauthnRegisterBeginResponse> {
+  const res = await fetch("/api/account/mfa/webauthn/register/begin", jsonPostInit(body));
+  return parseJson<WebauthnRegisterBeginResponse>(res);
+}
+
+export async function finishWebauthnRegistration(body: WebauthnRegisterFinishBody): Promise<WebauthnRegisterFinishResponse> {
+  const res = await fetch("/api/account/mfa/webauthn/register/finish", jsonPostInit(body));
+  return parseJson<WebauthnRegisterFinishResponse>(res);
+}
+
+export async function fetchWebauthnCredentials(signal?: AbortSignal): Promise<WebauthnCredentialsResponse> {
+  const res = await fetch("/api/account/mfa/webauthn", { credentials: "same-origin", signal });
+  return parseJson<WebauthnCredentialsResponse>(res);
+}
+
+export async function deleteWebauthnCredential(credentialId: string, code?: string): Promise<{ ok: true }> {
+  const res = await fetch(
+    `/api/account/mfa/webauthn/${encodeURIComponent(credentialId)}`,
+    jsonDeleteInit(code ? { code } : undefined),
+  );
+  return parseJson<{ ok: true }>(res);
+}
+
+/** Removes only the TOTP row(s) - WebAuthn credentials and backup codes are untouched. */
+export async function deleteAccountTotp(code?: string): Promise<{ ok: true }> {
+  const res = await fetch("/api/account/mfa/totp", jsonDeleteInit(code ? { code } : undefined));
+  return parseJson<{ ok: true }>(res);
+}
+
+export async function fetchBackupCodesStatus(signal?: AbortSignal): Promise<BackupCodesStatusResponse> {
+  const res = await fetch("/api/account/mfa/backup-codes", { credentials: "same-origin", signal });
+  return parseJson<BackupCodesStatusResponse>(res);
+}
+
+/** Invalidates the current backup-code batch and mints a fresh set, returned once as plaintext. */
+export async function regenerateBackupCodes(code?: string): Promise<RegenerateBackupCodesResponse> {
+  const res = await fetch("/api/account/mfa/backup-codes/regenerate", jsonPostInit(code ? { code } : {}));
+  return parseJson<RegenerateBackupCodesResponse>(res);
 }
 
 /** Load aggregated admission report for an event. */

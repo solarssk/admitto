@@ -7,7 +7,7 @@
 
 ## What this page helps you do
 
-Update your own profile (display name, regional date format, time format, and internal contact phone number), understand what your Sign-in and Role fields mean, connect or unlink a single sign-on (SSO) identity provider, change your password, manage two-factor authentication, and review your active sessions — all from **My account**.
+Update your own profile (display name, regional date format, time format, and internal contact phone number), understand what your Sign-in and Role fields mean, connect or unlink a single sign-on (SSO) identity provider, change your password, manage two-factor authentication (an authenticator app, passkeys, security keys, and backup codes), and review your active sessions — all from **My account**.
 
 ## Before you start
 
@@ -33,8 +33,24 @@ Sign in and open **My account** from the top-right account menu. No special perm
    - Unlinking ends your other active sessions immediately; the session you're using stays signed in.
 10. Click **Save** once you're done editing the profile fields above (Save is disabled until something has actually changed).
 11. **Password** — enter your current password plus a new one (at least 12 characters) to change it. This ends your other active sessions; the session you're using stays signed in. Not available on an account with no local password (SSO-only).
-12. **Two-factor authentication** — set up an authenticator app (TOTP) for a second sign-in factor. Save the 10 backup codes shown once during setup; they're your fallback if you lose access to the app.
-13. **Active sessions** — review where your account is currently signed in (device, IP, sign-in method, last active) and revoke any session that isn't yours, or all other sessions at once.
+12. **Two-factor authentication** — click **Set up** to add an authenticator app (TOTP) as a second sign-in factor; this opens in a popup with a QR code to scan and a digit code to confirm. Save the 10 backup codes shown once during setup; they're your fallback if you lose access to the app. Once set up, the button becomes **Manage**, opening a popup with two options:
+    - **Remove** — the primary option. Removes only the authenticator app; your passkeys, security keys, and backup codes are left in place.
+    - **Reset everything** — a secondary option below it, clearly labelled as removing the authenticator app, every passkey and security key, and all backup codes together. Choosing it closes the Manage popup and opens a separate confirmation for the full reset. Use this only when you want a completely clean slate for two-factor authentication.
+
+    If your role requires two-factor authentication and you have a confirmed method, both **Remove** and the full reset ask for a code from your authenticator app (or a backup code) first.
+13. **Passkeys and security keys** — add one or more passkeys or security keys as extra second sign-in factors, alongside or instead of an authenticator app:
+
+    | Type | What it is | Typical example |
+    |------|------------|------------------|
+    | Passkey | Built into your device, unlocked with the device's own screen lock | Face ID, Touch ID, Windows Hello |
+    | Security key | A separate physical device you plug in or tap | YubiKey or similar |
+
+    Click **Add passkey** or **Add security key**, give it a name in the popup (required — this is how you'll tell multiple keys apart later, for example "Work laptop" vs "Phone"), then follow your browser or device's prompt to complete it. There's no limit on how many passkeys or security keys you can register.
+14. To **remove** a passkey or security key: find it in its list under **Two-factor authentication** and click **Remove**.
+    - If your role requires two-factor authentication and you have a confirmed method, you're asked for a code from your authenticator app (or a backup code) to confirm it's really you.
+    - If the one you're removing is your last remaining two-factor method, you'll need to set one up again the next time you sign in.
+15. **Backup codes** — appears once you have at least one confirmed two-factor method (an authenticator app, a passkey, or a security key). Shows how many of your 10 codes are still unused, for example "7 of 10 remaining", or **None generated yet** if none have been created for your account. Backup codes are an account-wide fallback: they aren't tied to any single authenticator app, passkey, or security key, and work as a second factor no matter which method you normally sign in with. Click **Manage**, then **Regenerate** to invalidate your current codes and get a fresh set of 10, shown once as plain text — save them somewhere safe, since they can't be viewed again after you close the popup. Backup codes can't be removed individually; regenerating is the only way to invalidate old ones. If your role requires two-factor authentication and you have a confirmed method, regenerating asks for a code from your authenticator app (or another backup code) first.
+16. **Active sessions** — review where your account is currently signed in (device, IP, sign-in method, last active) and revoke any session that isn't yours, or all other sessions at once.
 
 ## Expected result
 
@@ -47,13 +63,17 @@ Profile changes take effect immediately and are visible to administrators viewin
 - Phone number is internal-contact-only by design: it's never surfaced on attendee-facing tickets or pages.
 - Regional format changes how dates are displayed to you specifically; it does not affect what other staff see, and it doesn't change the interface language.
 - Time format changes only how time fields are displayed to you. It can use 12-hour time with AM/PM or 24-hour time regardless of the selected regional date format.
-- An account that requires two-factor authentication (per its role) is asked for a TOTP or backup code before a password change or 2FA reset can complete.
+- An account that requires two-factor authentication (per its role) is asked for a TOTP or backup code before a password change, removing the authenticator app, a full 2FA reset, removing a passkey or security key, or regenerating backup codes can complete.
+- Removing the authenticator app has two levels: **Remove** takes out only the app itself and leaves your passkeys, security keys, and backup codes untouched; **Reset everything** clears all of them together in one step. Pick Remove when you just want to swap or drop the app, and Reset everything only when you want a completely clean slate.
+- Backup codes are an account-wide fallback, not tied to any specific authenticator app, passkey, or security key — they work as a second factor regardless of which method you use day to day. They can only be regenerated, never deleted individually or viewed again once the popup is closed; regenerating immediately invalidates every code from the previous batch.
+- Passkeys and security keys are additional second-factor options alongside the authenticator app, not a replacement for it — you can register any number of each, and every one needs a name so you can tell multiple keys apart later.
+- An administrator can turn passkeys and security keys off for the whole instance. There's no toggle for this in Settings yet — it's set in server configuration. When it's off, the Add buttons don't appear and a note explains why; the authenticator app is unaffected.
 - Unlinking SSO always demands one proof of identity beyond just being signed in — a TOTP/backup code if you have one confirmed, otherwise your current local password — precisely because it replaces the credential that gets you into the account. An account with neither has nothing to unlink with self-service; that's an intentional dead end, not a bug.
 - A role granted to you by an identity provider group can't be converted into a role you control yourself just by unlinking SSO. An administrator has to remove the grant (or you leave the group) first.
 
 ## What changes after this action
 
-A changed display name appears wherever your name is shown to other staff (role assignments, audit/security logs, delivery history). A changed password or a session revoke ends every other active session; you'll need to sign in again on those devices. After unlinking SSO, Account type switches to **Local account** and sign-in via the removed provider(s) stops working immediately — use the new local password you set instead. After connecting a provider, Account type reflects the new link and you can sign in with either method going forward.
+A changed display name appears wherever your name is shown to other staff (role assignments, audit/security logs, delivery history). A changed password or a session revoke ends every other active session; you'll need to sign in again on those devices. After unlinking SSO, Account type switches to **Local account** and sign-in via the removed provider(s) stops working immediately — use the new local password you set instead. After connecting a provider, Account type reflects the new link and you can sign in with either method going forward. A newly added passkey or security key is available to sign in with immediately. Removing your last remaining two-factor method — whether that's the authenticator app via Remove, a passkey, or a security key — means you'll be asked to set one up again the next time you sign in, if your role requires two-factor authentication. Regenerating backup codes immediately invalidates every code from the previous batch; only the new set shown at that moment is valid.
 
 ## Common problems
 
@@ -61,6 +81,12 @@ A changed display name appears wherever your name is shown to other staff (role 
 - **Can't change email:** email isn't editable from this page by design; ask an administrator.
 - **Password section is missing:** the account is SSO-only (no local password) — sign-in and password are managed by the linked identity provider instead.
 - **Lost access to the authenticator app:** use a saved backup code to sign in, then reset 2FA and set it up again from this page.
+- **The authenticator app now shows "Manage" instead of "Reset":** that's expected — Manage opens a popup with **Remove** (authenticator app only) as the primary option and **Reset everything** (also clears passkeys, security keys, and backup codes) as a secondary, clearly-labelled option below it. Nothing is missing, it's just relabelled and split into two choices.
+- **No "Backup codes" row:** it only appears once you have at least one confirmed two-factor method — set up an authenticator app, a passkey, or a security key first.
+- **Regenerating backup codes asks for a code:** that's the required step-up check for accounts whose role requires two-factor authentication, not an error — enter a code from your authenticator app or a saved backup code.
+- **A saved backup code stopped working:** each **Regenerate** invalidates every code from the previous batch immediately — only the newest set, shown once at regenerate time, is valid.
+- **"Add passkey" or "Add security key" doesn't appear:** either your account has no local password yet (set one under Password first, or ask an administrator to set one for you), or an administrator has turned passkeys and security keys off for this instance — a note explains which.
+- **Removing a passkey or security key asks for a code:** that's the required step-up check for accounts whose role requires two-factor authentication, not an error — enter a code from your authenticator app or a saved backup code.
 - **No "SSO" menu on the Profile card:** nothing is linked and no identity provider is currently configured for the instance — there's nothing to connect or unlink.
 - **"Connect" is missing for a provider:** either you're already linked to it, or your account has no local password yet — set one under Password first (or ask an administrator to set one for you).
 - **Unlink SSO asks for a password or authenticator code you don't recognize:** that's the required proof of identity, not an error — enter your current local password, or a code from your authenticator app / a saved backup code, whichever the dialog is asking for.

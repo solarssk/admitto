@@ -333,23 +333,21 @@
   }
 }
 
-/* Enrollment: QR column sized to canvas + padding; info column takes the rest. */
+/* Enrollment now lives inside a fixed ~360px-wide ConfirmDialog (moved there earlier this
+   session) - the old QR-left/digits-right grid doesn't fit that width (the 6 digit boxes alone
+   need ~246px, more than the ~170px an info column got beside a 178px QR column), so this
+   always stacks QR above the digit input instead. */
 .account-2fa-enroll {
-  --account-totp-qr-size: 160px;
-  display: grid;
-  grid-template-columns: calc(var(--account-totp-qr-size) + 18px) minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3, 0.75rem);
-  align-items: start;
 }
 
-/* Left column: fixed width so the 160px canvas never bleeds into backup codes */
 .account-2fa-enroll__qr {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--space-2, 0.5rem);
-  width: calc(var(--account-totp-qr-size) + 18px);
-  flex-shrink: 0;
-  min-width: 0;
 }
 
 /* Compact scrollable URI in the fixed-width QR column — does not grow the 2FA card */
@@ -403,12 +401,6 @@
 
 .account-2fa-enroll__info .mail-field-row {
   margin-bottom: 0;
-}
-
-@media (max-width: 900px) {
-  .account-2fa-enroll {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Six individual digit boxes for TOTP code entry */
@@ -470,9 +462,11 @@
   padding-bottom: 0;
 }
 
-.account-mfa-method--soon {
-  opacity: 0.45;
-  pointer-events: none;
+/* Flush the first row's content with the card body's own padding - matches every other card on
+   this page (e.g. Password's intro paragraph has no extra top margin of its own either), instead
+   of stacking this row's padding-top on top of .at-card__body's padding. */
+.account-mfa-method:first-child {
+  padding-top: 0;
 }
 
 .account-mfa-method__icon {
@@ -516,10 +510,67 @@
   color: var(--status-ok, var(--at-green-700, #15803d));
 }
 
-.account-mfa-method__status--soon {
-  font-style: italic;
+/* Registered passkey/security key rows nested under their method row (PR3) - label + last-used
+   timestamp on the left, a small text Remove button on the right. Reuses the same spacing, font
+   size, and text-muted custom properties as the rest of this list rather than new hardcoded values. */
+.account-mfa-credential-list {
+  list-style: none;
+  margin: var(--space-2, 0.5rem) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+}
+
+.account-mfa-credential-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem);
+}
+
+.account-mfa-credential-row__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-mfa-credential-row__label {
+  font-size: var(--fs-sm, 0.875rem);
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-mfa-credential-row__meta {
+  font-size: var(--fs-xs, 0.75rem);
+  color: var(--text-muted);
+}
+
+.account-mfa-credential-row__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius, 4px);
+  border: none;
+  background: var(--surface-subtle, var(--at-gray-100));
+  color: var(--text-secondary);
+  padding: 0;
+  cursor: pointer;
+}
+
+.account-mfa-credential-row__remove:hover {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
 }
 
 .account-mfa-method__action {
   flex-shrink: 0;
 }
+

@@ -29,6 +29,7 @@ const CODE_MESSAGES: Record<string, string> = {
   cannot_unlink_own_sso: "You cannot unlink SSO from your own account. Ask another superadmin.",
   cannot_revoke_current: "You cannot revoke your current session.",
   cannot_revoke_own_session: "You cannot revoke your current session.",
+  challenge_expired: "This passkey/security key setup request expired. Start again.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
   duplicate_issuer: "An identity provider with this issuer already exists.",
@@ -120,6 +121,8 @@ const CODE_MESSAGES: Record<string, string> = {
   unsupported_file_type: "Unsupported file type. Upload a PNG, JPG, or WebP image.",
   "unsupported file type": "Unsupported file type. Upload a .csv or .xlsx file.",
   validation_failed: "Check the form and try again.",
+  verification_failed: "Could not verify the passkey/security key. Try again.",
+  webauthn_disabled: "Passkeys and security keys are turned off for this instance. Ask an administrator to enable them.",
   wrong_password: "Current password is incorrect.",
   "file too large": "File exceeds the 5 MB limit. Split the file and import in parts.",
 };

@@ -22,6 +22,7 @@
     "@admitto/tickets": "*",
     "@admitto/ui": "*",
     "@admitto/wallet": "*",
+    "@simplewebauthn/browser": "^13.3.0",
     "@tabler/icons-webfont": "3.46.0",
     "@zxing/browser": "^0.2.0",
     "countries-list": "^3.4.1",

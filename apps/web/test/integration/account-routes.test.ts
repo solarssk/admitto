@@ -4,17 +4,22 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
+  BACKUP_RECOVERY_CODE_COUNT,
+  beginWebauthnRegistration,
   bootstrapSuperadmin,
   confirmTotpEnrollment,
   createSession,
+  finishWebauthnRegistration,
   hashPassword,
   markBackupCodesAcknowledged,
   parseTotpSecretFromOtpauthUri,
+  regenerateBackupRecoveryCodes,
   SESSION_STAGE,
   startTotpEnrollment,
   verifyPassword,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "@admitto/auth/testing";
+import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
@@ -29,6 +34,7 @@ const EMAIL_ADMIN = "account-admin@example.com";
 const PASSWORD = "account-pass-123";
 const NEW_PASSWORD = "account-new-pass-456";
 const ADMIN_PASSWORD = "account-admin-pass-123";
+const WEBAUTHN_RP = { rpName: "Admitto", rpID: "admitto.example.com", origin: "https://admitto.example.com" };
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -648,6 +654,19 @@ describe("POST /api/account/mfa/totp/*", () => {
   });
 });
 
+/** Register + acknowledge a confirmed WebAuthn credential directly against `prisma` (bypassing
+ * the HTTP ceremony), so a test can prove a TOTP-only action leaves it untouched. */
+async function registerConfirmedWebauthnCredential(uid: string, label = "Seeded key") {
+  const authenticator = createVirtualAuthenticator();
+  const begin = await beginWebauthnRegistration(prisma, uid, "platform", WEBAUTHN_RP);
+  if (!begin) throw new Error("beginWebauthnRegistration failed");
+  const response = authenticator.register({ challenge: begin.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
+  const result = await finishWebauthnRegistration(prisma, uid, response, begin.challenge, "platform", label, WEBAUTHN_RP);
+  if (!result) throw new Error("finishWebauthnRegistration failed");
+  await markBackupCodesAcknowledged(prisma, uid);
+  return result;
+}
+
 // Enroll+confirm via direct function calls (not the HTTP endpoints) so these setup steps
 // don't consume the shared per-IP login rate-limit bucket that both `/api/account/mfa/reset`
 // and `/api/account/password` are gated by. Shared by both step-up describe blocks below.
@@ -935,6 +954,308 @@ describe("DELETE /api/account/mfa/totp/enroll", () => {
 
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp", confirmed_at: { not: null } } })).toBe(1);
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(2);
+  });
+});
+
+describe("DELETE /api/account/mfa/totp", () => {
+  it("removes TOTP for the non-MFA-required operator fixture, leaving WebAuthn credentials untouched", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    const credential = await registerConfirmedWebauthnCredential(userId);
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { id: credential.credentialRowId } })).toBe(1);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_totp_removed" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+  });
+
+  it("removes TOTP even when it is the user's only confirmed MFA method (no server-side last-method block)", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
+  });
+
+  it("returns 404 when there is no TOTP row to remove", async () => {
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("treats a malformed JSON body the same as no body (no step-up code supplied)", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+  });
+
+  it("returns 400 for a body that fails schema validation", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: 123456 }), // must be a string
+    });
+    expect(res.status).toBe(400);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(1);
+  });
+});
+
+describe("DELETE /api/account/mfa/totp — step-up for MFA-required roles", () => {
+  beforeEach(() => rateLimitStore.reset());
+
+  it("returns 400 totp_required when no code is given for an MFA-required role", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("totp_required");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(1);
+  });
+
+  it("returns 401 invalid_totp for a wrong code", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "000000" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(1);
+  });
+
+  it("returns 429 after exceeding the step-up code rate limit", async () => {
+    await enrollConfirmedTotp();
+    const bucketKey = `mfa:totp:session:account-totp-remove:${adminSessionId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "000000" }),
+    });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(1);
+  });
+
+  it("removes TOTP with a correct TOTP code, and writes an audit row", async () => {
+    // Seeded directly (not via enroll+confirm) so this is the only code ever verified against
+    // this secret — see the equivalent mfa/reset test above for why.
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
+    });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: generateTotpCode(secret) }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(0);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_totp_removed", actor_user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(adminUserId);
+  });
+
+  it("removes TOTP with a valid backup recovery code, and consumes it", async () => {
+    const backupCode = await enrollConfirmedTotp();
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: backupCode }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(0);
+
+    // The same backup code must not work again.
+    const other = await createSession(prisma, { userId: adminUserId, stage: SESSION_STAGE.FULL });
+    const replay = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: `admitto_session=${other.rawToken}`, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: backupCode }),
+    });
+    expect(replay.status).toBe(401);
+  });
+});
+
+describe("GET /api/account/mfa/backup-codes", () => {
+  it("returns 0/0 before any codes have been generated", async () => {
+    const res = await app.request("/api/account/mfa/backup-codes", { headers: { Cookie: userCookie } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ total: 0, remaining: 0 });
+  });
+
+  it("reflects the current batch's usage — some codes used, some not", async () => {
+    await regenerateBackupRecoveryCodes(prisma, userId);
+    const rows = await prisma.userMfaMethod.findMany({ where: { user_id: userId, type: "recovery" } });
+    expect(rows).toHaveLength(BACKUP_RECOVERY_CODE_COUNT);
+    // Directly mark 3 of the 10 rows as consumed - exercises the same "some used, some not"
+    // status the UI's "x of y remaining" copy reads, without needing an MFA-required fixture
+    // just to run a code through the step-up consumption path.
+    await prisma.userMfaMethod.updateMany({
+      where: { id: { in: rows.slice(0, 3).map((r) => r.id) } },
+      data: { last_used_at: new Date() },
+    });
+
+    const res = await app.request("/api/account/mfa/backup-codes", { headers: { Cookie: userCookie } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ total: BACKUP_RECOVERY_CODE_COUNT, remaining: BACKUP_RECOVERY_CODE_COUNT - 3 });
+  });
+});
+
+describe("POST /api/account/mfa/backup-codes/regenerate", () => {
+  it("mints a fresh batch of plaintext codes that replaces the old one, and writes an audit row", async () => {
+    const { codes: oldCodes } = await regenerateBackupRecoveryCodes(prisma, userId);
+
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; codes: string[] };
+    expect(body.ok).toBe(true);
+    expect(body.codes).toHaveLength(BACKUP_RECOVERY_CODE_COUNT);
+    expect(body.codes).not.toEqual(expect.arrayContaining(oldCodes));
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_backup_codes_regenerated" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+  });
+
+  it("returns 400 for a body that fails schema validation", async () => {
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: 123456 }), // must be a string
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/account/mfa/backup-codes/regenerate — step-up for MFA-required roles", () => {
+  beforeEach(() => rateLimitStore.reset());
+
+  it("returns 400 totp_required when no code is given for an MFA-required role", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("totp_required");
+  });
+
+  it("returns 401 invalid_totp for a wrong code", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "000000" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
+  });
+
+  it("returns 429 after exceeding the step-up code rate limit", async () => {
+    await enrollConfirmedTotp();
+    const bucketKey = `mfa:totp:session:account-backup-codes-regenerate:${adminSessionId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "000000" }),
+    });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
+  });
+
+  it("regenerates with a correct TOTP code, invalidating every old code", async () => {
+    // Seeded directly (not via enroll+confirm) so this is the only code ever verified against
+    // this secret — see the equivalent mfa/reset test above for why.
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
+    });
+    const { codes: oldCodes } = await regenerateBackupRecoveryCodes(prisma, adminUserId);
+
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: generateTotpCode(secret) }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; codes: string[] };
+    expect(body.codes).toHaveLength(BACKUP_RECOVERY_CODE_COUNT);
+    expect(body.codes).not.toEqual(expect.arrayContaining(oldCodes));
+
+    const statusRes = await app.request("/api/account/mfa/backup-codes", { headers: { Cookie: adminCookie } });
+    expect(await statusRes.json()).toEqual({ total: BACKUP_RECOVERY_CODE_COUNT, remaining: BACKUP_RECOVERY_CODE_COUNT });
+
+    // An old code (from before regeneration) no longer verifies as step-up proof.
+    const other = await createSession(prisma, { userId: adminUserId, stage: SESSION_STAGE.FULL });
+    const replay = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: `admitto_session=${other.rawToken}`, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: oldCodes[0] }),
+    });
+    expect(replay.status).toBe(401);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_backup_codes_regenerated", actor_user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(adminUserId);
   });
 });
 

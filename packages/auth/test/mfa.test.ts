@@ -20,6 +20,7 @@ import {
   confirmTotpEnrollment,
   resetUserMfa,
   verifyUserTotpCode,
+  removeTotpMethod,
 } from "../src/mfa/enrollment.js";
 import {
   generateTotpSecret,
@@ -34,6 +35,7 @@ import {
 import {
   verifyBackupRecoveryCode,
   regenerateBackupRecoveryCodes,
+  getBackupRecoveryCodesStatus,
 } from "../src/mfa/backup-recovery.js";
 import {
   generateEmergencyRecoveryCode,
@@ -606,6 +608,43 @@ describe("backup recovery codes", () => {
   });
 });
 
+describe("getBackupRecoveryCodesStatus", () => {
+  it("returns 0/0 before any codes have been generated", async () => {
+    const userId = "user-backup-status-none";
+    await prisma.user.create({
+      data: { id: userId, email: "backup-status-none@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({ total: 0, remaining: 0 });
+  });
+
+  it("reports total and remaining reflecting a mix of used and unused codes", async () => {
+    const userId = "user-backup-status-mixed";
+    await prisma.user.create({
+      data: { id: userId, email: "backup-status-mixed@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    const { codes } = await regenerateBackupRecoveryCodes(prisma, userId);
+    expect(await verifyBackupRecoveryCode(prisma, userId, codes[0]!)).toBe(true);
+    expect(await verifyBackupRecoveryCode(prisma, userId, codes[1]!)).toBe(true);
+
+    expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({
+      total: codes.length,
+      remaining: codes.length - 2,
+    });
+  });
+
+  it("excludes the break-glass emergency code from total/remaining", async () => {
+    const userId = "user-backup-status-emergency";
+    await prisma.user.create({
+      data: { id: userId, email: "backup-status-emergency@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await generateEmergencyRecoveryCode(prisma, userId);
+
+    expect(await getBackupRecoveryCodesStatus(prisma, userId)).toEqual({ total: 0, remaining: 0 });
+  });
+});
+
 describe("trusted device", () => {
   it("rejects a token that does not match a stored trusted device", async () => {
     expect(await validateTrustedDevice(prisma, USER_ADMIN, "missing-trusted-device-token")).toBe(false);
@@ -799,6 +838,54 @@ describe("cancelPendingTotpEnrollment", () => {
         where: { user_id: userId, type: "recovery" },
       }),
     ).toBe(recoveryCountBefore);
+  });
+});
+
+describe("removeTotpMethod", () => {
+  it("removes confirmed TOTP while leaving WebAuthn credentials and backup recovery codes untouched", async () => {
+    const userId = "user-remove-totp-second-method";
+    await prisma.user.create({
+      data: { id: userId, email: "remove-totp-second-method@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await registerConfirmedWebauthnCredential(userId);
+    const recoveryCountBefore = await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } });
+    expect(recoveryCountBefore).toBeGreaterThan(0);
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
+    });
+
+    expect(await removeTotpMethod(prisma, userId)).toBe(true);
+
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "webauthn" } })).toBe(1);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(
+      recoveryCountBefore,
+    );
+  });
+
+  it("removes TOTP even when it is the user's only confirmed MFA method (no server-side last-method block)", async () => {
+    const userId = "user-remove-totp-last-method";
+    await prisma.user.create({
+      data: { id: userId, email: "remove-totp-last-method@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(secret), confirmed_at: new Date() },
+    });
+
+    expect(await removeTotpMethod(prisma, userId)).toBe(true);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBe(0);
+  });
+
+  it("returns false and changes nothing when there is no TOTP row", async () => {
+    const userId = "user-remove-totp-none";
+    await prisma.user.create({
+      data: { id: userId, email: "remove-totp-none@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    expect(await removeTotpMethod(prisma, userId)).toBe(false);
   });
 });
 
