@@ -199,82 +199,36 @@ function notifyBulkRevokePassResult(
   addToast(`No passes revoked${noteSuffix}.`, "error");
 }
 
-function notifyBulkVoidWalletResult(
-  result: { voided: number; skipped: number; errored: number },
+/** Shared "N wallet passes {verb} / none had a pass" toast for a bulk wallet-lifecycle action
+ * result (void / push updates / delete) - the three call sites differ only in the past-tense verb,
+ * the skip reason, and the all-skipped info copy; the count/skipped/errored branching itself is
+ * identical (bot review). */
+function notifyBulkWalletActionResult(
+  result: { count: number; skipped: number; errored: number },
+  copy: { verb: string; skipReason: string; noneMessage: string },
   addToast: (message: string, variant?: ToastVariant) => void,
 ) {
-  const { voided, skipped, errored } = result;
+  const { count, skipped, errored } = result;
+  const { verb, skipReason, noneMessage } = copy;
   const notes: string[] = [];
-  if (skipped > 0) notes.push(`${skipped} had no pass, or it was already voided`);
+  if (skipped > 0) notes.push(`${skipped} ${skipReason}`);
   if (errored > 0) notes.push(`${errored} failed unexpectedly`);
   const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 
-  if (voided > 0) {
+  if (count > 0) {
     addToast(
-      `${voided} wallet ${voided === 1 ? "pass" : "passes"} voided${noteSuffix}.`,
+      `${count} wallet ${count === 1 ? "pass" : "passes"} ${verb}${noteSuffix}.`,
       errored > 0 ? "warning" : "success",
     );
     return;
   }
 
   if (skipped > 0 && errored === 0) {
-    addToast("None of the selected attendees had a pass to void - no pass, or already voided.", "info");
+    addToast(noneMessage, "info");
     return;
   }
 
-  addToast(`No wallet passes voided${noteSuffix}.`, "error");
-}
-
-function notifyBulkReissueWalletResult(
-  result: { reissued: number; skipped: number; errored: number },
-  addToast: (message: string, variant?: ToastVariant) => void,
-) {
-  const { reissued, skipped, errored } = result;
-  const notes: string[] = [];
-  if (skipped > 0) notes.push(`${skipped} had no pass to update`);
-  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
-  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
-
-  if (reissued > 0) {
-    addToast(
-      `${reissued} wallet ${reissued === 1 ? "pass" : "passes"} updated${noteSuffix}.`,
-      errored > 0 ? "warning" : "success",
-    );
-    return;
-  }
-
-  if (skipped > 0 && errored === 0) {
-    addToast("None of the selected attendees had a wallet pass to update.", "info");
-    return;
-  }
-
-  addToast(`No wallet passes updated${noteSuffix}.`, "error");
-}
-
-function notifyBulkDeleteWalletResult(
-  result: { deleted: number; skipped: number; errored: number },
-  addToast: (message: string, variant?: ToastVariant) => void,
-) {
-  const { deleted, skipped, errored } = result;
-  const notes: string[] = [];
-  if (skipped > 0) notes.push(`${skipped} had no pass to delete`);
-  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
-  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
-
-  if (deleted > 0) {
-    addToast(
-      `${deleted} wallet ${deleted === 1 ? "pass" : "passes"} deleted${noteSuffix}.`,
-      errored > 0 ? "warning" : "success",
-    );
-    return;
-  }
-
-  if (skipped > 0 && errored === 0) {
-    addToast("None of the selected attendees had a wallet pass to delete.", "info");
-    return;
-  }
-
-  addToast(`No wallet passes deleted${noteSuffix}.`, "error");
+  addToast(`No wallet passes ${verb}${noteSuffix}.`, "error");
 }
 
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
@@ -1449,7 +1403,15 @@ export function AttendeesPage() {
       genericFallback: "Failed to void wallet passes.",
       action: (id) => bulkVoidWalletPass(id, [...selectedIds]),
       onSuccess: (result) => {
-        notifyBulkVoidWalletResult(result, addToast);
+        notifyBulkWalletActionResult(
+          { count: result.voided, skipped: result.skipped, errored: result.errored },
+          {
+            verb: "voided",
+            skipReason: "had no pass, or it was already voided",
+            noneMessage: "None of the selected attendees had a pass to void - no pass, or already voided.",
+          },
+          addToast,
+        );
         setBulkVoidWalletConfirmOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
@@ -1473,7 +1435,15 @@ export function AttendeesPage() {
       genericFallback: "Failed to push updates to wallet passes.",
       action: (id) => bulkReissueWalletPass(id, [...selectedIds]),
       onSuccess: (result) => {
-        notifyBulkReissueWalletResult(result, addToast);
+        notifyBulkWalletActionResult(
+          { count: result.reissued, skipped: result.skipped, errored: result.errored },
+          {
+            verb: "updated",
+            skipReason: "had no pass to update",
+            noneMessage: "None of the selected attendees had a wallet pass to update.",
+          },
+          addToast,
+        );
         setBulkReissueWalletConfirmOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
@@ -1497,7 +1467,15 @@ export function AttendeesPage() {
       genericFallback: "Failed to delete wallet passes.",
       action: (id) => bulkDeleteWalletPass(id, [...selectedIds]),
       onSuccess: (result) => {
-        notifyBulkDeleteWalletResult(result, addToast);
+        notifyBulkWalletActionResult(
+          { count: result.deleted, skipped: result.skipped, errored: result.errored },
+          {
+            verb: "deleted",
+            skipReason: "had no pass to delete",
+            noneMessage: "None of the selected attendees had a wallet pass to delete.",
+          },
+          addToast,
+        );
         setBulkDeleteWalletConfirmOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
