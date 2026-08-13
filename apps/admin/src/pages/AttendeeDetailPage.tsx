@@ -458,7 +458,7 @@ function WalletActionMenuItems({
               <i className="ti ti-wallet-off" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
                 <span>Void wallet pass</span>
-                <span className="more-actions-menu__item-hint">Show as invalid in Apple/Google Wallet</span>
+                <span className="more-actions-menu__item-hint">Show as invalid in their wallet</span>
               </span>
             </button>
           )}
@@ -476,7 +476,7 @@ function WalletActionMenuItems({
               <i className="ti ti-refresh" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
                 <span>Restore wallet pass</span>
-                <span className="more-actions-menu__item-hint">Show as valid again in Apple/Google Wallet</span>
+                <span className="more-actions-menu__item-hint">Show as valid again in their wallet</span>
               </span>
             </button>
           )}
@@ -505,7 +505,7 @@ function WalletActionMenuItems({
             <i className="ti ti-trash" aria-hidden="true" />
             <span className="more-actions-menu__item-text">
               <span>Delete wallet pass</span>
-              <span className="more-actions-menu__item-hint">Permanently remove it from Apple/Google Wallet</span>
+              <span className="more-actions-menu__item-hint">Permanently remove it from their wallet</span>
             </span>
           </button>
         )}
@@ -909,7 +909,7 @@ function AttendeeOverviewTab({
             <EmptyState
               icon={<i className="ti ti-wallet" aria-hidden="true" />}
               title="Not added to a wallet"
-              description="This attendee hasn't added their ticket to Apple Wallet or Google Wallet yet."
+              description="This attendee hasn't added their ticket to a wallet yet."
             />
           )}
         </Card>
@@ -2552,7 +2552,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "void"}
         title="Void wallet pass?"
-        message={`${detail.name}'s pass stays installed on their phone but shows as invalid in Apple/Google Wallet. You can restore it later.`}
+        message={`${detail.name}'s pass stays installed on their phone but shows as invalid in their wallet. You can restore it later.`}
         confirmLabel="Void"
         confirmVariant="danger"
         loading={walletBusy}
@@ -2569,7 +2569,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "restore"}
         title="Restore wallet pass?"
-        message={`This shows ${detail.name}'s pass as valid again in Apple/Google Wallet.`}
+        message={`This shows ${detail.name}'s pass as valid again in their wallet.`}
         confirmLabel="Restore"
         confirmVariant="primary"
         loading={walletBusy}
@@ -2603,7 +2603,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "delete"}
         title="Delete wallet pass?"
-        message={`Permanently removes ${detail.name}'s pass from Apple/Google Wallet. This cannot be undone - they would need to add it again from their ticket page.`}
+        message={`Permanently removes ${detail.name}'s pass from their wallet. This cannot be undone - they would need to add it again from their ticket page.`}
         confirmLabel="Delete"
         confirmVariant="danger"
         loading={walletBusy}
