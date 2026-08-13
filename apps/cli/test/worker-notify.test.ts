@@ -72,11 +72,13 @@ describe("openWorkerNotifyClient", () => {
   it("stops waiting once signal.stopped flips", async () => {
     const client = await openWorkerNotifyClient("postgresql://example/db");
     const signal = { stopped: false };
+    const started = Date.now();
     const wait = client.waitForWakeOrTimeout(60_000, signal);
     setTimeout(() => {
       signal.stopped = true;
     }, 20);
     await wait;
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it("latches a notification that arrives before waitForWakeOrTimeout is called", async () => {

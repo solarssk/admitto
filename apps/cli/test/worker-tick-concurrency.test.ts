@@ -111,4 +111,37 @@ describe("runWorker", () => {
     expect(notifyClient.waitForWakeOrTimeout).toHaveBeenCalledOnce();
     expect(notifyClient.close).toHaveBeenCalledOnce();
   });
+
+  it("logs notify=off and falls back to plain polling when the notify client never connects", async () => {
+    process.env["DATABASE_URL"] = "postgresql://example/db";
+    openWorkerNotifyClient.mockReset();
+    openWorkerNotifyClient.mockRejectedValue(new Error("connection refused"));
+    openWorkerLockClient.mockClear();
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    // SIGTERM lands while the mocked mail_delivery drain (60ms) is still in flight, so this
+    // also exercises the mid-tick "signal.stopped flipped during runWorkerTick" break path.
+    const stopTimer = setTimeout(() => process.emit("SIGTERM"), 20);
+    await runWorker({} as never);
+    clearTimeout(stopTimer);
+
+    expect(logSpy.mock.calls.some((c) => String(c[0]).includes("notify=off"))).toBe(true);
+    logSpy.mockRestore();
+  });
+
+  it("falls back to the plain sleep poll once a tick completes with no notify client", async () => {
+    process.env["DATABASE_URL"] = "postgresql://example/db";
+    openWorkerNotifyClient.mockReset();
+    openWorkerNotifyClient.mockRejectedValue(new Error("connection refused"));
+    openWorkerLockClient.mockClear();
+
+    // Let the first tick finish normally (mail_delivery's mocked drain takes ~60ms), then stop
+    // while the loop is inside the sleep(tickMs, signal) fallback, not mid-tick this time.
+    const stopTimer = setTimeout(() => process.emit("SIGTERM"), 150);
+    const started = Date.now();
+    await runWorker({} as never);
+    clearTimeout(stopTimer);
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100);
+  });
 });
