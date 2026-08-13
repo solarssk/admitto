@@ -1268,6 +1268,66 @@ describe("PATCH /api/admin/events/:eventId", () => {
       expect(afterSecond).toHaveLength(1);
       expect(afterSecond[0]?.id).toBe(afterFirst[0]?.id);
     });
+
+    it("does not enqueue a job when a wallet-relevant field is resubmitted with its current value (bot review)", async () => {
+      const before = await prisma.event.findUniqueOrThrow({ where: { id: PUSH_EVENT }, select: { title: true } });
+
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: before.title }),
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("does not let a pending attendee_ids-kind job suppress a new event-wide push (bot review)", async () => {
+      await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_SET,
+          event_id: PUSH_EVENT,
+          result_json: { request: { kind: "attendee_ids", eventId: PUSH_EVENT, attendeeIds: [PUSH_ATTENDEE] } },
+        },
+      });
+
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (kind-scoped dedupe)" }),
+      });
+      expect(res.status).toBe(200);
+
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(2);
+      const kinds = jobs
+        .map((job) => (job.result_json as { request: { kind: string } }).request.kind)
+        .sort();
+      expect(kinds).toEqual(["attendee_ids", "event_wide"]);
+    });
+
+    it("creates only one event-wide job when two relevant-field saves race (DB-enforced, bot review)", async () => {
+      const [resA, resB] = await Promise.all([
+        app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (race A)" }),
+        }),
+        app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+        }),
+      ]);
+      expect(resA.status).toBe(200);
+      expect(resB.status).toBe(200);
+
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    });
   });
 
   describe("webhook subscription on wallet-config save", () => {

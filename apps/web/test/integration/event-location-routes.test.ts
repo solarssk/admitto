@@ -855,4 +855,39 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
       }
     },
   );
+
+  it("does not enqueue a job when a wallet-relevant field is resubmitted with its current value (bot review)", async () => {
+    await prisma.eventLocation.create({
+      data: { event_id: WALLET_LOC_EVENT, formatted_address: "Unchanged Street" },
+    });
+
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { formatted_address: "Unchanged Street" });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("does not enqueue a job when address_components are resubmitted with identical content (bot review)", async () => {
+    const components = {
+      object_name: "ICE Kraków",
+      street: "Marii Konopnickiej 17",
+      postcode: "30-302",
+      city: "Kraków",
+      region: "Lesser Poland",
+      country: "Poland",
+    };
+    await prisma.eventLocation.create({
+      data: { event_id: WALLET_LOC_EVENT, address_components: components },
+    });
+
+    // A fresh object with identical content, not the same reference - proves the comparison is
+    // by serialized value (JSON.stringify), not by object identity (Prisma always returns a new
+    // JS object on read, even when the stored content hasn't changed).
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { address_components: { ...components } });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(0);
+  });
 });

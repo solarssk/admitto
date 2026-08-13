@@ -561,20 +561,37 @@ async function subscribeWalletWebhooksBestEffort(
 }
 
 /** Event fields that can appear in a wallet pass via WALLET_MAPPING_PLACEHOLDERS (event name,
- * hours, date, location) - only these are worth an automatic push to every already-issued pass.
- * A patch that touches only, say, capacity or branding never reaches pushWalletUpdatesBestEffort
- * below. */
-const WALLET_RELEVANT_EVENT_FIELDS: ReadonlySet<string> = new Set([
-  "title",
-  "date",
-  "timezone",
-  "event_hours_start",
-  "event_hours_end",
-]);
+ * hours, date, location). */
+type WalletRelevantEventSnapshot = {
+  title: string;
+  date: Date;
+  timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
+};
+
+/** True only when one of the wallet-relevant fields' *persisted* value actually differs -
+ * comparing against the pre-write row, not just whether the patch touched the key, so
+ * resubmitting an unchanged value (e.g. a client re-saving the same title) never counts as a
+ * change (bot review: an unconditional key-presence check would let a resubmit loop repeatedly
+ * enqueue pushes for no real change once each prior job finishes). Dates compare via getTime() -
+ * both sides come from the same Postgres column, so this only ever differs on a genuine write. */
+function walletRelevantEventFieldsChanged(
+  existing: WalletRelevantEventSnapshot,
+  updated: WalletRelevantEventSnapshot,
+): boolean {
+  return (
+    existing.title !== updated.title ||
+    existing.date.getTime() !== updated.date.getTime() ||
+    existing.timezone !== updated.timezone ||
+    existing.event_hours_start !== updated.event_hours_start ||
+    existing.event_hours_end !== updated.event_hours_end
+  );
+}
 
 /** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass's
- * name/ticket type/event details whenever a save changes one of WALLET_RELEVANT_EVENT_FIELDS
- * above (PO report, 2026-08-13: "the system already knows the wallet is on, so when hours/name
+ * name/ticket type/event details whenever a save actually changes one of the wallet-relevant
+ * fields (PO report, 2026-08-13: "the system already knows the wallet is on, so when hours/name
  * change in Event Settings it should quietly update the wallets too" - previously nothing pushed
  * to already-issued passes until an admin manually reissued each one). Guarded on wallet_enabled
  * here (unlike attendees-api-routes.ts's ticket-type push) so an event that never had wallet
@@ -587,15 +604,15 @@ async function pushWalletUpdatesBestEffort(
   db: PrismaClient,
   c: Context,
   eventId: string,
-  changedFields: readonly string[],
-  updated: {
+  existing: WalletRelevantEventSnapshot,
+  updated: WalletRelevantEventSnapshot & {
     organization_id: string;
     wallet_enabled: boolean;
     wallet_template_id: string | null;
     wallet_api_key_enc: string | null;
   },
 ): Promise<void> {
-  if (!changedFields.some((field) => WALLET_RELEVANT_EVENT_FIELDS.has(field))) return;
+  if (!walletRelevantEventFieldsChanged(existing, updated)) return;
   if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
 
   await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id);
@@ -718,7 +735,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     // already committed, so a transient enqueue failure here must not turn that success into a
     // 500.
     try {
-      await pushWalletUpdatesBestEffort(db, c, eventId, changedFields, updated);
+      await pushWalletUpdatesBestEffort(db, c, eventId, existing, updated);
     } catch (err) {
       console.error("wallet event-change push enqueue failed:", err);
       recordSystemLog({

@@ -5,7 +5,7 @@
  * side.
  */
 import type { Context } from "hono";
-import type { PrismaClient } from "@admitto/db";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import type { WalletPushRequest } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveClientTimezone } from "./admin-helpers.js";
 import { loadEventAdminJob } from "./admin-job-http.js";
@@ -57,34 +57,64 @@ export async function enqueueWalletPushJob(
   return createWalletPushJob(db, c, eventId, organizationId, { kind: "attendee_ids", eventId, attendeeIds });
 }
 
+/** Finds a pending/running *event_wide* wallet_push job for the event - deliberately scoped to
+ * that one request kind (via a JSON-path filter on result_json.request.kind) so an
+ * attendee_ids-kind job (e.g. from a bulk ticket-type change, covering only its own selection)
+ * never gets mistaken for coverage of an event-wide push and suppresses one that's actually
+ * needed (bot review). */
+async function findPendingEventWideWalletPushJob(db: PrismaClient, eventId: string): Promise<string | null> {
+  const job = await db.adminJob.findFirst({
+    where: {
+      event_id: eventId,
+      type: "wallet_push",
+      status: { in: ["pending", "running"] },
+      result_json: { path: ["request", "kind"], equals: "event_wide" },
+    },
+    select: { id: true },
+  });
+  return job?.id ?? null;
+}
+
 /** Enqueues a wallet_push job for every already-issued active pass under the event - event
  * settings / location saves, where the affected set has no operator-picked selection to bound
  * it. No no-op case to check for here (unlike enqueueWalletPushJob above): the job drain itself
  * resolves the target set at run time, so an event with zero issued passes just finishes with
  * `reissued: 0` rather than never having been worth creating.
  *
- * Deduplicates against any wallet_push job already pending/running for this event instead of
- * creating a new one - unlike enqueueWalletPushJob above (an explicit operator click), this is
+ * Deduplicates against any pending/running *event_wide* wallet_push job for this event instead
+ * of creating a new one - unlike enqueueWalletPushJob above (an explicit operator click), this is
  * triggered automatically on every qualifying settings/location save, so a rapid string of saves
- * (or a scripted no-op resubmit loop, since neither caller diffs the new value against the
- * existing one before calling this) must not each queue their own job and starve other events'
- * wallet_push jobs behind it (bot review). The worker re-reads current data when it picks a job
- * up, so an already-queued job still covers a change that lands before it starts running; a
- * change that lands after it started is simply picked up by the next qualifying save, the same
- * self-heals-on-next-save tradeoff already accepted throughout this feature. */
+ * must not each queue their own job and starve other events' wallet_push jobs behind it. The
+ * worker re-reads current data when it picks a job up, so an already-queued job still covers a
+ * change that lands before it starts running; a change that lands after it started is simply
+ * picked up by the next qualifying save, the same self-heals-on-next-save tradeoff already
+ * accepted throughout this feature.
+ *
+ * findPendingEventWideWalletPushJob above is a fast-path check only, not the actual guarantee -
+ * two concurrent saves can both pass it before either one's create() below commits (bot review).
+ * The real invariant is a partial unique index on AdminJob(event_id) scoped to exactly this
+ * (type=wallet_push, kind=event_wide, status pending/running) - see the migration named for it.
+ * A P2002 from that index means this call lost the race; fetch and return whichever job won it
+ * instead of failing the caller's save over what is, from the caller's perspective, already a
+ * queued push. */
 export async function enqueueEventWideWalletPushJob(
   db: PrismaClient,
   c: Context,
   eventId: string,
   organizationId: string,
 ): Promise<string> {
-  const alreadyQueued = await db.adminJob.findFirst({
-    where: { event_id: eventId, type: "wallet_push", status: { in: ["pending", "running"] } },
-    select: { id: true },
-  });
-  if (alreadyQueued) return alreadyQueued.id;
+  const alreadyQueued = await findPendingEventWideWalletPushJob(db, eventId);
+  if (alreadyQueued) return alreadyQueued;
 
-  return createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId });
+  try {
+    return await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const winner = await findPendingEventWideWalletPushJob(db, eventId);
+      if (winner) return winner;
+    }
+    throw err;
+  }
 }
 
 /** GET /api/admin/events/:eventId/wallet-push/jobs/:jobId */

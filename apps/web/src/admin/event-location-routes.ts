@@ -236,28 +236,67 @@ async function parseLocationPutBody(
  * wallet-pass-input.ts) - venue name, address, coordinates/maps links, directions/accessibility
  * notes. `map_zoom` and geocoding provenance (`geocoding_provider`/`geocoded_at`) are UI-only,
  * never read by the pass, so they're deliberately excluded. */
-const WALLET_RELEVANT_LOCATION_FIELDS: ReadonlySet<string> = new Set([
-  "venue_name",
-  "formatted_address",
-  "latitude",
-  "longitude",
-  "directions_text",
-  "accessibility_text",
-  "address_components",
-  "google_maps_url_override",
-  "apple_maps_url_override",
-]);
+type WalletRelevantLocationSnapshot = {
+  venue_name: string | null;
+  formatted_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  directions_text: string | null;
+  accessibility_text: string | null;
+  address_components: Prisma.JsonValue | null;
+  google_maps_url_override: string | null;
+  apple_maps_url_override: string | null;
+};
+
+const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
+  venue_name: null,
+  formatted_address: null,
+  latitude: null,
+  longitude: null,
+  directions_text: null,
+  accessibility_text: null,
+  address_components: null,
+  google_maps_url_override: null,
+  apple_maps_url_override: null,
+};
+
+/** True only when one of the wallet-relevant fields' *persisted* value actually differs from
+ * before the save - comparing against the pre-write row (null when this is the event's first-ever
+ * location save, treated as every field starting from EMPTY_WALLET_LOCATION_SNAPSHOT), not just
+ * whether the patch touched the key (bot review, same reasoning as event-settings-routes.ts's own
+ * walletRelevantEventFieldsChanged - an unconditional key-presence check would let a resubmit loop
+ * repeatedly enqueue pushes for no real change once each prior job finishes). address_components
+ * is JSON - compared by serialized value, not object identity, since Prisma returns a fresh
+ * object on every read even when the stored content is byte-identical. */
+function walletRelevantLocationFieldsChanged(
+  existing: WalletRelevantLocationSnapshot | null,
+  updated: WalletRelevantLocationSnapshot,
+): boolean {
+  const before = existing ?? EMPTY_WALLET_LOCATION_SNAPSHOT;
+  return (
+    before.venue_name !== updated.venue_name ||
+    before.formatted_address !== updated.formatted_address ||
+    before.latitude !== updated.latitude ||
+    before.longitude !== updated.longitude ||
+    before.directions_text !== updated.directions_text ||
+    before.accessibility_text !== updated.accessibility_text ||
+    before.google_maps_url_override !== updated.google_maps_url_override ||
+    before.apple_maps_url_override !== updated.apple_maps_url_override ||
+    JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components)
+  );
+}
 
 /** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass
- * whenever a save changes one of WALLET_RELEVANT_LOCATION_FIELDS above - the location half of the
- * same gap event-settings-routes.ts's own pushWalletUpdatesBestEffort closes for the event's
- * basic fields (name/date/hours). Before this, buildWalletPassInput already read location fields
- * but nothing ever pushed a location change to an already-issued pass. */
+ * whenever a save actually changes one of the wallet-relevant location fields - the location half
+ * of the same gap event-settings-routes.ts's own pushWalletUpdatesBestEffort closes for the
+ * event's basic fields (name/date/hours). Before this, buildWalletPassInput already read location
+ * fields but nothing ever pushed a location change to an already-issued pass. */
 async function pushWalletUpdatesBestEffort(
   db: PrismaClient,
   c: Context,
   eventId: string,
-  changedFields: readonly string[],
+  existingLocation: WalletRelevantLocationSnapshot | null,
+  updatedLocation: WalletRelevantLocationSnapshot,
   event: {
     organization_id: string;
     wallet_enabled: boolean;
@@ -265,7 +304,7 @@ async function pushWalletUpdatesBestEffort(
     wallet_api_key_enc: string | null;
   },
 ): Promise<void> {
-  if (!changedFields.some((field) => WALLET_RELEVANT_LOCATION_FIELDS.has(field))) return;
+  if (!walletRelevantLocationFieldsChanged(existingLocation, updatedLocation)) return;
   if (!event.wallet_enabled || !event.wallet_template_id || !event.wallet_api_key_enc) return;
 
   await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id);
@@ -411,7 +450,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
     // transient enqueue failure here must not turn that success into a 500 (same reasoning as
     // event-settings-routes.ts's own basic-fields wallet push).
     try {
-      await pushWalletUpdatesBestEffort(db, c, eventId, changedFields, event);
+      await pushWalletUpdatesBestEffort(db, c, eventId, existing, updated, event);
     } catch (err) {
       console.error("wallet event-location push enqueue failed:", err);
       recordSystemLog({
