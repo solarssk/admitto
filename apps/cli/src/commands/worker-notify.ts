@@ -28,7 +28,7 @@ function log(message: string): void {
  * Opens a dedicated LISTEN connection. Caller must `close()` on shutdown.
  */
 export async function openWorkerNotifyClient(connectionString: string): Promise<WorkerNotifyClient> {
-  const client = new Client({ connectionString });
+  const client = new Client({ connectionString, connectionTimeoutMillis: 5_000 });
   let alive = true;
   // Latches a notification that arrives while nothing is awaiting waitForWakeOrTimeout
   // (e.g. a burst of inserts while the worker is mid-tick) so it isn't lost.
@@ -44,8 +44,13 @@ export async function openWorkerNotifyClient(connectionString: string): Promise<
     log(`connection error, falling back to poll-only: ${err instanceof Error ? err.message : String(err)}`);
   });
 
-  await client.connect();
-  await client.query(`LISTEN ${WORKER_WAKE_CHANNEL}`);
+  try {
+    await client.connect();
+    await client.query(`LISTEN ${WORKER_WAKE_CHANNEL}`);
+  } catch (err) {
+    await client.end().catch(() => undefined);
+    throw err;
+  }
 
   return {
     isAlive(): boolean {

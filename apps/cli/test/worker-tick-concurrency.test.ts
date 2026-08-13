@@ -76,6 +76,7 @@ describe("runWorkerTick", () => {
   it("runs mail_delivery, import, export, bounce, and wallet_sync concurrently", async () => {
     for (const key of Object.keys(starts)) delete starts[key];
     for (const key of Object.keys(finishes)) delete finishes[key];
+    drainImportJobs.mockClear();
 
     await runWorkerTick({} as never, fakeLocks() as never, createRetentionSchedule());
 
@@ -85,6 +86,9 @@ describe("runWorkerTick", () => {
     expect(starts["export"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["bounce"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["wallet_sync"]).toBeLessThan(finishes["mail_delivery"]);
+    // import has no artificial delay to race against, but a regression that drops it from the
+    // Promise.all batch entirely should still fail this test.
+    expect(drainImportJobs).toHaveBeenCalledOnce();
   });
 });
 

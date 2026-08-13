@@ -79,6 +79,7 @@ describe("openWorkerNotifyClient", () => {
     }, 20);
     await wait;
     expect(Date.now() - started).toBeLessThan(1000);
+    expect(signal.stopped).toBe(true);
   });
 
   it("latches a notification that arrives before waitForWakeOrTimeout is called", async () => {
@@ -122,6 +123,22 @@ describe("openWorkerNotifyClient", () => {
     query.mockClear();
     await client.close();
     expect(query).not.toHaveBeenCalledWith(`UNLISTEN ${WORKER_WAKE_CHANNEL}`);
+    expect(end).toHaveBeenCalledOnce();
+  });
+
+  it("ends the connection and rethrows when connect() fails, instead of leaking it", async () => {
+    connect.mockRejectedValueOnce(new Error("connection refused"));
+    await expect(openWorkerNotifyClient("postgresql://example/db")).rejects.toThrow(
+      "connection refused",
+    );
+    expect(end).toHaveBeenCalledOnce();
+  });
+
+  it("ends the connection and rethrows when the LISTEN query fails, instead of leaking it", async () => {
+    query.mockRejectedValueOnce(new Error("permission denied for channel"));
+    await expect(openWorkerNotifyClient("postgresql://example/db")).rejects.toThrow(
+      "permission denied for channel",
+    );
     expect(end).toHaveBeenCalledOnce();
   });
 });

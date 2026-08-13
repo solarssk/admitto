@@ -69,6 +69,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // This file's beforeAll does a full `migrate reset`, but not every packages/db test file
+  // does - leaving these fixtures behind would leak into whichever non-resetting file runs
+  // next in the same (fileParallelism: false) sequential run against the shared test DB.
+  if (prisma) {
+    await prisma.emailDelivery.deleteMany({ where: { organization_id: ORG_ID } });
+    await prisma.adminJob.deleteMany({ where: { organization_id: ORG_ID } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_ID } });
+    await prisma.event.deleteMany({ where: { id: EVENT_ID } });
+    await prisma.organization.deleteMany({ where: { id: ORG_ID } });
+  }
   await listener?.end();
   await prisma?.$disconnect();
 });
