@@ -159,6 +159,20 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** PassCreator webhook deliveries - keyed by event, not IP, since PassCreator's own servers
+   * (not the attendee's browser) are the caller; retryEnabled means one event's bursts must not
+   * throttle another's. */
+  "wallet:webhook": {
+    checks: [
+      {
+        keyOf: (c) => `wallet:webhook:event:${c.req.param("eventId") ?? "unknown"}`,
+        windowMs: 60_000,
+        max: 120,
+        onExceeded: (c) => c.body(null, 429),
+        logOnExceeded: { scope: "wallet_webhook" },
+      },
+    ],
+  },
   "auth:oidc": {
     checks: [
       {

@@ -46,6 +46,7 @@ import {
 } from "./maps/static-map-route.js";
 import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
+import { handlePassCreatorWebhook } from "./wallet-webhook.js";
 import {
   resolveCheckinToken,
   resolveAllowCheckinBearer,
@@ -530,6 +531,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const opsHealthToken = resolveOpsHealthTokenOption(options.opsHealthToken);
   const readyzRateLimit = rateLimit(rateLimitStore, "ops:readyz");
   const opsSystemLogRateLimit = rateLimit(rateLimitStore, "ops:system-logs");
+  const walletWebhookRateLimit = rateLimit(rateLimitStore, "wallet:webhook");
   const healthzRateLimit = createHealthzRateLimitMiddleware(rateLimitStore);
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
@@ -1910,6 +1912,12 @@ export function createApp(options: CreateAppOptions = {}) {
       return handleWalletRedirect(c, resolved, platform, `/t/${eventSlug}/a/${ref}`);
     });
   }
+
+  // PassCreator webhook deliveries (registration/void events) - one event's target URL per
+  // subscribeWebhook() call, never a browser navigation.
+  app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, (c) =>
+    handlePassCreatorWebhook(c, db, options.walletPassProvider),
+  );
 
   // Mode B hosted QR — filename param is "{public_ref}.png"
   app.get("/q/:eventSlug/a/:filename", async (c) => {
