@@ -669,10 +669,14 @@ export function createApp(options: CreateAppOptions = {}) {
 
     // Same QR payload the attendee's own ticket page encodes - the wallet pass's barcode must
     // match it exactly, or scanning the wallet pass at check-in won't resolve to this attendee.
-    const qrPayload = await resolveQrPayloadOrRespond(resolved, internalToken, "wallet QR", () =>
+    const qrPayloadResult = await resolveQrPayloadOrRespond(resolved, internalToken, "wallet QR", () =>
       c.redirect(`${backHref}?walletError=1`, 302),
     );
-    if (typeof qrPayload !== "string") return qrPayload;
+    if (typeof qrPayloadResult !== "string") return qrPayloadResult;
+    // Narrowed local: a nested function declaration below (resolvePassUrls) doesn't inherit the
+    // typeof-narrowing above on the outer closure variable (see AGENTS.md's React-state note for
+    // the same TypeScript limitation) - capture it as a definitely-string const instead.
+    const qrPayload: string = qrPayloadResult;
 
     let existing: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
     try {
@@ -687,7 +691,6 @@ export function createApp(options: CreateAppOptions = {}) {
       });
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
-    let providerUrls: { apple_url: string | null; android_url: string | null };
 
     /** Returns null (after logging) instead of throwing - a database error here must still land
      * on the retry redirect below, not escape to app.onError as a bare JSON 500. */
@@ -829,19 +832,23 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
-    if (existing?.status === "active") {
-      providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
-    } else if (existing?.status === "voided" && existing.provider_pass_id) {
-      const restored = await restoreExistingPass(existing.provider_pass_id);
-      if (!restored) return c.redirect(`${backHref}?walletError=1`, 302);
-      providerUrls = restored;
-    } else {
+    /** Dispatches on the existing WalletPass row's status - split out of the main handler body to
+     * keep its cognitive complexity under the SonarCloud threshold (S3776). Returns null (after
+     * the callee's own logging) when none of the three paths could produce a usable URL. */
+    async function resolvePassUrls(): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      if (existing?.status === "active") {
+        return { apple_url: existing.apple_url, android_url: existing.android_url };
+      }
+      if (existing?.status === "voided" && existing.provider_pass_id) {
+        return restoreExistingPass(existing.provider_pass_id);
+      }
       const display = await resolveTicketPageDisplay(db, resolved);
       const input = buildWalletPassInput(display, qrPayload);
-      const created = await createOrRecoverPass(input);
-      if (!created) return c.redirect(`${backHref}?walletError=1`, 302);
-      providerUrls = created;
+      return createOrRecoverPass(input);
     }
+
+    const providerUrls = await resolvePassUrls();
+    if (!providerUrls) return c.redirect(`${backHref}?walletError=1`, 302);
 
     const url = platform === "apple" ? providerUrls.apple_url : providerUrls.android_url;
     if (!url) {
