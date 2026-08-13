@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+
+- The small map on the public ticket page and its "© OpenStreetMap contributors" credit could render as blank boxes instead of readable text in the packaged app image, because the container had no fonts installed at all for the server-side map renderer to draw with.
 - Event settings → Wallet: registering the PassCreator webhook subscriptions on save no longer logs a false failure and falls back to re-subscribing unconditionally on every save. PassCreator's hook endpoints return success without matching the response shape used elsewhere in its API, so a working subscription was being misread as an error.
 
 ## [0.5.0] - 2026-08-13
