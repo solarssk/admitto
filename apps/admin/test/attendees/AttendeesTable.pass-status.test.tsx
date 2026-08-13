@@ -82,13 +82,13 @@ describe("AttendeesTable pass status badge", () => {
 });
 
 describe("AttendeesTable Wallet column", () => {
-  it("shows a dash for an attendee with no WalletPass row", () => {
-    const { container } = render(<AttendeesTable {...tableProps} items={[baseRow]} />);
+  it("shows both platform icons muted for an attendee with no WalletPass row", () => {
+    render(<AttendeesTable {...tableProps} items={[baseRow]} />);
 
     const table = within(screen.getByRole("table"));
     expect(table.getByText("Wallet")).toBeTruthy();
-    const cells = container.querySelectorAll("tbody td");
-    expect(cells[cells.length - 1].textContent).toBe("-");
+    expect(screen.getByLabelText("Apple Wallet: Not added")).toBeTruthy();
+    expect(screen.getByLabelText("Google Wallet: Not added")).toBeTruthy();
   });
 
   it("shows a highlighted platform icon once the attendee has registered a device", () => {

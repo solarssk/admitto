@@ -8,9 +8,12 @@ afterEach(() => {
 });
 
 describe("WalletColumnCell", () => {
-  it("shows a dash when no WalletPass row exists", () => {
+  it("shows both platform icons muted, labelled Not added, when no WalletPass row exists", () => {
     render(<WalletColumnCell status={null} />);
-    expect(screen.getByText("-")).toBeTruthy();
+    const apple = screen.getByLabelText("Apple Wallet: Not added");
+    const google = screen.getByLabelText("Google Wallet: Not added");
+    expect(apple.className).not.toContain("attendees-table-v2__wallet-icon--active");
+    expect(google.className).not.toContain("attendees-table-v2__wallet-icon--active");
   });
 
   it("highlights only the platform(s) with an active registration", () => {
