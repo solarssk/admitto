@@ -37,5 +37,6 @@ export function getAuthPageInlineScriptHeaders(
     ].join("; "),
     "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
+    "X-Robots-Tag": "noindex, nofollow",
   };
 }
