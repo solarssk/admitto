@@ -516,6 +516,22 @@ export interface BulkRevokePassResponse {
   errored: number;
 }
 
+/** Bulk wallet-void summary from POST .../attendees/bulk-wallet-void. */
+export interface BulkWalletVoidResponse {
+  voided: number;
+  /** No WalletPass row, or already voided - nothing to void, left untouched. */
+  skipped: number;
+  errored: number;
+}
+
+/** Bulk wallet-reissue summary from POST .../attendees/bulk-wallet-reissue. */
+export interface BulkWalletReissueResponse {
+  reissued: number;
+  /** No WalletPass row, or no resolvable ticket to rebuild from - left untouched. */
+  skipped: number;
+  errored: number;
+}
+
 /** Admin SPA DTOs for event item configuration (mirror of web API).
  * `content_fields` references EventCustomField rows by source_field (see below) - it does not
  * embed field definitions. */

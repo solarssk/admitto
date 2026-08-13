@@ -241,6 +241,10 @@ export interface AttendeesTableProps {
   bulkRevokeItemsBusy: boolean;
   onBulkRevokePass: () => void;
   bulkRevokePassBusy: boolean;
+  onBulkVoidWallet: () => void;
+  bulkVoidWalletBusy: boolean;
+  onBulkReissueWallet: () => void;
+  bulkReissueWalletBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -320,6 +324,14 @@ function bulkRevokeCheckInTooltip(archived: boolean, canRevokeCheckIn: boolean):
 function bulkRevokePassTooltip(archived: boolean, canRevokePass: boolean): string | undefined {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
   if (!canRevokePass) return "The selected attendees' passes are already revoked or cancelled.";
+  return undefined;
+}
+
+/** "Void wallet pass"/"Reissue wallet pass" menu items' shared disabled-title - both are no-ops
+ * once nothing in the selection has a WalletPass row at all. */
+function bulkWalletTooltip(archived: boolean, canBulkWallet: boolean): string | undefined {
+  if (archived) return ARCHIVED_ACTION_TOOLTIP;
+  if (!canBulkWallet) return "None of the selected attendees have added a wallet pass.";
   return undefined;
 }
 
@@ -404,6 +416,12 @@ function BulkMoreActionsMenu({
   bulkRevokePassBusy,
   canRevokePass,
   revokablePassCount,
+  onBulkVoidWallet,
+  bulkVoidWalletBusy,
+  onBulkReissueWallet,
+  bulkReissueWalletBusy,
+  canBulkWallet,
+  walletPassCount,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -442,6 +460,14 @@ function BulkMoreActionsMenu({
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
   revokablePassCount: number;
+  onBulkVoidWallet: () => void;
+  bulkVoidWalletBusy: boolean;
+  onBulkReissueWallet: () => void;
+  bulkReissueWalletBusy: boolean;
+  /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
+   * act on (may still include an already-voided pass for Void, resolved server-side). */
+  canBulkWallet: boolean;
+  walletPassCount: number;
   onDelete: () => void;
 }>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
@@ -588,6 +614,33 @@ function BulkMoreActionsMenu({
               onBulkRevokePass();
             }}
           />
+          {/* Disabled once nothing in the selection has a WalletPass row at all - a mixed
+           * selection stays enabled, same "nothing to do" gate as the actions above. The exact
+           * count can still include an already-voided pass (skipped server-side and reported in
+           * the result toast) - the row list doesn't carry that finer status. */}
+          <MoreActionsMenuItem
+            icon="wallet-off"
+            variant="warning"
+            label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
+            hint={`Show as invalid in Apple/Google Wallet for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            disabled={archived || bulkVoidWalletBusy || !canBulkWallet}
+            tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+            onClick={() => {
+              setOpen(false);
+              onBulkVoidWallet();
+            }}
+          />
+          <MoreActionsMenuItem
+            icon="refresh-dot"
+            label={bulkReissueWalletBusy ? "Reissuing wallet passes…" : "Reissue wallet pass"}
+            hint={`Push current name/ticket type/event details for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
+            tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+            onClick={() => {
+              setOpen(false);
+              onBulkReissueWallet();
+            }}
+          />
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -666,6 +719,12 @@ function BulkBar({
   bulkRevokePassBusy,
   canRevokePass,
   revokablePassCount,
+  onBulkVoidWallet,
+  bulkVoidWalletBusy,
+  onBulkReissueWallet,
+  bulkReissueWalletBusy,
+  canBulkWallet,
+  walletPassCount,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -703,6 +762,12 @@ function BulkBar({
   bulkRevokePassBusy: boolean;
   canRevokePass: boolean;
   revokablePassCount: number;
+  onBulkVoidWallet: () => void;
+  bulkVoidWalletBusy: boolean;
+  onBulkReissueWallet: () => void;
+  bulkReissueWalletBusy: boolean;
+  canBulkWallet: boolean;
+  walletPassCount: number;
   onBulkDelete: () => void;
 }>) {
   const archived = event.archived_at != null;
@@ -801,6 +866,12 @@ function BulkBar({
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={canRevokePass}
           revokablePassCount={revokablePassCount}
+          onBulkVoidWallet={onBulkVoidWallet}
+          bulkVoidWalletBusy={bulkVoidWalletBusy}
+          onBulkReissueWallet={onBulkReissueWallet}
+          bulkReissueWalletBusy={bulkReissueWalletBusy}
+          canBulkWallet={canBulkWallet}
+          walletPassCount={walletPassCount}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1215,6 +1286,10 @@ export function AttendeesTable({
   bulkRevokeItemsBusy,
   onBulkRevokePass,
   bulkRevokePassBusy,
+  onBulkVoidWallet,
+  bulkVoidWalletBusy,
+  onBulkReissueWallet,
+  bulkReissueWalletBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1271,6 +1346,12 @@ export function AttendeesTable({
   const activeSelectedPassCount = selectedRows.filter(
     (row) => row.status !== "cancelled" && row.status !== "revoked",
   ).length;
+  // "Void wallet pass"/"Reissue wallet pass" are no-ops once nothing in the selection has ever
+  // added a wallet pass - the row list only knows whether a WalletPass row exists at all, not
+  // its exact provider status (active vs already-voided), so an already-voided pass still
+  // counts here and is skipped server-side instead (reported in the result toast).
+  const walletPassCount = selectedRows.filter((row) => row.wallet_status !== null).length;
+  const canBulkWallet = walletPassCount > 0;
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // this text on and off faster than it can register as loading — show it only once the
   // fetch has genuinely taken a moment. isInitialLoad itself (not the delayed derivative)
@@ -1314,6 +1395,12 @@ export function AttendeesTable({
           bulkRevokePassBusy={bulkRevokePassBusy}
           canRevokePass={anySelectedPassActive}
           revokablePassCount={activeSelectedPassCount}
+          onBulkVoidWallet={onBulkVoidWallet}
+          bulkVoidWalletBusy={bulkVoidWalletBusy}
+          onBulkReissueWallet={onBulkReissueWallet}
+          bulkReissueWalletBusy={bulkReissueWalletBusy}
+          canBulkWallet={canBulkWallet}
+          walletPassCount={walletPassCount}
           onBulkDelete={onBulkDelete}
         />
       ) : (

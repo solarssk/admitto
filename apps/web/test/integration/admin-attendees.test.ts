@@ -1434,6 +1434,123 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
   });
 
+  describe("bulk-wallet-void", () => {
+    it("voids every active wallet pass in the selection and skips the rest", async () => {
+      const activeId = "att-bulk-wallet-void-active";
+      const alreadyVoidedId = "att-bulk-wallet-void-already";
+      const noPassId = "att-bulk-wallet-void-none";
+      await seedActionAttendee(activeId, WALLET_ACTION_EVENT, { withPass: true });
+      await seedActionAttendee(alreadyVoidedId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.walletPass.update({
+        where: { attendee_id: alreadyVoidedId },
+        data: { status: "voided", voided_at: new Date() },
+      });
+      await seedActionAttendee(noPassId, WALLET_ACTION_EVENT);
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [activeId, alreadyVoidedId, noPassId] }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { voided: number; skipped: number; errored: number };
+      expect(body).toEqual({ voided: 1, skipped: 2, errored: 0 });
+      expect(voidSpy).toHaveBeenCalledTimes(1);
+      expect(voidSpy).toHaveBeenCalledWith(`pc-${activeId}`);
+      const activeRow = await prisma.walletPass.findUnique({ where: { attendee_id: activeId } });
+      expect(activeRow?.status).toBe("voided");
+    });
+
+    it("returns 409 without calling the provider when the event's wallet isn't configured", async () => {
+      const attendeeId = "att-bulk-wallet-void-unconfigured";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT_UNCONFIGURED, { withPass: true });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [attendeeId] }),
+        },
+      );
+
+      expect(res.status).toBe(409);
+      expect(voidSpy).not.toHaveBeenCalled();
+    });
+
+    it("counts a per-attendee provider failure as errored without failing the whole batch", async () => {
+      const okId = "att-bulk-wallet-void-ok";
+      const failId = "att-bulk-wallet-void-fail";
+      await seedActionAttendee(okId, WALLET_ACTION_EVENT, { withPass: true });
+      await seedActionAttendee(failId, WALLET_ACTION_EVENT, { withPass: true });
+      voidSpy.mockImplementation(async (providerPassId: string) => {
+        if (providerPassId === `pc-${failId}`) throw new Error("network down");
+      });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [okId, failId] }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { voided: number; skipped: number; errored: number };
+      expect(body).toEqual({ voided: 1, skipped: 0, errored: 1 });
+    });
+  });
+
+  describe("bulk-wallet-reissue", () => {
+    it("rebuilds each selected attendee's pass and skips one with no resolvable ticket", async () => {
+      const issuedId = "att-bulk-wallet-reissue-issued";
+      const unissuedId = "att-bulk-wallet-reissue-unissued";
+      const token = generateToken();
+      await prisma.attendee.create({
+        data: {
+          id: issuedId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${issuedId}@example.com`,
+          name: "Bulk Reissue Issued",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: { attendee_id: issuedId, provider: "passcreator", provider_pass_id: `pc-${issuedId}`, status: "active" },
+      });
+      await seedActionAttendee(unissuedId, WALLET_ACTION_EVENT, { withPass: true });
+      updateSpy.mockResolvedValueOnce({
+        providerPassId: `pc-${issuedId}`,
+        downloadUrl: "https://pc.test/p/bulk",
+        appleUrl: "https://pc.test/apple/bulk",
+        androidUrl: "https://pc.test/android/bulk",
+      });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-reissue`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [issuedId, unissuedId] }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reissued: number; skipped: number; errored: number };
+      expect(body).toEqual({ reissued: 1, skipped: 1, errored: 0 });
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${issuedId}`);
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: issuedId } });
+      expect(row?.apple_url).toBe("https://pc.test/apple/bulk");
+    });
+  });
+
   describe("wallet_apple_link / wallet_google_link on GET detail", () => {
     it("returns on-demand wallet links even when the attendee has never added a pass (PO review, 2026-08-13)", async () => {
       const attendeeId = "att-wallet-links-none";

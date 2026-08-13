@@ -17,6 +17,8 @@ import {
   bulkCheckInAttendees,
   bulkRevokeCheckIn,
   bulkRevokePass,
+  bulkVoidWalletPass,
+  bulkReissueWalletPass,
   bulkDeleteAttendees,
   bulkResendTickets,
   bulkRevokeItems,
@@ -198,6 +200,58 @@ function notifyBulkRevokePassResult(
   }
 
   addToast(`No passes revoked${noteSuffix}.`, "error");
+}
+
+function notifyBulkVoidWalletResult(
+  result: { voided: number; skipped: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { voided, skipped, errored } = result;
+  const notes: string[] = [];
+  if (skipped > 0) notes.push(`${skipped} had no pass to void`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (voided > 0) {
+    addToast(
+      `${voided} wallet ${voided === 1 ? "pass" : "passes"} voided${noteSuffix}.`,
+      errored > 0 ? "warning" : "success",
+    );
+    return;
+  }
+
+  if (skipped > 0 && errored === 0) {
+    addToast("None of the selected attendees had a wallet pass to void.", "info");
+    return;
+  }
+
+  addToast(`No wallet passes voided${noteSuffix}.`, "error");
+}
+
+function notifyBulkReissueWalletResult(
+  result: { reissued: number; skipped: number; errored: number },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { reissued, skipped, errored } = result;
+  const notes: string[] = [];
+  if (skipped > 0) notes.push(`${skipped} had no pass to reissue`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (reissued > 0) {
+    addToast(
+      `${reissued} wallet ${reissued === 1 ? "pass" : "passes"} reissued${noteSuffix}.`,
+      errored > 0 ? "warning" : "success",
+    );
+    return;
+  }
+
+  if (skipped > 0 && errored === 0) {
+    addToast("None of the selected attendees had a wallet pass to reissue.", "info");
+    return;
+  }
+
+  addToast(`No wallet passes reissued${noteSuffix}.`, "error");
 }
 
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
@@ -855,6 +909,12 @@ export function AttendeesPage() {
   const [bulkRevokePassBusy, setBulkRevokePassBusy] = useState(false);
   const [bulkRevokePassConfirmOpen, setBulkRevokePassConfirmOpen] = useState(false);
   const [bulkRevokePassError, setBulkRevokePassError] = useState<string | null>(null);
+  const [bulkVoidWalletBusy, setBulkVoidWalletBusy] = useState(false);
+  const [bulkVoidWalletConfirmOpen, setBulkVoidWalletConfirmOpen] = useState(false);
+  const [bulkVoidWalletError, setBulkVoidWalletError] = useState<string | null>(null);
+  const [bulkReissueWalletBusy, setBulkReissueWalletBusy] = useState(false);
+  const [bulkReissueWalletConfirmOpen, setBulkReissueWalletConfirmOpen] = useState(false);
+  const [bulkReissueWalletError, setBulkReissueWalletError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   // Lets the debounce timer below compare against the *currently committed* search value
@@ -1346,6 +1406,54 @@ export function AttendeesPage() {
       },
     });
 
+  /** Bulk "Void wallet pass" for an explicit subset of selected attendees - same effect as the
+   * attendee detail page's single "Void wallet pass" action, run once per selected attendee.
+   * An attendee with no wallet pass, or one already voided, is left untouched server-side and
+   * counted separately, not treated as a failure. */
+  const handleBulkVoidWalletSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkVoidWalletBusy,
+      setError: setBulkVoidWalletError,
+      addToast,
+      apiErrorFallback: "Void wallet pass failed.",
+      genericFallback: "Failed to void wallet passes.",
+      action: (id) => bulkVoidWalletPass(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkVoidWalletResult(result, addToast);
+        setBulkVoidWalletConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
+  /** Bulk "Reissue wallet pass" for an explicit subset of selected attendees - pushes each
+   * selected attendee's current name/ticket type/event details to their already-issued wallet
+   * pass at once, e.g. after an Event Settings change. An attendee with no wallet pass, or no
+   * resolvable ticket to rebuild from, is left untouched server-side and counted separately. */
+  const handleBulkReissueWalletSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkReissueWalletBusy,
+      setError: setBulkReissueWalletError,
+      addToast,
+      apiErrorFallback: "Reissue wallet pass failed.",
+      genericFallback: "Failed to reissue wallet passes.",
+      action: (id) => bulkReissueWalletPass(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkReissueWalletResult(result, addToast);
+        setBulkReissueWalletConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
   const isUnfilteredEmpty =
     total === 0 &&
     !searchQuery &&
@@ -1378,6 +1486,14 @@ export function AttendeesPage() {
   // the impact (PO review follow-up, #549).
   const revokablePassCount = items.filter(
     (row) => selectedIds.has(row.id) && row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
+
+  // How many of the selection have added a wallet pass at all - shown in the Void/Reissue
+  // confirm dialog titles instead of the raw selection size, same reasoning as
+  // revokablePassCount above. May still include an already-voided pass for Void (skipped
+  // server-side and reported in the result toast) - the row list doesn't carry that finer status.
+  const walletPassCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.wallet_status !== null,
   ).length;
 
   if (!eventId) return <p>Missing event.</p>;
@@ -1522,6 +1638,16 @@ export function AttendeesPage() {
           setBulkRevokePassConfirmOpen(true);
         }}
         bulkRevokePassBusy={bulkRevokePassBusy}
+        onBulkVoidWallet={() => {
+          setBulkVoidWalletError(null);
+          setBulkVoidWalletConfirmOpen(true);
+        }}
+        bulkVoidWalletBusy={bulkVoidWalletBusy}
+        onBulkReissueWallet={() => {
+          setBulkReissueWalletError(null);
+          setBulkReissueWalletConfirmOpen(true);
+        }}
+        bulkReissueWalletBusy={bulkReissueWalletBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -1678,6 +1804,40 @@ export function AttendeesPage() {
           if (!bulkRevokePassBusy) {
             setBulkRevokePassConfirmOpen(false);
             setBulkRevokePassError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkVoidWalletConfirmOpen}
+        title={`Void the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
+        message="Their pass stays installed on their phone but shows as invalid in Apple/Google Wallet. Attendees with no pass, or one already voided, are left untouched."
+        errorMessage={bulkVoidWalletError}
+        confirmLabel="Void"
+        confirmVariant="danger"
+        loading={bulkVoidWalletBusy}
+        onConfirm={() => void handleBulkVoidWalletSelected()}
+        onCancel={() => {
+          if (!bulkVoidWalletBusy) {
+            setBulkVoidWalletConfirmOpen(false);
+            setBulkVoidWalletError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkReissueWalletConfirmOpen}
+        title={`Reissue the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
+        message="Pushes each attendee's current name, ticket type, and event details to their already-installed wallet pass. Attendees with no pass are left untouched."
+        errorMessage={bulkReissueWalletError}
+        confirmLabel="Reissue"
+        confirmVariant="primary"
+        loading={bulkReissueWalletBusy}
+        onConfirm={() => void handleBulkReissueWalletSelected()}
+        onCancel={() => {
+          if (!bulkReissueWalletBusy) {
+            setBulkReissueWalletConfirmOpen(false);
+            setBulkReissueWalletError(null);
           }
         }}
       />

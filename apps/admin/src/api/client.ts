@@ -27,6 +27,8 @@ import type {
   BulkRevokeItemsResponse,
   BulkRevokeCheckInResponse,
   BulkRevokePassResponse,
+  BulkWalletVoidResponse,
+  BulkWalletReissueResponse,
   WalletPassActionDto,
   EventItemDto,
   EventItemsListResponse,
@@ -1049,6 +1051,32 @@ export async function bulkRevokePass(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<BulkRevokePassResponse>(res);
+}
+
+/** Admin/superadmin-only: void the wallet pass for every selected attendee that has one at the
+ * provider (e.g. PassCreator) - already-voided passes and attendees with no pass are skipped. */
+export async function bulkVoidWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletVoidResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-void`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletVoidResponse>(res);
+}
+
+/** Admin/superadmin-only: push each selected attendee's current name/ticket type/event details
+ * to their already-issued wallet pass at once, e.g. after an Event Settings change. */
+export async function bulkReissueWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletReissueResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-reissue`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletReissueResponse>(res);
 }
 
 export async function resendTicket(
