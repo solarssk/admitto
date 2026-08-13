@@ -654,7 +654,7 @@ function BulkMoreActionsMenu({
             icon="trash"
             variant="danger"
             label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
-            hint={`Permanently removes the record for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"} - not from their phones`}
+            hint={`Permanently deletes the pass record for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
             disabled={archived || bulkDeleteWalletBusy || !canBulkWallet}
             tooltip={bulkWalletTooltip(archived, canBulkWallet)}
             onClick={() => {

@@ -1904,7 +1904,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={bulkDeleteWalletConfirmOpen}
         title={`Delete the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
-        message="Permanently deletes each attendee's pass record at the provider - it stops receiving updates, but Apple/Google Wallet has no way for us to remove it from their phone; only they can do that. Check-in isn't affected - use Revoke pass to block entry. Attendees with no pass are left untouched."
+        message="Permanently deletes each attendee's pass record at the provider."
         errorMessage={bulkDeleteWalletError}
         confirmLabel="Delete"
         confirmVariant="danger"
@@ -1916,7 +1916,13 @@ export function AttendeesPage() {
             setBulkDeleteWalletError(null);
           }
         }}
-      />
+      >
+        <ul className="confirm-dialog__list">
+          <li>Apple/Google Wallet gives us no way to remove it from their phones - only they can do that</li>
+          <li>Doesn't affect check-in - use Revoke pass to block entry</li>
+          <li>Attendees with no pass are left untouched</li>
+        </ul>
+      </ConfirmDialog>
     </>
   );
 }
