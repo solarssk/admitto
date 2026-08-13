@@ -47,7 +47,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets",
+    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets",
     "precoverage": "npm run pretest",
     "test": "vitest run --project auth-unit && vitest run --project auth-integration",
     "coverage": "vitest run --coverage -c vitest.unit.config.ts && vitest run --coverage -c vitest.integration.config.ts",

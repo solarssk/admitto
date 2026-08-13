@@ -22,6 +22,8 @@ import {
   buildQrPayload,
   isAdmittable,
   hashToken,
+  resolveTicketPageDisplay,
+  buildWalletPassInput,
 } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
@@ -45,7 +47,6 @@ import {
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
 import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
-import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 import { handlePassCreatorWebhook } from "./wallet-webhook.js";
 import {
   resolveCheckinToken,
@@ -162,6 +163,7 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
+import { handleGetWalletPushJob, handleGetWalletPushHistory } from "./admin/wallet-push-routes.js";
 import { handleImportPreview, handleImportCommit, handleGetImportJob, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
   handleListEventItems,
@@ -1217,6 +1219,12 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/export/jobs/:jobId/download", staffAdminGate, (c) =>
     handleDownloadExportJob(c, db),
+  );
+  app.get("/api/admin/events/:eventId/wallet-push/jobs/:jobId", staffAdminGate, (c) =>
+    handleGetWalletPushJob(c, db),
+  );
+  app.get("/api/admin/events/:eventId/wallet-push/history", staffAdminGate, (c) =>
+    handleGetWalletPushHistory(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/export-selected",

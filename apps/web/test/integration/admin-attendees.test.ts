@@ -5928,7 +5928,12 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
+    expect(await res.json()).toEqual({
+      updatedCount: 2,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
 
     const after = await prisma.attendee.findMany({
       where: { id: { in: ids } },
@@ -5964,7 +5969,12 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: [already, fresh], ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1, conflictCount: 0 });
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 1,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
 
     const after = await prisma.attendee.findUniqueOrThrow({
       where: { id: already },
@@ -5984,7 +5994,14 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: ids, ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 2, conflictCount: 0 });
+    // walletPushJobId: null - nothing changed, enqueueWalletPushJob no-ops rather than creating
+    // an empty job.
+    expect(await res.json()).toEqual({
+      updatedCount: 0,
+      alreadySetCount: 2,
+      conflictCount: 0,
+      walletPushJobId: null,
+    });
     const logs = await prisma.attendeeActionLog.findMany({
       where: { attendee_id: { in: ids }, action_type: "attendee_edited" },
     });
@@ -6025,7 +6042,14 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
 
     expect(armed).toBe(false); // sanity check: the injected concurrent update actually ran
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+    // walletPushJobId: `safe`'s ticket_type change enqueues a wallet_push job (its content is
+    // covered by drain-wallet-push-jobs.test.ts, not re-asserted here).
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 0,
+      conflictCount: 1,
+      walletPushJobId: expect.any(String),
+    });
 
     const after = await prisma.attendee.findMany({
       where: { id: { in: [raced, safe] } },
@@ -6069,7 +6093,12 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
     const res = await postBulkType(EVENT_A, { attendeeIds: [ownId, ATT_B1], ticket_type: "vip" });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 0 });
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
     const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
     expect(other.ticket_type).not.toBe("vip");
   });

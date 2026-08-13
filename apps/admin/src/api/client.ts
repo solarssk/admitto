@@ -976,18 +976,51 @@ export interface BulkTicketTypeResponse {
   conflictCount: number;
 }
 
+/** ticket_type is always wallet-content-relevant, so a successful bulk change enqueues a
+ * wallet_push job for whichever rows actually changed - null when nothing changed (job would
+ * have been a no-op). Not part of BulkTicketTypeResponse itself: bulk RSVP reuses that type via
+ * BulkRsvpResponse below and has no wallet relevance. */
+export interface BulkTicketTypeResult extends BulkTicketTypeResponse {
+  walletPushJobId: string | null;
+}
+
 /** Assign one catalog ticket type to every selected attendee. Ids outside the event are
  * silently ignored server-side; rows already carrying the type are counted separately. */
 export async function bulkChangeTicketType(
   eventId: string,
   attendeeIds: string[],
   ticketType: string,
-): Promise<BulkTicketTypeResponse> {
+): Promise<BulkTicketTypeResult> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-ticket-type`,
     jsonPostInit({ attendeeIds, ticket_type: ticketType }),
   );
-  return parseJson<BulkTicketTypeResponse>(res);
+  return parseJson<BulkTicketTypeResult>(res);
+}
+
+export interface WalletPushJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  reissued: number | null;
+  skipped: number | null;
+  errored: number | null;
+}
+
+/** Poll async wallet_push job status - enqueued by bulkChangeTicketType above (and, eventually,
+ * event date/location saves). */
+export async function fetchWalletPushJobStatus(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<WalletPushJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletPushJobStatusResponse>(res);
 }
 
 /** Same shape as BulkTicketTypeResponse - one type for both structurally identical bulk

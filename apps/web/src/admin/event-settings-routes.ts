@@ -9,6 +9,7 @@ import {
   REVOCABLE_ITEM_STATES,
   writeAdminAuditLog,
   parseWalletFieldMapping,
+  reissueOneWalletPass,
 } from "@admitto/tickets";
 import {
   InvalidHttpUrlError,
@@ -44,7 +45,6 @@ import {
 } from "./admin-helpers.js";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { resolveInstanceBaseUrl } from "../instance-base-url.js";
-import { reissueOneWalletPass } from "./attendees-api-routes.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import {

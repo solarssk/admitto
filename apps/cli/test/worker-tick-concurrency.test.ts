@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Proves runWorkerTick launches mail_delivery/import/export/bounce/wallet_sync concurrently
-// (Promise.all) rather than sequentially, so one slow drain can't delay another's turn.
+// Proves runWorkerTick launches mail_delivery/import/export/wallet_push/bounce/wallet_sync
+// concurrently (Promise.all) rather than sequentially, so one slow drain can't delay another's
+// turn.
 
 const starts: Record<string, number> = {};
 const finishes: Record<string, number> = {};
@@ -25,6 +26,7 @@ const drainImportJobs = vi.fn(async () => ({
   eventIds: [],
 }));
 const drainExportJobs = deferredJob("export", 10);
+const drainWalletPushJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 }));
 const ingestBounces = deferredJob("bounce", 10);
 const runWalletRegistrationSync = deferredJob("wallet_sync", 10);
 
@@ -52,6 +54,7 @@ vi.mock("../src/lib/sse-publish.js", () => ({
   publishActivityChanged: vi.fn(async () => undefined),
 }));
 vi.mock("../src/commands/export-jobs.js", () => ({ drainExportJobs }));
+vi.mock("../src/commands/wallet-push-jobs.js", () => ({ drainWalletPushJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
@@ -74,10 +77,11 @@ const { runWorker, runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
 
 describe("runWorkerTick", () => {
-  it("runs mail_delivery, import, export, bounce, and wallet_sync concurrently", async () => {
+  it("runs mail_delivery, import, export, wallet_push, bounce, and wallet_sync concurrently", async () => {
     for (const key of Object.keys(starts)) delete starts[key];
     for (const key of Object.keys(finishes)) delete finishes[key];
     drainImportJobs.mockClear();
+    drainWalletPushJobs.mockClear();
 
     await runWorkerTick({} as never, fakeLocks() as never, createRetentionSchedule());
 
@@ -87,9 +91,10 @@ describe("runWorkerTick", () => {
     expect(starts["export"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["bounce"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["wallet_sync"]).toBeLessThan(finishes["mail_delivery"]);
-    // import has no artificial delay to race against, but a regression that drops it from the
-    // Promise.all batch entirely should still fail this test.
+    // import/wallet_push have no artificial delay to race against, but a regression that drops
+    // either from the Promise.all batch entirely should still fail this test.
     expect(drainImportJobs).toHaveBeenCalledOnce();
+    expect(drainWalletPushJobs).toHaveBeenCalledOnce();
   });
 });
 

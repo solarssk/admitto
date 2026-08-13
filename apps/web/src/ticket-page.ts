@@ -1,4 +1,5 @@
 import type { ResolvedTicket } from "@admitto/tickets";
+import { formatDate } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
 import {
   buildEventStaticMapPath,
@@ -17,10 +18,6 @@ import {
 
 function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-
-export function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
 /** "18:00–22:00" range, or an open-ended "from"/"until" when only one side is set. */

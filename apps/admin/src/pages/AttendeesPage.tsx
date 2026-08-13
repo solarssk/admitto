@@ -44,6 +44,7 @@ import type {
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
+import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -820,12 +821,16 @@ export function AttendeesPage() {
   /** Detached bulk-send status polls; abort on event change / unmount so toasts stay on-context. */
   const headerSendPollRef = useRef<AbortController | null>(null);
   const selectedSendPollRef = useRef<AbortController | null>(null);
+  /** Detached wallet_push job poll (bulk ticket-type change), same reasoning. */
+  const walletPushPollRef = useRef<AbortController | null>(null);
   useEffect(() => {
     return () => {
       headerSendPollRef.current?.abort();
       headerSendPollRef.current = null;
       selectedSendPollRef.current?.abort();
       selectedSendPollRef.current = null;
+      walletPushPollRef.current?.abort();
+      walletPushPollRef.current = null;
     };
   }, [eventId]);
 
@@ -1274,6 +1279,21 @@ export function AttendeesPage() {
         setChangeTypeOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
+        // ticket_type is always wallet-content-relevant - a second, later toast reports the
+        // wallet-side effect once the background job finishes (never blocks this action; the
+        // job can genuinely take minutes for a large selection, rate-limited by PassCreator
+        // itself, not by anything Admitto controls).
+        if (eventId && result.walletPushJobId) {
+          walletPushPollRef.current?.abort();
+          const ac = new AbortController();
+          walletPushPollRef.current = ac;
+          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
+            signal: ac.signal,
+          }).catch(() => {
+            if (ac.signal.aborted) return;
+            addToast("Could not refresh wallet push status.", "info");
+          });
+        }
       },
     });
   };
