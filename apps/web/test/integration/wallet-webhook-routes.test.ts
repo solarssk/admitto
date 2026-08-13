@@ -32,9 +32,8 @@ function stubProvider(publicKey: string): WalletPassProvider & {
     provider: "stub",
     createPass: vi.fn(async (input: WalletPassInput) => ({
       providerPassId: `pc-${input.userProvidedId}`,
-      downloadUrl: null,
-      appleUrl: null,
-      androidUrl: null,
+      appleUrl: "https://pc.test/apple/x",
+      androidUrl: "https://pc.test/android/x",
     })),
     updatePass: vi.fn(),
     voidPass: vi.fn(),

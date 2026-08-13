@@ -24,7 +24,12 @@ import {
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
 import { decryptFromString, encryptToString } from "@admitto/crypto";
-import { PassCreatorClient, WalletProviderError, WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet";
+import {
+  PassCreatorClient,
+  WalletProviderError,
+  WALLET_MAPPING_PLACEHOLDERS,
+  type PassCreatorWebhookEventType,
+} from "@admitto/wallet";
 import { z } from "zod";
 import {
   adminAuditFromContext,
@@ -36,6 +41,7 @@ import {
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
 import { resolvePassCreatorBaseUrl } from "../config.js";
+import { resolveInstanceBaseUrl } from "../instance-base-url.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import {
@@ -472,6 +478,66 @@ function applyBrandingPatch(
   }
 }
 
+const WALLET_WEBHOOK_EVENT_TYPES: readonly PassCreatorWebhookEventType[] = [
+  "first_pushnotification_registered",
+  "pushnotification_registered",
+  "pushnotification_unregistered",
+  "pass_voided",
+];
+
+/** Best-effort: (re-)registers this event's webhook target URL with PassCreator for every event
+ * type the receiving endpoint handles (wallet-webhook.ts), whenever a save leaves the wallet
+ * fully enabled and configured. A PassCreator outage, unreachable instance URL, or bad key here
+ * must never fail the settings save - registration/void updates simply keep flowing through the
+ * existing periodic sync (registration-sync.ts) until a later save retries this. */
+async function subscribeWalletWebhooksBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  updated: {
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key_enc: string | null;
+  },
+): Promise<void> {
+  if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
+
+  let apiKey: string;
+  try {
+    apiKey = decryptFromString(updated.wallet_api_key_enc);
+  } catch (err) {
+    console.error("wallet webhook subscribe: API key decrypt failed:", err);
+    return;
+  }
+  let baseUrl: string;
+  try {
+    baseUrl = await resolveInstanceBaseUrl(db);
+  } catch (err) {
+    console.error("wallet webhook subscribe: instance base URL unresolved:", err);
+    return;
+  }
+
+  const client = new PassCreatorClient({
+    apiKey,
+    templateId: updated.wallet_template_id,
+    baseUrl: resolvePassCreatorBaseUrl(),
+  });
+  const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+  const settled = await Promise.allSettled(
+    WALLET_WEBHOOK_EVENT_TYPES.map((event) => client.subscribeWebhook(targetUrl, event)),
+  );
+  settled.forEach((outcome, index) => {
+    if (outcome.status !== "rejected") return;
+    const event = WALLET_WEBHOOK_EVENT_TYPES[index];
+    console.error(`wallet webhook subscribe (${event}) failed:`, outcome.reason);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "wallet_webhook_subscribe_failed",
+      fields: { eventId, event },
+    });
+  });
+}
+
 /** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -578,6 +644,10 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
       { isStillReferenced: (url) => isManagedUploadUrlReferenced(db, url) },
     );
+
+    if (patchesWallet) {
+      await subscribeWalletWebhooksBestEffort(db, eventId, updated);
+    }
 
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);
