@@ -12,6 +12,7 @@ function makeDb(rows: unknown[]) {
     walletPass: {
       findMany: vi.fn(async () => rows),
       update: vi.fn(async () => ({})),
+      updateMany: vi.fn(async () => ({ count: 0 })),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
@@ -75,14 +76,18 @@ describe("runWalletRegistrationSync", () => {
     expect(result).toEqual({ checked: 2, updated: 2, skippedNoProvider: 0, failed: 0 });
   });
 
-  it("counts passes as skippedNoProvider when the event has no resolvable provider, without writing anything", async () => {
-    const db = makeDb([row()]);
+  it("counts passes as skippedNoProvider when the event has no resolvable provider, still bumping registration_checked_at so they don't starve future batches", async () => {
+    const db = makeDb([row(), row({ attendee_id: "att-2", user_provided_id: "admitto:evt-1:att-2" })]);
     mockResolveWalletProvider.mockReturnValue(null);
 
     const result = await runWalletRegistrationSync(db);
 
     expect(db.walletPass.update).not.toHaveBeenCalled();
-    expect(result).toEqual({ checked: 0, updated: 0, skippedNoProvider: 1, failed: 0 });
+    expect(db.walletPass.updateMany).toHaveBeenCalledWith({
+      where: { attendee_id: { in: ["att-1", "att-2"] } },
+      data: { registration_checked_at: expect.any(Date) },
+    });
+    expect(result).toEqual({ checked: 0, updated: 0, skippedNoProvider: 2, failed: 0 });
   });
 
   it("counts a getRegistrationStatus failure as failed without throwing or blocking its siblings", async () => {
@@ -97,6 +102,19 @@ describe("runWalletRegistrationSync", () => {
     const result = await runWalletRegistrationSync(db);
 
     expect(result).toEqual({ checked: 2, updated: 1, skippedNoProvider: 0, failed: 1 });
+  });
+
+  it("still bumps registration_checked_at on a failed row (only) - otherwise it would starve every future batch", async () => {
+    const db = makeDb([row()]);
+    const getRegistrationStatus = vi.fn().mockRejectedValueOnce(new Error("network down"));
+    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+
+    await runWalletRegistrationSync(db);
+
+    expect(db.walletPass.update).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1" },
+      data: { registration_checked_at: expect.any(Date) },
+    });
   });
 
   it("groups candidates by event, resolving the provider once per event not once per pass", async () => {
