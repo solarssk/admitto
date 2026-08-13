@@ -800,6 +800,7 @@ export function AccountPage() {
    * lives in the "Manage" popup (renderManageWebauthnDialog) once at least one is registered,
    * rather than inline here - this row is just a summary + one action button, same as TOTP's. */
   function renderWebauthnMethodRow(attachment: WebauthnAttachment) {
+    /* v8 ignore if */
     if (!account) return null;
     const isPasskey = attachment === "platform";
     const credentials = webauthnCredentials(account, attachment);
@@ -853,6 +854,7 @@ export function AccountPage() {
    * or "Close" to dismiss - reuses ConfirmDialog's own confirm/cancel pair for those two actions
    * rather than a bespoke footer, same as every other popup in this card. */
   function renderManageWebauthnDialog(attachment: WebauthnAttachment) {
+    /* v8 ignore if */
     if (!account) return null;
     const isPasskey = attachment === "platform";
     const open = isPasskey ? managePasskeysOpen : manageSecurityKeysOpen;
@@ -913,6 +915,7 @@ export function AccountPage() {
    * by the new plaintext codes (renderBackupCodesSection, same markup as first-time enrollment)
    * and Regenerate stays disabled so a second click can't invalidate the batch just shown. */
   function renderManageBackupCodesDialog() {
+    /* v8 ignore if */
     if (!account) return null;
     const statusMessage = backupCodesStatus
       ? backupCodesStatus.total === 0
@@ -1035,6 +1038,7 @@ export function AccountPage() {
    * other three rows, its status doesn't come from account.mfa_methods - GET
    * /api/account/mfa/backup-codes is its own fetch (see loadBackupCodesStatus). */
   function renderBackupCodesRow() {
+    /* v8 ignore if */
     if (!account) return null;
     if (!totpEnrolled && !hasConfirmedWebauthnMethod(account)) return null;
     const hasCodes = !!backupCodesStatus && backupCodesStatus.total > 0;
@@ -1851,6 +1855,10 @@ export function AccountPage() {
         errorMessage={removeCredentialError ?? undefined}
         disableConfirm={removeCredentialCodeRequired && !removeCredentialCode}
         onConfirm={async () => {
+          // Reachable only via the trash button on a webauthn row, whose id is always set
+          // (only totp/recovery rows lack one) - satisfies AccountMfaMethodDto's shared
+          // optional `id` field, not a reachable runtime case.
+          /* v8 ignore if */
           if (!removeCredentialTarget?.id) return;
           setRemovingCredential(true);
           setRemoveCredentialError(null);

@@ -1177,6 +1177,15 @@ describe("POST /api/account/mfa/backup-codes/regenerate", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("treats a malformed JSON body the same as no body (no step-up code supplied)", async () => {
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("POST /api/account/mfa/backup-codes/regenerate — step-up for MFA-required roles", () => {

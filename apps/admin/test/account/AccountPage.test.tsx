@@ -2408,6 +2408,124 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("surfaces a server API error when adding a security key", async () => {
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockBeginWebauthnRegistration.mockRejectedValueOnce(new ApiError(403, "webauthn_disabled", "webauthn_disabled"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(
+        within(dialog).getByText(
+          "Passkeys and security keys are turned off for this instance. Ask an administrator to enable them.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("shows a friendly message when the security-key browser ceremony is cancelled", async () => {
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+    mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
+    const cancelled = Object.assign(new Error("The operation either timed out or was not allowed."), {
+      name: "NotAllowedError",
+    });
+    mockStartRegistration.mockRejectedValueOnce(cancelled);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Setup was cancelled.")).toBeTruthy();
+    });
+    expect(mockFinishWebauthnRegistration).not.toHaveBeenCalled();
+  });
+
+  it("Cancel dismisses the Add passkey dialog without registering", async () => {
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mockBeginWebauthnRegistration).not.toHaveBeenCalled();
+  });
+
+  it("Cancel dismisses the Add security key dialog without registering", async () => {
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mockBeginWebauthnRegistration).not.toHaveBeenCalled();
+  });
+
+  it("clicking outside the Add passkey dialog while adding does not dismiss it", async () => {
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+    mockBeginWebauthnRegistration.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "MacBook Touch ID" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+
+    expect(screen.getByRole("dialog", { name: "Add passkey" })).toBeTruthy();
+  });
+
+  it("clicking outside the Add security key dialog while adding does not dismiss it", async () => {
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+    mockBeginWebauthnRegistration.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+
+    expect(screen.getByRole("dialog", { name: "Add security key" })).toBeTruthy();
+  });
+
   it("surfaces the webauthn_disabled error from the server", async () => {
     mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
     const { ApiError } = await import("../../src/api/client.js");
@@ -2520,6 +2638,71 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
   });
 
+  it("shows the same generic message when the browser rejects with a non-Error value", async () => {
+    mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
+    mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
+    // jsdom's own DOMException isn't an Error instance (unlike a real browser's) - a natural,
+    // non-contrived way to exercise webauthnCeremonyErrorMessage's `err instanceof Error` false
+    // branch, same fallback text as any other non-Error rejection.
+    mockStartRegistration.mockRejectedValueOnce(new DOMException("aborted"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    const dialog = await openAddPasskeyDialogAndSubmit();
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Could not complete the setup in your browser. Try again.")).toBeTruthy();
+    });
+  });
+
+  it("Add from within the Manage passkeys dialog opens Add passkey", async () => {
+    mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByRole("dialog", { name: "Add passkey" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Manage passkeys" })).toBeNull();
+  });
+
+  it("Add from within the Manage security keys dialog opens Add security key", async () => {
+    mockLoadedAccount({
+      ...baseAccount,
+      mfa_methods: [makeWebauthnMethod({ attachment: "cross-platform" })],
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage security keys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByRole("dialog", { name: "Add security key" })).toBeTruthy();
+  });
+
+  it("Close dismisses the Manage passkeys dialog", async () => {
+    mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Close" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("shows Never used for a credential that has never been used", async () => {
     mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod({ last_used_at: null })] });
 
@@ -2530,6 +2713,19 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
     const dialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
     expect(within(dialog).getByText("Never used")).toBeTruthy();
+  });
+
+  it("falls back to a generic name for an unlabeled passkey", async () => {
+    mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod({ label: null })] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    expect(within(dialog).getByText("Passkey")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Remove passkey" })).toBeTruthy();
   });
 
   it("removes a credential without a step-up code", async () => {
@@ -2611,6 +2807,82 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", "123456");
   });
 
+  it("shows an inline error for a non-step-up credential removal failure", async () => {
+    mockLoadedAccount({
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod(),
+      ],
+    });
+    mockDeleteWebauthnCredential.mockRejectedValueOnce(new Error("network down"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Failed to remove credential.")).toBeTruthy();
+    });
+  });
+
+  it("Cancel dismisses the Remove credential dialog without removing it", async () => {
+    mockLoadedAccount({
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod(),
+      ],
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mockDeleteWebauthnCredential).not.toHaveBeenCalled();
+  });
+
+  it("clicking outside the Remove credential dialog while removing does not dismiss it", async () => {
+    mockLoadedAccount({
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod(),
+      ],
+    });
+    mockDeleteWebauthnCredential.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+
+    expect(screen.getByRole("dialog", { name: "Remove passkey" })).toBeTruthy();
+  });
+
   it("warns that removing the only confirmed method leaves the account without two-factor authentication", async () => {
     mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
 
@@ -2653,6 +2925,46 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     expect(
       within(dialog).getByText('Remove "MacBook Touch ID"? You can register another passkey any time.'),
     ).toBeTruthy();
+  });
+
+  it("manages and removes an unlabeled security key (the security-key/no-label side of the shared passkey UI)", async () => {
+    const account: AccountDto = {
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod({
+          id: "cred-2",
+          label: null,
+          attachment: "cross-platform",
+          last_used_at: "2026-08-01T00:00:00.000Z",
+        }),
+      ],
+    };
+    mockFetchAccount
+      .mockResolvedValueOnce(account)
+      .mockResolvedValueOnce({ ...account, mfa_methods: [account.mfa_methods[0]!] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockDeleteWebauthnCredential.mockResolvedValueOnce({ ok: true });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage security keys" });
+    expect(within(manageDialog).getByText("Security key")).toBeTruthy();
+
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove security key" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove security key" });
+    expect(
+      within(dialog).getByText("Remove this security key? You can register another security key any time."),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Credential removed\./);
+    });
+    expect(mockDeleteWebauthnCredential).toHaveBeenCalledWith("cred-2", undefined);
   });
 
   it("hides Add passkey/Add security key and shows a note when webauthn is disabled for the instance", async () => {
@@ -2782,6 +3094,24 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     expect(mockDeleteAccountTotp).toHaveBeenLastCalledWith("123456");
   });
 
+  it("shows an inline error for a non-step-up removal failure", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockDeleteAccountTotp.mockRejectedValueOnce(new Error("network down"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(totpRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage authenticator app" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Failed to remove authenticator app.")).toBeTruthy();
+    });
+  });
+
   it("Reset everything opens the full reset dialog, unchanged, and performs a full wipe", async () => {
     mockFetchAccount
       .mockResolvedValueOnce(totpEnrolledAccount)
@@ -2815,6 +3145,32 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     expect(mockDeleteAccountTotp).not.toHaveBeenCalled();
   });
 
+  it("clicking outside the Reset dialog while resetting does not dismiss it", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockResetMfa.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Reset everything/ }));
+    const resetDialog = await screen.findByRole("dialog", { name: "Reset two-factor authentication" });
+    fireEvent.change(
+      within(resetDialog).getByLabelText("Current password", { selector: "#account-reset-password" }),
+      { target: { value: "current-password" } },
+    );
+    fireEvent.click(within(resetDialog).getByRole("button", { name: "Reset" }));
+    await waitFor(() => {
+      expect(within(resetDialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+
+    expect(screen.getByRole("dialog", { name: "Reset two-factor authentication" })).toBeTruthy();
+  });
+
   it("Close dismisses the manage dialog without removing TOTP or opening the reset flow", async () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
@@ -2833,6 +3189,29 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     expect(mockDeleteAccountTotp).not.toHaveBeenCalled();
     expect(mockResetMfa).not.toHaveBeenCalled();
   });
+
+  it("clicking outside the dialog while a removal is in flight does not dismiss it", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockDeleteAccountTotp.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(totpRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage authenticator app" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Close" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    // The backdrop's click-outside-to-close bypasses the (now-disabled) Close button, so this
+    // is the only way left to reach onCancel's own loading guard.
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+
+    expect(screen.getByRole("dialog", { name: "Manage authenticator app" })).toBeTruthy();
+  });
 });
 
 describe("AccountPage: Backup codes", () => {
@@ -2844,6 +3223,57 @@ describe("AccountPage: Backup codes", () => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
     expect(screen.queryByText("Backup codes")).toBeNull();
+  });
+
+  it("leaves the row blank rather than crashing the page when the status fetch fails", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockRejectedValueOnce(new Error("network down"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(1);
+    });
+    // The catch is a silent no-op (no error state to assert on) - flush the rejected promise's
+    // microtask queue so the catch itself has actually run before this test (and its coverage
+    // snapshot) completes, rather than "Loading..." being trivially true from the initial render.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(within(backupCodesRow()).getByText("Loading…")).toBeTruthy();
+  });
+
+  it("redirects to login when the status fetch fails with a 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    vi.stubGlobal("location", { ...window.location, assign: vi.fn() });
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockRejectedValueOnce(new ApiError(401, "unauthorized", "unauthorized"));
+
+    renderWithToast(<AccountPage />);
+
+    await waitFor(() => {
+      expect(window.location.assign).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
+    });
+  });
+
+  it("does nothing (no crash, no state update) when the status fetch settles after unmount", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    let rejectStatus!: (err: unknown) => void;
+    mockFetchBackupCodesStatus.mockImplementationOnce(
+      () => new Promise((_, reject) => { rejectStatus = reject; }),
+    );
+
+    const { unmount } = renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(1);
+    });
+    unmount();
+    await act(async () => {
+      rejectStatus(new Error("network down"));
+      await Promise.resolve();
+    });
   });
 
   it("renders the remaining/total status once loaded", async () => {
@@ -2957,5 +3387,46 @@ describe("AccountPage: Backup codes", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
     expect(mockRegenerateBackupCodes).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline error for a non-step-up regeneration failure", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
+    mockRegenerateBackupCodes.mockRejectedValueOnce(new Error("network down"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
+    });
+    fireEvent.click(within(backupCodesRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage backup codes" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Failed to regenerate backup codes.")).toBeTruthy();
+    });
+  });
+
+  it("clicking outside the dialog while regenerating does not dismiss it", async () => {
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
+    mockRegenerateBackupCodes.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
+    });
+    fireEvent.click(within(backupCodesRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage backup codes" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Close" }).hasAttribute("disabled")).toBe(true);
+    });
+
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+
+    expect(screen.getByRole("dialog", { name: "Manage backup codes" })).toBeTruthy();
   });
 });
