@@ -259,7 +259,7 @@ function MoreActionsMenu({
           {/* Own divider only when the group itself renders something (walletPass in an
               active/voided state) - an unconditional one here would leave an empty gap between
               two adjacent dividers whenever the attendee has no wallet pass yet (bot review). */}
-          {walletPass && (walletPass.status === "active" || walletPass.status === "voided") && (
+          {hasWalletLifecycleActions(walletPass) && (
             <>
               <hr className="more-actions-menu__divider" />
               <WalletActionMenuItems
@@ -423,7 +423,9 @@ function RevokeActionMenuItems({
  * (walletPass null until their first "Add to Wallet" click succeeds or fails) - nothing renders
  * before then, matching RevokeActionMenuItems' own toggle-by-state shape above. Reissue stays
  * available in both active and voided states (it only pushes fresh data, independent of void
- * state); Void/Restore toggle the same way Revoke/Restore pass do above. */
+ * state); Void/Restore toggle the same way Revoke/Restore pass do above. This gate duplicates the
+ * caller's own hasWalletLifecycleActions check (defense in depth, cheap on a null/two-value
+ * check) rather than trusting the caller not to render this with an ineligible pass. */
 function WalletActionMenuItems({
   event,
   walletPass,
@@ -441,7 +443,7 @@ function WalletActionMenuItems({
   onReissue: () => void;
   onDelete: () => void;
 }>) {
-  if (!walletPass || (walletPass.status !== "active" && walletPass.status !== "voided")) return null;
+  if (!hasWalletLifecycleActions(walletPass)) return null;
 
   return (
     <>
@@ -609,6 +611,14 @@ function mailTone(status: string | null): ChipTone {
   if (!status) return "neutral";
   const variant = resolveStatusMeta(status).variant;
   return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
+}
+
+/** Void/Restore/Reissue only make sense once the attendee has actually added a pass to a wallet
+ * (walletPass null until their first "Add to Wallet" click succeeds or fails) and it's still in
+ * an active or voided state - shared by the divider-visibility check and WalletActionMenuItems'
+ * own gate, which independently tested the identical condition (bot review). */
+function hasWalletLifecycleActions(pass: WalletPassActionDto | null): pass is WalletPassActionDto {
+  return !!pass && (pass.status === "active" || pass.status === "voided");
 }
 
 function walletTone(pass: WalletPassActionDto | null): ChipTone {
