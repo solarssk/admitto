@@ -755,6 +755,47 @@ export function createApp(options: CreateAppOptions = {}) {
       return null;
     }
 
+    /** Un-voids an already-issued pass at the provider (e.g. after a staff-only "Void wallet
+     * pass" action, independent of the attendee's own admittable status) instead of treating a
+     * voided WalletPass row as "never created": createPass would just get rejected as a
+     * duplicate on the shared userProvidedId, and recovering that rejection via
+     * findByUserProvidedId would mark the row "active" locally without ever calling restorePass,
+     * leaving the pass permanently voided at the provider while Admitto believes it's valid
+     * again and hides the Restore action (CodeRabbit review). Never throws: a provider/DB error
+     * here must still land on the retry redirect below. */
+    async function restoreExistingPass(
+      providerPassId: string,
+    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      try {
+        await provider.restorePass(providerPassId);
+      } catch (err) {
+        console.error("PassCreator restorePass failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_restore_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return null;
+      }
+      try {
+        const row = await db.walletPass.update({
+          where: { attendee_id: attendee.id },
+          data: { status: "active", voided_at: null, last_error_code: null },
+        });
+        return { apple_url: row.apple_url, android_url: row.android_url };
+      } catch (err) {
+        console.error("walletPass update (restore) failed:", err);
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_upsert_failed",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return null;
+      }
+    }
+
     /**
      * A concurrent request for the same attendee can win the race and create the pass first -
      * PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recovers the
@@ -789,6 +830,10 @@ export function createApp(options: CreateAppOptions = {}) {
 
     if (existing?.status === "active") {
       providerUrls = { apple_url: existing.apple_url, android_url: existing.android_url };
+    } else if (existing?.status === "voided" && existing.provider_pass_id) {
+      const restored = await restoreExistingPass(existing.provider_pass_id);
+      if (!restored) return c.redirect(`${backHref}?walletError=1`, 302);
+      providerUrls = restored;
     } else {
       const display = await resolveTicketPageDisplay(db, resolved);
       const input = buildWalletPassInput(display, qrPayload);
