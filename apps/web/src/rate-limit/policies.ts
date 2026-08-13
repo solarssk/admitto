@@ -322,6 +322,17 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Polling GET …/wallet-push/jobs/:jobId - same ~2s interval and budget as import-job-status. */
+  "admin:wallet-push-job-status": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "wallet-push-job-status"),
+        windowMs: 60_000,
+        max: 120,
+        logOnExceeded: { scope: "admin_wallet_push_job_status", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:template-preview": {
     checks: [
       {

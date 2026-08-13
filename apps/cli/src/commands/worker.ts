@@ -195,6 +195,13 @@ async function runWalletPushJob(db: PrismaClient, locks: WorkerLockClient): Prom
     log("wallet_push", "skipped (lock held)");
     return false;
   }
+  // A big push can genuinely run past the 5-minute heartbeat-stale floor (tuned for shorter
+  // import/export drains, see packages/db/src/worker-heartbeat.ts) - refresh it periodically
+  // while this drain is in flight so Health doesn't read a legitimately busy worker as dead
+  // (bot review). Well under that floor; cleared before the lock is released either way.
+  const heartbeatTimer = setInterval(() => {
+    touchWorkerHeartbeat(db).catch((err) => log("wallet_push", `heartbeat refresh failed: ${errMessage(err)}`));
+  }, 60_000);
   try {
     const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
     const result = await drainWalletPushJobs(db, { limit: 1, heartbeatStaleMs });
@@ -208,6 +215,7 @@ async function runWalletPushJob(db: PrismaClient, locks: WorkerLockClient): Prom
     );
     return result.claimed > 0;
   } finally {
+    clearInterval(heartbeatTimer);
     await locks.release("wallet_push");
   }
 }

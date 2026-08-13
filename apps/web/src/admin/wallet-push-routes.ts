@@ -11,6 +11,11 @@ import { loadEventAdminJob } from "./admin-job-http.js";
 
 const WALLET_PUSH_HISTORY_LIMIT = 20;
 
+/** Shape written by drainWalletPushJobs (packages/tickets/src/drain-wallet-push-jobs.ts) into
+ * AdminJob.result_json once a job finishes - named once so the two response shapes below can't
+ * drift apart from the worker's actual payload. */
+type WalletPushResultJson = { reissued?: number; skipped?: number; errored?: number } | null;
+
 /** Enqueues a wallet_push job for a caller-resolved set of attendee ids - the job drain re-checks
  * which of them still have an active WalletPass at run time, so a stale/racing id here is simply
  * skipped, never a hard failure. Returns null (no-op) when there's nothing to push, so callers
@@ -47,7 +52,7 @@ export async function handleGetWalletPushJob(c: Context, db: PrismaClient): Prom
   if (loaded instanceof Response) return loaded;
   const { job } = loaded;
 
-  const result = (job.result_json ?? null) as { reissued?: number; skipped?: number; errored?: number } | null;
+  const result = (job.result_json ?? null) as WalletPushResultJson;
 
   c.header("Cache-Control", "no-store");
   return c.json({
@@ -64,7 +69,7 @@ export async function handleGetWalletPushJob(c: Context, db: PrismaClient): Prom
   });
 }
 
-/** GET /api/admin/events/:eventId/wallet-push/history — recent terminal wallet_push jobs. */
+/** GET /api/admin/events/:eventId/wallet-push/history - recent terminal wallet_push jobs. */
 export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -80,7 +85,7 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
   });
 
   const items = jobs.map((job) => {
-    const result = (job.result_json ?? null) as { reissued?: number; skipped?: number; errored?: number } | null;
+    const result = (job.result_json ?? null) as WalletPushResultJson;
     const when = job.finished_at ?? job.created_at;
     return {
       id: job.id,

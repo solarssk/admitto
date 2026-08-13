@@ -580,6 +580,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminGeocodingTimezoneRateLimit = rateLimit(rateLimitStore, "admin:geocoding-timezone");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminImportJobStatusRateLimit = rateLimit(rateLimitStore, "admin:import-job-status");
+  const adminWalletPushJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-push-job-status");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -1220,8 +1221,11 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/export/jobs/:jobId/download", staffAdminGate, (c) =>
     handleDownloadExportJob(c, db),
   );
-  app.get("/api/admin/events/:eventId/wallet-push/jobs/:jobId", staffAdminGate, (c) =>
-    handleGetWalletPushJob(c, db),
+  app.get(
+    "/api/admin/events/:eventId/wallet-push/jobs/:jobId",
+    staffAdminGate,
+    adminWalletPushJobStatusRateLimit,
+    (c) => handleGetWalletPushJob(c, db),
   );
   app.get("/api/admin/events/:eventId/wallet-push/history", staffAdminGate, (c) =>
     handleGetWalletPushHistory(c, db),

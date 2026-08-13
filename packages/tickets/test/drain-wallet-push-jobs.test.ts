@@ -16,6 +16,7 @@ import { resolveWalletProvider } from "@admitto/wallet";
 import {
   drainWalletPushJobs,
   reclaimStaleWalletPushJobs,
+  STALE_WALLET_PUSH_PENDING_ERROR,
   WALLET_PUSH_CONCURRENCY,
 } from "../src/drain-wallet-push-jobs.js";
 
@@ -144,6 +145,17 @@ describe("drainWalletPushJobs", () => {
     await drainWalletPushJobs(db as never);
 
     expect(reissueOneWalletPass).toHaveBeenCalledTimes(1);
+    // progress_total/progress_done both count the full original selection (2), not just the 1
+    // resolvable target - a no-pass row is already known-skipped up front, not left uncounted
+    // until the final tally (bot review).
+    expect(db.adminJob.update).toHaveBeenCalledWith({
+      where: { id: "job-wp-1" },
+      data: { progress_total: 2, progress_done: 1 },
+    });
+    expect(db.adminJob.update).toHaveBeenCalledWith({
+      where: { id: "job-wp-1" },
+      data: { progress_done: 2 },
+    });
     const finalCall = db.adminJob.update.mock.calls.find(
       (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
     );
@@ -252,5 +264,29 @@ describe("reclaimStaleWalletPushJobs", () => {
 
     expect(result).toEqual({ reclaimed: 0 });
     expect(db.adminJob.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("fails a pending job with the pending-specific error once the worker heartbeat itself is stale", async () => {
+    const db = {
+      adminJob: {
+        findMany: vi.fn().mockResolvedValue([{ id: "job-2", status: "pending" }]),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      backgroundWorkerHeartbeat: {
+        findUnique: vi.fn().mockResolvedValue({ last_beat_at: new Date("2026-08-13T00:00:00Z") }),
+      },
+    };
+
+    const result = await reclaimStaleWalletPushJobs(db as never, { now: new Date("2026-08-13T12:00:00Z") });
+
+    expect(result).toEqual({ reclaimed: 1 });
+    expect(db.adminJob.updateMany).toHaveBeenCalledWith({
+      where: { id: "job-2", status: "pending" },
+      data: {
+        status: "failed",
+        error: STALE_WALLET_PUSH_PENDING_ERROR,
+        finished_at: new Date("2026-08-13T12:00:00Z"),
+      },
+    });
   });
 });

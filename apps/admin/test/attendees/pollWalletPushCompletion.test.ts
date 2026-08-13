@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { pollWalletPushCompletion } from "../../src/attendees/pollWalletPushCompletion.js";
 
 const fetchWalletPushJobStatus = vi.fn();
@@ -24,6 +24,12 @@ function baseStatus(overrides: Partial<Record<string, unknown>> = {}) {
 describe("pollWalletPushCompletion", () => {
   beforeEach(() => {
     fetchWalletPushJobStatus.mockReset();
+  });
+
+  // Restored here, not at the end of the fake-timers test below, so a failed assertion in that
+  // test can't leave fake timers active for every test that runs after it (bot review).
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it.each([
@@ -102,7 +108,6 @@ describe("pollWalletPushCompletion", () => {
     expect(fetchWalletPushJobStatus).toHaveBeenCalledTimes(3);
     expect(addToast).toHaveBeenCalledTimes(1);
     expect(addToast).toHaveBeenCalledWith("5 wallet passes updated.", "success");
-    vi.useRealTimers();
   });
 
   it("toasts info when attempts are exhausted while still running", async () => {

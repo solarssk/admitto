@@ -39,10 +39,15 @@ export async function reissueOneWalletPass(
   try {
     result = await provider.updatePass(target.providerPassId, input);
   } catch (err) {
-    await db.walletPass.update({
-      where: { attendee_id: target.attendeeId },
-      data: { last_error_code: err instanceof WalletProviderError ? err.code : "wallet_provider_rejected" },
-    });
+    try {
+      await db.walletPass.update({
+        where: { attendee_id: target.attendeeId },
+        data: { last_error_code: err instanceof WalletProviderError ? err.code : "wallet_provider_rejected" },
+      });
+    } catch (updateErr) {
+      // Bookkeeping only - must not replace the real provider error below (bot review).
+      console.error("reissueOneWalletPass: failed to record last_error_code:", updateErr);
+    }
     throw err;
   }
 

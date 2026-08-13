@@ -126,9 +126,11 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
     const targets = await loadTargets(db, eventId, request.attendeeIds);
     const skippedNoPass = request.attendeeIds.length - targets.length;
 
+    // Denominator is the full selection, not just targets.length - keeps progress_total and the
+    // final result_json counts (reissued+skipped+errored) referring to the same set (bot review).
     await db.adminJob.update({
       where: { id: job.id },
-      data: { progress_total: targets.length, progress_done: 0 },
+      data: { progress_total: request.attendeeIds.length, progress_done: skippedNoPass },
     });
 
     const audit: OpsAuditContext = {
@@ -140,7 +142,7 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
     let reissued = 0;
     let skipped = skippedNoPass;
     let errored = 0;
-    let done = 0;
+    let done = skippedNoPass;
 
     for (const batch of chunk(targets, WALLET_PUSH_CONCURRENCY)) {
       const settled = await Promise.allSettled(
