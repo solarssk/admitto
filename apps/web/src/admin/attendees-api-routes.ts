@@ -1707,6 +1707,10 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       }),
     );
 
+    if (statusChange !== undefined) {
+      await syncWalletPassOnStatusChangeBestEffort(db, eventId, attendeeId, statusChange);
+    }
+
     const dto = await buildAttendeeDetailDto(db, eventId, updated);
     return c.json(dto);
   } catch (err) {
@@ -1792,6 +1796,66 @@ async function deleteWalletPassesBestEffort(
         });
       }
     }
+  }
+}
+
+/** Best-effort void/restore of an attendee's wallet pass at the provider to match a revoke/
+ * restore of their Admitto pass status - previously these could drift apart (revoking someone's
+ * pass on our side left their wallet pass showing as valid, PO review 2026-08-13). No-op when
+ * wallet isn't configured, the attendee has no WalletPass row, or the pass is already in the
+ * target state (a bulk selection can include attendees a previous action already touched). Runs
+ * after the caller's own DB transaction has committed - an external network call has no place
+ * inside one, same posture as deleteWalletPassesBestEffort above. */
+async function syncWalletPassOnStatusChangeBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  attendeeId: string,
+  statusChange: "revoked" | "registered",
+): Promise<void> {
+  const [event, walletPass] = await Promise.all([
+    db.event.findUnique({
+      where: { id: eventId },
+      select: { wallet_enabled: true, wallet_template_id: true, wallet_api_key_enc: true },
+    }),
+    db.walletPass.findUnique({
+      where: { attendee_id: attendeeId },
+      select: { provider_pass_id: true, status: true },
+    }),
+  ]);
+  if (!event || !walletPass?.provider_pass_id) return;
+  if (statusChange === "revoked" && walletPass.status !== "active") return;
+  if (statusChange === "registered" && walletPass.status !== "voided") return;
+
+  const provider = resolveWalletProvider({
+    walletEnabled: event.wallet_enabled,
+    walletTemplateId: event.wallet_template_id,
+    walletApiKeyEnc: event.wallet_api_key_enc,
+    walletFieldMapping: null,
+  });
+  if (!provider) return;
+
+  try {
+    if (statusChange === "revoked") {
+      await provider.voidPass(walletPass.provider_pass_id);
+      await db.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: { status: "voided", voided_at: new Date(), last_error_code: null },
+      });
+    } else {
+      await provider.restorePass(walletPass.provider_pass_id);
+      await db.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: { status: "active", voided_at: null, last_error_code: null },
+      });
+    }
+  } catch (err) {
+    console.error(`wallet pass ${statusChange} cascade failed:`, err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "wallet_pass_status_cascade_failed",
+      fields: { eventId, attendeeId, statusChange },
+    });
   }
 }
 
@@ -2515,7 +2579,7 @@ async function revokeOneAttendeePass(
   audit: OpsAuditContext,
   db: PrismaClient,
 ): Promise<"revoked" | "skipped"> {
-  return db.$transaction(async (tx) => {
+  const result = await db.$transaction(async (tx) => {
     const updated = await tx.attendee.updateMany({
       where: { id: attendeeId, event_id: eventId, status: { in: ADMITTABLE_STATUS_LIST } },
       data: { status: "revoked" },
@@ -2538,6 +2602,10 @@ async function revokeOneAttendeePass(
 
     return "revoked";
   });
+  if (result === "revoked") {
+    await syncWalletPassOnStatusChangeBestEffort(db, eventId, attendeeId, "revoked");
+  }
+  return result;
 }
 
 /** POST /api/admin/events/:eventId/attendees/bulk-revoke-pass — revoke the pass for a selection

@@ -1470,6 +1470,85 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       });
     });
   });
+
+  describe("revoking/restoring an attendee's pass cascades to their wallet pass", () => {
+    it("voids the wallet pass when the attendee's own pass is revoked via PATCH", async () => {
+      const attendeeId = "att-wallet-status-cascade-revoke";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      const before = await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } });
+
+      const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "revoked", expected_updated_at: before.updated_at.toISOString() }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(voidSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
+      const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(pass?.status).toBe("voided");
+    });
+
+    it("restores the wallet pass when the attendee's own pass is restored via PATCH", async () => {
+      const attendeeId = "att-wallet-status-cascade-restore";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: { status: "voided", voided_at: new Date() },
+      });
+      await prisma.attendee.update({ where: { id: attendeeId }, data: { status: "revoked" } });
+      const before = await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } });
+
+      const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "registered", expected_updated_at: before.updated_at.toISOString() }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(restoreSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
+      const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(pass?.status).toBe("active");
+    });
+
+    it("voids the wallet pass for each attendee included in a bulk pass revoke", async () => {
+      const attendeeId = "att-wallet-status-cascade-bulk";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-revoke-pass`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [attendeeId] }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      expect(voidSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
+      const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(pass?.status).toBe("voided");
+    });
+
+    it("does not call the provider a second time when the wallet pass is already voided", async () => {
+      const attendeeId = "att-wallet-status-cascade-noop";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: { status: "voided", voided_at: new Date() },
+      });
+      const before = await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } });
+
+      const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "revoked", expected_updated_at: before.updated_at.toISOString() }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(voidSpy).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
