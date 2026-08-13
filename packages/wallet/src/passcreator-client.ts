@@ -168,31 +168,57 @@ export class PassCreatorClient implements WalletPassProvider {
    * (developer.passcreator.com/en/webhooks/webhook-endpoints). Call once per event type - the
    * endpoint doesn't document a way to subscribe to several at once. NOT idempotent: PassCreator
    * creates a separate subscription entry per call, even for an identical (templateId, targetUrl,
-   * event) triple - callers must check listWebhooks() first, this endpoint won't dedupe for them. */
+   * event) triple - callers must check listWebhooks() first, this endpoint won't dedupe for them.
+   *
+   * Uses requestRaw + res.ok (like setVoided/deletePass below), not the shared request() helper -
+   * live testing (2026-08-13) found this endpoint returns HTTP 201 with a body that doesn't match
+   * the v3 {success,data,errors} envelope request() requires, so every call looked like a failure
+   * to us even though PassCreator's own dashboard confirmed the subscription was created. */
   async subscribeWebhook(targetUrl: string, event: PassCreatorWebhookEventType): Promise<void> {
-    await this.request(
+    const res = await this.requestRaw(
       "POST",
       `/api/hook/subscribe/${encodeURIComponent(this.templateId)}`,
       { target_url: targetUrl, event, signPayload: true, retryEnabled: true },
     );
+    if (!res.ok) {
+      throw this.toProviderError(res.status);
+    }
   }
 
   /** Every currently active webhook subscription across the whole PassCreator account
    * (developer.passcreator.com/en/webhooks/webhook-endpoints "List Active Hooks") - not scoped to
    * this client's own templateId, so callers must filter by passTemplate themselves. Used to check
    * for an existing (passTemplate, targetUrl, event) subscription before calling subscribeWebhook,
-   * since that endpoint creates a duplicate rather than deduping. */
+   * since that endpoint creates a duplicate rather than deduping.
+   *
+   * Parses the response defensively rather than through the shared request() helper, for the same
+   * reason as subscribeWebhook above: this endpoint's exact envelope shape on success isn't
+   * confirmed (unlike v3 endpoints), and request()'s strict `data !== undefined` check turned a
+   * real HTTP 200 success into a thrown error here too. Accepts a bare array, a v3-style
+   * `{data: [...]}` wrapper, or any other successful shape (falls back to an empty list rather
+   * than guessing wrong) - but a body that explicitly reports `success: false` still throws, so a
+   * genuine documented failure isn't swallowed. */
   async listWebhooks(): Promise<
     { targetUrl: string | null; event: string; passTemplate: string | null }[]
   > {
-    const rows = await this.request<
-      { target_url?: string | null; event?: string; pass_template?: string | null }[]
-    >("GET", "/api/hook/list");
-    return rows.map((row) => ({
-      targetUrl: row.target_url ?? null,
-      event: row.event ?? "",
-      passTemplate: row.pass_template ?? null,
-    }));
+    const res = await this.requestRaw("GET", "/api/hook/list");
+    if (!res.ok) {
+      throw this.toProviderError(res.status);
+    }
+    const body: unknown = await res.json().catch(() => null);
+    if (body && typeof body === "object" && (body as { success?: unknown }).success === false) {
+      throw this.toProviderError(res.status, (body as { errors?: string[] }).errors);
+    }
+    const data =
+      body && typeof body === "object" && "data" in body ? (body as { data: unknown }).data : body;
+    const rows = Array.isArray(data) ? data : [];
+    return (rows as { target_url?: string | null; event?: string; pass_template?: string | null }[]).map(
+      (row) => ({
+        targetUrl: row.target_url ?? null,
+        event: row.event ?? "",
+        passTemplate: row.pass_template ?? null,
+      }),
+    );
   }
 
   async findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null> {
