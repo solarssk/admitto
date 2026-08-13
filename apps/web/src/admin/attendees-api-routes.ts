@@ -561,7 +561,7 @@ type AttendeeWalletStatus = Pick<
   | "google_inactive_registrations"
 >;
 
-/** Registration status per attendee (within the given set) that has a WalletPass row at all —
+/** Registration status per attendee (within the given set) that has a WalletPass row at all -
  * backs the Attendees list's Wallet column. Attendees with no row (wallet never created for
  * them) are simply absent from the returned map. */
 async function walletStatusByAttendee(
@@ -2750,7 +2750,7 @@ async function voidOneWalletPass(
   return "voided";
 }
 
-/** POST /api/admin/events/:eventId/attendees/bulk-wallet-void — void the wallet pass for a
+/** POST /api/admin/events/:eventId/attendees/bulk-wallet-void - void the wallet pass for a
  * selection of attendees at once, from the Attendees list's row-selection bulk bar. Same
  * owned-id/chunked-Promise.allSettled shape as the sibling bulk endpoints in this file; attendees
  * with no WalletPass row, or whose pass is already voided, count as skipped rather than errored. */
@@ -2870,7 +2870,7 @@ export async function reissueOneWalletPass(
   return "reissued";
 }
 
-/** POST /api/admin/events/:eventId/attendees/bulk-wallet-reissue — push each selected attendee's
+/** POST /api/admin/events/:eventId/attendees/bulk-wallet-reissue - push each selected attendee's
  * current name/ticket type/event details to their already-issued wallet pass at once, e.g. after
  * an Event Settings change. Same owned-id/chunked-Promise.allSettled shape as the sibling bulk
  * endpoints; attendees with no WalletPass row or no resolvable ticket count as skipped. */
@@ -2951,7 +2951,7 @@ async function deleteOneWalletPass(
   return "deleted";
 }
 
-/** POST /api/admin/events/:eventId/attendees/bulk-wallet-delete — permanently remove the wallet
+/** POST /api/admin/events/:eventId/attendees/bulk-wallet-delete - permanently remove the wallet
  * pass for a selection of attendees at once, from the Attendees list's row-selection bulk bar.
  * Same owned-id/chunked-Promise.allSettled shape as the sibling bulk endpoints; attendees with no
  * WalletPass row count as skipped rather than errored. Irreversible, gated behind its own confirm
@@ -3501,7 +3501,7 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
 }
 
 /**
- * POST /api/admin/events/:eventId/attendees/:id/wallet/reissue — pushes the attendee's current
+ * POST /api/admin/events/:eventId/attendees/:id/wallet/reissue - pushes the attendee's current
  * name/ticket type/event details to the provider via updatePass (PATCH, not delete+recreate,
  * which trips a known PassCreator 402 bug). The barcode value is recovered from the attendee's
  * own existing identifier (agency qr_payload/external_uuid, or the decrypted internal token) and
@@ -3516,8 +3516,18 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
   const ctx = await loadWalletActionContext(c, db, eventId);
   if (ctx instanceof Response) return ctx;
 
-  const scanned =
-    ctx.qrPayload ?? ctx.externalUuid ?? (ctx.tokenEnc ? decryptFromString(ctx.tokenEnc) : null);
+  let scanned: string | null = ctx.qrPayload ?? ctx.externalUuid;
+  if (!scanned && ctx.tokenEnc) {
+    try {
+      scanned = decryptFromString(ctx.tokenEnc);
+    } catch (err) {
+      // A malformed token_enc, or one written under an ENCRYPTION_KEY version no longer
+      // available, must not escape as a bare 500 - same machine-readable response as the
+      // "nothing to build a barcode from" case right below.
+      console.error("handleReissueAttendeeWalletPass token decrypt failed:", err);
+      return c.json({ error: "attendee_not_issued" }, 409);
+    }
+  }
   if (!scanned) return c.json({ error: "attendee_not_issued" }, 409);
 
   const resolved = await resolveTicket(scanned, db, { eventId });
@@ -3565,7 +3575,7 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
 }
 
 /**
- * POST /api/admin/events/:eventId/attendees/:id/wallet/delete — permanently removes the pass at
+ * POST /api/admin/events/:eventId/attendees/:id/wallet/delete - permanently removes the pass at
  * the provider, distinct from void (which leaves the pass installed but marked invalid). The
  * WalletPass row itself is deleted rather than updated, so the attendee reads as never having
  * added a pass - a later "Add to Wallet" click creates a fresh one. Irreversible; the frontend

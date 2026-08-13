@@ -1421,6 +1421,30 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       );
 
       expect(res.status).toBe(409);
+    });
+
+    it("returns 409 (not a bare 500) when token_enc can't be decrypted and there's no other identifier", async () => {
+      const attendeeId = "att-wallet-action-reissue-corrupt-token";
+      await prisma.attendee.create({
+        data: {
+          id: attendeeId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${attendeeId}@example.com`,
+          name: "Wallet Corrupt Token",
+          token_hash: hashToken(generateToken()),
+          token_enc: "not-valid-encrypted-payload",
+        },
+      });
+      await prisma.walletPass.create({
+        data: { attendee_id: attendeeId, provider: "passcreator", provider_pass_id: `pc-${attendeeId}`, status: "active" },
+      });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+
+      expect(res.status).toBe(409);
       expect(updateSpy).not.toHaveBeenCalled();
     });
   });
