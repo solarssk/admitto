@@ -525,7 +525,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       await waitFor(() => {
         expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not copy\. Clipboard access was blocked\./);
       });
-      // Only the Apple link menu item renders once android_url is null.
+      // Only the Apple link menu item renders once wallet_google_link is null.
       expect(screen.queryByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeNull();
     });
   });

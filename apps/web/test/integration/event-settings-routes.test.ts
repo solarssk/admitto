@@ -1393,9 +1393,17 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
 
         expect(res.status).toBe(200);
-        expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        // subscribeWalletWebhooksBestEffort runs unawaited in the background - poll rather than
+        // assert immediately after the response resolves (CodeRabbit review).
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
 
-        const [entry] = querySystemLogs({ source: "admin", search: "wallet_webhook_subscribe_failed" });
+        const [entry] = await vi.waitFor(() => {
+          const entries = querySystemLogs({ source: "admin", search: "wallet_webhook_subscribe_failed" });
+          expect(entries).toHaveLength(1);
+          return entries;
+        });
         expect(entry).toMatchObject({
           level: "error",
           source: "admin",
@@ -1423,6 +1431,10 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
 
         expect(res.status).toBe(200);
+        // subscribeWalletWebhooksBestEffort runs unawaited in the background - nothing to poll
+        // for on this negative assertion, so a short settle guards against a same-tick false
+        // pass (CodeRabbit review).
+        await new Promise((resolve) => setTimeout(resolve, 50));
         expect(listSpy).not.toHaveBeenCalled();
         expect(subscribeSpy).not.toHaveBeenCalled();
       } finally {
@@ -1456,6 +1468,9 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
 
         expect(res.status).toBe(200);
+        // Same reasoning as the decrypt-failure test above: negative assertion on unawaited
+        // background work needs a short settle, not an immediate check (CodeRabbit review).
+        await new Promise((resolve) => setTimeout(resolve, 50));
         expect(listSpy).not.toHaveBeenCalled();
         expect(subscribeSpy).not.toHaveBeenCalled();
       } finally {

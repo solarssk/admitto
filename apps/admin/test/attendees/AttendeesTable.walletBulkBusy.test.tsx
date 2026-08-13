@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
+import { AttendeesTable, type AttendeesTableProps } from "../../src/attendees/AttendeesTable.js";
 import { mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
@@ -27,7 +27,8 @@ const walletRow: AttendeeRowDto = {
   },
 };
 
-const tableProps = {
+const tableProps: AttendeesTableProps = {
+  items: [],
   total: 1,
   page: 1,
   pageSize: 25,
@@ -38,11 +39,12 @@ const tableProps = {
   statusFilter: "all" as const,
   ticketTypeFilter: "",
   rsvpStatusFilter: "" as const,
-  availableTypes: [] as string[],
+  mailStatusFilter: "" as const,
   onSearchChange: vi.fn(),
   onStatusFilterChange: vi.fn(),
   onTicketTypeFilterChange: vi.fn(),
   onRsvpStatusFilterChange: vi.fn(),
+  onMailStatusFilterChange: vi.fn(),
   sortBy: "name" as const,
   sortDir: "asc" as const,
   onSortChange: vi.fn(),
@@ -56,9 +58,26 @@ const tableProps = {
   onBulkSendTickets: vi.fn(),
   bulkSendBusy: false,
   canBulkSend: true,
+  onBulkCheckIn: vi.fn(),
+  bulkCheckInBusy: false,
+  onBulkRevokeCheckIn: vi.fn(),
+  bulkRevokeCheckInBusy: false,
+  onBulkExportSelected: vi.fn(),
+  bulkExportBusy: false,
+  onBulkChangeTicketType: vi.fn(),
+  onBulkChangeRsvpStatus: vi.fn(),
+  itemCount: 1,
+  onBulkRevokeItems: vi.fn(),
+  bulkRevokeItemsBusy: false,
+  onBulkRevokePass: vi.fn(),
+  bulkRevokePassBusy: false,
   onBulkVoidWallet: vi.fn(),
   onBulkReissueWallet: vi.fn(),
   onBulkDeleteWallet: vi.fn(),
+  bulkVoidWalletBusy: false,
+  bulkReissueWalletBusy: false,
+  bulkDeleteWalletBusy: false,
+  onBulkDelete: vi.fn(),
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
 };
