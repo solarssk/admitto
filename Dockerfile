@@ -48,8 +48,11 @@ FROM node:24-bookworm-slim AS production
 
 # Global npm is unused at runtime (Prisma/app invoked via node directly).
 # Removes bundled picomatch 4.0.3 flagged by Trivy (CVE-2026-33671).
+# fontconfig + fonts-dejavu-core: debian-slim ships no fonts at all, so sharp's SVG compositor
+# (apps/web/src/maps/static-map.ts, font-family "DejaVu Sans, Arial, Helvetica, sans-serif") has
+# nothing to resolve glyphs against and draws the static-map attribution/placeholder text as tofu.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates openssl wget \
+  && apt-get install -y --no-install-recommends ca-certificates openssl wget fontconfig fonts-dejavu-core \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /usr/local/lib/node_modules/npm \
