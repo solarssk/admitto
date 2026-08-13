@@ -1,5 +1,6 @@
 import { Tooltip } from "@admitto/ui";
 import type { AttendeeRowDto } from "../api/types.js";
+import "./attendees.css";
 import { walletRegistrationLabel } from "./walletRegistrationLabel.js";
 
 function PlatformIcon({
@@ -10,6 +11,7 @@ function PlatformIcon({
   return (
     <Tooltip content={label}>
       <i
+        role="img"
         className={`ti ${iconClass} attendees-table-v2__wallet-icon${
           active ? " attendees-table-v2__wallet-icon--active" : ""
         }`}
