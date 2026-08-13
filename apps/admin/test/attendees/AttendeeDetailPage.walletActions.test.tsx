@@ -278,6 +278,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(await within(dialog).findByText("Could not restore the wallet pass.")).toBeTruthy();
       expect(screen.getByRole("dialog")).toBeTruthy();
     });
+
+    it("Cancel closes the dialog without calling restoreWalletPass", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Restore wallet pass/ }));
+      const dialog = screen.getByRole("dialog", { name: "Restore wallet pass?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(restoreWalletPass).not.toHaveBeenCalled();
+    });
   });
 
   describe("Push updates (reissue)", () => {
@@ -315,6 +329,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(await within(dialog).findByText("Could not push updates to the wallet pass.")).toBeTruthy();
       expect(screen.getByRole("dialog")).toBeTruthy();
       expect(screen.queryByTestId("at-toast")).toBeNull();
+    });
+
+    it("Cancel closes the dialog without calling reissueWalletPass", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Push updates/ }));
+      const dialog = screen.getByRole("dialog", { name: "Push updates to their wallet pass?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(reissueWalletPass).not.toHaveBeenCalled();
     });
   });
 
@@ -371,6 +399,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(await within(dialog).findByText("Could not delete the wallet pass.")).toBeTruthy();
       expect(screen.getByRole("dialog")).toBeTruthy();
       expect(screen.queryByTestId("at-toast")).toBeNull();
+    });
+
+    it("Cancel closes the dialog without calling deleteWalletPass", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Delete wallet pass/ }));
+      const dialog = screen.getByRole("dialog", { name: "Delete wallet pass?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(deleteWalletPass).not.toHaveBeenCalled();
     });
   });
 
