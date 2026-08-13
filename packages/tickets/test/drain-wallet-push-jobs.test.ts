@@ -321,6 +321,66 @@ describe("drainWalletPushJobs", () => {
     expect(maxConcurrent).toBeLessThanOrEqual(WALLET_PUSH_CONCURRENCY);
     expect(reissueOneWalletPass).toHaveBeenCalledTimes(attendeeIds.length);
   });
+
+  describe("event_wide requests", () => {
+    it("loads every active pass under the event, without a predetermined id list to diff against", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({ result_json: { request: { kind: "event_wide", eventId: "evt-1" } } }) as never,
+      );
+      vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued").mockResolvedValueOnce("skipped");
+
+      const result = await drainWalletPushJobs(db as never);
+
+      expect(result).toEqual({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
+      // status: "active" is deliberate here (unlike loadTargets for attendee_ids requests) -
+      // matches the pre-job-system best-effort push's own behaviour of excluding voided passes.
+      expect(db.walletPass.findMany).toHaveBeenCalledWith({
+        where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: "evt-1" } },
+        select: { attendee_id: true, provider_pass_id: true },
+      });
+      expect(reissueOneWalletPass).toHaveBeenCalledTimes(2);
+
+      // No skippedNoPass concept for event_wide - the query result *is* the full selection, so
+      // progress_total is just the resolved target count, not some separate requested count.
+      expect(db.adminJob.update).toHaveBeenCalledWith({
+        where: { id: "job-wp-1" },
+        data: { progress_total: 2, progress_done: 0 },
+      });
+
+      const finalCall = db.adminJob.update.mock.calls.find(
+        (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+      );
+      expect(finalCall![0]).toMatchObject({
+        where: { id: "job-wp-1" },
+        data: {
+          status: "succeeded",
+          result_json: {
+            request: { kind: "event_wide", eventId: "evt-1" },
+            reissued: 1,
+            skipped: 1,
+            errored: 0,
+          },
+          error: null,
+        },
+      });
+    });
+
+    it("still succeeds with an all-zero tally when the event has no active wallet passes at all", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({ result_json: { request: { kind: "event_wide", eventId: "evt-1" } } }) as never,
+      );
+      db.walletPass.findMany.mockResolvedValueOnce([]);
+
+      const result = await drainWalletPushJobs(db as never);
+
+      expect(result).toEqual({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
+      expect(reissueOneWalletPass).not.toHaveBeenCalled();
+      const finalCall = db.adminJob.update.mock.calls.find(
+        (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+      );
+      expect(finalCall![0].data.result_json).toMatchObject({ reissued: 0, skipped: 0, errored: 0 });
+    });
+  });
 });
 
 describe("parseWalletPushJobStaleRunningMs", () => {

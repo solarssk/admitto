@@ -37,14 +37,16 @@ export type DrainWalletPushJobsResult = {
   reclaimed: number;
 };
 
-/** `kind: "attendee_ids"` is the only request shape so far (an operator-bounded selection, e.g.
- * bulk ticket-type change) - an `"event_wide"` kind (every active pass under an event, for
- * date/location changes with no selection cap) is a deliberate follow-up, not built yet. */
-type WalletPushRequest = {
-  kind: "attendee_ids";
-  eventId: string;
-  attendeeIds: string[];
-};
+/** `attendee_ids` is an operator-bounded selection (e.g. bulk ticket-type change) - the request
+ * carries exactly which attendees to push, and a target with no resolvable pass is a "skip", not
+ * an error. `event_wide` is every already-issued *active* pass under the event (event settings /
+ * location saves, with no selection cap) - there's no predetermined id list to diff against, so
+ * every row the query finds simply *is* a target; a voided pass is deliberately excluded (matches
+ * the previous best-effort push's own behaviour - refreshing a voided pass's content is not
+ * useful background work). */
+export type WalletPushRequest =
+  | { kind: "attendee_ids"; eventId: string; attendeeIds: string[] }
+  | { kind: "event_wide"; eventId: string };
 
 type ClaimedWalletPushJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 
@@ -56,8 +58,9 @@ function readRequest(job: { result_json: unknown }): WalletPushRequest | null {
   const request = raw.request;
   if (!request || typeof request !== "object" || Array.isArray(request)) return null;
   const req = request as Record<string, unknown>;
-  if (req.kind !== "attendee_ids") return null;
   if (typeof req.eventId !== "string" || !req.eventId) return null;
+  if (req.kind === "event_wide") return { kind: "event_wide", eventId: req.eventId };
+  if (req.kind !== "attendee_ids") return null;
   if (!Array.isArray(req.attendeeIds) || !req.attendeeIds.every((id) => typeof id === "string")) return null;
   return { kind: "attendee_ids", eventId: req.eventId, attendeeIds: req.attendeeIds as string[] };
 }
@@ -103,6 +106,19 @@ async function loadTargets(
   return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
 }
 
+/** Every already-issued *active* pass under the event - see WalletPushRequest's own doc comment
+ * for why `status: "active"` is deliberate here but not in loadTargets above. */
+async function loadEventWideTargets(
+  db: PrismaClient,
+  eventId: string,
+): Promise<{ attendeeId: string; providerPassId: string }[]> {
+  const rows = await db.walletPass.findMany({
+    where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: eventId } },
+    select: { attendee_id: true, provider_pass_id: true },
+  });
+  return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
+}
+
 async function markWalletPushFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
   await db.adminJob.update({
     where: { id: jobId },
@@ -123,14 +139,20 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
     const provider = await resolveEventWalletProvider(db, eventId);
     if (!provider) throw new Error("wallet_not_configured");
 
-    const targets = await loadTargets(db, eventId, request.attendeeIds);
-    const skippedNoPass = request.attendeeIds.length - targets.length;
+    // event_wide has no predetermined id list to diff targets against - the query result *is*
+    // the full selection, so there's nothing to count as "requested but no pass" (always 0).
+    const targets =
+      request.kind === "event_wide" ? await loadEventWideTargets(db, eventId) : await loadTargets(db, eventId, request.attendeeIds);
+    const skippedNoPass = request.kind === "event_wide" ? 0 : request.attendeeIds.length - targets.length;
 
     // Denominator is the full selection, not just targets.length - keeps progress_total and the
     // final result_json counts (reissued+skipped+errored) referring to the same set (bot review).
     await db.adminJob.update({
       where: { id: job.id },
-      data: { progress_total: request.attendeeIds.length, progress_done: skippedNoPass },
+      data: {
+        progress_total: request.kind === "event_wide" ? targets.length : request.attendeeIds.length,
+        progress_done: skippedNoPass,
+      },
     });
 
     const audit: OpsAuditContext = {
@@ -162,12 +184,7 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
       data: {
         status: "succeeded",
         finished_at: new Date(),
-        result_json: {
-          request: { kind: request.kind, eventId: request.eventId, attendeeIds: request.attendeeIds },
-          reissued,
-          skipped,
-          errored,
-        },
+        result_json: { request, reissued, skipped, errored },
         error: null,
       },
     });

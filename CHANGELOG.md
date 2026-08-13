@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.
+- Event settings → Location changes (venue name, address, coordinates, directions/accessibility notes) are now also pushed in the background to every already-issued wallet pass for that event. Previously only name/date/timezone/event-hours changes triggered this, so a venue or address change silently drifted out of sync with already-issued passes.
 
 ### Changed
 

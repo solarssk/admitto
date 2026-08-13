@@ -22,8 +22,10 @@ import {
   type EventLocationDto,
   type EventLocationInput,
 } from "@admitto/location";
+import { recordSystemLog } from "@admitto/shared/system-log";
 import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import { enqueueEventWideWalletPushJob } from "./wallet-push-routes.js";
 
 const addressComponentsSchema = z
   .object({
@@ -230,6 +232,45 @@ async function parseLocationPutBody(
   }
 }
 
+/** Location fields that appear in a wallet pass via buildWalletPassInput (packages/tickets/src/
+ * wallet-pass-input.ts) - venue name, address, coordinates/maps links, directions/accessibility
+ * notes. `map_zoom` and geocoding provenance (`geocoding_provider`/`geocoded_at`) are UI-only,
+ * never read by the pass, so they're deliberately excluded. */
+const WALLET_RELEVANT_LOCATION_FIELDS: ReadonlySet<string> = new Set([
+  "venue_name",
+  "formatted_address",
+  "latitude",
+  "longitude",
+  "directions_text",
+  "accessibility_text",
+  "address_components",
+  "google_maps_url_override",
+  "apple_maps_url_override",
+]);
+
+/** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass
+ * whenever a save changes one of WALLET_RELEVANT_LOCATION_FIELDS above - the location half of the
+ * same gap event-settings-routes.ts's own pushWalletUpdatesBestEffort closes for the event's
+ * basic fields (name/date/hours). Before this, buildWalletPassInput already read location fields
+ * but nothing ever pushed a location change to an already-issued pass. */
+async function pushWalletUpdatesBestEffort(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  changedFields: readonly string[],
+  event: {
+    organization_id: string;
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key_enc: string | null;
+  },
+): Promise<void> {
+  if (!changedFields.some((field) => WALLET_RELEVANT_LOCATION_FIELDS.has(field))) return;
+  if (!event.wallet_enabled || !event.wallet_template_id || !event.wallet_api_key_enc) return;
+
+  await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id);
+}
+
 /** GET /api/admin/events/:eventId/location */
 export async function handleGetEventLocation(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -264,7 +305,15 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
   if (parsedOrRes instanceof Response) return parsedOrRes;
   const { patch, geocodingProvider } = parsedOrRes;
 
-  const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: {
+      organization_id: true,
+      wallet_enabled: true,
+      wallet_template_id: true,
+      wallet_api_key_enc: true,
+    },
+  });
   if (!event) return c.json({ error: "not_found" }, 404);
 
   const existing = await db.eventLocation.findUnique({ where: { event_id: eventId } });
@@ -357,6 +406,21 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
 
       return row;
     });
+
+    // Caught separately from the transaction above: the location write already committed, so a
+    // transient enqueue failure here must not turn that success into a 500 (same reasoning as
+    // event-settings-routes.ts's own basic-fields wallet push).
+    try {
+      await pushWalletUpdatesBestEffort(db, c, eventId, changedFields, event);
+    } catch (err) {
+      console.error("wallet event-location push enqueue failed:", err);
+      recordSystemLog({
+        level: "error",
+        source: "admin",
+        message: "wallet_event_location_push_failed",
+        fields: { eventId },
+      });
+    }
 
     return c.json(serializeLocation(updated));
   } catch (err) {
