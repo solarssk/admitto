@@ -2008,6 +2008,12 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(voidSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
       const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
       expect(pass?.status).toBe("voided");
+      // The cascade runs after `updated` was already selected inside the PATCH's own transaction -
+      // the response body itself must reflect the post-cascade state, not that stale pre-cascade
+      // snapshot (CodeRabbit review: the detail page installs this response directly via
+      // setDetail(), so a stale wallet_pass here would show the wrong badge/action until reload).
+      const body = (await res.json()) as { wallet_pass: { status: string } | null };
+      expect(body.wallet_pass?.status).toBe("voided");
     });
 
     it("restores the wallet pass when the attendee's own pass is restored via PATCH", async () => {
@@ -2030,6 +2036,8 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(restoreSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
       const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
       expect(pass?.status).toBe("active");
+      const body = (await res.json()) as { wallet_pass: { status: string } | null };
+      expect(body.wallet_pass?.status).toBe("active");
     });
 
     it("voids the wallet pass for each attendee included in a bulk pass revoke", async () => {

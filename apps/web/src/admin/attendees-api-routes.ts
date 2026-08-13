@@ -1706,11 +1706,21 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       }),
     );
 
+    let walletPass = updated.wallet_pass;
     if (statusChange !== undefined) {
       await syncWalletPassOnStatusChangeBestEffort(db, eventId, attendeeId, statusChange);
+      // The cascade above runs after `updated` was already selected inside the transaction, and
+      // may have just voided/restored the pass - re-read it fresh rather than serializing the
+      // pre-cascade snapshot below, or the response (and whatever setDetail(response) installs
+      // client-side) shows the wrong wallet badge/lifecycle action until a manual reload
+      // (CodeRabbit review).
+      walletPass = await db.walletPass.findUnique({
+        where: { attendee_id: attendeeId },
+        select: ATTENDEE_DETAIL_SELECT.wallet_pass.select,
+      });
     }
 
-    const dto = await buildAttendeeDetailDto(db, eventId, updated);
+    const dto = await buildAttendeeDetailDto(db, eventId, { ...updated, wallet_pass: walletPass });
     return c.json(dto);
   } catch (err) {
     return patchAttendeeErrorResponse(c, err);
