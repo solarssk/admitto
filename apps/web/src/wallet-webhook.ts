@@ -8,6 +8,7 @@ import {
   parseWebhookEnvelope,
   resolveWalletProvider,
   verifyWebhookSignature,
+  type PassCreatorWebhookData,
   type WalletPassProvider,
 } from "@admitto/wallet";
 
@@ -25,6 +26,46 @@ function hasWebhookSupport(
  * per event for the life of the process rather than refetched on every delivery. A key rotation on
  * PassCreator's side would need a process restart to pick up; acceptable for a fast-follow. */
 const publicKeyCache = new Map<string, string>();
+
+/** Cached public key for eventId, fetching + caching on a cold cache. Returns null (having already
+ * logged the failure) instead of throwing - the caller turns that into a 502. Split out of
+ * handlePassCreatorWebhook to keep its own cognitive complexity under the SonarCloud threshold
+ * (S3776). */
+async function resolveCachedPublicKey(
+  eventId: string,
+  provider: WebhookCapableProvider,
+): Promise<string | null> {
+  const cached = publicKeyCache.get(eventId);
+  if (cached) return cached;
+  try {
+    const publicKey = await provider.getWebhookPublicKey();
+    publicKeyCache.set(eventId, publicKey);
+    return publicKey;
+  } catch (err) {
+    emitSystemLog("api", "error", "wallet_webhook_public_key_fetch_failed", {
+      eventId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+/** True if the signed payload's own userProvidedId names a different event than the URL's -
+ * emits the security warning itself when it does, so the caller only needs to branch on the
+ * boolean. The URL's :eventId segment must never be trusted alone (see the module doc below) -
+ * the signing key belongs to the PassCreator account, not to one event, so a second Admitto event
+ * on the same account would verify against this same key. Split out for the same complexity
+ * reason as resolveCachedPublicKey above. */
+function payloadNamesADifferentEvent(eventId: string, data: PassCreatorWebhookData): boolean {
+  if (!data.userProvidedId) return false;
+  const parsed = parseAdmittoUserProvidedId(data.userProvidedId);
+  if (!parsed || parsed.eventId === eventId) return false;
+  emitSystemLog("security", "warn", "wallet_webhook_event_mismatch", {
+    eventId,
+    payloadEventId: parsed.eventId,
+  });
+  return true;
+}
 
 async function resolveEventWebhookProvider(
   db: PrismaClient,
@@ -80,19 +121,8 @@ export async function handlePassCreatorWebhook(
   const envelope = parseWebhookEnvelope(body);
   if (!envelope) return c.body(null, 400);
 
-  let publicKey = publicKeyCache.get(eventId);
-  if (!publicKey) {
-    try {
-      publicKey = await provider.getWebhookPublicKey();
-    } catch (err) {
-      emitSystemLog("api", "error", "wallet_webhook_public_key_fetch_failed", {
-        eventId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return c.body(null, 502);
-    }
-    publicKeyCache.set(eventId, publicKey);
-  }
+  const publicKey = await resolveCachedPublicKey(eventId, provider);
+  if (!publicKey) return c.body(null, 502);
 
   if (!verifyWebhookSignature(envelope.signedData, envelope.signature, publicKey)) {
     emitSystemLog("security", "warn", "wallet_webhook_signature_invalid", { eventId });
@@ -102,19 +132,7 @@ export async function handlePassCreatorWebhook(
   const data = parseWebhookData(envelope.signedData);
   if (!data) return c.body(null, 400);
 
-  // The signing key belongs to the PassCreator account, not to one event - a second Admitto event
-  // on the same account would verify against this same key. Confirm the signed payload's own
-  // userProvidedId actually names this event before writing anything.
-  if (data.userProvidedId) {
-    const parsed = parseAdmittoUserProvidedId(data.userProvidedId);
-    if (parsed && parsed.eventId !== eventId) {
-      emitSystemLog("security", "warn", "wallet_webhook_event_mismatch", {
-        eventId,
-        payloadEventId: parsed.eventId,
-      });
-      return c.body(null, 200);
-    }
-  }
+  if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
 
   // Success is otherwise silent (a bare 200) - this is the only positive signal in System Logs
   // that a delivery actually reached us, verified, and either found or missed its WalletPass row.

@@ -305,6 +305,12 @@ function AttendeeCard({
   );
 }
 
+/** "N attendee"/"N attendees" - factored out of BulkMoreActionsMenu's many menu-item hints (each
+ * inline ternary counted toward that function's own cognitive complexity, Sonar S3776). */
+function attendeeCount(n: number): string {
+  return `${n} attendee${n === 1 ? "" : "s"}`;
+}
+
 /** Mobile "Send tickets" menu item's disabled-title (Sonar S3358: was a nested ternary). */
 function bulkSendTicketsTooltip(archived: boolean, canBulkSend: boolean): string | undefined {
   if (archived) return ARCHIVED_ACTION_TOOLTIP;
@@ -375,7 +381,7 @@ function BulkSendTicketsMenuItem({
     <MoreActionsMenuItem
       icon="send"
       label={bulkSendBusy ? "Sending…" : "Send tickets"}
-      hint={`Email tickets to ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+      hint={`Email tickets to ${attendeeCount(selectedCount)}`}
       disabled={archived || bulkSendBusy || !canBulkSend}
       tooltip={bulkSendTicketsTooltip(archived, canBulkSend)}
       onClick={onClick}
@@ -518,7 +524,7 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="download"
             label="Export selected"
-            hint={`CSV of ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+            hint={`CSV of ${attendeeCount(selectedCount)}`}
             disabled={exportBusy}
             onClick={() => {
               setOpen(false);
@@ -553,7 +559,7 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="calendar-event"
             label="Change attendance status"
-            hint={`Set for ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+            hint={`Set for ${attendeeCount(selectedCount)}`}
             disabled={archived}
             tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
             onClick={() => {
@@ -572,7 +578,7 @@ function BulkMoreActionsMenu({
             icon="qrcode-off"
             variant="warning"
             label={bulkRevokeCheckInBusy ? "Revoking check-in…" : "Revoke check-in"}
-            hint={`Undo check-in for ${revokableCheckInCount} attendee${revokableCheckInCount === 1 ? "" : "s"}`}
+            hint={`Undo check-in for ${attendeeCount(revokableCheckInCount)}`}
             disabled={archived || bulkRevokeCheckInBusy || !canRevokeCheckIn}
             tooltip={bulkRevokeCheckInTooltip(archived, canRevokeCheckIn)}
             onClick={() => {
@@ -590,7 +596,7 @@ function BulkMoreActionsMenu({
             icon="package"
             variant="warning"
             label={bulkRevokeItemsBusy ? "Revoking items…" : "Revoke items"}
-            hint={`Reset all issued items for ${revokableItemsCount} attendee${revokableItemsCount === 1 ? "" : "s"}`}
+            hint={`Reset all issued items for ${attendeeCount(revokableItemsCount)}`}
             disabled={archived || bulkRevokeItemsBusy || itemCount === 0 || !canRevokeItems}
             tooltip={bulkRevokeItemsTooltip(archived, itemCount, itemsError, canRevokeItems)}
             onClick={() => {
@@ -612,7 +618,7 @@ function BulkMoreActionsMenu({
             icon="ban"
             variant="danger"
             label={bulkRevokePassBusy ? "Revoking pass…" : "Revoke pass"}
-            hint={`Block check-in for ${revokablePassCount} attendee${revokablePassCount === 1 ? "" : "s"}`}
+            hint={`Block check-in for ${attendeeCount(revokablePassCount)}`}
             disabled={archived || bulkRevokePassBusy || !canRevokePass}
             tooltip={bulkRevokePassTooltip(archived, canRevokePass)}
             onClick={() => {
@@ -628,7 +634,7 @@ function BulkMoreActionsMenu({
             icon="wallet-off"
             variant="warning"
             label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
-            hint={`Show as invalid in their wallet for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            hint={`Show as invalid in their wallet for ${attendeeCount(walletPassCount)}`}
             disabled={archived || bulkVoidWalletBusy || !canBulkWallet}
             tooltip={bulkWalletTooltip(archived, canBulkWallet)}
             onClick={() => {
@@ -639,7 +645,7 @@ function BulkMoreActionsMenu({
           <MoreActionsMenuItem
             icon="refresh-dot"
             label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
-            hint={`Push the latest details for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            hint={`Push the latest details for ${attendeeCount(walletPassCount)}`}
             disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
             tooltip={bulkWalletTooltip(archived, canBulkWallet)}
             onClick={() => {
@@ -654,7 +660,7 @@ function BulkMoreActionsMenu({
             icon="trash"
             variant="danger"
             label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
-            hint={`Permanently deletes the pass record for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}`}
+            hint={`Permanently deletes the pass record for ${attendeeCount(walletPassCount)}`}
             disabled={archived || bulkDeleteWalletBusy || !canBulkWallet}
             tooltip={bulkWalletTooltip(archived, canBulkWallet)}
             onClick={() => {
@@ -669,7 +675,7 @@ function BulkMoreActionsMenu({
             icon="trash"
             variant="danger"
             label="Delete"
-            hint={`Permanently remove ${selectedCount} attendee${selectedCount === 1 ? "" : "s"}`}
+            hint={`Permanently remove ${attendeeCount(selectedCount)}`}
             onClick={() => {
               setOpen(false);
               onDelete();
