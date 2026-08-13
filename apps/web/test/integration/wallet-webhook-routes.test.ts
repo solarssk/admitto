@@ -12,6 +12,10 @@ const EVENT_ID = "evt-wallet-webhook";
 const OTHER_EVENT_ID = "evt-wallet-webhook-other";
 const UNCONFIGURED_EVENT_ID = "evt-wallet-webhook-unconfigured";
 const CACHE_TEST_EVENT_ID = "evt-wallet-webhook-cache";
+// Own event id for the public-key-fetch-failure test below, never reused elsewhere in this
+// file - publicKeyCache is module-scoped and never cleared between tests, so reusing an id
+// another test has already delivered to would silently skip the fetch this test needs to fail.
+const KEY_FETCH_FAILURE_EVENT_ID = "evt-wallet-webhook-key-failure";
 const ATTENDEE_ID = "attendee-wallet-webhook";
 const USER_PROVIDED_ID = `admitto:${EVENT_ID}:${ATTENDEE_ID}`;
 
@@ -46,7 +50,7 @@ function stubProvider(publicKey: string): WalletPassProvider & {
 }
 
 async function seedFixture(client: PrismaClient): Promise<void> {
-  const eventIds = [EVENT_ID, OTHER_EVENT_ID, UNCONFIGURED_EVENT_ID, CACHE_TEST_EVENT_ID];
+  const eventIds = [EVENT_ID, OTHER_EVENT_ID, UNCONFIGURED_EVENT_ID, CACHE_TEST_EVENT_ID, KEY_FETCH_FAILURE_EVENT_ID];
   await client.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_ID } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
@@ -91,6 +95,16 @@ async function seedFixture(client: PrismaClient): Promise<void> {
       date: new Date("2026-09-01"),
       organization_id: ORG_ID,
       wallet_template_id: "tmpl-cache-test-gala",
+    },
+  });
+  await client.event.create({
+    data: {
+      id: KEY_FETCH_FAILURE_EVENT_ID,
+      title: "Key Failure Gala",
+      slug: "key-failure-gala",
+      date: new Date("2026-09-01"),
+      organization_id: ORG_ID,
+      wallet_template_id: "tmpl-key-failure-gala",
     },
   });
   await client.attendee.create({
@@ -143,6 +157,11 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  const eventIds = [EVENT_ID, OTHER_EVENT_ID, UNCONFIGURED_EVENT_ID, CACHE_TEST_EVENT_ID, KEY_FETCH_FAILURE_EVENT_ID];
+  await prisma.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_ID } });
+  await prisma.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
+  await prisma.event.deleteMany({ where: { id: { in: eventIds } } });
+  await prisma.organization.deleteMany({ where: { id: ORG_ID } });
   await prisma?.$disconnect();
 });
 
@@ -343,7 +362,10 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     const app = makeApp(provider);
     const body = signedRequest({ identifier: "pc-webhook-1", voided: true });
 
-    const res = await app.request(`/api/wallet/webhook/passcreator/${OTHER_EVENT_ID}`, {
+    // Own event id (KEY_FETCH_FAILURE_EVENT_ID), not reused anywhere else in this file -
+    // publicKeyCache is module-scoped and never cleared between tests, so a shared id would let
+    // an earlier delivery's cached key silently skip the fetch this test depends on failing.
+    const res = await app.request(`/api/wallet/webhook/passcreator/${KEY_FETCH_FAILURE_EVENT_ID}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
