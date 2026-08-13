@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeesTable } from "../../src/attendees/AttendeesTable.js";
-import { getTooltipText, mockMatchMedia } from "../test-utils.js";
+import { mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const baseRow: AttendeeRowDto = {
@@ -18,6 +18,8 @@ const baseRow: AttendeeRowDto = {
   updated_at: "2026-06-01T10:00:00.000Z",
   last_mail_status: "sent",
   rsvp_status: "confirmed",
+  has_issued_items: false,
+  wallet_status: null,
 };
 
 const tableProps = {
@@ -63,128 +65,60 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("AttendeesTable pass status actions", () => {
-  it("shows revoke for registered attendees and calls onRevokePass", () => {
-    const onRevokePass = vi.fn();
-    render(
-      <AttendeesTable
-        {...tableProps}
-        items={[baseRow]}
-        onRevokePass={onRevokePass}
-        onRestorePass={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Revoke pass" }));
-    expect(onRevokePass).toHaveBeenCalledWith(baseRow);
-    expect(screen.queryByRole("button", { name: "Restore pass" })).toBeNull();
-  });
-
-  it("shows restore for revoked attendees and calls onRestorePass", () => {
-    const onRestorePass = vi.fn();
-    const revokedRow = { ...baseRow, status: "revoked" as const };
-    render(
-      <AttendeesTable
-        {...tableProps}
-        items={[revokedRow]}
-        onRevokePass={vi.fn()}
-        onRestorePass={onRestorePass}
-      />,
-    );
-
-    expect(screen.getByText("Revoked")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Restore pass" }));
-    expect(onRestorePass).toHaveBeenCalledWith(revokedRow);
-    expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
-  });
-
-  it("disables Restore/Revoke pass when the event is archived", () => {
-    render(
-      <AttendeesTable
-        {...tableProps}
-        event={{ archived_at: "2026-07-01T00:00:00.000Z" }}
-        items={[baseRow]}
-        onRevokePass={vi.fn()}
-        onRestorePass={vi.fn()}
-      />,
-    );
-
-    const revoke = screen.getByRole("button", { name: "Revoke pass" }) as HTMLButtonElement;
-    expect(revoke.disabled).toBe(true);
-    expect(getTooltipText(revoke)).not.toMatch(/cannot check in until the pass is restored/);
-  });
-
-  it("disables Restore pass without the restore hover hint when the event is archived", () => {
-    render(
-      <AttendeesTable
-        {...tableProps}
-        event={{ archived_at: "2026-07-01T00:00:00.000Z" }}
-        items={[{ ...baseRow, status: "revoked" }]}
-        onRevokePass={vi.fn()}
-        onRestorePass={vi.fn()}
-      />,
-    );
-
-    const restore = screen.getByRole("button", { name: "Restore pass" }) as HTMLButtonElement;
-    expect(restore.disabled).toBe(true);
-    expect(getTooltipText(restore)).not.toMatch(/Re-enable check-in for this attendee/);
-  });
-
-  it("exposes Restore and Revoke pass hover hints on active events", () => {
-    const { rerender } = render(
-      <AttendeesTable
-        {...tableProps}
-        items={[baseRow]}
-        onRevokePass={vi.fn()}
-        onRestorePass={vi.fn()}
-      />,
-    );
-    expect(getTooltipText(screen.getByRole("button", { name: "Revoke pass" }))).toMatch(
-      /cannot check in until the pass is restored/,
-    );
-
-    rerender(
-      <AttendeesTable
-        {...tableProps}
-        items={[{ ...baseRow, status: "revoked" }]}
-        onRevokePass={vi.fn()}
-        onRestorePass={vi.fn()}
-      />,
-    );
-    expect(getTooltipText(screen.getByRole("button", { name: "Restore pass" }))).toMatch(
-      /Re-enable check-in for this attendee/,
-    );
-  });
-
-  it("hides pass actions for cancelled attendees", () => {
-    render(
-      <AttendeesTable
-        {...tableProps}
-        items={[{ ...baseRow, status: "cancelled" }]}
-        onRevokePass={vi.fn()}
-        onRestorePass={vi.fn()}
-      />,
-    );
-
-    expect(within(screen.getByRole("table")).getByText("Cancelled")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Restore pass" })).toBeNull();
-  });
-
-  it("shows Confirmed pass status with Revoke pass still available (#352/#366 split columns)", () => {
-    render(
-      <AttendeesTable
-        {...tableProps}
-        items={[{ ...baseRow, status: "confirmed" }]}
-        onRevokePass={vi.fn()}
-        onRestorePass={vi.fn()}
-      />,
-    );
+describe("AttendeesTable pass status badge", () => {
+  it("shows Confirmed pass status (#352/#366 split columns)", () => {
+    render(<AttendeesTable {...tableProps} items={[{ ...baseRow, status: "confirmed" }]} />);
 
     // rsvp_status and status are both "confirmed" on baseRow but render in separate
     // columns (#366) — two independent "Confirmed" badges, not a single shared one.
     expect(within(screen.getByRole("table")).getAllByText("Confirmed")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Revoke pass" })).toBeTruthy();
+  });
+
+  it("shows Cancelled pass status", () => {
+    render(<AttendeesTable {...tableProps} items={[{ ...baseRow, status: "cancelled" }]} />);
+
+    expect(within(screen.getByRole("table")).getByText("Cancelled")).toBeTruthy();
+  });
+});
+
+describe("AttendeesTable Wallet column", () => {
+  it("shows a dash for an attendee with no WalletPass row", () => {
+    const { container } = render(<AttendeesTable {...tableProps} items={[baseRow]} />);
+
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText("Wallet")).toBeTruthy();
+    const cells = container.querySelectorAll("tbody td");
+    expect(cells[cells.length - 1].textContent).toBe("-");
+  });
+
+  it("shows a highlighted platform icon once the attendee has registered a device", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[
+          {
+            ...baseRow,
+            wallet_status: {
+              apple_active_registrations: 0,
+              apple_inactive_registrations: 0,
+              google_active_registrations: 1,
+              google_inactive_registrations: 0,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Google Wallet: Registered")).toBeTruthy();
+    expect(screen.getByLabelText("Apple Wallet: Not added")).toBeTruthy();
+  });
+
+  it("no longer renders the per-row view/revoke icon actions column", () => {
+    render(<AttendeesTable {...tableProps} items={[baseRow]} />);
+
+    expect(screen.queryByRole("button", { name: "View attendee" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Restore pass" })).toBeNull();
   });
 });
 

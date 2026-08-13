@@ -274,6 +274,16 @@ export type AttendeeRowDto = {
    * Attendees list's bulk "Revoke items" action report how many of the selection it would
    * actually affect, not just the raw selection size. */
   has_issued_items: boolean;
+  /** Same registration-status fields as WalletPassActionDto, shown compactly in the list's
+   * Wallet column - null when no WalletPass row exists yet for this attendee (wallet not
+   * configured for the event, or the attendee hasn't added it). */
+  wallet_status: Pick<
+    WalletPassActionDto,
+    | "apple_active_registrations"
+    | "apple_inactive_registrations"
+    | "google_active_registrations"
+    | "google_inactive_registrations"
+  > | null;
 };
 
 export type AttendeeActionLogEntryDto = {
@@ -544,6 +554,46 @@ async function issuedItemsAttendeeIds(db: PrismaClient, attendeeIds: string[]): 
   return new Set(states.map((s) => s.attendee_id));
 }
 
+type AttendeeWalletStatus = Pick<
+  WalletPassActionDto,
+  | "apple_active_registrations"
+  | "apple_inactive_registrations"
+  | "google_active_registrations"
+  | "google_inactive_registrations"
+>;
+
+/** Registration status per attendee (within the given set) that has a WalletPass row at all —
+ * backs the Attendees list's Wallet column. Attendees with no row (wallet never created for
+ * them) are simply absent from the returned map. */
+async function walletStatusByAttendee(
+  db: PrismaClient,
+  attendeeIds: string[],
+): Promise<Map<string, AttendeeWalletStatus>> {
+  if (attendeeIds.length === 0) return new Map();
+
+  const rows = await db.walletPass.findMany({
+    where: { attendee_id: { in: attendeeIds } },
+    select: {
+      attendee_id: true,
+      apple_active_registrations: true,
+      apple_inactive_registrations: true,
+      google_active_registrations: true,
+      google_inactive_registrations: true,
+    },
+  });
+  return new Map(
+    rows.map((row) => [
+      row.attendee_id,
+      {
+        apple_active_registrations: row.apple_active_registrations,
+        apple_inactive_registrations: row.apple_inactive_registrations,
+        google_active_registrations: row.google_active_registrations,
+        google_inactive_registrations: row.google_inactive_registrations,
+      },
+    ]),
+  );
+}
+
 /** Shown in activity log when a human actor has no display_name (email is never exposed). */
 const ACTION_LOG_ACTOR_FALLBACK = "Admin";
 
@@ -713,6 +763,7 @@ function serializeAttendeeRow(
   },
   lastMail: Map<string, string>,
   issuedItems: Set<string>,
+  walletStatus: Map<string, AttendeeWalletStatus>,
 ): AttendeeRowDto {
   const { company, department } = resolveCompanyDepartment(row);
   return {
@@ -729,6 +780,7 @@ function serializeAttendeeRow(
     last_mail_status: lastMail.get(row.id) ?? null,
     rsvp_status: row.rsvp_status as RsvpStatus,
     has_issued_items: issuedItems.has(row.id),
+    wallet_status: walletStatus.get(row.id) ?? null,
   };
 }
 
@@ -854,14 +906,15 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   ]);
 
   const attendeeIds = rows.map((r) => r.id);
-  const [lastMail, issuedItems] = await Promise.all([
+  const [lastMail, issuedItems, walletStatus] = await Promise.all([
     lastMailStatusByAttendee(db, attendeeIds),
     issuedItemsAttendeeIds(db, attendeeIds),
+    walletStatusByAttendee(db, attendeeIds),
   ]);
 
   c.header("Cache-Control", "no-store");
   return c.json({
-    items: rows.map((r) => serializeAttendeeRow(r, lastMail, issuedItems)),
+    items: rows.map((r) => serializeAttendeeRow(r, lastMail, issuedItems, walletStatus)),
     total,
     page,
     pageSize,

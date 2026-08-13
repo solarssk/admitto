@@ -59,6 +59,7 @@ import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { WalletStatusBadge } from "../attendees/walletStatusBadge.js";
+import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
@@ -590,20 +591,6 @@ function walletTone(pass: WalletPassActionDto | null): ChipTone {
   if (pass.status === "voided" || pass.status === "failed") return "error";
   if (pass.status === "expired") return "warn";
   return "neutral";
-}
-
-/** Apple/Google registration counts as PassCreator itself reports them (refreshed periodically by
- * the wallet_sync worker job, apps/cli - never on a request path). `null` counts mean the worker
- * hasn't checked yet, not "confirmed zero" - distinct from a confirmed 0. */
-/** "Status unknown", not "Not checked yet" - "checked" collides with check-in terminology
- * elsewhere in Admitto, and reads as if nothing has happened yet when the attendee may well
- * already have the pass in their wallet - we just haven't confirmed it with PassCreator (PO
- * review, 2026-08-13). */
-function walletRegistrationLabel(active: number | null, inactive: number | null): string {
-  if (active === null && inactive === null) return "Status unknown";
-  if ((active ?? 0) > 0) return (active ?? 0) > 1 ? `Registered (${active} devices)` : "Registered";
-  if ((inactive ?? 0) > 0) return "Unregistered";
-  return "Not added";
 }
 
 /** PassCreator's firstDownloadedAt comes back as "YYYY-MM-DD HH:MM:SS" with no offset - confirmed

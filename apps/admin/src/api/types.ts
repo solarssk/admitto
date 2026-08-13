@@ -248,6 +248,15 @@ export interface AttendeeRowDto {
   /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
    * bulk "Revoke items" action report how many of the selection it would actually affect. */
   has_issued_items: boolean;
+  /** Same registration-status fields as WalletPassActionDto, shown compactly in the Wallet
+   * column - null when no WalletPass row exists yet for this attendee. */
+  wallet_status: Pick<
+    WalletPassActionDto,
+    | "apple_active_registrations"
+    | "apple_inactive_registrations"
+    | "google_active_registrations"
+    | "google_inactive_registrations"
+  > | null;
 }
 
 /** Redacted rendered message for the "View sent message" preview — the recipient's real QR

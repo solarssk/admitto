@@ -1416,6 +1416,60 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(body.wallet_google_link).toBeNull();
     });
   });
+
+  describe("wallet_status on GET list", () => {
+    it("returns null when the attendee has no WalletPass row", async () => {
+      const attendeeId = "att-wallet-status-none";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT);
+
+      const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees`, {
+        headers: { Cookie: adminCookie },
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: { id: string; wallet_status: unknown }[] };
+      const row = body.items.find((item) => item.id === attendeeId);
+      expect(row?.wallet_status).toBeNull();
+    });
+
+    it("returns the per-platform registration counts once a WalletPass row exists", async () => {
+      const attendeeId = "att-wallet-status-registered";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      await prisma.walletPass.update({
+        where: { attendee_id: attendeeId },
+        data: {
+          apple_active_registrations: 1,
+          apple_inactive_registrations: 0,
+          google_active_registrations: 0,
+          google_inactive_registrations: 2,
+        },
+      });
+
+      const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees`, {
+        headers: { Cookie: adminCookie },
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        items: {
+          id: string;
+          wallet_status: {
+            apple_active_registrations: number | null;
+            apple_inactive_registrations: number | null;
+            google_active_registrations: number | null;
+            google_inactive_registrations: number | null;
+          } | null;
+        }[];
+      };
+      const row = body.items.find((item) => item.id === attendeeId);
+      expect(row?.wallet_status).toEqual({
+        apple_active_registrations: 1,
+        apple_inactive_registrations: 0,
+        google_active_registrations: 0,
+        google_inactive_registrations: 2,
+      });
+    });
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {

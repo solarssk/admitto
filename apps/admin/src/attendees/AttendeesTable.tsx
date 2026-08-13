@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, Tooltip } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -23,6 +23,7 @@ import { MailStatusBadge } from "./mailStatusBadge.js";
 import { PassStatusBadge } from "./passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
+import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
@@ -41,9 +42,7 @@ function AttendeesTableSkeleton() {
             <th>Attendance</th>
             <th>Mail</th>
             <th>Check-in</th>
-            <th className="attendees-table-v2__actions-col" aria-label="Actions">
-              <span className="sr-only">Actions</span>
-            </th>
+            <th>Wallet</th>
           </tr>
         </thead>
         <tbody>
@@ -166,81 +165,6 @@ function MobileSortControl({
   );
 }
 
-/** Revoke/Restore pass icon buttons for one row — shared by the desktop table row and the
- * mobile card, which otherwise duplicated this exact block with only their `reasonId` suffix
- * differing (`row.id` vs `card-${row.id}`, so ArchivedGuard's `aria-describedby` id stays
- * unique between the two layouts if both ever render at once, e.g. mid-breakpoint-resize). */
-function PassActionButtons({
-  row,
-  event,
-  reasonIdSuffix,
-  passActionBusyIds,
-  onRevokePass,
-  onRestorePass,
-}: Readonly<{
-  row: AttendeeRowDto;
-  event: ArchivedGuardEvent;
-  reasonIdSuffix: string;
-  passActionBusyIds: ReadonlySet<string>;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
-}>) {
-  return (
-    <>
-      {row.status === "revoked" && onRestorePass ? (
-        <ArchivedGuard
-          event={event}
-          reasonId={`restore-pass-reason-${reasonIdSuffix}`}
-          disabled={passActionBusyIds.has(row.id)}
-        >
-          {(guard) => {
-            const button = (
-              <IconButton
-                label="Restore pass"
-                icon={<i className="ti ti-refresh" aria-hidden="true" />}
-                size="sm"
-                {...guard}
-                onClick={() => onRestorePass(row)}
-              />
-            );
-            return guard.disabled ? (
-              button
-            ) : (
-              <Tooltip content="Restore pass. Re-enable check-in for this attendee.">{button}</Tooltip>
-            );
-          }}
-        </ArchivedGuard>
-      ) : null}
-      {row.status !== "cancelled" && row.status !== "revoked" && onRevokePass ? (
-        <ArchivedGuard
-          event={event}
-          reasonId={`revoke-pass-reason-${reasonIdSuffix}`}
-          disabled={passActionBusyIds.has(row.id)}
-        >
-          {(guard) => {
-            const button = (
-              <IconButton
-                label="Revoke pass"
-                icon={<i className="ti ti-ban" aria-hidden="true" />}
-                size="sm"
-                {...guard}
-                onClick={() => onRevokePass(row)}
-              />
-            );
-            return guard.disabled ? (
-              button
-            ) : (
-              <Tooltip content="Revoke pass. They cannot check in until the pass is restored.">
-                {button}
-              </Tooltip>
-            );
-          }}
-        </ArchivedGuard>
-      ) : null}
-    </>
-  );
-}
-
 /** Renders as two stacked lines ("Today" / "14:32"), mirroring the two-line
  * name/email cell next to it — null when the attendee hasn't checked in. */
 function CheckInCell({
@@ -293,9 +217,6 @@ export interface AttendeesTableProps {
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
   onViewAttendee: (id: string) => void;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
-  passActionBusyIds?: ReadonlySet<string>;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   selectedIds: ReadonlySet<string>;
@@ -332,10 +253,6 @@ interface AttendeeCardProps {
   onView: () => void;
   ticketTypes: TicketTypeDto[];
   eventTimezone: string;
-  event: ArchivedGuardEvent;
-  passActionBusyIds: ReadonlySet<string>;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
 }
 
 /** One attendee as a card — the < 768px equivalent of a table row: same data, same actions. */
@@ -346,10 +263,6 @@ function AttendeeCard({
   onView,
   ticketTypes,
   eventTimezone,
-  event,
-  passActionBusyIds,
-  onRevokePass,
-  onRestorePass,
 }: Readonly<AttendeeCardProps>) {
   return (
     <div className={`attendees-card${selected ? " attendees-card--selected" : ""}`}>
@@ -380,24 +293,7 @@ function AttendeeCard({
         ) : (
           <span className="attendee-readonly">Not checked in</span>
         )}
-        <div className="attendees-card__actions">
-          <Tooltip content="View attendee profile">
-            <IconButton
-              label="View attendee"
-              icon={<i className="ti ti-eye" aria-hidden="true" />}
-              size="sm"
-              onClick={onView}
-            />
-          </Tooltip>
-          <PassActionButtons
-            row={row}
-            event={event}
-            reasonIdSuffix={`card-${row.id}`}
-            passActionBusyIds={passActionBusyIds}
-            onRevokePass={onRevokePass}
-            onRestorePass={onRestorePass}
-          />
-        </div>
+        <WalletColumnCell status={row.wallet_status} />
       </div>
     </div>
   );
@@ -1092,10 +988,6 @@ function AttendeesListContent({
   onSortChange,
   ticketTypes,
   eventTimezone,
-  event,
-  passActionBusyIds,
-  onRevokePass,
-  onRestorePass,
 }: Readonly<{
   loading: boolean;
   hasLoadedOnce: boolean;
@@ -1111,10 +1003,6 @@ function AttendeesListContent({
   onSortChange: (column: AttendeeSortBy) => void;
   ticketTypes: TicketTypeDto[];
   eventTimezone: string;
-  event: ArchivedGuardEvent;
-  passActionBusyIds: ReadonlySet<string>;
-  onRevokePass?: (row: AttendeeRowDto) => void;
-  onRestorePass?: (row: AttendeeRowDto) => void;
 }>): ReactNode {
   // Only the very first load ever (never-loaded, items always [] at that point) gets the
   // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
@@ -1166,10 +1054,6 @@ function AttendeesListContent({
             onView={() => onViewAttendee(row.id)}
             ticketTypes={ticketTypes}
             eventTimezone={eventTimezone}
-            event={event}
-            passActionBusyIds={passActionBusyIds}
-            onRevokePass={onRevokePass}
-            onRestorePass={onRestorePass}
           />
         ))}
       </div>
@@ -1205,9 +1089,7 @@ function AttendeesListContent({
               sortDir={sortDir}
               onSortChange={onSortChange}
             />
-            <th className="attendees-table-v2__actions-col" aria-label="Actions">
-              <span className="sr-only">Actions</span>
-            </th>
+            <th>Wallet</th>
           </tr>
         </thead>
         <tbody>
@@ -1259,24 +1141,7 @@ function AttendeesListContent({
                 <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
               </td>
               <td>
-                <div className="attendees-table-v2__actions">
-                  <Tooltip content="View attendee profile">
-                    <IconButton
-                      label="View attendee"
-                      icon={<i className="ti ti-eye" aria-hidden="true" />}
-                      size="sm"
-                      onClick={() => onViewAttendee(row.id)}
-                    />
-                  </Tooltip>
-                  <PassActionButtons
-                    row={row}
-                    event={event}
-                    reasonIdSuffix={row.id}
-                    passActionBusyIds={passActionBusyIds}
-                    onRevokePass={onRevokePass}
-                    onRestorePass={onRestorePass}
-                  />
-                </div>
+                <WalletColumnCell status={row.wallet_status} />
               </td>
             </tr>
           ))}
@@ -1326,9 +1191,6 @@ export function AttendeesTable({
   sortDir,
   onSortChange,
   onViewAttendee,
-  onRevokePass,
-  onRestorePass,
-  passActionBusyIds = new Set(),
   onPageChange,
   onPageSizeChange,
   selectedIds,
@@ -1490,10 +1352,6 @@ export function AttendeesTable({
         onSortChange={onSortChange}
         ticketTypes={ticketTypes}
         eventTimezone={eventTimezone}
-        event={event}
-        passActionBusyIds={passActionBusyIds}
-        onRevokePass={onRevokePass}
-        onRestorePass={onRestorePass}
       />
       <div className="attendees-table-foot">
         <div className="attendees-table-foot__summary">

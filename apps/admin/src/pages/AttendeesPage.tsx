@@ -3,7 +3,6 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -27,7 +26,6 @@ import {
   fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
-  updateAttendee,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
@@ -62,16 +60,6 @@ const DEBOUNCE_MS = 300;
  * button (bulk change ticket type / change attendance status) — a misclick on a large batch
  * would otherwise overwrite everyone's ticket type or RSVP status in one shot with no
  * confirmation at all (code review on #569). */
-
-function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
-  return {
-    ...prev,
-    status: updated.status,
-    updated_at: updated.updated_at,
-    check_in_status: updated.check_in_status,
-    admitted_at: updated.admitted_at,
-  };
-}
 
 function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
@@ -783,63 +771,6 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
   setLoadError(err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.");
 }
 
-interface PassStatusErrorContext {
-  reportApiError: (status: number) => void;
-  addToast: (message: string, variant?: ToastVariant) => void;
-  revokeOpen: boolean;
-  setRevokeOpen: (open: boolean) => void;
-  setRevokeTarget: (target: AttendeeRowDto | null) => void;
-  setRevokeError: (message: string | null) => void;
-  setReloadToken: (updater: (n: number) => number) => void;
-}
-
-/** The 409-conflict half of {@link reportPassStatusChangeError} — split out further so neither
- * function's own cognitive complexity creeps back over the threshold. */
-function reportPassStatusConflict(err: ApiError, ctx: PassStatusErrorContext): void {
-  const { addToast, revokeOpen, setRevokeOpen, setRevokeTarget, setRevokeError, setReloadToken } = ctx;
-  if (err.code === "event_full") {
-    addToast("Event is at capacity. Pass cannot be restored.", "error");
-    return;
-  }
-  if (err.code === "stale_write") {
-    addToast("Someone else updated this attendee. Reloading list.", "warning");
-    setRevokeOpen(false);
-    setRevokeTarget(null);
-    setRevokeError(null);
-    setReloadToken((n) => n + 1);
-    return;
-  }
-  if (revokeOpen) {
-    setRevokeError("Could not update pass status.");
-  } else {
-    addToast("Could not update pass status.", "error");
-  }
-}
-
-/** The catch-block error handling for handlePassStatusChange — split out to keep that function's
- * cognitive complexity under SonarCloud's threshold (bot review), matching the same extraction
- * pattern as reportBulkActionError/runBulkAction above. */
-function reportPassStatusChangeError(err: unknown, ctx: PassStatusErrorContext): void {
-  const { revokeOpen, setRevokeError, addToast, reportApiError } = ctx;
-  if (err instanceof ApiError) {
-    reportApiError(err.status);
-    if (err.status === 401) {
-      const next = encodeURIComponent(window.location.pathname);
-      window.location.assign(`/login?next=${next}`);
-      return;
-    }
-    if (err.status === 409) {
-      reportPassStatusConflict(err, ctx);
-      return;
-    }
-  }
-  if (revokeOpen) {
-    setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
-  } else {
-    addToast(operatorApiErrorMessage(err, "Could not update pass status."), "error");
-  }
-}
-
 export function AttendeesPage() {
   const { eventId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -925,16 +856,6 @@ export function AttendeesPage() {
   const [bulkRevokePassConfirmOpen, setBulkRevokePassConfirmOpen] = useState(false);
   const [bulkRevokePassError, setBulkRevokePassError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const [revokeOpen, setRevokeOpen] = useState(false);
-  const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
-  const passActionBusyRef = useRef(new Set<string>());
-  const [passActionBusyVersion, setPassActionBusyVersion] = useState(0);
-  const passActionBusyIds = useMemo(
-    () => new Set(passActionBusyRef.current),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- passActionBusyVersion is a version counter; the ref holds the data, the state is the invalidation signal
-    [passActionBusyVersion],
-  );
 
   // Lets the debounce timer below compare against the *currently committed* search value
   // without adding `searchQuery` itself as a dependency (which would reschedule this effect
@@ -1109,41 +1030,6 @@ export function AttendeesPage() {
     setPage(1);
     setReloadToken((n) => n + 1);
   };
-
-  const handlePassStatusChange = useCallback(
-    async (row: AttendeeRowDto, nextStatus: "registered" | "revoked") => {
-      if (!eventId) return;
-      if (passActionBusyRef.current.has(row.id)) return;
-      passActionBusyRef.current.add(row.id);
-      setPassActionBusyVersion((version) => version + 1);
-      setRevokeError(null);
-      try {
-        const updated = await updateAttendee(eventId, row.id, {
-          status: nextStatus,
-          expected_updated_at: row.updated_at,
-        });
-        setItems((prev) => prev.map((item) => (item.id === row.id ? mergeAttendeeRow(item, updated) : item)));
-        setRevokeOpen(false);
-        setRevokeTarget(null);
-        addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
-      } catch (err) {
-        reportPassStatusChangeError(err, {
-          reportApiError,
-          addToast,
-          revokeOpen,
-          setRevokeOpen,
-          setRevokeTarget,
-          setRevokeError,
-          setReloadToken,
-        });
-      } finally {
-        if (passActionBusyRef.current.delete(row.id)) {
-          setPassActionBusyVersion((version) => version + 1);
-        }
-      }
-    },
-    [addToast, eventId, reportApiError, revokeOpen],
-  );
 
   const handleSendTicketsConfirm = async () => {
     if (!eventId) return;
@@ -1592,13 +1478,6 @@ export function AttendeesPage() {
           setPage(1);
         }}
         onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}
-        onRevokePass={(row) => {
-          setRevokeTarget(row);
-          setRevokeError(null);
-          setRevokeOpen(true);
-        }}
-        onRestorePass={(row) => void handlePassStatusChange(row, "registered")}
-        passActionBusyIds={passActionBusyIds}
         onPageChange={setPage}
         onPageSizeChange={(v) => {
           setPageSize(v);
@@ -1712,29 +1591,6 @@ export function AttendeesPage() {
         }}
       />
 
-      <ConfirmDialog
-        open={revokeOpen}
-        title="Revoke pass?"
-        message={
-          revokeTarget
-            ? `Revoke the pass for ${revokeTarget.name}? They will no longer be able to check in until the pass is restored.`
-            : ""
-        }
-        confirmLabel="Revoke"
-        confirmVariant="danger"
-        loading={revokeTarget ? passActionBusyIds.has(revokeTarget.id) : false}
-        errorMessage={revokeError ?? undefined}
-        onConfirm={() => {
-          if (revokeTarget) void handlePassStatusChange(revokeTarget, "revoked");
-        }}
-        onCancel={() => {
-          if (!revokeTarget || !passActionBusyIds.has(revokeTarget.id)) {
-            setRevokeOpen(false);
-            setRevokeTarget(null);
-            setRevokeError(null);
-          }
-        }}
-      />
 
       <ConfirmDialog
         open={bulkSendConfirmOpen}

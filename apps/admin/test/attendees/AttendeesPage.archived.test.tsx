@@ -23,6 +23,8 @@ const registeredRow: AttendeeRowDto = {
   updated_at: "2026-06-01T10:00:00.000Z",
   last_mail_status: "sent",
   rsvp_status: "confirmed",
+  has_issued_items: false,
+  wallet_status: null,
 };
 
 const revokedRow: AttendeeRowDto = {
@@ -84,7 +86,6 @@ vi.mock("../../src/api/client.js", () => ({
   bulkCheckInAttendees: vi.fn(),
   bulkRevokeCheckIn: vi.fn(),
   bulkRevokePass: vi.fn(),
-  updateAttendee: vi.fn(),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -141,17 +142,12 @@ describe("AttendeesPage archived lockdown", () => {
     });
 
     const addButton = screen.getByRole("button", { name: "+ Add attendee" });
-    const revokeButton = screen.getByRole("button", { name: "Revoke pass" });
-    const restoreButton = screen.getByRole("button", { name: "Restore pass" });
-
-    for (const control of [addButton, revokeButton, restoreButton]) {
-      expect(control.disabled).toBe(true);
-      const describedBy = control.getAttribute("aria-describedby");
-      expect(describedBy).toBeTruthy();
-      const description = document.getElementById(describedBy!);
-      expect(description?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-      expect(getTooltipText(control)).toBe(ARCHIVED_ACTION_TOOLTIP);
-    }
+    expect(addButton.disabled).toBe(true);
+    const describedBy = addButton.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    const description = document.getElementById(describedBy!);
+    expect(description?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
+    expect(getTooltipText(addButton)).toBe(ARCHIVED_ACTION_TOOLTIP);
 
     // Import and Send tickets now live behind the header's "More" menu (#615) instead of their
     // own standalone buttons — MoreActionsMenuItem shows its disabled-reason via a hover tooltip
@@ -172,8 +168,6 @@ describe("AttendeesPage archived lockdown", () => {
     expect(screen.getByRole("menuitem", { name: /^XLSX/ })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /^CSV/ })).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /^PDF/ })).toBeTruthy();
-    const viewButtons = screen.getAllByRole("button", { name: "View attendee" });
-    expect(viewButtons.every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
   });
 
   it("locks the bulk bar's Send tickets but leaves Delete reachable (#356 follow-up)", async () => {
