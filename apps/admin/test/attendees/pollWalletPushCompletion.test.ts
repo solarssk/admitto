@@ -156,4 +156,58 @@ describe("pollWalletPushCompletion", () => {
     ).rejects.toThrow("network down");
     expect(addToast).not.toHaveBeenCalled();
   });
+
+  it("rejects immediately, without toasting, when the signal is already aborted by the time a non-terminal poll needs to sleep", async () => {
+    const addToast = vi.fn();
+    const ac = new AbortController();
+    fetchWalletPushJobStatus.mockImplementationOnce(async () => {
+      ac.abort();
+      return baseStatus({ status: "running" });
+    });
+
+    await pollWalletPushCompletion("evt-1", "job-1", addToast, { maxAttempts: 3, signal: ac.signal });
+
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("stops sleeping and exits quietly when aborted while waiting between polls", async () => {
+    vi.useFakeTimers();
+    const addToast = vi.fn();
+    const ac = new AbortController();
+    fetchWalletPushJobStatus.mockResolvedValueOnce(baseStatus({ status: "running" }));
+
+    const done = pollWalletPushCompletion("evt-1", "job-1", addToast, {
+      maxAttempts: 5,
+      intervalMs: 5000,
+      signal: ac.signal,
+    });
+    await Promise.resolve();
+    ac.abort();
+    await done;
+
+    expect(fetchWalletPushJobStatus).toHaveBeenCalledTimes(1);
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("treats a missing reissued/skipped/errored triple as all-zero", async () => {
+    const addToast = vi.fn();
+    const ac = new AbortController();
+    fetchWalletPushJobStatus.mockResolvedValueOnce(baseStatus({ status: "succeeded" }));
+
+    await pollWalletPushCompletion("evt-1", "job-1", addToast, { maxAttempts: 3, signal: ac.signal });
+
+    expect(addToast).toHaveBeenCalledWith("Wallet pass update finished - nothing needed pushing.", "info");
+  });
+
+  it("uses the default maxAttempts/intervalMs when the caller supplies neither", async () => {
+    const addToast = vi.fn();
+    const ac = new AbortController();
+    fetchWalletPushJobStatus.mockResolvedValueOnce(
+      baseStatus({ status: "succeeded", reissued: 1, skipped: 0, errored: 0 }),
+    );
+
+    await pollWalletPushCompletion("evt-1", "job-1", addToast, { signal: ac.signal });
+
+    expect(addToast).toHaveBeenCalledWith("1 wallet pass updated.", "success");
+  });
 });

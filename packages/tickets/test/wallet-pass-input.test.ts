@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { buildWalletPassInput, formatDate, resolveTicketPageDisplay } from "../src/wallet-pass-input.js";
 
@@ -56,6 +56,17 @@ function fullResolved(overrides: { attendee?: Record<string, unknown>; event?: R
 }
 
 describe("resolveTicketPageDisplay — ticket type label resolution edge cases", () => {
+  it("skips the catalog lookup entirely when the attendee has no ticket_type", async () => {
+    const findMany = vi.fn();
+    const db = makeDb(findMany);
+    const resolved = makeResolved(null);
+
+    const result = await resolveTicketPageDisplay(db, resolved);
+
+    expect(result).toBe(resolved);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
   it("substitutes the catalog label for the raw ticket_type key when a match is found", async () => {
     const db = makeDb(() => Promise.resolve([{ key: "press_pass", label: "Press Pass" }]));
     const resolved = makeResolved("press_pass");

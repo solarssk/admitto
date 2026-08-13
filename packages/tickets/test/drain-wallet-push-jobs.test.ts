@@ -15,6 +15,7 @@ import { reissueOneWalletPass } from "../src/reissue-wallet-pass.js";
 import { resolveWalletProvider } from "@admitto/wallet";
 import {
   drainWalletPushJobs,
+  parseWalletPushJobStaleRunningMs,
   reclaimStaleWalletPushJobs,
   STALE_WALLET_PUSH_PENDING_ERROR,
   WALLET_PUSH_CONCURRENCY,
@@ -89,6 +90,20 @@ describe("drainWalletPushJobs", () => {
 
     expect(result).toEqual({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
     expect(reissueOneWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("claims up to an explicitly provided limit, not just the default of one", async () => {
+    vi.mocked(claimNextAdminJob)
+      .mockResolvedValueOnce(baseJob({ id: "job-wp-1" }) as never)
+      .mockResolvedValueOnce(baseJob({ id: "job-wp-2" }) as never);
+    vi.mocked(reissueOneWalletPass).mockResolvedValue("reissued");
+
+    const result = await drainWalletPushJobs(db as never, { limit: 2 });
+
+    // Exactly `limit` claims, even though a 3rd could theoretically still be pending - the loop
+    // bound itself caps it, it doesn't need a trailing null claim to know to stop.
+    expect(result.claimed).toBe(2);
+    expect(claimNextAdminJob).toHaveBeenCalledTimes(2);
   });
 
   it("pushes every resolvable target, tallies the result, and marks the job succeeded", async () => {
@@ -203,6 +218,86 @@ describe("drainWalletPushJobs", () => {
     });
   });
 
+  it.each([
+    ["no request property at all", {}],
+    ["a non-object request", { request: "not-an-object" }],
+    ["an array request", { request: ["nope"] }],
+    ["a non-string eventId", { request: { kind: "attendee_ids", eventId: 123, attendeeIds: [] } }],
+    ["an empty eventId", { request: { kind: "attendee_ids", eventId: "", attendeeIds: [] } }],
+    ["a non-array attendeeIds", { request: { kind: "attendee_ids", eventId: "evt-1", attendeeIds: "att-1" } }],
+    ["an attendeeIds entry that isn't a string", { request: { kind: "attendee_ids", eventId: "evt-1", attendeeIds: [1] } }],
+  ])("marks the job failed for %s instead of throwing", async (_label, resultJson) => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob({ result_json: resultJson }) as never);
+
+    const result = await drainWalletPushJobs(db as never);
+
+    expect(result.failed).toBe(1);
+    expect(db.adminJob.update).toHaveBeenCalledWith({
+      where: { id: "job-wp-1" },
+      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_push_job_bad_request" },
+    });
+  });
+
+  it("marks the job failed when the event referenced by the request no longer exists", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    db.event.findUnique.mockResolvedValueOnce(null);
+
+    const result = await drainWalletPushJobs(db as never);
+
+    expect(result.failed).toBe(1);
+    expect(resolveWalletProvider).not.toHaveBeenCalled();
+    expect(db.adminJob.update).toHaveBeenCalledWith({
+      where: { id: "job-wp-1" },
+      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_not_configured" },
+    });
+  });
+
+  it("passes undefined (not null) audit fields to reissueOneWalletPass when the job has none recorded", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+      baseJob({ actor_user_id: null, session_id: null, client_timezone: null }) as never,
+    );
+    vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued").mockResolvedValueOnce("skipped");
+
+    await drainWalletPushJobs(db as never);
+
+    expect(reissueOneWalletPass).toHaveBeenCalledWith(
+      db,
+      "evt-1",
+      expect.anything(),
+      fakeProvider,
+      { operator: undefined, sessionId: undefined, timezone: undefined },
+    );
+  });
+
+  it("stringifies a non-Error rejection instead of crashing when marking the job failed", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    db.adminJob.update.mockRejectedValueOnce("raw string failure");
+
+    const result = await drainWalletPushJobs(db as never);
+
+    expect(result.failed).toBe(1);
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
+    );
+    expect(finalCall![0]).toMatchObject({ data: { error: "raw string failure" } });
+  });
+
+  it.each([
+    ["a null result_json", null],
+    ["a non-object result_json", "not-an-object"],
+    ["an array result_json", ["nope"]],
+  ])("marks the job failed for %s instead of throwing", async (_label, resultJson) => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob({ result_json: resultJson }) as never);
+
+    const result = await drainWalletPushJobs(db as never);
+
+    expect(result.failed).toBe(1);
+    expect(db.adminJob.update).toHaveBeenCalledWith({
+      where: { id: "job-wp-1" },
+      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_push_job_bad_request" },
+    });
+  });
+
   it("chunks at WALLET_PUSH_CONCURRENCY, not all at once", async () => {
     const attendeeIds = Array.from({ length: WALLET_PUSH_CONCURRENCY + 3 }, (_, i) => `att-${i}`);
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
@@ -228,6 +323,26 @@ describe("drainWalletPushJobs", () => {
   });
 });
 
+describe("parseWalletPushJobStaleRunningMs", () => {
+  it("uses the env value when it's a valid positive integer", () => {
+    expect(parseWalletPushJobStaleRunningMs({ WALLET_PUSH_JOB_STALE_RUNNING_MS: "600000" })).toBe(600000);
+  });
+
+  it("trims surrounding whitespace before parsing", () => {
+    expect(parseWalletPushJobStaleRunningMs({ WALLET_PUSH_JOB_STALE_RUNNING_MS: "  900000  " })).toBe(900000);
+  });
+
+  it.each([
+    ["unset", {}],
+    ["blank", { WALLET_PUSH_JOB_STALE_RUNNING_MS: "   " }],
+    ["not a number", { WALLET_PUSH_JOB_STALE_RUNNING_MS: "soon" }],
+    ["zero", { WALLET_PUSH_JOB_STALE_RUNNING_MS: "0" }],
+    ["negative", { WALLET_PUSH_JOB_STALE_RUNNING_MS: "-5" }],
+  ])("falls back to the 30-minute default when %s", (_label, env) => {
+    expect(parseWalletPushJobStaleRunningMs(env)).toBe(30 * 60 * 1000);
+  });
+});
+
 describe("reclaimStaleWalletPushJobs", () => {
   it("fails a stale running job with the running-specific error", async () => {
     const db = {
@@ -249,6 +364,20 @@ describe("reclaimStaleWalletPushJobs", () => {
         finished_at: new Date("2026-08-13T12:00:00Z"),
       },
     });
+  });
+
+  it("does not count a job as reclaimed when the CAS update finds it already changed status (race with a legitimate finish)", async () => {
+    const db = {
+      adminJob: {
+        findMany: vi.fn().mockResolvedValue([{ id: "job-1", status: "running" }]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      backgroundWorkerHeartbeat: { findUnique: vi.fn().mockResolvedValue({ last_beat_at: new Date() }) },
+    };
+
+    const result = await reclaimStaleWalletPushJobs(db as never, { now: new Date("2026-08-13T12:00:00Z") });
+
+    expect(result).toEqual({ reclaimed: 0 });
   });
 
   it("leaves a pending job alone while the worker heartbeat is fresh", async () => {

@@ -1827,6 +1827,21 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     });
   });
 
+  it("toasts a fallback message when the wallet push poll itself fails to run", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, walletPushJobId: "job-abc" });
+    pollWalletPushCompletion.mockRejectedValue(new Error("network down"));
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
+    });
+  });
+
   it("does not poll wallet push completion when nothing actually changed (no job enqueued)", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     fetchTicketTypes.mockResolvedValue(catalog);
