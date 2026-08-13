@@ -318,12 +318,30 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: gitleaks
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           curl -sSfL --proto '=https' --proto-redir '=https' -o gitleaks.tar.gz \
             https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
           echo "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d  gitleaks.tar.gz" | sha256sum -c -
           tar -xzf gitleaks.tar.gz gitleaks
-          ./gitleaks detect --source . --no-banner --redact --exit-code 1
+          # gitleaks' default log-opts is `git log --all --full-history` - with fetch-depth:0
+          # above fetching every remote branch, that scans every open branch's commits, not just
+          # this ref's own. Any PR then fails secret-scan if ANY other branch in the repo has a
+          # commit gitleaks flags, regardless of that PR's actual changes. Scope the scan to just
+          # this ref's own commits instead: the PR's commits since its base, or the commits a push
+          # actually introduced.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            RANGE="origin/$BASE_REF..HEAD"
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            RANGE="$BEFORE_SHA..$HEAD_SHA"
+          else
+            RANGE="-1"
+          fi
+          ./gitleaks detect --source . --no-banner --redact --exit-code 1 --log-opts="$RANGE"
 
   pii-guard:
     runs-on: ubuntu-latest
