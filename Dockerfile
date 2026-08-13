@@ -52,7 +52,7 @@ FROM node:24-bookworm-slim AS production
 # (apps/web/src/maps/static-map.ts, font-family "DejaVu Sans, Arial, Helvetica, sans-serif") has
 # nothing to resolve glyphs against and draws the static-map attribution/placeholder text as tofu.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates openssl wget fontconfig fonts-dejavu-core \
+  && apt-get install -y --no-install-recommends ca-certificates fontconfig fonts-dejavu-core openssl wget \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /usr/local/lib/node_modules/npm \
