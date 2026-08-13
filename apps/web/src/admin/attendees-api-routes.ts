@@ -13,8 +13,7 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { TemplateNotFoundError } from "@admitto/mail-templates";
-import type { AttendeeStatus } from "@admitto/db/status";
-import type { WalletPassStatus } from "@admitto/db/status";
+import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
 import { decryptFromString } from "@admitto/crypto";
 import { WalletProviderError, resolveWalletProvider, type WalletPassProvider } from "@admitto/wallet";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "../wallet-pass-input.js";
@@ -2846,13 +2845,16 @@ export async function reissueOneWalletPass(
   }
 
   await db.$transaction(async (tx) => {
+    // updatePass only patches the provider's content, never its voided flag (that's Restore's
+    // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
+    // an already-voided pass stays voided instead of falsely reporting "active" while the
+    // installed pass is still invalid at the provider, which would also hide the Restore action.
     await tx.walletPass.update({
       where: { attendee_id: target.attendeeId },
       data: {
         download_url: result.downloadUrl,
         apple_url: result.appleUrl,
         android_url: result.androidUrl,
-        status: "active",
         last_error_code: null,
         last_synced_at: new Date(),
       },
@@ -3411,7 +3413,7 @@ async function loadWalletActionContext(
       },
     }),
   ]);
-  if (!attendee || attendee.event_id !== eventId) return c.json({ error: "forbidden" }, 403);
+  if (attendee?.event_id !== eventId) return c.json({ error: "forbidden" }, 403);
   if (!event) return c.json({ error: "forbidden" }, 403);
   if (!attendee.wallet_pass?.provider_pass_id) return c.json({ error: "no_wallet_pass" }, 404);
 
@@ -3536,13 +3538,16 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
   }
 
   const updated = await db.$transaction(async (tx) => {
+    // updatePass only patches the provider's content, never its voided flag (that's Restore's
+    // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
+    // an already-voided pass stays voided instead of falsely reporting "active" while the
+    // installed pass is still invalid at the provider, which would also hide the Restore action.
     const row = await tx.walletPass.update({
       where: { attendee_id: ctx.attendeeId },
       data: {
         download_url: result.downloadUrl,
         apple_url: result.appleUrl,
         android_url: result.androidUrl,
-        status: "active",
         last_error_code: null,
         last_synced_at: new Date(),
       },

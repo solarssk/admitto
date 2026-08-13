@@ -1358,6 +1358,49 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(audit).not.toBeNull();
     });
 
+    it("keeps an already-voided pass voided - updatePass never restores the provider's voided flag", async () => {
+      const attendeeId = "att-wallet-action-reissue-voided";
+      const token = generateToken();
+      await prisma.attendee.create({
+        data: {
+          id: attendeeId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${attendeeId}@example.com`,
+          name: "Wallet Reissue Voided",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: {
+          attendee_id: attendeeId,
+          provider: "passcreator",
+          provider_pass_id: `pc-${attendeeId}`,
+          status: "voided",
+          voided_at: new Date(),
+        },
+      });
+      updateSpy.mockResolvedValueOnce({
+        providerPassId: `pc-${attendeeId}`,
+        downloadUrl: "https://pc.test/p/new",
+        appleUrl: "https://pc.test/apple/new",
+        androidUrl: "https://pc.test/android/new",
+      });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { status: string };
+      expect(body.status).toBe("voided");
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(row?.status).toBe("voided");
+      expect(row?.voided_at).not.toBeNull();
+      expect(row?.apple_url).toBe("https://pc.test/apple/new");
+    });
+
     it("returns 409 when the attendee has never been issued a ticket", async () => {
       const attendeeId = "att-wallet-action-reissue-unissued";
       await prisma.attendee.create({
@@ -1548,6 +1591,53 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${issuedId}`);
       const row = await prisma.walletPass.findUnique({ where: { attendee_id: issuedId } });
       expect(row?.apple_url).toBe("https://pc.test/apple/bulk");
+    });
+
+    it("keeps an already-voided pass voided - updatePass never restores the provider's voided flag", async () => {
+      const attendeeId = "att-bulk-wallet-reissue-voided";
+      const token = generateToken();
+      await prisma.attendee.create({
+        data: {
+          id: attendeeId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${attendeeId}@example.com`,
+          name: "Bulk Reissue Voided",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: {
+          attendee_id: attendeeId,
+          provider: "passcreator",
+          provider_pass_id: `pc-${attendeeId}`,
+          status: "voided",
+          voided_at: new Date(),
+        },
+      });
+      updateSpy.mockResolvedValueOnce({
+        providerPassId: `pc-${attendeeId}`,
+        downloadUrl: "https://pc.test/p/bulk-voided",
+        appleUrl: "https://pc.test/apple/bulk-voided",
+        androidUrl: "https://pc.test/android/bulk-voided",
+      });
+
+      const res = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-reissue`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [attendeeId] }),
+        },
+      );
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { reissued: number; skipped: number; errored: number };
+      expect(body).toEqual({ reissued: 1, skipped: 0, errored: 0 });
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      expect(row?.status).toBe("voided");
+      expect(row?.voided_at).not.toBeNull();
+      expect(row?.apple_url).toBe("https://pc.test/apple/bulk-voided");
     });
   });
 
