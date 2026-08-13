@@ -99,7 +99,9 @@ describe("WebAuthn registration", () => {
 
     const begin = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
     expect(begin?.options.authenticatorSelection?.residentKey).toBe("discouraged");
-    expect(begin?.options.authenticatorSelection?.authenticatorAttachment).toBe("cross-platform");
+    // Non-binding hint only - no hard authenticatorAttachment filter (see beginWebauthnRegistration).
+    expect(begin?.options.authenticatorSelection?.authenticatorAttachment).toBeUndefined();
+    expect(begin?.options.hints).toEqual(["security-key"]);
 
     const { result } = await registerCredential(userId, "cross-platform", "YubiKey 5C");
     expect(result?.credentialRowId).toBeTruthy();
