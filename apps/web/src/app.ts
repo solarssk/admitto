@@ -581,6 +581,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminImportJobStatusRateLimit = rateLimit(rateLimitStore, "admin:import-job-status");
   const adminWalletPushJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-push-job-status");
+  const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -1259,9 +1260,13 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),
   );
-  app.patch("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
-    handlePatchEventAttendee(c, db),
-  ));
+  app.patch(
+    "/api/admin/events/:eventId/attendees/:id",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeePatchRateLimit,
+    guardArchivedEvent((c) => handlePatchEventAttendee(c, db)),
+  );
   app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteEventAttendee(c, db),
   );

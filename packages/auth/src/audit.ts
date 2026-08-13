@@ -169,6 +169,7 @@ export type RateLimitScope =
   | "admin_resend_bulk"
   | "admin_resend"
   | "admin_export"
+  | "admin_attendee_patch"
   | "checkin_stream"
   | "checkin_history"
   | "admin_geocoding_search"

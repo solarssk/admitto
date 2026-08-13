@@ -1009,8 +1009,7 @@ export interface WalletPushJobStatusResponse {
   errored: number | null;
 }
 
-/** Poll async wallet_push job status - enqueued by bulkChangeTicketType above (and, eventually,
- * event date/location saves). */
+/** Poll async wallet_push job status - enqueued by bulkChangeTicketType above. */
 export async function fetchWalletPushJobStatus(
   eventId: string,
   jobId: string,
@@ -1021,6 +1020,31 @@ export async function fetchWalletPushJobStatus(
     { credentials: "same-origin", signal },
   );
   return parseJson<WalletPushJobStatusResponse>(res);
+}
+
+export interface WalletPushHistoryEntry {
+  id: string;
+  created_at: string;
+  reissued: number;
+  skipped: number;
+  errored: number;
+  status: "succeeded" | "failed";
+  error: string | null;
+}
+
+/** Recent terminal wallet_push jobs for the event (newest first) - the async job system's own
+ * triggers only (currently: bulk ticket type change). Single-attendee field edits push directly
+ * and synchronously (see handlePatchEventAttendee), so they never appear here. */
+export async function fetchWalletPushHistory(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<WalletPushHistoryEntry[]> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/history`, {
+    credentials: "same-origin",
+    signal,
+  });
+  const body = await parseJson<{ items: WalletPushHistoryEntry[] }>(res);
+  return body.items;
 }
 
 /** Same shape as BulkTicketTypeResponse - one type for both structurally identical bulk
