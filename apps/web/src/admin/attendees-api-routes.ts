@@ -1756,8 +1756,13 @@ async function writeAttendeeLifecycleAuditLog(
  * logged and local erasure proceeds regardless, same posture as the other best-effort external
  * calls in this file. The `attendee: { event_id: eventId }` relation filter keeps this correctly
  * scoped even before the caller's own event-ownership check has run - an id belonging to a
- * different event simply matches no row. No-op when wallet is unconfigured or none of the given
- * attendees has a WalletPass row with a known provider_pass_id yet. */
+ * different event simply matches no row. No-op when the event's credentials are unconfigured or
+ * none of the given attendees has a WalletPass row with a known provider_pass_id yet - but NOT
+ * gated on the event's wallet_enabled toggle, unlike every other resolveWalletProvider call site:
+ * that flag only governs whether new passes get issued, and erasure must still delete whatever
+ * already exists at the provider even after issuance has since been turned off (CodeRabbit
+ * review - the local WalletPass row's provider_pass_id, the only way to ever reach it again, is
+ * gone the moment the caller's own transaction below removes the row). */
 async function deleteWalletPassesBestEffort(
   db: PrismaClient,
   eventId: string,
@@ -1767,7 +1772,6 @@ async function deleteWalletPassesBestEffort(
     db.event.findUnique({
       where: { id: eventId },
       select: {
-        wallet_enabled: true,
         wallet_template_id: true,
         wallet_api_key_enc: true,
         wallet_field_mapping: true,
@@ -1784,8 +1788,15 @@ async function deleteWalletPassesBestEffort(
   ]);
   if (!event || passes.length === 0) return;
 
+  // walletEnabled: true regardless of the event's own current toggle - that flag governs whether
+  // NEW passes get issued, not whether erasure may clean up passes that already exist at the
+  // provider. An event with wallet issuance since turned off (but still holding a valid API
+  // key/template) must still delete the provider's copy here, or these WalletPass rows'
+  // provider_pass_id - the only way to ever delete them at PassCreator - is gone the moment the
+  // caller's own transaction below removes the local row, permanently orphaning attendee PII
+  // there (CodeRabbit review, GDPR).
   const provider = resolveWalletProvider({
-    walletEnabled: event.wallet_enabled,
+    walletEnabled: true,
     walletTemplateId: event.wallet_template_id,
     walletApiKeyEnc: event.wallet_api_key_enc,
     walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),

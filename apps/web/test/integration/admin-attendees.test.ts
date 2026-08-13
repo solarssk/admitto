@@ -1099,6 +1099,24 @@ describe("attendee erasure — wallet pass deletion at the provider", () => {
     expect(deleteSpy).not.toHaveBeenCalled();
   });
 
+  it("DELETE still calls deletePass when wallet issuance is disabled but credentials are still configured (CodeRabbit review, GDPR)", async () => {
+    const attendeeId = "att-wallet-erase-disabled";
+    await seedWalletAttendee(attendeeId, "pc-erase-disabled");
+    await prisma.event.update({ where: { id: WALLET_ERASE_EVENT }, data: { wallet_enabled: false } });
+    try {
+      const res = await app.request(`/api/admin/events/${WALLET_ERASE_EVENT}/attendees/${attendeeId}`, {
+        method: "DELETE",
+        headers: { Cookie: adminCookie, ...sameOrigin },
+      });
+
+      expect(res.status).toBe(204);
+      expect(deleteSpy).toHaveBeenCalledWith("pc-erase-disabled");
+      expect(await prisma.attendee.findUnique({ where: { id: attendeeId } })).toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: WALLET_ERASE_EVENT }, data: { wallet_enabled: true } });
+    }
+  });
+
   it("bulk-delete calls deletePass for every selected attendee that has a wallet pass", async () => {
     const ids = ["att-wallet-erase-bulk-1", "att-wallet-erase-bulk-2"];
     await seedWalletAttendee(ids[0]!, "pc-erase-bulk-1");
