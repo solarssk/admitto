@@ -1410,24 +1410,32 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         androidUrl: "https://pc.test/android/new",
       });
 
-      const res = await app.request(
-        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
-        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
-      );
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
 
-      expect(res.status).toBe(200);
-      expect(updateSpy).toHaveBeenCalledTimes(1);
-      expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${attendeeId}`);
-      expect(updateSpy.mock.calls[0]?.[1]).toMatchObject({ barcodeValue: token, attendeeName: "Wallet Reissue" });
-      const body = (await res.json()) as { status: string; apple_url: string | null; android_url: string | null };
-      expect(body.status).toBe("active");
-      expect(body.apple_url).toBe("https://pc.test/apple/new");
-      expect(body.android_url).toBe("https://pc.test/android/new");
+        expect(res.status).toBe(200);
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+        expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${attendeeId}`);
+        expect(updateSpy.mock.calls[0]?.[1]).toMatchObject({ barcodeValue: token, attendeeName: "Wallet Reissue" });
+        const body = (await res.json()) as { status: string; apple_url: string | null; android_url: string | null };
+        expect(body.status).toBe("active");
+        expect(body.apple_url).toBe("https://pc.test/apple/new");
+        expect(body.android_url).toBe("https://pc.test/android/new");
 
-      const audit = await prisma.attendeeActionLog.findFirst({
-        where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_reissued" },
-      });
-      expect(audit).not.toBeNull();
+        const audit = await prisma.attendeeActionLog.findFirst({
+          where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_reissued" },
+        });
+        expect(audit).not.toBeNull();
+      } finally {
+        // Same reasoning as the restore-failure test above: keep this describe's total
+        // WALLET_ACTION_EVENT attendee count from drifting past what the later
+        // "wallet_status on GET list" block's unfiltered (25-per-page) list call expects.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
     });
 
     it("keeps an already-voided pass voided - updatePass never restores the provider's voided flag", async () => {
@@ -1459,18 +1467,26 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         androidUrl: "https://pc.test/android/new",
       });
 
-      const res = await app.request(
-        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
-        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
-      );
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/reissue`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
 
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { status: string };
-      expect(body.status).toBe("voided");
-      const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
-      expect(row?.status).toBe("voided");
-      expect(row?.voided_at).not.toBeNull();
-      expect(row?.apple_url).toBe("https://pc.test/apple/new");
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { status: string };
+        expect(body.status).toBe("voided");
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("voided");
+        expect(row?.voided_at).not.toBeNull();
+        expect(row?.apple_url).toBe("https://pc.test/apple/new");
+      } finally {
+        // Same reasoning as the restore-failure test above: keep this describe's total
+        // WALLET_ACTION_EVENT attendee count from drifting past what the later
+        // "wallet_status on GET list" block's unfiltered (25-per-page) list call expects.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
     });
 
     it("returns 409 when the attendee has never been issued a ticket", async () => {
