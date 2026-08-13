@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Attendee export/import and mail sending now start almost immediately after you trigger them, instead of waiting up to a minute for the background worker's next scheduled check.
+
 ### Fixed
 
 - The small map on the public ticket page and its "© OpenStreetMap contributors" credit could render as blank boxes instead of readable text in the packaged app image, because the container had no fonts installed at all for the server-side map renderer to draw with.

@@ -28,6 +28,7 @@ import { drainExportJobs } from "./export-jobs.js";
 import { runWalletRegistrationSync } from "./wallet-sync.js";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
 import { openWorkerLockClient, type WorkerLockClient } from "./worker-locks.js";
+import { openWorkerNotifyClient, type WorkerNotifyClient } from "./worker-notify.js";
 import {
   createRetentionSchedule,
   markRetentionFailure,
@@ -62,6 +63,25 @@ async function runJobSafely(job: string, run: () => Promise<void>): Promise<void
     await run();
   } catch (err) {
     log(job, `FAILED ${errMessage(err)}`);
+  }
+}
+
+/**
+ * Reuses `current` if still alive, otherwise (re)connects. Returns null on failure so the
+ * caller can fall back to plain tick-interval polling — the notify client is a pure latency
+ * optimization, never a correctness dependency.
+ */
+async function ensureNotifyClient(
+  databaseUrl: string,
+  current: WorkerNotifyClient | null,
+): Promise<WorkerNotifyClient | null> {
+  if (current?.isAlive()) return current;
+  if (current) await current.close().catch(() => undefined);
+  try {
+    return await openWorkerNotifyClient(databaseUrl);
+  } catch (err) {
+    log("heartbeat", `notify client unavailable, falling back to poll-only: ${errMessage(err)}`);
+    return null;
   }
 }
 
@@ -218,7 +238,7 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
   }
 }
 
-async function runWorkerTick(
+export async function runWorkerTick(
   db: PrismaClient,
   locks: WorkerLockClient,
   schedule: RetentionSchedule,
@@ -227,11 +247,15 @@ async function runWorkerTick(
     await touchWorkerHeartbeat(db);
     log("heartbeat", "ok");
   });
-  await runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks));
-  await runJobSafely("import", () => runImportJob(db, locks));
-  await runJobSafely("export", () => runExportJob(db, locks));
-  await runJobSafely("bounce", () => runBounceJob(db, locks));
-  await runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks));
+  // Independent advisory locks per job type, so one slow drain (e.g. a big mail_delivery
+  // batch) cannot delay another's turn (e.g. export) within the same tick.
+  await Promise.all([
+    runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks)),
+    runJobSafely("import", () => runImportJob(db, locks)),
+    runJobSafely("export", () => runExportJob(db, locks)),
+    runJobSafely("bounce", () => runBounceJob(db, locks)),
+    runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks)),
+  ]);
 
   if (retentionIsDue(schedule, Date.now())) {
     try {
@@ -264,6 +288,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   const tickSeconds = parseBounceIngestTickSeconds(process.env);
   const tickMs = tickSeconds * 1000;
   const locks = await openWorkerLockClient(databaseUrl);
+  let notify = await ensureNotifyClient(databaseUrl, null);
   const signal = { stopped: false };
   const retention: RetentionSchedule = createRetentionSchedule();
 
@@ -277,7 +302,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
 
   log(
     "heartbeat",
-    `starting tick=${tickSeconds}s host=${osHostname()} (mail_delivery + import + export + bounce + wallet_sync + retention)`,
+    `starting tick=${tickSeconds}s host=${osHostname()} notify=${notify ? "on" : "off"} (mail_delivery + import + export + bounce + wallet_sync + retention)`,
   );
 
   try {
@@ -285,12 +310,18 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     while (!signal.stopped) {
       await runWorkerTick(db, locks, retention);
       if (signal.stopped) break;
-      await sleep(tickMs, signal);
+      notify = await ensureNotifyClient(databaseUrl, notify);
+      if (notify) {
+        await notify.waitForWakeOrTimeout(tickMs, signal);
+      } else {
+        await sleep(tickMs, signal);
+      }
     }
   } finally {
     process.off("SIGTERM", onStop);
     process.off("SIGINT", onStop);
     await locks.close();
+    await notify?.close();
     await closeSsePublishClient();
     log("heartbeat", "stopped");
   }
