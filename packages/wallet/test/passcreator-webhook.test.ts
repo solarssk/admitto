@@ -235,6 +235,22 @@ describe("applyWebhookUpdate", () => {
     expect(call.data).not.toHaveProperty("google_active_registrations");
   });
 
+  it("leaves both apple_* and google_* columns untouched when operatingSystem is an unrecognized value - never guess platform from a value we don't understand", async () => {
+    const db = makeDb();
+    db.walletPass.update.mockResolvedValueOnce({});
+    await applyWebhookUpdate(db as never, {
+      identifier: "pc-1",
+      operatingSystem: "iPadOS",
+      noOfActivePasses: 1,
+      noOfInactivePasses: 0,
+    });
+    const call = db.walletPass.update.mock.calls[0]?.[0];
+    expect(call.data).not.toHaveProperty("apple_active_registrations");
+    expect(call.data).not.toHaveProperty("google_active_registrations");
+    expect(call.data).not.toHaveProperty("apple_inactive_registrations");
+    expect(call.data).not.toHaveProperty("google_inactive_registrations");
+  });
+
   it("falls back to identifier (provider_pass_id) when userProvidedId is absent", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
