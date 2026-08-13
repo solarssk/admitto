@@ -6166,6 +6166,167 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
   });
 });
 
+describe("GET /api/admin/events/:eventId/wallet-push/jobs/:jobId", () => {
+  afterAll(async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] }, type: "wallet_push" } });
+  });
+
+  async function seedJob(overrides: Record<string, unknown> = {}) {
+    return prisma.adminJob.create({
+      data: {
+        type: "wallet_push",
+        status: "pending",
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        result_json: { request: { kind: "attendee_ids", eventId: EVENT_A, attendeeIds: ["att-1"] } },
+        ...overrides,
+      },
+    });
+  }
+
+  it("returns 400/404 for a blank and an unknown job id", async () => {
+    const blank = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/jobs/%20`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(blank.status).toBe(400);
+    expect(await blank.json()).toEqual({ error: "jobId required" });
+
+    const missing = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/jobs/does-not-exist`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "not_found" });
+  });
+
+  it("returns 404, not a leaked 200, for a job that belongs to a different event", async () => {
+    const job = await prisma.adminJob.create({
+      data: {
+        type: "wallet_push",
+        status: "pending",
+        organization_id: ORG_B,
+        event_id: EVENT_B,
+        result_json: { request: { kind: "attendee_ids", eventId: EVENT_B, attendeeIds: [] } },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/jobs/${job.id}`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 403 for an operator", async () => {
+    const job = await seedJob();
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/jobs/${job.id}`, {
+      headers: { Cookie: opCookie },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("surfaces progress and terminal counts, with no-store caching", async () => {
+    const job = await seedJob({ progress_total: 5, progress_done: 2, status: "running" });
+
+    const running = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/jobs/${job.id}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(running.status).toBe(200);
+    expect(running.headers.get("Cache-Control")).toBe("no-store");
+    expect(await running.json()).toMatchObject({
+      jobId: job.id,
+      status: "running",
+      error: null,
+      progressTotal: 5,
+      progressDone: 2,
+      reissued: null,
+      skipped: null,
+      errored: null,
+    });
+
+    await prisma.adminJob.update({
+      where: { id: job.id },
+      data: {
+        status: "succeeded",
+        finished_at: new Date(),
+        result_json: { request: { kind: "attendee_ids", eventId: EVENT_A, attendeeIds: ["att-1"] }, reissued: 3, skipped: 1, errored: 0 },
+      },
+    });
+    const succeeded = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/jobs/${job.id}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(await succeeded.json()).toMatchObject({ status: "succeeded", reissued: 3, skipped: 1, errored: 0 });
+
+    await prisma.adminJob.update({
+      where: { id: job.id },
+      data: { status: "failed", error: "wallet_not_configured", finished_at: new Date() },
+    });
+    const failed = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/jobs/${job.id}`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(await failed.json()).toMatchObject({ status: "failed", error: "wallet_not_configured" });
+  });
+});
+
+describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
+  afterAll(async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: { in: [EVENT_A, EVENT_B] }, type: "wallet_push" } });
+  });
+
+  it("returns only terminal jobs, newest-finished-first, with counts and error mapped", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    await prisma.adminJob.createMany({
+      data: [
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          result_json: { reissued: 4, skipped: 1, errored: 0 },
+          created_at: new Date("2026-06-01T10:00:00Z"),
+          finished_at: new Date("2026-06-01T10:01:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "failed",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          error: "wallet_not_configured",
+          created_at: new Date("2026-06-02T09:00:00Z"),
+          finished_at: new Date("2026-06-02T09:05:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "running",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          created_at: new Date("2026-06-03T09:00:00Z"),
+        },
+      ],
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    // Running is excluded - only the two terminal jobs, newest finished_at first.
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0]).toMatchObject({ status: "failed", error: "wallet_not_configured", reissued: 0, skipped: 0, errored: 0 });
+    expect(body.items[1]).toMatchObject({ status: "succeeded", error: null, reissued: 4, skipped: 1, errored: 0 });
+  });
+
+  it("returns 403 for an operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-rsvp-" } } });
