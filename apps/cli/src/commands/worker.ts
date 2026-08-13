@@ -71,7 +71,7 @@ async function runJobSafely(job: string, run: () => Promise<void>): Promise<void
  * caller can fall back to plain tick-interval polling — the notify client is a pure latency
  * optimization, never a correctness dependency.
  */
-async function ensureNotifyClient(
+export async function ensureNotifyClient(
   databaseUrl: string,
   current: WorkerNotifyClient | null,
 ): Promise<WorkerNotifyClient | null> {

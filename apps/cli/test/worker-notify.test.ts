@@ -96,6 +96,17 @@ describe("openWorkerNotifyClient", () => {
     expect(client.isAlive()).toBe(false);
   });
 
+  it("logs a non-Error thrown value via String() rather than .message", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const client = await openWorkerNotifyClient("postgresql://example/db");
+    emit("error", "socket hang up");
+    expect(client.isAlive()).toBe(false);
+    expect(logSpy.mock.calls.some((call) => String(call[0]).includes("socket hang up"))).toBe(
+      true,
+    );
+    logSpy.mockRestore();
+  });
+
   it("close() issues UNLISTEN when still alive and always ends the connection", async () => {
     const client = await openWorkerNotifyClient("postgresql://example/db");
     await client.close();

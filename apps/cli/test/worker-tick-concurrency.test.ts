@@ -54,9 +54,6 @@ vi.mock("../src/commands/export-jobs.js", () => ({ drainExportJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
-const { runWorkerTick } = await import("../src/commands/worker.js");
-const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
-
 function fakeLocks() {
   return {
     tryAcquire: vi.fn(async () => true),
@@ -65,6 +62,15 @@ function fakeLocks() {
     close: vi.fn(async () => undefined),
   };
 }
+
+const openWorkerLockClient = vi.fn(async () => fakeLocks());
+vi.mock("../src/commands/worker-locks.js", () => ({ openWorkerLockClient }));
+
+const openWorkerNotifyClient = vi.fn();
+vi.mock("../src/commands/worker-notify.js", () => ({ openWorkerNotifyClient }));
+
+const { runWorker, runWorkerTick } = await import("../src/commands/worker.js");
+const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
 
 describe("runWorkerTick", () => {
   it("runs mail_delivery, import, export, bounce, and wallet_sync concurrently", async () => {
@@ -79,5 +85,30 @@ describe("runWorkerTick", () => {
     expect(starts["export"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["bounce"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["wallet_sync"]).toBeLessThan(finishes["mail_delivery"]);
+  });
+});
+
+describe("runWorker", () => {
+  it("wakes via the notify client each tick and closes it on shutdown", async () => {
+    process.env["DATABASE_URL"] = "postgresql://example/db";
+
+    const notifyClient = {
+      isAlive: vi.fn(() => true),
+      waitForWakeOrTimeout: vi.fn(async (_ms: number, signal: { stopped: boolean }) => {
+        signal.stopped = true; // one tick is enough to prove the wiring, then stop the loop
+      }),
+      close: vi.fn(async () => undefined),
+    };
+    openWorkerNotifyClient.mockReset();
+    openWorkerNotifyClient.mockResolvedValue(notifyClient);
+    openWorkerLockClient.mockClear();
+
+    await runWorker({} as never);
+
+    // Connected once up front and reused on the loop's reconnect check - never re-dialed
+    // while still alive.
+    expect(openWorkerNotifyClient).toHaveBeenCalledOnce();
+    expect(notifyClient.waitForWakeOrTimeout).toHaveBeenCalledOnce();
+    expect(notifyClient.close).toHaveBeenCalledOnce();
   });
 });
