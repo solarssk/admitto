@@ -39,7 +39,9 @@ function stubProvider(): WalletPassProvider & {
     updatePass: vi.fn(),
     voidPass: vi.fn(),
     restorePass: vi.fn(),
+    deletePass: vi.fn(),
     findByUserProvidedId: vi.fn(async () => null),
+    getRegistrationStatus: vi.fn(async () => null),
   };
 }
 
@@ -294,6 +296,34 @@ describe("On-demand wallet routes", () => {
     expect(second.status).toBe(302);
     expect(second.headers.get("location")).toBe("https://pc.test/apple/x");
     expect(provider.createPass).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores a voided pass instead of creating a new one when the attendee retries the wallet link (CodeRabbit review)", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATTENDEE_MODE_A_ID,
+        provider: "passcreator",
+        provider_pass_id: "pc-voided-retry",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        status: "voided",
+        voided_at: new Date(),
+        apple_url: "https://pc.test/apple/stale",
+        android_url: "https://pc.test/android/stale",
+      },
+    });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/stale");
+    expect(provider.createPass).not.toHaveBeenCalled();
+    expect(provider.restorePass).toHaveBeenCalledWith("pc-voided-retry");
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("active");
+    expect(saved?.voided_at).toBeNull();
   });
 
   it("redirects back with walletError=1 and records status=failed on provider error", async () => {

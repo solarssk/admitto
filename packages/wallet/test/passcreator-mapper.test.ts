@@ -12,17 +12,17 @@ const baseInput: WalletPassInput = {
 
 describe("toPassCreatorData", () => {
   it("always includes barcodeValue, matching the ticket page's own QR payload", () => {
-    const data = toPassCreatorData(baseInput, "tmpl-1");
+    const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
     expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
   });
 
   it("includes barcodeValue even when a custom field mapping is used", () => {
-    const data = toPassCreatorData(baseInput, "tmpl-1", { attendeeFullName: "full_name" });
+    const data = toPassCreatorData(baseInput, "tmpl-1", { attendeeFullName: "full_name" }, true);
     expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
   });
 
   it("also exposes the ticket/QR URL as a mappable ticket_url placeholder", () => {
-    const data = toPassCreatorData(baseInput, "tmpl-1", { barcodeSource: "ticket_url" });
+    const data = toPassCreatorData(baseInput, "tmpl-1", { barcodeSource: "ticket_url" }, true);
     expect(data.barcodeSource).toBe("https://tickets.example.com/t/tok-1");
   });
 
@@ -30,6 +30,8 @@ describe("toPassCreatorData", () => {
     const data = toPassCreatorData(
       { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },
       "tmpl-1",
+      undefined,
+      true,
     );
     expect(data).toEqual({
       templateId: "tmpl-1",
@@ -39,8 +41,13 @@ describe("toPassCreatorData", () => {
     });
   });
 
+  it("sets enforceUniqueUserProvidedId to false when enforceUnique is false (update, not create)", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1", undefined, false);
+    expect(data.enforceUniqueUserProvidedId).toBe(false);
+  });
+
   it("sends only base fields when fieldMapping is an empty object", () => {
-    const data = toPassCreatorData(baseInput, "tmpl-1", {});
+    const data = toPassCreatorData(baseInput, "tmpl-1", {}, true);
     expect(data).not.toHaveProperty("name");
     expect(data).not.toHaveProperty("eventDate");
   });
@@ -50,6 +57,7 @@ describe("toPassCreatorData", () => {
       { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },
       "tmpl-1",
       { attendeeFullName: "full_name", ticketKind: "ticket_type" },
+      true,
     );
     expect(data).toMatchObject({
       templateId: "tmpl-1",
@@ -68,13 +76,14 @@ describe("toPassCreatorData", () => {
       { ...baseInput, eventHoursLabel: "18:00-22:00", eventLocationLabel: "Test Venue" },
       "tmpl-1",
       { hours: "event_hours", place: "event_location" },
+      true,
     );
     expect(data.hours).toBe("18:00-22:00");
     expect(data.place).toBe("Test Venue");
   });
 
   it("drops a mapped field whose source value is unset", () => {
-    const data = toPassCreatorData(baseInput, "tmpl-1", { hours: "event_hours" });
+    const data = toPassCreatorData(baseInput, "tmpl-1", { hours: "event_hours" }, true);
     expect(data).not.toHaveProperty("hours");
   });
 
@@ -118,6 +127,7 @@ describe("toPassCreatorData", () => {
         region: "region",
         country: "country",
       },
+      true,
     );
     expect(data).toMatchObject({
       first: "Alice",

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, resolveInstanceBaseUrl, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
@@ -1108,6 +1108,378 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(res.status).toBe(403);
     const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
     expect(row.wallet_field_mapping).toBeNull();
+  });
+
+  describe("auto-push to already-issued wallet passes on save", () => {
+    const PUSH_EVENT = "evt-event-settings-wallet-push";
+    const PUSH_ATTENDEE = "att-event-settings-wallet-push";
+
+    beforeAll(async () => {
+      const token = generateToken();
+      await prisma.event.create({
+        data: {
+          id: PUSH_EVENT,
+          title: "Wallet Push Gala",
+          slug: "wallet-push-gala",
+          date: new Date("2026-09-01"),
+          organization_id: ORG_SET,
+          wallet_template_id: "tmpl-push",
+          wallet_api_key_enc: encryptToString("push-api-key"),
+        },
+      });
+      await prisma.attendee.create({
+        data: {
+          id: PUSH_ATTENDEE,
+          event_id: PUSH_EVENT,
+          email: "wallet-push@example.com",
+          name: "Wallet Push Guest",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: {
+          attendee_id: PUSH_ATTENDEE,
+          provider: "passcreator",
+          provider_pass_id: `pc-${PUSH_ATTENDEE}`,
+          status: "active",
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.walletPass.deleteMany({ where: { attendee_id: PUSH_ATTENDEE } });
+      await prisma.attendee.deleteMany({ where: { id: PUSH_ATTENDEE } });
+      await prisma.event.deleteMany({ where: { id: PUSH_EVENT } });
+    });
+
+    it("pushes the already-issued pass fresh when a wallet-relevant field (title) changes", async () => {
+      const updateSpy = vi
+        .spyOn(PassCreatorClient.prototype, "updatePass")
+        .mockResolvedValue({
+          providerPassId: `pc-${PUSH_ATTENDEE}`,
+          appleUrl: "https://pc.test/apple/pushed",
+          androidUrl: "https://pc.test/android/pushed",
+        });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (renamed)" }),
+        });
+
+        expect(res.status).toBe(200);
+        // The push runs in the background, deliberately not awaited by the response above (a
+        // large event's fan-out must never hold the settings save open) - poll instead of
+        // asserting immediately after the request resolves.
+        await vi.waitFor(() => {
+          expect(updateSpy).toHaveBeenCalledTimes(1);
+        });
+        expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${PUSH_ATTENDEE}`);
+        await vi.waitFor(async () => {
+          const pass = await prisma.walletPass.findUnique({ where: { attendee_id: PUSH_ATTENDEE } });
+          expect(pass?.apple_url).toBe("https://pc.test/apple/pushed");
+        });
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("does not push when only an unrelated field (capacity) changes", async () => {
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: `pc-${PUSH_ATTENDEE}`,
+        appleUrl: "https://pc.test/apple/unexpected",
+        androidUrl: "https://pc.test/android/unexpected",
+      });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ capacity: 500 }),
+        });
+
+        expect(res.status).toBe(200);
+        // Nothing to poll for here - changedFields never includes capacity, so
+        // pushWalletUpdatesBestEffort returns before ever touching the provider, background or
+        // not. A short settle still guards against a false pass from a same-tick race.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("still saves the field change (200) when the background push itself fails", async () => {
+      const updateSpy = vi
+        .spyOn(PassCreatorClient.prototype, "updatePass")
+        .mockRejectedValue(new Error("provider outage"));
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (renamed again)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { event: { title: string } };
+        expect(body.event.title).toBe("Wallet Push Gala (renamed again)");
+        // The failed push is still attempted in the background - poll for it, then confirm the
+        // save itself (already committed before the push even started) was never rolled back.
+        await vi.waitFor(() => {
+          expect(updateSpy).toHaveBeenCalledTimes(1);
+        });
+        const event = await prisma.event.findUnique({ where: { id: PUSH_EVENT } });
+        expect(event?.title).toBe("Wallet Push Gala (renamed again)");
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("still saves the field change (200) via the top-level catch when pushWalletUpdatesBestEffort itself throws before its internal per-attendee handling", async () => {
+      resetSystemLogBufferForTest();
+      // Forcing db.walletPass.findMany (the function's very first DB call, before its own
+      // internal Promise.allSettled safety net around each attendee) to reject is the only way
+      // to reach the top-level `.catch` in handlePatchEvent - a per-attendee PassCreator failure
+      // (covered above) is already caught internally and never gets here.
+      const findManySpy = vi
+        .spyOn(prisma.walletPass, "findMany")
+        .mockRejectedValueOnce(new Error("db down"));
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (db down)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { event: { title: string } };
+        expect(body.event.title).toBe("Wallet Push Gala (db down)");
+
+        await vi.waitFor(() => {
+          const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+          expect(entry).toBeDefined();
+        });
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_event_change_push_failed",
+        });
+        // No attendeeId here (unlike the internal per-attendee failure logged above) - proof this
+        // came from the top-level catch, not the function's own Promise.allSettled loop.
+        expect(entry?.fields).toEqual({ eventId: PUSH_EVENT });
+
+        const event = await prisma.event.findUnique({ where: { id: PUSH_EVENT } });
+        expect(event?.title).toBe("Wallet Push Gala (db down)");
+      } finally {
+        findManySpy.mockRestore();
+      }
+    });
+  });
+
+  describe("webhook subscription on wallet-config save", () => {
+    const SUB_EVENT = "evt-event-settings-wallet-sub";
+
+    beforeAll(async () => {
+      await prisma.event.create({
+        data: {
+          id: SUB_EVENT,
+          title: "Webhook Sub Gala",
+          slug: "webhook-sub-gala",
+          date: new Date("2026-09-01"),
+          organization_id: ORG_SET,
+          wallet_template_id: "tmpl-sub",
+          wallet_api_key_enc: encryptToString("sub-api-key"),
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.event.deleteMany({ where: { id: SUB_EVENT } });
+    });
+
+    it("subscribes to all 4 webhook event types when none already exist", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+        const subscribedEvents = subscribeSpy.mock.calls.map((call) => call[1]).sort();
+        expect(subscribedEvents).toEqual(
+          [
+            "first_pushnotification_registered",
+            "pass_voided",
+            "pushnotification_registered",
+            "pushnotification_unregistered",
+          ].sort(),
+        );
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("skips event types that already have a matching subscription (no duplicate)", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        // Different template - must not count as "already subscribed" for this event's template.
+        { targetUrl, event: "pushnotification_registered", passTemplate: "some-other-template" },
+      ]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(3);
+        });
+        const subscribedEvents = subscribeSpy.mock.calls.map((call) => call[1]).sort();
+        expect(subscribedEvents).toEqual(
+          ["first_pushnotification_registered", "pushnotification_registered", "pushnotification_unregistered"].sort(),
+        );
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("falls back to subscribing unconditionally when listWebhooks itself fails", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("down"));
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("logs a per-event failure but still subscribes the other event types when exactly one subscribeWebhook call rejects", async () => {
+      resetSystemLogBufferForTest();
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "subscribeWebhook")
+        .mockImplementation(async (_targetUrl: string, event: string) => {
+          if (event === "pass_voided") throw new Error("subscribe failed for pass_voided");
+        });
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        // subscribeWalletWebhooksBestEffort runs unawaited in the background - poll rather than
+        // assert immediately after the response resolves (CodeRabbit review).
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+
+        const [entry] = await vi.waitFor(() => {
+          const entries = querySystemLogs({ source: "admin", search: "wallet_webhook_subscribe_failed" });
+          expect(entries).toHaveLength(1);
+          return entries;
+        });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_webhook_subscribe_failed",
+          fields: { eventId: SUB_EVENT, event: "pass_voided" },
+        });
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("does not attempt any webhook calls when the saved API key fails to decrypt (corrupted ciphertext)", async () => {
+      await prisma.event.update({
+        where: { id: SUB_EVENT },
+        data: { wallet_api_key_enc: "not-valid-ciphertext" },
+      });
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks");
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook");
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        // subscribeWalletWebhooksBestEffort runs unawaited in the background - nothing to poll
+        // for on this negative assertion, so a short settle guards against a same-tick false
+        // pass (CodeRabbit review).
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(listSpy).not.toHaveBeenCalled();
+        expect(subscribeSpy).not.toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.event.update({
+          where: { id: SUB_EVENT },
+          data: { wallet_api_key_enc: encryptToString("sub-api-key") },
+        });
+      }
+    });
+
+    it("does not attempt any webhook calls when the instance base URL cannot be resolved", async () => {
+      const originalBaseUrl = process.env.BASE_URL;
+      // With BASE_URL unset, resolveInstanceBaseUrl falls through to the DB-persisted
+      // instance_url setting - a malformed value there (trailing slash) makes that lookup
+      // throw for real, without needing to mock the auth package's exported function.
+      delete process.env.BASE_URL;
+      await prisma.systemSettings.upsert({
+        where: { key: "instance_url" },
+        create: { key: "instance_url", value_json: JSON.stringify("https://bad.example.com/") },
+        update: { value_json: JSON.stringify("https://bad.example.com/") },
+      });
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks");
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook");
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        // Same reasoning as the decrypt-failure test above: negative assertion on unawaited
+        // background work needs a short settle, not an immediate check (CodeRabbit review).
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(listSpy).not.toHaveBeenCalled();
+        expect(subscribeSpy).not.toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
+        if (originalBaseUrl !== undefined) process.env.BASE_URL = originalBaseUrl;
+      }
+    });
   });
 
   it("POST /wallet/test succeeds with a draft API key and reports the template name", async () => {

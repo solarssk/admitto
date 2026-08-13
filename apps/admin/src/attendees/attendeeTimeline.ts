@@ -1,9 +1,15 @@
-import type { AttendeeStatus } from "@admitto/db/status";
-import type { AttendeeActionLogEntryDto, AttendeeDetailItemDto, RsvpStatus } from "../api/types.js";
+import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
+import type {
+  AttendeeActionLogEntryDto,
+  AttendeeDetailItemDto,
+  RsvpStatus,
+  TicketTypeDto,
+} from "../api/types.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import type { CustomDataFieldDef } from "./customData.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
 import { PASS_STATUS_LABELS } from "./passStatusBadge.js";
+import { WALLET_STATUS_LABELS } from "./walletStatusBadge.js";
 
 /** Activity row timestamp, in the timezone the acting admin was actually in when they made this
  * change (PO review, round 2 - the prior "always event timezone" version was itself wrong):
@@ -30,6 +36,14 @@ function formatRsvpStatus(value: unknown): string {
 function formatPassStatus(value: unknown): string {
   const key = String(value);
   if (key in PASS_STATUS_LABELS) return PASS_STATUS_LABELS[key as AttendeeStatus];
+  return key;
+}
+
+function formatWalletPassStatus(value: unknown): string {
+  const key = String(value);
+  if (Object.hasOwn(WALLET_STATUS_LABELS, key)) {
+    return WALLET_STATUS_LABELS[key as WalletPassStatus];
+  }
   return key;
 }
 
@@ -102,6 +116,10 @@ const TONE_BY_ACTION: Record<string, TimelineTone> = {
   pass_revoked: "error",
   mail_bounced: "error",
   item_revoked: "error",
+  wallet_pass_voided: "error",
+  wallet_pass_restored: "ok",
+  wallet_pass_reissued: "ok",
+  wallet_pass_deleted: "error",
 };
 
 /** rsvp_status_changed varies by the change's own target status rather than a fixed per-action
@@ -147,6 +165,10 @@ export function getTimelineIcon(actionType: string): string {
     pass_restored: "refresh",
     attendee_edited: "pencil",
     scan_preview: "scan",
+    wallet_pass_voided: "wallet-off",
+    wallet_pass_restored: "refresh",
+    wallet_pass_reissued: "refresh-dot",
+    wallet_pass_deleted: "trash",
   };
   return icons[actionType] ?? "history";
 }
@@ -201,6 +223,14 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
       return "Pass revoked";
     case "pass_restored":
       return "Pass restored";
+    case "wallet_pass_voided":
+      return "Wallet pass voided";
+    case "wallet_pass_restored":
+      return "Wallet pass restored";
+    case "wallet_pass_reissued":
+      return "Wallet pass updated";
+    case "wallet_pass_deleted":
+      return "Wallet pass deleted";
     case "scan_preview":
       return "Scan preview";
     default:
@@ -236,17 +266,26 @@ function attendeeEditedDetail(
   entry: AttendeeActionLogEntryDto,
   meta: Record<string, unknown>,
   customFields: CustomDataFieldDef[],
+  ticketTypes: TicketTypeDto[],
 ): string | null {
   if (entry.action_type !== "attendee_edited") return null;
   const fields = meta.fields;
   if (!Array.isArray(fields) || fields.length === 0) return null;
   const customFieldLabels = new Map(customFields.map((f) => [f.source_field, f.label]));
+  // ticket_type stores the catalog's immutable `key`, not its current `label` - a type renamed
+  // after this log entry was written must still resolve to its current label here, same as
+  // itemStateDetail does for event_item_key below, otherwise a rename makes old log rows show a
+  // stale/never-shown-elsewhere key (e.g. "new_type", frozen from before the first rename).
+  const ticketTypeLabels = new Map(ticketTypes.map((t) => [t.key, t.label]));
   return fields
     .map((f) => {
       const key = String(f);
       const label = fieldChangeLabel(key, customFieldLabels);
       const change = fieldValueChange(meta.field_changes, key);
-      return change ? `${label}: ${change.from ?? "-"} → ${change.to ?? "-"}` : label;
+      if (!change) return label;
+      const from = key === "ticket_type" && change.from !== null ? (ticketTypeLabels.get(change.from) ?? change.from) : change.from;
+      const to = key === "ticket_type" && change.to !== null ? (ticketTypeLabels.get(change.to) ?? change.to) : change.to;
+      return `${label}: ${from ?? "-"} → ${to ?? "-"}`;
     })
     .join(", ");
 }
@@ -260,6 +299,21 @@ function passChangeDetail(
   if (from == null) return null;
   const to = entry.action_type === "pass_revoked" ? "revoked" : "registered";
   return `${formatPassStatus(from)} → ${formatPassStatus(to)}`;
+}
+
+/** Only void/restore get a from→to diff - reissue doesn't change status in any way worth
+ * calling out (it's usually already "active"), so its headline alone is clearer. */
+function walletPassChangeDetail(
+  entry: AttendeeActionLogEntryDto,
+  meta: Record<string, unknown>,
+): string | null {
+  if (entry.action_type !== "wallet_pass_voided" && entry.action_type !== "wallet_pass_restored") {
+    return null;
+  }
+  const from = meta.previous_status;
+  if (from == null) return null;
+  const to = entry.action_type === "wallet_pass_voided" ? "voided" : "active";
+  return `${formatWalletPassStatus(from)} → ${formatWalletPassStatus(to)}`;
 }
 
 /** `eventItems` is the same registry-backed list the Event items card renders
@@ -289,13 +343,15 @@ export function getTimelineDetail(
   entry: AttendeeActionLogEntryDto,
   customFields: CustomDataFieldDef[] = [],
   eventItems: AttendeeDetailItemDto[] = [],
+  ticketTypes: TicketTypeDto[] = [],
 ): string {
   const meta = entry.metadata;
   if (!meta) return "";
   return (
     rsvpChangeDetail(entry, meta) ??
-    attendeeEditedDetail(entry, meta, customFields) ??
+    attendeeEditedDetail(entry, meta, customFields, ticketTypes) ??
     passChangeDetail(entry, meta) ??
+    walletPassChangeDetail(entry, meta) ??
     itemStateDetail(entry, meta, eventItems) ??
     ""
   );

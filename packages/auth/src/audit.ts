@@ -171,7 +171,8 @@ export type RateLimitScope =
   | "checkin_stream"
   | "checkin_history"
   | "admin_geocoding_search"
-  | "admin_geocoding_timezone";
+  | "admin_geocoding_timezone"
+  | "wallet_webhook";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable
  * `SecurityAuditLog` row. Full email, not redacted - staff/operator sign-in is exactly the

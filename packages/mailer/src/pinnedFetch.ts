@@ -18,6 +18,10 @@ import { createPinnedDispatcher, isConnectFailure } from "@admitto/shared/pinned
  * resolved address would work — same as the OIDC pinned fetch. An error thrown by `handler`
  * (an HTTP-level failure, already a Response) is never treated as a reason to retry.
  *
+ * Defaults to `redirect: "error"` (a redirect to a blocked target must not be followed blindly).
+ * Pass `redirect: "manual"` when the caller re-validates and re-pins each hop itself (e.g. a
+ * tile fetcher following a same-origin-checked redirect chain).
+ *
  * Takes a `handler` rather than returning the raw Response: `dispatcher.close()` waits for
  * the request to fully complete, which for a response whose body is never read means it
  * waits forever — the caller must consume the body inside `handler`, before this function
@@ -27,7 +31,13 @@ export async function withPinnedFetch<T>(
   url: string | URL,
   hostname: string,
   records: LookupAddress[],
-  init: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal },
+  init: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    signal?: AbortSignal;
+    redirect?: "error" | "manual";
+  },
   handler: (res: Response) => Promise<T>,
 ): Promise<T> {
   let lastConnectError: unknown;
@@ -37,7 +47,7 @@ export async function withPinnedFetch<T>(
     try {
       res = (await undiciFetch(url, {
         ...init,
-        redirect: "error",
+        redirect: init.redirect ?? "error",
         dispatcher,
       } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
     } catch (err) {

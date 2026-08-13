@@ -27,6 +27,10 @@ import type {
   BulkRevokeItemsResponse,
   BulkRevokeCheckInResponse,
   BulkRevokePassResponse,
+  BulkWalletVoidResponse,
+  BulkWalletReissueResponse,
+  BulkWalletDeleteResponse,
+  WalletPassActionDto,
   EventItemDto,
   EventItemsListResponse,
   CreateEventItemBody,
@@ -751,6 +755,45 @@ export async function revokeAttendeeCheckIn(
   return parseJson<{ card: AttendeeCardDto }>(res);
 }
 
+/** Admin/superadmin-only: void the attendee's wallet pass at the provider (e.g. PassCreator) -
+ * the pass stays installed on the attendee's phone but shows as voided/invalid there. */
+export async function voidWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/void`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: reverse a previous void, restoring the wallet pass to active. */
+export async function restoreWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/restore`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: push the attendee's current name/ticket type/event details to the
+ * already-issued wallet pass, e.g. after a ticket type change or a corrected name. */
+export async function reissueWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/reissue`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: permanently removes the pass at the provider, distinct from void (the
+ * pass disappears entirely instead of staying installed but marked invalid). Irreversible. */
+export async function deleteWalletPass(eventId: string, attendeeId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/delete`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ deleted: boolean }>(res);
+}
+
 /** Add a note on the attendee detail page's Notes tab — shares the same AttendeeNote model
  * as the check-in operator note composer (submitAttendeeNote), so a note added here also
  * shows up on the check-in card, and vice versa. Returns the refreshed detail DTO so the
@@ -1016,6 +1059,46 @@ export async function bulkRevokePass(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<BulkRevokePassResponse>(res);
+}
+
+/** Admin/superadmin-only: void the wallet pass for every selected attendee that has one at the
+ * provider (e.g. PassCreator) - already-voided passes and attendees with no pass are skipped. */
+export async function bulkVoidWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletVoidResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-void`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletVoidResponse>(res);
+}
+
+/** Admin/superadmin-only: push each selected attendee's current name/ticket type/event details
+ * to their already-issued wallet pass at once, e.g. after an Event Settings change. */
+export async function bulkReissueWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletReissueResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-reissue`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletReissueResponse>(res);
+}
+
+/** Admin/superadmin-only: permanently remove the wallet pass for every selected attendee that has
+ * one at the provider - irreversible, gated behind its own confirm dialog. Attendees with no pass
+ * are skipped. */
+export async function bulkDeleteWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletDeleteResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-delete`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletDeleteResponse>(res);
 }
 
 export async function resendTicket(

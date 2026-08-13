@@ -527,12 +527,6 @@
   font-size: var(--fs-sm);
 }
 
-.attendees-card__actions {
-  display: flex;
-  gap: 2px;
-  flex: none;
-}
-
 /* Detail drawer */
 .attendee-drawer-backdrop {
   position: fixed;
@@ -806,16 +800,35 @@
 }
 
 @media (max-width: 1100px) {
-  /* Side column is narrow: keep icon + body on the first line, tuck time under the subject. */
+  /* Side column is narrow: keep icon + body on the first line, tuck time under the subject.
+   * Explicit grid (not flex-wrap + order + margin) - that combination let the line-break point
+   * depend on subject/email text length, so a long "to" address could keep everything on one
+   * flex line and crush .attendee-delivery__body to near-zero width instead of wrapping. Named
+   * areas always place each part on its own row regardless of content length. */
   .attendee-delivery {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "icon body menu"
+      ".    time time";
+    column-gap: 10px;
     row-gap: 4px;
   }
 
+  .attendee-delivery__icon-tip {
+    grid-area: icon;
+  }
+
+  .attendee-delivery__body {
+    grid-area: body;
+  }
+
   .attendee-delivery__time {
-    flex: 1 1 auto;
-    order: 5;
-    margin-left: 38px;
+    grid-area: time;
+  }
+
+  .attendee-delivery .delivery-row-menu {
+    grid-area: menu;
   }
 }
 
@@ -1151,24 +1164,24 @@
   color: var(--text-muted);
 }
 
-.attendees-table-v2__actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-
-/* ArchivedGuard wraps Restore/Revoke pass in a bare <span> (display: inline by
-   default) so it can carry the archived tooltip. Left unstyled, that span doesn't
-   size/align identically to the plain "View attendee" IconButton next to it in
-   every browser engine — force it to participate in the row the same way. */
-.attendees-table-v2__actions > span {
+/* Two per-platform icons, muted by default - only the platform(s) the attendee has actually
+   registered a device on (apple/google_active_registrations > 0) are highlighted, matching the
+   check-in accent color used elsewhere in this table. */
+.attendees-table-v2__wallet {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
 
-.attendees-table-v2__actions-col {
-  width: 88px;
+.attendees-table-v2__wallet-icon {
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.attendees-table-v2__wallet-icon--active {
+  color: var(--status-ok);
+  opacity: 1;
 }
 
 /* Mirrors .attendees-pageheader's mobile treatment above (row restored beside the title,

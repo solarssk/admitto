@@ -213,7 +213,27 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
-import type { AttendeeStatus } from "@admitto/db/status";
+import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
+
+export interface WalletPassActionDto {
+  status: WalletPassStatus;
+  issued_at: string | null;
+  voided_at: string | null;
+  apple_url: string | null;
+  android_url: string | null;
+  last_synced_at: string | null;
+  last_error_code: string | null;
+  apple_active_registrations: number | null;
+  apple_inactive_registrations: number | null;
+  google_active_registrations: number | null;
+  google_inactive_registrations: number | null;
+  /** Provider-reported "YYYY-MM-DD HH:MM:SS" string, deliberately not a Date. PassCreator's own
+   * docs don't state which timezone this is in; the admin UI treats it as UTC (the attendee's own
+   * action, in a timezone we have no way to know) and formats it - see formatFirstDownloadedAt in
+   * AttendeeDetailPage.tsx. */
+  first_downloaded_at: string | null;
+  registration_checked_at: string | null;
+}
 
 export interface AttendeeRowDto {
   id: string;
@@ -231,6 +251,15 @@ export interface AttendeeRowDto {
   /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
    * bulk "Revoke items" action report how many of the selection it would actually affect. */
   has_issued_items: boolean;
+  /** Same registration-status fields as WalletPassActionDto, shown compactly in the Wallet
+   * column - null when no WalletPass row exists yet for this attendee. */
+  wallet_status: Pick<
+    WalletPassActionDto,
+    | "apple_active_registrations"
+    | "apple_inactive_registrations"
+    | "google_active_registrations"
+    | "google_inactive_registrations"
+  > | null;
 }
 
 /** Redacted rendered message for the "View sent message" preview — the recipient's real QR
@@ -287,6 +316,11 @@ export interface AttendeeDetailDto {
   rsvp_status: RsvpStatus;
   rsvp_source: string | null;
   rsvp_updated_at: string | null;
+  wallet_pass: WalletPassActionDto | null;
+  /** On-demand wallet install links (same routes the ticket page's own buttons use) - available
+   * whether or not wallet_pass exists yet, null when wallet isn't configured for this event. */
+  wallet_apple_link: string | null;
+  wallet_google_link: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
@@ -482,6 +516,30 @@ export interface BulkRevokePassResponse {
   /** Already revoked or cancelled - nothing to revoke, left untouched. */
   skipped: number;
   /** revokeOneAttendeePass threw for this id (unexpected) - safe to retry. */
+  errored: number;
+}
+
+/** Bulk wallet-void summary from POST .../attendees/bulk-wallet-void. */
+export interface BulkWalletVoidResponse {
+  voided: number;
+  /** No WalletPass row, or already voided - nothing to void, left untouched. */
+  skipped: number;
+  errored: number;
+}
+
+/** Bulk wallet-reissue summary from POST .../attendees/bulk-wallet-reissue. */
+export interface BulkWalletReissueResponse {
+  reissued: number;
+  /** No WalletPass row, or no resolvable ticket to rebuild from - left untouched. */
+  skipped: number;
+  errored: number;
+}
+
+/** Bulk wallet-delete summary from POST .../attendees/bulk-wallet-delete. */
+export interface BulkWalletDeleteResponse {
+  deleted: number;
+  /** No WalletPass row - nothing to delete, left untouched. */
+  skipped: number;
   errored: number;
 }
 

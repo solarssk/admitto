@@ -56,10 +56,10 @@ flowchart LR
     B --> C["✉️ Deliver ticket\nM365 · SMTP · Power Automate"]
     C --> E["✅ Check-in\ntablet scan · no double-entry"]
     E --> F["📊 Reports &\nPDF / XLSX export"]
-    C -.-> D["📱 Wallet pass\nApple & Google · v0.5"]
+    C --> D["📱 Wallet pass\nApple & Google"]
 ```
 
-Solid path is supported today. Wallet passes are planned for **v0.5** (placeholders only in the UI until then).
+All of the above is supported today.
 
 ## Features
 
@@ -68,6 +68,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | | Area | What it does |
 |---|------|--------------|
 | 🎫 | **Tickets** | Each guest gets a unique QR and a browser ticket page. Venue map, directions, and weather when you configure them. |
+| 📱 | **Wallet passes** | Add to Apple Wallet / Google Wallet from the ticket page, backed by PassCreator. Staff can void, restore, push updates, or delete a pass, and see whether the attendee actually added it. |
 | ✉️ | **Mail** | Send tickets via Microsoft 365, SMTP, or Power Automate. Detect bounced mail and inspect why a send failed. |
 | 👥 | **Attendees** | Import from CSV/XLSX, ticket types, custom fields, bulk actions, and delete a guest when required (GDPR). |
 | ✅ | **Check-in** | Scan with a camera or USB scanner, or look someone up by name. Hand out badges and items. Beep / vibration on each scan. |
@@ -76,7 +77,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | 🔒 | **Security** | Two-factor login (TOTP), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. Session and login logs show the country for each IP, looked up on your own server (no external geo API). |
 | 🏠 | **Hosting** | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
-**Coming later:** Apple/Google Wallet passes (v0.5). Public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest` (also v0.5).
+**Coming later:** public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest`.
 
 ## Stack
 
