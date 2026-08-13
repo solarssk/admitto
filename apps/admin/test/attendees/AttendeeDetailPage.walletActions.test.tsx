@@ -373,4 +373,75 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByTestId("at-toast")).toBeNull();
     });
   });
+
+  describe("Wallet pass links menu", () => {
+    it("renders nothing when neither an Apple nor a Google Wallet link exists yet", async () => {
+      mockLoad(baseDetail({ wallet_apple_link: null, wallet_google_link: null }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(screen.queryByRole("button", { name: "Wallet pass links" })).toBeNull();
+    });
+
+    it("copies the Apple Wallet link to the clipboard", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+      mockLoad(
+        baseDetail({
+          wallet_apple_link: "https://example.com/apple",
+          wallet_google_link: "https://example.com/android",
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /Copy Apple Wallet link/ }));
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("https://example.com/apple");
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Apple Wallet link copied to clipboard/);
+      });
+    });
+
+    it("copies the Google Wallet link to the clipboard", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+      mockLoad(
+        baseDetail({
+          wallet_apple_link: "https://example.com/apple",
+          wallet_google_link: "https://example.com/android",
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /Copy Google Wallet link/ }));
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith("https://example.com/android");
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Google Wallet link copied to clipboard/);
+      });
+    });
+
+    it("toasts an error when the clipboard write is blocked", async () => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+      });
+      mockLoad(baseDetail({ wallet_apple_link: "https://example.com/apple", wallet_google_link: null }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: /Copy Apple Wallet link/ }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not copy\. Clipboard access was blocked\./);
+      });
+      // Only the Apple link menu item renders once android_url is null.
+      expect(screen.queryByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeNull();
+    });
+  });
 });
