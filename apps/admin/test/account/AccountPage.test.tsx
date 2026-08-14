@@ -1021,6 +1021,20 @@ describe("AccountPage toasts", () => {
     expect(screen.queryByRole("button", { name: "Set up" })).toBeNull();
   });
 
+  it("shows OIDC-only MFA reset guidance, not the methods list, when already enrolled with no local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...totpEnrolledAccount, has_local_password: false, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Two-factor reset requires a local password/i),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText("Authenticator app (TOTP)")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+  });
+
   it("copies the otpauth URI during enrollment", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const originalClipboard = navigator.clipboard;
@@ -2026,6 +2040,11 @@ describe("AccountPage profile: SSO unlink", () => {
         "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
       ),
     ).toBeTruthy();
+
+    // Regression: reopening must not still show what was typed before this error closed the dialog.
+    clickIdentityMenuItem(/Unlink SSO/);
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
   });
 
   it("closes the dialog and toasts when the account has no available proof of identity", async () => {
@@ -2051,6 +2070,11 @@ describe("AccountPage profile: SSO unlink", () => {
         "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
       ),
     ).toBeTruthy();
+
+    // Regression: reopening must not still show what was typed before this error closed the dialog.
+    clickIdentityMenuItem(/Unlink SSO/);
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
   });
 });
 
