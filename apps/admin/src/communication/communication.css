@@ -322,6 +322,14 @@
   margin-top: var(--space-3);
 }
 
+/* Cancels the margin-top above when this field is already a flex-gap sibling inside
+   .settings-card-stack (Wallets tab) - otherwise the stack's own gap and this margin stack on
+   top of each other, doubling the space below the intro paragraph. Templates' own body field
+   sits in a plain (non-gapped) fieldset stack, so it still needs and keeps its own margin. */
+.settings-card-stack .communication-body-field {
+  margin-top: 0;
+}
+
 .communication-body-field label {
   display: block;
   margin-bottom: var(--space-2);

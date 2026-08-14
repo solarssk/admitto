@@ -42,7 +42,12 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
             </p>
             <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
               <div className="communication-body-field">
-                <label htmlFor="wallets-message-text">Message</label>
+                {/* Visually hidden: the Card title and intro above already say "Message" -
+                    a second, identical visible label right above the textarea was pure
+                    duplication. Kept for accessibility (the textarea still needs a name). */}
+                <label htmlFor="wallets-message-text" className="sr-only">
+                  Message
+                </label>
                 <textarea
                   id="wallets-message-text"
                   className="communication-textarea"
@@ -50,7 +55,7 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
                   value={text}
                   maxLength={WALLET_MESSAGE_TEXT_MAX_LENGTH}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="e.g. Doors close at 6pm — please head to the main hall now."
+                  placeholder="e.g. Doors close at 6pm, please head to the main hall now."
                 />
               </div>
             </fieldset>
@@ -61,7 +66,7 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
               role={overSoftLimit ? "alert" : undefined}
             >
               {remaining} characters remaining
-              {overSoftLimit && " — long messages may be cropped on some lock screens"}
+              {overSoftLimit && ", long messages may be cropped on some lock screens"}
             </p>
           </div>
         </Card>
@@ -73,7 +78,7 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
 
       <Notice variant="info">
         Google Wallet allows at most 3 notification-triggering messages per pass in a rolling
-        24-hour window — further sends within that window are rejected until it resets. Apple
+        24-hour window, and further sends within that window are rejected until it resets. Apple
         Wallet doesn't publish a fixed number, but throttles or blocks pushes it considers
         excessive. Space out repeat sends to the same event.
       </Notice>

@@ -199,7 +199,7 @@ describe("CommunicationPage archived lockdown", () => {
 
   it("disables the Send button on the Send tab, but not Count recipients", async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole("tab", { name: "Send" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Email" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();

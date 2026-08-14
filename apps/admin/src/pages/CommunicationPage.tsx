@@ -2388,7 +2388,7 @@ export function CommunicationPage() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "send", label: "Send" },
+          { id: "send", label: "Email" },
           { id: "wallets", label: "Wallets" },
           {
             id: "templates",
