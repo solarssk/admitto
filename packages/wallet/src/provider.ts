@@ -9,6 +9,11 @@ export interface WalletPassProvider {
 
   createPass(input: WalletPassInput): Promise<WalletPassResult>;
   updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult>;
+  /** Sends a custom, attendee-visible push notification/message to already-installed passes
+   * (e.g. an Apple Wallet lock-screen banner, a Google Wallet notification) - distinct from
+   * updatePass, which only silently refreshes field values with no guaranteed visible signal.
+   * Only confirms the provider accepted the request, not that every device has received it. */
+  sendPushMessage(providerPassIds: string[], text: string): Promise<void>;
   voidPass(passUid: string): Promise<void>;
   restorePass(passUid: string): Promise<void>;
   /** Permanently removes the pass from the provider (e.g. GDPR/DSAR erasure) - idempotent, a

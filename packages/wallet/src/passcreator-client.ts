@@ -115,6 +115,26 @@ export class PassCreatorClient implements WalletPassProvider {
     return toResult(envelope);
   }
 
+  /**
+   * Sends a custom, attendee-visible push notification via the v3 bulk-update endpoint's
+   * `pushNotificationText` field (developer.passcreator.com/en/api/v3/pass), passing
+   * `filter.identifiers` even for a single recipient - the per-pass `sendpushnotification`
+   * endpoint lives on API v1, which PassCreator's own docs mark deprecated for new integrations
+   * (ADR 0041 §2.2), so we never use it here regardless of recipient count.
+   *
+   * PassCreator processes a bulk update asynchronously (202 + a `process` tracking URL in the
+   * response) - this only confirms PassCreator accepted the request, not that every device has
+   * actually shown the notification. The `process` status response shape isn't documented
+   * anywhere found so far, so it isn't polled here; needs live confirmation before this can
+   * report actual delivery outcome instead of just "accepted".
+   */
+  async sendPushMessage(providerPassIds: string[], text: string): Promise<void> {
+    await this.request<{ process?: string }>("PATCH", "/api/v3/pass/bulk", {
+      data: { pushNotificationText: text },
+      filter: { identifiers: providerPassIds },
+    });
+  }
+
   async voidPass(passUid: string): Promise<void> {
     await this.setVoided(passUid, true);
   }
