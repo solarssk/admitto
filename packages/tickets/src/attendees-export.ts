@@ -35,6 +35,8 @@ export type SanitizedExportRow = {
    * doesn't match any live entry), matching what admins see on-screen everywhere else - not the
    * internal key (batch 04 / #351 follow-up). */
   ticket_type: string;
+  /** Human-readable label ("Checked in" / "Not checked in"), matching the admin UI's
+   * status filter wording - not the raw "admitted"/"not_admitted" DB value. */
   check_in_status: string;
   admitted_at: string;
   attribute_values: string[];
@@ -106,7 +108,7 @@ export function buildSanitizedExportRows(
       company: sanitizeCsvCell(company),
       department: sanitizeCsvCell(department),
       ticket_type: sanitizeCsvCell(resolveTicketTypeLabel(row.ticket_type, ticketTypes)),
-      check_in_status: row.admitted_at ? "admitted" : "not_admitted",
+      check_in_status: row.admitted_at ? "Checked in" : "Not checked in",
       admitted_at: row.admitted_at ? formatAdmittedAtLocal(row.admitted_at, timeZone) : "",
       attribute_values: attributeFields.map((field) =>
         sanitizeCsvCell(customDataValue(row.custom_data, field.source_field)),

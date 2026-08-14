@@ -177,13 +177,17 @@ lazy `communication` chunk) using `.add-attendee-modal__*` classes with no impor
 at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` — every consumer of
 a shared modal/component CSS file should show up importing it directly.
 
-**Do not import `@admitto/mail-templates` or `@admitto/tickets` (package root) from `apps/admin`.**
-Both barrels re-export Prisma/node-only server modules (mjml/fs for mail-templates; Prisma,
-`node:crypto`, pdfkit for tickets); Vite can ship them into a lazy SPA chunk (`fileURLToPath is not
-a function` on Event Settings was the mail-templates incident; the tickets barrel separately pulled
-the entire `typescript` compiler into a lazy chunk via `htmlnano`→`cosmiconfig`'s optional TS-config
-loader). Use browser-safe subpaths only (e.g. `@admitto/mail-templates/placeholders`,
-`@admitto/tickets/custom-data-reserved`, `@admitto/tickets/event-item-usability`). Same idea as
+**Do not import `@admitto/mail-templates`, `@admitto/tickets`, or `@admitto/wallet` (package
+root) from `apps/admin`.** All three barrels re-export Prisma/node-only server modules (mjml/fs
+for mail-templates; Prisma, `node:crypto`, pdfkit for tickets; `node:crypto`, Prisma, and `pg`
+transitively via `registration-sync.ts`/`passcreator-webhook.ts` for wallet); Vite can ship them
+into a lazy SPA chunk (`fileURLToPath is not a function` on Event Settings was the mail-templates
+incident; the tickets barrel separately pulled the entire `typescript` compiler into a lazy chunk
+via `htmlnano`→`cosmiconfig`'s optional TS-config loader; the wallet barrel pulled `node:crypto`,
+`node:url`, `@prisma/client/runtime`, `pg`, and `pgpass` into the Event Settings chunk via the same
+`WALLET_MAPPING_PLACEHOLDERS` import). Use browser-safe subpaths only (e.g.
+`@admitto/mail-templates/placeholders`, `@admitto/tickets/custom-data-reserved`,
+`@admitto/tickets/event-item-usability`, `@admitto/wallet/passcreator-mapper`). Same idea as
 avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`).
 Type-only re-exports from the root remain OK when they stay `import type` / `export type`. A local
 build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been
