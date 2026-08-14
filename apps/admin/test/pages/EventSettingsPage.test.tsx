@@ -2442,90 +2442,6 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
-  it("does not show the loading placeholder or hide existing rows during a same-event background refresh (no flicker)", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
-    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
-    let resolveRefresh!: (types: TicketTypeDto[]) => void;
-    const refreshPromise = new Promise<TicketTypeDto[]>((resolve) => {
-      resolveRefresh = resolve;
-    });
-
-    renderSettings("/admin/events/evt-1/settings?tab=ticket-types");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
-    });
-    // TicketTypeRow synchronizes its local draft from the fetched type in a passive effect.
-    // Let that effect settle before changing + blurring the controlled input, otherwise a busy
-    // CI worker can commit the old label between those two events.
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    // A background refresh only ever follows a successful color/label edit (TicketTypesCard's
-    // onChanged) — queue it as the next fetchTicketTypes resolution before triggering that edit.
-    vi.mocked(fetchTicketTypes).mockImplementationOnce(() => refreshPromise);
-
-    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "VIP Gold" } });
-    await waitFor(() => {
-      expect(input.value).toBe("VIP Gold");
-    });
-    fireEvent.blur(input);
-
-    await waitFor(() => {
-      expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold" });
-    });
-    await waitFor(() => {
-      expect(vi.mocked(fetchTicketTypes).mock.calls).toHaveLength(2);
-    });
-
-    // The background refresh must not blank the card out while it's in flight.
-    expect(screen.queryByText("Loading…")).toBeNull();
-    expect(screen.getByDisplayValue("VIP Gold")).toBeTruthy();
-
-    resolveRefresh([{ ...vipType, label: "VIP Gold" }]);
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("VIP Gold")).toBeTruthy();
-    });
-    expect(screen.queryByText("Loading…")).toBeNull();
-  });
-
-  it("aborts the latest background ticket-type refresh when the page unmounts", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
-    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
-    let refreshSignal: AbortSignal | undefined;
-    vi.mocked(fetchTicketTypes).mockImplementationOnce((_eventId, signal) => {
-      refreshSignal = signal;
-      return new Promise(() => {});
-    });
-
-    const rendered = renderWithToast(
-      <MemoryRouter initialEntries={["/admin/events/evt-1/settings?tab=ticket-types"]}>
-        <Routes>
-          <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "VIP Gold" } });
-    fireEvent.blur(input);
-
-    await waitFor(() => {
-      expect(refreshSignal).toBeDefined();
-    });
-    rendered.unmount();
-    expect(refreshSignal!.aborted).toBe(true);
-  });
-
   it("clears the previous event's stale ticket types when the new event's fetch fails", async () => {
     vi.mocked(fetchEventSettings).mockImplementation((eventId: string) =>
       Promise.resolve(eventId === "evt-1" ? activeEvent : eventB),
@@ -2545,5 +2461,153 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
 
     expect(await screen.findByText("Could not load ticket types")).toBeTruthy();
     expect(screen.queryByDisplayValue("VIP")).toBeNull();
+  });
+
+  it("does not let a stale refreshEventDeletionStatus response from event A overwrite event B's Danger Zone after navigating away", async () => {
+    const deletableEventB = { ...eventB, is_deletable: true, deletion_blockers: [] as string[] };
+    vi.mocked(fetchTicketTypes).mockResolvedValue([vipType]);
+    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
+
+    // Call order: (1) initial load of event A, (2) the background refreshEventDeletionStatus
+    // fired by the upcoming ticket-type edit's onChanged - held open so it resolves only after
+    // navigating to event B, (3) event B's own load once the router navigates.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    let resolveStaleRefresh!: (event: typeof activeEvent) => void;
+    const staleRefresh = new Promise<typeof activeEvent>((resolve) => {
+      resolveStaleRefresh = resolve;
+    });
+    vi.mocked(fetchEventSettings).mockImplementationOnce(() => staleRefresh);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(deletableEventB);
+
+    const router = renderSettingsRouter("/admin/events/evt-1/settings?tab=ticket-types");
+    renderWithToast(<RouterProvider router={router} />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "VIP Gold" } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateTicketType).toHaveBeenCalled();
+    });
+
+    await router.navigate("/admin/events/evt-2/settings?tab=ticket-types");
+    await waitFor(() => {
+      expect(vi.mocked(fetchEventSettings).mock.calls).toHaveLength(3);
+    });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.",
+        ),
+      ).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Delete event" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+
+    // Event A's held-open refresh resolves only now, after event B is already showing - it must
+    // not overwrite event B's Danger Zone with event A's stale deletable/blockers snapshot.
+    resolveStaleRefresh(activeEvent);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText(
+        "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Still blocking delete/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete event" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+  });
+
+  it("keeps the later of two overlapping same-event deletion-status refreshes, even if the earlier one resolves last", async () => {
+    const blockedSnapshot = { ...activeEvent, is_deletable: false, deletion_blockers: ["attendees"] as string[] };
+    const clearedSnapshot = { ...activeEvent, is_deletable: true, deletion_blockers: [] as string[] };
+    vi.mocked(fetchTicketTypes).mockResolvedValue([vipType]);
+    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
+    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold 2" });
+
+    // Call order: (1) initial load, (2) the first edit's refresh - held open so it resolves only
+    // after the second edit's own refresh has already landed, (3) the second edit's refresh -
+    // resolves immediately with the current, correct snapshot.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(blockedSnapshot);
+    let resolveFirstRefresh!: (event: typeof activeEvent) => void;
+    const firstRefresh = new Promise<typeof activeEvent>((resolve) => {
+      resolveFirstRefresh = resolve;
+    });
+    vi.mocked(fetchEventSettings).mockImplementationOnce(() => firstRefresh);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(clearedSnapshot);
+
+    const router = renderSettingsRouter("/admin/events/evt-1/settings?tab=ticket-types");
+    renderWithToast(<RouterProvider router={router} />);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const saveButton = () => screen.getByRole("button", { name: "Save" });
+
+    // First edit + Save - its own refreshEventDeletionStatus call is held open.
+    const firstInput = screen.getByDisplayValue("VIP") as HTMLInputElement;
+    fireEvent.change(firstInput, { target: { value: "VIP Gold" } });
+    fireEvent.blur(firstInput);
+    fireEvent.click(saveButton());
+    await waitFor(() => {
+      expect(updateTicketType).toHaveBeenCalledTimes(1);
+    });
+
+    // Second edit + Save, fired once the first Save has gone through (the button re-disables,
+    // then re-enables once this new edit dirties the draft again) - its own refresh resolves
+    // immediately with the current, correct snapshot.
+    const secondInput = (await screen.findByDisplayValue("VIP Gold")) as HTMLInputElement;
+    fireEvent.change(secondInput, { target: { value: "VIP Gold 2" } });
+    fireEvent.blur(secondInput);
+    await waitFor(() => {
+      expect(saveButton()).toHaveProperty("disabled", false);
+    });
+    fireEvent.click(saveButton());
+    await waitFor(() => {
+      expect(updateTicketType).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(vi.mocked(fetchEventSettings).mock.calls).toHaveLength(3);
+    });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.",
+        ),
+      ).toBeTruthy();
+    });
+
+    // The first edit's refresh resolves only now, after the second edit's own (fresher) refresh
+    // has already landed - its stale is_deletable/deletion_blockers must not win.
+    resolveFirstRefresh(blockedSnapshot);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText(
+        "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Still blocking delete/)).toBeNull();
   });
 });

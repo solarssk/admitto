@@ -193,6 +193,7 @@ import {
 import {
   handleListEventImageAssets,
   handleCreateEventImageAsset,
+  handleUpdateEventImageAsset,
   handleDeleteEventImageAsset,
 } from "./admin/event-image-assets-routes.js";
 import {
@@ -1161,6 +1162,13 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     uploadBodyLimit,
     guardArchivedEvent((c) => handleCreateEventImageAsset(c, db)),
+  );
+  app.patch(
+    "/api/admin/events/:eventId/image-assets/:assetId",
+    jsonPostCsrf,
+    staffAdminGate,
+    uploadBodyLimit,
+    guardArchivedEvent((c) => handleUpdateEventImageAsset(c, db)),
   );
   app.delete(
     "/api/admin/events/:eventId/image-assets/:assetId",

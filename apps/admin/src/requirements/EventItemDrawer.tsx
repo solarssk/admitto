@@ -74,6 +74,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
   // would silently reappear, so deletion is blocked; disable it instead.
   const isDefaultItem = item.key === "badge";
   const headerIcon = form.icon ?? item.icon ?? DEFAULT_EVENT_ITEM_ICON;
+  const dirty = JSON.stringify(form) !== JSON.stringify(toForm(item));
 
   useEffect(() => {
     setForm(toForm(item));
@@ -311,7 +312,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
               <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting}>
+              <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting || !dirty}>
                 {saving ? "Saving…" : "Save"}
               </Button>
             </div>

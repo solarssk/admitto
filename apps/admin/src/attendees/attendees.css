@@ -515,6 +515,21 @@
   padding-left: 1.75rem;
 }
 
+/* Card-only context: the desktop table gets "Pass status"/"Attendance"/"Mail" for free from its
+   column headers, but these three badges have nothing to say what each refers to once they're
+   stacked in a mobile card instead of a labeled column - a short label per badge reuses those
+   same header terms. */
+.attendees-card__badge-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.attendees-card__badge-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
 .attendees-card__foot {
   display: flex;
   align-items: center;

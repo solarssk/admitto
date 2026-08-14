@@ -535,3 +535,28 @@
   gap: var(--space-2);
   margin-left: auto;
 }
+
+/* Requirements header: "Documentation" is a single short action - keep it beside the title on
+   mobile too instead of the shared PageHeader's default stack-below-full-width, and shrink it
+   to match .reports-pageheader/.event-settings-pageheader/.communication-pageheader/
+   .settings-pageheader verbatim (drifting from those reads as a mismatch - PO review). */
+@media (max-width: 767px) {
+  .requirements-pageheader .at-pageheader__row {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .requirements-pageheader .at-pageheader__actions {
+    justify-content: flex-end;
+  }
+
+  .requirements-pageheader .at-pageheader__actions .at-btn {
+    height: var(--control-h-sm);
+    font-size: var(--fs-sm);
+    padding: 0 var(--space-2);
+  }
+
+  .requirements-pageheader .at-pageheader__actions .at-btn .at-btn__icon {
+    display: none;
+  }
+}

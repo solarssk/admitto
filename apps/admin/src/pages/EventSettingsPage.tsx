@@ -16,7 +16,6 @@ import {
   exportEventPii,
   fetchEventLocation,
   fetchEventSettings,
-  fetchTicketTypes,
   fetchWalletPushHistory,
   patchEvent,
   revokeAllCheckIns,
@@ -29,7 +28,7 @@ import {
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventLocationDto, EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
+import type { EventLocationDto, EventSettingsDto, LogoCropMeta } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import {
@@ -560,37 +559,35 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
   }
 }
 
-interface LoadTicketTypesDeps {
-  eventId: string;
-  loadedRef: RefObject<boolean>;
-  abortRef: RefObject<AbortController | null>;
-  setTicketTypesLoading: (value: boolean) => void;
-  setTicketTypes: (types: TicketTypeDto[]) => void;
-  setTicketTypesError: (error: string | null) => void;
-}
-
-/** Extracted out of the `loadTicketTypes` callback (SonarCloud S3776). */
-async function loadTicketTypesForEvent(deps: LoadTicketTypesDeps): Promise<void> {
-  const { eventId, loadedRef, abortRef, setTicketTypesLoading, setTicketTypes, setTicketTypesError } = deps;
-  abortRef.current?.abort();
-  const ac = new AbortController();
-  abortRef.current = ac;
-  if (!loadedRef.current) setTicketTypesLoading(true);
+/** Re-syncs `event` (is_deletable/deletion_blockers for the Danger Zone) after a ticket-type
+ * create/update/delete, without touching `form`/`original` - those hold another tab's possibly
+ * unsaved draft, and `loadEventSettings`'s full reload would silently discard it. Best-effort:
+ * a failed background refresh here is a lesser problem than a toast unrelated to what the
+ * operator just did in the Ticket types card.
+ *
+ * `deletionStatusSeqRef` guards against two different kinds of stale response: (1) this request
+ * resolving after the operator has already navigated to a different event's settings (the page
+ * component isn't remounted on an `:eventId` param change alone - bumped separately in an effect
+ * keyed on `eventId`), and (2) two overlapping refreshes for the *same* event - e.g. two quick
+ * ticket-type edits - resolving out of order, where the earlier request's response would
+ * otherwise land after and overwrite the later, more current one (CodeRabbit review). Each call
+ * claims the next sequence number and only applies its result while it's still the latest. */
+async function refreshEventDeletionStatus(
+  eventId: string,
+  deletionStatusSeqRef: RefObject<number>,
+  setEvent: (event: EventSettingsDto) => void,
+): Promise<void> {
+  const mySeq = deletionStatusSeqRef.current + 1;
+  deletionStatusSeqRef.current = mySeq;
   try {
-    const types = await fetchTicketTypes(eventId, ac.signal);
-    if (ac.signal.aborted) return;
-    setTicketTypes(types);
-    setTicketTypesError(null);
-    loadedRef.current = true;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") return;
-    loadedRef.current = false;
-    setTicketTypes([]);
-    setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
-  } finally {
-    if (!ac.signal.aborted) setTicketTypesLoading(false);
+    const data = await fetchEventSettings(eventId);
+    if (deletionStatusSeqRef.current !== mySeq) return;
+    setEvent(data);
+  } catch {
+    // Best-effort - see comment above.
   }
 }
+
 
 interface SaveEventSettingsDeps {
   eventId: string;
@@ -640,6 +637,7 @@ interface ArchiveToggleDeps {
   setArchiveOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
+  setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -654,6 +652,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setArchiveOpen,
     setMailCardResetKey,
     setLocationCardResetKey,
+    setTicketTypesCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -670,6 +669,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setArchiveOpen(false);
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
+    setTicketTypesCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -748,6 +748,7 @@ interface RevokeCheckinsDeps {
   setRevokeCheckinsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
+  setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -761,6 +762,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setRevokeCheckinsOpen,
     setMailCardResetKey,
     setLocationCardResetKey,
+    setTicketTypesCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -777,6 +779,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setRevokeCheckinsOpen(false);
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
+    setTicketTypesCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -792,6 +795,7 @@ interface RevokeItemsDeps {
   setRevokeItemsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
+  setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -805,6 +809,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setRevokeItemsOpen,
     setMailCardResetKey,
     setLocationCardResetKey,
+    setTicketTypesCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -821,6 +826,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setRevokeItemsOpen(false);
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
+    setTicketTypesCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -957,9 +963,10 @@ export function EventSettingsPage() {
   const [revokeCheckinsOpen, setRevokeCheckinsOpen] = useState(false);
   const [revokingItems, setRevokingItems] = useState(false);
   const [revokeItemsOpen, setRevokeItemsOpen] = useState(false);
-  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
-  const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
-  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
+  const [ticketTypesDirty, setTicketTypesDirty] = useState(false);
+  const [ticketTypesSaving, setTicketTypesSaving] = useState(false);
+  // Same reasoning as mailCardResetKey below, applied to TicketTypesCard's own draft state.
+  const [ticketTypesCardResetKey, setTicketTypesCardResetKey] = useState(0);
   const [mailDirty, setMailDirty] = useState(false);
   const [mailSaving, setMailSaving] = useState(false);
   const [bounceDirty, setBounceDirty] = useState(false);
@@ -1074,15 +1081,14 @@ export function EventSettingsPage() {
   // (CodeRabbit review).
   const mailTabDirty = mailDirty || bounceDirty;
   const mailTabSaving = mailSaving || bounceSaving;
-  const pageDirty = dirty || mailTabDirty || locationDirty;
+  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailTabSaving || locationSaving;
+  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving;
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
-  const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
@@ -1094,44 +1100,17 @@ export function EventSettingsPage() {
     await loadEventSettings({ eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
+  // Sequence guard for refreshEventDeletionStatus - see that function's own comment. Bumped here
+  // on every :eventId change (in addition to each refresh call bumping it) so an in-flight
+  // request from a previous event can never be mistaken for still-current.
+  const deletionStatusSeqRef = useRef(0);
+  useEffect(() => {
+    deletionStatusSeqRef.current += 1;
+  }, [eventId]);
+
   useEffect(() => {
     void load();
   }, [load]);
-
-  // Only the very first load shows the card's "Loading…" placeholder - a background refresh
-  // after a color/label edit (TicketTypesCard's onChanged) must not swap the whole list out and
-  // back in, which read as a full-card flicker (PO review).
-  const ticketTypesLoadedRef = useRef(false);
-  const ticketTypesAbortRef = useRef<AbortController | null>(null);
-  const abortLatestTicketTypes = useCallback(() => ticketTypesAbortRef.current?.abort(), []);
-
-  // A stale in-flight request from a previous eventId (e.g. navigating between two events'
-  // settings before the first request lands) must not overwrite this event's state once it
-  // resolves - reset and discard it the same way RequirementsPage's own load effect does
-  // (CodeRabbit review).
-  useEffect(() => {
-    ticketTypesAbortRef.current?.abort();
-    setTicketTypes([]);
-    setTicketTypesError(null);
-    ticketTypesLoadedRef.current = false;
-  }, [eventId]);
-
-  const loadTicketTypes = useCallback(async () => {
-    if (!eventId) return;
-    await loadTicketTypesForEvent({
-      eventId,
-      loadedRef: ticketTypesLoadedRef,
-      abortRef: ticketTypesAbortRef,
-      setTicketTypesLoading,
-      setTicketTypes,
-      setTicketTypesError,
-    });
-  }, [eventId]);
-
-  useEffect(() => {
-    loadTicketTypes().catch(() => {});
-    return abortLatestTicketTypes;
-  }, [abortLatestTicketTypes, loadTicketTypes]);
 
   useEffect(() => {
     if (!pageDirty && !pageBusy) return;
@@ -1202,6 +1181,7 @@ export function EventSettingsPage() {
       setArchiveOpen,
       setMailCardResetKey,
       setLocationCardResetKey,
+      setTicketTypesCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1226,6 +1206,7 @@ export function EventSettingsPage() {
       setRevokeCheckinsOpen,
       setMailCardResetKey,
       setLocationCardResetKey,
+      setTicketTypesCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1240,6 +1221,7 @@ export function EventSettingsPage() {
       setRevokeItemsOpen,
       setMailCardResetKey,
       setLocationCardResetKey,
+      setTicketTypesCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1519,14 +1501,17 @@ export function EventSettingsPage() {
 
       <EventSettingsTabPanel tab="ticket-types" activeTab={tab} visited={visitedTabs} label="Ticket types">
         <TicketTypesCard
+          key={ticketTypesCardResetKey}
           eventId={eventId}
           event={event}
-          types={ticketTypes}
-          loading={ticketTypesLoading}
-          showLoading={showTicketTypesLoading}
-          error={ticketTypesError}
-          onRetry={() => loadTicketTypes().catch(() => {})}
-          onChanged={() => loadTicketTypes().catch(() => {})}
+          onDirtyChange={setTicketTypesDirty}
+          onSavingChange={setTicketTypesSaving}
+          onSaved={() => {
+            // A create/update/delete here can flip is_deletable/deletion_blockers (e.g.
+            // clearing the last non-standard type) - keep the Danger Zone's Delete button
+            // accurate without reloading the whole page (see refreshEventDeletionStatus).
+            void refreshEventDeletionStatus(eventId, deletionStatusSeqRef, setEvent);
+          }}
         />
       </EventSettingsTabPanel>
 
@@ -1850,48 +1835,50 @@ export function EventSettingsPage() {
                           })
                         }
                       />
-                      <Input
-                        id={`event-wallet-field-mapping-key-${row.id}`}
-                        name={`event-wallet-field-mapping-key-${row.id}`}
-                        aria-label="PassCreator field key"
-                        value={row.key}
-                        disabled={isArchived || saving}
-                        placeholder="PassCreator field key"
-                        {...NO_AUTOFILL_PROPS}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            walletFieldMapping: form.walletFieldMapping.map((r) =>
-                              r.id === row.id ? { ...r, key: e.target.value } : r,
-                            ),
-                          })
-                        }
-                      />
-                      <Tooltip
-                        content={hintPreview}
-                        className="at-btn at-btn--secondary wallet-field-mapping__hint"
-                      >
-                        {selectedOption ? (
-                          <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
-                        ) : (
-                          <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
-                        )}
-                      </Tooltip>
-                      <Button
-                        type="button"
-                        id={`event-wallet-field-mapping-remove-${row.id}`}
-                        name={`event-wallet-field-mapping-remove-${row.id}`}
-                        variant="secondary"
-                        disabled={isArchived || saving}
-                        aria-label="Remove field"
-                        onClick={() =>
-                          setForm({
-                            ...form,
-                            walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
-                          })
-                        }
-                        icon={<i className="ti ti-trash" aria-hidden="true" />}
-                      />
+                      <div className="wallet-field-mapping__row-detail">
+                        <Input
+                          id={`event-wallet-field-mapping-key-${row.id}`}
+                          name={`event-wallet-field-mapping-key-${row.id}`}
+                          aria-label="PassCreator field key"
+                          value={row.key}
+                          disabled={isArchived || saving}
+                          placeholder="PassCreator field key"
+                          {...NO_AUTOFILL_PROPS}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              walletFieldMapping: form.walletFieldMapping.map((r) =>
+                                r.id === row.id ? { ...r, key: e.target.value } : r,
+                              ),
+                            })
+                          }
+                        />
+                        <Tooltip
+                          content={hintPreview}
+                          className="at-btn at-btn--secondary wallet-field-mapping__hint"
+                        >
+                          {selectedOption ? (
+                            <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
+                          ) : (
+                            <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
+                          )}
+                        </Tooltip>
+                        <Button
+                          type="button"
+                          id={`event-wallet-field-mapping-remove-${row.id}`}
+                          name={`event-wallet-field-mapping-remove-${row.id}`}
+                          variant="secondary"
+                          disabled={isArchived || saving}
+                          aria-label="Remove field"
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
+                            })
+                          }
+                          icon={<i className="ti ti-trash" aria-hidden="true" />}
+                        />
+                      </div>
                     </div>
                     );
                   })}

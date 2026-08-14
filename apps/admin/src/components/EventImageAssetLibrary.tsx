@@ -1,16 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { PercentCrop } from "react-image-crop";
 import { Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 // Subpath only: the package root re-exports Prisma/mjml server modules. Importing the
 // barrel into the SPA pulled Node APIs (fileURLToPath) into Event Settings and crashed.
 import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates/placeholders";
-import { createEventImageAsset, deleteEventImageAsset, deleteUploadedFile, fetchEventImageAssets, uploadEventBrandingFile } from "../api/client.js";
+import {
+  createEventImageAsset,
+  deleteEventImageAsset,
+  deleteUploadedFile,
+  fetchEventImageAssets,
+  updateEventImageAsset,
+  uploadEventBrandingFile,
+} from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventImageAssetDto } from "../api/types.js";
+import type { EventImageAssetDto, LogoCropMeta } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
 import { CropImageModal } from "./crop/CropImageModal.js";
+import { cropMetaToPercent, toLogoCropMeta } from "./crop/cropMeta.js";
 import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
 import {
   ALLOWED_BRANDING_IMAGE_TYPES,
@@ -143,6 +152,16 @@ type PendingCrop = {
   originalName: string;
 };
 
+/** Re-crop session for an already-uploaded asset (the "Edit" button on a gallery card). */
+type EditCropSession = {
+  assetId: string;
+  imageSrc: string;
+  sourceMime: string;
+  filenameBase: string;
+  initialCrop?: PercentCrop;
+  initialZoom?: number;
+};
+
 function ImageNameHint({
   errorText,
   previewToken,
@@ -179,9 +198,15 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
   const [uploading, setUploading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
+  /** Original URL + crop framing for the file currently staged in `file`, once cropped - sent
+   * along with Add image so the server can persist the original for later re-Edit. */
+  const [pendingOriginal, setPendingOriginal] = useState<{ url: string; crop: LogoCropMeta } | null>(
+    null,
+  );
   /** Pre-crop upload URL kept until Add asset succeeds or the operator cancels/replaces. */
   const preCropUrlRef = useRef<string | null>(null);
   const aliveRef = useRef(true);
+  const [editSession, setEditSession] = useState<EditCropSession | null>(null);
 
   const [dragging, setDragging] = useState(false);
 
@@ -242,6 +267,7 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     setDisplayName("");
     setDisplayNameTouched(false);
     setFile(null);
+    setPendingOriginal(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
@@ -311,9 +337,16 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     setUploading(true);
     setFormError(null);
     try {
-      const created = await createEventImageAsset(eventId, file, displayName.trim());
+      const created = await createEventImageAsset(
+        eventId,
+        file,
+        displayName.trim(),
+        pendingOriginal ?? undefined,
+      );
       setAssets((prev) => [...prev, created]);
-      discardPreCropUpload();
+      // The server now owns the pre-crop original (persisted as original_url) - release the
+      // ref without deleting it, unlike the cancel/replace paths below.
+      preCropUrlRef.current = null;
       resetForm();
       addToast(`Added "${created.filename}"`, "success", 2500);
     } catch (err) {
@@ -350,6 +383,26 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
     } catch {
       addToast("Could not copy", "error");
     }
+  };
+
+  const openEditCrop = (asset: EventImageAssetDto) => {
+    if (disabled) return;
+    const hasOriginal = Boolean(asset.original_url);
+    if (!hasOriginal) {
+      addToast(
+        "The original image isn't available for this image - re-cropping the current image instead.",
+        "info",
+        4500,
+      );
+    }
+    setEditSession({
+      assetId: asset.id,
+      imageSrc: asset.original_url ?? asset.url,
+      sourceMime: asset.mime_type,
+      filenameBase: basenameWithoutExt(asset.filename),
+      initialCrop: hasOriginal ? cropMetaToPercent(asset.crop) : undefined,
+      initialZoom: hasOriginal ? (asset.crop?.zoom ?? undefined) : undefined,
+    });
   };
 
   const deletingAsset = assets.find((a) => a.id === confirmDeleteId) ?? null;
@@ -413,6 +466,18 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
                       icon={<i className="ti ti-copy" aria-hidden="true" />}
                     >
                       Copy
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="image-asset-library__edit-btn"
+                      title="Edit crop"
+                      disabled={disabled}
+                      onClick={() => openEditCrop(a)}
+                      icon={<i className="ti ti-crop" aria-hidden="true" />}
+                    >
+                      Edit
                     </Button>
                     <Button
                       type="button"
@@ -571,12 +636,44 @@ export function EventImageAssetLibrary({ eventId, disabled = false }: EventImage
             closePendingCrop();
             if (fileRef.current) fileRef.current.value = "";
           }}
-          onApply={(blob) => {
+          onApply={(blob, meta) => {
             const outMime = resolveCropOutputMime(pendingCrop.sourceMime);
             const base = pendingCrop.originalName.replace(/\.[^.]+$/, "") || "asset";
             setFile(new File([blob], `${base}${extensionForMime(outMime)}`, { type: outMime }));
+            setPendingOriginal({ url: pendingCrop.imageSrc, crop: toLogoCropMeta(meta) });
             closePendingCrop();
             if (fileRef.current) fileRef.current.value = "";
+          }}
+        />
+      ) : null}
+
+      {editSession ? (
+        <CropImageModal
+          open
+          title="Adjust image"
+          imageSrc={editSession.imageSrc}
+          sourceMime={editSession.sourceMime}
+          initialCrop={editSession.initialCrop}
+          initialZoom={editSession.initialZoom}
+          onCancel={() => setEditSession(null)}
+          onApply={async (blob, meta) => {
+            const outMime = resolveCropOutputMime(editSession.sourceMime);
+            const file = new File([blob], `${editSession.filenameBase}${extensionForMime(outMime)}`, {
+              type: outMime,
+            });
+            try {
+              const updated = await updateEventImageAsset(
+                eventId,
+                editSession.assetId,
+                file,
+                toLogoCropMeta(meta),
+              );
+              setAssets((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+              setEditSession(null);
+              addToast(`Updated "${updated.filename}"`, "success", 2500);
+            } catch (err) {
+              throw new Error(operatorApiErrorMessage(err, "Could not update image."));
+            }
           }}
         />
       ) : null}

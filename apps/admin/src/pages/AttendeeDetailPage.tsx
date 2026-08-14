@@ -1269,7 +1269,11 @@ function AttendeeNotesTab({
                         type="button"
                         variant="secondary"
                         size="sm"
-                        disabled={!editState.draft.trim() || editState.submitting}
+                        disabled={
+                          !editState.draft.trim() ||
+                          editState.submitting ||
+                          editState.draft.trim() === note.body.trim()
+                        }
                         onClick={onSaveEdit}
                       >
                         {editState.submitting ? "Saving…" : "Save"}
@@ -1657,12 +1661,6 @@ export function AttendeeDetailPage() {
     if (!eventId || !attendeeId || !detail || !form) return;
 
     const patch = buildAttendeePatch(form, detail, attributeFields);
-    if (Object.keys(patch).length === 0) {
-      setEditMode(false);
-      setError(null);
-      setEmailConflict(false);
-      return;
-    }
 
     const customValidation = validateCustomFieldsForm(attributeFields, form.customFields);
     if (customValidation) {
@@ -2419,7 +2417,7 @@ export function AttendeeDetailPage() {
               <ArchivedGuard
                 event={event}
                 reasonId="save-changes-reason"
-                disabled={saving || reloading || staleWrite}
+                disabled={saving || reloading || staleWrite || !isDirty}
               >
                 {(guard) => (
                   <Button type="submit" variant="primary" {...guard}>

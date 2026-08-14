@@ -174,6 +174,8 @@ describe("BrandingSettingsPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
     });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "Acme " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save branding/);
@@ -200,6 +202,8 @@ describe("BrandingSettingsPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
     });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "Acme " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/the rest was saved/);

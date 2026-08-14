@@ -997,7 +997,7 @@ export function IdentityProviderEditor({
         <Button
           type="submit"
           variant="primary"
-          disabled={actionsDisabled(saving, testing, discovering, mode, loadState)}
+          disabled={actionsDisabled(saving, testing, discovering, mode, loadState) || !dirty}
         >
           {submitButtonLabel(saving, mode)}
         </Button>

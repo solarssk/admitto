@@ -543,6 +543,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -567,6 +571,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -590,6 +598,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -1659,6 +1671,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
@@ -1691,6 +1707,11 @@ describe("CommunicationPage templates", () => {
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited reminder" } });
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // The metadata dialog's own Save is disabled on a clean load - dirty its field so it
+    // becomes clickable (separate from the content Subject field dirtied above).
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
