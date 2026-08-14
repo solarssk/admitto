@@ -513,6 +513,28 @@ describe("ExternalServicesPanel", () => {
     });
   });
 
+  it("keeps Reset enabled to clear a stale validation error after manually retyping the saved value", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-maps-max-zoom"), {
+      target: { value: "99" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Max zoom/);
+    });
+    // Retype the original saved value by hand instead of clicking Reset - this zeroes the dirty
+    // diff without going through the code path that clears the stale error.
+    fireEvent.change(el<HTMLInputElement>("external-maps-max-zoom"), {
+      target: { value: "19" },
+    });
+    expect(screen.getByRole("alert").textContent).toMatch(/Max zoom/);
+    expect(screen.getByRole("button", { name: "Reset" })).toHaveProperty("disabled", false);
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
   it("navigates to Support contact from the MET Norway notice", async () => {
     mockFetch.mockResolvedValueOnce(
       sampleResponse({ weather: { contact_configured: false } }),

@@ -2512,4 +2512,72 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     expect(await screen.findByText("Could not load ticket types")).toBeTruthy();
     expect(screen.queryByDisplayValue("VIP")).toBeNull();
   });
+
+  it("does not let a stale refreshEventDeletionStatus response from event A overwrite event B's Danger Zone after navigating away", async () => {
+    const deletableEventB = { ...eventB, is_deletable: true, deletion_blockers: [] as string[] };
+    vi.mocked(fetchTicketTypes).mockResolvedValue([vipType]);
+    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
+
+    // Call order: (1) initial load of event A, (2) the background refreshEventDeletionStatus
+    // fired by the upcoming ticket-type edit's onChanged - held open so it resolves only after
+    // navigating to event B, (3) event B's own load once the router navigates.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    let resolveStaleRefresh!: (event: typeof activeEvent) => void;
+    const staleRefresh = new Promise<typeof activeEvent>((resolve) => {
+      resolveStaleRefresh = resolve;
+    });
+    vi.mocked(fetchEventSettings).mockImplementationOnce(() => staleRefresh);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(deletableEventB);
+
+    const router = renderSettingsRouter("/admin/events/evt-1/settings?tab=ticket-types");
+    renderWithToast(<RouterProvider router={router} />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "VIP Gold" } });
+    fireEvent.blur(input);
+    await waitFor(() => {
+      expect(updateTicketType).toHaveBeenCalled();
+    });
+
+    await router.navigate("/admin/events/evt-2/settings?tab=ticket-types");
+    await waitFor(() => {
+      expect(vi.mocked(fetchEventSettings).mock.calls).toHaveLength(3);
+    });
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Danger zone" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.",
+        ),
+      ).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Delete event" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+
+    // Event A's held-open refresh resolves only now, after event B is already showing - it must
+    // not overwrite event B's Danger Zone with event A's stale deletable/blockers snapshot.
+    resolveStaleRefresh(activeEvent);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText(
+        "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Still blocking delete/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete event" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+  });
 });
