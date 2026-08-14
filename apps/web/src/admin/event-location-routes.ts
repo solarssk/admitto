@@ -310,6 +310,38 @@ async function pushWalletUpdatesBestEffort(
   await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id);
 }
 
+/** Wraps pushWalletUpdatesBestEffort above in its own try/catch + logging - factored out of
+ * handlePutEventLocation (rather than inlined there) to keep that already-branchy handler under
+ * SonarCloud's cognitive-complexity threshold; a nested try/catch inside it pushed it over. The
+ * location write already committed by the time this runs, so a transient enqueue failure here
+ * must not turn that success into a 500 (same reasoning as event-settings-routes.ts's own
+ * basic-fields wallet push). */
+async function pushWalletUpdatesBestEffortSafely(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  existingLocation: WalletRelevantLocationSnapshot | null,
+  updatedLocation: WalletRelevantLocationSnapshot,
+  event: {
+    organization_id: string;
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key_enc: string | null;
+  },
+): Promise<void> {
+  try {
+    await pushWalletUpdatesBestEffort(db, c, eventId, existingLocation, updatedLocation, event);
+  } catch (err) {
+    console.error("wallet event-location push enqueue failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "wallet_event_location_push_failed",
+      fields: { eventId },
+    });
+  }
+}
+
 /** GET /api/admin/events/:eventId/location */
 export async function handleGetEventLocation(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -446,20 +478,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
       return row;
     });
 
-    // Caught separately from the transaction above: the location write already committed, so a
-    // transient enqueue failure here must not turn that success into a 500 (same reasoning as
-    // event-settings-routes.ts's own basic-fields wallet push).
-    try {
-      await pushWalletUpdatesBestEffort(db, c, eventId, existing, updated, event);
-    } catch (err) {
-      console.error("wallet event-location push enqueue failed:", err);
-      recordSystemLog({
-        level: "error",
-        source: "admin",
-        message: "wallet_event_location_push_failed",
-        fields: { eventId },
-      });
-    }
+    await pushWalletUpdatesBestEffortSafely(db, c, eventId, existing, updated, event);
 
     return c.json(serializeLocation(updated));
   } catch (err) {

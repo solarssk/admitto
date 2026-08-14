@@ -1328,6 +1328,106 @@ describe("PATCH /api/admin/events/:eventId", () => {
       const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
       expect(jobs).toHaveLength(1);
     });
+
+    it("reuses the winning job when create() itself hits a P2002 conflict (race-lost path, bot review)", async () => {
+      // Simulates the narrow window findPendingEventWideWalletPushJob's own pre-check can miss:
+      // another request's job is inserted between this call's own (mocked-empty) pre-check and
+      // its create() attempt - the DB's unique index is what actually catches it, and the
+      // catch block must fetch and return that real winner rather than erroring the save.
+      const winner = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_SET,
+          event_id: PUSH_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        },
+      });
+      const findFirstSpy = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValueOnce(null);
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (p2002 race)" }),
+        });
+        expect(res.status).toBe(200);
+
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]?.id).toBe(winner.id);
+      } finally {
+        createSpy.mockRestore();
+        findFirstSpy.mockRestore();
+      }
+    });
+
+    it("still saves the field change (200) via the catch when enqueueing fails with a non-conflict error (bot review)", async () => {
+      resetSystemLogBufferForTest();
+      const createSpy = vi
+        .spyOn(prisma.adminJob, "create")
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError("Foreign key constraint violated", {
+            code: "P2003",
+            clientVersion: "test",
+          }),
+        );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (non-conflict error)" }),
+        });
+
+        // A non-P2002 error isn't a "someone else won the race" signal - it must re-throw (not
+        // silently swallow) up to the caller's own outer catch, which still saves the settings
+        // change successfully rather than failing the whole request.
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({ message: "wallet_event_change_push_failed", fields: { eventId: PUSH_EVENT } });
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("re-throws the P2002 conflict when no winning job can be found (edge case, bot review)", async () => {
+      // Contrived (the conflicting job would have to vanish between the failed insert and the
+      // immediate re-query, in production this never happens), but still a real code path: the
+      // catch block must not silently swallow a P2002 it can't actually resolve to a real job.
+      resetSystemLogBufferForTest();
+      const findFirstSpy = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValue(null);
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (p2002 no winner)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({ message: "wallet_event_change_push_failed", fields: { eventId: PUSH_EVENT } });
+      } finally {
+        createSpy.mockRestore();
+        findFirstSpy.mockRestore();
+      }
+    });
   });
 
   describe("webhook subscription on wallet-config save", () => {

@@ -222,6 +222,10 @@ describe("drainWalletPushJobs", () => {
     ["no request property at all", {}],
     ["a non-object request", { request: "not-an-object" }],
     ["an array request", { request: ["nope"] }],
+    // A valid eventId but neither recognized kind - distinct from the "nonsense" test above,
+    // which has no eventId at all and so never reaches this specific check (bot review: Codecov
+    // flagged the kind!=="attendee_ids" branch as only ever exercised in one direction).
+    ["a valid eventId with an unrecognized kind", { request: { kind: "nonsense", eventId: "evt-1", attendeeIds: [] } }],
     ["a non-string eventId", { request: { kind: "attendee_ids", eventId: 123, attendeeIds: [] } }],
     ["an empty eventId", { request: { kind: "attendee_ids", eventId: "", attendeeIds: [] } }],
     ["a non-array attendeeIds", { request: { kind: "attendee_ids", eventId: "evt-1", attendeeIds: "att-1" } }],
