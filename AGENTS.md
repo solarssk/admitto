@@ -137,6 +137,23 @@ makes `mock.calls[0][0]` a `TS2493` under `tsc` even when Vitest is green. After
 React state, nest handlers must use narrowed locals (`const weather = weatherDraft`) — TypeScript
 does not keep the narrowing inside nested functions.
 
+**New `process.env.X` reads must be registered in `deploy/env-catalog.json`, then regenerated.**
+CI's `wiki-docs` job runs `npm run docs:check`, which includes `generate-env-dictionary.mjs
+--check` — it scans source for env var references and fails the build if one isn't listed in the
+catalog (or under its `scanIgnore`). Add a catalog entry (`name`, `group`, `boot`, `consumers`,
+`secret`, `ui`, `summary` — copy the shape of a sibling entry), then run `npm run docs:env` to
+regenerate `deploy/ENV.md` and commit both files together; the check also fails if `ENV.md` is
+stale relative to the catalog even when the catalog entry itself is present.
+
+**A new AdminJob drain file mirroring an existing sibling (e.g. wallet_push → wallet_message)
+will likely trip SonarCloud's new-code duplication gate (max 3%).** Structural copies like
+`resolveEventWalletProvider` or the stale-job reclaim loop read as near-verbatim duplicates by
+line/token comparison even when deliberately parallel by design. Extract genuinely shared pieces
+into their own small module (see `resolve-event-wallet-provider.ts`,
+`reclaim-stale-admin-jobs-by-type.ts`) rather than leaving two inline copies — check the SonarCloud
+PR dashboard (`new_duplicated_lines_density` condition) before assuming a passing local build means
+this gate will pass too, since duplication isn't caught by `tsc`/vitest.
+
 **New runtime workspace package:** the Dockerfile production stage is an explicit allowlist.
 Copy both `packages/<name>/package.json` and `--from=builder …/packages/<name>/dist` (same
 pattern as crypto/location/…). Builder already has all of `packages/`; omitting the production
