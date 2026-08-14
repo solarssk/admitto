@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, HintLabel, IconButton, Input, Notice, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
-import type { TicketTypeColor } from "@admitto/ui";
+import type { TicketTypeColor, ToastVariant } from "@admitto/ui";
 import { ApiError, createTicketType, deleteTicketType, fetchTicketTypes, updateTicketType } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto, TicketTypeDto, UpdateTicketTypePatch } from "../api/types.js";
@@ -36,7 +36,7 @@ const TICKET_TYPES_HINT =
 function isTicketTypeDirty(item: DraftTicketType, saved: TicketTypeDto[]): boolean {
   if (item.pending) return true;
   const original = saved.find((s) => s.id === item.id);
-  return !original || original.label !== item.label || original.color !== item.color;
+  return original?.label !== item.label || original?.color !== item.color;
 }
 
 /** Only the fields this draft actually changed vs. `original` - never the untouched one, even
@@ -62,6 +62,36 @@ function describeTicketTypeSaveError(label: string, err: unknown): string {
     return "Ticket type limit reached for this event.";
   }
   return operatorApiErrorMessage(err, `Failed to save "${label}".`);
+}
+
+type SaveTicketTypeItemResult = {
+  draftItem: DraftTicketType;
+  savedItem: TicketTypeDto | undefined;
+  failed: boolean;
+};
+
+/** Saves (or skips, when untouched) a single draft row - split out of handleSave to keep that
+ * function's own cognitive complexity down to just looping and aggregating the outcomes
+ * (SonarCloud S3776). */
+async function saveTicketTypeItem(
+  eventId: string,
+  item: DraftTicketType,
+  saved: TicketTypeDto[],
+  addToast: (message: string, variant?: ToastVariant, duration?: number) => void,
+): Promise<SaveTicketTypeItemResult> {
+  const original = item.pending ? undefined : saved.find((s) => s.id === item.id);
+  if (!item.pending && !isTicketTypeDirty(item, saved)) {
+    return { draftItem: item, savedItem: original, failed: false };
+  }
+  try {
+    const result = item.pending
+      ? await createTicketType(eventId, { label: item.label, color: item.color })
+      : await updateTicketType(eventId, item.id, buildTicketTypePatch(item, original));
+    return { draftItem: result, savedItem: result, failed: false };
+  } catch (err) {
+    addToast(describeTicketTypeSaveError(item.label, err), "error");
+    return { draftItem: item, savedItem: original, failed: true };
+  }
 }
 
 /** Click the current color to open a small swatch grid — same popover pattern as the app's other
@@ -402,24 +432,10 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
     let failureCount = 0;
 
     for (const item of draft) {
-      const original = item.pending ? undefined : saved.find((s) => s.id === item.id);
-      if (!item.pending && !isTicketTypeDirty(item, saved)) {
-        nextDraft.push(item);
-        if (original) nextSaved.push(original);
-        continue;
-      }
-      try {
-        const result = item.pending
-          ? await createTicketType(eventId, { label: item.label, color: item.color })
-          : await updateTicketType(eventId, item.id, buildTicketTypePatch(item, original));
-        nextDraft.push(result);
-        nextSaved.push(result);
-      } catch (err) {
-        failureCount += 1;
-        addToast(describeTicketTypeSaveError(item.label, err), "error");
-        nextDraft.push(item);
-        if (original) nextSaved.push(original);
-      }
+      const result = await saveTicketTypeItem(eventId, item, saved, addToast);
+      nextDraft.push(result.draftItem);
+      if (result.savedItem) nextSaved.push(result.savedItem);
+      if (result.failed) failureCount += 1;
     }
 
     setDraft(nextDraft);
