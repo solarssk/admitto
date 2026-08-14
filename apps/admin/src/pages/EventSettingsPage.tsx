@@ -564,18 +564,25 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
  * create/update/delete, without touching `form`/`original` - those hold another tab's possibly
  * unsaved draft, and `loadEventSettings`'s full reload would silently discard it. Best-effort:
  * a failed background refresh here is a lesser problem than a toast unrelated to what the
- * operator just did in the Ticket types card. `currentEventIdRef` guards against this request
+ * operator just did in the Ticket types card.
+ *
+ * `deletionStatusSeqRef` guards against two different kinds of stale response: (1) this request
  * resolving after the operator has already navigated to a different event's settings (the page
- * component isn't remounted on an `:eventId` param change alone) - applying a stale event's
- * snapshot would otherwise mislabel this event's deletion status/blockers. */
+ * component isn't remounted on an `:eventId` param change alone - bumped separately in an effect
+ * keyed on `eventId`), and (2) two overlapping refreshes for the *same* event - e.g. two quick
+ * ticket-type edits - resolving out of order, where the earlier request's response would
+ * otherwise land after and overwrite the later, more current one (CodeRabbit review). Each call
+ * claims the next sequence number and only applies its result while it's still the latest. */
 async function refreshEventDeletionStatus(
   eventId: string,
-  currentEventIdRef: RefObject<string | undefined>,
+  deletionStatusSeqRef: RefObject<number>,
   setEvent: (event: EventSettingsDto) => void,
 ): Promise<void> {
+  const mySeq = deletionStatusSeqRef.current + 1;
+  deletionStatusSeqRef.current = mySeq;
   try {
     const data = await fetchEventSettings(eventId);
-    if (currentEventIdRef.current !== eventId) return;
+    if (deletionStatusSeqRef.current !== mySeq) return;
     setEvent(data);
   } catch {
     // Best-effort - see comment above.
@@ -1116,11 +1123,13 @@ export function EventSettingsPage() {
     await loadEventSettings({ eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
-  // Tracks the currently active :eventId for refreshEventDeletionStatus's staleness guard -
-  // read during render (not an effect) so it's already current by the time an in-flight
-  // request from a previous eventId resolves.
-  const currentEventIdRef = useRef(eventId);
-  currentEventIdRef.current = eventId;
+  // Sequence guard for refreshEventDeletionStatus - see that function's own comment. Bumped here
+  // on every :eventId change (in addition to each refresh call bumping it) so an in-flight
+  // request from a previous event can never be mistaken for still-current.
+  const deletionStatusSeqRef = useRef(0);
+  useEffect(() => {
+    deletionStatusSeqRef.current += 1;
+  }, [eventId]);
 
   useEffect(() => {
     void load();
@@ -1559,7 +1568,7 @@ export function EventSettingsPage() {
             // Every create/update/delete here can flip is_deletable/deletion_blockers (e.g.
             // clearing the last non-standard type) - keep the Danger Zone's Delete button
             // accurate without reloading the whole page (see refreshEventDeletionStatus).
-            void refreshEventDeletionStatus(eventId, currentEventIdRef, setEvent);
+            void refreshEventDeletionStatus(eventId, deletionStatusSeqRef, setEvent);
           }}
         />
       </EventSettingsTabPanel>
