@@ -687,11 +687,6 @@ function SendTab({
   senderName,
   senderAddress,
   onPreview,
-  testEmail,
-  setTestEmail,
-  testSending,
-  onTestSend,
-  testStatus,
 }: Readonly<{
   event: EventDto;
   templates: MailTemplateListItem[];
@@ -714,11 +709,6 @@ function SendTab({
   senderName: string | null;
   senderAddress: string | null;
   onPreview: () => Promise<void>;
-  testEmail: string;
-  setTestEmail: Dispatch<SetStateAction<string>>;
-  testSending: boolean;
-  onTestSend: () => Promise<void>;
-  testStatus: TestSendStatus | null;
 }>) {
   // Preview the *saved* template when this tab is shown (or when that saved snapshot changes).
   // Skip while inactive so a Templates-tab draft preview is not overwritten in the background.
@@ -739,7 +729,7 @@ function SendTab({
         <Card
           title={
             <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
-              Message
+              Email message
             </HintLabel>
           }
         >
@@ -787,18 +777,6 @@ function SendTab({
         snapshotMissing={editorSnapshotMissing}
         isDirty={isDirty}
       />
-
-      {isActive && (
-        <SendTestCard
-          event={event}
-          testEmail={testEmail}
-          setTestEmail={setTestEmail}
-          testSending={testSending}
-          editorSnapshotMissing={editorSnapshotMissing}
-          onTestSend={onTestSend}
-          testStatus={testStatus}
-        />
-      )}
     </div>
   );
 }
@@ -2454,11 +2432,6 @@ export function CommunicationPage() {
           senderName={senderName}
           senderAddress={senderAddress}
           onPreview={handleSendPreview}
-          testEmail={testEmail}
-          setTestEmail={setTestEmail}
-          testSending={testSending}
-          onTestSend={handleTestSend}
-          testStatus={testStatus}
         />
       </div>
 

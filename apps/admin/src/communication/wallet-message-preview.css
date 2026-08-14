@@ -99,7 +99,3 @@
 .wallet-message-preview__placeholder {
   color: rgba(255, 255, 255, 0.55);
 }
-
-.wallet-message-preview__caption {
-  font-size: var(--fs-xs);
-}

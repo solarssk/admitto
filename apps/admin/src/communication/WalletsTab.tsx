@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card } from "@admitto/ui";
+import { Card, Notice } from "@admitto/ui";
 import { WALLET_MESSAGE_TEXT_MAX_LENGTH } from "./walletMessageLimits.js";
 import { WalletMessagePreview } from "./WalletMessagePreview.js";
 import { WalletsSendPanel } from "./WalletsSendPanel.js";
@@ -12,10 +12,10 @@ interface WalletsTabProps {
   eventId: string;
 }
 
-/** Wallets tab: compose a short message, see a live preview of the lock-screen notification it
- * produces, then send it via WalletsSendPanel. Full-width text editor mirrors the Templates
- * tab's body editor - unlike a mail template, there's no subject/format/placeholder chips, just
- * plain text. */
+/** Wallets tab: compose a short message with a live preview of the lock-screen notification it
+ * produces side by side, mirroring the Templates tab's editor/preview split, then send it via
+ * WalletsSendPanel below. Unlike a mail template, there's no subject/format/placeholder chips,
+ * just plain text. */
 export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
   const [text, setText] = useState("");
 
@@ -29,35 +29,44 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
 
   return (
     <div className="communication-send-tab">
-      <Card title="Message">
-        <div className="settings-card-stack">
-          <p className="settings-card-intro">
-            Write a short message to push to attendees' installed wallet passes as a lock-screen
-            notification.
-          </p>
-          <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
-            <div className="communication-body-field">
-              <label htmlFor="wallets-message-text">Message</label>
-              <textarea
-                id="wallets-message-text"
-                className="communication-textarea"
-                rows={4}
-                value={text}
-                maxLength={WALLET_MESSAGE_TEXT_MAX_LENGTH}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="e.g. Doors close at 6pm — please head to the main hall now."
-              />
-            </div>
-          </fieldset>
-          {/* remaining can't go negative: the textarea's own maxLength already stops typed/pasted
-              input from exceeding WALLET_MESSAGE_TEXT_MAX_LENGTH. */}
-          <p className="mail-field-hint">{remaining} characters remaining</p>
-        </div>
-      </Card>
+      <div className="communication-templates-split">
+        <Card title="Message">
+          <div className="settings-card-stack">
+            <p className="settings-card-intro">
+              Write a short message to push to attendees' installed wallet passes as a lock-screen
+              notification.
+            </p>
+            <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
+              <div className="communication-body-field">
+                <label htmlFor="wallets-message-text">Message</label>
+                <textarea
+                  id="wallets-message-text"
+                  className="communication-textarea"
+                  rows={4}
+                  value={text}
+                  maxLength={WALLET_MESSAGE_TEXT_MAX_LENGTH}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="e.g. Doors close at 6pm — please head to the main hall now."
+                />
+              </div>
+            </fieldset>
+            {/* remaining can't go negative: the textarea's own maxLength already stops
+                typed/pasted input from exceeding WALLET_MESSAGE_TEXT_MAX_LENGTH. */}
+            <p className="mail-field-hint">{remaining} characters remaining</p>
+          </div>
+        </Card>
 
-      <Card title="Preview">
-        <WalletMessagePreview text={text} />
-      </Card>
+        <Card title="Preview">
+          <WalletMessagePreview text={text} />
+        </Card>
+      </div>
+
+      <Notice variant="info">
+        Google Wallet allows at most 3 notification-triggering messages per pass in a rolling
+        24-hour window — further sends within that window are rejected until it resets. Apple
+        Wallet doesn't publish a fixed number, but throttles or blocks pushes it considers
+        excessive. Space out repeat sends to the same event.
+      </Notice>
 
       <WalletsSendPanel event={event} eventId={eventId} text={text} />
     </div>

@@ -31,7 +31,7 @@ export function WalletMessagePreview({ text }: Readonly<{ text: string }>) {
           </div>
         </div>
       </div>
-      <p className="wallet-message-preview__caption muted">
+      <p className="mail-field-hint">
         Illustrative preview of the lock-screen banner attendees see on Apple Wallet. Google Wallet
         renders its own notification style, which may differ slightly.
       </p>
