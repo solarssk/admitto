@@ -25,14 +25,14 @@ Open the correct organisation and event. If another manager may be editing the s
 
 ### Event settings tabs
 
-Event settings are organised into tabs. Each card that needs saving (Basic information, Location, Images, Mail transport) has its own **Save** / **Reset**. There is no single page-level Save.
+Event settings are organised into tabs. Each card that needs saving (Basic information, Location, Ticket types, Images, Mail transport) has its own **Save** / **Reset**. There is no single page-level Save.
 
 1. Open **Event settings**, then **General**.
 2. Review the title, event date, time zone, and capacity. Optionally set **Event hours (start/end)** between the date and time zone fields, using your account's selected 12-hour (AM/PM) or 24-hour format. Set either value independently, or set both for a time-of-day range shown on tickets separately from the calendar date. Leave both blank to omit event hours.
 3. Leave capacity empty for an unlimited event, or enter the maximum number of attendees that may be added.
 4. Save the General card.
 5. Open **Location** to set the venue's name and address. Start typing a venue name or an address into the single search field. Matching places appear as you type; pick one to also set the map pin, or keep typing free text if nothing matches. Drag the pin or double-click the map to adjust it by hand. Add directions or accessibility notes if attendees need them. If Copy Google/Apple Maps opens the wrong place while the pin looks correct, use **Pin wrong? Fix link** to paste the correct Maps URLs (the pin and static map stay as they are).
-6. Review **Ticket types** for the event's catalog (label + colour), not free-text guest types.
+6. Review **Ticket types** for the event's catalog (label + colour), not free-text guest types. Adding a type or editing an existing one's label/colour is staged until you select **Save**; **Reset** discards it. Removing a type takes effect immediately once confirmed and does not wait for Save.
 7. Review **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. Logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add image**, and each one gets its own **Edit** button afterward in **Your images** to reopen the adjust popup on the original upload with the last crop restored, the same way **Edit image** works for the logo. Images added before this capability existed have no stored original, so **Edit** re-crops the already-cropped image instead. Enter a normal image name; Admitto creates the `{{variable}}` for templates.
 8. Return to **Overview** and confirm that the event now shows the intended state.
 

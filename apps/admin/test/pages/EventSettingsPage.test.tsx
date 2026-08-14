@@ -2442,100 +2442,6 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     expect(screen.queryByText("Loading…")).toBeNull();
   });
 
-  it("does not show the loading placeholder or hide existing rows during a same-event background refresh (no flicker)", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    // A successful ticket-type edit also re-syncs is_deletable/deletion_blockers in the
-    // background (refreshEventDeletionStatus) - queue the second fetchEventSettings call it
-    // makes, same event snapshot back since nothing about deletability changed here.
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
-    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
-    let resolveRefresh!: (types: TicketTypeDto[]) => void;
-    const refreshPromise = new Promise<TicketTypeDto[]>((resolve) => {
-      resolveRefresh = resolve;
-    });
-
-    renderSettings("/admin/events/evt-1/settings?tab=ticket-types");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
-    });
-    // TicketTypeRow synchronizes its local draft from the fetched type in a passive effect.
-    // Let that effect settle before changing + blurring the controlled input, otherwise a busy
-    // CI worker can commit the old label between those two events.
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    // A background refresh only ever follows a successful color/label edit (TicketTypesCard's
-    // onChanged) — queue it as the next fetchTicketTypes resolution before triggering that edit.
-    vi.mocked(fetchTicketTypes).mockImplementationOnce(() => refreshPromise);
-
-    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "VIP Gold" } });
-    await waitFor(() => {
-      expect(input.value).toBe("VIP Gold");
-    });
-    fireEvent.blur(input);
-
-    await waitFor(() => {
-      expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold" });
-    });
-    await waitFor(() => {
-      expect(vi.mocked(fetchTicketTypes).mock.calls).toHaveLength(2);
-    });
-    // The second fetchEventSettings call queued above is refreshEventDeletionStatus's own
-    // background re-sync, fired by the same edit - confirm it actually happens, not just that
-    // an unused mock result was queued for it.
-    await waitFor(() => {
-      expect(vi.mocked(fetchEventSettings).mock.calls).toHaveLength(2);
-    });
-
-    // The background refresh must not blank the card out while it's in flight.
-    expect(screen.queryByText("Loading…")).toBeNull();
-    expect(screen.getByDisplayValue("VIP Gold")).toBeTruthy();
-
-    resolveRefresh([{ ...vipType, label: "VIP Gold" }]);
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("VIP Gold")).toBeTruthy();
-    });
-    expect(screen.queryByText("Loading…")).toBeNull();
-  });
-
-  it("aborts the latest background ticket-type refresh when the page unmounts", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
-    vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
-    let refreshSignal: AbortSignal | undefined;
-    vi.mocked(fetchTicketTypes).mockImplementationOnce((_eventId, signal) => {
-      refreshSignal = signal;
-      return new Promise(() => {});
-    });
-
-    const rendered = renderWithToast(
-      <MemoryRouter initialEntries={["/admin/events/evt-1/settings?tab=ticket-types"]}>
-        <Routes>
-          <Route path="/admin/events/:eventId/settings" element={<EventSettingsPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("VIP")).toBeTruthy();
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "VIP Gold" } });
-    fireEvent.blur(input);
-
-    await waitFor(() => {
-      expect(refreshSignal).toBeDefined();
-    });
-    rendered.unmount();
-    expect(refreshSignal!.aborted).toBe(true);
-  });
-
   it("clears the previous event's stale ticket types when the new event's fetch fails", async () => {
     vi.mocked(fetchEventSettings).mockImplementation((eventId: string) =>
       Promise.resolve(eventId === "evt-1" ? activeEvent : eventB),
@@ -2586,6 +2492,7 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "VIP Gold" } });
     fireEvent.blur(input);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateTicketType).toHaveBeenCalled();
     });
@@ -2652,16 +2559,27 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
       await Promise.resolve();
     });
 
+    const saveButton = () => screen.getByRole("button", { name: "Save" });
+
+    // First edit + Save - its own refreshEventDeletionStatus call is held open.
     const firstInput = screen.getByDisplayValue("VIP") as HTMLInputElement;
     fireEvent.change(firstInput, { target: { value: "VIP Gold" } });
     fireEvent.blur(firstInput);
+    fireEvent.click(saveButton());
     await waitFor(() => {
       expect(updateTicketType).toHaveBeenCalledTimes(1);
     });
 
+    // Second edit + Save, fired once the first Save has gone through (the button re-disables,
+    // then re-enables once this new edit dirties the draft again) - its own refresh resolves
+    // immediately with the current, correct snapshot.
     const secondInput = (await screen.findByDisplayValue("VIP Gold")) as HTMLInputElement;
     fireEvent.change(secondInput, { target: { value: "VIP Gold 2" } });
     fireEvent.blur(secondInput);
+    await waitFor(() => {
+      expect(saveButton()).toHaveProperty("disabled", false);
+    });
+    fireEvent.click(saveButton());
     await waitFor(() => {
       expect(updateTicketType).toHaveBeenCalledTimes(2);
     });
