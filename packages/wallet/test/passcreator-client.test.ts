@@ -387,6 +387,50 @@ describe("PassCreatorClient.updatePass", () => {
   });
 });
 
+describe("PassCreatorClient.sendPushMessage", () => {
+  it("PATCHes the v3 bulk endpoint with pushNotificationText and an identifiers filter", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/v3/pass/bulk");
+      expect(init?.method).toBe("PATCH");
+      expect(JSON.parse(init?.body as string)).toEqual({
+        data: { pushNotificationText: "Welcome to the event!" },
+        filter: { identifiers: ["pass-1", "pass-2"] },
+      });
+      return jsonResponse(202, {
+        success: true,
+        data: { process: "https://pc.test/api/v3/process/xyz" },
+      });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(
+      client.sendPushMessage(["pass-1", "pass-2"], "Welcome to the event!"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("uses the same bulk endpoint for a single recipient (never the deprecated v1 single-pass endpoint)", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/v3/pass/bulk");
+      expect(JSON.parse(init?.body as string).filter).toEqual({ identifiers: ["pass-1"] });
+      return jsonResponse(202, {
+        success: true,
+        data: { process: "https://pc.test/api/v3/process/xyz" },
+      });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.sendPushMessage(["pass-1"], "Hi!")).resolves.toBeUndefined();
+  });
+
+  it("throws WalletProviderError on failure, same as other v3 endpoints", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(401, { success: false, errors: ["Invalid API key"] }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.sendPushMessage(["pass-1"], "Hi!")).rejects.toMatchObject({
+      code: "wallet_provider_unauthorized",
+    });
+  });
+});
+
 describe("PassCreatorClient void/restore", () => {
   it("voidPass PUTs {voided: true} to the non-v3 endpoint", async () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
