@@ -800,30 +800,30 @@ export function AccountPage() {
 
   function renderTwoFactorCard() {
     if (!account) return null;
+    if (!account.has_local_password) {
+      // Sign-in-only accounts can't reach Set up/Reset (both require a local password, see
+      // renderMfaMethodsList) or the enrollment/reset forms those buttons open - the methods
+      // list itself is dropped too, so this is the card's only content, not a note above it.
+      return (
+        <Card title="Two-factor authentication">
+          <EmptyState
+            icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
+            title={totpEnrolled ? "Two-factor reset requires a local password" : "Two-factor setup requires a local password"}
+            description={
+              totpEnrolled
+                ? "Sign-in-only accounts must contact an administrator."
+                : "Sign-in-only accounts must use their identity provider or contact an administrator."
+            }
+          />
+        </Card>
+      );
+    }
     return (
       <Card title="Two-factor authentication">
           {/* Methods list — visible only when no active form */}
           {renderMfaMethodsList()}
-
-          {!totpEnrolled && !enrollData && !account.has_local_password && (
-            <div style={{ marginTop: "var(--space-3)" }}>
-              <EmptyState
-                icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
-                title="Two-factor setup requires a local password"
-                description="Sign-in-only accounts must use their identity provider or contact an administrator."
-              />
-            </div>
-          )}
-
           {renderMfaEnrollment()}
           {renderMfaResetFields()}
-          {totpEnrolled && !account.has_local_password && (
-            <EmptyState
-              icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
-              title="Two-factor reset requires a local password"
-              description="Sign-in-only accounts must contact an administrator."
-            />
-          )}
           {/* Action footer — aligned to card bottom alongside "Change password" */}
           {enrollData && (
             <div className="mail-transport-footer">
