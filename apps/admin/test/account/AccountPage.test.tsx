@@ -2026,6 +2026,11 @@ describe("AccountPage profile: SSO unlink", () => {
         "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
       ),
     ).toBeTruthy();
+
+    // Regression: reopening must not still show what was typed before this error closed the dialog.
+    clickIdentityMenuItem(/Unlink SSO/);
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
   });
 
   it("closes the dialog and toasts when the account has no available proof of identity", async () => {
@@ -2051,6 +2056,11 @@ describe("AccountPage profile: SSO unlink", () => {
         "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
       ),
     ).toBeTruthy();
+
+    // Regression: reopening must not still show what was typed before this error closed the dialog.
+    clickIdentityMenuItem(/Unlink SSO/);
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
   });
 });
 

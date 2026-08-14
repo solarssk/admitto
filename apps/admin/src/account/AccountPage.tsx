@@ -541,7 +541,10 @@ export function AccountPage() {
         </p>
       )}
       {!account.has_local_password ? (
-        <p className="account-info-block">Password is managed by your identity provider.</p>
+        <EmptyState
+          icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
+          title="Password is managed by your identity provider"
+        />
       ) : (
         <>
           {account.must_change_password && (
@@ -803,17 +806,23 @@ export function AccountPage() {
           {renderMfaMethodsList()}
 
           {!totpEnrolled && !enrollData && !account.has_local_password && (
-            <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>
-              Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
-            </p>
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <EmptyState
+                icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
+                title="Two-factor setup requires a local password"
+                description="Sign-in-only accounts must use their identity provider or contact an administrator."
+              />
+            </div>
           )}
 
           {renderMfaEnrollment()}
           {renderMfaResetFields()}
           {totpEnrolled && !account.has_local_password && (
-            <p className="account-info-block">
-              Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
-            </p>
+            <EmptyState
+              icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
+              title="Two-factor reset requires a local password"
+              description="Sign-in-only accounts must contact an administrator."
+            />
           )}
           {/* Action footer — aligned to card bottom alongside "Change password" */}
           {enrollData && (
@@ -1190,12 +1199,16 @@ export function AccountPage() {
               setUnlinkSsoError("Current password is incorrect.");
             } else if (hasApiErrorCode(err, "provider_managed_roles_exist")) {
               setUnlinkSsoOpen(false);
+              setUnlinkSsoPassword("");
+              setUnlinkSsoCurrentPassword("");
               addToast(
                 "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
                 "error",
               );
             } else if (hasApiErrorCode(err, "insufficient_verification")) {
               setUnlinkSsoOpen(false);
+              setUnlinkSsoPassword("");
+              setUnlinkSsoCurrentPassword("");
               addToast(
                 "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
                 "error",
