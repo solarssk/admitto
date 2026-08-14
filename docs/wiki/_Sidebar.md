@@ -39,6 +39,7 @@
 - [Advanced Email Templates](Advanced-Email-Templates)
 - [Template Variables](Template-Variables)
 - [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
+- [Sending Wallet Messages](Sending-Wallet-Messages)
 - [Email Delivery Statuses](Email-Delivery-Statuses)
 
 **Check-in Operations**

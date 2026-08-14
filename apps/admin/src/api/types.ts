@@ -815,6 +815,68 @@ export interface BulkSendStatusResponse {
   failed: number;
 }
 
+/** Audience filter for POST `/api/admin/events/:eventId/wallet-message/send` - narrower than
+ * mail's BulkSendFilter, since every branch is already scoped server-side to attendees with an
+ * active wallet pass ("all" means all such attendees, not literally everyone on the event). */
+export type WalletMessageFilter =
+  | { type: "all" }
+  | { type: "ticket_type"; value: string }
+  | { type: "attendee_ids"; ids: string[] };
+
+export interface WalletMessageSendBody {
+  filter: WalletMessageFilter;
+  text: string;
+  dryRun?: boolean;
+}
+
+export interface WalletMessageDryRunResponse {
+  recipientCount: number;
+}
+
+export interface WalletMessageQueuedResponse {
+  jobId: string | null;
+  recipientCount: number;
+}
+
+export interface WalletMessageJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  sent: number | null;
+  skipped: number | null;
+  errored: number | null;
+  created_at: string;
+  started_at: string | null;
+}
+
+export interface WalletMessageHistoryItem {
+  id: string;
+  created_at: string;
+  sent: number;
+  skipped: number;
+  errored: number;
+  status: "succeeded" | "failed";
+  error: string | null;
+}
+
+export interface WalletMessageHistoryResponse {
+  items: WalletMessageHistoryItem[];
+}
+
+/** Row shape returned by the wallet-message-scoped attendee search - a subset of AttendeeRowDto,
+ * matching what apps/web's handleSearchWalletMessageAttendees actually returns. */
+export interface WalletMessageAttendeeDto {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface WalletMessageAttendeeSearchResponse {
+  items: WalletMessageAttendeeDto[];
+}
+
 export type MailFieldSource = "env" | "db" | "default";
 
 export interface MailPlainFieldDto<T = string | number | boolean | null> {

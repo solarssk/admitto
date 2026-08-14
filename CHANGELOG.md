@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Editing an attendee's name, email, company, department, or ticket type now also pushes the change to their already-issued wallet pass, the same way a bulk ticket type change already does. Event settings → Wallet has a new Wallet push history list showing recent bulk ticket type pushes for the event.
 - Event settings → Wallet has a new "Semantic tags" switch under Apple Wallet, off by default. When enabled, issued Apple Wallet passes include event name, date/time, venue location, and entrance directions as Apple's own semantic tags, which power Siri Suggestions, Maps, and Calendar smart surfacing. No NFC or PassCreator account approval needed, and it has no effect on Google Wallet passes. Toggling it also refreshes already-issued Apple Wallet passes.
 - Event settings → Images: uploaded images can now be re-cropped after the fact. A new Edit button on each image in "Your images" reopens the crop tool on the original, uncropped file with the previous framing restored, matching the logo upload's existing re-crop capability.
+- Communication now has a **Wallets** tab: compose a short message and push it to attendees' already-installed Apple Wallet or Google Wallet passes as a lock-screen notification, with the same recipient-filtering and count-before-you-send pattern as the existing mail Send tab. Recipient options are limited to attendees who currently have an active wallet pass (all such attendees, by ticket type, or specific attendees).
 
 ### Changed
 
