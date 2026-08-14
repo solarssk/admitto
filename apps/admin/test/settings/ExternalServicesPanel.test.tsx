@@ -181,12 +181,9 @@ describe("ExternalServicesPanel", () => {
     expect(mockSaveMaps).not.toHaveBeenCalled();
   });
 
-  it("toasts info when Save is clicked with no dirty fields", async () => {
+  it("disables Save when there are no dirty fields", async () => {
     await renderLoaded();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toContain("No changes to save.");
-    });
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
     expect(mockSaveWeather).not.toHaveBeenCalled();
     expect(mockSaveMaps).not.toHaveBeenCalled();
   });

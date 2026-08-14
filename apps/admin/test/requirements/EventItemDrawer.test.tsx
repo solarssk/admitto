@@ -85,6 +85,9 @@ describe("EventItemDrawer", () => {
       config: { issue_on_checkin: true, requires_return: false },
     });
     renderDrawer(badgeWithNullConfig);
+    // Save is disabled on a clean load - a trailing space dirties the field without changing
+    // the trimmed label handleSave actually sends.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Badge " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateEventItem).toHaveBeenCalledWith(
@@ -149,6 +152,8 @@ describe("EventItemDrawer", () => {
       new ApiError(409, "item_in_use", "item_in_use"),
     );
     renderDrawer(giftbagItem);
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
@@ -162,6 +167,8 @@ describe("EventItemDrawer", () => {
   it("fires error toast for generic save failure", async () => {
     vi.mocked(updateEventItem).mockRejectedValueOnce(new Error("network error"));
     renderDrawer(giftbagItem);
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Gift bag " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(

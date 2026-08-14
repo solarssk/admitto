@@ -240,18 +240,40 @@
   margin-top: var(--space-3);
 }
 
-/* Stays a single row (Value | Key | Hint | Remove) at every width, including phones - the Value
-   dropdown's own label truncates with an ellipsis (searchable-select.css) and minmax(0, 1fr)
-   lets both text columns shrink past their content's natural size, so there's no need to fall
-   back to stacking the fields into separate rows on narrow screens. The hint icon's column is
-   always rendered (even for a row with no value picked yet, see the Tooltip's own `content`
-   fallback) so the Remove button's column position never shifts between rows. */
+/* A single row (Value | Key | Hint | Remove) down to tablet width - the Value dropdown's own
+   label truncates with an ellipsis (searchable-select.css) and minmax(0, 1fr) lets both text
+   columns shrink past their content's natural size. Below 767px the four columns can no longer
+   fit legibly (the source field name and the PassCreator key both truncate to nothing), so
+   .wallet-field-mapping__row-detail groups Key + Hint + Remove onto their own line under Value
+   (see the @media block below) - `display: contents` here keeps its three children as direct
+   grid items at this width so the desktop layout is unaffected. */
 .wallet-field-mapping__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
   align-items: start;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+.wallet-field-mapping__row-detail {
+  display: contents;
+}
+
+@media (max-width: 767px) {
+  .wallet-field-mapping__row {
+    grid-template-columns: 1fr;
+  }
+
+  .wallet-field-mapping__row-detail {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .wallet-field-mapping__row-detail .at-field {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 /* Hint icon renders with the same at-btn/at-btn--secondary classes as the Remove button beside

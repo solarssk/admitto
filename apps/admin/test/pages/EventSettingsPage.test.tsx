@@ -2406,6 +2406,10 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
 
   it("does not show the loading placeholder or hide existing rows during a same-event background refresh (no flicker)", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    // A successful ticket-type edit also re-syncs is_deletable/deletion_blockers in the
+    // background (refreshEventDeletionStatus) - queue the second fetchEventSettings call it
+    // makes, same event snapshot back since nothing about deletability changed here.
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
     vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
     let resolveRefresh!: (types: TicketTypeDto[]) => void;

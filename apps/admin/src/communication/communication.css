@@ -682,11 +682,17 @@
 }
 
 /* Icon-prefixed fields (email, time, template) - an icon per field disambiguates without a text
-   label that would wrap awkwardly on narrow cards (reports-log-card__meta-item convention). */
+   label that would wrap awkwardly on narrow cards (reports-log-card__meta-item convention).
+   min-width: 0 + max-width: 100% let a long value (typically the email) wrap inside its own
+   item instead of overflowing the card on narrow phones - the parent's flex-wrap only wraps
+   between items, not within one. */
 .communication-card__meta-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .communication-card__meta-item i {
@@ -698,6 +704,17 @@
   padding: var(--space-6);
   text-align: center;
   color: var(--text-muted);
+}
+
+/* The header's shared .at-card__header is nowrap by design - but the Delivery log card's title
+   plus its three actions (Clear filters, Export log, Live/Paused) genuinely don't fit on one
+   line under ~480px. Wrapping to a second line there is the lesser evil vs. clipping a button
+   off-screen (same fix already applied to Settings' Audit log card, staff.css). */
+@media (max-width: 480px) {
+  .communication-delivery-header .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+  }
 }
 
 /* Communication header: "Documentation" is a single short action, same shape as Reports'

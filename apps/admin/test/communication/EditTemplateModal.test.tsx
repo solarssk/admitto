@@ -91,6 +91,8 @@ describe("EditTemplateModal", () => {
       />,
     );
 
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Template label"), { target: { value: "Reminder!" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledTimes(1);
 

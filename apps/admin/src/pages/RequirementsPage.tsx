@@ -569,6 +569,7 @@ export function RequirementsPage() {
   return (
     <>
       <PageHeader
+        className="requirements-pageheader"
         title="Requirements"
         subtitle="Configure what this event issues to attendees and operational behaviour."
         actions={
