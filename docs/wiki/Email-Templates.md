@@ -48,7 +48,7 @@ Saving changes the source used for later previews, tests, initial sends, and res
 - **MJML or HTML validation failed:** read the listed errors and use [Advanced Email Templates](Advanced-Email-Templates).
 - **A variable is rejected:** use an exact variable offered by the editor.
 - **The QR does not render:** insert `qr_image_url` with the image chip and preview again.
-- **The Wallet badge does not open a pass when tested:** Wallet links only resolve once Wallet is turned on and configured for this event. Confirm that under Event settings → Wallet, then preview again; see [Template Variables](Template-Variables).
+- **The Wallet badge does not open a pass when tested:** that is expected. Preview and Send test always show a placeholder link, by design, no matter how this event's Wallet is configured. Only a real message sent to an attendee uses the actual link; see [Template Variables](Template-Variables).
 - **Test send fails:** check template validation first, then ask a Superadmin to review the effective mail transport.
 
 ## Related pages

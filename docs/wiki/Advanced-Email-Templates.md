@@ -37,7 +37,7 @@ The preview renders without validation errors, required ticket values are presen
 - MJML is compiled before sending. Invalid nesting, such as an image inside `<mj-text>`, can fail validation.
 - `ticket_url` and `qr_image_url` are required for a usable ticket message.
 - Unknown or malformed `{{placeholders}}` are rejected. Do not invent variable names.
-- Wallet chips insert a ready-to-use badge button. The link only resolves once Wallet is turned on and configured for this event.
+- Wallet chips insert a ready-to-use badge button. In Preview and Send test the link is always a placeholder, by design, since both use fixed sample data instead of this event's real configuration. In a real attendee message, the link resolves once Wallet is turned on and configured for this event.
 
 <details>
 <summary>Example MJML ticket section</summary>
@@ -67,7 +67,7 @@ Saving replaces the event template source used by later previews, tests, initial
 - **The preview is blank or incomplete:** confirm that the selected format matches the body.
 - **A required placeholder is missing:** insert it with the editor button and preview again.
 - **An image shows as text:** use the image placeholder button instead of typing the token as plain text.
-- **A wallet badge appears in preview but has no working link:** check that Wallet is turned on and configured for this event under Event settings → Wallet.
+- **A wallet badge appears in preview but has no working link:** that is expected. Preview always shows a placeholder wallet link, by design, regardless of this event's configuration. Send a real message to an attendee to see the actual link.
 - **The test succeeds but looks different in one client:** simplify the layout and test again; email clients support different subsets of HTML.
 
 ## Related pages
