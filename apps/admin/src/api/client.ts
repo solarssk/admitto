@@ -47,6 +47,12 @@ import type {
   BulkSendDryRunResponse,
   BulkSendQueuedResponse,
   BulkSendStatusResponse,
+  WalletMessageSendBody,
+  WalletMessageDryRunResponse,
+  WalletMessageQueuedResponse,
+  WalletMessageJobStatusResponse,
+  WalletMessageHistoryResponse,
+  WalletMessageAttendeeSearchResponse,
   RsvpStatus,
   TestSendBody,
   TemplateTestSendResponse,
@@ -1503,6 +1509,68 @@ export async function fetchBulkSendStatus(
     { credentials: "same-origin", signal },
   );
   return parseJson<BulkSendStatusResponse>(res);
+}
+
+/** Queue or dry-run a wallet message send for selected attendees (see BulkSendFilter's
+ * counterpart WalletMessageFilter - only "all"/"ticket_type"/"attendee_ids", server-scoped to
+ * attendees with an active wallet pass). */
+export async function sendWalletMessage(
+  eventId: string,
+  body: WalletMessageSendBody & { dryRun: true },
+): Promise<WalletMessageDryRunResponse>;
+export async function sendWalletMessage(
+  eventId: string,
+  body: Omit<WalletMessageSendBody, "dryRun"> & { dryRun?: false },
+): Promise<WalletMessageQueuedResponse>;
+export async function sendWalletMessage(
+  eventId: string,
+  body: WalletMessageSendBody,
+): Promise<WalletMessageDryRunResponse | WalletMessageQueuedResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/send`,
+    jsonPostInit(body),
+  );
+  return parseJson<WalletMessageDryRunResponse | WalletMessageQueuedResponse>(res);
+}
+
+/** Poll async wallet_message job status - enqueued by sendWalletMessage above. */
+export async function fetchWalletMessageJob(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<WalletMessageJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletMessageJobStatusResponse>(res);
+}
+
+/** Recent terminal wallet_message sends for this event. */
+export async function fetchWalletMessageHistory(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<WalletMessageHistoryResponse> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/history`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<WalletMessageHistoryResponse>(res);
+}
+
+/** Type-to-search attendees who currently have an active wallet pass - the search function the
+ * Wallets tab's AttendeePicker instance uses instead of the general fetchEventAttendees. */
+export async function fetchWalletMessageAttendees(
+  eventId: string,
+  params: { q: string; pageSize: number },
+  signal?: AbortSignal,
+): Promise<WalletMessageAttendeeSearchResponse> {
+  const query = new URLSearchParams({ q: params.q, pageSize: String(params.pageSize) });
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/attendees?${query.toString()}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletMessageAttendeeSearchResponse>(res);
 }
 
 /** Build query string for paginated event delivery log requests. */

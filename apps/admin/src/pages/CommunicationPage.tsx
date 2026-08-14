@@ -62,6 +62,7 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
+import { WalletsTab } from "../communication/WalletsTab.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { EditTemplateModal } from "../communication/EditTemplateModal.js";
 import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
@@ -1527,7 +1528,7 @@ function TestSendResultPreview({ status }: Readonly<{ status: TestSendStatus }>)
   );
 }
 
-const TAB_IDS = ["send", "templates", "log"] as const;
+const TAB_IDS = ["send", "wallets", "templates", "log"] as const;
 
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
@@ -2410,6 +2411,7 @@ export function CommunicationPage() {
         onChange={setTab}
         tabs={[
           { id: "send", label: "Send" },
+          { id: "wallets", label: "Wallets" },
           {
             id: "templates",
             label: isDirty ? "Templates *" : "Templates",
@@ -2458,6 +2460,12 @@ export function CommunicationPage() {
           onTestSend={handleTestSend}
           testStatus={testStatus}
         />
+      </div>
+
+      {/* Same reasoning as the Send tab above: keep mounted so an in-flight wallet-message send
+          poll survives a brief detour to another tab. */}
+      <div hidden={tab !== "wallets"}>
+        <WalletsTab event={event} eventId={eventId} />
       </div>
 
       {tab === "templates" && (

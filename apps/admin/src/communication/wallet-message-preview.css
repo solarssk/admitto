@@ -1,0 +1,105 @@
+.wallet-message-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Fixed dark colors, not theme tokens - this mocks an external device's lock screen, which
+   looks the same regardless of whether the admin app itself is in light or dark mode. */
+.wallet-message-preview__lockscreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6, 32px) var(--space-4);
+  border-radius: var(--radius-lg, 20px);
+  background: linear-gradient(160deg, #2b2f77 0%, #171a3d 55%, #05060f 100%);
+  color: #fff;
+}
+
+.wallet-message-preview__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.wallet-message-preview__time {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.wallet-message-preview__date {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.wallet-message-preview__notification {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 320px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(20px);
+  text-align: left;
+}
+
+.wallet-message-preview__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 18px;
+}
+
+.wallet-message-preview__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.wallet-message-preview__app-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 2px;
+}
+
+.wallet-message-preview__app-name {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.wallet-message-preview__now {
+  font-size: var(--fs-xs);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.wallet-message-preview__text {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.wallet-message-preview__placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.wallet-message-preview__caption {
+  font-size: var(--fs-xs);
+}
