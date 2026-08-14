@@ -62,6 +62,17 @@
   gap: var(--space-4);
 }
 
+/* A grid track's default min-width is `auto` (its content's intrinsic min-content width), not
+   0 - a long unbroken run of text (no spaces for the browser to break on) on one side makes
+   that track's min-content huge, which blows out its whole column and starves the other one,
+   even though overflow-wrap: break-word is set (it governs actual line-wrapping, not intrinsic
+   sizing, so it doesn't shrink min-content on its own). Forcing min-width: 0 here makes the grid
+   honor the explicit 1fr/1fr split regardless of content, which in turn gives break-word room to
+   actually wrap that content within its column instead of pushing the layout wide. */
+.communication-templates-split > * {
+  min-width: 0;
+}
+
 @media (max-width: 960px) {
   .communication-templates-split {
     grid-template-columns: 1fr;

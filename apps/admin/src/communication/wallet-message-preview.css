@@ -8,8 +8,12 @@
    out underneath - matches PassCreator's own push-notification preview. Fixed grays (not theme
    surface tokens) on all three layers since this mocks an OS notification stack, which looks
    the same regardless of Admitto's own light/dark theme. */
+/* Capped instead of stretching to fill a wide Preview column - a real lock-screen notification
+   wraps at roughly 70 characters per line at this font size, not however many characters a
+   desktop column happens to be wide enough for. */
 .wallet-message-preview__stack {
   position: relative;
+  max-width: 480px;
   padding-bottom: 10px;
 }
 
