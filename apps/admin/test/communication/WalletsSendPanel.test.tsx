@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletsSendPanel } from "../../src/communication/WalletsSendPanel.js";
 
 const sendWalletMessage = vi.fn();
@@ -29,6 +29,14 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+});
+
+// The "shows a retry control..." test below calls fetchTicketTypes.mockReset(), which wipes the
+// implementation entirely (not just call history, unlike vi.clearAllMocks() above) - restore the
+// module-scope defaults before every test so later tests don't inherit that reset state.
+beforeEach(() => {
+  fetchTicketTypes.mockResolvedValue([]);
+  fetchWalletMessageAttendees.mockResolvedValue({ items: [] });
 });
 
 describe("WalletsSendPanel", () => {
@@ -307,5 +315,209 @@ describe("WalletsSendPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => expect(fetchTicketTypes).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows a warning notice and reports the failed count when the job succeeds with some errors", async () => {
+    sendWalletMessage.mockResolvedValue({ jobId: "job-1", recipientCount: 5 });
+    fetchWalletMessageJob.mockResolvedValue({
+      jobId: "job-1",
+      status: "succeeded",
+      error: null,
+      progressTotal: 5,
+      progressDone: 5,
+      sent: 3,
+      skipped: 0,
+      errored: 2,
+      created_at: "2026-08-14T10:00:00.000Z",
+      started_at: "2026-08-14T10:00:00.000Z",
+    });
+
+    render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const notice = await screen.findByText("Sent to 3, 2 failed.");
+    expect(notice.closest(".at-notice--warning")).toBeTruthy();
+  });
+
+  it("falls back to a generic message when a failed job has no error detail", async () => {
+    sendWalletMessage.mockResolvedValue({ jobId: "job-1", recipientCount: 5 });
+    fetchWalletMessageJob.mockResolvedValue({
+      jobId: "job-1",
+      status: "failed",
+      error: null,
+      progressTotal: null,
+      progressDone: null,
+      sent: null,
+      skipped: null,
+      errored: null,
+      created_at: "2026-08-14T10:00:00.000Z",
+      started_at: null,
+    });
+
+    render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Send failed.")).toBeTruthy();
+  });
+
+  it("ignores a ticket-type fetch failure after the panel unmounts", async () => {
+    let rejectTypes: ((reason?: unknown) => void) | undefined;
+    fetchTicketTypes.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectTypes = reject;
+        }),
+    );
+
+    const { unmount } = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    await waitFor(() => expect(fetchTicketTypes).toHaveBeenCalled());
+    unmount();
+    await act(async () => {
+      rejectTypes?.(new Error("gone"));
+      await Promise.resolve();
+    });
+
+    // Cancelled path must not resurrect error UI after unmount.
+    expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+  });
+
+  it("ignores poll results and poll failures after the panel unmounts mid-send", async () => {
+    let resolveStatus: ((value: unknown) => void) | undefined;
+    let rejectStatus: ((reason?: unknown) => void) | undefined;
+    sendWalletMessage.mockResolvedValue({ jobId: "job-1", recipientCount: 2 });
+    fetchWalletMessageJob.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+
+    const first = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(fetchWalletMessageJob).toHaveBeenCalled());
+    first.unmount();
+    await act(async () => {
+      resolveStatus?.({
+        jobId: "job-1",
+        status: "succeeded",
+        error: null,
+        progressTotal: 2,
+        progressDone: 2,
+        sent: 2,
+        skipped: 0,
+        errored: 0,
+        created_at: "2026-08-14T10:00:00.000Z",
+        started_at: "2026-08-14T10:00:00.000Z",
+      });
+      await Promise.resolve();
+    });
+
+    fetchWalletMessageJob.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectStatus = reject;
+        }),
+    );
+    const second = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(fetchWalletMessageJob).toHaveBeenCalledTimes(2));
+    second.unmount();
+    await act(async () => {
+      rejectStatus?.(new Error("network"));
+      await Promise.resolve();
+    });
+  });
+
+  it("ignores a late dry-run count after the event changes mid-request", async () => {
+    let resolveDryRun: ((value: unknown) => void) | undefined;
+    sendWalletMessage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDryRun = resolve;
+        }),
+    );
+
+    const { rerender } = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => expect(sendWalletMessage).toHaveBeenCalled());
+
+    rerender(<WalletsSendPanel event={activeEvent} eventId="evt-2" text="Hi" />);
+
+    await act(async () => {
+      resolveDryRun?.({ recipientCount: 99 });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("99")).toBeNull();
+  });
+
+  it("ignores a late dry-run failure after the event changes mid-request", async () => {
+    let rejectDryRun: ((reason?: unknown) => void) | undefined;
+    sendWalletMessage.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectDryRun = reject;
+        }),
+    );
+
+    const { rerender } = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => expect(sendWalletMessage).toHaveBeenCalled());
+
+    rerender(<WalletsSendPanel event={activeEvent} eventId="evt-2" text="Hi" />);
+
+    await act(async () => {
+      rejectDryRun?.(new Error("stale failure"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("ignores a late send result after the event changes mid-send", async () => {
+    let resolveSend: ((value: unknown) => void) | undefined;
+    sendWalletMessage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+
+    const { rerender } = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(sendWalletMessage).toHaveBeenCalled());
+
+    rerender(<WalletsSendPanel event={activeEvent} eventId="evt-2" text="Hi" />);
+
+    await act(async () => {
+      resolveSend?.({ jobId: "job-stale", recipientCount: 7 });
+      await Promise.resolve();
+    });
+
+    expect(fetchWalletMessageJob).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+  });
+
+  it("ignores a late send failure after the event changes mid-send", async () => {
+    let rejectSend: ((reason?: unknown) => void) | undefined;
+    sendWalletMessage.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectSend = reject;
+        }),
+    );
+
+    const { rerender } = render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(sendWalletMessage).toHaveBeenCalled());
+
+    rerender(<WalletsSendPanel event={activeEvent} eventId="evt-2" text="Hi" />);
+
+    await act(async () => {
+      rejectSend?.(new Error("stale failure"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
