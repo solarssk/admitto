@@ -3,7 +3,7 @@ import { Button, Card, EmptyState, HintLabel, IconButton, Input, Notice, TICKET_
 import type { TicketTypeColor } from "@admitto/ui";
 import { ApiError, createTicketType, deleteTicketType, fetchTicketTypes, updateTicketType } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
+import type { EventSettingsDto, TicketTypeDto, UpdateTicketTypePatch } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
@@ -37,6 +37,21 @@ function isTicketTypeDirty(item: DraftTicketType, saved: TicketTypeDto[]): boole
   if (item.pending) return true;
   const original = saved.find((s) => s.id === item.id);
   return !original || original.label !== item.label || original.color !== item.color;
+}
+
+/** Only the fields this draft actually changed vs. `original` - never the untouched one, even
+ * though it's still sent along unchanged today. Otherwise, if another admin edits the same type
+ * between this card's load and Save, saving only a color change here would resend this card's own
+ * stale label and silently revert their edit (CodeRabbit review). */
+function buildTicketTypePatch(
+  item: DraftTicketType,
+  original: TicketTypeDto | undefined,
+): UpdateTicketTypePatch {
+  if (!original) return { label: item.label, color: item.color };
+  const patch: UpdateTicketTypePatch = {};
+  if (item.label !== original.label) patch.label = item.label;
+  if (item.color !== original.color) patch.color = item.color;
+  return patch;
 }
 
 function describeTicketTypeSaveError(label: string, err: unknown): string {
@@ -120,18 +135,24 @@ function TicketTypeRow({
   onLabelChange,
   onColorChange,
   onRemove,
+  onLocalDirtyChange,
 }: {
   readonly type: DraftTicketType;
   readonly disabled: boolean;
   readonly onLabelChange: (id: string, label: string) => void;
   readonly onColorChange: (id: string, color: TicketTypeColor) => void;
   readonly onRemove: () => void;
+  /** A typed-but-not-yet-blurred label edit doesn't reach `draft` (and so isn't reflected in the
+   * card's own dirty flag) until commitLabel runs - report it separately so the page's unsaved-
+   * changes guard still fires if the operator navigates away mid-edit (CodeRabbit review). */
+  readonly onLocalDirtyChange: (isDirty: boolean) => void;
 }) {
   const [label, setLabel] = useState(type.label);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => setLabel(type.label), [type.label]);
 
   function commitLabel() {
+    onLocalDirtyChange(false);
     const trimmed = label.trim();
     if (!trimmed || trimmed === type.label) {
       setLabel(type.label);
@@ -156,7 +177,10 @@ function TicketTypeRow({
             aria-label={`Ticket type label for ${type.label}`}
             value={label}
             disabled={disabled}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(e) => {
+              setLabel(e.target.value);
+              onLocalDirtyChange(e.target.value.trim() !== type.label);
+            }}
             onBlur={commitLabel}
             onKeyDown={(e) => {
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
@@ -190,10 +214,14 @@ function DraftTicketTypeRow({
   disabled,
   onCommit,
   onCancel,
+  onLocalDirtyChange,
 }: {
   readonly disabled: boolean;
   readonly onCommit: (label: string, color: TicketTypeColor) => void;
   readonly onCancel: () => void;
+  /** Same reasoning as TicketTypeRow's own prop - a typed-but-uncommitted name for a brand new
+   * type doesn't exist in `draft` at all yet, so it needs its own signal into the dirty flag. */
+  readonly onLocalDirtyChange: (isDirty: boolean) => void;
 }) {
   const [label, setLabel] = useState("");
   const [color, setColor] = useState<TicketTypeColor>("blue");
@@ -236,7 +264,10 @@ function DraftTicketTypeRow({
             placeholder="Type a name…"
             value={label}
             disabled={disabled}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(e) => {
+              setLabel(e.target.value);
+              onLocalDirtyChange(e.target.value.trim().length > 0);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -257,6 +288,10 @@ function nextPendingId(): string {
   return `pending-${pendingIdSeq}`;
 }
 
+/** Sentinel key for the new-type draft row's own uncommitted-input tracking (it has no ticket
+ * type id yet - see `uncommittedIds` below). */
+const DRAFT_ROW_KEY = "__new_ticket_type__";
+
 /** Event Settings tab: the only place a ticket type's name and color are set (batch 04 / #351).
  * Every other screen (add/edit attendee, import, filters, bulk-send, check-in, Reports) reads
  * this catalog through TicketTypeBadge's resolver instead of accepting free text.
@@ -275,13 +310,33 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<TicketTypeDto | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DraftTicketType | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBlockedByAttendees, setDeleteBlockedByAttendees] = useState(false);
+  // Ids (or DRAFT_ROW_KEY) of rows with a locally typed label that hasn't reached `draft` yet -
+  // see TicketTypeRow/DraftTicketTypeRow's onLocalDirtyChange.
+  const [uncommittedIds, setUncommittedIds] = useState<ReadonlySet<string>>(new Set());
   const disabled = event.status === "archived";
   const loadAbortRef = useRef<AbortController | null>(null);
   const validationErrorsRef = useRef<HTMLUListElement | null>(null);
+
+  const setRowUncommitted = useCallback((id: string, isDirty: boolean) => {
+    setUncommittedIds((prev) => {
+      if (prev.has(id) === isDirty) return prev;
+      const next = new Set(prev);
+      if (isDirty) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // The draft row itself unmounts as soon as it closes (commit, cancel, Escape, or Reset), so
+  // its own onBlur/onCancel can't reliably clear DRAFT_ROW_KEY first in every case - clear it
+  // centrally whenever draftOpen flips false instead.
+  useEffect(() => {
+    if (!draftOpen) setRowUncommitted(DRAFT_ROW_KEY, false);
+  }, [draftOpen, setRowUncommitted]);
 
   const load = useCallback(() => {
     loadAbortRef.current?.abort();
@@ -309,7 +364,7 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
     return () => loadAbortRef.current?.abort();
   }, [load]);
 
-  const dirty = draft.some((item) => isTicketTypeDirty(item, saved));
+  const dirty = uncommittedIds.size > 0 || draft.some((item) => isTicketTypeDirty(item, saved));
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -356,7 +411,7 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
       try {
         const result = item.pending
           ? await createTicketType(eventId, { label: item.label, color: item.color })
-          : await updateTicketType(eventId, item.id, { label: item.label, color: item.color });
+          : await updateTicketType(eventId, item.id, buildTicketTypePatch(item, original));
         nextDraft.push(result);
         nextSaved.push(result);
       } catch (err) {
@@ -380,10 +435,19 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
   function handleReset() {
     setDraft(saved);
     setDraftOpen(false);
+    setUncommittedIds(new Set());
   }
 
   async function handleDelete() {
     if (!deleteTarget) return;
+    // A pending row only exists in `draft` - it has no server id to delete and never reached the
+    // server in the first place, so just drop it from the draft instead of calling the API with
+    // an id that can't exist (CodeRabbit review).
+    if (deleteTarget.pending) {
+      setDraft((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     setDeleteError(null);
     setDeleteBlockedByAttendees(false);
@@ -462,6 +526,7 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
                       onLabelChange={(id, label) => updateDraft(id, { label })}
                       onColorChange={(id, color) => updateDraft(id, { color })}
                       onRemove={() => setDeleteTarget(type)}
+                      onLocalDirtyChange={(isDirty) => setRowUncommitted(type.id, isDirty)}
                     />
                   ))}
                   {draftOpen && (
@@ -469,6 +534,7 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
                       disabled={disabled || saving}
                       onCommit={commitDraftRow}
                       onCancel={() => setDraftOpen(false)}
+                      onLocalDirtyChange={(isDirty) => setRowUncommitted(DRAFT_ROW_KEY, isDirty)}
                     />
                   )}
                   {draft.length === 0 && !draftOpen && (

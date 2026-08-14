@@ -114,7 +114,9 @@ describe("TicketTypesCard", () => {
     vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, label: "VIP Gold" });
     fireEvent.click(saveButton());
 
-    await waitFor(() => expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold", color: "purple" }));
+    // Only the field this draft actually changed is sent - never the untouched color, so a
+    // concurrent edit to it by someone else can't be silently reverted (CodeRabbit review).
+    await waitFor(() => expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP Gold" }));
     await waitFor(() => expect(saveButton()).toHaveProperty("disabled", true));
   });
 
@@ -132,15 +134,20 @@ describe("TicketTypesCard", () => {
     expect(saveButton()).toHaveProperty("disabled", false);
   });
 
-  it("does not commit the label for a non-Enter key", async () => {
+  it("does not commit the label for a non-Enter key, but still marks the page dirty while it's typed", async () => {
     const { onDirtyChange } = renderCard([vipType]);
     const input = (await screen.findByDisplayValue("VIP")) as HTMLInputElement;
     input.focus();
     fireEvent.change(input, { target: { value: "VIP Gold" } });
     fireEvent.keyDown(input, { key: "Escape" });
 
-    expect(saveButton()).toHaveProperty("disabled", true);
-    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+    // Escape isn't handled here (only Enter/blur commit) - the typed text stays uncommitted...
+    expect(input.value).toBe("VIP Gold");
+    expect(updateTicketType).not.toHaveBeenCalled();
+    // ...but the page must already report unsaved changes so a reload/close warns and Reset can
+    // discard it - waiting for commit first would silently lose the edit (CodeRabbit review).
+    expect(saveButton()).toHaveProperty("disabled", false);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 
   it("Reset discards a pending label edit without ever calling updateTicketType", async () => {
@@ -170,7 +177,8 @@ describe("TicketTypesCard", () => {
 
     vi.mocked(updateTicketType).mockResolvedValueOnce({ ...vipType, color: "blue" });
     fireEvent.click(saveButton());
-    await waitFor(() => expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { label: "VIP", color: "blue" }));
+    // Only the field this draft actually changed is sent - never the untouched label.
+    await waitFor(() => expect(updateTicketType).toHaveBeenCalledWith("evt-1", "tt-vip", { color: "blue" }));
   });
 
   it("closes the color popover on outside click and on Escape", async () => {
@@ -244,6 +252,22 @@ describe("TicketTypesCard", () => {
 
     expect(screen.queryByDisplayValue("Staff")).toBeNull();
     expect(createTicketType).not.toHaveBeenCalled();
+  });
+
+  it("marks the page dirty while typing a new type's name, before it's committed to the draft", async () => {
+    const { onDirtyChange } = renderCard([vipType]);
+    await screen.findByDisplayValue("VIP");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+    const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Staff" } });
+
+    // Not yet queued as a pending row (still no server call)...
+    expect(createTicketType).not.toHaveBeenCalled();
+    // ...but the page must already report unsaved changes so a reload/close warns, even though
+    // the operator hasn't blurred or pressed Enter yet (CodeRabbit review).
+    expect(saveButton()).toHaveProperty("disabled", false);
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 
   it("commits the draft on Enter directly, without relying on blur", async () => {
@@ -422,6 +446,31 @@ describe("TicketTypesCard", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.queryByDisplayValue("VIP")).toBeNull();
       expect(saveButton()).toHaveProperty("disabled", true);
+    });
+
+    it("removes a not-yet-created pending row from the draft without calling deleteTicketType", async () => {
+      const { onDirtyChange } = renderCard([vipType]);
+      await screen.findByDisplayValue("VIP");
+
+      fireEvent.click(screen.getByRole("button", { name: "Add ticket type" }));
+      const input = screen.getByLabelText("New ticket type label") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "Staff" } });
+      fireEvent.blur(input);
+      expect(screen.getByDisplayValue("Staff")).toBeTruthy();
+      expect(saveButton()).toHaveProperty("disabled", false);
+
+      fireEvent.click(screen.getByRole("button", { name: "Remove Staff" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+      // A pending row has no server id yet - it must never reach deleteTicketType (which would
+      // fail against an id that can't exist), just drop straight out of the draft (CodeRabbit
+      // review).
+      expect(deleteTicketType).not.toHaveBeenCalled();
+      expect(screen.queryByDisplayValue("Staff")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // Removing it leaves the draft matching `saved` again (only the untouched VIP row remains).
+      await waitFor(() => expect(saveButton()).toHaveProperty("disabled", true));
+      expect(onDirtyChange).toHaveBeenLastCalledWith(false);
     });
 
     it("closes the delete confirm dialog on Cancel without calling deleteTicketType", async () => {
