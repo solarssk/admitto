@@ -1,9 +1,11 @@
 # Sending Wallet Messages
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.5.1
+| Field | Value |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Administrator |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 

@@ -1,9 +1,11 @@
 # Wallet Passes - PassCreator Template Setup
 
-> **Audience:** Superadmins
-> **Required role:** Superadmin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.14
+| Field | Value |
+|---|---|
+| **Audience** | Superadmins |
+| **Required role** | Superadmin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 

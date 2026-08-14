@@ -1,11 +1,13 @@
 # Admitto Documentation
 
-> **Audience:** All staff
-> **Required role:** Any staff role
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | All staff |
+| **Required role** | Any staff role |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
-Admitto helps event teams prepare attendees, send tickets, and run check-in.
+Admitto helps event teams prepare attendee lists, send tickets, and run check-in.
 
 ## Find your starting point
 
@@ -15,8 +17,8 @@ Admitto helps event teams prepare attendees, send tickets, and run check-in.
 | Prepare attendee data | [Importing Attendees](Importing-Attendees) and the [Import File Reference](Import-File-Reference) |
 | Create event messages | [Email Templates](Email-Templates) and [Sending Messages and Delivery](Sending-Tickets-and-Delivery) |
 | Push a wallet notification | [Sending Wallet Messages](Sending-Wallet-Messages) |
-| Work at the entrance | [Operator Quick Start](Operator-Quick-Start) |
-| Administer an organisation | [Organisation Administration](Organisation-Administration) |
+| Admit attendees at the entrance | [Operator Quick Start](Operator-Quick-Start) |
+| Administer an organisation's events | [Organisation Administration](Organisation-Administration) |
 | Manage the Admitto instance | [Superadmin Quick Start](Superadmin-Quick-Start) |
 
 ## The event journey
