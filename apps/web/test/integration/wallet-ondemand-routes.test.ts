@@ -37,6 +37,7 @@ function stubProvider(): WalletPassProvider & {
       androidUrl: "https://pc.test/android/x",
     })),
     updatePass: vi.fn(),
+    sendPushMessage: vi.fn(),
     voidPass: vi.fn(),
     restorePass: vi.fn(),
     deletePass: vi.fn(),
