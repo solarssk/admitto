@@ -1,7 +1,7 @@
 .wallet-message-preview {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 /* Wraps .__card so its ::before/::after can sit behind it as a stack of notifications peeking

@@ -3978,6 +3978,12 @@ output.mail-field-hint {
   display: block;
 }
 
+/* Escalates a hint to a warning tone (e.g. WalletsTab's over-length notice) without
+   changing its layout - same box, just the color. */
+.mail-field-hint--warning {
+  color: var(--status-warn-fg);
+}
+
 .mail-transport__desc,
 .mail-transport__env-note {
   margin: 0 0 var(--space-3);

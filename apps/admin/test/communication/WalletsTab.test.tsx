@@ -2,7 +2,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WalletsTab } from "../../src/communication/WalletsTab.js";
-import { WALLET_MESSAGE_TEXT_MAX_LENGTH } from "../../src/communication/walletMessageLimits.js";
+import {
+  WALLET_MESSAGE_TEXT_MAX_LENGTH,
+  WALLET_MESSAGE_TRUNCATION_WARNING_LENGTH,
+} from "../../src/communication/walletMessageLimits.js";
 
 vi.mock("../../src/communication/WalletMessagePreview.js", () => ({
   WalletMessagePreview: ({ text }: { text: string }) => <div data-testid="preview">{text}</div>,
@@ -36,6 +39,19 @@ describe("WalletsTab", () => {
     rerender(<WalletsTab event={activeEvent} eventId="evt-2" />);
 
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("warns once the message passes the truncation-risk length, and clears the warning below it", () => {
+    render(<WalletsTab event={activeEvent} eventId="evt-1" />);
+    const field = screen.getByLabelText("Message");
+
+    const short = "a".repeat(WALLET_MESSAGE_TRUNCATION_WARNING_LENGTH);
+    fireEvent.change(field, { target: { value: short } });
+    expect(screen.queryByText(/may be cropped/)).toBeNull();
+
+    const long = "a".repeat(WALLET_MESSAGE_TRUNCATION_WARNING_LENGTH + 1);
+    fireEvent.change(field, { target: { value: long } });
+    expect(screen.getByText(/may be cropped on some lock screens/)).toBeTruthy();
   });
 
   it("disables the message field for an archived event (via its wrapping fieldset)", () => {

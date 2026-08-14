@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Card, Notice } from "@admitto/ui";
-import { WALLET_MESSAGE_TEXT_MAX_LENGTH } from "./walletMessageLimits.js";
+import {
+  WALLET_MESSAGE_TEXT_MAX_LENGTH,
+  WALLET_MESSAGE_TRUNCATION_WARNING_LENGTH,
+} from "./walletMessageLimits.js";
 import { WalletMessagePreview } from "./WalletMessagePreview.js";
 import { WalletsSendPanel } from "./WalletsSendPanel.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
@@ -26,6 +29,7 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
   }, [eventId]);
 
   const remaining = WALLET_MESSAGE_TEXT_MAX_LENGTH - text.length;
+  const overSoftLimit = text.length > WALLET_MESSAGE_TRUNCATION_WARNING_LENGTH;
 
   return (
     <div className="communication-send-tab">
@@ -52,7 +56,13 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
             </fieldset>
             {/* remaining can't go negative: the textarea's own maxLength already stops
                 typed/pasted input from exceeding WALLET_MESSAGE_TEXT_MAX_LENGTH. */}
-            <p className="mail-field-hint">{remaining} characters remaining</p>
+            <p
+              className={overSoftLimit ? "mail-field-hint mail-field-hint--warning" : "mail-field-hint"}
+              role={overSoftLimit ? "alert" : undefined}
+            >
+              {remaining} characters remaining
+              {overSoftLimit && " — long messages may be cropped on some lock screens"}
+            </p>
           </div>
         </Card>
 
