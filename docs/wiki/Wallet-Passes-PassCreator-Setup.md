@@ -60,3 +60,4 @@ Event Settings → Wallet has a separate **Semantic tags** switch next to Apple 
 
 - [Wallet Passes Overview](Wallet-Passes-Overview) - what the wallet integration supports overall, and where each piece is configured
 - [Event Overview and Settings](Event-Overview-and-Settings)
+- [Sending Wallet Messages](Sending-Wallet-Messages)

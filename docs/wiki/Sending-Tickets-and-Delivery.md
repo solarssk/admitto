@@ -57,3 +57,4 @@ Sending creates delivery records and can issue the attendee's ticket when needed
 - [Email Templates](Email-Templates)
 - [Email Delivery Statuses](Email-Delivery-Statuses)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
+- [Sending Wallet Messages](Sending-Wallet-Messages)

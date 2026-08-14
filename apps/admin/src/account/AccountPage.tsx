@@ -541,7 +541,10 @@ export function AccountPage() {
         </p>
       )}
       {!account.has_local_password ? (
-        <p className="account-info-block">Password is managed by your identity provider.</p>
+        <EmptyState
+          icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
+          title="Password is managed by your identity provider"
+        />
       ) : (
         <>
           {account.must_change_password && (
@@ -797,24 +800,30 @@ export function AccountPage() {
 
   function renderTwoFactorCard() {
     if (!account) return null;
+    if (!account.has_local_password) {
+      // Sign-in-only accounts can't reach Set up/Reset (both require a local password, see
+      // renderMfaMethodsList) or the enrollment/reset forms those buttons open - the methods
+      // list itself is dropped too, so this is the card's only content, not a note above it.
+      return (
+        <Card title="Two-factor authentication">
+          <EmptyState
+            icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
+            title={totpEnrolled ? "Two-factor reset requires a local password" : "Two-factor setup requires a local password"}
+            description={
+              totpEnrolled
+                ? "Sign-in-only accounts must contact an administrator."
+                : "Sign-in-only accounts must use their identity provider or contact an administrator."
+            }
+          />
+        </Card>
+      );
+    }
     return (
       <Card title="Two-factor authentication">
           {/* Methods list — visible only when no active form */}
           {renderMfaMethodsList()}
-
-          {!totpEnrolled && !enrollData && !account.has_local_password && (
-            <p className="account-info-block" style={{ marginTop: "var(--space-3)" }}>
-              Two-factor setup requires a local password. Sign-in-only accounts must use their identity provider or contact an administrator.
-            </p>
-          )}
-
           {renderMfaEnrollment()}
           {renderMfaResetFields()}
-          {totpEnrolled && !account.has_local_password && (
-            <p className="account-info-block">
-              Two-factor reset requires a local password. Sign-in-only accounts must contact an administrator.
-            </p>
-          )}
           {/* Action footer — aligned to card bottom alongside "Change password" */}
           {enrollData && (
             <div className="mail-transport-footer">
@@ -1190,12 +1199,16 @@ export function AccountPage() {
               setUnlinkSsoError("Current password is incorrect.");
             } else if (hasApiErrorCode(err, "provider_managed_roles_exist")) {
               setUnlinkSsoOpen(false);
+              setUnlinkSsoPassword("");
+              setUnlinkSsoCurrentPassword("");
               addToast(
                 "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
                 "error",
               );
             } else if (hasApiErrorCode(err, "insufficient_verification")) {
               setUnlinkSsoOpen(false);
+              setUnlinkSsoPassword("");
+              setUnlinkSsoCurrentPassword("");
               addToast(
                 "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
                 "error",

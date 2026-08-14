@@ -126,8 +126,13 @@ export { drainExportJobs } from "./drain-export-jobs.js";
 export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
 export { formatDate, resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
+export { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 export { drainWalletPushJobs } from "./drain-wallet-push-jobs.js";
 export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
+export { loadWalletMessageTargets } from "./send-wallet-message.js";
+export type { SendWalletMessageTarget } from "./send-wallet-message.js";
+export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
+export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";
 export {
   reclaimStaleExportJobs,
   parseExportJobStaleRunningMs,

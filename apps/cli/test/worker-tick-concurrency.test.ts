@@ -31,6 +31,12 @@ const drainImportJobs = deferredJob("import", 10, {
 });
 const drainExportJobs = deferredJob("export", 10);
 const drainWalletPushJobs = deferredJob("wallet_push", 10, { claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
+const drainWalletMessageJobs = deferredJob("wallet_message", 10, {
+  claimed: 0,
+  succeeded: 0,
+  failed: 0,
+  reclaimed: 0,
+});
 const ingestBounces = deferredJob("bounce", 10);
 const runWalletRegistrationSync = deferredJob("wallet_sync", 10);
 
@@ -59,6 +65,7 @@ vi.mock("../src/lib/sse-publish.js", () => ({
 }));
 vi.mock("../src/commands/export-jobs.js", () => ({ drainExportJobs }));
 vi.mock("../src/commands/wallet-push-jobs.js", () => ({ drainWalletPushJobs }));
+vi.mock("../src/commands/wallet-message-jobs.js", () => ({ drainWalletMessageJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
@@ -81,11 +88,12 @@ const { runWorker, runWorkerTick } = await import("../src/commands/worker.js");
 const { createRetentionSchedule } = await import("../src/commands/worker-retention-schedule.js");
 
 describe("runWorkerTick", () => {
-  it("runs mail_delivery, import, export, wallet_push, bounce, and wallet_sync concurrently", async () => {
+  it("runs mail_delivery, import, export, wallet_push, wallet_message, bounce, and wallet_sync concurrently", async () => {
     for (const key of Object.keys(starts)) delete starts[key];
     for (const key of Object.keys(finishes)) delete finishes[key];
     drainImportJobs.mockClear();
     drainWalletPushJobs.mockClear();
+    drainWalletMessageJobs.mockClear();
 
     await runWorkerTick({} as never, fakeLocks() as never, createRetentionSchedule());
 
@@ -95,6 +103,7 @@ describe("runWorkerTick", () => {
     expect(starts["export"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["import"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["wallet_push"]).toBeLessThan(finishes["mail_delivery"]);
+    expect(starts["wallet_message"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["bounce"]).toBeLessThan(finishes["mail_delivery"]);
     expect(starts["wallet_sync"]).toBeLessThan(finishes["mail_delivery"]);
   });

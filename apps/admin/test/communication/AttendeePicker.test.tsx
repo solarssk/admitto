@@ -269,4 +269,49 @@ describe("AttendeePicker", () => {
     await waitFor(() => expect(screen.queryByText("Searching…")).toBeNull());
     expect(screen.queryByRole("list", { name: "Attendee suggestions" })).toBeNull();
   });
+
+  it("gives two simultaneously-rendered instances distinct input ids - CommunicationPage keeps the Send and Wallets tabs both mounted (hidden, not unmounted) while an operator might have 'Specific attendees' selected on each", () => {
+    render(
+      <>
+        <AttendeePicker eventId="evt-1" selected={[]} onChange={() => {}} />
+        <AttendeePicker eventId="evt-1" selected={[]} onChange={() => {}} />
+      </>,
+    );
+
+    const inputs = screen.getAllByLabelText("Search attendees") as HTMLInputElement[];
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0].id).not.toBe("");
+    expect(inputs[0].id).not.toBe(inputs[1].id);
+  });
+
+  it("uses a caller-supplied searchFn instead of fetchEventAttendees when provided, for a narrower row type", async () => {
+    type WalletAttendee = { id: string; name: string; email: string };
+    const walletSearchFn = vi.fn(
+      async (): Promise<{ items: WalletAttendee[] }> => ({
+        items: [{ id: "att-9", name: "Wally Wallet", email: "wally@example.com" }],
+      }),
+    );
+
+    function WalletHarness() {
+      const [selected, setSelected] = useState<WalletAttendee[]>([]);
+      return (
+        <AttendeePicker<WalletAttendee>
+          eventId="evt-1"
+          selected={selected}
+          onChange={setSelected}
+          searchFn={walletSearchFn}
+        />
+      );
+    }
+
+    render(<WalletHarness />);
+    fireEvent.change(screen.getByLabelText("Search attendees"), { target: { value: "wally" } });
+
+    await waitFor(() =>
+      expect(walletSearchFn).toHaveBeenCalledWith("evt-1", { q: "wally", pageSize: 10 }),
+    );
+    expect(fetchEventAttendees).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: /Wally Wallet/ }));
+    expect(screen.getByText("Wally Wallet")).toBeTruthy();
+  });
 });

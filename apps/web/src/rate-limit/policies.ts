@@ -92,6 +92,23 @@ export function adminUserEventKey(c: Context, scope: string): string {
     : `admin:${scope}:ip:${resolveClientIp(c)}:event:${eventId}`;
 }
 
+/** Shared shape for a per-user-per-event polling GET (job-status endpoints, ~2s interval) -
+ * factored out once a third near-identical entry (wallet-message-job-status, alongside
+ * import-job-status and wallet-push-job-status) would otherwise token-duplicate the other two,
+ * tripping SonarCloud's new-code duplication gate. */
+function pollingJobStatusPolicy(scope: RateLimitScope, keyHint: string): RatePolicy {
+  return {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, keyHint),
+        windowMs: 60_000,
+        max: 120,
+        logOnExceeded: { scope, keyHint: "user_event" },
+      },
+    ],
+  };
+}
+
 function checkinRateLimitKey(c: Context, kind: CheckinRateLimitKind): string {
   if (c.get("checkinAuth") === "bearer") {
     return `checkin:${kind}:bearer:ip:${resolveClientIp(c)}`;
@@ -330,6 +347,27 @@ export const RATE_POLICIES = {
         windowMs: 60_000,
         max: 120,
         logOnExceeded: { scope: "admin_wallet_push_job_status", keyHint: "user_event" },
+      },
+    ],
+  },
+  /** Polling GET …/wallet-message/jobs/:jobId - same budget class as wallet-push-job-status. */
+  "admin:wallet-message-job-status": pollingJobStatusPolicy(
+    "admin_wallet_message_job_status",
+    "wallet-message-job-status",
+  ),
+  /** POST …/wallet-message/send handles both dry-run (recipient count) and the real send -
+   * dry-run is exempted via skipWalletMessageRateLimitForDryRun so adjusting filters while
+   * composing stays responsive; the real send itself is tightly bounded. Less strict than mail's
+   * admin:resend-bulk (3/10min) since a wallet push carries no email deliverability/spam-
+   * reputation risk, but still bounded against accidental or abusive repeat sends. */
+  "admin:wallet-message-send": {
+    checks: [
+      {
+        when: (c) => c.get("walletMessageDryRun") !== true,
+        keyOf: (c) => adminUserEventKey(c, "wallet-message-send"),
+        windowMs: 600_000,
+        max: 10,
+        logOnExceeded: { scope: "admin_wallet_message_send", keyHint: "user_event" },
       },
     ],
   },

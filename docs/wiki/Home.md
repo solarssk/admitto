@@ -16,6 +16,7 @@ Admitto helps event teams prepare attendee lists, send tickets, and run check-in
 | Organise an event | [First Event Checklist](First-Event-Checklist) |
 | Prepare attendee data | [Importing Attendees](Importing-Attendees) and the [Import File Reference](Import-File-Reference) |
 | Create event messages | [Email Templates](Email-Templates) and [Sending Messages and Delivery](Sending-Tickets-and-Delivery) |
+| Push a wallet notification | [Sending Wallet Messages](Sending-Wallet-Messages) |
 | Admit attendees at the entrance | [Operator Quick Start](Operator-Quick-Start) |
 | Administer an organisation's events | [Organisation Administration](Organisation-Administration) |
 | Manage the Admitto instance | [Superadmin Quick Start](Superadmin-Quick-Start) |

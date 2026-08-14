@@ -21,6 +21,7 @@ import {
   handleDeleteAttendeeNote,
   handlePatchAttendeeNote,
 } from "../../src/admin/attendees-api-routes.js";
+import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-message-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -6621,6 +6622,189 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
 
     const body = (await res.json()) as { items: Array<{ created_at: string }> };
     expect(body.items[0]!.created_at).toBe(createdAt.toISOString());
+  });
+});
+
+/** Route-wiring coverage for the four wallet-message endpoints (app.ts) - the handler logic
+ * itself is unit-tested in wallet-message-routes.test.ts against a mocked db; this only proves
+ * each route is actually reachable through the real app (auth gate, path, middleware order). */
+describe("wallet-message routes — POST send, GET jobs/:jobId, GET history, GET attendees", () => {
+  const WALLET_MESSAGE_EVENT = "evt-admin-att-wallet-message";
+  const WALLET_MESSAGE_ATTENDEE = "att-admin-att-wallet-message";
+
+  beforeAll(async () => {
+    await prisma.event.create({
+      data: {
+        id: WALLET_MESSAGE_EVENT,
+        title: "Wallet Message Event",
+        slug: "wallet-message-event",
+        date: new Date("2026-09-01"),
+        organization_id: ORG_A,
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: WALLET_MESSAGE_ATTENDEE,
+        event_id: WALLET_MESSAGE_EVENT,
+        email: "wallet-message-attendee@example.com",
+        name: "Wallet Message Attendee",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: WALLET_MESSAGE_ATTENDEE,
+        provider: "passcreator",
+        provider_pass_id: `pc-${WALLET_MESSAGE_ATTENDEE}`,
+        status: "active",
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: WALLET_MESSAGE_EVENT, type: "wallet_message" } });
+    await prisma.walletPass.deleteMany({ where: { attendee_id: WALLET_MESSAGE_ATTENDEE } });
+    await prisma.attendee.deleteMany({ where: { id: WALLET_MESSAGE_ATTENDEE } });
+    await prisma.event.deleteMany({ where: { id: WALLET_MESSAGE_EVENT } });
+  });
+
+  it("dry-run counts recipients without creating a job, then a real send enqueues one", async () => {
+    const dryRun = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ filter: { type: "all" }, dryRun: true }),
+    });
+    expect(dryRun.status).toBe(200);
+    expect(await dryRun.json()).toEqual({ recipientCount: 1 });
+
+    const sent = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ filter: { type: "all" }, text: "Doors open at 6pm." }),
+    });
+    expect(sent.status).toBe(200);
+    const body = (await sent.json()) as { jobId: string | null; recipientCount: number };
+    expect(body.recipientCount).toBe(1);
+    expect(body.jobId).toBeTruthy();
+
+    const job = await prisma.adminJob.findUnique({ where: { id: body.jobId! } });
+    expect(job?.type).toBe("wallet_message");
+    expect(job?.status).toBe("pending");
+  });
+
+  it("returns 403 for an operator on send", async () => {
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: opCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ filter: { type: "all" }, dryRun: true }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET jobs/:jobId surfaces a queued job's status", async () => {
+    const job = await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "pending",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        result_json: {
+          request: { eventId: WALLET_MESSAGE_EVENT, attendeeIds: [WALLET_MESSAGE_ATTENDEE], text: "Hi" },
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/jobs/${job.id}`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(await res.json()).toMatchObject({ jobId: job.id, status: "pending" });
+  });
+
+  it("GET history returns only terminal jobs", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: WALLET_MESSAGE_EVENT, type: "wallet_message" } });
+    await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "succeeded",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        result_json: { sent: 1, skipped: 0, errored: 0 },
+        finished_at: new Date(),
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({ status: "succeeded", sent: 1 });
+  });
+
+  it("GET history ranks a job that never got a finished_at after a genuinely recent one", async () => {
+    // Postgres puts nulls first on a bare `finished_at DESC` - without nulls:"last" this legacy
+    // (pre-backfill) null-finished_at job would wrongly rank ahead of the one that actually
+    // finished most recently.
+    await prisma.adminJob.deleteMany({ where: { event_id: WALLET_MESSAGE_EVENT, type: "wallet_message" } });
+    const legacyNullFinished = await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "failed",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        error: "wallet_not_configured",
+        created_at: new Date("2026-01-01T00:00:00Z"),
+        finished_at: null,
+      },
+    });
+    const recentlyFinished = await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "succeeded",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        result_json: { sent: 1, skipped: 0, errored: 0 },
+        created_at: new Date("2026-08-01T00:00:00Z"),
+        finished_at: new Date("2026-08-01T00:01:00Z"),
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.map((item) => item.id)).toEqual([recentlyFinished.id, legacyNullFinished.id]);
+  });
+
+  it("rejects an oversized send body before it ever reaches the handler", async () => {
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        filter: { type: "all" },
+        text: "x".repeat(WALLET_MESSAGE_SEND_BODY_MAX_BYTES),
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "request too large" });
+  });
+
+  it("GET attendees searches only wallet-pass holders by name", async () => {
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/attendees?q=Wallet`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.map((i) => i.id)).toEqual([WALLET_MESSAGE_ATTENDEE]);
   });
 });
 

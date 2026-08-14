@@ -15,6 +15,7 @@ export const WORKER_LOCK_KEYS = {
   export: "admitto:worker:export",
   wallet_sync: "admitto:worker:wallet_sync",
   wallet_push: "admitto:worker:wallet_push",
+  wallet_message: "admitto:worker:wallet_message",
 } as const;
 
 export type WorkerLockJob = keyof typeof WORKER_LOCK_KEYS;

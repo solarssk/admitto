@@ -62,6 +62,7 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
+import { WalletsTab } from "../communication/WalletsTab.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { EditTemplateModal } from "../communication/EditTemplateModal.js";
 import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
@@ -686,11 +687,6 @@ function SendTab({
   senderName,
   senderAddress,
   onPreview,
-  testEmail,
-  setTestEmail,
-  testSending,
-  onTestSend,
-  testStatus,
 }: Readonly<{
   event: EventDto;
   templates: MailTemplateListItem[];
@@ -713,11 +709,6 @@ function SendTab({
   senderName: string | null;
   senderAddress: string | null;
   onPreview: () => Promise<void>;
-  testEmail: string;
-  setTestEmail: Dispatch<SetStateAction<string>>;
-  testSending: boolean;
-  onTestSend: () => Promise<void>;
-  testStatus: TestSendStatus | null;
 }>) {
   // Preview the *saved* template when this tab is shown (or when that saved snapshot changes).
   // Skip while inactive so a Templates-tab draft preview is not overwritten in the background.
@@ -738,7 +729,7 @@ function SendTab({
         <Card
           title={
             <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
-              Message
+              Email message
             </HintLabel>
           }
         >
@@ -786,18 +777,6 @@ function SendTab({
         snapshotMissing={editorSnapshotMissing}
         isDirty={isDirty}
       />
-
-      {isActive && (
-        <SendTestCard
-          event={event}
-          testEmail={testEmail}
-          setTestEmail={setTestEmail}
-          testSending={testSending}
-          editorSnapshotMissing={editorSnapshotMissing}
-          onTestSend={onTestSend}
-          testStatus={testStatus}
-        />
-      )}
     </div>
   );
 }
@@ -1527,7 +1506,7 @@ function TestSendResultPreview({ status }: Readonly<{ status: TestSendStatus }>)
   );
 }
 
-const TAB_IDS = ["send", "templates", "log"] as const;
+const TAB_IDS = ["send", "wallets", "templates", "log"] as const;
 
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
@@ -2409,7 +2388,8 @@ export function CommunicationPage() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "send", label: "Send" },
+          { id: "send", label: "Email" },
+          { id: "wallets", label: "Wallets" },
           {
             id: "templates",
             label: isDirty ? "Templates *" : "Templates",
@@ -2452,12 +2432,13 @@ export function CommunicationPage() {
           senderName={senderName}
           senderAddress={senderAddress}
           onPreview={handleSendPreview}
-          testEmail={testEmail}
-          setTestEmail={setTestEmail}
-          testSending={testSending}
-          onTestSend={handleTestSend}
-          testStatus={testStatus}
         />
+      </div>
+
+      {/* Same reasoning as the Send tab above: keep mounted so an in-flight wallet-message send
+          poll survives a brief detour to another tab. */}
+      <div hidden={tab !== "wallets"}>
+        <WalletsTab event={event} eventId={eventId} />
       </div>
 
       {tab === "templates" && (
