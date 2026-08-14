@@ -875,7 +875,7 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
       <EmptyState
         icon={<i className="ti ti-history" aria-hidden="true" />}
         title="No wallet pushes yet"
-        description="Pushes appear here once a wallet-relevant change is saved for this event."
+        description="Pushes appear here after a bulk wallet push for this event, such as a ticket-type change."
       />
     );
   } else {

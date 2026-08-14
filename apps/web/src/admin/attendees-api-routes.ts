@@ -1716,7 +1716,14 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       walletPassMaybeStale = true;
     }
     if (profileChanges?.fields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) {
-      await pushWalletUpdateOnAttendeeChangeBestEffort(db, c, eventId, attendeeId, profileChanges.fields);
+      await pushWalletUpdateOnAttendeeChangeBestEffort(
+        db,
+        c,
+        eventId,
+        attendeeId,
+        profileChanges.fields,
+        statusChange === "revoked",
+      );
       walletPassMaybeStale = true;
     }
     if (walletPassMaybeStale) {
@@ -1914,6 +1921,14 @@ const WALLET_RELEVANT_ATTENDEE_FIELDS: ReadonlySet<string> = new Set([
  * after the caller's own DB transaction has committed, same posture as
  * syncWalletPassOnStatusChangeBestEffort above.
  *
+ * `justVoidedThisRequest` overrides the active-only gate: when the very same PATCH also set
+ * status: revoked, syncWalletPassOnStatusChangeBestEffort above already flipped the pass to
+ * voided before this function re-reads it, so the plain active check would silently drop the
+ * content change instead of just skipping a no-op push. updatePass only ever touches content,
+ * never the voided flag (see reissueOneWalletPass), so pushing here is safe and keeps the pass
+ * accurate for whenever it's later restored, rather than leaving stale name/company/etc. behind
+ * for a status-only restore to (not) fix (bot review, Codex).
+ *
  * Self-gates on `changedFields` (bot review) rather than trusting the caller to have already
  * filtered - the call site below also checks this first to skip the call (and the response's
  * wallet_pass re-read) entirely on a no-op-for-wallet-purposes patch, but a future caller must
@@ -1927,6 +1942,7 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
   eventId: string,
   attendeeId: string,
   changedFields: readonly string[],
+  justVoidedThisRequest: boolean,
 ): Promise<void> {
   if (!changedFields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) return;
 
@@ -1946,7 +1962,8 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
         select: { provider_pass_id: true, status: true },
       }),
     ]);
-    if (!event || !walletPass?.provider_pass_id || walletPass.status !== "active") return;
+    if (!event || !walletPass?.provider_pass_id) return;
+    if (walletPass.status !== "active" && !justVoidedThisRequest) return;
 
     const provider = resolveWalletProvider({
       walletEnabled: event.wallet_enabled,

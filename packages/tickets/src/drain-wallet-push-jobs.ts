@@ -29,6 +29,9 @@ export const STALE_WALLET_PUSH_JOB_ERROR =
   "Wallet push job abandoned (worker stopped while running). Start it again.";
 export const STALE_WALLET_PUSH_PENDING_ERROR =
   "Wallet push job was never picked up by the worker. Start the worker and try again.";
+export const WALLET_PUSH_JOB_BAD_REQUEST_ERROR = "Wallet push job has an invalid request payload.";
+export const WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR = "Wallet is not configured for this event.";
+export const WALLET_PUSH_JOB_GENERIC_ERROR = "Wallet push failed unexpectedly. Contact support if this continues.";
 
 export type DrainWalletPushJobsResult = {
   claimed: number;
@@ -103,13 +106,28 @@ async function loadTargets(
   return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
 }
 
+/** Maps the two deliberately-thrown internal signals in runOneWalletPushJob below to their
+ * operator-facing copy, and everything else (an unexpected database, crypto, or provider
+ * exception) to one generic fixed message - AdminJob.error is read verbatim by both the polling
+ * toast and the Wallet push history table, so it must never carry raw exception text (AGENTS.md's
+ * "Admin API errors in the UI" convention, applied here at the point the message is stored rather
+ * than where it's displayed; bot review, Codex). The real error is still logged server-side. */
+function walletPushJobErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message === "wallet_push_job_bad_request") return WALLET_PUSH_JOB_BAD_REQUEST_ERROR;
+    if (err.message === "wallet_not_configured") return WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR;
+  }
+  return WALLET_PUSH_JOB_GENERIC_ERROR;
+}
+
 async function markWalletPushFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
+  console.error("wallet push job failed:", err);
   await db.adminJob.update({
     where: { id: jobId },
     data: {
       status: "failed",
       finished_at: new Date(),
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 2000),
+      error: walletPushJobErrorMessage(err),
     },
   });
 }

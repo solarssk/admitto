@@ -19,6 +19,9 @@ import {
   reclaimStaleWalletPushJobs,
   STALE_WALLET_PUSH_PENDING_ERROR,
   WALLET_PUSH_CONCURRENCY,
+  WALLET_PUSH_JOB_BAD_REQUEST_ERROR,
+  WALLET_PUSH_JOB_GENERIC_ERROR,
+  WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR,
 } from "../src/drain-wallet-push-jobs.js";
 
 const fakeProvider = { provider: "stub" };
@@ -202,7 +205,7 @@ describe("drainWalletPushJobs", () => {
     expect(reissueOneWalletPass).not.toHaveBeenCalled();
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wp-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_not_configured" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR },
     });
   });
 
@@ -214,7 +217,7 @@ describe("drainWalletPushJobs", () => {
     expect(result.failed).toBe(1);
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wp-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_push_job_bad_request" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_PUSH_JOB_BAD_REQUEST_ERROR },
     });
   });
 
@@ -234,7 +237,7 @@ describe("drainWalletPushJobs", () => {
     expect(result.failed).toBe(1);
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wp-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_push_job_bad_request" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_PUSH_JOB_BAD_REQUEST_ERROR },
     });
   });
 
@@ -248,7 +251,7 @@ describe("drainWalletPushJobs", () => {
     expect(resolveWalletProvider).not.toHaveBeenCalled();
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wp-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_not_configured" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR },
     });
   });
 
@@ -269,7 +272,7 @@ describe("drainWalletPushJobs", () => {
     );
   });
 
-  it("stringifies a non-Error rejection instead of crashing when marking the job failed", async () => {
+  it("maps a non-Error rejection to the generic fixed message instead of crashing when marking the job failed", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     db.adminJob.update.mockRejectedValueOnce("raw string failure");
 
@@ -279,7 +282,7 @@ describe("drainWalletPushJobs", () => {
     const finalCall = db.adminJob.update.mock.calls.find(
       (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
     );
-    expect(finalCall![0]).toMatchObject({ data: { error: "raw string failure" } });
+    expect(finalCall![0]).toMatchObject({ data: { error: WALLET_PUSH_JOB_GENERIC_ERROR } });
   });
 
   it.each([
@@ -294,7 +297,7 @@ describe("drainWalletPushJobs", () => {
     expect(result.failed).toBe(1);
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wp-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_push_job_bad_request" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_PUSH_JOB_BAD_REQUEST_ERROR },
     });
   });
 

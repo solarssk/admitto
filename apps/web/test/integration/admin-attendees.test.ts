@@ -3910,6 +3910,39 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }
     });
 
+    it("still pushes the content change when the same PATCH also revokes the pass (bot review, Codex)", async () => {
+      // Regression for a race Codex flagged: the status cascade (revoke) runs before the
+      // content-push guard, so a plain active-only check would see the pass as already voided by
+      // the time it re-reads it and silently drop the content change - leaving the pass stale
+      // forever, since a later status-only restore never rebuilds content either. The fix lets the
+      // content push through when this same request is the one that just voided the pass.
+      const voidSpy = vi.spyOn(PassCreatorClient.prototype, "voidPass").mockResolvedValue(undefined);
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/pushed-while-revoking",
+        androidUrl: "https://pc.test/android/pushed-while-revoking",
+      });
+      try {
+        const res = await patchWpAttendee({ status: "revoked", first_name: "Renamed While Revoking" });
+        expect(res.status).toBe(200);
+        expect(voidSpy).toHaveBeenCalledWith(WP_PROVIDER_PASS_ID);
+        expect(updateSpy).toHaveBeenCalledWith(WP_PROVIDER_PASS_ID, expect.anything());
+
+        const body = (await res.json()) as {
+          wallet_pass: { status: string; apple_url: string | null } | null;
+        };
+        expect(body.wallet_pass?.status).toBe("voided");
+        expect(body.wallet_pass?.apple_url).toBe("https://pc.test/apple/pushed-while-revoking");
+
+        const pass = await prisma.walletPass.findUnique({ where: { attendee_id: WP_ATTENDEE } });
+        expect(pass?.status).toBe("voided");
+        expect(pass?.apple_url).toBe("https://pc.test/apple/pushed-while-revoking");
+      } finally {
+        voidSpy.mockRestore();
+        updateSpy.mockRestore();
+      }
+    });
+
     it("does not push when only an unrelated field (rsvp_status) changes", async () => {
       const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
         providerPassId: WP_PROVIDER_PASS_ID,
