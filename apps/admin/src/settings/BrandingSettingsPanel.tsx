@@ -1016,14 +1016,14 @@ export function BrandingSettingsPanel() {
         <div className="settings-footer__buttons">
           <Button
             variant="secondary"
-            disabled={!loadedOk || formDisabled || logoUploading}
+            disabled={!loadedOk || formDisabled || logoUploading || !hasUnsavedChanges}
             onClick={handleReset}
           >
             Reset to saved
           </Button>
           <Button
             variant="primary"
-            disabled={!loadedOk || formDisabled || logoUploading}
+            disabled={!loadedOk || formDisabled || logoUploading || !hasUnsavedChanges}
             onClick={() => void handleSave()}
           >
             {saving ? "Saving…" : "Save"}

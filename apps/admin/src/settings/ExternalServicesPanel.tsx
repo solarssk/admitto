@@ -448,10 +448,6 @@ export function ExternalServicesPanel() {
       setValidationErrors(errors);
       return;
     }
-    if (!saveWeather && !saveMaps) {
-      addToast("No changes to save.", "info");
-      return;
-    }
 
     setValidationErrors([]);
     setSaving(true);

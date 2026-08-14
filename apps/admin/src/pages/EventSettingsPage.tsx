@@ -560,6 +560,35 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
   }
 }
 
+/** Re-syncs `event` (is_deletable/deletion_blockers for the Danger Zone) after a ticket-type
+ * create/update/delete, without touching `form`/`original` - those hold another tab's possibly
+ * unsaved draft, and `loadEventSettings`'s full reload would silently discard it. Best-effort:
+ * a failed background refresh here is a lesser problem than a toast unrelated to what the
+ * operator just did in the Ticket types card.
+ *
+ * `deletionStatusSeqRef` guards against two different kinds of stale response: (1) this request
+ * resolving after the operator has already navigated to a different event's settings (the page
+ * component isn't remounted on an `:eventId` param change alone - bumped separately in an effect
+ * keyed on `eventId`), and (2) two overlapping refreshes for the *same* event - e.g. two quick
+ * ticket-type edits - resolving out of order, where the earlier request's response would
+ * otherwise land after and overwrite the later, more current one (CodeRabbit review). Each call
+ * claims the next sequence number and only applies its result while it's still the latest. */
+async function refreshEventDeletionStatus(
+  eventId: string,
+  deletionStatusSeqRef: RefObject<number>,
+  setEvent: (event: EventSettingsDto) => void,
+): Promise<void> {
+  const mySeq = deletionStatusSeqRef.current + 1;
+  deletionStatusSeqRef.current = mySeq;
+  try {
+    const data = await fetchEventSettings(eventId);
+    if (deletionStatusSeqRef.current !== mySeq) return;
+    setEvent(data);
+  } catch {
+    // Best-effort - see comment above.
+  }
+}
+
 interface LoadTicketTypesDeps {
   eventId: string;
   loadedRef: RefObject<boolean>;
@@ -1094,6 +1123,14 @@ export function EventSettingsPage() {
     await loadEventSettings({ eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
+  // Sequence guard for refreshEventDeletionStatus - see that function's own comment. Bumped here
+  // on every :eventId change (in addition to each refresh call bumping it) so an in-flight
+  // request from a previous event can never be mistaken for still-current.
+  const deletionStatusSeqRef = useRef(0);
+  useEffect(() => {
+    deletionStatusSeqRef.current += 1;
+  }, [eventId]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -1526,7 +1563,13 @@ export function EventSettingsPage() {
           showLoading={showTicketTypesLoading}
           error={ticketTypesError}
           onRetry={() => loadTicketTypes().catch(() => {})}
-          onChanged={() => loadTicketTypes().catch(() => {})}
+          onChanged={() => {
+            loadTicketTypes().catch(() => {});
+            // Every create/update/delete here can flip is_deletable/deletion_blockers (e.g.
+            // clearing the last non-standard type) - keep the Danger Zone's Delete button
+            // accurate without reloading the whole page (see refreshEventDeletionStatus).
+            void refreshEventDeletionStatus(eventId, deletionStatusSeqRef, setEvent);
+          }}
         />
       </EventSettingsTabPanel>
 
@@ -1850,48 +1893,50 @@ export function EventSettingsPage() {
                           })
                         }
                       />
-                      <Input
-                        id={`event-wallet-field-mapping-key-${row.id}`}
-                        name={`event-wallet-field-mapping-key-${row.id}`}
-                        aria-label="PassCreator field key"
-                        value={row.key}
-                        disabled={isArchived || saving}
-                        placeholder="PassCreator field key"
-                        {...NO_AUTOFILL_PROPS}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            walletFieldMapping: form.walletFieldMapping.map((r) =>
-                              r.id === row.id ? { ...r, key: e.target.value } : r,
-                            ),
-                          })
-                        }
-                      />
-                      <Tooltip
-                        content={hintPreview}
-                        className="at-btn at-btn--secondary wallet-field-mapping__hint"
-                      >
-                        {selectedOption ? (
-                          <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
-                        ) : (
-                          <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
-                        )}
-                      </Tooltip>
-                      <Button
-                        type="button"
-                        id={`event-wallet-field-mapping-remove-${row.id}`}
-                        name={`event-wallet-field-mapping-remove-${row.id}`}
-                        variant="secondary"
-                        disabled={isArchived || saving}
-                        aria-label="Remove field"
-                        onClick={() =>
-                          setForm({
-                            ...form,
-                            walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
-                          })
-                        }
-                        icon={<i className="ti ti-trash" aria-hidden="true" />}
-                      />
+                      <div className="wallet-field-mapping__row-detail">
+                        <Input
+                          id={`event-wallet-field-mapping-key-${row.id}`}
+                          name={`event-wallet-field-mapping-key-${row.id}`}
+                          aria-label="PassCreator field key"
+                          value={row.key}
+                          disabled={isArchived || saving}
+                          placeholder="PassCreator field key"
+                          {...NO_AUTOFILL_PROPS}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              walletFieldMapping: form.walletFieldMapping.map((r) =>
+                                r.id === row.id ? { ...r, key: e.target.value } : r,
+                              ),
+                            })
+                          }
+                        />
+                        <Tooltip
+                          content={hintPreview}
+                          className="at-btn at-btn--secondary wallet-field-mapping__hint"
+                        >
+                          {selectedOption ? (
+                            <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
+                          ) : (
+                            <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
+                          )}
+                        </Tooltip>
+                        <Button
+                          type="button"
+                          id={`event-wallet-field-mapping-remove-${row.id}`}
+                          name={`event-wallet-field-mapping-remove-${row.id}`}
+                          variant="secondary"
+                          disabled={isArchived || saving}
+                          aria-label="Remove field"
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
+                            })
+                          }
+                          icon={<i className="ti ti-trash" aria-hidden="true" />}
+                        />
+                      </div>
                     </div>
                     );
                   })}

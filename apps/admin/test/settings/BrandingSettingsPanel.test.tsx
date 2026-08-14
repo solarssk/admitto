@@ -307,7 +307,11 @@ describe("BrandingSettingsPanel - organisation fields", () => {
     mockFetchOrg.mockResolvedValueOnce({ org_name: undefined, logo_url: "" } as unknown as typeof defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    expect(await screen.findByLabelText("Organisation name")).toHaveProperty("value", "");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    expect(nameInput).toHaveProperty("value", "");
+    // Save is disabled on a clean load - dirty the field (still empty once trimmed) so it
+    // becomes clickable, matching "blocks save with an empty organisation name" below.
+    fireEvent.change(nameInput, { target: { value: "  " } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -1173,7 +1177,10 @@ describe("BrandingSettingsPanel - save and reset", () => {
       },
     });
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - dirty an unrelated field so it becomes clickable,
+    // exercising the theme validation that still covers the untouched, already-invalid font.
+    fireEvent.change(nameInput, { target: { value: "Acme Renamed" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -1211,7 +1218,10 @@ describe("BrandingSettingsPanel - save and reset", () => {
     });
     mockSaveTheme.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - a trailing space dirties the field without changing
+    // the trimmed value handleSave actually sends.
+    fireEvent.change(nameInput, { target: { value: "Acme Corp " } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -1225,7 +1235,10 @@ describe("BrandingSettingsPanel - save and reset", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({ theme: { primary: "not-a-hex" } });
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - dirty an unrelated field so it becomes clickable,
+    // exercising the theme validation that still covers the untouched, already-invalid colour.
+    fireEvent.change(nameInput, { target: { value: "Acme Renamed" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -1239,7 +1252,10 @@ describe("BrandingSettingsPanel - save and reset", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "bad</name>" } });
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - dirty an unrelated field so it becomes clickable,
+    // exercising the theme validation that still covers the untouched, already-invalid font name.
+    fireEvent.change(nameInput, { target: { value: "Acme Renamed" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -1253,7 +1269,10 @@ describe("BrandingSettingsPanel - save and reset", () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce({ theme: { ticket_font_family_name: "bad</name>" } });
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - dirty an unrelated field so it becomes clickable,
+    // exercising the theme validation that still covers the untouched, already-invalid font name.
+    fireEvent.change(nameInput, { target: { value: "Acme Renamed" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -1269,7 +1288,10 @@ describe("BrandingSettingsPanel - save and reset", () => {
     mockPatchOrg.mockRejectedValueOnce(new ApiError(500, "secret_internal_1"));
     mockSaveTheme.mockRejectedValueOnce(new ApiError(500, "secret_internal_2"));
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - a trailing space dirties the field without changing
+    // the trimmed value handleSave actually sends.
+    fireEvent.change(nameInput, { target: { value: "Acme Corp " } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -1284,7 +1306,10 @@ describe("BrandingSettingsPanel - save and reset", () => {
     mockPatchOrg.mockResolvedValueOnce(defaultOrg);
     mockSaveTheme.mockResolvedValueOnce(defaultTheme);
     renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - a trailing space dirties the field without changing
+    // the trimmed org_name the assertion below expects.
+    fireEvent.change(nameInput, { target: { value: "Acme Corp " } });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {

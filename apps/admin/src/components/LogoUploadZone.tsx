@@ -6,6 +6,7 @@ import { uploadFile, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { CropImageModal, type CropApplyMeta } from "./crop/CropImageModal.js";
+import { cropMetaToPercent, toLogoCropMeta } from "./crop/cropMeta.js";
 import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
 import {
   ALLOWED_BRANDING_IMAGE_TYPES,
@@ -160,22 +161,6 @@ function mimeFromUploadPath(path: string): string {
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
   if (lower.endsWith(".webp")) return "image/webp";
   return "image/png";
-}
-
-function cropMetaToPercent(meta: LogoCropMeta | null | undefined): PercentCrop | undefined {
-  if (meta?.unit !== "%") return undefined;
-  return { unit: "%", x: meta.x, y: meta.y, width: meta.width, height: meta.height };
-}
-
-function toLogoCropMeta(meta: CropApplyMeta): LogoCropMeta {
-  return {
-    unit: "%",
-    x: meta.crop.x,
-    y: meta.crop.y,
-    width: meta.crop.width,
-    height: meta.crop.height,
-    zoom: meta.zoom,
-  };
 }
 
 /** @internal Unit-test surface for MIME/path helpers (keeps branch coverage explicit). */

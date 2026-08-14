@@ -535,6 +535,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     await openNotesTab();
 
     fireEvent.click(within(notesList()).getByRole("button", { name: /^Edit note by/ }));
+    fireEvent.change(screen.getByDisplayValue("Original"), { target: { value: "Changed" } });
     let rejectRequest!: (reason: Error) => void;
     updateAttendeeNote.mockReturnValueOnce(new Promise((_, reject) => { rejectRequest = reject; }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

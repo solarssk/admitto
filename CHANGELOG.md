@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Event settings → Location changes (venue name, address, coordinates, directions/accessibility notes) are now also pushed in the background to every already-issued active wallet pass for that event. Previously only name/date/timezone/event-hours changes triggered this, so a venue or address change silently drifted out of sync with already-issued passes.
 - Editing an attendee's name, email, company, department, or ticket type now also pushes the change to their already-issued wallet pass, the same way a bulk ticket type change already does. Event settings → Wallet has a new Wallet push history list showing recent bulk ticket type pushes for the event.
 - Event settings → Wallet has a new "Semantic tags" switch under Apple Wallet, off by default. When enabled, issued Apple Wallet passes include event name, date/time, venue location, and entrance directions as Apple's own semantic tags, which power Siri Suggestions, Maps, and Calendar smart surfacing. No NFC or PassCreator account approval needed, and it has no effect on Google Wallet passes. Toggling it also refreshes already-issued Apple Wallet passes.
+- Event settings → Images: uploaded images can now be re-cropped after the fact. A new Edit button on each image in "Your images" reopens the crop tool on the original, uncropped file with the previous framing restored, matching the logo upload's existing re-crop capability.
 
 ### Changed
 
@@ -28,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Attendee Detail → Delivery history: on narrow screens, a long subject or recipient address could squeeze the row down until the message text disappeared entirely, or overlap the timestamp, instead of cleanly wrapping the timestamp onto its own line underneath.
 - Settings → Health could show the background worker as unresponsive during a large attendee import, export, or wallet pass push, even though it was still actively working - the worker's liveness signal was only refreshed before and after one of those runs, not while it was still in progress.
 - Attendee exports (PDF, CSV, and XLSX) now show a readable check-in status ("Checked in" / "Not checked in") instead of the raw "admitted"/"not_admitted" database value. The PDF export additionally no longer cuts off long email addresses with "...", or squeezes every column down once several custom fields are added: column widths are now measured from the real data on every export instead of guessed, long values wrap onto extra lines instead of being truncated, and the page automatically switches to a larger paper size only on the rare export with enough custom fields that even wrapped text wouldn't otherwise fit.
+- Save buttons across Event settings, Organisation settings, and attendee/requirements/communication edit forms stayed clickable with nothing to save, instead of greying out until an actual change was made.
+- Event settings → Danger zone: the Delete event button could keep showing a stale "can't delete yet" state after clearing the event's last blocking ticket type or editing a ticket type's color/label - it was only ever refreshed on page load, not after that change.
+- Event settings → Wallet: field mapping rows overlapped and truncated on narrow screens; the field name and its mapped value now stack onto two readable lines instead of squeezing four columns into one.
+- Communication → Delivery log looked cramped on narrow screens; its header actions now wrap onto a second line instead of forcing everything into one.
+- Requirements page's Documentation button now matches the same compact mobile sizing as every other page's, instead of staying full-size with its icon.
+- Attendees list: on narrow screens, each attendee's Pass/Attendance/Mail status badges are now labeled, so it's clear what each one refers to - previously that context only existed in the desktop table's column headers.
 
 ## [0.5.0] - 2026-08-13
 
