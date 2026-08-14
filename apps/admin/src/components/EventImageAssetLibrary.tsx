@@ -18,7 +18,8 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
 import { brandingLogoImgSrc } from "../utils/safeBrandingLogoHref.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
-import { CropImageModal, type CropApplyMeta } from "./crop/CropImageModal.js";
+import { CropImageModal } from "./crop/CropImageModal.js";
+import { cropMetaToPercent, toLogoCropMeta } from "./crop/cropMeta.js";
 import { resolveCropOutputMime } from "./crop/getCroppedImageBlob.js";
 import {
   ALLOWED_BRANDING_IMAGE_TYPES,
@@ -114,24 +115,6 @@ function sniffImageMime(file: File): string {
 
 function basenameWithoutExt(filename: string): string {
   return filename.replace(/\.[^.]+$/, "") || filename;
-}
-
-/** Restore a stored crop as the modal's `initialCrop` - percentages only make sense against the
- * same original they were captured from (see `openEditCrop`'s original_url guard). */
-function cropMetaToPercent(meta: LogoCropMeta | null | undefined): PercentCrop | undefined {
-  if (meta?.unit !== "%") return undefined;
-  return { unit: "%", x: meta.x, y: meta.y, width: meta.width, height: meta.height };
-}
-
-function toLogoCropMeta(meta: CropApplyMeta): LogoCropMeta {
-  return {
-    unit: "%",
-    x: meta.crop.x,
-    y: meta.crop.y,
-    width: meta.crop.width,
-    height: meta.crop.height,
-    zoom: meta.zoom,
-  };
 }
 
 function clampDisplayName(value: string): string {

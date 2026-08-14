@@ -271,10 +271,14 @@ function isAdminAppPath(): boolean {
   return path === "/admin" || path.startsWith("/admin/");
 }
 
-/** Build a same-origin multipart POST request (browser sets Content-Type boundary). */
-function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestInit {
+/** Build a same-origin multipart request (browser sets Content-Type boundary). */
+function multipartRequestInit(
+  method: "POST" | "PATCH",
+  formData: FormData,
+  signal?: AbortSignal,
+): RequestInit {
   return {
-    method: "POST",
+    method,
     credentials: "same-origin",
     headers: {
       Origin: window.location.origin,
@@ -285,18 +289,12 @@ function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestIni
   };
 }
 
-/** Build a same-origin multipart PATCH request (browser sets Content-Type boundary). */
+function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestInit {
+  return multipartRequestInit("POST", formData, signal);
+}
+
 function multipartPatchInit(formData: FormData, signal?: AbortSignal): RequestInit {
-  return {
-    method: "PATCH",
-    credentials: "same-origin",
-    headers: {
-      Origin: window.location.origin,
-      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
-    },
-    body: formData,
-    signal,
-  };
+  return multipartRequestInit("PATCH", formData, signal);
 }
 
 /** Build multipart form fields for an attendee import upload. */

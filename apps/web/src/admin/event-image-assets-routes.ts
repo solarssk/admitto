@@ -26,6 +26,17 @@ class AssetLimitReachedError extends Error {}
  * appeared after the initial check. Caught below and mapped to the same 409 response. */
 class AssetInUseError extends Error {}
 
+/** Maps a saveEventUpload failure to its response shape, falling back to a generic 500 for
+ * anything else - shared by create/update's catch blocks, which each check their own additional
+ * error types first and fall through to this for everything else. */
+function uploadOrServerErrorResponse(c: Context, err: unknown, logContext: string): Response {
+  if (err instanceof BrandingUploadError) {
+    return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415 | 503);
+  }
+  logger.error(logContext, { err });
+  return c.json({ error: "server error" }, 500);
+}
+
 /** Serializes create/delete for one event's image asset library (same pattern as
  * event-capacity.ts's acquireEventCapacityLock): a transaction-scoped count/recheck is not
  * race-safe on its own since two concurrent transactions can both read the pre-write state
@@ -63,6 +74,20 @@ export type EventImageAssetDto = {
   created_at: string;
 };
 
+/** Shared by every query that returns a full asset row (list, create, update) - avoids repeating
+ * the same nine-field object three times. */
+const IMAGE_ASSET_SELECT = {
+  id: true,
+  token: true,
+  filename: true,
+  url: true,
+  original_url: true,
+  crop: true,
+  size_bytes: true,
+  mime_type: true,
+  created_at: true,
+} as const;
+
 function serializeImageAsset(row: {
   id: string;
   token: string;
@@ -99,17 +124,7 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
   const rows = await db.eventImageAsset.findMany({
     where: { event_id: eventId },
     orderBy: { created_at: "asc" },
-    select: {
-      id: true,
-      token: true,
-      filename: true,
-      url: true,
-      original_url: true,
-      crop: true,
-      size_bytes: true,
-      mime_type: true,
-      created_at: true,
-    },
+    select: IMAGE_ASSET_SELECT,
   });
 
   c.header("Cache-Control", "no-store");
@@ -312,17 +327,7 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
           size_bytes: uploaded.sizeBytes,
           mime_type: uploaded.mimeType,
         },
-        select: {
-          id: true,
-          token: true,
-          filename: true,
-          url: true,
-          original_url: true,
-          crop: true,
-          size_bytes: true,
-          mime_type: true,
-          created_at: true,
-        },
+        select: IMAGE_ASSET_SELECT,
       });
       await writeBulkActionLog(tx, {
         event_id: eventId,
@@ -334,9 +339,6 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
     });
     return c.json(serializeImageAsset(created), 201);
   } catch (err) {
-    if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415 | 503);
-    }
     if (err instanceof AssetLimitReachedError) {
       return c.json(
         { error: "asset_limit_reached", limit: MAX_IMAGE_ASSETS_PER_EVENT },
@@ -346,8 +348,7 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "token_conflict" }, 409);
     }
-    logger.error("handleCreateEventImageAsset failed", { err });
-    return c.json({ error: "server error" }, 500);
+    return uploadOrServerErrorResponse(c, err, "handleCreateEventImageAsset failed");
   }
 }
 
@@ -413,17 +414,7 @@ export async function handleUpdateEventImageAsset(c: Context, db: PrismaClient):
           size_bytes: uploaded.sizeBytes,
           mime_type: uploaded.mimeType,
         },
-        select: {
-          id: true,
-          token: true,
-          filename: true,
-          url: true,
-          original_url: true,
-          crop: true,
-          size_bytes: true,
-          mime_type: true,
-          created_at: true,
-        },
+        select: IMAGE_ASSET_SELECT,
       });
       await writeBulkActionLog(tx, {
         event_id: eventId,
@@ -442,11 +433,7 @@ export async function handleUpdateEventImageAsset(c: Context, db: PrismaClient):
     });
     return c.json(serializeImageAsset(updated));
   } catch (err) {
-    if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415 | 503);
-    }
-    logger.error("handleUpdateEventImageAsset failed", { err });
-    return c.json({ error: "server error" }, 500);
+    return uploadOrServerErrorResponse(c, err, "handleUpdateEventImageAsset failed");
   }
 }
 

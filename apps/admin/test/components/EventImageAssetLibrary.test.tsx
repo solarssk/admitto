@@ -21,61 +21,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 
 vi.mock("../../src/components/crop/CropImageModal.js", async () => {
-  const { useState } = await import("react");
+  const { createCropImageModalMock } = await import("./cropImageModalMock.js");
   return {
-    // Mirrors the real modal's own async onApply handling (catches a thrown Error and shows
-    // its message inline) so a rejected onApply can be asserted on without the real component.
-    CropImageModal: ({
-      open,
-      imageSrc,
-      initialCrop,
-      initialZoom,
-      onApply,
-      onCancel,
-    }: {
-      open: boolean;
-      imageSrc: string;
-      initialCrop?: { unit: "%"; x: number; y: number; width: number; height: number };
-      initialZoom?: number;
-      onApply: (
-        blob: Blob,
-        meta: { crop: { unit: "%"; x: number; y: number; width: number; height: number }; zoom: number },
-      ) => void | Promise<void>;
-      onCancel: () => void;
-    }) => {
-      const [error, setError] = useState<string | null>(null);
-      if (!open) return null;
-      return (
-        <div
-          role="dialog"
-          aria-label="Adjust image"
-          data-image-src={imageSrc}
-          data-initial-crop={initialCrop ? JSON.stringify(initialCrop) : ""}
-          data-initial-zoom={initialZoom ?? ""}
-        >
-          {error ? <p role="alert">{error}</p> : null}
-          <button
-            type="button"
-            onClick={() => {
-              setError(null);
-              Promise.resolve(
-                onApply(new Blob(["x"], { type: "image/png" }), {
-                  crop: { unit: "%", x: 4, y: 4, width: 92, height: 92 },
-                  zoom: 1,
-                }),
-              ).catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : "Could not crop image.");
-              });
-            }}
-          >
-            Apply changes
-          </button>
-          <button type="button" onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
-      );
-    },
+    CropImageModal: createCropImageModalMock(() => ({
+      crop: { unit: "%", x: 4, y: 4, width: 92, height: 92 },
+      zoom: 1,
+    })),
   };
 });
 
