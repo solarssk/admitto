@@ -15,47 +15,15 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../src/components/crop/CropImageModal.js", () => ({
-  CropImageModal: ({
-    open,
-    imageSrc,
-    initialCrop,
-    onApply,
-    onCancel,
-  }: {
-    open: boolean;
-    imageSrc: string;
-    initialCrop?: { unit: "%"; x: number; y: number; width: number; height: number };
-    onApply: (
-      blob: Blob,
-      meta: { crop: { unit: "%"; x: number; y: number; width: number; height: number }; zoom: number },
-    ) => void | Promise<void>;
-    onCancel: () => void;
-  }) =>
-    open ? (
-      <div
-        role="dialog"
-        aria-label="Adjust image"
-        data-image-src={imageSrc}
-        data-initial-crop={initialCrop ? JSON.stringify(initialCrop) : ""}
-      >
-        <button
-          type="button"
-          onClick={() =>
-            void onApply(new Blob(["x"], { type: "image/png" }), {
-              crop: initialCrop ?? { unit: "%", x: 4, y: 4, width: 92, height: 92 },
-              zoom: 1.5,
-            })
-          }
-        >
-          Apply changes
-        </button>
-        <button type="button" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    ) : null,
-}));
+vi.mock("../../src/components/crop/CropImageModal.js", async () => {
+  const { createCropImageModalMock } = await import("./cropImageModalMock.js");
+  return {
+    CropImageModal: createCropImageModalMock((initialCrop) => ({
+      crop: initialCrop ?? { unit: "%", x: 4, y: 4, width: 92, height: 92 },
+      zoom: 1.5,
+    })),
+  };
+});
 
 import { uploadFile, deleteUploadedFile } from "../../src/api/client.js";
 

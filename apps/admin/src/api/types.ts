@@ -1,5 +1,5 @@
 import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
-import type { LogoPersistenceDto } from "@admitto/mail-templates";
+import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
@@ -572,6 +572,10 @@ export interface EventImageAssetDto {
   token: string;
   filename: string;
   url: string;
+  /** Full pre-crop file for re-Edit; null for assets created before this field existed. */
+  original_url: string | null;
+  /** Last crop framing applied - null if there's nothing to restore. */
+  crop: LogoCropMeta | null;
   size_bytes: number;
   mime_type: string;
   created_at: string;
