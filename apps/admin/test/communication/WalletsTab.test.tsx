@@ -52,6 +52,10 @@ describe("WalletsTab", () => {
     const long = "a".repeat(WALLET_MESSAGE_TRUNCATION_WARNING_LENGTH + 1);
     fireEvent.change(field, { target: { value: long } });
     expect(screen.getByText(/may be cropped on some lock screens/)).toBeTruthy();
+    // The warning alone is the live region - the counter above it changes on every keystroke
+    // and must not carry role="alert", or a screen reader re-announces it on every character.
+    expect(screen.getByRole("alert").textContent).toMatch(/may be cropped on some lock screens/);
+    expect(screen.getByText(`${WALLET_MESSAGE_TEXT_MAX_LENGTH - long.length} characters remaining`).getAttribute("role")).toBeNull();
   });
 
   it("disables the message field for an archived event (via its wrapping fieldset)", () => {

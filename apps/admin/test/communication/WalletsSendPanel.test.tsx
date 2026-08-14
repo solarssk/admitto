@@ -57,12 +57,15 @@ describe("WalletsSendPanel", () => {
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("disables Send but not Count recipients for an archived event", () => {
+  it("disables both Send and Count recipients for an archived event", () => {
+    // The dry-run POST goes through the same server-side guardArchivedEvent as a real send
+    // (apps/web/src/app.ts), so a dry run against an archived event would only ever 403 - the
+    // button must not invite that click.
     render(<WalletsSendPanel event={archivedEvent} eventId="evt-1" text="Hi" />);
 
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Count recipients" }) as HTMLButtonElement).disabled).toBe(
-      false,
+      true,
     );
   });
 
@@ -151,10 +154,14 @@ describe("WalletsSendPanel", () => {
 
   it("shows the job's error and does not report a success message when the job fails", async () => {
     sendWalletMessage.mockResolvedValue({ jobId: "job-1", recipientCount: 5 });
+    // drain-wallet-message-jobs.ts's markWalletMessageFailed always writes one of its own
+    // sanitized, already-operator-safe constants here (e.g. WALLET_MESSAGE_JOB_NOT_CONFIGURED_ERROR)
+    // - never a raw machine code - so this mock mirrors the real shape rather than a short code
+    // the UI would never actually receive.
     fetchWalletMessageJob.mockResolvedValue({
       jobId: "job-1",
       status: "failed",
-      error: "wallet_not_configured",
+      error: "Wallet is not configured for this event.",
       progressTotal: null,
       progressDone: null,
       sent: null,
@@ -167,7 +174,7 @@ describe("WalletsSendPanel", () => {
     render(<WalletsSendPanel event={activeEvent} eventId="evt-1" text="Hi" />);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(await screen.findByText("wallet_not_configured")).toBeTruthy();
+    expect(await screen.findByText("Wallet is not configured for this event.")).toBeTruthy();
   });
 
   it("keeps polling on a timer while the job is still pending/running", async () => {
@@ -426,6 +433,10 @@ describe("WalletsSendPanel", () => {
       rejectStatus?.(new Error("network"));
       await Promise.resolve();
     });
+
+    // Neither the succeeded result nor the poll-failure error may reach the DOM after unmount.
+    expect(screen.queryByText("Sent to 2.")).toBeNull();
+    expect(screen.queryByText("Failed to load send status.")).toBeNull();
   });
 
   it("ignores a late dry-run count after the event changes mid-request", async () => {

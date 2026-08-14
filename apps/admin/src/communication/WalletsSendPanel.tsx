@@ -136,11 +136,9 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
             setResultMessage(null);
             setError(status.error ?? "Send failed.");
           } else {
-            setResultMessage(
-              `Sent to ${counts.sent}${counts.errored > 0 ? `, ${counts.errored} failed` : ""}${
-                counts.skipped > 0 ? `, ${counts.skipped} skipped` : ""
-              }.`,
-            );
+            const failedPart = counts.errored > 0 ? `, ${counts.errored} failed` : "";
+            const skippedPart = counts.skipped > 0 ? `, ${counts.skipped} skipped` : "";
+            setResultMessage(`Sent to ${counts.sent}${failedPart}${skippedPart}.`);
           }
           return;
         }
@@ -175,7 +173,11 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
     (filterType !== "ticket_type" || ticketType.trim().length > 0) &&
     (filterType !== "attendee_ids" || selectedAttendees.length > 0);
   const textReady = text.trim().length > 0;
-  const pickerLocked = phase !== "form";
+  // Also locked while a count/send request is in flight (not just once one has resolved into
+  // polling/done) - otherwise switching the filter mid-request lets the in-flight response land
+  // against a filter the operator has already moved on from, and its count/result then gets
+  // shown next to the new selection instead of the one it actually reflects.
+  const pickerLocked = phase !== "form" || busy;
 
   const runDryRun = async () => {
     const runId = runIdRef.current;
@@ -309,15 +311,26 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
             )}
             <RecipientCountNotice count={recipientCount} />
             <div className="communication-send-panel__actions">
-              <Button
-                type="button"
-                variant="secondary"
-                icon={<i className="ti ti-calculator" aria-hidden="true" />}
+              {/* A dry run still goes through the same archived-event route guard as a real
+                  send (apps/web/src/app.ts wraps wallet-message/send unconditionally), so this
+                  needs the same guard as Send below, not just the busy/filterReady checks. */}
+              <ArchivedGuard
+                event={event}
+                reasonId="count-wallet-message-reason"
                 disabled={busy || !filterReady}
-                onClick={() => void runDryRun()}
               >
-                {busy ? "Checking…" : "Count recipients"}
-              </Button>
+                {(guard) => (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    icon={<i className="ti ti-calculator" aria-hidden="true" />}
+                    onClick={() => void runDryRun()}
+                    {...guard}
+                  >
+                    {busy ? "Checking…" : "Count recipients"}
+                  </Button>
+                )}
+              </ArchivedGuard>
               <ArchivedGuard
                 event={event}
                 reasonId="send-wallet-message-reason"
@@ -348,17 +361,23 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
             {phase === "polling" && (
               <p className="mail-field-hint">Sending in progress…</p>
             )}
-            <div className="communication-send-panel__actions">
-              <Button
-                type="button"
-                variant="secondary"
-                icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
-                disabled={busy}
-                onClick={resetOutcome}
-              >
-                Send another
-              </Button>
-            </div>
+            {/* Only once the job has actually reached a terminal state - resetOutcome only
+                clears local UI state, it does not cancel the still-running server-side job, so
+                offering this mid-poll would let an operator queue a second send while the first
+                is still in flight and lose track of its own completion report. */}
+            {phase === "done" && (
+              <div className="communication-send-panel__actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                  disabled={busy}
+                  onClick={resetOutcome}
+                >
+                  Send another
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>

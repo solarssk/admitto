@@ -60,14 +60,18 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
               </div>
             </fieldset>
             {/* remaining can't go negative: the textarea's own maxLength already stops
-                typed/pasted input from exceeding WALLET_MESSAGE_TEXT_MAX_LENGTH. */}
-            <p
-              className={overSoftLimit ? "mail-field-hint mail-field-hint--warning" : "mail-field-hint"}
-              role={overSoftLimit ? "alert" : undefined}
-            >
+                typed/pasted input from exceeding WALLET_MESSAGE_TEXT_MAX_LENGTH. Kept as a
+                separate paragraph from the warning below: this one changes on every keystroke,
+                and role="alert" on a live-changing element re-announces the whole thing to a
+                screen reader on every character typed once overSoftLimit is true. */}
+            <p className={overSoftLimit ? "mail-field-hint mail-field-hint--warning" : "mail-field-hint"}>
               {remaining} characters remaining
-              {overSoftLimit && ", long messages may be cropped on some lock screens"}
             </p>
+            {overSoftLimit && (
+              <p className="mail-field-hint mail-field-hint--warning" role="alert">
+                Long messages may be cropped on some lock screens.
+              </p>
+            )}
           </div>
         </Card>
 

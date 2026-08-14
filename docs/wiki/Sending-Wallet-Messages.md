@@ -11,7 +11,7 @@ Push a short custom message to attendees' already-installed Apple Wallet or Goog
 
 ## Before you start
 
-The event's Wallet integration must be configured and working (see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)), and at least some attendees must have actually added their pass to a phone - this only reaches attendees with an active, installed pass, not everyone who was ever issued one. Keep the Admitto **worker** running (`npm run worker` in development, or the compose `worker` service in deploy) so a queued send leaves the queue.
+The event's Wallet integration must be configured and working (see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)), and at least some attendees must have an active wallet pass on this event - the recipient count is every attendee with an issued, non-voided pass, whether or not they've actually added it to a phone yet. Keep the Admitto **worker** running (`npm run worker` in development, or the compose `worker` service in deploy) so a queued send leaves the queue.
 
 ## Steps
 
@@ -25,7 +25,7 @@ The event's Wallet integration must be configured and working (see [Wallet Passe
 
 ## Expected result
 
-Matching recipients' installed wallet passes show a lock-screen notification with the message text. The send completes with counts for how many were reached.
+Recipients whose pass is still installed see a lock-screen notification with the message text. The send completes with counts for how many the wallet provider accepted - not a confirmation that every device actually displayed it.
 
 ## Important decisions
 
@@ -43,7 +43,7 @@ Nothing is stored on the attendee's own record; sending only pushes a transient 
 
 ## Common problems
 
-- **The count is zero:** confirm the selected filter, and that the attendees you expected have actually added their pass to a phone - a wallet pass that was issued but never installed does not count.
+- **The count is zero:** confirm the selected filter, and that the attendees you expected have an active wallet pass on this event (Attendee detail page → Wallet). The count does not check whether a pass was actually installed on a phone - an issued-but-never-installed pass is still counted.
 - **Send completes but the "errored" count is above zero:** those attendees' passes were not reachable at send time (for example, the pass was later removed from the phone). Try again later, or check the event's Wallet integration is still connected.
 - **The message never arrives on a real device even though the send reported success:** delivery to the wallet provider (Apple/Google) is outside Admitto's control once the send is accepted - allow a few minutes, and confirm the attendee's device has notifications enabled for Wallet.
 
