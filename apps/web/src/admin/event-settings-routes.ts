@@ -91,6 +91,7 @@ const patchEventSchema = z
     wallet_api_key: z.string().trim().max(512).nullish(),
     wallet_apple_enabled: z.boolean().optional(),
     wallet_google_enabled: z.boolean().optional(),
+    wallet_semantic_tags_enabled: z.boolean().optional(),
     wallet_field_mapping: z
       .record(
         z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
@@ -119,6 +120,7 @@ type EventSettingsRow = {
   wallet_api_key_enc: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_semantic_tags_enabled: boolean;
   wallet_field_mapping: unknown;
   capacity: number | null;
   archived_at: Date | null;
@@ -155,6 +157,7 @@ function serializeEventSettings(
     wallet_api_key: { configured: event.wallet_api_key_enc != null },
     wallet_apple_enabled: event.wallet_apple_enabled,
     wallet_google_enabled: event.wallet_google_enabled,
+    wallet_semantic_tags_enabled: event.wallet_semantic_tags_enabled,
     wallet_field_mapping: parseWalletFieldMapping(event.wallet_field_mapping),
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
@@ -194,6 +197,7 @@ const EVENT_SETTINGS_SELECT = {
   wallet_api_key_enc: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
+  wallet_semantic_tags_enabled: true,
   wallet_field_mapping: true,
   capacity: true,
   archived_at: true,
@@ -372,6 +376,7 @@ type WalletFieldsPatch = {
   wallet_api_key_enc?: string | null;
   wallet_apple_enabled?: boolean;
   wallet_google_enabled?: boolean;
+  wallet_semantic_tags_enabled?: boolean;
   wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
 };
 
@@ -390,6 +395,9 @@ function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
   }
   if (patch.wallet_google_enabled !== undefined) {
     data.wallet_google_enabled = patch.wallet_google_enabled;
+  }
+  if (patch.wallet_semantic_tags_enabled !== undefined) {
+    data.wallet_semantic_tags_enabled = patch.wallet_semantic_tags_enabled;
   }
   if (patch.wallet_field_mapping !== undefined) {
     const mapping = patch.wallet_field_mapping;
@@ -561,13 +569,20 @@ async function subscribeWalletWebhooksBestEffort(
 }
 
 /** Event fields that can appear in a wallet pass via WALLET_MAPPING_PLACEHOLDERS (event name,
- * hours, date, location). */
+ * hours, date, location) or via the semantic tags toggle - flipping either changes what
+ * buildWalletPassInput would produce for an already-issued pass. wallet_apple_enabled is
+ * included too: buildWalletPassInput gates `semantics` on it as well as
+ * wallet_semantic_tags_enabled (Apple-only data never sent for a Google-only event), so turning
+ * Apple Wallet off must also refresh already-issued passes, or a stale semantics payload would
+ * linger on-device until some other tracked field happened to change. */
 type WalletRelevantEventSnapshot = {
   title: string;
   date: Date;
   timezone: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
+  wallet_apple_enabled: boolean;
+  wallet_semantic_tags_enabled: boolean;
 };
 
 /** True only when one of the wallet-relevant fields' *persisted* value actually differs -
@@ -585,7 +600,9 @@ function walletRelevantEventFieldsChanged(
     existing.date.getTime() !== updated.date.getTime() ||
     existing.timezone !== updated.timezone ||
     existing.event_hours_start !== updated.event_hours_start ||
-    existing.event_hours_end !== updated.event_hours_end
+    existing.event_hours_end !== updated.event_hours_end ||
+    existing.wallet_apple_enabled !== updated.wallet_apple_enabled ||
+    existing.wallet_semantic_tags_enabled !== updated.wallet_semantic_tags_enabled
   );
 }
 
@@ -654,6 +671,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     patch.wallet_api_key !== undefined ||
     patch.wallet_apple_enabled !== undefined ||
     patch.wallet_google_enabled !== undefined ||
+    patch.wallet_semantic_tags_enabled !== undefined ||
     patch.wallet_field_mapping !== undefined;
   if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
@@ -676,6 +694,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     wallet_api_key_enc?: string | null;
     wallet_apple_enabled?: boolean;
     wallet_google_enabled?: boolean;
+    wallet_semantic_tags_enabled?: boolean;
     wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     capacity?: number | null;
     logo_url?: string | null;

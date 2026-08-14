@@ -148,4 +148,41 @@ describe("toPassCreatorData", () => {
       country: "Poland",
     });
   });
+
+  describe("Apple Wallet semantics", () => {
+    const semantics = {
+      eventName: "Launch Event",
+      eventType: "PKEventTypeGeneric",
+      eventStartDate: "2026-08-10T18:00:00+02:00",
+      venueName: "Test Arena",
+    };
+
+    it("omits the semantics key entirely when input.semantics is unset", () => {
+      const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
+      expect(data).not.toHaveProperty("semantics");
+    });
+
+    it("omits the semantics key when input.semantics is an empty object", () => {
+      const data = toPassCreatorData({ ...baseInput, semantics: {} }, "tmpl-1", undefined, true);
+      expect(data).not.toHaveProperty("semantics");
+    });
+
+    it("sends semantics as a top-level sibling of base fields, verbatim", () => {
+      const data = toPassCreatorData({ ...baseInput, semantics }, "tmpl-1", undefined, true);
+      expect(data.semantics).toEqual(semantics);
+      expect(data.templateId).toBe("tmpl-1");
+      expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
+    });
+
+    it("keeps semantics alongside an admin's own fieldMapping custom properties", () => {
+      const data = toPassCreatorData(
+        { ...baseInput, semantics, eventNameLabel: "Launch Event" },
+        "tmpl-1",
+        { name: "event_name" },
+        true,
+      );
+      expect(data.semantics).toEqual(semantics);
+      expect(data.name).toBe("Launch Event");
+    });
+  });
 });

@@ -488,6 +488,7 @@ export async function patchEvent(
     wallet_api_key: string | null;
     wallet_apple_enabled: boolean;
     wallet_google_enabled: boolean;
+    wallet_semantic_tags_enabled: boolean;
     wallet_field_mapping: Record<string, string> | null;
     location: string | null;
     capacity: number | null;
