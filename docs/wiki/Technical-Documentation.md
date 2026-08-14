@@ -1,9 +1,11 @@
 # Technical Documentation
 
-> **Audience:** Maintainers and Technical Superadmins
-> **Required role:** Repository access as required by the linked document
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| | |
+|---|---|
+| **Audience** | Maintainers and Technical Superadmins |
+| **Required role** | Repository access as required by the linked document |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 The Wiki documents supported application use. It does not duplicate deployment, architecture, security, privacy, or release procedures.
 

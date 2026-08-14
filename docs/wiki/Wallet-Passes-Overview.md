@@ -1,9 +1,11 @@
 # Wallet Passes Overview
 
-> **Audience:** Superadmins (configuration), all staff (attendee actions)
-> **Required role:** Superadmin for Event Settings → Wallet; Staff Admin or higher for attendee wallet actions
-> **Feature status:** Available
-> **Last verified:** Admitto 0.5.1
+| | |
+|---|---|
+| **Audience** | Superadmins (configuration), all staff (attendee actions) |
+| **Required role** | Superadmin for Event Settings → Wallet; Staff Admin or higher for attendee wallet actions |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 

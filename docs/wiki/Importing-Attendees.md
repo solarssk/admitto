@@ -1,9 +1,11 @@
 # Importing Attendees
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| | |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Organisation Admin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 ![Import preview showing only fictional attendees](assets/import-preview.png)
 

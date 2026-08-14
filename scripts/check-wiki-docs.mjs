@@ -179,9 +179,9 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
     if (filePath !== resolve(wikiRoot, "_Sidebar.md")) {
       if (!text.startsWith("# ")) fail(`${relativePath} is missing its page title.`);
       for (const label of metadataLabels) {
-        if (!text.includes(`> **${label}:**`)) fail(`${relativePath} is missing ${label} metadata.`);
+        if (!text.includes(`| **${label}** |`)) fail(`${relativePath} is missing ${label} metadata.`);
       }
-      const status = text.match(/^> \*\*Feature status:\*\* (.+)$/m)?.[1]?.trim();
+      const status = text.match(/^\| \*\*Feature status\*\* \| (.+) \|$/m)?.[1]?.trim();
       if (!status || !validStatuses.has(status)) {
         fail(`${relativePath} has an invalid feature status.`);
       }

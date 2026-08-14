@@ -1,9 +1,11 @@
 # QR Tickets
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.5.0
+| | |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Organisation Admin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.0 |
 
 ## What this page helps you do
 

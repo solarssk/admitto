@@ -1,9 +1,11 @@
 # Scanning Tickets and Results
 
-> **Audience:** Check-in Operators
-> **Required role:** Check-in Operator for the event
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| | |
+|---|---|
+| **Audience** | Check-in Operators |
+| **Required role** | Check-in Operator for the event |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 ## What this page helps you do
 

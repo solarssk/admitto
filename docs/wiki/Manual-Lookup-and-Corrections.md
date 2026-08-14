@@ -1,9 +1,11 @@
 # Manual Lookup and Corrections
 
-> **Audience:** Check-in Operators and Event Managers
-> **Required role:** Check-in Operator for lookup; Organisation Admin for administrative corrections
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| | |
+|---|---|
+| **Audience** | Check-in Operators and Event Managers |
+| **Required role** | Check-in Operator for lookup; Organisation Admin for administrative corrections |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 ## What this page helps you do
 

@@ -1,9 +1,11 @@
 # Requirements and Fulfilment
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| | |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Organisation Admin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 Use this area to decide what attendee information the event needs, what operators hand out, and how check-in behaves.
 

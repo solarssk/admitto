@@ -1,9 +1,11 @@
 # Advanced Email Templates
 
-> **Audience:** Technical Event Manager
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.5.1
+| | |
+|---|---|
+| **Audience** | Technical Event Manager |
+| **Required role** | Organisation Admin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 

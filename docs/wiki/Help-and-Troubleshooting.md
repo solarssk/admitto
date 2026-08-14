@@ -1,9 +1,11 @@
 # Help and Troubleshooting
 
-> **Audience:** All staff
-> **Required role:** Any staff role
-> **Feature status:** Available
-> **Last verified:** Admitto 0.5.1
+| | |
+|---|---|
+| **Audience** | All staff |
+| **Required role** | Any staff role |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 Start with the page for the failed workflow:
 
