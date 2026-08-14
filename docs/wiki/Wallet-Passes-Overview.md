@@ -25,10 +25,19 @@ works; Admitto never signs or hosts pass files itself.
 - **On-demand creation.** A pass is created the first time an attendee taps "Add to Apple/Google
   Wallet" on their ticket page - not eagerly at ticket issuance, not in bulk. Repeat taps reuse the
   same pass.
-- **Field mapping.** PassCreator templates each define their own custom field names; an admin maps
-  Admitto values (attendee name, event date/hours/location, ticket type, maps links, and more) onto
-  those field names. Nothing beyond the QR/barcode is sent until a field is explicitly mapped - see
-  the [template setup page](Wallet-Passes-PassCreator-Setup) for the full walkthrough.
+- **Field mapping.** Every PassCreator template defines its own custom field names (an admin
+  chooses these when building the template in PassCreator's own dashboard - Admitto has no say in
+  what they're called). In Event Settings → Wallet, an admin adds one row per template field: pick
+  an Admitto **value** from a fixed list (attendee full/first/last name, email, company,
+  department, event name/date/hours/location, directions/accessibility text, Google/Apple Maps
+  links, individual address parts, ticket type, or the ticket/QR value itself), then type the exact
+  **key** that matches that field's name in the PassCreator template. For example, mapping value
+  "Attendee full name" to key `fullName` sends the attendee's name to whichever template field is
+  registered as `fullName`. There is no default mapping and no auto-detection - nothing beyond the
+  QR/barcode is sent until a row exists for it, because different templates use different field
+  names and Admitto can't guess them. See the
+  [template setup page](Wallet-Passes-PassCreator-Setup) for the full step-by-step, including how
+  to register a field on the PassCreator side first.
 - **Semantic tags** (Apple Wallet only, off by default). A separate switch next to Apple Wallet
   that sends Apple's own structured pass data (event name, start/end time, venue location, entrance
   directions, attendee name, duration) so the pass gets Siri Suggestions and Maps/Calendar smart
