@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Audience** | Event Managers |
-| **Required role** | Organisation Admin |
+| **Required role** | Administrator |
 | **Feature status** | Available |
 | **Last verified** | Admitto 0.4.13 |
 

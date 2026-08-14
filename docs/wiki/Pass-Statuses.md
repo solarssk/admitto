@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Audience** | Event Managers and Check-in Operators |
-| **Required role** | Organisation Admin for changes; Operator for check-in results |
+| **Required role** | Administrator for changes; Operator for check-in results |
 | **Feature status** | Available |
 | **Last verified** | Admitto 0.5.1 |
 

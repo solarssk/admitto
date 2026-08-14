@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Audience** | Event Managers and Superadmins |
-| **Required role** | Organisation Admin for reports; Superadmin for archiving |
+| **Required role** | Administrator for reports; Superadmin for archiving |
 | **Feature status** | Available |
 | **Last verified** | Admitto 0.4.13 |
 

@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Audience** | Event Managers and Superadmins |
-| **Required role** | Organisation Admin or Superadmin |
+| **Required role** | Administrator or Superadmin |
 | **Feature status** | Available |
 | **Last verified** | Admitto 0.5.1 |
 

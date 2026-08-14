@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Audience** | Check-in Operators and Event Managers |
-| **Required role** | Check-in Operator for the event |
+| **Required role** | Operator for the event |
 | **Feature status** | Available |
 | **Last verified** | Admitto 0.4.13 |
 

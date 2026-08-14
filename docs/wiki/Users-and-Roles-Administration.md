@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Audience** | Organisation Admins and Superadmins |
-| **Required role** | Organisation Admin for assignments; Superadmin for staff accounts |
+| **Required role** | Administrator for assignments; Superadmin for staff accounts |
 | **Feature status** | Available |
 | **Last verified** | Admitto 0.4.13 |
 
