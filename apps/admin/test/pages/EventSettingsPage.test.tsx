@@ -167,6 +167,7 @@ const activeEvent = {
   wallet_api_key: { configured: false },
   wallet_apple_enabled: false,
   wallet_google_enabled: false,
+  wallet_semantic_tags_enabled: false,
   wallet_field_mapping: null as Record<string, string> | null,
 };
 
@@ -939,6 +940,43 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("PassCreator")).toBeTruthy();
     expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
     expect(screen.getByLabelText("Google Wallet")).toBeTruthy();
+    expect(screen.getByLabelText("Semantic tags")).toBeTruthy();
+    expect((screen.getByLabelText("Samsung Wallet") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("disables the Semantic tags switch while Apple Wallet is off, and enables it once Apple Wallet is on", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_apple_enabled: false });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect((screen.getByLabelText("Semantic tags") as HTMLInputElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByLabelText("Apple Wallet"));
+    expect((screen.getByLabelText("Semantic tags") as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it("saves the semantic tags toggle through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_apple_enabled: true,
+      wallet_semantic_tags_enabled: false,
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_apple_enabled: true, wallet_semantic_tags_enabled: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText("Semantic tags"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_semantic_tags_enabled: true });
+    });
   });
 
   it("saves the wallet API key and platform toggles through the event patch", async () => {

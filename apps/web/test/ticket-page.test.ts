@@ -18,6 +18,7 @@ const EMPTY_EVENT_LOCATION = {
   walletApiKeyEnc: null,
   walletAppleEnabled: true,
   walletGoogleEnabled: true,
+  walletSemanticTagsEnabled: false,
   walletFieldMapping: null,
   formattedAddress: null,
   addressComponents: null,

@@ -32,6 +32,7 @@ function fullResolved(overrides: { attendee?: Record<string, unknown>; event?: R
       id: "evt-1",
       title: "Admitto Conference",
       date: new Date("2026-09-24T12:00:00.000Z"),
+      timezone: "Europe/London",
       eventHoursStart: "09:00",
       eventHoursEnd: "18:00",
       location: "Main Hall",
@@ -42,6 +43,11 @@ function fullResolved(overrides: { attendee?: Record<string, unknown>; event?: R
       longitude: -0.1,
       googleMapsUrlOverride: null,
       appleMapsUrlOverride: null,
+      // Matches the DB defaults (wallet_apple_enabled true, wallet_semantic_tags_enabled false) -
+      // semantics stays off unless a test explicitly opts in, so the "all fields present" exact
+      // match below doesn't need to account for it.
+      walletAppleEnabled: true,
+      walletSemanticTagsEnabled: false,
       addressComponents: {
         object_name: "Main Hall",
         street: "123 Example St",
@@ -213,5 +219,107 @@ describe("buildWalletPassInput", () => {
     const input = buildWalletPassInput(fullResolved({ event: { location: null } }), "b");
 
     expect(input.googleMapsUrlLabel).toEqual(expect.stringContaining("google"));
+  });
+});
+
+describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
+  it("omits semantics entirely when walletSemanticTagsEnabled is off (the DB default)", () => {
+    const input = buildWalletPassInput(fullResolved(), "b");
+    expect(input.semantics).toBeUndefined();
+  });
+
+  it("omits semantics when walletAppleEnabled is off, even if the tags toggle is on", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { walletSemanticTagsEnabled: true, walletAppleEnabled: false } }),
+      "b",
+    );
+    expect(input.semantics).toBeUndefined();
+  });
+
+  it("populates semantics from event/attendee data when both toggles are on", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { walletSemanticTagsEnabled: true } }),
+      "b",
+    );
+    expect(input.semantics).toEqual({
+      eventName: "Admitto Conference",
+      eventType: "PKEventTypeGeneric",
+      // Europe/London is BST (+01:00) in September.
+      eventStartDate: "2026-09-24T09:00:00+01:00",
+      eventEndDate: "2026-09-24T18:00:00+01:00",
+      venueName: "Main Hall",
+      venueLocation: { latitude: 51.5, longitude: -0.1 },
+      entranceDescription: "Enter via the north gate",
+      attendeeName: "Jane Doe",
+      duration: 9 * 60 * 60,
+    });
+  });
+
+  it("omits venueLocation when coordinates aren't ready, without dropping the rest", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { walletSemanticTagsEnabled: true, latitude: null, longitude: null },
+      }),
+      "b",
+    );
+    expect(input.semantics?.venueLocation).toBeUndefined();
+    expect(input.semantics?.eventName).toBe("Admitto Conference");
+  });
+
+  it("omits eventStartDate/eventEndDate/duration when event hours aren't set", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { walletSemanticTagsEnabled: true, eventHoursStart: null, eventHoursEnd: null },
+      }),
+      "b",
+    );
+    expect(input.semantics?.eventStartDate).toBeUndefined();
+    expect(input.semantics?.eventEndDate).toBeUndefined();
+    expect(input.semantics?.duration).toBeUndefined();
+    expect(input.semantics?.eventName).toBe("Admitto Conference");
+  });
+
+  it("wraps an overnight event's duration past midnight instead of going negative", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { walletSemanticTagsEnabled: true, eventHoursStart: "22:00", eventHoursEnd: "02:00" },
+      }),
+      "b",
+    );
+    expect(input.semantics?.duration).toBe(4 * 60 * 60);
+  });
+
+  it("rolls eventEndDate onto the next calendar day for an overnight event, so it stays after eventStartDate", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          walletSemanticTagsEnabled: true,
+          timezone: "UTC",
+          eventHoursStart: "22:00",
+          eventHoursEnd: "02:00",
+        },
+      }),
+      "b",
+    );
+    expect(input.semantics?.eventStartDate).toBe("2026-09-24T22:00:00Z");
+    expect(input.semantics?.eventEndDate).toBe("2026-09-25T02:00:00Z");
+    expect(new Date(input.semantics!.eventEndDate!).getTime()).toBeGreaterThan(
+      new Date(input.semantics!.eventStartDate!).getTime(),
+    );
+  });
+
+  it("keeps eventEndDate on the same calendar day for a normal (non-overnight) event", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { walletSemanticTagsEnabled: true } }), "b");
+    // Europe/London (fullResolved's default timezone) is BST (+01:00) in September.
+    expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00+01:00");
+    expect(input.semantics?.eventEndDate).toBe("2026-09-24T18:00:00+01:00");
+  });
+
+  it("computes a UTC offset ('Z') correctly for a UTC-timezone event", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { walletSemanticTagsEnabled: true, timezone: "UTC" } }),
+      "b",
+    );
+    expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
   });
 });

@@ -50,6 +50,10 @@ model Event {
   wallet_api_key_enc           String?
   wallet_apple_enabled         Boolean                    @default(true)
   wallet_google_enabled        Boolean                    @default(true)
+  // Apple Wallet semantic tags (Siri Suggestions/Maps/Calendar) - opt-in, default off (ADR 0009
+  // data minimization: nothing beyond the pass's visible fields goes to PassCreator unless an
+  // admin explicitly turns it on). Apple only - no Google Wallet equivalent exists.
+  wallet_semantic_tags_enabled Boolean                    @default(false)
   // Admin-defined PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}).
   // Null/empty = the built-in default mapping (name, eventDate, eventHours, eventPlace, ticketType).
   wallet_field_mapping         Json?

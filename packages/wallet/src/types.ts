@@ -32,6 +32,31 @@ export interface WalletPassInput {
    * PassCreator's template default (its own auto-generated pass UID) ends up on the pass instead,
    * so scanning the wallet pass at check-in would not match the attendee's real ticket. */
   barcodeValue: string;
+  /** Apple Wallet semantic tags (opt-in, event-level). Omitted entirely unless the event has
+   * semantic tags enabled - never sent by default (ADR 0009 data minimization). */
+  semantics?: WalletPassSemantics;
+}
+
+/**
+ * Apple PassKit `semantics` object for event tickets (developer.apple.com/documentation/walletpasses,
+ * developer.passcreator.com/en/apple-wallet/semantic-tags). Powers Siri Suggestions / Maps /
+ * Calendar smart surfacing on a plain `eventTicket` pass - no NFC, no poster-style template
+ * required. Every field optional: only populated when Admitto actually has the underlying data.
+ */
+export interface WalletPassSemantics {
+  eventName?: string;
+  /** Always "PKEventTypeGeneric" - Admitto has no per-event category (concert/sports/etc.) to
+   * pick a more specific PKEventType, and Generic is valid for any event. */
+  eventType?: string;
+  /** ISO 8601 with UTC offset, e.g. "2026-09-24T18:00:00+02:00". */
+  eventStartDate?: string;
+  eventEndDate?: string;
+  venueName?: string;
+  venueLocation?: { latitude: number; longitude: number };
+  entranceDescription?: string;
+  attendeeName?: string;
+  /** Event duration in seconds. */
+  duration?: number;
 }
 
 export interface WalletPassResult {

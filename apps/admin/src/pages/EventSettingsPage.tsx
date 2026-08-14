@@ -49,6 +49,7 @@ import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { TimeInput } from "../components/TimeInput.js";
+import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime, formatUtcDateTime, formatWalletDatePreview } from "../utils/event-dates.js";
 import {
@@ -80,6 +81,7 @@ type SettingsForm = {
   walletApiKeyEdit: { mode: SecretEditMode; value: string };
   walletAppleEnabled: boolean;
   walletGoogleEnabled: boolean;
+  walletSemanticTagsEnabled: boolean;
   walletFieldMapping: WalletFieldMappingRow[];
   timezone: string;
   capacity: string;
@@ -98,6 +100,7 @@ type SettingsPatch = Partial<{
   wallet_api_key: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_semantic_tags_enabled: boolean;
   wallet_field_mapping: Record<string, string> | null;
   timezone: string;
   capacity: number | null;
@@ -122,6 +125,7 @@ const WALLET_CARD_INTRO =
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
+const WALLET_SEMANTIC_TAGS_DESC = "Adds Siri Suggestions, Maps, and Calendar smart data to the pass.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
   "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
 const WALLET_FIELD_MAPPING_EMPTY_NOTICE =
@@ -289,6 +293,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     walletApiKeyEdit: { mode: "idle", value: "" },
     walletAppleEnabled: data.wallet_apple_enabled,
     walletGoogleEnabled: data.wallet_google_enabled,
+    walletSemanticTagsEnabled: data.wallet_semantic_tags_enabled,
     walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
       id: crypto.randomUUID(),
       key,
@@ -325,6 +330,7 @@ function buildWalletPatch(
   | "wallet_api_key"
   | "wallet_apple_enabled"
   | "wallet_google_enabled"
+  | "wallet_semantic_tags_enabled"
   | "wallet_field_mapping"
 > {
   const patch: SettingsPatch = {};
@@ -344,6 +350,9 @@ function buildWalletPatch(
   }
   if (form.walletGoogleEnabled !== original.walletGoogleEnabled) {
     patch.wallet_google_enabled = form.walletGoogleEnabled;
+  }
+  if (form.walletSemanticTagsEnabled !== original.walletSemanticTagsEnabled) {
+    patch.wallet_semantic_tags_enabled = form.walletSemanticTagsEnabled;
   }
   if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
     patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
@@ -1728,6 +1737,19 @@ export function EventSettingsPage() {
                   />
                 </div>
                 <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <div className="settings-row__text">
+                    <strong>Semantic tags</strong>
+                    <p>{WALLET_SEMANTIC_TAGS_DESC}</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-semantic-tags-enabled"
+                    aria-label="Semantic tags"
+                    checked={form.walletSemanticTagsEnabled}
+                    disabled={isArchived || saving || !form.walletAppleEnabled}
+                    onChange={(e) => setForm({ ...form, walletSemanticTagsEnabled: e.target.checked })}
+                  />
+                </div>
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
                   <span className="wallet-platform-row__icon">
                     <i className="ti ti-brand-google" aria-hidden="true" />
                   </span>
@@ -1741,6 +1763,26 @@ export function EventSettingsPage() {
                     checked={form.walletGoogleEnabled}
                     disabled={isArchived || saving}
                     onChange={(e) => setForm({ ...form, walletGoogleEnabled: e.target.checked })}
+                  />
+                </div>
+                {/* Empty grid cell, paired with Google Wallet's row - pushes Samsung Wallet
+                    below onto its own row instead of sharing Google's, since the 2-column
+                    grid auto-flows every child in DOM order. */}
+                <div aria-hidden="true" />
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <span className="wallet-platform-row__icon">
+                    <SamsungWalletIcon />
+                  </span>
+                  <div className="settings-row__text">
+                    <strong>Samsung Wallet</strong>
+                    <p>Not supported yet.</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-samsung-enabled"
+                    aria-label="Samsung Wallet"
+                    checked={false}
+                    disabled
+                    onChange={() => {}}
                   />
                 </div>
               </div>
@@ -1856,6 +1898,13 @@ export function EventSettingsPage() {
               </div>
             </div>
           </Card>
+          <WalletPushHistoryCard
+            history={walletPushHistory}
+            error={walletPushHistoryError}
+            eventTimezone={form.timezone}
+            onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
+            showLoading={showWalletPushHistoryLoading}
+          />
           {!isArchived && (
             <SettingsFooter
               validationErrors={computeWalletFieldMappingErrors(form.walletFieldMapping)}
@@ -1866,13 +1915,6 @@ export function EventSettingsPage() {
               onSave={() => void handleSave()}
             />
           )}
-          <WalletPushHistoryCard
-            history={walletPushHistory}
-            error={walletPushHistoryError}
-            eventTimezone={form.timezone}
-            onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
-            showLoading={showWalletPushHistoryLoading}
-          />
         </EventSettingsTabPanel>
       )}
 

@@ -1040,6 +1040,38 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(row.wallet_google_enabled).toBe(true);
   });
 
+  it("toggles wallet_semantic_tags_enabled (superadmin) - off by default", async () => {
+    try {
+      const before = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+      expect(before.wallet_semantic_tags_enabled).toBe(false);
+
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { event: { wallet_semantic_tags_enabled: boolean } };
+      expect(body.event.wallet_semantic_tags_enabled).toBe(true);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_semantic_tags_enabled: false },
+      });
+    }
+  });
+
+  it("returns 403 when an organisation admin tries to toggle wallet_semantic_tags_enabled", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_semantic_tags_enabled).toBe(false);
+  });
+
   it("toggles the wallet_enabled master switch (superadmin)", async () => {
     try {
       const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
@@ -1173,6 +1205,46 @@ describe("PATCH /api/admin/events/:eventId", () => {
         status: "pending",
         result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
       });
+    });
+
+    it("enqueues an event-wide wallet_push job when wallet_semantic_tags_enabled is toggled", async () => {
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]).toMatchObject({
+          status: "pending",
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        });
+      } finally {
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_semantic_tags_enabled: false } });
+      }
+    });
+
+    it("enqueues an event-wide wallet_push job when wallet_apple_enabled is toggled (semantics gating depends on it too)", async () => {
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_apple_enabled: false }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]).toMatchObject({
+          status: "pending",
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        });
+      } finally {
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_apple_enabled: true } });
+      }
     });
 
     it("does not enqueue a job when only an unrelated field (capacity) changes", async () => {
