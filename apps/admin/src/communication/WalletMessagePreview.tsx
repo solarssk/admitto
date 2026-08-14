@@ -11,18 +11,22 @@ export function WalletMessagePreview({ text }: Readonly<{ text: string }>) {
   const trimmed = text.trim();
   return (
     <div className="wallet-message-preview">
-      <div className="wallet-message-preview__card">
-        <span className="wallet-message-preview__icon" aria-hidden="true">
-          <i className="ti ti-wallet" aria-hidden="true" />
-        </span>
-        <div className="wallet-message-preview__body">
-          <div className="wallet-message-preview__app-row">
-            <span className="wallet-message-preview__app-name">Wallet</span>
-            <span className="wallet-message-preview__now">now</span>
+      {/* The two pseudo-element layers behind .__card (see CSS) mimic a stack of notifications
+          peeking out underneath, matching PassCreator's own push-notification preview. */}
+      <div className="wallet-message-preview__stack">
+        <div className="wallet-message-preview__card">
+          <span className="wallet-message-preview__icon" aria-hidden="true">
+            <i className="ti ti-wallet" aria-hidden="true" />
+          </span>
+          <div className="wallet-message-preview__body">
+            <div className="wallet-message-preview__app-row">
+              <span className="wallet-message-preview__app-name">Wallet</span>
+              <span className="wallet-message-preview__now">now</span>
+            </div>
+            <p className="wallet-message-preview__text">
+              {trimmed || <span className="wallet-message-preview__placeholder">Your message will appear here…</span>}
+            </p>
           </div>
-          <p className="wallet-message-preview__text">
-            {trimmed || <span className="wallet-message-preview__placeholder">Your message will appear here…</span>}
-          </p>
         </div>
       </div>
       <p className="mail-field-hint">

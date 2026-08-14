@@ -4,18 +4,55 @@
   gap: var(--space-2);
 }
 
-/* Light notification card, matching .at-card's own tokens - not the app's own theme accent,
-   the icon background is fixed brand-blue since a real push notification's icon color comes
-   from PassCreator/the OS, not from Admitto's own light/dark theme. */
+/* Wraps .__card so its ::before/::after can sit behind it as a stack of notifications peeking
+   out underneath - matches PassCreator's own push-notification preview. Fixed grays (not theme
+   surface tokens) on all three layers since this mocks an OS notification stack, which looks
+   the same regardless of Admitto's own light/dark theme. */
+.wallet-message-preview__stack {
+  position: relative;
+  padding-bottom: 10px;
+}
+
+/* z-index climbs front-to-back (::before furthest back, .__card on top) - ::after would
+   otherwise paint over .__card, since a pseudo-element's default paint order among auto-z-index
+   siblings follows DOM order, and ::after is generated as the element's last child. */
+.wallet-message-preview__stack::before,
+.wallet-message-preview__stack::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 100%;
+  border-radius: var(--radius-lg, 20px);
+}
+
+.wallet-message-preview__stack::before {
+  right: 14px;
+  left: 14px;
+  bottom: -2px;
+  background: #dcdde1;
+  z-index: 1;
+}
+
+.wallet-message-preview__stack::after {
+  right: 7px;
+  left: 7px;
+  bottom: -5px;
+  background: #e8e9ec;
+  z-index: 2;
+}
+
 .wallet-message-preview__card {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-4);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg, 20px);
+  background: #f2f2f4;
+  box-shadow: var(--shadow-md);
 }
 
 .wallet-message-preview__icon {
