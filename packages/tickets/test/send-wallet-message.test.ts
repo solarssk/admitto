@@ -52,7 +52,7 @@ describe("sendWalletMessage", () => {
 
     expect(provider.sendPushMessage).toHaveBeenCalledTimes(1);
     expect(provider.sendPushMessage).toHaveBeenCalledWith(["pc-1", "pc-2"], "Welcome!");
-    expect(result).toEqual({ sent: 2, errored: 0 });
+    expect(result).toEqual({ sent: 2, errored: 0, erroredAttendeeIds: [] });
   });
 
   it("does nothing and reports zero/zero when there are no targets - never calls the provider", async () => {
@@ -61,7 +61,7 @@ describe("sendWalletMessage", () => {
     const result = await sendWalletMessage(provider as never, [], "Welcome!");
 
     expect(provider.sendPushMessage).not.toHaveBeenCalled();
-    expect(result).toEqual({ sent: 0, errored: 0 });
+    expect(result).toEqual({ sent: 0, errored: 0, erroredAttendeeIds: [] });
   });
 
   it("splits into multiple sequential bulk calls once past WALLET_MESSAGE_BULK_BATCH_SIZE", async () => {
@@ -81,10 +81,14 @@ describe("sendWalletMessage", () => {
     expect(provider.sendPushMessage).toHaveBeenCalledTimes(2);
     expect(calls[0]).toHaveLength(WALLET_MESSAGE_BULK_BATCH_SIZE);
     expect(calls[1]).toHaveLength(1);
-    expect(result).toEqual({ sent: WALLET_MESSAGE_BULK_BATCH_SIZE + 1, errored: 0 });
+    expect(result).toEqual({
+      sent: WALLET_MESSAGE_BULK_BATCH_SIZE + 1,
+      errored: 0,
+      erroredAttendeeIds: [],
+    });
   });
 
-  it("counts a failed batch as errored and keeps sending the remaining batches, instead of aborting the whole send", async () => {
+  it("counts a failed batch as errored, records its attendee ids, and keeps sending the remaining batches, instead of aborting the whole send", async () => {
     const targets = Array.from({ length: WALLET_MESSAGE_BULK_BATCH_SIZE + 1 }, (_, i) => ({
       attendeeId: `att-${i}`,
       providerPassId: `pc-${i}`,
@@ -99,10 +103,13 @@ describe("sendWalletMessage", () => {
     const result = await sendWalletMessage(provider as never, targets, "Welcome!");
 
     // First batch (WALLET_MESSAGE_BULK_BATCH_SIZE targets) failed, second (1 target) succeeded -
-    // a retry limited to the errored subset would not re-message the already-reached second
+    // a retry limited to erroredAttendeeIds would not re-message the already-reached second
     // batch, unlike the previous all-or-nothing behavior.
     expect(provider.sendPushMessage).toHaveBeenCalledTimes(2);
-    expect(result).toEqual({ sent: 1, errored: WALLET_MESSAGE_BULK_BATCH_SIZE });
+    expect(result.sent).toBe(1);
+    expect(result.errored).toBe(WALLET_MESSAGE_BULK_BATCH_SIZE);
+    expect(result.erroredAttendeeIds).toEqual(targets.slice(0, WALLET_MESSAGE_BULK_BATCH_SIZE).map((t) => t.attendeeId));
+    expect(result.erroredAttendeeIds).not.toContain(targets[WALLET_MESSAGE_BULK_BATCH_SIZE].attendeeId);
   });
 
   it("reports progress after every batch, success or failure, with the cumulative done count", async () => {
@@ -129,5 +136,21 @@ describe("sendWalletMessage", () => {
     await sendWalletMessage(provider as never, [], "Welcome!", onProgress);
 
     expect(onProgress).not.toHaveBeenCalled();
+  });
+
+  it("does not fail the send when onProgress rejects after a batch the provider already accepted", async () => {
+    const targets = [
+      { attendeeId: "att-1", providerPassId: "pc-1" },
+      { attendeeId: "att-2", providerPassId: "pc-2" },
+    ];
+    const provider = { sendPushMessage: vi.fn().mockResolvedValue(undefined) };
+    const onProgress = vi.fn().mockRejectedValue(new Error("db write failed"));
+
+    const result = await sendWalletMessage(provider as never, targets, "Welcome!", onProgress);
+
+    // The provider call succeeded - a progress-write failure must not turn that into a reported
+    // failure and risk a retry re-sending a notification that already reached its recipients.
+    expect(result).toEqual({ sent: 2, errored: 0, erroredAttendeeIds: [] });
+    expect(onProgress).toHaveBeenCalledTimes(1);
   });
 });

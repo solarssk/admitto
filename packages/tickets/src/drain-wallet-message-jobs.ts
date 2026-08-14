@@ -20,6 +20,10 @@ export const STALE_WALLET_MESSAGE_JOB_ERROR =
   "Wallet message job abandoned (worker stopped while running). Start it again.";
 export const STALE_WALLET_MESSAGE_PENDING_ERROR =
   "Wallet message job was never picked up by the worker. Start the worker and try again.";
+export const WALLET_MESSAGE_JOB_BAD_REQUEST_ERROR = "Wallet message job has an invalid request payload.";
+export const WALLET_MESSAGE_JOB_NOT_CONFIGURED_ERROR = "Wallet is not configured for this event.";
+export const WALLET_MESSAGE_JOB_GENERIC_ERROR =
+  "Wallet message send failed unexpectedly. Contact support if this continues.";
 
 export type DrainWalletMessageJobsResult = {
   claimed: number;
@@ -50,13 +54,28 @@ function readRequest(job: { result_json: unknown }): WalletMessageRequest | null
   return { eventId: req.eventId, attendeeIds: req.attendeeIds as string[], text: req.text };
 }
 
+/** Maps the two deliberately-thrown internal signals in runOneWalletMessageJob below to their
+ * operator-facing copy, and everything else (an unexpected database, crypto, or provider
+ * exception) to one generic fixed message - AdminJob.error is read verbatim by the polling UI,
+ * so it must never carry raw exception text (AGENTS.md's "Admin API errors in the UI" convention,
+ * applied here at the point the message is stored, same as wallet_push's own drain). The real
+ * error is still logged server-side. */
+function walletMessageJobErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message === "wallet_message_job_bad_request") return WALLET_MESSAGE_JOB_BAD_REQUEST_ERROR;
+    if (err.message === "wallet_not_configured") return WALLET_MESSAGE_JOB_NOT_CONFIGURED_ERROR;
+  }
+  return WALLET_MESSAGE_JOB_GENERIC_ERROR;
+}
+
 async function markWalletMessageFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
+  console.error("wallet message job failed:", err);
   await db.adminJob.update({
     where: { id: jobId },
     data: {
       status: "failed",
       finished_at: new Date(),
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 2000),
+      error: walletMessageJobErrorMessage(err),
     },
   });
 }
@@ -90,9 +109,14 @@ async function runOneWalletMessageJob(
     // it throw here would mark the whole job "failed" with no record of which batches already
     // went out, and an operator retrying the same selection would re-message everyone already
     // reached by an earlier, successful batch.
-    const { sent, errored } = await sendWalletMessage(provider, targets, request.text, async (doneCount) => {
-      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: skipped + doneCount } });
-    });
+    const { sent, errored, erroredAttendeeIds } = await sendWalletMessage(
+      provider,
+      targets,
+      request.text,
+      async (doneCount) => {
+        await db.adminJob.update({ where: { id: job.id }, data: { progress_done: skipped + doneCount } });
+      },
+    );
 
     await db.adminJob.update({
       where: { id: job.id },
@@ -105,6 +129,7 @@ async function runOneWalletMessageJob(
           sent,
           skipped,
           errored,
+          erroredAttendeeIds,
         },
         error: null,
       },

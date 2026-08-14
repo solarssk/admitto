@@ -19,6 +19,9 @@ import {
   parseWalletMessageJobStaleRunningMs,
   reclaimStaleWalletMessageJobs,
   STALE_WALLET_MESSAGE_PENDING_ERROR,
+  WALLET_MESSAGE_JOB_BAD_REQUEST_ERROR,
+  WALLET_MESSAGE_JOB_GENERIC_ERROR,
+  WALLET_MESSAGE_JOB_NOT_CONFIGURED_ERROR,
 } from "../src/drain-wallet-message-jobs.js";
 
 const fakeProvider = { provider: "stub" };
@@ -58,7 +61,7 @@ describe("drainWalletMessageJobs", () => {
       .mockReset()
       .mockImplementation(async (_provider, targets, _text, onProgress) => {
         await onProgress?.(targets.length);
-        return { sent: targets.length, errored: 0 };
+        return { sent: targets.length, errored: 0, erroredAttendeeIds: [] };
       });
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
 
@@ -147,6 +150,7 @@ describe("drainWalletMessageJobs", () => {
           sent: 2,
           skipped: 0,
           errored: 0,
+          erroredAttendeeIds: [],
         },
         error: null,
       },
@@ -173,9 +177,11 @@ describe("drainWalletMessageJobs", () => {
     expect(finalCall![0].data.result_json).toMatchObject({ sent: 1, skipped: 1, errored: 0 });
   });
 
-  it("still marks the job succeeded (not failed) when sendWalletMessage reports a partial batch failure, with an accurate errored count - a retry limited to the errored subset would not re-message already-reached recipients", async () => {
+  it("still marks the job succeeded (not failed) when sendWalletMessage reports a partial batch failure, with an accurate errored count and the failed recipients' ids - a retry limited to erroredAttendeeIds would not re-message already-reached recipients", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
-    vi.mocked(sendWalletMessage).mockReset().mockResolvedValueOnce({ sent: 1, errored: 1 });
+    vi.mocked(sendWalletMessage)
+      .mockReset()
+      .mockResolvedValueOnce({ sent: 1, errored: 1, erroredAttendeeIds: ["att-2"] });
 
     const result = await drainWalletMessageJobs(db as never);
 
@@ -183,7 +189,12 @@ describe("drainWalletMessageJobs", () => {
     const finalCall = db.adminJob.update.mock.calls.find(
       (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
     );
-    expect(finalCall![0].data.result_json).toMatchObject({ sent: 1, skipped: 0, errored: 1 });
+    expect(finalCall![0].data.result_json).toMatchObject({
+      sent: 1,
+      skipped: 0,
+      errored: 1,
+      erroredAttendeeIds: ["att-2"],
+    });
   });
 
   it("persists progress after each batch via the onProgress callback passed to sendWalletMessage", async () => {
@@ -191,7 +202,7 @@ describe("drainWalletMessageJobs", () => {
     vi.mocked(sendWalletMessage).mockReset().mockImplementationOnce(async (_p, _t, _x, onProgress) => {
       await onProgress?.(1);
       await onProgress?.(2);
-      return { sent: 2, errored: 0 };
+      return { sent: 2, errored: 0, erroredAttendeeIds: [] };
     });
 
     await drainWalletMessageJobs(db as never);
@@ -211,7 +222,7 @@ describe("drainWalletMessageJobs", () => {
     expect(sendWalletMessage).not.toHaveBeenCalled();
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wm-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_not_configured" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_MESSAGE_JOB_NOT_CONFIGURED_ERROR },
     });
   });
 
@@ -225,11 +236,11 @@ describe("drainWalletMessageJobs", () => {
     expect(resolveWalletProvider).not.toHaveBeenCalled();
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wm-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_not_configured" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_MESSAGE_JOB_NOT_CONFIGURED_ERROR },
     });
   });
 
-  it("marks the job failed when sendWalletMessage itself rejects - defense in depth, the real implementation never throws (batch failures are caught internally and reported as `errored`), but an unexpected exception here must still fail safely rather than crash the drain loop", async () => {
+  it("sanitizes an unexpected sendWalletMessage rejection to the generic operator-safe message instead of leaking the raw exception text - defense in depth, the real implementation never throws (batch failures are caught internally and reported as `errored`), but an unexpected exception here must still fail safely rather than crash the drain loop or expose internals", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     vi.mocked(sendWalletMessage).mockReset().mockRejectedValueOnce(new Error("provider down"));
 
@@ -238,7 +249,7 @@ describe("drainWalletMessageJobs", () => {
     expect(result).toEqual({ claimed: 1, succeeded: 0, failed: 1, reclaimed: 0 });
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wm-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "provider down" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_MESSAGE_JOB_GENERIC_ERROR },
     });
   });
 
@@ -264,11 +275,11 @@ describe("drainWalletMessageJobs", () => {
     expect(result.failed).toBe(1);
     expect(db.adminJob.update).toHaveBeenCalledWith({
       where: { id: "job-wm-1" },
-      data: { status: "failed", finished_at: expect.any(Date), error: "wallet_message_job_bad_request" },
+      data: { status: "failed", finished_at: expect.any(Date), error: WALLET_MESSAGE_JOB_BAD_REQUEST_ERROR },
     });
   });
 
-  it("stringifies a non-Error rejection instead of crashing when marking the job failed", async () => {
+  it("sanitizes a non-Error rejection to the generic operator-safe message instead of leaking it verbatim", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     vi.mocked(sendWalletMessage).mockRejectedValueOnce("raw string failure");
 
@@ -278,7 +289,7 @@ describe("drainWalletMessageJobs", () => {
     const finalCall = db.adminJob.update.mock.calls.find(
       (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
     );
-    expect(finalCall![0]).toMatchObject({ data: { error: "raw string failure" } });
+    expect(finalCall![0]).toMatchObject({ data: { error: WALLET_MESSAGE_JOB_GENERIC_ERROR } });
   });
 });
 

@@ -38,7 +38,14 @@ export async function loadWalletMessageTargets(
   return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
 }
 
-export type SendWalletMessageResult = { sent: number; errored: number };
+export type SendWalletMessageResult = {
+  sent: number;
+  errored: number;
+  /** attendeeId of every target in a batch that failed - the actual retry set a caller needs to
+   * re-message only what didn't go out, not the full original selection (which would duplicate
+   * already-successful batches). */
+  erroredAttendeeIds: string[];
+};
 
 /** Called after each batch (whether it succeeded or failed) so a caller can persist incremental
  * job progress - a large send can span several batches, and progress would otherwise sit frozen
@@ -66,7 +73,7 @@ export async function sendWalletMessage(
   onProgress?: SendWalletMessageProgress,
 ): Promise<SendWalletMessageResult> {
   let sent = 0;
-  let errored = 0;
+  const erroredAttendeeIds: string[] = [];
   for (const batch of chunk(targets, WALLET_MESSAGE_BULK_BATCH_SIZE)) {
     try {
       await provider.sendPushMessage(
@@ -75,9 +82,16 @@ export async function sendWalletMessage(
       );
       sent += batch.length;
     } catch {
-      errored += batch.length;
+      erroredAttendeeIds.push(...batch.map((target) => target.attendeeId));
     }
-    await onProgress?.(sent + errored);
+    try {
+      // Progress is advisory (polling UI only) - a write failure here must not turn a batch the
+      // provider already accepted into a reported failure, which would risk an operator retry
+      // re-sending a notification that already reached its recipients.
+      await onProgress?.(sent + erroredAttendeeIds.length);
+    } catch (err) {
+      console.error("wallet message progress update failed:", err);
+    }
   }
-  return { sent, errored };
+  return { sent, errored: erroredAttendeeIds.length, erroredAttendeeIds };
 }
