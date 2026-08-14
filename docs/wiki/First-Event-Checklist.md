@@ -3,13 +3,13 @@
 > **Audience:** Event Manager
 > **Required role:** Organisation Admin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+> **Last verified:** Admitto 0.5.1
 
 Use this checklist before an event. It is a practical starting point, not a replacement for your organisation's event policy.
 
 ## Plan the event
 
-- [ ] [Create the event](Create-an-Event) with the correct title, permanent link name, date, time zone, and optional location.
+- [ ] [Create the event](Create-an-Event) with the correct title, date, time zone, and optional location.
 - [ ] Open [Event Overview and Settings](Event-Overview-and-Settings) and set capacity if the event has a limit.
 - [ ] Add the [ticket types](Ticket-Types) and [custom attendee fields](Custom-Attendee-Fields) that attendee data needs.
 - [ ] Configure [event items and check-in behaviour](Event-Items-and-Check-in-Behaviour) for operators.

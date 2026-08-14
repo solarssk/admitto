@@ -3,7 +3,7 @@
 > **Audience:** Event Managers and Check-in Operators
 > **Required role:** Organisation Admin for changes; Operator for check-in results
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+> **Last verified:** Admitto 0.5.1
 
 Pass status controls whether an attendee may use the event ticket. It is separate from attendance confirmation, email delivery, and check-in state.
 
@@ -39,6 +39,7 @@ Restoring a pass can be blocked by event capacity. A Superadmin can use the disp
 
 - Revoking a pass blocks admission; it is not the same as revoking an earlier check-in.
 - Restoring a pass does not automatically check the attendee in again.
+- When the event has Wallet configured, revoking a pass also voids the attendee's wallet pass automatically, and restoring the pass restores the wallet pass the same way.
 - Attendance confirmation describes the attendee's response and does not replace pass status.
 - Delivery status describes a message attempt and does not prove that the pass is active.
 

@@ -3,7 +3,7 @@
 > **Audience:** Event Managers and Superadmins
 > **Required role:** Organisation Admin or Superadmin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+> **Last verified:** Admitto 0.5.1
 
 Your role decides which organisations, events, and actions are available. If a control is missing, ask a Superadmin to review your assignments rather than sharing an account.
 
@@ -22,7 +22,7 @@ Your role decides which organisations, events, and actions are available. If a c
 
 ## Organisation Admin
 
-An Organisation Admin prepares and runs events belonging to an assigned organisation. This includes event settings, attendees, communication, check-in, reports, and supported organisation administration. Event-level Mailing and Integrations tabs and event archive actions remain Superadmin-only.
+An Organisation Admin prepares and runs events belonging to an assigned organisation. This includes event settings, attendees, communication, check-in, reports, and supported organisation administration. Event-level Mailing, Wallet, and Integrations tabs and event archive actions remain Superadmin-only.
 
 ## Operator
 

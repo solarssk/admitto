@@ -3,7 +3,7 @@
 > **Audience:** Superadmins
 > **Required role:** Superadmin for organisation transport; Superadmin for event Mailing settings
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+> **Last verified:** Admitto 0.5.1
 
 ## What this page helps you do
 
@@ -105,6 +105,7 @@ When a hard failure NDR is forwarded into the mailbox, the next ingest run updat
 - Power Automate uses a configured webhook. Its URL and key are secrets.
 - Returning an event to organisation settings removes its dedicated override.
 - A successful transport test does not validate an event template; send a template test too.
+- A self-hosted mail server on your organisation's own private network is blocked by default in production, to stop Admitto from being tricked into reaching internal systems. Ops can allow specific trusted hostnames through the `MAIL_PRIVATE_DESTINATION_ALLOWLIST` environment variable, set on both the app and the background worker. This is not an in-app setting - if your organisation runs its own private mail server and the transport test keeps failing, ask ops to add it to the allowlist.
 
 ## What changes after this action
 
@@ -113,6 +114,7 @@ Future test and attendee messages use the newly effective transport. Existing de
 ## Common problems
 
 - **Test failed:** recheck required fields and use the safe error shown by Admitto; do not publish raw provider responses.
+- **Test fails only for a self-hosted, in-house mail server:** the destination likely resolves to a private network address, which production blocks unless ops added it to `MAIL_PRIVATE_DESTINATION_ALLOWLIST`.
 - **The wrong sender is used:** verify organisation versus event scope and the provider's mailbox/from settings.
 - **Event mail fails while the organisation test works:** inspect the event's dedicated override.
 
