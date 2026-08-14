@@ -21,6 +21,7 @@ import {
   handleDeleteAttendeeNote,
   handlePatchAttendeeNote,
 } from "../../src/admin/attendees-api-routes.js";
+import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-message-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -6744,6 +6745,56 @@ describe("wallet-message routes — POST send, GET jobs/:jobId, GET history, GET
     const body = (await res.json()) as { items: Array<Record<string, unknown>> };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({ status: "succeeded", sent: 1 });
+  });
+
+  it("GET history ranks a job that never got a finished_at after a genuinely recent one", async () => {
+    // Postgres puts nulls first on a bare `finished_at DESC` - without nulls:"last" this legacy
+    // (pre-backfill) null-finished_at job would wrongly rank ahead of the one that actually
+    // finished most recently.
+    await prisma.adminJob.deleteMany({ where: { event_id: WALLET_MESSAGE_EVENT, type: "wallet_message" } });
+    const legacyNullFinished = await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "failed",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        error: "wallet_not_configured",
+        created_at: new Date("2026-01-01T00:00:00Z"),
+        finished_at: null,
+      },
+    });
+    const recentlyFinished = await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "succeeded",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        result_json: { sent: 1, skipped: 0, errored: 0 },
+        created_at: new Date("2026-08-01T00:00:00Z"),
+        finished_at: new Date("2026-08-01T00:01:00Z"),
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.map((item) => item.id)).toEqual([recentlyFinished.id, legacyNullFinished.id]);
+  });
+
+  it("rejects an oversized send body before it ever reaches the handler", async () => {
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        filter: { type: "all" },
+        text: "x".repeat(WALLET_MESSAGE_SEND_BODY_MAX_BYTES),
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "request too large" });
   });
 
   it("GET attendees searches only wallet-pass holders by name", async () => {

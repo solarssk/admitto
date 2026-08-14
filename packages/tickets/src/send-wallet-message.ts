@@ -39,6 +39,10 @@ export async function loadWalletMessageTargets(
 }
 
 export type SendWalletMessageResult = {
+  /** Count of targets in a batch PassCreator's bulk push call accepted, not a confirmed
+   * on-device delivery - like wallet_push's own "reissued" count, neither PassCreator nor
+   * Apple/Google expose a synchronous delivery receipt for this, so "accepted the request" is
+   * the strongest signal available here. */
   sent: number;
   errored: number;
   /** attendeeId of every target in a batch that failed - the actual retry set a caller needs to

@@ -79,4 +79,23 @@ describe("admin wallet message dry-run rate-limit skip", () => {
     });
     expect(limited.status).toBe(429);
   });
+
+  it("leaves the real-send budget intact after many dry runs on the same user/event", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = makeSendApp(store, "admin-mixed");
+    const post = (dryRun: boolean) =>
+      app.request("/api/admin/events/evt-a/wallet-message/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ dryRun, filter: { type: "all" }, text: "Hi" }),
+      });
+
+    for (let i = 0; i < 20; i++) {
+      expect((await post(true)).status).toBe(200);
+    }
+    for (let i = 0; i < 10; i++) {
+      expect((await post(false)).status).toBe(200);
+    }
+    expect((await post(false)).status).toBe(429);
+  });
 });

@@ -27,6 +27,7 @@ import {
   handleWalletMessageSend,
   resolveWalletMessageAttendeeIds,
   WALLET_MESSAGE_RECIPIENT_LIMIT,
+  WALLET_MESSAGE_TEXT_MAX_LENGTH,
 } from "../../src/admin/wallet-message-routes.js";
 
 const HAS_WALLET_WHERE = { wallet_pass: { status: "active", provider_pass_id: { not: null } } };
@@ -222,6 +223,24 @@ describe("handleWalletMessageSend", () => {
     expect(c.json).toHaveBeenCalledWith({ error: "validation_failed" }, 400);
   });
 
+  it("returns validation_failed when text exceeds the max length", async () => {
+    const db = { attendee: { findMany: vi.fn() } };
+    const c = fakeContext({
+      req: {
+        param: vi.fn(() => "evt-1"),
+        query: vi.fn(),
+        json: vi.fn(async () => ({
+          filter: { type: "all" },
+          text: "x".repeat(WALLET_MESSAGE_TEXT_MAX_LENGTH + 1),
+        })),
+      },
+    });
+
+    await handleWalletMessageSend(c as never, db as never);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "validation_failed" }, 400);
+  });
+
   it("too_many_attendees when the resolved recipient set exceeds the cap", async () => {
     const rows = Array.from({ length: WALLET_MESSAGE_RECIPIENT_LIMIT + 1 }, (_, i) => ({ id: `att-${i}` }));
     const db = { attendee: { findMany: vi.fn().mockResolvedValue(rows) } };
@@ -289,7 +308,7 @@ describe("handleWalletMessageSend", () => {
       db,
       expect.objectContaining({
         event_id: "evt-1",
-        action_type: "wallet_message_sent",
+        action_type: "wallet_message_queued",
         metadata: { filter: "all", recipient_count: 2 },
       }),
     );
@@ -443,6 +462,9 @@ describe("handleGetWalletMessageHistory", () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { event_id: "evt-1", type: "wallet_message", status: { in: ["succeeded", "failed"] } },
+        // Postgres puts nulls first on a bare DESC - without nulls:"last" a job that predates the
+        // finished_at column (or never got one) could push a genuinely recent one out of the cap.
+        orderBy: [{ finished_at: { sort: "desc", nulls: "last" } }, { created_at: "desc" }],
       }),
     );
     expect(c.json).toHaveBeenCalledWith({

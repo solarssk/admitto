@@ -25,6 +25,9 @@ import { loadEventAdminJob } from "./admin-job-http.js";
 
 export const WALLET_MESSAGE_RECIPIENT_LIMIT = 2000;
 export const WALLET_MESSAGE_TEXT_MAX_LENGTH = 500;
+// 2000 ids x ~40 chars + the 500-char text cap above, with headroom - matches the other
+// body-limited admin routes in app.ts (importBodyLimit, templateBodyLimit, ...).
+export const WALLET_MESSAGE_SEND_BODY_MAX_BYTES = 128 * 1024;
 const WALLET_MESSAGE_HISTORY_LIMIT = 20;
 const WALLET_MESSAGE_ATTENDEE_SEARCH_MIN_LENGTH = 2;
 const WALLET_MESSAGE_ATTENDEE_SEARCH_MAX_PAGE_SIZE = 20;
@@ -112,7 +115,10 @@ async function assertTicketTypeFilterValid(
   }
 }
 
-async function auditWalletMessageSend(
+/** Logs the *request* to send, not a confirmed send - the job is still `pending` at this point
+ * and may later fail entirely (worker down, provider unconfigured). Named "queued" rather than
+ * "sent" so the audit trail can't be read as claiming delivery that may not have happened. */
+async function auditWalletMessageQueued(
   db: PrismaClient,
   c: Context,
   eventId: string,
@@ -121,7 +127,7 @@ async function auditWalletMessageSend(
   try {
     await writeBulkActionLog(db, {
       event_id: eventId,
-      action_type: "wallet_message_sent",
+      action_type: "wallet_message_queued",
       audit: adminAuditFromContext(c),
       metadata: { filter: meta.filterType, recipient_count: meta.recipientCount },
     });
@@ -184,7 +190,7 @@ export async function handleWalletMessageSend(c: Context, db: PrismaClient): Pro
     },
   });
 
-  await auditWalletMessageSend(db, c, eventId, { filterType: body.filter.type, recipientCount: ids.length });
+  await auditWalletMessageQueued(db, c, eventId, { filterType: body.filter.type, recipientCount: ids.length });
 
   return c.json({ jobId: job.id, recipientCount: ids.length } satisfies WalletMessageQueuedDto);
 }
@@ -226,13 +232,19 @@ export async function handleGetWalletMessageHistory(c: Context, db: PrismaClient
 
   const jobs = await db.adminJob.findMany({
     where: { event_id: eventId, type: "wallet_message", status: { in: ["succeeded", "failed"] } },
-    orderBy: { finished_at: "desc" },
+    // finished_at is nullable, and Postgres puts nulls first on DESC - without `nulls: "last"`,
+    // older jobs from before this column was backfilled could push recently-finished ones out of
+    // the LIMIT below.
+    orderBy: [{ finished_at: { sort: "desc", nulls: "last" } }, { created_at: "desc" }],
     take: WALLET_MESSAGE_HISTORY_LIMIT,
     select: { id: true, created_at: true, finished_at: true, status: true, error: true, result_json: true },
   });
 
   const items = jobs.map((job) => {
     const result = (job.result_json ?? null) as WalletMessageResultJson;
+    // Displayed as the item's timestamp - finished_at (when set) reads better to an operator than
+    // the job's original created_at, so this is when the send actually completed, not when it was
+    // queued.
     const when = job.finished_at ?? job.created_at;
     return {
       id: job.id,

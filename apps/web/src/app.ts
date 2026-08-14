@@ -170,6 +170,7 @@ import {
   handleGetWalletMessageJob,
   handleGetWalletMessageHistory,
   handleSearchWalletMessageAttendees,
+  WALLET_MESSAGE_SEND_BODY_MAX_BYTES,
 } from "./admin/wallet-message-routes.js";
 import { handleImportPreview, handleImportCommit, handleGetImportJob, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
@@ -615,6 +616,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const mailSettingsBodyLimit = bodyLimit({
     maxSize: MAX_MAIL_SETTINGS_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const walletMessageBodyLimit = bodyLimit({
+    maxSize: WALLET_MESSAGE_SEND_BODY_MAX_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const uploadBodyLimit = bodyLimit({
@@ -1252,6 +1257,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/wallet-message/send",
     jsonPostCsrf,
     staffAdminGate,
+    walletMessageBodyLimit,
     skipWalletMessageRateLimitForDryRun,
     adminWalletMessageSendRateLimit,
     guardArchivedEvent((c) => handleWalletMessageSend(c, db)),
