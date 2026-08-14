@@ -17,6 +17,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     discoverIdentityProvider: vi.fn(),
     discoverIdentityProviderPreview: vi.fn(),
     testIdentityProviderDraft: vi.fn(),
+    fetchAdminEvents: vi.fn(),
+    fetchAdminOrganizations: vi.fn(),
   };
 });
 
@@ -27,7 +29,10 @@ import {
   discoverIdentityProvider,
   discoverIdentityProviderPreview,
   testIdentityProviderDraft,
+  fetchAdminEvents,
+  fetchAdminOrganizations,
 } from "../../src/api/client.js";
+import type { EventDto } from "../../src/api/types.js";
 
 const mockFetch = vi.mocked(fetchIdentityProvider);
 const mockCreate = vi.mocked(createIdentityProvider);
@@ -35,6 +40,35 @@ const mockUpdate = vi.mocked(updateIdentityProvider);
 const mockDiscover = vi.mocked(discoverIdentityProvider);
 const mockDiscoverPreview = vi.mocked(discoverIdentityProviderPreview);
 const mockTestDraft = vi.mocked(testIdentityProviderDraft);
+
+function fixtureEvent(overrides: Partial<EventDto>): EventDto {
+  return {
+    id: "evt-x",
+    title: "Event",
+    slug: "event",
+    date: "2026-09-15T12:00:00.000Z",
+    timezone: "Europe/Warsaw",
+    event_hours_start: null,
+    event_hours_end: null,
+    location: null,
+    organization_id: "org-1",
+    archived_at: null,
+    ...overrides,
+  };
+}
+
+// Every mapping row's Event/Organization field is a picker sourced from these two lists (see
+// IdentityMappingRepeater) - the ids below match what the tests below select, plus "org-1" /
+// "org-777", which arrive pre-set on validDetail/legacyDetail rows and only need to keep
+// round-tripping unchanged (the picker's own "not found" fallback covers a value absent here).
+vi.mocked(fetchAdminEvents).mockResolvedValue([
+  fixtureEvent({ id: "evt-1", title: "Spring Summit" }),
+  fixtureEvent({ id: "evt-9", title: "Autumn Kickoff" }),
+]);
+vi.mocked(fetchAdminOrganizations).mockResolvedValue([
+  { id: "org-2", name: "Acme Events" },
+  { id: "org-9", name: "Northwind Org" },
+]);
 
 function renderEditorAt(path: string) {
   // createMemoryRouter + RouterProvider (not <MemoryRouter>) so the editor's
@@ -86,7 +120,8 @@ const validDetail = {
   claim_phone: "phone_number",
   enabled: true,
   login_button_label: "Continue with Google",
-  mappings: [{ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }],
+  mappings: [{ group: "admins", role: "admin", scope_type: "organization", scope_id: "org-1" }],
+  redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
 };
 
 afterEach(() => {
@@ -107,13 +142,16 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     const groupInputs = screen.getAllByLabelText("Group");
     expect(groupInputs).toHaveLength(2);
     fireEvent.change(groupInputs[1], { target: { value: "ops" } });
+    // A new row defaults to operator, which is always event-scoped and needs an Event.
+    fireEvent.click(screen.getByLabelText("Event"));
+    fireEvent.click(await screen.findByRole("button", { name: "Autumn Kickoff" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     const body = mockUpdate.mock.calls[0][1];
     expect(body.mappings).toHaveLength(2);
-    expect(body.mappings[1]).toMatchObject({ group: "ops", scope_type: "instance", scope_id: null });
+    expect(body.mappings[1]).toMatchObject({ group: "ops", role: "operator", scope_type: "event", scope_id: "evt-9" });
   });
 
   it("removes a mapping row", async () => {
@@ -138,14 +176,16 @@ describe("IdentityProviderEditor — mapping repeater (slice 3b)", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it("requires scope_id when switching a row to organization scope", async () => {
+  it("requires scope_id when switching a row's role changes its (derived) scope", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("admins");
-    // Switch the row's Scope select to "organization".
-    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "organization" }));
+    // The row starts as admin/organization with scope_id "org-1". Switching role to operator
+    // re-derives scope to "event" and clears scope_id - an organization id was never a valid
+    // event id anyway, so a fresh one is required before the row can save.
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "operator" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Scope ID is required for this scope.");
@@ -415,6 +455,7 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Issuer URL must use HTTPS/);
+    await screen.findByText(/SSO_PRIVATE_DESTINATION_ALLOWLIST/);
     expect(screen.queryByText("Connection test failed.")).toBeNull();
   });
 
@@ -565,16 +606,24 @@ describe("IdentityProviderEditor — discover & test error paths", () => {
 });
 
 describe("IdentityProviderEditor — repeater onChange coverage", () => {
-  it("changing the Role select updates the saved mapping role", async () => {
+  it("changing the Role select updates the saved mapping role and re-derives its scope", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
     fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
     fireEvent.click(screen.getByRole("button", { name: "operator" }));
+    // Switching role clears scope_id (organization "org-1" isn't a valid event id).
+    expect(screen.getByRole("button", { name: "Event, none selected" })).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Event"));
+    fireEvent.click(await screen.findByRole("button", { name: "Spring Summit" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
-    expect(mockUpdate.mock.calls[0][1].mappings[0].role).toBe("operator");
+    expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
+      role: "operator",
+      scope_type: "event",
+      scope_id: "evt-1",
+    });
   });
 
   it("typing into the scope_id field is carried through on save", async () => {
@@ -582,39 +631,41 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
-    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "organization" }));
-    fireEvent.change(screen.getByLabelText("Organization ID"), { target: { value: "org-1" } });
+    // The row is already admin/organization (from validDetail); just retarget its Organization picker.
+    fireEvent.click(screen.getByLabelText("Organization"));
+    fireEvent.click(await screen.findByRole("button", { name: "Acme Events" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
       scope_type: "organization",
-      scope_id: "org-1",
+      scope_id: "org-2",
     });
   });
 
-  it("labels the scope_id field 'Event ID' for event scope, and clears it on switching back to instance", async () => {
+  it("scope always tracks role: switching role away from and back to instance-scoped shows/hides the id field", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     mockUpdate.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
     await screen.findByDisplayValue("admins");
 
-    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "event" }));
-    expect(screen.getByLabelText("Event ID")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Event ID"), { target: { value: "evt-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "operator" }));
+    expect(screen.getByLabelText("Event")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Event"));
+    fireEvent.click(await screen.findByRole("button", { name: "Spring Summit" }));
 
-    // Switching back to instance drops the scope_id field entirely, and clears
-    // the value it held — a stale org/event id must not silently survive under
-    // the "instance" scope it no longer applies to.
-    fireEvent.click(screen.getByRole("button", { name: /^Scope,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "instance" }));
-    expect(screen.queryByLabelText("Event ID")).toBeNull();
-    expect(screen.queryByLabelText("Organization ID")).toBeNull();
+    // Switching to superadmin (instance-scoped) drops the scope_id field entirely, and clears
+    // the value it held — a stale event id must not silently survive under the "instance" scope
+    // it no longer applies to.
+    fireEvent.click(screen.getByRole("button", { name: /^Role,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "superadmin" }));
+    expect(screen.queryByLabelText("Event")).toBeNull();
+    expect(screen.queryByLabelText("Organization")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
+      role: "superadmin",
       scope_type: "instance",
       scope_id: null,
     });
@@ -622,28 +673,62 @@ describe("IdentityProviderEditor — repeater onChange coverage", () => {
 });
 
 describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2)", () => {
-  it("renders the invalid scope inline and blocks save with row errors", async () => {
+  it("self-heals a legacy/mismatched scope_type to the one its role requires, instead of blocking save", async () => {
     const legacyDetail = {
       ...validDetail,
       mappings: [{ group: "admins", role: "admin", scope_type: "legacy_scope", scope_id: "" }],
     };
     mockFetch.mockResolvedValueOnce(legacyDetail);
+    mockUpdate.mockResolvedValueOnce(legacyDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("admins");
-    // The legacy scope is outside MAPPING_SCOPES → an "(invalid — pick a scope)"
-    // option is rendered, same treatment as an out-of-range role. The trigger's own
-    // accessible name carries the bad value plus the "(invalid" marker, since the
-    // SearchableSelect trigger (a button, not a native select) has no CSS invalid state.
-    expect(screen.getByRole("button", { name: /^Scope, legacy_scope \(invalid/ })).toBeTruthy();
-    // Any non-"instance" scope_type (valid or not) still requires a scope_id.
-    expect(screen.getByLabelText("Event ID")).toBeTruthy();
+    // scope_type is now always derived from role (withScopeForRole), not read from the server
+    // as-is - a legacy or otherwise mismatched stored value self-heals to "organization" (what
+    // "admin" requires) on load, same as it would for any other role/scope mismatch.
+    expect(screen.getByRole("button", { name: /^Scope, organization/ })).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Organization"));
+    fireEvent.click(await screen.findByRole("button", { name: "Northwind Org" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await screen.findByText("Pick a scope.");
-    expect(screen.getByText("Scope ID is required for this scope.")).toBeTruthy();
-    expect(mockUpdate).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][1].mappings[0]).toMatchObject({
+      role: "admin",
+      scope_type: "organization",
+      scope_id: "org-9",
+    });
+  });
+
+  it("marks the form dirty as soon as a stored superadmin mapping self-heals to instance scope, so an unrelated save can't silently promote it (security regression)", async () => {
+    // A stored superadmin row at a non-instance scope is inert under the app's exact-match scope
+    // model (nothing checks superadmin outside instance scope) - but self-healing rewrites it to
+    // instance, an immediately-live, fully-privileged grant, with no scope_id field to force the
+    // operator to notice. baselineMappings must NOT also be healed, or this becomes invisible.
+    const legacyDetail = {
+      ...validDetail,
+      mappings: [{ group: "execs", role: "superadmin", scope_type: "organization", scope_id: "org-777" }],
+    };
+    mockFetch.mockResolvedValueOnce(legacyDetail);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await screen.findByDisplayValue("execs");
+    // Confirm the row actually displays the healed (instance) scope.
+    expect(screen.getByRole("button", { name: /^Scope, instance/ })).toBeTruthy();
+
+    // Navigate away (router-level, exercising the same useBlocker a real in-app link would)
+    // without touching anything else in the form.
+    await act(async () => {
+      await router.navigate("/admin/settings/identity/providers");
+    });
+
+    // waitFor, not a direct assertion: the confirm() call happens from a useEffect reacting to
+    // the blocker's own state transition (see IdentityProviderEditor.tsx), one render tick after
+    // navigate() itself resolves - the same reason every other confirmSpy assertion in this file
+    // and IdentityProviderEditor.test.tsx already retries here instead of asserting immediately.
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
+    confirmSpy.mockRestore();
   });
 });
 
@@ -660,11 +745,14 @@ describe("IdentityProviderEditor — create with a mapping", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add mapping" }));
     fireEvent.change(screen.getAllByLabelText("Group")[0], { target: { value: "admins" } });
+    // A new row defaults to operator, which is always event-scoped and needs an Event.
+    fireEvent.click(screen.getByLabelText("Event"));
+    fireEvent.click(await screen.findByRole("button", { name: "Autumn Kickoff" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
     await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
     const body = mockCreate.mock.calls[0][0];
-    expect(body.mappings).toEqual([{ group: "admins", role: "operator", scope_type: "instance", scope_id: null }]);
+    expect(body.mappings).toEqual([{ group: "admins", role: "operator", scope_type: "event", scope_id: "evt-9" }]);
   });
 });
 

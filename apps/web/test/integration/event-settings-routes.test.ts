@@ -3,10 +3,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { createSession, hashPassword, resolveInstanceBaseUrl, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
+import { PassCreatorClient } from "@admitto/wallet";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -173,6 +174,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_SET } });
   await prisma.event.update({
     where: { id: EVENT_SET },
@@ -182,6 +184,8 @@ afterEach(async () => {
       timezone: "UTC",
       capacity: null,
       archived_at: null,
+      created_by_timezone: null,
+      archived_by_timezone: null,
       logo_url: null,
       header_image_url: null,
     },
@@ -232,6 +236,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       archived_at: string | null;
       created_at: string;
       is_deletable: boolean;
+      deletion_blockers: string[];
       organization_name: string;
       active_items: { id: string; name: string; enabled: boolean }[];
       logo_url: string | null;
@@ -252,6 +257,7 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.archived_at).toBeNull();
     expect(new Date(body.created_at).toString()).not.toBe("Invalid Date");
     expect(body.is_deletable).toBe(false);
+    expect(body.deletion_blockers.length).toBeGreaterThan(0);
     expect(body.organization_name).toBe("Settings Org");
     expect(body.active_items.some((i) => i.id === ITEM_SET && i.name === "Badge")).toBe(true);
     expect(body.logo_url).toBeNull();
@@ -262,6 +268,54 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     expect(body.resolved_header_image_url).toBeNull();
     expect(body.admitted_count).toBe(0);
     expect(body.issued_items_count).toBe(0);
+  });
+
+  it("normalizes legacy event and audit timezones in the settings response", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: {
+        timezone: "Asia/Calcutta",
+        created_by_timezone: "Europe/Kiev",
+        archived_by_timezone: "Etc/UTC",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      timezone: string;
+      created_by_timezone: string | null;
+      archived_by_timezone: string | null;
+    };
+    expect(body.timezone).toBe("Asia/Kolkata");
+    expect(body.created_by_timezone).toBe("Europe/Kyiv");
+    expect(body.archived_by_timezone).toBe("UTC");
+  });
+
+  it("preserves unrecognized stored timezone identifiers in the settings response", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: {
+        timezone: "Legacy/Event",
+        created_by_timezone: "Legacy/Created",
+        archived_by_timezone: "Legacy/Archived",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      timezone: string;
+      created_by_timezone: string | null;
+      archived_by_timezone: string | null;
+    };
+    expect(body.timezone).toBe("Legacy/Event");
+    expect(body.created_by_timezone).toBe("Legacy/Created");
+    expect(body.archived_by_timezone).toBe("Legacy/Archived");
   });
 
   it("returns admitted_count and issued_items_count reflecting real activity", async () => {
@@ -418,9 +472,11 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     const body = (await res.json()) as {
       archived_at: string | null;
       is_deletable: boolean;
+      deletion_blockers: string[];
     };
     expect(body.archived_at).not.toBeNull();
     expect(body.is_deletable).toBe(true);
+    expect(body.deletion_blockers).toEqual([]);
   });
 
   it("returns is_deletable: true for an ACTIVE event with zero activity (archiving is not required)", async () => {
@@ -432,10 +488,12 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       status: string;
       archived_at: string | null;
       is_deletable: boolean;
+      deletion_blockers: string[];
     };
     expect(body.status).toBe("active");
     expect(body.archived_at).toBeNull();
     expect(body.is_deletable).toBe(true);
+    expect(body.deletion_blockers).toEqual([]);
   });
 
   it("returns 404 for non-existent event (superadmin)", async () => {
@@ -509,6 +567,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
         title: string;
         slug: string;
         is_deletable: boolean;
+        deletion_blockers: string[];
         admitted_count: number;
         issued_items_count: number;
       };
@@ -516,6 +575,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(body.event.title).toBe("Renamed Event");
     expect(body.event.slug).toBe("event-settings");
     expect(body.event.is_deletable).toBe(false);
+    expect(body.event.deletion_blockers.length).toBeGreaterThan(0);
     expect(body.event.admitted_count).toBe(0);
     expect(body.event.issued_items_count).toBe(0);
 
@@ -827,6 +887,1018 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(clearRes.status).toBe(200);
     const clearBody = (await clearRes.json()) as { event: { capacity: number | null } };
     expect(clearBody.event.capacity).toBeNull();
+  });
+
+  it("updates event_hours_start/end and clears them with null", async () => {
+    const original = await prisma.event.findUniqueOrThrow({
+      where: { id: EVENT_SET },
+      select: { event_hours_start: true, event_hours_end: true },
+    });
+
+    try {
+      const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+      });
+      expect(setRes.status).toBe(200);
+      const setBody = (await setRes.json()) as {
+        event: { event_hours_start: string | null; event_hours_end: string | null };
+      };
+      expect(setBody.event.event_hours_start).toBe("18:00");
+      expect(setBody.event.event_hours_end).toBe("22:00");
+
+      const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_hours_start: null, event_hours_end: null }),
+      });
+      expect(clearRes.status).toBe(200);
+      const clearBody = (await clearRes.json()) as {
+        event: { event_hours_start: string | null; event_hours_end: string | null };
+      };
+      expect(clearBody.event.event_hours_start).toBeNull();
+      expect(clearBody.event.event_hours_end).toBeNull();
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: original,
+      });
+    }
+  });
+
+  it("updates wallet_template_id and clears it with null (superadmin)", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { event: { wallet_template_id: string | null } };
+    expect(setBody.event.wallet_template_id).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as { event: { wallet_template_id: string | null } };
+    expect(clearBody.event.wallet_template_id).toBeNull();
+  });
+
+  it("returns 403 when an organisation admin tries to patch wallet_template_id", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_template_id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("forbidden");
+
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_template_id).toBeNull();
+  });
+
+  it("sets and clears the per-event wallet API key (superadmin)", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: "secret-key" }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as { event: { wallet_api_key: { configured: boolean } } };
+    expect(setBody.event.wallet_api_key.configured).toBe(true);
+    const stored = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(stored.wallet_api_key_enc).not.toBeNull();
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as {
+      event: { wallet_api_key: { configured: boolean } };
+    };
+    expect(clearBody.event.wallet_api_key.configured).toBe(false);
+  });
+
+  it("returns 403 when an organisation admin tries to patch the wallet API key", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_api_key: "secret-key" }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_api_key_enc).toBeNull();
+  });
+
+  it("toggles wallet_apple_enabled and wallet_google_enabled independently (superadmin)", async () => {
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_apple_enabled: false }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        event: { wallet_apple_enabled: boolean; wallet_google_enabled: boolean };
+      };
+      expect(body.event.wallet_apple_enabled).toBe(false);
+      expect(body.event.wallet_google_enabled).toBe(true);
+
+      const googleRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_google_enabled: false }),
+      });
+      expect(googleRes.status).toBe(200);
+      const googleBody = (await googleRes.json()) as {
+        event: { wallet_apple_enabled: boolean; wallet_google_enabled: boolean };
+      };
+      expect(googleBody.event.wallet_apple_enabled).toBe(false);
+      expect(googleBody.event.wallet_google_enabled).toBe(false);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_apple_enabled: true, wallet_google_enabled: true },
+      });
+    }
+  });
+
+  it("returns 403 when an organisation admin tries to toggle wallet_google_enabled", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_google_enabled: false }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_google_enabled).toBe(true);
+  });
+
+  it("toggles the wallet_enabled master switch (superadmin)", async () => {
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_enabled: false }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { event: { wallet_enabled: boolean } };
+      expect(body.event.wallet_enabled).toBe(false);
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_enabled: true } });
+    }
+  });
+
+  it("returns 403 when an organisation admin tries to toggle wallet_enabled", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_enabled: false }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_enabled).toBe(true);
+  });
+
+  it("sets and clears the wallet field mapping (superadmin)", async () => {
+    const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { attendeeName: "full_name" } }),
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as {
+      event: { wallet_field_mapping: Record<string, string> | null };
+    };
+    expect(setBody.event.wallet_field_mapping).toEqual({ attendeeName: "full_name" });
+
+    const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: null }),
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as {
+      event: { wallet_field_mapping: Record<string, string> | null };
+    };
+    expect(clearBody.event.wallet_field_mapping).toBeNull();
+  });
+
+  it("rejects a wallet field mapping value outside the known placeholder list", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { name: "not_a_real_placeholder" } }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 when an organisation admin tries to patch the wallet field mapping", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { name: "full_name" } }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_field_mapping).toBeNull();
+  });
+
+  describe("auto-push to already-issued wallet passes on save", () => {
+    const PUSH_EVENT = "evt-event-settings-wallet-push";
+    const PUSH_ATTENDEE = "att-event-settings-wallet-push";
+
+    beforeAll(async () => {
+      const token = generateToken();
+      await prisma.event.create({
+        data: {
+          id: PUSH_EVENT,
+          title: "Wallet Push Gala",
+          slug: "wallet-push-gala",
+          date: new Date("2026-09-01"),
+          organization_id: ORG_SET,
+          wallet_template_id: "tmpl-push",
+          wallet_api_key_enc: encryptToString("push-api-key"),
+        },
+      });
+      await prisma.attendee.create({
+        data: {
+          id: PUSH_ATTENDEE,
+          event_id: PUSH_EVENT,
+          email: "wallet-push@example.com",
+          name: "Wallet Push Guest",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: {
+          attendee_id: PUSH_ATTENDEE,
+          provider: "passcreator",
+          provider_pass_id: `pc-${PUSH_ATTENDEE}`,
+          status: "active",
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.walletPass.deleteMany({ where: { attendee_id: PUSH_ATTENDEE } });
+      await prisma.attendee.deleteMany({ where: { id: PUSH_ATTENDEE } });
+      await prisma.event.deleteMany({ where: { id: PUSH_EVENT } });
+    });
+
+    afterEach(async () => {
+      await prisma.adminJob.deleteMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+    });
+
+    it("enqueues an event-wide wallet_push job when a wallet-relevant field (title) changes", async () => {
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (renamed)" }),
+      });
+
+      expect(res.status).toBe(200);
+      // Awaited by the route (unlike the old direct-PassCreator-call version): the job row exists
+      // as soon as the response resolves, no polling needed.
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]).toMatchObject({
+        status: "pending",
+        result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+      });
+    });
+
+    it("does not enqueue a job when only an unrelated field (capacity) changes", async () => {
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ capacity: 500 }),
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("still saves the field change (200) via the catch when enqueueing itself throws (bot review)", async () => {
+      resetSystemLogBufferForTest();
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("db down"));
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (db down)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { event: { title: string } };
+        expect(body.event.title).toBe("Wallet Push Gala (db down)");
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_event_change_push_failed",
+          fields: { eventId: PUSH_EVENT },
+        });
+
+        const event = await prisma.event.findUnique({ where: { id: PUSH_EVENT } });
+        expect(event?.title).toBe("Wallet Push Gala (db down)");
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it.each([
+      ["wallet_enabled is false", { wallet_enabled: false }, { wallet_enabled: true }],
+      ["wallet_template_id is missing", { wallet_template_id: null }, { wallet_template_id: "tmpl-push" }],
+      [
+        "wallet_api_key_enc is missing",
+        { wallet_api_key_enc: null },
+        { wallet_api_key_enc: encryptToString("push-api-key") },
+      ],
+    ])(
+      "does not enqueue a job for a wallet-relevant field change when %s (guard, bot review)",
+      async (_label, unconfigured, restore) => {
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: unconfigured });
+        try {
+          const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+            method: "PATCH",
+            headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "Wallet Push Gala (unconfigured guard)" }),
+          });
+
+          expect(res.status).toBe(200);
+          const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+          expect(jobs).toHaveLength(0);
+        } finally {
+          await prisma.event.update({ where: { id: PUSH_EVENT }, data: restore });
+        }
+      },
+    );
+
+    it("does not enqueue a second job while one is already pending for the event (dedupe, bot review)", async () => {
+      const first = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (dedupe 1)" }),
+      });
+      expect(first.status).toBe(200);
+      const afterFirst = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(afterFirst).toHaveLength(1);
+
+      // Still pending (nothing drained it) - a second relevant-field save must reuse that same
+      // job instead of queuing another one behind it (bot review: no-op/idempotency guard).
+      const second = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (dedupe 2)" }),
+      });
+      expect(second.status).toBe(200);
+      const afterSecond = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(afterSecond).toHaveLength(1);
+      expect(afterSecond[0]?.id).toBe(afterFirst[0]?.id);
+    });
+
+    it("does not enqueue a job when a wallet-relevant field is resubmitted with its current value (bot review)", async () => {
+      const before = await prisma.event.findUniqueOrThrow({ where: { id: PUSH_EVENT }, select: { title: true } });
+
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: before.title }),
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("does not let a pending attendee_ids-kind job suppress a new event-wide push (bot review)", async () => {
+      await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_SET,
+          event_id: PUSH_EVENT,
+          result_json: { request: { kind: "attendee_ids", eventId: PUSH_EVENT, attendeeIds: [PUSH_ATTENDEE] } },
+        },
+      });
+
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (kind-scoped dedupe)" }),
+      });
+      expect(res.status).toBe(200);
+
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(2);
+      const kinds = jobs
+        .map((job) => (job.result_json as { request: { kind: string } }).request.kind)
+        .sort();
+      expect(kinds).toEqual(["attendee_ids", "event_wide"]);
+    });
+
+    it("creates only one event-wide job when two relevant-field saves race (DB-enforced, bot review)", async () => {
+      const [resA, resB] = await Promise.all([
+        app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (race A)" }),
+        }),
+        app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+        }),
+      ]);
+      expect(resA.status).toBe(200);
+      expect(resB.status).toBe(200);
+
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    });
+
+    it("reuses the winning job when create() itself hits a P2002 conflict (race-lost path, bot review)", async () => {
+      // Simulates the narrow window findPendingEventWideWalletPushJob's own pre-check can miss:
+      // another request's job is inserted between this call's own (mocked-empty) pre-check and
+      // its create() attempt - the DB's unique index is what actually catches it, and the
+      // catch block must fetch and return that real winner rather than erroring the save.
+      const winner = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_SET,
+          event_id: PUSH_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        },
+      });
+      const findFirstSpy = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValueOnce(null);
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (p2002 race)" }),
+        });
+        expect(res.status).toBe(200);
+
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]?.id).toBe(winner.id);
+      } finally {
+        createSpy.mockRestore();
+        findFirstSpy.mockRestore();
+      }
+    });
+
+    it("still saves the field change (200) via the catch when enqueueing fails with a non-conflict error (bot review)", async () => {
+      resetSystemLogBufferForTest();
+      const createSpy = vi
+        .spyOn(prisma.adminJob, "create")
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError("Foreign key constraint violated", {
+            code: "P2003",
+            clientVersion: "test",
+          }),
+        );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (non-conflict error)" }),
+        });
+
+        // A non-P2002 error isn't a "someone else won the race" signal - it must re-throw (not
+        // silently swallow) up to the caller's own outer catch, which still saves the settings
+        // change successfully rather than failing the whole request.
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({ message: "wallet_event_change_push_failed", fields: { eventId: PUSH_EVENT } });
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("re-throws the P2002 conflict when no winning job can be found (edge case, bot review)", async () => {
+      // Contrived (the conflicting job would have to vanish between the failed insert and the
+      // immediate re-query, in production this never happens), but still a real code path: the
+      // catch block must not silently swallow a P2002 it can't actually resolve to a real job.
+      resetSystemLogBufferForTest();
+      const findFirstSpy = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValue(null);
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (p2002 no winner)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({ message: "wallet_event_change_push_failed", fields: { eventId: PUSH_EVENT } });
+      } finally {
+        createSpy.mockRestore();
+        findFirstSpy.mockRestore();
+      }
+    });
+  });
+
+  describe("webhook subscription on wallet-config save", () => {
+    const SUB_EVENT = "evt-event-settings-wallet-sub";
+
+    beforeAll(async () => {
+      await prisma.event.create({
+        data: {
+          id: SUB_EVENT,
+          title: "Webhook Sub Gala",
+          slug: "webhook-sub-gala",
+          date: new Date("2026-09-01"),
+          organization_id: ORG_SET,
+          wallet_template_id: "tmpl-sub",
+          wallet_api_key_enc: encryptToString("sub-api-key"),
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.event.deleteMany({ where: { id: SUB_EVENT } });
+    });
+
+    it("subscribes to all 4 webhook event types when none already exist", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+        const subscribedEvents = subscribeSpy.mock.calls.map((call) => call[1]).sort();
+        expect(subscribedEvents).toEqual(
+          [
+            "first_pushnotification_registered",
+            "pass_voided",
+            "pushnotification_registered",
+            "pushnotification_unregistered",
+          ].sort(),
+        );
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("skips event types that already have a matching subscription (no duplicate)", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        // Different template - must not count as "already subscribed" for this event's template.
+        { targetUrl, event: "pushnotification_registered", passTemplate: "some-other-template" },
+      ]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(3);
+        });
+        const subscribedEvents = subscribeSpy.mock.calls.map((call) => call[1]).sort();
+        expect(subscribedEvents).toEqual(
+          ["first_pushnotification_registered", "pushnotification_registered", "pushnotification_unregistered"].sort(),
+        );
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("falls back to subscribing unconditionally when listWebhooks itself fails", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("down"));
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("logs a per-event failure but still subscribes the other event types when exactly one subscribeWebhook call rejects", async () => {
+      resetSystemLogBufferForTest();
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "subscribeWebhook")
+        .mockImplementation(async (_targetUrl: string, event: string) => {
+          if (event === "pass_voided") throw new Error("subscribe failed for pass_voided");
+        });
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        // subscribeWalletWebhooksBestEffort runs unawaited in the background - poll rather than
+        // assert immediately after the response resolves (CodeRabbit review).
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+
+        const [entry] = await vi.waitFor(() => {
+          const entries = querySystemLogs({ source: "admin", search: "wallet_webhook_subscribe_failed" });
+          expect(entries).toHaveLength(1);
+          return entries;
+        });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_webhook_subscribe_failed",
+          fields: { eventId: SUB_EVENT, event: "pass_voided" },
+        });
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("does not attempt any webhook calls when the saved API key fails to decrypt (corrupted ciphertext)", async () => {
+      await prisma.event.update({
+        where: { id: SUB_EVENT },
+        data: { wallet_api_key_enc: "not-valid-ciphertext" },
+      });
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks");
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook");
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        // subscribeWalletWebhooksBestEffort runs unawaited in the background - nothing to poll
+        // for on this negative assertion, so a short settle guards against a same-tick false
+        // pass (CodeRabbit review).
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(listSpy).not.toHaveBeenCalled();
+        expect(subscribeSpy).not.toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.event.update({
+          where: { id: SUB_EVENT },
+          data: { wallet_api_key_enc: encryptToString("sub-api-key") },
+        });
+      }
+    });
+
+    it("does not attempt any webhook calls when the instance base URL cannot be resolved", async () => {
+      const originalBaseUrl = process.env.BASE_URL;
+      // With BASE_URL unset, resolveInstanceBaseUrl falls through to the DB-persisted
+      // instance_url setting - a malformed value there (trailing slash) makes that lookup
+      // throw for real, without needing to mock the auth package's exported function.
+      delete process.env.BASE_URL;
+      await prisma.systemSettings.upsert({
+        where: { key: "instance_url" },
+        create: { key: "instance_url", value_json: JSON.stringify("https://bad.example.com/") },
+        update: { value_json: JSON.stringify("https://bad.example.com/") },
+      });
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks");
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook");
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        // Same reasoning as the decrypt-failure test above: negative assertion on unawaited
+        // background work needs a short settle, not an immediate check (CodeRabbit review).
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(listSpy).not.toHaveBeenCalled();
+        expect(subscribeSpy).not.toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.systemSettings.deleteMany({ where: { key: "instance_url" } });
+        if (originalBaseUrl !== undefined) process.env.BASE_URL = originalBaseUrl;
+      }
+    });
+  });
+
+  it("POST /wallet/test succeeds with a draft API key and reports the template name", async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      expect(String(url)).toContain("/api/v2/pass-template/tmpl-probe/describe");
+      return new Response(JSON.stringify({ success: true, data: { name: "Gala Pass" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "draft-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message: string };
+    expect(body.ok).toBe(true);
+    expect(body.message).toContain("Gala Pass");
+  });
+
+  it("POST /wallet/test succeeds with a generic message when PassCreator reports no template name", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: true, data: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "draft-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; message: string };
+    expect(body.ok).toBe(true);
+    expect(body.message).toBe("Connected to PassCreator.");
+  });
+
+  it("POST /wallet/test reports failure when PassCreator rejects the key", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["bad key"] }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "wrong-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("rejected the API key");
+  });
+
+  it("POST /wallet/test requires an API key when none is saved and none is drafted", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("API key is required");
+  });
+
+  it("POST /wallet/test falls back to the event's saved API key when none is drafted", async () => {
+    try {
+      const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_api_key: "saved-key" }),
+      });
+      expect(setRes.status).toBe(200);
+
+      const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+        expect((init?.headers as Record<string, string>).Authorization).toBe("saved-key");
+        return new Response(JSON.stringify({ success: true, data: { name: "Gala Pass" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId: "tmpl-probe" }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; message: string };
+      expect(body.ok).toBe(true);
+      expect(body.message).toContain("Gala Pass");
+    } finally {
+      await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_api_key: null }),
+      });
+    }
+  });
+
+  it("POST /wallet/test reports 'not found' when the template ID doesn't exist", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["no such template"] }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "missing-template" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("Template ID not found");
+  });
+
+  it("POST /wallet/test reports rate limiting when PassCreator returns 429 on every retry", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["slow down"] }), {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("rate-limiting");
+  }, 15000);
+
+  it("POST /wallet/test reports a generic rejection for an unmapped PassCreator error", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, errors: ["boom"] }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("PassCreator rejected the request.");
+  });
+
+  it("POST /wallet/test returns validation_failed when templateId is missing", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
+  it("POST /wallet/test reports a decrypt failure for a corrupted saved API key", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_SET },
+      data: { wallet_api_key_enc: "not-valid-ciphertext" },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ templateId: "tmpl-probe" }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("could not be decrypted");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_api_key_enc: null } });
+    }
+  });
+
+  it("POST /wallet/test reports a generic failure when the network request itself fails", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("fetch failed");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain("Could not reach PassCreator");
+  });
+
+  it("POST /wallet/test reports a generic rejection when the client throws something other than WalletProviderError", async () => {
+    // PassCreatorClient itself always wraps failures in WalletProviderError (fetch errors, non-
+    // JSON bodies, HTTP error statuses) - the ternary's other branch only guards against a truly
+    // unexpected throw, which needs a direct spy to reach.
+    vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockRejectedValueOnce(
+      new TypeError("unexpected"),
+    );
+
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "a-key", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("Could not reach PassCreator.");
+  });
+
+  it("POST /wallet/test returns 400 on invalid JSON", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /wallet/test returns 403 for a non-superadmin", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "x", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /wallet/test returns 403 event_archived for an archived event", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_ARCHIVED}/wallet/test`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "x", templateId: "tmpl-probe" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("event_archived");
   });
 
   it("returns 400 when slug is sent (strict schema)", async () => {

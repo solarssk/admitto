@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { parseTicketAddressComponents, toResolved } from "../src/resolve.js";
+import { parseTicketAddressComponents, parseWalletFieldMapping, toResolved } from "../src/resolve.js";
+
+describe("parseWalletFieldMapping", () => {
+  it("returns null for non-objects, arrays, and empty maps", () => {
+    expect(parseWalletFieldMapping(null)).toBeNull();
+    expect(parseWalletFieldMapping("x")).toBeNull();
+    expect(parseWalletFieldMapping([])).toBeNull();
+    expect(parseWalletFieldMapping({})).toBeNull();
+  });
+
+  it("trims string values and drops non-string / blank entries", () => {
+    expect(
+      parseWalletFieldMapping({
+        name: " full_name ",
+        eventDate: "event_date",
+        blank: "   ",
+        wrongType: 42,
+      }),
+    ).toEqual({ name: "full_name", eventDate: "event_date" });
+  });
+});
 
 describe("parseTicketAddressComponents", () => {
   it("returns null for non-objects and empty grids", () => {
@@ -37,6 +57,10 @@ describe("toResolved location fields", () => {
     email: "a@example.com",
     name: "Guest",
     status: "confirmed",
+    first_name: null,
+    last_name: null,
+    company: null,
+    department: null,
     token_hash: null,
     qr_payload: null,
     external_uuid: null,
@@ -50,8 +74,11 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "UTC",
+          event_hours_start: null,
+          event_hours_end: null,
           location_details: {
             venue_name: "Hall",
             formatted_address: "1 Main St, Warsaw",
@@ -93,8 +120,11 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "",
+          event_hours_start: null,
+          event_hours_end: null,
           location_details: null,
           logo_url: null,
           header_image_url: null,
@@ -113,8 +143,11 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "UTC",
+          event_hours_start: null,
+          event_hours_end: null,
           location_details: {
             venue_name: "Hall",
             formatted_address: "1 Main St, Warsaw",
@@ -138,6 +171,30 @@ describe("toResolved location fields", () => {
     expect(resolved.event.appleMapsUrlOverride).toBe("https://maps.apple.com/?q=Hall");
   });
 
+  it("maps event_hours_start/end onto the ResolvedTicket event shape", () => {
+    const resolved = toResolved(
+      {
+        ...baseAttendee,
+        event: {
+          id: "e1",
+          title: "Launch",
+          slug: "launch",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "UTC",
+          event_hours_start: "18:00",
+          event_hours_end: "22:00",
+          location_details: null,
+          logo_url: null,
+          header_image_url: null,
+          organization: { logo_url: null, header_image_url: null },
+        },
+      },
+      "internal",
+    );
+    expect(resolved.event.eventHoursStart).toBe("18:00");
+    expect(resolved.event.eventHoursEnd).toBe("22:00");
+  });
+
   it("leaves location fields null when location_details is absent", () => {
     const resolved = toResolved(
       {
@@ -145,8 +202,11 @@ describe("toResolved location fields", () => {
         event: {
           id: "e1",
           title: "Launch",
+          slug: "launch",
           date: new Date("2026-09-01T09:00:00Z"),
           timezone: "UTC",
+          event_hours_start: null,
+          event_hours_end: null,
           location_details: null,
           logo_url: null,
           header_image_url: null,

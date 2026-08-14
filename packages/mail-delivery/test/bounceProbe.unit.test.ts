@@ -24,6 +24,7 @@ import {
   runEventBounceProbe,
 } from "../src/bounceProbe.js";
 import { sendEventTransportTestEmail } from "../src/transportTest.js";
+import { BounceAuthError } from "../src/bounceIngest/resolveAuth.js";
 import type { InboundMailProvider, InboundMessage } from "../src/bounceIngest/types.js";
 
 vi.mock("@admitto/mailer-config", () => ({
@@ -191,7 +192,9 @@ describe("runEventBounceProbe (unit)", () => {
     );
 
     expect(result.status).toBe("failed");
-    expect(result.message).toMatch(/ALLOW_PRIVATE_MAIL_DESTINATIONS|private address/i);
+    expect(result.message).toMatch(
+      /ALLOW_PRIVATE_MAIL_DESTINATIONS|MAIL_PRIVATE_DESTINATION_ALLOWLIST|private address/i,
+    );
     expect(result.message).not.toMatch(/getaddrinfo|ECONNREFUSED/i);
     expect(result.sendResult.status).toBe("rejected");
     expect(result.sendResult.provider).toBe("smtp");
@@ -407,6 +410,32 @@ describe("runEventBounceProbe (unit)", () => {
     expect(result.status).toBe("failed");
     expect(result.message).toMatch(/open the bounce mailbox|IMAP settings/i);
     expect(result.message).not.toMatch(/decrypt/i);
+  });
+
+  it("surfaces the BounceAuthError message when the stored mail secret cannot be decrypted", async () => {
+    resolveImapConnectConfigMock.mockRejectedValueOnce(
+      new BounceAuthError(
+        "Cannot reuse SMTP credentials: A stored mail secret could not be decrypted. The encryption key may have changed, or the stored value is corrupted.",
+      ),
+    );
+
+    const result = await runEventBounceProbe(
+      {
+        eventId: "evt_1",
+        toAddress: "nobody@example.com",
+        timeoutMs: 30,
+        pollMs: 5,
+        sleep: async () => undefined,
+      },
+      baseDb({
+        bounceIngestSettings: {
+          findUnique: vi.fn().mockResolvedValue(settings({ reuse_smtp_credentials: true })),
+        },
+      }) as never,
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("could not be decrypted");
   });
 
   it("reconnects after a mid-poll IMAP failure and still finds the bounce", async () => {

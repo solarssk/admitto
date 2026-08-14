@@ -3,7 +3,7 @@
 > **Audience:** Superadmins
 > **Required role:** Superadmin
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -17,12 +17,13 @@ Sign in with your own Superadmin account and complete the security steps shown b
 
 1. Confirm the organisation and first administrator before handing over event work.
 2. Use **Organisations** for organisation details and limits.
-3. Use **Users & roles** for staff users and role assignments.
-4. Use **Organisation settings** for supported general, branding, mail, security, archiving, identity, and log settings.
-5. Use organisation settings for configuration that belongs to one organisation.
-6. Use event settings for event-specific overrides and lifecycle actions.
-7. Verify every material change with a synthetic account or test event.
-8. Review the relevant audit or system log view when the change requires confirmation.
+3. Use **Users & roles** for staff users, role assignments, and **Active sessions** (sessions are no longer under Organisation settings → Security).
+4. Use **Organisation settings** for supported general, branding, mail, security, archiving, identity, log, and **Health check** settings. Health check groups Core infrastructure vs External integrations, can **Run live checks**, and can **Copy for GitHub Issue** / **Export** a sanitized snapshot.
+5. Use the topbar **System status** and **Account** menus for a quick glance at connection/mailer state and My account / Sign out.
+6. Use organisation settings for configuration that belongs to one organisation.
+7. Use event settings for event-specific overrides and lifecycle actions.
+8. Verify every material change with a synthetic account or test event.
+9. Review the relevant audit, system, or security log view when the change requires confirmation.
 
 ## Expected result
 

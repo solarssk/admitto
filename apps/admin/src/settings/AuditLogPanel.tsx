@@ -15,6 +15,7 @@ import { exportAuditLog, exportSecurityAuditLog, fetchAdminEvents, fetchAuditLog
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AuditLogEntryDto, EventDto, SecurityAuditLogEntryDto } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { GeoCell, geoLocationText } from "../components/GeoCell.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
@@ -81,6 +82,7 @@ const ACTION_LABELS: Record<string, string> = {
   org_branding_logo_uploaded: "Organization branding logo uploaded",
   retention_run: "Retention job run",
   role_granted: "Role granted",
+  role_changed: "Role changed",
   role_revoked: "Role revoked",
   security_audit_log_exported: "Security log exported",
   session_device_label_updated: "Session device label updated",
@@ -93,6 +95,7 @@ const ACTION_LABELS: Record<string, string> = {
   user_email_changed: "User email changed",
   user_mfa_reset: "2FA reset",
   user_password_reset: "Password reset",
+  user_profile_updated: "User profile updated",
   user_reactivated: "User reactivated",
   user_sessions_revoked: "User sessions revoked",
   weather_settings_updated: "Weather settings updated",
@@ -123,6 +126,7 @@ const TONE_BY_ADMIN_ACTION: Record<string, BadgeVariant> = {
   user_deleted: "error",
   user_sessions_revoked: "error",
   role_granted: "info",
+  role_changed: "info",
   system_settings_updated: "info",
   identity_provider_toggled: "info",
   identity_cf_access_updated: "info",
@@ -214,13 +218,13 @@ function hourMinuteFormat(timeZone: string): Intl.DateTimeFormat {
 }
 
 /** Wall-clock text only (no label) - used in copy/export and under the Time column's user icon. */
-function userLocalTimeText(entry: AuditLogEntryDto): string | null {
+function userLocalTimeText(entry: { actor_timezone: string | null; created_at: string }): string | null {
   if (!entry.actor_timezone) return null;
   const hhmm = hourMinuteFormat(entry.actor_timezone).format(new Date(entry.created_at));
   return `${hhmm} ${zonedTimeLabel(entry.created_at, entry.actor_timezone)}`;
 }
 
-/** Viewer browser zone text only - Security has no stored user timezone (failed login etc.). */
+/** Viewer browser zone text only - fallback when no actor timezone was stored. */
 function viewerLocalTimeText(iso: string): string {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const hhmm = hourMinuteFormat(timeZone).format(new Date(iso));
@@ -236,17 +240,6 @@ function UserLocalTimeLine({ entry }: Readonly<{ entry: AuditLogEntryDto }>): Re
       <i className="ti ti-user" aria-hidden="true" title="User's local time" />
       <span className="sr-only">User's local time: </span>
       {text}
-    </div>
-  );
-}
-
-/** Security secondary line: ti-device-desktop marks the current viewer's browser timezone. */
-function ViewerLocalTimeLine({ iso }: Readonly<{ iso: string }>): ReactNode {
-  return (
-    <div className="sessions-subdued audit-log-time__local">
-      <i className="ti ti-device-desktop" aria-hidden="true" title="Your local time" />
-      <span className="sr-only">Your local time: </span>
-      {viewerLocalTimeText(iso)}
     </div>
   );
 }
@@ -286,7 +279,7 @@ const SCOPE_HINT = "Which event this action affected, or “Instance” for acco
 const TIME_HINT =
   "UTC on top. Below (user icon): the user's local time when they did it. Missing for older rows or CLI.";
 const SECURITY_TIME_HINT =
-  "UTC on top. Below (desktop icon): the same moment in your browser timezone.";
+  "UTC on top. Below (user icon): the user's local time when they did it. Missing for older rows or non-browser clients - then your browser timezone (desktop icon).";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {
@@ -337,14 +330,25 @@ function formatMetadataValue(key: string, value: unknown): string {
 }
 
 // Already shown elsewhere in the row - repeating them in Details would just be noise.
-// eventId/event_id: shown by the Scope column. email_redacted: shown under Security's User column.
-const METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id", "email_redacted"]);
+// eventId/event_id: shown by the Scope column.
+const AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE = new Set(["eventId", "event_id"]);
+// Security adds email/email_redacted: shown under the User column (resolved user, or the
+// attempted email on a failed login - email_redacted is the legacy key for rows written before
+// that was unredacted, see securityUnknownEmail).
+const SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE = new Set([
+  ...AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE,
+  "email",
+  "email_redacted",
+]);
 
 /** True when metadata has at least one key worth rendering in the Details column, beyond what
- * the Scope column already covers. */
-function hasVisibleMetadata(metadata: Record<string, unknown> | null): boolean {
+ * the Scope/User column already covers. */
+function hasVisibleMetadata(
+  metadata: Record<string, unknown> | null,
+  hiddenKeys: ReadonlySet<string>,
+): boolean {
   if (!metadata) return false;
-  return Object.keys(metadata).some((key) => !METADATA_KEYS_SHOWN_ELSEWHERE.has(key));
+  return Object.keys(metadata).some((key) => !hiddenKeys.has(key));
 }
 
 /** Plain-text rendering of one full row - Time/Action/Scope/Actor/IP plus any visible Details,
@@ -363,10 +367,10 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
     `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
-  if (hasVisibleMetadata(entry.metadata)) {
+  if (hasVisibleMetadata(entry.metadata, AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE)) {
     lines.push("Details:");
     for (const [key, value] of Object.entries(entry.metadata!)) {
-      if (METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
+      if (AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
       lines.push(`  ${humanizeMetadataKey(key)}: ${formatMetadataValue(key, value)}`);
     }
   }
@@ -394,7 +398,10 @@ const DETAILS_PANEL_EDGE_MARGIN_PX = 8;
  * CSS spec. Flips above the trigger when there isn't room below, so a row near the bottom of the
  * viewport doesn't push the panel off-screen.
  */
-function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> | null }>) {
+function DetailsCell({
+  metadata,
+  hiddenKeys,
+}: Readonly<{ metadata: Record<string, unknown> | null; hiddenKeys: ReadonlySet<string> }>) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -426,8 +433,8 @@ function DetailsCell({ metadata }: Readonly<{ metadata: Record<string, unknown> 
     };
   }, [open]);
 
-  if (!hasVisibleMetadata(metadata)) return <>-</>;
-  const rows = Object.entries(metadata!).filter(([key]) => !METADATA_KEYS_SHOWN_ELSEWHERE.has(key));
+  if (!hasVisibleMetadata(metadata, hiddenKeys)) return <>-</>;
+  const rows = Object.entries(metadata!).filter(([key]) => !hiddenKeys.has(key));
   return (
     <div ref={rootRef} className="audit-log-details">
       <button
@@ -468,11 +475,16 @@ interface LogColumn<T> {
  * (desktop table or mobile card, Audit or Security). */
 function LogDetailsAction({
   metadata,
+  hiddenKeys,
   onCopy,
-}: Readonly<{ metadata: Record<string, unknown> | null; onCopy: () => void }>) {
+}: Readonly<{
+  metadata: Record<string, unknown> | null;
+  hiddenKeys: ReadonlySet<string>;
+  onCopy: () => void;
+}>) {
   return (
     <div className="audit-log-details-cell">
-      <DetailsCell metadata={metadata} />
+      <DetailsCell metadata={metadata} hiddenKeys={hiddenKeys} />
       <button type="button" className="audit-log-row-copy" aria-label="Copy row" onClick={onCopy}>
         <i className="ti ti-copy" aria-hidden="true" />
       </button>
@@ -508,6 +520,7 @@ interface LogTableProps<T> {
   columns: LogColumn<T>[];
   rowKey: (entry: T) => string;
   metadataOf: (entry: T) => Record<string, unknown> | null;
+  metadataHiddenKeys: ReadonlySet<string>;
   onCopyRow: (entry: T) => Promise<void>;
 }
 
@@ -515,7 +528,15 @@ interface LogTableProps<T> {
  * differ enough (no Scope column on Security, a different Time/User cell) that each view still
  * supplies its own column list, but the table/row/details-cell scaffolding itself no longer
  * exists twice. */
-function LogTable<T>({ entries, loading, columns, rowKey, metadataOf, onCopyRow }: Readonly<LogTableProps<T>>) {
+function LogTable<T>({
+  entries,
+  loading,
+  columns,
+  rowKey,
+  metadataOf,
+  metadataHiddenKeys,
+  onCopyRow,
+}: Readonly<LogTableProps<T>>) {
   return (
     <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
       <table className="table audit-log-table">
@@ -538,7 +559,11 @@ function LogTable<T>({ entries, loading, columns, rowKey, metadataOf, onCopyRow 
                 </td>
               ))}
               <td>
-                <LogDetailsAction metadata={metadataOf(entry)} onCopy={() => void onCopyRow(entry)} />
+                <LogDetailsAction
+                  metadata={metadataOf(entry)}
+                  hiddenKeys={metadataHiddenKeys}
+                  onCopy={() => void onCopyRow(entry)}
+                />
               </td>
             </tr>
           ))}
@@ -556,6 +581,7 @@ interface LogCardsProps<T> {
   renderMeta: (entry: T) => ReactNode;
   renderFootLeft: (entry: T) => ReactNode;
   metadataOf: (entry: T) => Record<string, unknown> | null;
+  metadataHiddenKeys: ReadonlySet<string>;
   onCopyRow: (entry: T) => Promise<void>;
 }
 
@@ -572,6 +598,7 @@ function LogCards<T>({
   renderMeta,
   renderFootLeft,
   metadataOf,
+  metadataHiddenKeys,
   onCopyRow,
 }: Readonly<LogCardsProps<T>>) {
   return (
@@ -582,7 +609,11 @@ function LogCards<T>({
           <div className="audit-log-card__meta">{renderMeta(entry)}</div>
           <div className="audit-log-card__foot">
             <span>{renderFootLeft(entry)}</span>
-            <LogDetailsAction metadata={metadataOf(entry)} onCopy={() => void onCopyRow(entry)} />
+            <LogDetailsAction
+              metadata={metadataOf(entry)}
+              hiddenKeys={metadataHiddenKeys}
+              onCopy={() => void onCopyRow(entry)}
+            />
           </div>
         </div>
       ))}
@@ -719,9 +750,12 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
 /** Audit's LogCards top/meta slots - mirrors Security's own render*Card* functions below, plus
  * the Scope meta item Security has no equivalent of. */
 function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
+  const label = actionLabel(entry.action_type);
   return (
     <>
-      <Badge variant={actionTone(entry.action_type)}>{actionLabel(entry.action_type)}</Badge>
+      <div className="audit-log-card__action" title={label}>
+        <Badge variant={actionTone(entry.action_type)}>{label}</Badge>
+      </div>
       <div className="audit-log-time audit-log-card__time">
         <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
         <UserLocalTimeLine entry={entry} />
@@ -763,7 +797,7 @@ function renderAuditCardMeta(entry: AuditLogEntryDto, eventTitleById: Map<string
  * display name nor an email (already deleted). */
 function securityUserDisplay(entry: SecurityAuditLogEntryDto): string {
   if (!entry.user_id) return "Unknown";
-  return entry.user_display_name || entry.user_email || "Unknown";
+  return entry.user_display_name || entry.user_email || "Deleted user";
 }
 
 /** Tooltip for the User cell when `user_id` names an account that's since been deleted - mirrors
@@ -774,42 +808,50 @@ function securityUserTitle(entry: SecurityAuditLogEntryDto): string | undefined 
   return entry.user_id;
 }
 
-/** Redacted email for the `user_id`-is-null / enumeration-safe case (e.g. a failed login
- * attempt) - `auth.login.fail` is the only event type that currently writes a redacted email
- * into metadata for these rows; everything else with a null user_id (e.g. access denied) has no
- * email at all, so this simply resolves to undefined for them. */
+/** The attempted email for the `user_id`-is-null case (e.g. a failed login attempt) -
+ * `auth.login.fail` is the only event type that currently writes an email into metadata for
+ * these rows; everything else with a null user_id (e.g. access denied) has no email at all, so
+ * this simply resolves to undefined for them. `user_id` stays null even though the email is now
+ * shown in full: the write path still never resolves/confirms the email against a real account
+ * (packages/auth/src/audit.ts). Checks `email` first (current field); `email_redacted` is the
+ * legacy key from before this was unredacted - still read here so rows written before that change
+ * keep displaying their (redacted) value instead of going blank. */
 function securityUnknownEmail(entry: SecurityAuditLogEntryDto): string | undefined {
   if (entry.user_id) return undefined;
-  const value = entry.metadata?.["email_redacted"];
+  const value = entry.metadata?.["email"] ?? entry.metadata?.["email_redacted"];
   return typeof value === "string" ? value : undefined;
 }
 
 /** Email subline shown under the User cell - mirrors Audit's actor_email subline (full email
  * only when a known user has both a display name and an email, so we don't duplicate the value
  * when securityUserDisplay already fell back to showing the email as the primary text), plus the
- * redacted email for enumeration-safe rows above. */
+ * attempted email for the null-user_id rows above. */
 function securityUserEmail(entry: SecurityAuditLogEntryDto): string | undefined {
   if (entry.user_display_name && entry.user_email) return entry.user_email;
   return securityUnknownEmail(entry);
 }
 
 /** Plain-text rendering of one full row, for the same row-level "copy" affordance as Audit's
- * buildRowSummary - no Scope line here, since that concept doesn't apply; the local time is the
- * viewer's own (see viewerLocalTimeText), not the user's. */
+ * buildRowSummary - no Scope line here, since that concept doesn't apply. Prefers the actor's
+ * stored zone when present; otherwise the viewer's browser zone (same as the Time cell). */
 function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
   const userEmailSuffix = securityUserEmail(entry) ? ` (${securityUserEmail(entry)})` : "";
   const locationText = entry.ip ? geoLocationText(entry.country) : "";
   const locationSuffix = locationText ? ` (${locationText})` : "";
+  const actorLocal = userLocalTimeText(entry);
+  const localLine = actorLocal
+    ? `User's local time · ${actorLocal}`
+    : `Your local time · ${viewerLocalTimeText(entry.created_at)}`;
   const lines = [
-    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (Your local time · ${viewerLocalTimeText(entry.created_at)})`,
+    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${localLine})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
   ];
-  if (hasVisibleMetadata(entry.metadata)) {
+  if (hasVisibleMetadata(entry.metadata, SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE)) {
     lines.push("Details:");
     for (const [key, value] of Object.entries(entry.metadata!)) {
-      if (METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
+      if (SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE.has(key)) continue;
       lines.push(`  ${humanizeMetadataKey(key)}: ${formatMetadataValue(key, value)}`);
     }
   }
@@ -817,9 +859,8 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
 }
 
 /** Security's column config for LogTable - no Scope column (SecurityAuditLog rows aren't
- * event-scoped), and the Time column's second line is the viewer's own local time rather than the
- * user's (see ViewerLocalTimeLine). Static (unlike Audit's, built per-render below) since nothing
- * here depends on data outside the entry itself. */
+ * event-scoped). Time secondary line prefers actor_timezone (user icon) with viewer fallback
+ * (desktop icon), matching Audit. Static since nothing here depends on data outside the entry. */
 const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "time",
@@ -828,7 +869,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     cell: (entry) => (
       <>
         <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
-        <ViewerLocalTimeLine iso={entry.created_at} />
+        <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
       </>
     ),
   },
@@ -869,7 +910,7 @@ function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
       <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
         <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
-        <ViewerLocalTimeLine iso={entry.created_at} />
+        <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
       </div>
     </>
   );
@@ -1114,6 +1155,13 @@ interface UseLogQueryOptions<TEntry, TFilters extends { search: string; start: s
   exportRows: (filters: TFilters) => Promise<void>;
   loadErrorMessage: string;
   exportErrorMessage: string;
+  /** Whether this view's tab (Audit/Security) is the one currently shown. LogsPanelViews keeps
+   * all three views mounted (see its own comment), so without this the live-poll interval below
+   * would keep hitting this view's endpoint every tick even while the operator is looking at a
+   * sibling tab - three times the request volume of what's actually on screen, indefinitely, per
+   * open browser tab (PO review). Only gates the recurring poll, not the initial/filter-change
+   * load, so switching back to this tab still shows its last-fetched (not stale-forever) rows. */
+  isVisible: boolean;
 }
 
 /** All state + fetch/pagination/live-poll/scroll-restore logic shared by the Audit and Security
@@ -1126,6 +1174,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   exportRows,
   loadErrorMessage,
   exportErrorMessage,
+  isVisible,
 }: Readonly<UseLogQueryOptions<TEntry, TFilters>>) {
   const [entries, setEntries] = useState<TEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -1282,16 +1331,17 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
   // a live dashboard is worth having open at all. Independent of the effect above (its own deps
   // only touch page/filters) so pausing/resuming Live doesn't re-trigger a fetch, matching
   // SystemLogsPanel's own poll effect. AuditLogPanel mounts both Audit and Security hooks at
-  // once (LogsPanelViews toggles visibility, not mount) so this interval keeps firing even when
-  // the operator is on System or the sibling tab - deliberate; see LogsPanelViews.
+  // once (LogsPanelViews toggles visibility, not mount), so `isVisible` (this view's own tab
+  // being the shown one) also gates the interval - see isVisible's own comment on
+  // UseLogQueryOptions for why.
   useEffect(() => {
-    if (!live || !hasLoadedOnce) return;
+    if (!live || !hasLoadedOnce || !isVisible) return;
     // Resuming Live always starts the degraded-state tracking fresh.
     pollFailureCountRef.current = 0;
     setPollDegraded(false);
     const intervalId = window.setInterval(() => void load({ silent: true }), POLL_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [live, hasLoadedOnce, load]);
+  }, [live, hasLoadedOnce, isVisible, load]);
 
   const clearFilters = useCallback(() => {
     setFilters(initialFilters);
@@ -1624,6 +1674,7 @@ export function AuditLogPanel() {
     exportRows: exportAuditLogRows,
     loadErrorMessage: "Failed to load audit log.",
     exportErrorMessage: "Failed to export audit log.",
+    isVisible: view === "audit",
   });
   const security = useLogQuery<SecurityAuditLogEntryDto, SecurityLogFilters>({
     initialFilters: SECURITY_INITIAL_FILTERS,
@@ -1632,6 +1683,7 @@ export function AuditLogPanel() {
     exportRows: exportSecurityLogRows,
     loadErrorMessage: "Failed to load security audit log.",
     exportErrorMessage: "Failed to export security audit log.",
+    isVisible: view === "security",
   });
 
   const [events, setEvents] = useState<EventDto[]>([]);
@@ -1816,6 +1868,7 @@ export function AuditLogPanel() {
           columns={auditColumns}
           rowKey={(entry) => entry.id}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopyRow}
         />
       )}
@@ -1828,6 +1881,7 @@ export function AuditLogPanel() {
           renderMeta={(entry) => renderAuditCardMeta(entry, eventTitleById)}
           renderFootLeft={(entry) => entry.ip ?? "-"}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={AUDIT_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopyRow}
         />
       )}
@@ -1866,6 +1920,7 @@ export function AuditLogPanel() {
           columns={SECURITY_COLUMNS}
           rowKey={(entry) => entry.id}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopySecurityRow}
         />
       )}
@@ -1878,6 +1933,7 @@ export function AuditLogPanel() {
           renderMeta={renderSecurityCardMeta}
           renderFootLeft={(entry) => entry.ip ?? "-"}
           metadataOf={(entry) => entry.metadata}
+          metadataHiddenKeys={SECURITY_METADATA_KEYS_SHOWN_ELSEWHERE}
           onCopyRow={handleCopySecurityRow}
         />
       )}
@@ -1955,6 +2011,7 @@ export function AuditLogPanel() {
           <SystemLogsPanel
             ref={systemLogsRef}
             isDesktop={isDesktop}
+            isVisible={view === "system"}
             liveButton={!isDesktop ? liveButton : undefined}
             downloadButton={!isDesktop ? downloadButton : undefined}
             onLiveChange={setSystemLive}

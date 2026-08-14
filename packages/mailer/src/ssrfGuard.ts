@@ -1,5 +1,6 @@
 import type { LookupAddress } from "node:dns";
 import {
+  canonicalizeAllowlistHost,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
@@ -34,6 +35,9 @@ export class MailDestinationError extends Error {
  * Opt-in lab escape hatch. Honored only when `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` and
  * `NODE_ENV` is not `production`. Never enable in production: it bypasses loopback, RFC1918 /
  * IPv6-private, link-local, metadata, and unspecified-address checks at save and connect time.
+ *
+ * Self-hosted production with a LAN SMTP/IMAP host should use
+ * `MAIL_PRIVATE_DESTINATION_ALLOWLIST` instead (exact hostnames / IP literals).
  */
 function allowPrivateMailDestinations(): boolean {
   if (process.env["NODE_ENV"]?.trim().toLowerCase() === "production") {
@@ -43,13 +47,49 @@ function allowPrivateMailDestinations(): boolean {
 }
 
 /**
+ * Comma-separated exact hostnames or IP literals (case-insensitive) that may be private /
+ * loopback at save and connect time. Honored in production. Ops-controlled only (env), not UI.
+ */
+function parseMailPrivateDestinationAllowlist(): Set<string> {
+  const raw = process.env["MAIL_PRIVATE_DESTINATION_ALLOWLIST"]?.trim() ?? "";
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(",")
+      .map((entry) => canonicalizeAllowlistHost(entry))
+      .filter((entry) => entry.length > 0),
+  );
+}
+
+function isAllowlistedMailHost(hostname: string): boolean {
+  return parseMailPrivateDestinationAllowlist().has(canonicalizeAllowlistHost(hostname));
+}
+
+/** Lab global bypass (non-production) or exact allowlist match (any NODE_ENV). */
+function skipPrivateMailDestinationChecks(hostname: string): boolean {
+  return allowPrivateMailDestinations() || isAllowlistedMailHost(hostname);
+}
+
+async function lookupMailDestinationUnrestricted(host: string): Promise<LookupAddress[]> {
+  const { lookup } = await import("node:dns/promises");
+  try {
+    return await lookup(host, { all: true, verbatim: true });
+  } catch {
+    throw new MailDestinationError(
+      "mail_destination_unresolved",
+      "hostname could not be resolved",
+    );
+  }
+}
+
+/**
  * Sync literal-string check, for zod schema refinements at config write-time.
- * Honors the same `ALLOW_PRIVATE_MAIL_DESTINATIONS` override as
+ * Honors the same `ALLOW_PRIVATE_MAIL_DESTINATIONS` / allowlist overrides as
  * {@link resolveSafeMailDestination} so RFC1918 SMTP literals (e.g. `192.168.1.10`)
- * can be saved in local lab configs, not only hostnames that later resolve privately.
+ * can be saved when explicitly permitted, not only hostnames that later resolve privately.
  */
 export function isBlockedMailHost(hostname: string): boolean {
-  if (allowPrivateMailDestinations()) {
+  if (skipPrivateMailDestinationChecks(hostname)) {
     return false;
   }
   const host = unbracketHostname(hostname);
@@ -72,21 +112,14 @@ function mapSafeHostnameError(err: SafeHostnameError): MailDestinationError {
  * connection to them - resolving here and then letting fetch/nodemailer do their own,
  * separate DNS lookup for the actual connect would reopen the same DNS-rebinding gap.
  *
- * Opt-in escape hatch: `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` (non-production only) skips
- * the private/link-local check for local lab SMTP on RFC1918.
+ * Escape hatches:
+ * - `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` (non-production only): skip checks for any host.
+ * - `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (any NODE_ENV): skip checks only for listed hosts.
  */
 export async function resolveSafeMailDestination(hostname: string): Promise<LookupAddress[]> {
   const host = unbracketHostname(hostname);
-  if (allowPrivateMailDestinations()) {
-    const { lookup } = await import("node:dns/promises");
-    try {
-      return await lookup(host, { all: true, verbatim: true });
-    } catch {
-      throw new MailDestinationError(
-        "mail_destination_unresolved",
-        "hostname could not be resolved",
-      );
-    }
+  if (skipPrivateMailDestinationChecks(host)) {
+    return lookupMailDestinationUnrestricted(host);
   }
   if (isLoopbackHost(host) || isBlockedPrivateOrMetadataHost(host)) {
     throw new MailDestinationError(

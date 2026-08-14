@@ -1,0 +1,108 @@
+/* AttendeePicker: type-to-search attendee widget for the Send tab's "Specific attendees"
+   recipient option - search box with an inline suggestions dropdown (styled after
+   VenueAutocomplete/CheckInPage's own typeahead), plus a removable-chip list of who's picked
+   so far (styled after UserEditModal's pendingAdds chips). Lives in its own file since neither
+   of those two source components is a clean fit to import (a venue search and a role-assignment
+   chip list, not attendees). */
+
+.attendee-picker__field {
+  position: relative;
+}
+
+.attendee-picker__status {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted, var(--text-secondary));
+}
+
+.attendee-picker__suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: var(--z-dropdown, 1000);
+  margin: 4px 0 0;
+  padding: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  list-style: none;
+  box-sizing: border-box;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgb(15 23 42 / 12%));
+}
+
+.attendee-picker__hit {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius, 4px);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.attendee-picker__hit:hover,
+.attendee-picker__hit:focus-visible {
+  background: var(--surface-hover, var(--surface-sunken));
+}
+
+.attendee-picker__hit-name {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.attendee-picker__hit-email {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted, var(--text-secondary));
+}
+
+.attendee-picker__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.attendee-picker__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  font-size: var(--fs-sm);
+}
+
+.attendee-picker__chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: var(--at-gray-200);
+  color: var(--text-secondary);
+  padding: 0;
+  cursor: pointer;
+}
+
+.attendee-picker__chip-remove:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
+.attendee-picker__chip-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

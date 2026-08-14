@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button, Input, ModalBackdrop } from "@admitto/ui";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import "../attendees/add-attendee-modal.css";
 
 /** Props for {@link CreateTemplateDialog}. */
 export interface CreateTemplateDialogProps {
@@ -62,6 +63,10 @@ export function CreateTemplateDialog({
         <h2 className="add-attendee-modal__title" id={titleId}>
           New template
         </h2>
+        <p className="add-attendee-modal__hint">
+          Creates a new, blank template for this event. Give it a short label to find it in the
+          picker later. You'll write the subject and body next.
+        </p>
         <Input
           label="Template label"
           value={label}

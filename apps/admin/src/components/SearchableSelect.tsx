@@ -33,6 +33,10 @@ interface SearchableSelectProps {
   /** Id of the element (usually the visible error message) this trigger's `aria-describedby`
    * should point at - see `invalid`'s own comment for why this replaces `aria-invalid` here. */
   describedBy?: string;
+  /** Supplementary text below the trigger, same `.at-hint` styling and placement as `Input`'s
+   * own `hint` prop (`@admitto/ui`) - so a hint under this field reads identically to one under
+   * a plain text field instead of a caller improvising its own paragraph/spacing. */
+  hint?: string;
   /** Native tooltip on the trigger, e.g. explaining why the field is disabled. */
   title?: string;
   /** Floor for the panel's width, in px - default 260 fits most option sets, but a list of long
@@ -65,6 +69,7 @@ export function SearchableSelect({
   disabled,
   invalid,
   describedBy,
+  hint,
   title,
   showLabel = true,
   minWidth = 260,
@@ -96,6 +101,8 @@ export function SearchableSelect({
   // accessible-name spec, silencing the selected value) - states the field's purpose *and*
   // current selection together, matching PhoneCountrySelect's own trigger.
   const triggerLabel = selected ? `${label}, ${selected.label}` : `${label}, none selected`;
+  const hintId = hint ? `${id}-hint` : undefined;
+  const triggerDescribedBy = [describedBy, hintId].filter(Boolean).join(" ") || undefined;
 
   return (
     <div className="at-field searchable-select" ref={rootRef}>
@@ -117,7 +124,7 @@ export function SearchableSelect({
         disabled={disabled}
         title={title}
         aria-expanded={open}
-        aria-describedby={describedBy}
+        aria-describedby={triggerDescribedBy}
         aria-label={triggerLabel}
         onClick={() => setOpen((current) => !current)}
       >
@@ -131,6 +138,11 @@ export function SearchableSelect({
         )}
         <i className="ti ti-chevron-down searchable-select__chevron" aria-hidden="true" />
       </button>
+      {hint && (
+        <span id={hintId} className="at-hint">
+          {hint}
+        </span>
+      )}
       {open && (
         <div
           className={`searchable-select__panel${openUpward ? " searchable-select__panel--up" : ""}`}

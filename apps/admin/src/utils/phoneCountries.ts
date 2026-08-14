@@ -30,3 +30,28 @@ export const PHONE_COUNTRIES: readonly PhoneCountry[] = getCountryDataList()
 export function findPhoneCountryByDialCode(dialCode: string): PhoneCountry | undefined {
   return PHONE_COUNTRIES.find((c) => c.dialCode === dialCode);
 }
+
+export interface SplitPhoneForPicker {
+  dialCode: string;
+  nationalNumber: string;
+}
+
+/** Splits an existing E.164 contact value for the country picker and national-number input.
+ * Longest code wins because shared-code prefixes such as +1 and +1242 must not be ambiguous. */
+export function splitPhoneForPicker(phone: string): SplitPhoneForPicker {
+  const value = phone.trim();
+  const dialCode = [...new Set(PHONE_COUNTRIES.map((country) => country.dialCode))]
+    .sort((a, b) => b.length - a.length)
+    .find((code) => value.startsWith(code));
+
+  if (!dialCode) return { dialCode: "", nationalNumber: value };
+  return { dialCode, nationalNumber: value.slice(dialCode.length).trim() };
+}
+
+/** Stores picker input as one E.164-like contact value while preserving a legacy number when
+ * the operator does not select a country code. */
+export function composePhoneE164(dialCode: string, nationalNumber: string): string {
+  const number = nationalNumber.trim();
+  if (!dialCode) return number;
+  return number ? `${dialCode}${number.replace(/\D/g, "")}` : "";
+}

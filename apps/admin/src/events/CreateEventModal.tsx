@@ -6,6 +6,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, GeocodingResultDto } from "../api/types.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { slugFromTitle } from "./slug.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
@@ -31,8 +32,13 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   useOverscrollBounceGuard(scrollRef, open);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
-  const [slugTouched, setSlugTouched] = useState(false);
   const [date, setDate] = useState("");
+  const [eventHoursStart, setEventHoursStart] = useState("");
+  const [eventHoursEnd, setEventHoursEnd] = useState("");
+  const [eventHoursStartValid, setEventHoursStartValid] = useState(true);
+  const [eventHoursEndValid, setEventHoursEndValid] = useState(true);
+  const eventHoursStartValidRef = useRef(true);
+  const eventHoursEndValidRef = useRef(true);
   const [timezone, setTimezone] = useState(defaultBrowserTimezone);
   const [venueName, setVenueName] = useState("");
   // Only set right after picking a geocoding suggestion; free-typed text carries just
@@ -42,16 +48,19 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!slugTouched) {
-      setSlug(slugFromTitle(title, 80));
-    }
-  }, [title, slugTouched]);
+    setSlug(slugFromTitle(title, 80));
+  }, [title]);
 
   const resetForm = () => {
     setTitle("");
     setSlug("");
-    setSlugTouched(false);
     setDate("");
+    setEventHoursStart("");
+    setEventHoursEnd("");
+    eventHoursStartValidRef.current = true;
+    eventHoursEndValidRef.current = true;
+    setEventHoursStartValid(true);
+    setEventHoursEndValid(true);
     setTimezone(defaultBrowserTimezone());
     setVenueName("");
     setVenueGeocode(null);
@@ -66,10 +75,22 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
 
   useModalFocusTrap(panelRef, open, handleClose);
 
-  const canSubmit = Boolean(title.trim() && slug.trim() && date && timezone);
+  const canSubmit = Boolean(title.trim() && slug.trim() && date && timezone && eventHoursStartValid && eventHoursEndValid);
+
+  const updateEventHoursStartValidity = (valid: boolean) => {
+    eventHoursStartValidRef.current = valid;
+    setEventHoursStartValid(valid);
+  };
+
+  const updateEventHoursEndValidity = (valid: boolean) => {
+    eventHoursEndValidRef.current = valid;
+    setEventHoursEndValid(valid);
+  };
 
   const handleSubmit = async () => {
     // Create is disabled while submitting or while the form is incomplete.
+    // The refs make the just-blurred TimeInput authoritative even before React re-renders its button.
+    if (!canSubmit || !eventHoursStartValidRef.current || !eventHoursEndValidRef.current) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -78,6 +99,8 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
         slug: slug.trim(),
         date,
         timezone,
+        event_hours_start: eventHoursStart || undefined,
+        event_hours_end: eventHoursEnd || undefined,
         venue_name: venueName.trim() || undefined,
         formatted_address: venueGeocode?.formatted_address,
         latitude: venueGeocode?.latitude,
@@ -89,7 +112,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError("This link name is already in use. Choose another.");
+        setError("An event with a similar name already exists. Change the title slightly and try again.");
       } else {
         setError(operatorApiErrorMessage(err, "Failed to create event. Try again."));
       }
@@ -109,7 +132,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
           <i className="ti ti-calendar-plus" aria-hidden="true" /> New event
         </h2>
         <p className="add-attendee-modal__subtitle">
-          Add a title and date. Location is optional.
+          Add a title and date.
         </p>
         {error && (
           <p className="add-attendee-modal__error" role="alert">
@@ -128,23 +151,6 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             onChange={(e) => setTitle(e.target.value)}
             {...NO_AUTOFILL_PROPS}
           />
-          <Input
-            id="ce-slug"
-            label="Link name *"
-            hint="Short permanent ID for this event (lowercase letters, numbers, - or _). Used in agency ticket links such as /t/summer-summit/a/…. Ordinary tickets use a private token only (/t/…). Filled from the title; editable now, not after create."
-            icon={<i className="ti ti-link" aria-hidden="true" />}
-            className="mono"
-            value={slug}
-            maxLength={80}
-            pattern="[a-z0-9_\-]+"
-            required
-            disabled={submitting}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              setSlugTouched(true);
-            }}
-            {...NO_AUTOFILL_PROPS}
-          />
           <DatePicker
             id="ce-date"
             label="Event date"
@@ -153,6 +159,28 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
             disabled={submitting}
             onChange={setDate}
           />
+          <div className="add-attendee-modal__time-range">
+            <div className="add-attendee-modal__field-row">
+              <TimeInput
+                id="ce-hours-start"
+                label="Event hours (start)"
+                value={eventHoursStart}
+                disabled={submitting}
+                onChange={setEventHoursStart}
+                onValidityChange={updateEventHoursStartValidity}
+              />
+              <TimeInput
+                id="ce-hours-end"
+                label="Event hours (end)"
+                value={eventHoursEnd}
+                disabled={submitting}
+                onChange={setEventHoursEnd}
+                pickerAlign="end"
+                onValidityChange={updateEventHoursEndValidity}
+              />
+            </div>
+            <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
+          </div>
           <div className="at-field">
             <label className="at-label" htmlFor={timezoneId}>
               Event timezone *
@@ -163,17 +191,18 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
               onChange={setTimezone}
               disabled={submitting}
               required
-              hint="Search by city (for example Delhi or Warsaw). The saved value is a standard timezone ID such as Asia/Kolkata or Europe/Warsaw; often a region name, not the city you typed."
+              hint="Search by city (for example Warsaw). Admitto saves the official region clock for that place (shown as Europe/Warsaw) so event times and reports stay correct."
             />
           </div>
           <VenueAutocomplete
             id="ce-location"
-            label="Location"
+            label="Location (optional)"
             value={venueName}
             maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
             disabled={submitting}
+            showFindButton={false}
             placeholder="e.g. Convention Center, Warsaw"
-            hint="Optional. Search a venue or address. If nothing matches, create the event anyway and set the map pin and coordinates later under Event settings, Location tab."
+            hint="Search a venue or address. If nothing matches, create the event anyway and set the map pin later under Event settings, Location tab."
             onChange={(text) => {
               setVenueName(text);
               setVenueGeocode(null);

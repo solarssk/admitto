@@ -48,13 +48,22 @@ const EMPTY_DRAFT: LocationDraft = {
 };
 
 const ADDRESS_CARD_HINT =
-  "Also used for directions and to check the venue against the event timezone.";
+  "Venue, map pin, and attendee-facing address.";
 const ADDRESS_CARD_INTRO =
-  "Venue name, map pin, and structured address shown to attendees.";
+  "Search for a venue or set its pin on the map.";
 const DIRECTIONS_HINT =
-  "How attendees find the entrance, parking, or public transit. Shown with the event location.";
+  "Arrival details shown with the event location.";
 const ACCESSIBILITY_HINT =
-  "Step-free access, accessible restrooms, hearing loop, and similar notes for attendees.";
+  "Accessibility details shown with the event location.";
+
+/** Used when map-tile config cannot be loaded. Keeps venue/notes editable without a MapPicker. */
+const MAPS_UNAVAILABLE_FALLBACK: MapTileConfigDto = {
+  enabled: false,
+  tile_url: "",
+  attribution: "",
+  max_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
+  contact_configured: true,
+};
 
 /** Location tab: venue search, interactive map, structured address grid, and
  * directions/accessibility notes. */
@@ -97,6 +106,7 @@ export function LocationSettingsPanel({
   const [draftVerified, setDraftVerified] = useState(false);
   const [suggestedTimezone, setSuggestedTimezone] = useState<string | null>(null);
   const [fixLinksOpen, setFixLinksOpen] = useState(false);
+  const [lookupResetKey, setLookupResetKey] = useState(0);
 
   const loadAbortRef = useRef<AbortController | null>(null);
   const reverseSeqRef = useRef(0);
@@ -119,18 +129,28 @@ export function LocationSettingsPanel({
     setLoading(true);
     setLoadError(null);
     try {
-      const [location, tiles] = await Promise.all([
+      // Location is required for editing. Map tiles are optional: a tile-config
+      // failure must not hide venue search or Directions/Accessibility (#808).
+      // Fetch both concurrently; only the tile promise falls back when it fails.
+      const [locationResult, tilesResult] = await Promise.allSettled([
         fetchEventLocation(eventId, ac.signal),
         fetchMapTileConfig(ac.signal),
       ]);
       if (ac.signal.aborted) return;
-      applyResponse(location);
+
+      if (locationResult.status === "rejected") {
+        setLoadError("Failed to load location settings.");
+        setApiData(null);
+        setTileConfig(null);
+        return;
+      }
+
+      applyResponse(locationResult.value);
+
+      const tiles =
+        tilesResult.status === "fulfilled" ? tilesResult.value : MAPS_UNAVAILABLE_FALLBACK;
       setTileConfig(tiles);
       setContactConfigured(tiles.contact_configured);
-    } catch {
-      if (ac.signal.aborted) return;
-      setLoadError("Failed to load location settings.");
-      setApiData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
@@ -197,6 +217,7 @@ export function LocationSettingsPanel({
   const handleClearLocation = () => {
     reverseSeqRef.current += 1;
     pendingGeocodingProviderRef.current = null;
+    setLookupResetKey((key) => key + 1);
     setDraftVerified(false);
     setDraft((prev) => ({
       ...prev,
@@ -255,6 +276,7 @@ export function LocationSettingsPanel({
     const seq = ++reverseSeqRef.current;
     // Manual pin move invalidates prior geocode provenance until reverse succeeds.
     pendingGeocodingProviderRef.current = null;
+    setLookupResetKey((key) => key + 1);
     // Clear Maps overrides immediately so Copy / Notice cannot keep the previous place's links
     // while reverse geocode is still in flight.
     setDraft((prev) => ({
@@ -410,7 +432,7 @@ export function LocationSettingsPanel({
         actions={
           !isArchived && hasCoordinates ? (
             <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={handleClearLocation}>
-              Clear map
+              Remove pin
             </Button>
           ) : undefined
         }
@@ -458,11 +480,13 @@ export function LocationSettingsPanel({
               maxLength={LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH}
               disabled={disabled}
               placeholder="e.g. Convention Center, or a full address"
-              hint="The venue name shown to attendees. Search OpenStreetMap by name or street address - pick a match to set the map. If the venue is missing from the map data, search a nearby street address or double-click the map below to drop a pin, then type the display name here (the pin stays)."
+              hint="Search by venue or address, then choose a match to set the pin. You can also set a pin on the map and enter the venue name here."
+              showFindButton={false}
+              lookupResetKey={lookupResetKey}
               onChange={(text) => {
                 // Keep the map pin and address grid when renaming - OSM often lacks the
                 // building POI, so the intended workflow is pin (or street search) + manual
-                // venue display name. Clear map / a new suggestion still replace coordinates.
+                // venue display name. Remove pin / a new suggestion still replace coordinates.
                 // Verified badge clears because the free-text name is no longer an OSM pick.
                 // Sync object_name so Getting there / {{event_address}} do not keep a stale POI.
                 reverseSeqRef.current += 1;
@@ -498,9 +522,8 @@ export function LocationSettingsPanel({
                 }}
               />
               <p className="field-hint">
-                Double-click the map to drop or move the pin, or drag an existing pin to fine-tune
-                it. Pan and zoom freely without losing the pin. Editing the venue name above keeps
-                it - use Clear map to remove it.
+                Double-click to place or move the pin. Drag to adjust. Remove pin clears coordinates
+                and address fields; the venue name stays.
               </p>
             </div>
           ) : (

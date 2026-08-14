@@ -208,10 +208,6 @@ function sanitizePreviewReason(reason: string): string {
 
 /** Strip any interpolated cell/column values from parser warning strings shown in preview. */
 function sanitizePreviewWarning(warning: string): string {
-  // "Row N: single-word name "Cher" — ..." → strip quoted name
-  if (/^Row \d+: single-word name "/.test(warning)) {
-    return warning.replace(/single-word name "[^"]*"/, "single-word name");
-  }
   // "Unknown column ignored: "john@example.com"" → strip quoted value
   if (warning.startsWith('Unknown column ignored: "')) {
     return "Unknown column ignored";

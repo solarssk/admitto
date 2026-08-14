@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Outlet, Route, Routes } from "react-router";
+import { resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
@@ -63,6 +64,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     searchGeocoding: vi.fn(),
     reverseGeocoding: vi.fn(),
     fetchTimezoneForCoordinates: vi.fn(),
+    testWalletConnection: vi.fn(),
+    fetchWalletPushHistory: vi.fn(),
   };
 });
 
@@ -121,9 +124,11 @@ import {
   reverseGeocoding,
   saveEventLocation,
   searchGeocoding,
+  testWalletConnection,
   unarchiveEvent,
   updateTicketType,
   uploadEventBrandingFile,
+  fetchWalletPushHistory,
 } from "../../src/api/client.js";
 import type {
   EventBounceIngestSettingsResponse,
@@ -146,6 +151,7 @@ const activeEvent = {
   archived_at: null as string | null,
   created_at: "2026-01-15T00:00:00.000Z",
   is_deletable: false,
+  deletion_blockers: ["attendees"] as string[],
   admitted_count: 0,
   issued_items_count: 0,
   organization_name: "Org",
@@ -156,6 +162,12 @@ const activeEvent = {
   header_image_url: null,
   resolved_logo_url: null,
   resolved_header_image_url: null,
+  wallet_enabled: false,
+  wallet_template_id: null as string | null,
+  wallet_api_key: { configured: false },
+  wallet_apple_enabled: false,
+  wallet_google_enabled: false,
+  wallet_field_mapping: null as Record<string, string> | null,
 };
 
 const archivedEvent = {
@@ -294,6 +306,7 @@ beforeEach(() => {
   vi.mocked(searchGeocoding).mockResolvedValue({ results: [], contact_configured: true });
   vi.mocked(reverseGeocoding).mockResolvedValue({ result: null, contact_configured: true });
   vi.mocked(fetchTimezoneForCoordinates).mockResolvedValue({ timezone: null });
+  vi.mocked(fetchWalletPushHistory).mockResolvedValue([]);
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
   // window.matchMedia isn't implemented by jsdom; default to desktop so any component on
   // this page relying on useIsDesktop() (elsewhere in the app, not this page's Save button)
@@ -357,7 +370,7 @@ describe("EventSettingsPage save label", () => {
 });
 
 describe("EventSettingsPage subtitle", () => {
-  const SUBTITLE = "Manage this event's details, images, and access controls.";
+  const SUBTITLE = "Manage event details, images, and access.";
 
   it("shows the stable purpose subtitle while loading, before the event title is known", () => {
     vi.mocked(fetchEventSettings).mockImplementation(() => new Promise(() => {}));
@@ -435,10 +448,68 @@ describe("EventSettingsPage tabs", () => {
     expect(
       screen.getByText("When the event takes place. Times and reports use the timezone below."),
     ).toBeTruthy();
+    const schedule = screen.getByText("Event hours (start)").closest(".settings-event-schedule");
+    expect(schedule).not.toBeNull();
+    expect(screen.getByText("Event timezone").closest(".settings-event-schedule")).toBe(schedule);
+    expect(screen.getByLabelText("Event hours (end)").closest(".time-input")?.classList).toContain(
+      "time-input--picker-end",
+    );
     const titleInput = screen.getByLabelText("Event title") as HTMLInputElement;
     expect(titleInput.getAttribute("data-bwignore")).toBe("true");
     expect(titleInput.getAttribute("data-1p-ignore")).toBe("true");
     expect(titleInput.getAttribute("autocomplete")).toBe("off");
+  });
+
+  it("saves the event hours range through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_hours_start: "18:00", event_hours_end: "22:00" },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), {
+      target: { value: "18:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), {
+      target: { value: "22:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        event_hours_start: "18:00",
+        event_hours_end: "22:00",
+      });
+    });
+  });
+
+  it("clears a previously-set event hours range to null", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      event_hours_start: "18:00",
+      event_hours_end: "22:00",
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_hours_start: null, event_hours_end: null },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), { target: { value: "" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), { target: { value: "" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        event_hours_start: null,
+        event_hours_end: null,
+      });
+    });
   });
 
   it("deep links to Location and keeps venue guidance out of Basic information", async () => {
@@ -449,14 +520,14 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByRole("tab", { name: "Location" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(await screen.findByText("Find on map")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "General" }));
     await screen.findByText("Basic information");
     const basicInformationHint = screen.getByText("Basic information").closest(".at-tooltip-trigger");
     fireEvent.mouseEnter(basicInformationHint!);
     expect(screen.getByRole("tooltip").textContent).toBe(
-      "Title and date appear on tickets and emails. Set the venue in the Location tab.",
+      "Title, date, capacity, and timezone.",
     );
   });
 
@@ -563,7 +634,7 @@ describe("EventSettingsPage tabs", () => {
     ).toBeNull();
   });
 
-  it("shows a superadmin-only notice instead of the image asset library for a non-superadmin org admin", async () => {
+  it("shows the image asset library for a non-superadmin org admin", async () => {
     mockAssignments = orgAdminAssignments;
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
@@ -572,13 +643,12 @@ describe("EventSettingsPage tabs", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "Images" }));
     expect(await screen.findByText("Event logo")).toBeTruthy();
-    // Event logo stays available to any event admin...
     expect(screen.getByText("Drop logo here or click to browse")).toBeTruthy();
-    // ...but the image asset library (upload/list/delete routes require superadmin) does not
-    // mount at all for a non-superadmin, so it never fires the 403 fetch it otherwise would.
-    expect(screen.queryByText("Upload images")).toBeNull();
-    expect(screen.getByText("Superadmin only")).toBeTruthy();
-    expect(fetchEventImageAssets).not.toHaveBeenCalled();
+    expect(screen.getByText("Upload images")).toBeTruthy();
+    expect(screen.queryByText("Superadmin only")).toBeNull();
+    await waitFor(() => {
+      expect(fetchEventImageAssets).toHaveBeenCalledWith("evt-1", expect.any(AbortSignal));
+    });
   });
 
   it("uploads a branding file through the event-scoped upload endpoint", async () => {
@@ -702,16 +772,751 @@ describe("EventSettingsPage tabs", () => {
     ) as HTMLInputElement;
     expect(assetFileInput.disabled).toBe(true);
     expect(
-      screen.getByText("This event is archived - the asset library cannot be changed."),
+      screen.getByText("This event is archived - the image library cannot be changed."),
     ).toBeTruthy();
   });
 
-  it("switches to the Wallet tab and shows the roadmap placeholder", async () => {
+  it("switches to the Wallet tab and shows the Template ID field", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
     await screen.findByRole("tab", { name: "Wallet" });
     fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
-    expect(await screen.findByText("Wallet passes are on the roadmap")).toBeTruthy();
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+  });
+
+  it("shows wallet push history rows once fetched", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
+      {
+        id: "job-1",
+        created_at: "2026-06-07T10:00:00.000Z",
+        reissued: 3,
+        skipped: 1,
+        errored: 0,
+        status: "succeeded",
+        error: null,
+      },
+      {
+        id: "job-2",
+        created_at: "2026-06-06T10:00:00.000Z",
+        reissued: 0,
+        skipped: 0,
+        errored: 2,
+        status: "failed",
+        error: "provider outage",
+      },
+    ]);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Succeeded")).toBeTruthy();
+    expect(screen.getByText("provider outage")).toBeTruthy();
+    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", expect.anything());
+  });
+
+  it("shows an error and retries wallet push history on demand", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Could not load wallet push history")).toBeTruthy();
+
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Could not load wallet push history")).toBeNull();
+    });
+    expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
+  });
+
+  it("re-fetches wallet push history every time the admin returns to the Wallet tab (bot review)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory)
+      .mockResolvedValueOnce([
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "job-2",
+          created_at: "2026-06-08T10:00:00.000Z",
+          reissued: 2,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+        },
+      ]);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+
+    // Proves the effect is keyed on the active tab (re-fetches on every visit), not on mount
+    // alone - a future simplification that drops that dependency would leave the list stale
+    // after a background push runs elsewhere, and this is the only test that would catch it.
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows Loading… while wallet push history is in flight, then clears it", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    let resolveHistory!: (items: never[]) => void;
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Loading…")).toBeTruthy();
+
+    resolveHistory([]);
+
+    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+    expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
+  });
+
+  it("saves the wallet Template ID through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_template_id: "tmpl-1" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.change(document.getElementById("event-wallet-template-id") as HTMLInputElement, {
+      target: { value: "tmpl-1" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_template_id: "tmpl-1" });
+    });
+  });
+
+  it("clears the wallet Template ID through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-existing",
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_template_id: null },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.change(document.getElementById("event-wallet-template-id") as HTMLInputElement, {
+      target: { value: "" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_template_id: null });
+    });
+  });
+
+  it("shows the provider selector and Apple/Google toggles on the Wallet tab", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(screen.getByText("PassCreator")).toBeTruthy();
+    expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
+    expect(screen.getByLabelText("Google Wallet")).toBeTruthy();
+  });
+
+  it("saves the wallet API key and platform toggles through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_apple_enabled: true,
+      wallet_google_enabled: true,
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_api_key: { configured: true }, wallet_apple_enabled: false },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "pc-secret" } });
+    fireEvent.click(screen.getByLabelText("Apple Wallet"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        wallet_api_key: "pc-secret",
+        wallet_apple_enabled: false,
+      });
+    });
+  });
+
+  it("saves the master Wallet toggle, Google Wallet toggle, and a cleared API key", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_enabled: true,
+      wallet_google_enabled: true,
+      wallet_api_key: { configured: true },
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_enabled: false, wallet_google_enabled: false },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(document.getElementById("event-wallet-enabled") as HTMLInputElement);
+    fireEvent.click(screen.getByLabelText("Google Wallet"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        wallet_enabled: false,
+        wallet_google_enabled: false,
+        wallet_api_key: null,
+      });
+    });
+  });
+
+  it("adds, edits, and removes a field mapping row, saving the resulting mapping", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_field_mapping: { attendeeFullName: "full_name" } },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    const twoKeyInputs = screen.getAllByLabelText("PassCreator field key");
+    expect(twoKeyInputs).toHaveLength(2);
+
+    // Editing the first row's key and value while a second row exists confirms the second row
+    // stays untouched (the update targets its own index, not every row in the mapping array).
+    fireEvent.click(screen.getAllByRole("button", { name: "Value, none selected" })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Attendee full name" }));
+    expect(screen.getAllByRole("button", { name: "Value, none selected" })).toHaveLength(1);
+
+    fireEvent.change(twoKeyInputs[0]!, { target: { value: "attendeeFullName" } });
+    expect((twoKeyInputs[1] as HTMLInputElement).value).toBe("");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove field" })[1]!);
+    const keyInputs = screen.getAllByLabelText("PassCreator field key");
+    expect(keyInputs).toHaveLength(1);
+    expect((keyInputs[0] as HTMLInputElement).value).toBe("attendeeFullName");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        wallet_field_mapping: { attendeeFullName: "full_name" },
+      });
+    });
+  });
+
+  it("shows the returned message on a successful Test connection", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({
+      ok: true,
+      message: 'Connected - template "Gala Pass".',
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(testWalletConnection).toHaveBeenCalledWith("evt-1", { templateId: "tmpl-1" });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Gala Pass/);
+    });
+  });
+
+  it("saves a newly added field mapping row last, regardless of where it displays", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: {
+        name: "full_name",
+        company: "company",
+        ticketQR: "ticket_url",
+        eventDate: "event_date",
+        eventHours: "event_hours",
+        ticketType: "ticket_type",
+        eventLocation: "event_location",
+      },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    const valueButtons = screen.getAllByRole("button", { name: "Value, none selected" });
+    expect(valueButtons).toHaveLength(1);
+    fireEvent.click(valueButtons[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Event name" }));
+
+    // Rows display grouped by category (event_name sorts among the other event fields, not at
+    // the DOM's tail), so the new row's own key input is found by proximity to its now-selected
+    // "Event name" trigger, not by raw position.
+    const eventNameTrigger = screen.getByRole("button", { name: "Value, Event name" });
+    const newRow = eventNameTrigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const newRowKeyInput = within(newRow).getByLabelText("PassCreator field key");
+    fireEvent.change(newRowKeyInput, { target: { value: "test" } });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalled();
+    });
+    const call = vi.mocked(patchEvent).mock.calls[0]![1] as { wallet_field_mapping?: Record<string, string> };
+    expect(Object.keys(call.wallet_field_mapping ?? {})).toEqual([
+      "name",
+      "company",
+      "ticketQR",
+      "eventDate",
+      "eventHours",
+      "ticketType",
+      "eventLocation",
+      "test",
+    ]);
+  });
+
+  it("displays field mapping rows grouped by category, not insertion order", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      // Inserted ticket type, then attendee name, then event date - category order puts
+      // attendee first, then event, then ticket, regardless of this insertion order.
+      wallet_field_mapping: { ticketType: "ticket_type", name: "full_name", eventDate: "event_date" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const triggers = screen.getAllByRole("button", { name: /^Value, / });
+    expect(triggers.map((el) => el.getAttribute("aria-label"))).toEqual([
+      "Value, Attendee full name",
+      "Value, Event date",
+      "Value, Ticket type",
+    ]);
+  });
+
+  it("excludes a value already picked by another field mapping row from the Value dropdown", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "full_name", company: "company" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    const valueButtons = screen.getAllByRole("button", { name: "Value, none selected" });
+    fireEvent.click(valueButtons[0]!);
+
+    expect(screen.queryByRole("button", { name: "Attendee full name" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Attendee company" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Event name" })).toBeTruthy();
+  });
+
+  it("still shows a row's own already-selected value in its own dropdown", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "full_name", company: "company" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Value, Attendee full name" }));
+    const options = within(screen.getByRole("list", { name: "Value" })).getAllByRole("button", {
+      name: "Attendee full name",
+    });
+    expect(options).toHaveLength(1);
+  });
+
+  it("shows a hover tooltip explaining what a field mapping row's selected value sends", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "full_name" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Attendee full name" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    expect(screen.getByRole("tooltip").textContent).toBe("e.g. Jan Kowalski");
+  });
+
+  it("shows the event's own real value in a field mapping row's hover tooltip", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { name: "event_name" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Event name" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    expect(screen.getByRole("tooltip").textContent).toBe(activeEvent.title);
+  });
+
+  it("shows the event's real Location-tab values in field mapping row tooltips", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      venue_name: "Congress Hall",
+      directions_text: "Enter via the north gate.",
+      accessibility_text: "Step-free access from the car park.",
+      address_components: {
+        object_name: "Congress Hall",
+        street: "Main Street 1",
+        postcode: "00-001",
+        city: "Warsaw",
+        region: "Mazowieckie",
+        country: "Poland",
+      },
+    });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { directions: "directions_text", access: "accessibility_text", city: "city" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      // Leave every other row's hint first - a previous hover in this same waitFor loop (or an
+      // earlier hoverTooltipOf call) never got a matching mouseLeave, so without this two
+      // tooltips can be open at once and getByRole("tooltip") finds more than one match.
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    await waitFor(() => {
+      expect(hoverTooltipOf("Directions").textContent).toBe("Enter via the north gate.");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Accessibility notes").textContent).toBe(
+        "Step-free access from the car park.",
+      );
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("City").textContent).toBe("Warsaw");
+    });
+  });
+
+  it("shows a not-set fallback for location tooltips before the Location tab has anything saved", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { directions: "directions_text" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Directions" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe(
+        "Not set for this event - this field won't be sent.",
+      );
+    });
+  });
+
+  it("shows the real Google/Apple Maps links in field mapping row tooltips", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      venue_name: "Congress Hall",
+      latitude: 52.2297,
+      longitude: 21.0122,
+    });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { gmaps: "google_maps_url", amaps: "apple_maps_url" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      // Leave every other row's hint first - a previous hover in this same waitFor loop (or an
+      // earlier hoverTooltipOf call) never got a matching mouseLeave, so without this two
+      // tooltips can be open at once and getByRole("tooltip") finds more than one match.
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    await waitFor(() => {
+      expect(hoverTooltipOf("Google Maps URL").textContent).toBe(
+        resolveGoogleMapsUrl(52.2297, 21.0122, "Congress Hall", null),
+      );
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Apple Maps URL").textContent).toBe(
+        resolveAppleMapsUrl(52.2297, 21.0122, "Congress Hall", null),
+      );
+    });
+  });
+
+  it("falls back to the raw mapping value in the incomplete-row warning when it matches no known placeholder", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      // "stale_placeholder" doesn't exist in WALLET_MAPPING_PLACEHOLDERS (e.g. left over from an
+      // older vocabulary) - the key is blank, so this row triggers the incomplete-row warning.
+      wallet_field_mapping: { "": "stale_placeholder" } as unknown as Record<string, string>,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(
+      screen.getByText('"stale_placeholder" has no PassCreator field key - this row won\'t be saved.'),
+    ).toBeTruthy();
+  });
+
+  it("warns when two field mapping rows share the same PassCreator field key", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { company: "company", " company ": "department" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(
+      screen.getByText('The key "company" is used by more than one row - only the last one will be saved.'),
+    ).toBeTruthy();
+  });
+
+  it("keeps a field mapping row's hint icon decorative until a value is picked", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add field" }));
+    const trigger = screen.getByRole("button", { name: "Value, none selected" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const icon = row.querySelector(".wallet-field-mapping__hint i") as HTMLElement;
+
+    expect(icon.getAttribute("aria-hidden")).toBe("true");
+    expect(icon.hasAttribute("aria-label")).toBe(false);
+  });
+
+  it("falls back to a generic success toast when Test connection reports no message", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({ ok: true });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Connected\./);
+    });
+  });
+
+  it("falls back to a generic error toast when Test connection reports no error message", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({ ok: false });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not reach PassCreator\./);
+    });
+  });
+
+  it("shows the API's error message on a failed Test connection, including a replaced key", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockResolvedValueOnce({
+      ok: false,
+      error: "Invalid API key.",
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "new-key" } });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(testWalletConnection).toHaveBeenCalledWith("evt-1", {
+        templateId: "tmpl-1",
+        apiKey: "new-key",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Invalid API key/);
+    });
+  });
+
+  it("shows a fallback toast when Test connection throws, and Cancel discards an in-progress key edit", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    vi.mocked(testWalletConnection).mockRejectedValueOnce(new Error("network down"));
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Could not test the wallet connection/,
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "abandoned" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Set" })).toBeTruthy();
+  });
+
+  it("does not flag unsaved changes from clicking Set on the API key alone (no value typed)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "real-value" } });
+    expect(await screen.findByText("Unsaved changes")).toBeTruthy();
+  });
+
+  it("blocks Test connection with a clear message while the API key is queued for clearing", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /API key will be cleared on save/,
+      );
+    });
+    expect(testWalletConnection).not.toHaveBeenCalled();
+  });
+
+  it("disables Test connection on an archived event", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...archivedEvent,
+      wallet_template_id: "tmpl-1",
+    });
+    renderSettings("/admin/events/evt-2/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    expect(screen.getByRole("button", { name: "Test connection" }).hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 
   it("switches to the Danger zone tab and shows Archive + Export personal data actions", async () => {
@@ -802,7 +1607,9 @@ describe("EventSettingsPage tabs", () => {
   it("deep links directly into a non-default tab via ?tab=", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    expect(await screen.findByText("Wallet passes are on the roadmap")).toBeTruthy();
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
     expect(screen.getByRole("tab", { name: "Wallet" }).getAttribute("aria-selected")).toBe("true");
   });
 });
@@ -815,11 +1622,12 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     await screen.findByRole("tab", { name: "Integrations" });
     fireEvent.click(screen.getByRole("tab", { name: "Integrations" }));
     expect(
-      await screen.findByText("Inbound API tokens are on the roadmap"),
+      await screen.findByText("Event API connections are on the roadmap"),
     ).toBeTruthy();
     expect(
-      screen.getByText(/separate from Organisation Settings → External services/),
+      screen.getByText(/Connect external systems to push attendee data into this event automatically/),
     ).toBeTruthy();
+    expect(screen.queryByText(/Maps and weather/)).toBeNull();
   });
 
   it("hides the Integrations tab entirely for a non-superadmin org admin", async () => {
@@ -836,7 +1644,7 @@ describe("EventSettingsPage Integrations tab (superadmin-only)", () => {
     renderSettings("/admin/events/evt-1/settings?tab=integrations");
     await screen.findByLabelText("Event title");
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.queryByText("Inbound API tokens are on the roadmap")).toBeNull();
+    expect(screen.queryByText("Event API connections are on the roadmap")).toBeNull();
   });
 });
 
@@ -1016,6 +1824,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       is_deletable: false,
+      deletion_blockers: ["attendees", "pinned_note"],
     });
     renderSettings();
     await openDangerZone();
@@ -1026,19 +1835,19 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.disabled).toBe(true);
     const describedBy = button.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy!)?.textContent).toBe(
-      "This event has data and cannot be deleted",
+      "Still blocking delete: attendees, pinned note.",
     );
-    expect(
-      screen.getByText(
-        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
-      ),
-    ).toBeTruthy();
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(
+      "Still blocking delete: attendees, pinned note.",
+    );
   });
 
   it("renders Delete event enabled for a superadmin on an active, empty event", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       is_deletable: true,
+      deletion_blockers: [],
     });
     renderSettings();
     await openDangerZone();
@@ -1058,6 +1867,7 @@ describe("EventSettingsPage — delete event (#395)", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...archivedEvent,
       is_deletable: false,
+      deletion_blockers: ["custom_items", "contacts"],
     });
     renderSettings("/admin/events/evt-2/settings");
     await openDangerZone();
@@ -1068,19 +1878,59 @@ describe("EventSettingsPage — delete event (#395)", () => {
     expect(button.disabled).toBe(true);
     const describedBy = button.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy!)?.textContent).toBe(
-      "This event has data and cannot be deleted",
+      "Still blocking delete: custom items, contacts.",
     );
-    expect(
-      screen.getByText(
-        /Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted/,
-      ),
-    ).toBeTruthy();
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(
+      "Still blocking delete: custom items, contacts.",
+    );
+  });
+
+  it("falls back to generic delete copy when not deletable without named blockers", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+      deletion_blockers: [],
+    });
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const fallback =
+      "This event still has content that must be cleared before it can be permanently deleted.";
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(fallback);
+    const deleteItem = button.closest(".danger-zone__item");
+    expect(deleteItem?.querySelector(".danger-zone__desc")?.textContent).toBe(fallback);
+  });
+
+  it("labels unknown deletion blockers with spaced words", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+      deletion_blockers: ["future_blocker_type"],
+    });
+    renderSettings();
+    await openDangerZone();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Delete event/ })).toBeTruthy();
+    });
+    const button = screen.getByRole("button", { name: /Delete event/ }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      "Still blocking delete: future blocker type.",
+    );
   });
 
   it("renders Delete event enabled for a superadmin on an archived, empty event", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...archivedEvent,
       is_deletable: true,
+      deletion_blockers: [],
     });
     renderSettings("/admin/events/evt-2/settings");
     await openDangerZone();

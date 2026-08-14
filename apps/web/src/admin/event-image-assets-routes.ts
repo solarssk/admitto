@@ -8,7 +8,6 @@ import {
   adminAuditFromContext,
   assertEventManageAccess,
   requireEventId,
-  requireSuperadmin,
 } from "./admin-helpers.js";
 import { BrandingUploadError, bestEffortDeleteUploadUrl, saveEventUpload } from "./branding-upload.js";
 import { logger } from "../logger.js";
@@ -80,12 +79,8 @@ function serializeImageAsset(row: {
   };
 }
 
-/** GET /api/admin/events/:eventId/image-assets - superadmin only (this data flows into
- * attendee-facing email content, same posture as the sibling branding upload/revoke routes). */
+/** GET /api/admin/events/:eventId/image-assets - event managers (org admin / superadmin). */
 export async function handleListEventImageAssets(c: Context, db: PrismaClient): Promise<Response> {
-  const superadminDenied = await requireSuperadmin(c, db);
-  if (superadminDenied) return superadminDenied;
-
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
@@ -107,20 +102,68 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
     },
   });
 
+  c.header("Cache-Control", "no-store");
   return c.json({ items: rows.map(serializeImageAsset) });
 }
 
 /**
- * POST /api/admin/events/:eventId/image-assets - multipart upload (fields: `file`, `token`).
- * Superadmin only (same posture as the sibling branding upload/revoke routes, since this data
- * flows into attendee-facing email content). Archive guard applied by the caller (app.ts wraps
+ * POST /api/admin/events/:eventId/image-assets - multipart upload (fields: `file`, `name`).
+ * Server slugifies `name` into a template token (auto-suffix on collision / reserved names).
+ * Event managers (org admin / superadmin). Archive guard applied by the caller (app.ts wraps
  * with guardArchivedEvent).
  */
 type CreateAssetValidation =
-  | { ok: true; fileField: File; token: string }
+  | { ok: true; fileField: File; displayName: string; tokenBase: string }
   | { ok: false; response: Response };
 
-/** Parses and validates the upload request (form fields, reserved/duplicate token, per-event
+const DISPLAY_NAME_MAX = 80;
+
+/** Same shape as admin item/ticket-type slugify, capped at the asset token max (40). */
+export function slugifyImageAssetToken(name: string): string {
+  const slug = name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_");
+  let start = 0;
+  while (start < slug.length) {
+    const code = slug.codePointAt(start)!;
+    if (code >= 97 && code <= 122) break;
+    start += 1;
+  }
+  let end = slug.length;
+  while (end > start && slug.codePointAt(end - 1) === 95) end -= 1;
+  // Collapse runs of underscores without a backtracking regex (Sonar S8786).
+  let out = "";
+  let prevUnderscore = false;
+  for (let i = start; i < end; i++) {
+    const ch = slug[i]!;
+    if (ch === "_") {
+      if (prevUnderscore) continue;
+      prevUnderscore = true;
+      out += ch;
+      continue;
+    }
+    prevUnderscore = false;
+    out += ch;
+  }
+  return out.slice(0, 40);
+}
+
+/** Prefer `base`, then `base_2`… while skipping taken and reserved placeholder names. */
+export function allocateImageAssetToken(base: string, taken: ReadonlySet<string>): string | null {
+  for (let n = 1; n < 100; n++) {
+    const suffix = n === 1 ? "" : `_${n}`;
+    const candidate =
+      n === 1 ? base : `${base.slice(0, Math.max(1, 40 - suffix.length))}${suffix}`;
+    if (ALLOWED_PLACEHOLDERS.has(candidate) || taken.has(candidate)) continue;
+    if (!tokenSchema.safeParse(candidate).success) continue;
+    return candidate;
+  }
+  return null;
+}
+
+/** Parses and validates the upload request (form fields, name→token base, per-event
  * cap) ahead of the actual file write - split out of handleCreateEventImageAsset to keep that
  * function's own cognitive complexity down to its real job (upload + transaction + error
  * mapping) instead of also carrying this linear validation chain. */
@@ -141,15 +184,14 @@ async function validateCreateAssetRequest(
     return { ok: false, response: c.json({ error: "file_required" }, 400) };
   }
 
-  const tokenField = body.token;
-  const tokenParsed = tokenSchema.safeParse(typeof tokenField === "string" ? tokenField : "");
-  if (!tokenParsed.success) {
-    return { ok: false, response: c.json({ error: "invalid_token" }, 400) };
+  const nameField = body.name;
+  const displayName = typeof nameField === "string" ? nameField.trim() : "";
+  if (!displayName || displayName.length > DISPLAY_NAME_MAX) {
+    return { ok: false, response: c.json({ error: "invalid_name" }, 400) };
   }
-  const token = tokenParsed.data;
-
-  if (ALLOWED_PLACEHOLDERS.has(token)) {
-    return { ok: false, response: c.json({ error: "reserved_token" }, 409) };
+  const tokenBase = slugifyImageAssetToken(displayName);
+  if (!tokenBase) {
+    return { ok: false, response: c.json({ error: "invalid_name" }, 400) };
   }
 
   // Fast-path rejection only (avoids writing a file to disk when the library is obviously
@@ -162,25 +204,10 @@ async function validateCreateAssetRequest(
     };
   }
 
-  // saveEventUpload writes the file to disk before the unique (event_id, token) insert - check
-  // for an existing token first so a duplicate upload fails cleanly instead of leaving an
-  // orphaned file behind. The P2002 catch in handleCreateEventImageAsset stays as the guard for
-  // concurrent uploads.
-  const duplicate = await db.eventImageAsset.findUnique({
-    where: { event_id_token: { event_id: eventId, token } },
-    select: { id: true },
-  });
-  if (duplicate) {
-    return { ok: false, response: c.json({ error: "token_conflict" }, 409) };
-  }
-
-  return { ok: true, fileField, token };
+  return { ok: true, fileField, displayName, tokenBase };
 }
 
 export async function handleCreateEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
-  const superadminDenied = await requireSuperadmin(c, db);
-  if (superadminDenied) return superadminDenied;
-
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
@@ -196,7 +223,7 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
 
   const validation = await validateCreateAssetRequest(c, db, eventId);
   if (!validation.ok) return validation.response;
-  const { fileField, token } = validation;
+  const { fileField, displayName, tokenBase } = validation;
 
   // TODO(multi-org): same single-tenant assumption as handlePostEventBrandingUpload.
   const orgId = "default";
@@ -215,11 +242,20 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
       if (recount >= MAX_IMAGE_ASSETS_PER_EVENT) {
         throw new AssetLimitReachedError();
       }
+      const existing = await tx.eventImageAsset.findMany({
+        where: { event_id: eventId },
+        select: { token: true },
+      });
+      const taken = new Set(existing.map((row) => row.token));
+      const token = allocateImageAssetToken(tokenBase, taken);
+      if (!token) {
+        throw new AssetLimitReachedError();
+      }
       const row = await tx.eventImageAsset.create({
         data: {
           event_id: eventId,
           token,
-          filename: fileField.name || "upload",
+          filename: displayName,
           url: uploaded.url,
           size_bytes: uploaded.sizeBytes,
           mime_type: uploaded.mimeType,
@@ -245,7 +281,7 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
     return c.json(serializeImageAsset(created), 201);
   } catch (err) {
     if (err instanceof BrandingUploadError) {
-      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415);
+      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415 | 503);
     }
     if (err instanceof AssetLimitReachedError) {
       return c.json(
@@ -277,13 +313,9 @@ async function loadImageAssetInEvent(db: PrismaClient, eventId: string, assetId:
  * If the token is still referenced by a saved event template's {{token}}, the delete is rejected
  * (409 asset_in_use) - the batch send path renders saved templates without whitelist re-validation
  * (renderTemplateTrustedForStorage), so after a delete the token would silently resolve to ""
- * and the image would just vanish from attendee emails. Superadmin only, same posture as the
- * sibling branding upload/revoke routes.
+ * and the image would just vanish from attendee emails. Event managers (org admin / superadmin).
  */
 export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
-  const superadminDenied = await requireSuperadmin(c, db);
-  if (superadminDenied) return superadminDenied;
-
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;

@@ -48,6 +48,7 @@ Active automated checks in this repository:
 | Trivy | Container image scan (OS + libraries); **scan-before-push** on release tags | Release tags + manual dispatch | `.github/workflows/publish-container.yml` |
 | CycloneDX SBOM | Container image bill of materials | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset) |
 | Codecov | Test coverage reporting (no merge gate) | Every PR | `.github/workflows/ci.yml` (`build-test`) |
+| SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) — not a workflow file in this repo |
 
 **Codecov data:** CI uploads LCOV coverage reports (file paths and hit counts). No secrets, attendee PII, or production credentials are sent. Treat Codecov as development tooling; customer production data stays in customer PostgreSQL.
 
@@ -77,7 +78,7 @@ deploy time — never committed. See **What counts as a secret** above.
 
 ### Supported versions
 
-Only the **latest minor release** is supported (currently `0.4.x`, latest <!-- admitto:latest-patch -->`0.4.12`<!-- /admitto:latest-patch -->). Deploy from signed
+Only the **latest minor release** is supported (currently `0.4.x`, latest <!-- admitto:latest-patch -->`0.5.0`<!-- /admitto:latest-patch -->). Deploy from signed
 semver tags (`v0.4.y`) published to `ghcr.io/solarssk/admitto`.
 
 ### Data protection

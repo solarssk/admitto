@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  absolutizeBundledTicketAssetUrls,
   escapeHtmlAttribute,
   escapeHtmlText,
   renderTemplate,
@@ -213,6 +214,34 @@ describe("renderTemplate", () => {
     expect(result.html).not.toContain('href=""');
   });
 
+  it("absolutizes bundled wallet badge asset paths when baseUrl is set", () => {
+    expect(
+      absolutizeBundledTicketAssetUrls(
+        '<img src="/assets/apple-wallet-badge.svg" /><img src="/assets/google-wallet-badge.svg" />',
+        "https://tickets.example.com/",
+      ),
+    ).toBe(
+      '<img src="https://tickets.example.com/assets/apple-wallet-badge.svg" /><img src="https://tickets.example.com/assets/google-wallet-badge.svg" />',
+    );
+    expect(
+      absolutizeBundledTicketAssetUrls('<img src="/assets/apple-wallet-badge.svg" />'),
+    ).toBe('<img src="/assets/apple-wallet-badge.svg" />');
+
+    const rendered = renderTemplate(
+      {
+        subject: "Ticket",
+        compiledHtml:
+          '<mj-image href="{{apple_wallet_url}}" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet" />',
+      },
+      { apple_wallet_url: "https://wallet.example.com/pass" },
+      { baseUrl: "https://tickets.example.com" },
+    );
+    expect(rendered.html).toContain(
+      'src="https://tickets.example.com/assets/apple-wallet-badge.svg"',
+    );
+    expect(rendered.html).toContain('href="https://wallet.example.com/pass"');
+  });
+
   it("validates URL values at render time", () => {
     expect(() =>
       renderTemplate(
@@ -405,6 +434,77 @@ describe("renderTemplateTrustedForStorage", () => {
     });
     expect(sent.html).toContain('href="https://example.com/t?a=1&amp;b=2"');
     expect(sent.html).not.toContain("{{ticket_url}}");
+  });
+
+  it("leaves apple_wallet_url/google_wallet_url literal in frozen snapshot, same as ticket_url", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Ticket for {{first_name}}",
+        compiledHtml:
+          '<a href="{{apple_wallet_url}}">Apple</a><a href="{{google_wallet_url}}">Google</a>',
+      },
+      {
+        first_name: "Alice",
+        apple_wallet_url: "https://secret.example/t/SHOULD_NOT_PERSIST/wallet/apple",
+        google_wallet_url: "https://secret.example/t/SHOULD_NOT_PERSIST/wallet/google",
+      },
+    );
+    expect(frozen.html).toContain('href="{{apple_wallet_url}}"');
+    expect(frozen.html).toContain('href="{{google_wallet_url}}"');
+    expect(frozen.html).not.toContain("SHOULD_NOT_PERSIST");
+  });
+
+  it("materializeStoredDeliveryMessage applies wallet links at send time, including in the subject", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Add to wallet: {{apple_wallet_url}}",
+        compiledHtml: '<a href="{{apple_wallet_url}}">Apple</a><a href="{{google_wallet_url}}">Google</a>',
+      },
+      { first_name: "Bob" },
+    );
+    const sent = materializeStoredDeliveryMessage(frozen, {
+      ticket_url: "https://example.com/t/tok",
+      qr_image_url: "https://example.com/q/tok.png",
+      apple_wallet_url: "https://example.com/t/tok/wallet/apple",
+      google_wallet_url: "https://example.com/t/tok/wallet/google",
+    });
+    expect(sent.subject).toBe("Add to wallet: https://example.com/t/tok/wallet/apple");
+    expect(sent.html).toContain('href="https://example.com/t/tok/wallet/apple"');
+    expect(sent.html).toContain('href="https://example.com/t/tok/wallet/google"');
+    expect(sent.html).not.toContain("{{apple_wallet_url}}");
+    expect(sent.html).not.toContain("{{google_wallet_url}}");
+  });
+
+  it("materializeStoredDeliveryMessage drops an empty (unconfigured) wallet URL's href attribute", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Hi",
+        compiledHtml: '<a href="{{apple_wallet_url}}">Apple</a>',
+      },
+      { first_name: "Bob" },
+    );
+    const sent = materializeStoredDeliveryMessage(frozen, {
+      ticket_url: "https://example.com/t/tok",
+      qr_image_url: "https://example.com/q/tok.png",
+      apple_wallet_url: "",
+      google_wallet_url: "",
+    });
+    expect(sent.html).not.toContain("href=");
+  });
+
+  it("materializeStoredDeliveryMessage treats a missing wallet link key like an empty one", () => {
+    const frozen = renderTemplateTrustedForStorage(
+      {
+        subject: "Hi",
+        compiledHtml: '<a href="{{apple_wallet_url}}">Apple</a>',
+      },
+      { first_name: "Bob" },
+    );
+    const sent = materializeStoredDeliveryMessage(frozen, {
+      ticket_url: "https://example.com/t/tok",
+      qr_image_url: "https://example.com/q/tok.png",
+    });
+    expect(sent.html).not.toContain("href=");
   });
 });
 

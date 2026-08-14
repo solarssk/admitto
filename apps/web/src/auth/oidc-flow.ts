@@ -15,6 +15,8 @@ export interface BeginOidcFlowOptions {
   redirectNext?: string;
   linkUserId?: string;
   linkStepUpAt?: Date;
+  /** Browser IANA timezone captured before IdP redirect. */
+  timezone?: string | null;
 }
 
 /** Create OAuth state + flow cookie and redirect to the IdP authorize URL. */
@@ -44,6 +46,7 @@ export async function beginOidcAuthorizationRedirect(
       redirectNext: options.redirectNext,
       linkUserId: options.linkUserId,
       linkStepUpAt: options.linkStepUpAt,
+      timezone: options.timezone,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";

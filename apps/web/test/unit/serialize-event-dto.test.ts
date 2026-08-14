@@ -12,6 +12,8 @@ const baseRow = {
   slug: "demo",
   date: new Date("2026-09-01T12:00:00.000Z"),
   timezone: "Europe/Warsaw",
+  event_hours_start: null,
+  event_hours_end: null,
   location: "Hall A",
   organization_id: "org-1",
   archived_at: null,
@@ -34,6 +36,30 @@ afterEach(() => {
 });
 
 describe("serializeEventDto — has_coordinates / map_preview_path", () => {
+  it("normalizes legacy event and audit timezones", () => {
+    const dto = serializeEventDto({
+      ...baseRow,
+      timezone: "Asia/Calcutta",
+      created_by_timezone: "Europe/Kiev",
+      archived_by_timezone: "Etc/UTC",
+    });
+    expect(dto.timezone).toBe("Asia/Kolkata");
+    expect(dto.created_by_timezone).toBe("Europe/Kyiv");
+    expect(dto.archived_by_timezone).toBe("UTC");
+  });
+
+  it("preserves unrecognized stored timezone identifiers", () => {
+    const dto = serializeEventDto({
+      ...baseRow,
+      timezone: "Legacy/Event",
+      created_by_timezone: "Legacy/Created",
+      archived_by_timezone: "Legacy/Archived",
+    });
+    expect(dto.timezone).toBe("Legacy/Event");
+    expect(dto.created_by_timezone).toBe("Legacy/Created");
+    expect(dto.archived_by_timezone).toBe("Legacy/Archived");
+  });
+
   it("passes through has_coordinates when true", () => {
     const dto = serializeEventDto({ ...baseRow, has_coordinates: true }, 3);
     expect(dto.has_coordinates).toBe(true);

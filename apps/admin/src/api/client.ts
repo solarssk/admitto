@@ -16,6 +16,7 @@ import type {
   LookupAttendeeResult,
   MeResponse,
   ResendTicketBody,
+  DismissBounceResponse,
   ThemeResponse,
   UpdateAttendeePatch,
   ImportPreviewResponse,
@@ -26,6 +27,10 @@ import type {
   BulkRevokeItemsResponse,
   BulkRevokeCheckInResponse,
   BulkRevokePassResponse,
+  BulkWalletVoidResponse,
+  BulkWalletReissueResponse,
+  BulkWalletDeleteResponse,
+  WalletPassActionDto,
   EventItemDto,
   EventItemsListResponse,
   CreateEventItemBody,
@@ -34,6 +39,7 @@ import type {
   UpdateOpsConfigPatch,
   EventTemplateDto,
   SaveTemplateBody,
+  UpdateTemplateMetadataBody,
   PreviewTemplateResponse,
   MailTemplateListItem,
   MailTemplateDetail,
@@ -49,7 +55,7 @@ import type {
   EventMailSettingsResponse,
   EventBounceIngestSettingsResponse,
   SaveEventBounceIngestSettingsBody,
-  BounceIngestTestResponse,
+  ConnectionTestResponse,
   BounceIngestRunResponse,
   MailSmtpProbeResponse,
   SaveMailSettingsBody,
@@ -475,6 +481,14 @@ export async function patchEvent(
     title: string;
     date: string;
     timezone: string;
+    event_hours_start: string | null;
+    event_hours_end: string | null;
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key: string | null;
+    wallet_apple_enabled: boolean;
+    wallet_google_enabled: boolean;
+    wallet_field_mapping: Record<string, string> | null;
     location: string | null;
     capacity: number | null;
     logo_url: string | null;
@@ -506,21 +520,22 @@ export async function fetchEventImageAssets(
 ): Promise<EventImageAssetDto[]> {
   const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/image-assets`, {
     credentials: "same-origin",
+    cache: "no-store",
     signal,
   });
   const data = await parseJson<EventImageAssetsListResponse>(res);
   return data.items;
 }
 
-/** Upload a new named branding image asset (file + token); throws ApiError on validation/conflict. */
+/** Upload a new named branding image asset (file + display name); server slugifies the token. */
 export async function createEventImageAsset(
   eventId: string,
   file: File,
-  token: string,
+  name: string,
 ): Promise<EventImageAssetDto> {
   const fd = new FormData();
   fd.append("file", file);
-  fd.append("token", token);
+  fd.append("name", name);
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/image-assets`,
     multipartPostInit(fd),
@@ -733,6 +748,45 @@ export async function revokeAttendeeCheckIn(
   return parseJson<{ card: AttendeeCardDto }>(res);
 }
 
+/** Admin/superadmin-only: void the attendee's wallet pass at the provider (e.g. PassCreator) -
+ * the pass stays installed on the attendee's phone but shows as voided/invalid there. */
+export async function voidWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/void`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: reverse a previous void, restoring the wallet pass to active. */
+export async function restoreWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/restore`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: push the attendee's current name/ticket type/event details to the
+ * already-issued wallet pass, e.g. after a ticket type change or a corrected name. */
+export async function reissueWalletPass(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/reissue`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
+/** Admin/superadmin-only: permanently removes the pass at the provider, distinct from void (the
+ * pass disappears entirely instead of staying installed but marked invalid). Irreversible. */
+export async function deleteWalletPass(eventId: string, attendeeId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/delete`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ deleted: boolean }>(res);
+}
+
 /** Add a note on the attendee detail page's Notes tab — shares the same AttendeeNote model
  * as the check-in operator note composer (submitAttendeeNote), so a note added here also
  * shows up on the check-in card, and vice versa. Returns the refreshed detail DTO so the
@@ -851,7 +905,8 @@ export async function createAttendee(
   eventId: string,
   body: {
     email: string;
-    name: string;
+    first_name: string;
+    last_name: string;
     company?: string;
     department?: string;
     ticket_type?: string;
@@ -921,18 +976,75 @@ export interface BulkTicketTypeResponse {
   conflictCount: number;
 }
 
+/** ticket_type is always wallet-content-relevant, so a successful bulk change enqueues a
+ * wallet_push job for whichever rows actually changed - null when nothing changed (job would
+ * have been a no-op). Not part of BulkTicketTypeResponse itself: bulk RSVP reuses that type via
+ * BulkRsvpResponse below and has no wallet relevance. */
+export interface BulkTicketTypeResult extends BulkTicketTypeResponse {
+  walletPushJobId: string | null;
+}
+
 /** Assign one catalog ticket type to every selected attendee. Ids outside the event are
  * silently ignored server-side; rows already carrying the type are counted separately. */
 export async function bulkChangeTicketType(
   eventId: string,
   attendeeIds: string[],
   ticketType: string,
-): Promise<BulkTicketTypeResponse> {
+): Promise<BulkTicketTypeResult> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-ticket-type`,
     jsonPostInit({ attendeeIds, ticket_type: ticketType }),
   );
-  return parseJson<BulkTicketTypeResponse>(res);
+  return parseJson<BulkTicketTypeResult>(res);
+}
+
+export interface WalletPushJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  reissued: number | null;
+  skipped: number | null;
+  errored: number | null;
+}
+
+/** Poll async wallet_push job status - enqueued by bulkChangeTicketType above. */
+export async function fetchWalletPushJobStatus(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<WalletPushJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletPushJobStatusResponse>(res);
+}
+
+export interface WalletPushHistoryEntry {
+  id: string;
+  created_at: string;
+  reissued: number;
+  skipped: number;
+  errored: number;
+  status: "succeeded" | "failed";
+  error: string | null;
+}
+
+/** Recent terminal wallet_push jobs for the event (newest first) - the async job system's own
+ * triggers only (currently: bulk ticket type change). Single-attendee field edits push directly
+ * and synchronously (see handlePatchEventAttendee), so they never appear here. */
+export async function fetchWalletPushHistory(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<WalletPushHistoryEntry[]> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/history`, {
+    credentials: "same-origin",
+    signal,
+  });
+  const body = await parseJson<{ items: WalletPushHistoryEntry[] }>(res);
+  return body.items;
 }
 
 /** Same shape as BulkTicketTypeResponse - one type for both structurally identical bulk
@@ -999,6 +1111,46 @@ export async function bulkRevokePass(
   return parseJson<BulkRevokePassResponse>(res);
 }
 
+/** Admin/superadmin-only: void the wallet pass for every selected attendee that has one at the
+ * provider (e.g. PassCreator) - already-voided passes and attendees with no pass are skipped. */
+export async function bulkVoidWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletVoidResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-void`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletVoidResponse>(res);
+}
+
+/** Admin/superadmin-only: push each selected attendee's current name/ticket type/event details
+ * to their already-issued wallet pass at once, e.g. after an Event Settings change. */
+export async function bulkReissueWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletReissueResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-reissue`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletReissueResponse>(res);
+}
+
+/** Admin/superadmin-only: permanently remove the wallet pass for every selected attendee that has
+ * one at the provider - irreversible, gated behind its own confirm dialog. Attendees with no pass
+ * are skipped. */
+export async function bulkDeleteWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletDeleteResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-delete`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletDeleteResponse>(res);
+}
+
 export async function resendTicket(
   eventId: string,
   attendeeId: string,
@@ -1009,6 +1161,17 @@ export async function resendTicket(
     jsonPostInit(body),
   );
   return parseJson<DeliveryDto>(res);
+}
+
+export async function dismissBounce(
+  eventId: string,
+  attendeeId: string,
+): Promise<DismissBounceResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/dismiss-bounce`,
+    jsonPostInit({}),
+  );
+  return parseJson<DismissBounceResponse>(res);
 }
 
 /** Queue ticket emails for many attendees (undelivered or all). */
@@ -1208,6 +1371,19 @@ export async function saveEventTemplateById(
     jsonPutInit(body),
   );
   return parseTemplateActionJson<MailTemplateDetail>(res);
+}
+
+/** Update an event-scoped mail template's identity fields (label/icon/description) only. */
+export async function updateEventTemplateMetadata(
+  eventId: string,
+  templateId: string,
+  body: UpdateTemplateMetadataBody,
+): Promise<MailTemplateListItem> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/templates/${encodeURIComponent(templateId)}`,
+    jsonPatchInit(body),
+  );
+  return parseJson<MailTemplateListItem>(res);
 }
 
 /** Create a new event-scoped mail template. */
@@ -1678,12 +1854,12 @@ export async function saveEventBounceIngestSettings(
 
 export async function testEventBounceIngestConnection(
   eventId: string,
-): Promise<BounceIngestTestResponse> {
+): Promise<ConnectionTestResponse> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/bounce-ingest-settings/test`,
     jsonPostInit({}),
   );
-  return parseJson<BounceIngestTestResponse>(res);
+  return parseJson<ConnectionTestResponse>(res);
 }
 
 export async function runEventBounceIngestCheck(
@@ -1796,6 +1972,19 @@ export async function testMapsConnection(
 ): Promise<ExternalServicesConnectionTestResponse> {
   const res = await fetch("/api/admin/external-services/maps/test", jsonPostInit(body));
   return parseJson<ExternalServicesConnectionTestResponse>(res);
+}
+
+/** Probe an event's PassCreator API key + Template ID from a draft body (no persist). Empty/
+ * omitted apiKey falls back to the event's already-saved key. */
+export async function testWalletConnection(
+  eventId: string,
+  body: { apiKey?: string; templateId: string },
+): Promise<ConnectionTestResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet/test`,
+    jsonPostInit(body),
+  );
+  return parseJson<ConnectionTestResponse>(res);
 }
 
 export async function fetchSessions(
@@ -2191,6 +2380,7 @@ export async function fetchAccount(signal?: AbortSignal): Promise<AccountDto> {
 export async function patchAccountProfile(body: PatchAccountProfileBody): Promise<{
   display_name: string | null;
   preferred_locale: string | null;
+  preferred_time_format: "12h" | "24h" | null;
   phone_country_code: string | null;
   phone_number: string | null;
 }> {
@@ -2198,6 +2388,7 @@ export async function patchAccountProfile(body: PatchAccountProfileBody): Promis
   return parseJson<{
     display_name: string | null;
     preferred_locale: string | null;
+    preferred_time_format: "12h" | "24h" | null;
     phone_country_code: string | null;
     phone_number: string | null;
   }>(res);

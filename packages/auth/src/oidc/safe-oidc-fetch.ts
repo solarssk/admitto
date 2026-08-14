@@ -2,6 +2,7 @@ import * as jose from "jose";
 import { customFetch, type FetchImplementation } from "jose";
 import { isIP } from "node:net";
 import { Agent, fetch as undiciFetch } from "undici";
+import { createPinnedDispatcher, isConnectFailure } from "@admitto/shared/pinned-dispatcher";
 import {
   assertSafeOidcFetchUrl,
   isLoopbackHostForTests,
@@ -88,45 +89,7 @@ async function getResolvedHost(url: URL): Promise<ResolvedHost> {
   return resolved;
 }
 
-/** Pin connect-time DNS to a validated address while keeping the original URL hostname (Host/SNI). */
-function createPinnedDispatcher(hostname: string, record: ResolvedHostRecord): Agent {
-  return new Agent({
-    connect: {
-      servername: hostname,
-      lookup: (_host, options, callback) => {
-        if (options.all) {
-          (callback as (err: null, addresses: { address: string; family: number }[]) => void)(
-            null,
-            [{ address: record.address, family: record.family }],
-          );
-        } else {
-          callback(null, record.address, record.family);
-        }
-      },
-    },
-  });
-}
-
 type OidcFetchInit = NonNullable<Parameters<typeof fetch>[1]>;
-
-function isConnectFailure(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err as NodeJS.ErrnoException).code;
-  if (
-    code === "ECONNREFUSED" ||
-    code === "ETIMEDOUT" ||
-    code === "ENETUNREACH" ||
-    code === "EHOSTUNREACH" ||
-    code === "EPERM"
-  ) {
-    return true;
-  }
-  const cause = (err as Error & { cause?: unknown }).cause;
-  if (cause instanceof Error) {
-    return isConnectFailure(cause);
-  }
-  return err.message.toLowerCase().includes("fetch failed");
-}
 
 async function pinnedUndiciFetch(
   urlString: string,

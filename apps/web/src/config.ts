@@ -178,6 +178,17 @@ export function validateOpsHealthBootConfig(env: EnvLike = process.env): void {
   }
 }
 
+/**
+ * The API key and template are per-event now (Event.wallet_api_key_enc/wallet_template_id) -
+ * PASSCREATOR_BASE_URL is the only PassCreator setting still read from the environment. A
+ * non-HTTPS override is ignored (falls back to PassCreatorClient's own HTTPS default) rather than
+ * sending the wallet API key over plaintext.
+ */
+export function resolvePassCreatorBaseUrl(env: EnvLike = process.env): string | undefined {
+  const raw = env["PASSCREATOR_BASE_URL"]?.trim();
+  return raw?.startsWith("https://") ? raw : undefined;
+}
+
 /** Boot-time validation for Cloudflare Access config (resolved env → DB → defaults). */
 export async function validateCfAccessBootConfig(prisma: PrismaClient): Promise<void> {
   const config = await getCfAccessConfig(prisma);

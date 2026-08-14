@@ -1,0 +1,857 @@
+{
+  "title": "Admitto environment variables",
+  "intro": "This page is the operator-facing dictionary for deploy env vars. Copy values from [`.env.example`](./.env.example). **Boot vs UI:** anything marked UI `none` must be set in the environment before the container is useful; mail, branding, and most identity settings can wait for Organisation settings after `/setup`.",
+  "scanIgnore": [
+    "CI",
+    "COUNT",
+    "WEB_TEST_DATABASE_URL",
+    "EVENT_SLUG",
+    "EMAIL_DOMAIN",
+    "INSTANCE_ORG_ID",
+    "GIT_COMMIT",
+    "PGDATABASE",
+    "PGHOST",
+    "PGPORT",
+    "PGUSER",
+    "PGPASSWORD",
+    "CONFIG",
+    "SCHEMA",
+    "MAIL_PROVIDER",
+    "MAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS",
+    "IMPORT_JOB",
+    "EXPORT_JOB",
+    "BACKUP_DIR",
+    "RETENTION_DAYS",
+    "SLEEP_SECONDS"
+  ],
+  "vars": [
+    {
+      "name": "NODE_ENV",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["app", "worker", "migrate"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Use production for real deploys. Changes security defaults (HTTPS BASE_URL, private-mail lab flag ignored, etc.)."
+    },
+    {
+      "name": "BASE_URL",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development; not configurable from Settings."
+    },
+    {
+      "name": "ENCRYPTION_KEY",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["app", "worker", "migrate"],
+      "secret": true,
+      "ui": "none",
+      "summary": "AES-256-GCM master key (openssl rand -base64 32). Required to decrypt mail/OIDC secrets at rest. Losing it loses encrypted config."
+    },
+    {
+      "name": "DATABASE_URL",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["app", "worker", "migrate"],
+      "secret": true,
+      "ui": "none",
+      "summary": "Postgres URL. Password must match POSTGRES_PASSWORD when using compose db service."
+    },
+    {
+      "name": "REDIS_URL",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["app", "worker"],
+      "secret": true,
+      "ui": "none",
+      "summary": "Redis URL including password. Compose builds this from REDIS_PASSWORD; keep them in sync."
+    },
+    {
+      "name": "REDIS_PASSWORD",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["redis", "compose"],
+      "secret": true,
+      "ui": "none",
+      "summary": "Redis requirepass. Generate with openssl rand -hex 32. Must appear in REDIS_URL."
+    },
+    {
+      "name": "POSTGRES_USER",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["db", "compose"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Postgres role created by the db container."
+    },
+    {
+      "name": "POSTGRES_PASSWORD",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["db", "compose"],
+      "secret": true,
+      "ui": "none",
+      "summary": "Postgres password. Must match the password embedded in DATABASE_URL."
+    },
+    {
+      "name": "POSTGRES_DB",
+      "group": "boot",
+      "boot": "required",
+      "consumers": ["db", "compose"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Postgres database name."
+    },
+    {
+      "name": "PORT",
+      "group": "boot",
+      "boot": "recommended",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "HTTP listen port inside the app container (default 3000). Map host ports to this, not to a different internal port."
+    },
+    {
+      "name": "ADMITTO_IMAGE",
+      "group": "compose",
+      "boot": "recommended",
+      "consumers": ["compose"],
+      "secret": false,
+      "ui": "none",
+      "summary": "ghcr.io/solarssk/admitto:X.Y.Z image pin (version without leading v)."
+    },
+    {
+      "name": "TRUST_PROXY",
+      "group": "proxy",
+      "boot": "recommended",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "When true, honour X-Forwarded-* from peers allowed by TRUSTED_PROXY_CIDRS (required behind NPM/nginx)."
+    },
+    {
+      "name": "TRUSTED_PROXY_CIDRS",
+      "group": "proxy",
+      "boot": "recommended",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "CIDR list of TCP peers allowed to set forwarded headers. Variant A: compose internal subnet in .env.example. Variant B (Portainer/NPM direct to app): use NPM's source on /32 only, not broad RFC1918 ranges."
+    },
+    {
+      "name": "MIGRATION_BACKUP_DIR",
+      "group": "migrate",
+      "boot": "recommended",
+      "consumers": ["db-backup"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Directory for nightly SQL dumps written by the db-backup sidecar (compose volume mounted at /backups)."
+    },
+    {
+      "name": "UPLOAD_DIR",
+      "group": "storage",
+      "boot": "recommended",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Branding/upload root (compose: /app/uploads). Must be writable by uid 1000 (node). Health shows down when not writable."
+    },
+    {
+      "name": "STORAGE_PROVIDER",
+      "group": "storage",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "local (default). Other providers are not production-ready yet."
+    },
+    {
+      "name": "EMERGENCY_EXPORT_DIR",
+      "group": "storage",
+      "boot": "recommended",
+      "consumers": ["app", "migrate", "cli"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Non-public bind mount for break-glass CSV exports. Never put this under UPLOAD_DIR (/uploads is unauthenticated)."
+    },
+    {
+      "name": "EMAIL_PROVIDER",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation settings → Mail (preferred after setup)",
+      "summary": "smtp | graph | powerautomate for env-seeded transport. Production UI config is preferred; export_only is lab dry-run only."
+    },
+    {
+      "name": "MAIL_FROM_ADDRESS",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Default From address when seeding mail from env."
+    },
+    {
+      "name": "MAIL_FROM_NAME",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Default From display name."
+    },
+    {
+      "name": "MAIL_REPLY_TO",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Optional Reply-To."
+    },
+    {
+      "name": "MAIL_ENVELOPE_FROM",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Optional envelope/MAIL FROM override."
+    },
+    {
+      "name": "SMTP_HOST",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "SMTP hostname. Production blocks private/link-local targets unless listed in MAIL_PRIVATE_DESTINATION_ALLOWLIST (lab: ALLOW_PRIVATE_MAIL_DESTINATIONS when NODE_ENV is not production)."
+    },
+    {
+      "name": "SMTP_PORT",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "SMTP port (587 STARTTLS or 465 implicit TLS)."
+    },
+    {
+      "name": "SMTP_SECURE",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "true for implicit TLS (typically 465)."
+    },
+    {
+      "name": "SMTP_USER",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "SMTP username."
+    },
+    {
+      "name": "SMTP_PASSWORD",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": true,
+      "ui": "Organisation / Event mail settings",
+      "summary": "SMTP password / app password."
+    },
+    {
+      "name": "SMTP_REQUIRE_TLS",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Require STARTTLS upgrade on plaintext ports."
+    },
+    {
+      "name": "SMTP_TLS_REJECT_UNAUTHORIZED",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Reject invalid TLS certificates (keep true in production)."
+    },
+    {
+      "name": "SMTP_HELO_NAME",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Optional SMTP EHLO/HELO name."
+    },
+    {
+      "name": "SMTP_POOL",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Enable nodemailer connection pooling."
+    },
+    {
+      "name": "SMTP_MAX_CONNECTIONS",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Max pooled SMTP connections."
+    },
+    {
+      "name": "SMTP_MAX_MESSAGES_PER_CONNECTION",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Messages per pooled connection before recycle."
+    },
+    {
+      "name": "SMTP_RATE_LIMIT_PER_MINUTE",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Soft send rate cap for SMTP."
+    },
+    {
+      "name": "SMTP_CONNECTION_TIMEOUT",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "SMTP connect timeout (ms)."
+    },
+    {
+      "name": "SMTP_GREETING_TIMEOUT",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "SMTP greeting timeout (ms)."
+    },
+    {
+      "name": "SMTP_SOCKET_TIMEOUT",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "SMTP socket timeout (ms)."
+    },
+    {
+      "name": "POWER_AUTOMATE_URL",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": true,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Power Automate HTTP trigger URL (treat as a credential; may embed a signed token). Same SSRF rules as SMTP host."
+    },
+    {
+      "name": "POWER_AUTOMATE_KEY",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": true,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Power Automate shared key / secret header value."
+    },
+    {
+      "name": "GRAPH_TENANT_ID",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Microsoft Graph tenant ID."
+    },
+    {
+      "name": "GRAPH_CLIENT_ID",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Microsoft Graph app (client) ID."
+    },
+    {
+      "name": "GRAPH_CLIENT_SECRET",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": true,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Microsoft Graph client secret."
+    },
+    {
+      "name": "GRAPH_MAILBOX",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Mailbox UPN used as Graph send-as identity."
+    },
+    {
+      "name": "GRAPH_SAVE_TO_SENT",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "Organisation / Event mail settings",
+      "summary": "Whether Graph keeps messages in Sent Items."
+    },
+    {
+      "name": "ALLOW_PRIVATE_MAIL_DESTINATIONS",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Lab only. When true and NODE_ENV is not production, allow SMTP/IMAP/PA hosts on private addresses. Ignored in production."
+    },
+    {
+      "name": "MAIL_PRIVATE_DESTINATION_ALLOWLIST",
+      "group": "mail",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Comma-separated exact hostnames/IPs allowed to resolve to private addresses in production (self-hosted LAN MTA). Set on app and worker."
+    },
+    {
+      "name": "PASSCREATOR_BASE_URL",
+      "group": "wallet",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Optional PassCreator API base URL. Defaults to the provider's production URL; use only for a compatible PassCreator endpoint."
+    },
+    {
+      "name": "BOUNCE_INGEST_TICK_SECONDS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "Event settings → Mailing (poll interval)",
+      "summary": "Worker wake tick for bounce IMAP (default 60). Per-event poll decides when each mailbox is due."
+    },
+    {
+      "name": "BOUNCE_INGEST_INTERVAL_SECONDS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Legacy alias of BOUNCE_INGEST_TICK_SECONDS."
+    },
+    {
+      "name": "BOUNCE_INGEST_APP_URL",
+      "group": "worker",
+      "boot": "recommended",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Internal base URL for worker → app System Logs bridge (compose: http://app:3000)."
+    },
+    {
+      "name": "ADMITTO_INTERNAL_URL",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Optional alternate internal app URL used by worker integrations (compose sets http://app:3000)."
+    },
+    {
+      "name": "NIGHTLY_BACKUP_RETENTION_DAYS",
+      "group": "migrate",
+      "boot": "optional",
+      "consumers": ["db-backup"],
+      "secret": false,
+      "ui": "none",
+      "summary": "How many days of nightly-*.sql.gz files the db-backup sidecar keeps (default 14)."
+    },
+    {
+      "name": "NIGHTLY_BACKUP_INTERVAL_SECONDS",
+      "group": "migrate",
+      "boot": "optional",
+      "consumers": ["db-backup"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Sleep between nightly dumps (default 86400)."
+    },
+    {
+      "name": "ILA_IP_LOCATION_DB",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Offline IP→country dataset id for audit/session geo (default user). No third-party lookup API."
+    },
+    {
+      "name": "ILA_DATA_DIR",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Directory for the offline geoip dataset cache."
+    },
+    {
+      "name": "ILA_AUTO_UPDATE",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Keep false so the process does not fetch dataset updates on its own."
+    },
+    {
+      "name": "IMPORT_JOB_STALE_RUNNING_MS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Fail import AdminJobs stuck in running after this many ms (default 15 minutes)."
+    },
+    {
+      "name": "EXPORT_JOB_STALE_RUNNING_MS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Fail export AdminJobs stuck in running after this many ms (default 15 minutes)."
+    },
+    {
+      "name": "WALLET_PUSH_JOB_STALE_RUNNING_MS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Fail wallet_push AdminJobs stuck in running after this many ms (default 30 minutes)."
+    },
+    {
+      "name": "OPS_HEALTH_TOKEN",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app", "worker"],
+      "secret": true,
+      "ui": "none",
+      "summary": "Bearer/X-Ops-Token (≥32 chars) for /readyz and worker System Logs bridge. Unset = /readyz disabled."
+    },
+    {
+      "name": "LOG_HTTP_REQUESTS",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "1 (compose default) writes redacted JSON access lines to app stdout. No IPs, cookies, or QR tokens."
+    },
+    {
+      "name": "ALLOW_CHECKIN_BEARER",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Emergency: re-enable Bearer check-in auth. Default false; warns outside development."
+    },
+    {
+      "name": "CHECKIN_OPERATOR_TOKEN",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": true,
+      "ui": "none",
+      "summary": "Shared operator token when ALLOW_CHECKIN_BEARER=true."
+    },
+    {
+      "name": "SESSION_TTL_OPERATOR_MS",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none (defaults in auth)",
+      "summary": "Absolute operator session TTL override (ms)."
+    },
+    {
+      "name": "SESSION_TTL_ADMIN_MS",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none (defaults in auth)",
+      "summary": "Absolute admin/superadmin session TTL override (ms). Prefer ≤8h when OIDC group mapping grants elevated roles."
+    },
+    {
+      "name": "SESSION_IDLE_TIMEOUT_ADMIN_MS",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Idle timeout for elevated sessions (ms). Must not exceed admin TTL."
+    },
+    {
+      "name": "SESSION_IDLE_TIMEOUT_OPERATOR_MS",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Idle timeout for operator sessions (ms)."
+    },
+    {
+      "name": "TRUSTED_DEVICE_DAYS",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "MFA trusted-device cookie lifetime in days."
+    },
+    {
+      "name": "MFA_REQUIRED_ROLES",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Comma-separated roles that must enroll MFA (default admin,superadmin)."
+    },
+    {
+      "name": "CSP_TRUSTED_ORIGINS",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Settings → Security (preferred); env locks UI",
+      "summary": "JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages."
+    },
+    {
+      "name": "CF_ACCESS_ENABLED",
+      "group": "identity",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Settings → Identity (preferred); env locks UI",
+      "summary": "When true with other CF_ACCESS_* vars, locks Cloudflare Access config from env."
+    },
+    {
+      "name": "CF_ACCESS_TEAM_DOMAIN",
+      "group": "identity",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Settings → Identity",
+      "summary": "Cloudflare Access team domain URL."
+    },
+    {
+      "name": "CF_ACCESS_AUD",
+      "group": "identity",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": true,
+      "ui": "Settings → Identity",
+      "summary": "Cloudflare Access application audience tag."
+    },
+    {
+      "name": "CF_ACCESS_PROTECTED_PREFIXES",
+      "group": "identity",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Settings → Identity",
+      "summary": "JSON array of path prefixes protected by Access."
+    },
+    {
+      "name": "SSO_PRIVATE_DESTINATION_ALLOWLIST",
+      "group": "identity",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Comma-separated exact hostnames/IPs allowed to resolve privately for identity SSO (OIDC Issuer/endpoints today; same list for future SAML). One list covers every provider sharing those hosts. Set on app. Providers themselves are configured only in Settings → Identity."
+    },
+    {
+      "name": "LOCATION_MAPS_ENABLED",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Legacy/env maps enable; prefer UI External services."
+    },
+    {
+      "name": "MAP_TILE_URL",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Raster tile URL template."
+    },
+    {
+      "name": "MAP_TILE_ATTRIBUTION",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Tile attribution HTML/text."
+    },
+    {
+      "name": "MAP_TILE_MAX_ZOOM",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Max zoom for static maps."
+    },
+    {
+      "name": "GEOCODING_PROVIDER",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Geocoding provider id (Nominatim path by default)."
+    },
+    {
+      "name": "GEOCODING_BASE_URL",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Geocoding API base URL (must not be private)."
+    },
+    {
+      "name": "GEOCODING_TIMEOUT_MS",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Nominatim/geocoding HTTP timeout (ms). No UI field."
+    },
+    {
+      "name": "MAPS_CONFIG_CACHE_TTL_MS",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "In-process maps config cache TTL."
+    },
+    {
+      "name": "ADMITTO_DEFAULT_EVENT_TIMEZONE",
+      "group": "maps",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Event settings",
+      "summary": "Fallback IANA timezone when an event has none."
+    },
+    {
+      "name": "WEATHER_ENABLED",
+      "group": "weather",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Env seed for weather; prefer UI."
+    },
+    {
+      "name": "WEATHER_PROVIDER",
+      "group": "weather",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "met_no | open_meteo (UI preferred)."
+    },
+    {
+      "name": "WEATHER_CACHE_TTL_MS",
+      "group": "weather",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Weather response cache TTL."
+    },
+    {
+      "name": "OPEN_METEO_BASE_URL",
+      "group": "weather",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Organisation settings → External services",
+      "summary": "Open-Meteo API base (commercial / self-hosted)."
+    },
+    {
+      "name": "OPEN_METEO_API_KEY",
+      "group": "weather",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": true,
+      "ui": "Organisation settings → External services",
+      "summary": "Open-Meteo API key when required."
+    },
+    {
+      "name": "OPEN_METEO_TIMEOUT_MS",
+      "group": "weather",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Open-Meteo HTTP timeout (ms)."
+    },
+    {
+      "name": "EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS",
+      "group": "retention",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Days before rendered mail HTML/subject are nullified on terminal deliveries."
+    },
+    {
+      "name": "SECURITY_AUDIT_LOG_RETENTION_DAYS",
+      "group": "retention",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Days to keep durable security audit rows (default 30)."
+    }
+  ]
+}

@@ -4,7 +4,12 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { canManageInstance } from "@admitto/auth";
-import { ADMITTABLE_STATUS_LIST, REVOCABLE_ITEM_STATES, writeAdminAuditLog } from "@admitto/tickets";
+import {
+  ADMITTABLE_STATUS_LIST,
+  REVOCABLE_ITEM_STATES,
+  writeAdminAuditLog,
+  parseWalletFieldMapping,
+} from "@admitto/tickets";
 import {
   InvalidHttpUrlError,
   logoCropFromDb,
@@ -17,21 +22,38 @@ import {
   type LogoCropMeta,
 } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { normalizeTimeZone } from "@admitto/shared/timezones";
+import { decryptFromString, encryptToString } from "@admitto/crypto";
+import {
+  PassCreatorClient,
+  WalletProviderError,
+  WALLET_MAPPING_PLACEHOLDERS,
+  type PassCreatorWebhookEventType,
+} from "@admitto/wallet";
 import { z } from "zod";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
+  eventHoursField,
   isValidCalendarDate,
   parseEventDateInput,
   requireEventId,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
+import { resolvePassCreatorBaseUrl } from "../config.js";
+import { resolveInstanceBaseUrl } from "../instance-base-url.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
-import { countEventActivitySignals, isEventDeletable } from "./event-deletion.js";
+import {
+  countEventActivitySignals,
+  isEventDeletable,
+  listEventDeletionBlockers,
+  type EventDeletionBlocker,
+} from "./event-deletion.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import { isManagedUploadUrlReferenced } from "./branding-upload-refs.js";
+import { enqueueEventWideWalletPushJob } from "./wallet-push-routes.js";
 
 const dateOnlyField = z
   .string()
@@ -62,6 +84,19 @@ const patchEventSchema = z
     date: z.union([z.string().datetime(), dateOnlyField]).optional(),
     capacity: z.number().int().positive().max(PG_INT_MAX).nullish(),
     timezone: timezoneField.optional(),
+    event_hours_start: eventHoursField,
+    event_hours_end: eventHoursField,
+    wallet_enabled: z.boolean().optional(),
+    wallet_template_id: z.string().trim().max(200).nullish(),
+    wallet_api_key: z.string().trim().max(512).nullish(),
+    wallet_apple_enabled: z.boolean().optional(),
+    wallet_google_enabled: z.boolean().optional(),
+    wallet_field_mapping: z
+      .record(
+        z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
+        z.enum(WALLET_MAPPING_PLACEHOLDERS),
+      )
+      .nullish(),
     logo_url: z.string().trim().max(2000).nullish(),
     logo_original_url: z.string().trim().max(2000).nullish(),
     logo_crop: logoCropSchema,
@@ -77,6 +112,14 @@ type EventSettingsRow = {
   slug: string;
   date: Date;
   timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
+  wallet_enabled: boolean;
+  wallet_template_id: string | null;
+  wallet_api_key_enc: string | null;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
+  wallet_field_mapping: unknown;
   capacity: number | null;
   archived_at: Date | null;
   archived_by_timezone: string | null;
@@ -93,23 +136,34 @@ type EventSettingsRow = {
 
 function serializeEventSettings(
   event: EventSettingsRow,
-  deletability: { isDeletable: boolean },
+  deletability: { isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] },
   revokeCounts: { admittedCount: number; issuedItemsCount: number },
 ): EventSettingsDto {
+  const normalizeNullableTimeZone = (value: string | null) =>
+    value === null ? null : normalizeTimeZone(value) ?? value;
   const resolved = resolveBrandingFromEvent(event);
   return {
     id: event.id,
     title: event.title,
     slug: event.slug,
     date: event.date.toISOString(),
-    timezone: event.timezone,
+    timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
+    event_hours_start: event.event_hours_start,
+    event_hours_end: event.event_hours_end,
+    wallet_enabled: event.wallet_enabled,
+    wallet_template_id: event.wallet_template_id,
+    wallet_api_key: { configured: event.wallet_api_key_enc != null },
+    wallet_apple_enabled: event.wallet_apple_enabled,
+    wallet_google_enabled: event.wallet_google_enabled,
+    wallet_field_mapping: parseWalletFieldMapping(event.wallet_field_mapping),
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
     archived_at: event.archived_at ? event.archived_at.toISOString() : null,
-    archived_by_timezone: event.archived_by_timezone,
+    archived_by_timezone: normalizeNullableTimeZone(event.archived_by_timezone),
     created_at: event.created_at.toISOString(),
-    created_by_timezone: event.created_by_timezone,
+    created_by_timezone: normalizeNullableTimeZone(event.created_by_timezone),
     is_deletable: deletability.isDeletable,
+    deletion_blockers: deletability.deletionBlockers,
     admitted_count: revokeCounts.admittedCount,
     issued_items_count: revokeCounts.issuedItemsCount,
     organization_name: event.organization.name,
@@ -133,6 +187,14 @@ const EVENT_SETTINGS_SELECT = {
   slug: true,
   date: true,
   timezone: true,
+  event_hours_start: true,
+  event_hours_end: true,
+  wallet_enabled: true,
+  wallet_template_id: true,
+  wallet_api_key_enc: true,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
+  wallet_field_mapping: true,
   capacity: true,
   archived_at: true,
   archived_by_timezone: true,
@@ -151,14 +213,15 @@ const EVENT_SETTINGS_SELECT = {
   },
 } as const;
 
-/** Load activity signals for an event and evaluate the shared delete guard against them. */
+/** Load content signals for an event and evaluate the shared delete guard against them. */
 async function loadDeletability(
   db: PrismaClient,
   eventId: string,
   event: { archived_at: Date | null; pinned_note: string | null },
-): Promise<{ isDeletable: boolean }> {
+): Promise<{ isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] }> {
   const signals = await countEventActivitySignals(db, eventId);
-  return { isDeletable: isEventDeletable(event, signals) };
+  const deletionBlockers = listEventDeletionBlockers(event, signals);
+  return { isDeletable: isEventDeletable(event, signals), deletionBlockers };
 }
 
 /** Live counts backing the Danger Zone's "Revoke all check-ins" / "Revoke all items issued" rows.
@@ -220,19 +283,136 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   return c.json(serializeEventSettings(event, deletability, revokeCounts));
 }
 
+const walletTestSchema = z.object({
+  apiKey: z.string().trim().max(512).optional(),
+  templateId: z.string().trim().min(1).max(200),
+});
+
+function walletTestErrorMessage(code: WalletProviderError["code"]): string {
+  switch (code) {
+    case "wallet_provider_unauthorized":
+      return "PassCreator rejected the API key.";
+    case "wallet_provider_not_found":
+      return "Template ID not found on this PassCreator account.";
+    case "wallet_provider_rate_limited":
+      return "PassCreator is rate-limiting this instance - try again shortly.";
+    case "wallet_provider_timeout":
+      return "Could not reach PassCreator.";
+    default:
+      return "PassCreator rejected the request.";
+  }
+}
+
+/**
+ * POST /api/admin/events/:eventId/wallet/test
+ * Probe the API key + template ID from a draft body (no persist). Empty/omitted apiKey falls
+ * back to the event's already-saved key.
+ */
+export async function handlePostEventWalletTest(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  if (!(await canManageInstance(db, c.get("auth").userId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  const parsed = walletTestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "validation_failed", details: parsed.error.flatten() }, 400);
+  }
+
+  let apiKey = parsed.data.apiKey;
+  if (!apiKey) {
+    const event = await db.event.findUnique({
+      where: { id: eventId },
+      select: { wallet_api_key_enc: true },
+    });
+    if (!event?.wallet_api_key_enc) {
+      return c.json({ ok: false, error: "An API key is required to test the connection." });
+    }
+    try {
+      apiKey = decryptFromString(event.wallet_api_key_enc);
+    } catch {
+      return c.json({ ok: false, error: "The saved API key could not be decrypted." });
+    }
+  }
+
+  const client = new PassCreatorClient({
+    apiKey,
+    templateId: parsed.data.templateId,
+    baseUrl: resolvePassCreatorBaseUrl(),
+  });
+  try {
+    const result = await client.describeTemplate();
+    return c.json({
+      ok: true,
+      message: result.name ? `Connected - template "${result.name}".` : "Connected to PassCreator.",
+    });
+  } catch (err) {
+    const message =
+      err instanceof WalletProviderError
+        ? walletTestErrorMessage(err.code)
+        : "Could not reach PassCreator.";
+    return c.json({ ok: false, error: message });
+  }
+}
+
 type PatchEventBody = z.infer<typeof patchEventSchema>;
 
+type WalletFieldsPatch = {
+  wallet_enabled?: boolean;
+  wallet_template_id?: string | null;
+  wallet_api_key_enc?: string | null;
+  wallet_apple_enabled?: boolean;
+  wallet_google_enabled?: boolean;
+  wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+};
+
+/** Wallet-only slice of buildBasicFieldsPatch, extracted to keep the main function's cognitive
+ * complexity under the SonarCloud threshold (S3776). */
+function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
+  const data: WalletFieldsPatch = {};
+  if (patch.wallet_enabled !== undefined) data.wallet_enabled = patch.wallet_enabled;
+  if (patch.wallet_template_id !== undefined) data.wallet_template_id = patch.wallet_template_id;
+  // Empty string clears the key; omit to keep the previous one.
+  if (patch.wallet_api_key !== undefined) {
+    data.wallet_api_key_enc = patch.wallet_api_key ? encryptToString(patch.wallet_api_key) : null;
+  }
+  if (patch.wallet_apple_enabled !== undefined) {
+    data.wallet_apple_enabled = patch.wallet_apple_enabled;
+  }
+  if (patch.wallet_google_enabled !== undefined) {
+    data.wallet_google_enabled = patch.wallet_google_enabled;
+  }
+  if (patch.wallet_field_mapping !== undefined) {
+    const mapping = patch.wallet_field_mapping;
+    data.wallet_field_mapping = mapping && Object.keys(mapping).length > 0 ? mapping : Prisma.JsonNull;
+  }
+  return data;
+}
+
 /** Maps the schema's basic (non-branding) fields onto Prisma update data. */
-function buildBasicFieldsPatch(patch: PatchEventBody): {
+function buildBasicFieldsPatch(patch: PatchEventBody): WalletFieldsPatch & {
   title?: string;
   date?: Date;
   timezone?: string;
+  event_hours_start?: string | null;
+  event_hours_end?: string | null;
   capacity?: number | null;
 } {
-  const data: ReturnType<typeof buildBasicFieldsPatch> = {};
+  const data: ReturnType<typeof buildBasicFieldsPatch> = buildWalletFieldsPatch(patch);
   if (patch.title !== undefined) data.title = patch.title.trim();
   if (patch.date !== undefined) data.date = parseEventDateInput(patch.date);
   if (patch.timezone !== undefined) data.timezone = patch.timezone;
+  if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
+  if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
 }
@@ -299,6 +479,145 @@ function applyBrandingPatch(
   }
 }
 
+const WALLET_WEBHOOK_EVENT_TYPES: readonly PassCreatorWebhookEventType[] = [
+  "first_pushnotification_registered",
+  "pushnotification_registered",
+  "pushnotification_unregistered",
+  "pass_voided",
+];
+
+/** Best-effort: (re-)registers this event's webhook target URL with PassCreator for every event
+ * type the receiving endpoint handles (wallet-webhook.ts), whenever a save leaves the wallet
+ * fully enabled and configured. A PassCreator outage, unreachable instance URL, or bad key here
+ * must never fail the settings save - registration/void updates simply keep flowing through the
+ * existing periodic sync (registration-sync.ts) until a later save retries this. */
+async function subscribeWalletWebhooksBestEffort(
+  db: PrismaClient,
+  eventId: string,
+  updated: {
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key_enc: string | null;
+  },
+): Promise<void> {
+  if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
+
+  let apiKey: string;
+  try {
+    apiKey = decryptFromString(updated.wallet_api_key_enc);
+  } catch (err) {
+    console.error("wallet webhook subscribe: API key decrypt failed:", err);
+    return;
+  }
+  let baseUrl: string;
+  try {
+    baseUrl = await resolveInstanceBaseUrl(db);
+  } catch (err) {
+    console.error("wallet webhook subscribe: instance base URL unresolved:", err);
+    return;
+  }
+
+  const client = new PassCreatorClient({
+    apiKey,
+    templateId: updated.wallet_template_id,
+    baseUrl: resolvePassCreatorBaseUrl(),
+  });
+  const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+
+  // subscribeWebhook creates a fresh subscription entry every call, even for an identical
+  // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
+  // function runs on) would otherwise accumulate a duplicate subscription per save, each
+  // delivering its own redundant webhook call forever after. Listing is itself best-effort: if it
+  // fails, fall back to the old blind-subscribe behavior rather than skipping subscription
+  // entirely - a few duplicate subscriptions are a lesser problem than none at all.
+  let alreadySubscribed: Set<string>;
+  try {
+    const existing = await client.listWebhooks();
+    alreadySubscribed = new Set(
+      existing
+        .filter((hook) => hook.passTemplate === updated.wallet_template_id && hook.targetUrl === targetUrl)
+        .map((hook) => hook.event),
+    );
+  } catch (err) {
+    console.error("wallet webhook subscribe: listWebhooks failed, subscribing unconditionally:", err);
+    alreadySubscribed = new Set();
+  }
+  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter((event) => !alreadySubscribed.has(event));
+
+  const settled = await Promise.allSettled(
+    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrl, event)),
+  );
+  settled.forEach((outcome, index) => {
+    if (outcome.status !== "rejected") return;
+    const event = eventTypesToSubscribe[index];
+    console.error(`wallet webhook subscribe (${event}) failed:`, outcome.reason);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "wallet_webhook_subscribe_failed",
+      fields: { eventId, event },
+    });
+  });
+}
+
+/** Event fields that can appear in a wallet pass via WALLET_MAPPING_PLACEHOLDERS (event name,
+ * hours, date, location). */
+type WalletRelevantEventSnapshot = {
+  title: string;
+  date: Date;
+  timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
+};
+
+/** True only when one of the wallet-relevant fields' *persisted* value actually differs -
+ * comparing against the pre-write row, not just whether the patch touched the key, so
+ * resubmitting an unchanged value (e.g. a client re-saving the same title) never counts as a
+ * change (bot review: an unconditional key-presence check would let a resubmit loop repeatedly
+ * enqueue pushes for no real change once each prior job finishes). Dates compare via getTime() -
+ * both sides come from the same Postgres column, so this only ever differs on a genuine write. */
+function walletRelevantEventFieldsChanged(
+  existing: WalletRelevantEventSnapshot,
+  updated: WalletRelevantEventSnapshot,
+): boolean {
+  return (
+    existing.title !== updated.title ||
+    existing.date.getTime() !== updated.date.getTime() ||
+    existing.timezone !== updated.timezone ||
+    existing.event_hours_start !== updated.event_hours_start ||
+    existing.event_hours_end !== updated.event_hours_end
+  );
+}
+
+/** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass's
+ * name/ticket type/event details whenever a save actually changes one of the wallet-relevant
+ * fields (PO report, 2026-08-13: "the system already knows the wallet is on, so when hours/name
+ * change in Event Settings it should quietly update the wallets too" - previously nothing pushed
+ * to already-issued passes until an admin manually reissued each one). Guarded on wallet_enabled
+ * here (unlike attendees-api-routes.ts's ticket-type push) so an event that never had wallet
+ * turned on doesn't accumulate wallet_not_configured job-failure history on every settings save.
+ * Awaited by the caller inside its own try/catch - enqueueing is now a single fast AdminJob
+ * insert (not a PassCreator fan-out), so there's no client-timeout risk in waiting for it; a
+ * PassCreator outage or bad key still never fails the save, since that only ever surfaces later,
+ * inside the job worker. */
+async function pushWalletUpdatesBestEffort(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  existing: WalletRelevantEventSnapshot,
+  updated: WalletRelevantEventSnapshot & {
+    organization_id: string;
+    wallet_enabled: boolean;
+    wallet_template_id: string | null;
+    wallet_api_key_enc: string | null;
+  },
+): Promise<void> {
+  if (!walletRelevantEventFieldsChanged(existing, updated)) return;
+  if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
+
+  await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id);
+}
+
 /** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -326,6 +645,20 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     return c.json({ error: "validation_failed" }, 400);
   }
 
+  // Wallet fields are superadmin-only in the UI (Event settings -> Wallet tab is
+  // superadmin-gated); assertEventManageAccess above also permits organisation admins, so it
+  // does not by itself enforce that boundary for these fields.
+  const patchesWallet =
+    patch.wallet_enabled !== undefined ||
+    patch.wallet_template_id !== undefined ||
+    patch.wallet_api_key !== undefined ||
+    patch.wallet_apple_enabled !== undefined ||
+    patch.wallet_google_enabled !== undefined ||
+    patch.wallet_field_mapping !== undefined;
+  if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
+    return c.json({ error: "forbidden" }, 403);
+  }
+
   const existing = await loadEventSettingsRow(db, eventId);
   if (!existing) return c.json({ error: "not_found" }, 404);
 
@@ -336,6 +669,14 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     title?: string;
     date?: Date;
     timezone?: string;
+    event_hours_start?: string | null;
+    event_hours_end?: string | null;
+    wallet_enabled?: boolean;
+    wallet_template_id?: string | null;
+    wallet_api_key_enc?: string | null;
+    wallet_apple_enabled?: boolean;
+    wallet_google_enabled?: boolean;
+    wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     capacity?: number | null;
     logo_url?: string | null;
     logo_original_url?: string | null;
@@ -383,6 +724,27 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       { expectedOrgId: "default", expectedKind: "event", expectedEventId: eventId },
       { isStillReferenced: (url) => isManagedUploadUrlReferenced(db, url) },
     );
+
+    if (patchesWallet) {
+      await subscribeWalletWebhooksBestEffort(db, eventId, updated);
+    }
+    // Awaited (unlike the pre-job-system version): enqueueing is now a single fast AdminJob
+    // insert, not a fan-out of one PassCreator call per attendee, so there's no client-timeout
+    // risk left to justify not waiting for it. Caught separately from the transaction above (same
+    // reasoning as attendees-api-routes.ts's ticket-type push enqueue) - the settings write
+    // already committed, so a transient enqueue failure here must not turn that success into a
+    // 500.
+    try {
+      await pushWalletUpdatesBestEffort(db, c, eventId, existing, updated);
+    } catch (err) {
+      console.error("wallet event-change push enqueue failed:", err);
+      recordSystemLog({
+        level: "error",
+        source: "admin",
+        message: "wallet_event_change_push_failed",
+        fields: { eventId },
+      });
+    }
 
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);

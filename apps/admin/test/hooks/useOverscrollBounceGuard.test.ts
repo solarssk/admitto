@@ -21,6 +21,16 @@ function dispatchWheel(el: HTMLElement, deltaY: number): boolean {
   return el.dispatchEvent(event);
 }
 
+function makeNestedPicker(overflowY: "auto" | "clip" | "hidden" | "scroll"): HTMLButtonElement {
+  const picker = document.createElement("div");
+  picker.style.overflowY = overflowY;
+  Object.defineProperty(picker, "clientHeight", { value: 100, configurable: true });
+  Object.defineProperty(picker, "scrollHeight", { value: 300, configurable: true });
+  const option = document.createElement("button");
+  picker.appendChild(option);
+  return option;
+}
+
 describe("useOverscrollBounceGuard", () => {
   it("prevents scrolling further up when already at the top", () => {
     const el = makeScrollable({ scrollTop: 0 });
@@ -62,6 +72,42 @@ describe("useOverscrollBounceGuard", () => {
 
     expect(dispatchWheel(el, 100)).toBe(true);
     expect(dispatchWheel(el, -100)).toBe(true);
+  });
+
+  it("does not cancel a wheel gesture for a nested scrollable picker", () => {
+    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    const option = makeNestedPicker("auto");
+    el.appendChild(option.parentElement!);
+    renderHook(() => useOverscrollBounceGuard({ current: el }));
+
+    expect(dispatchWheel(option, 100)).toBe(true);
+  });
+
+  it("does not cancel a wheel gesture for a nested picker with forced scrolling", () => {
+    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    const option = makeNestedPicker("scroll");
+    el.appendChild(option.parentElement!);
+    renderHook(() => useOverscrollBounceGuard({ current: el }));
+
+    expect(dispatchWheel(option, 100)).toBe(true);
+  });
+
+  it("still cancels a wheel gesture for a clipped nested picker", () => {
+    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    const option = makeNestedPicker("clip");
+    el.appendChild(option.parentElement!);
+    renderHook(() => useOverscrollBounceGuard({ current: el }));
+
+    expect(dispatchWheel(option, 100)).toBe(false);
+  });
+
+  it("still cancels a wheel gesture for a hidden-overflow nested picker", () => {
+    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    const option = makeNestedPicker("hidden");
+    el.appendChild(option.parentElement!);
+    renderHook(() => useOverscrollBounceGuard({ current: el }));
+
+    expect(dispatchWheel(option, 100)).toBe(false);
   });
 
   it("allows scrolling back up from the bottom and down from the top", () => {

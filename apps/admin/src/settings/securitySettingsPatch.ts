@@ -1,4 +1,6 @@
+import { isValidCspTrustedOrigin, MAX_CSP_TRUSTED_ORIGINS } from "@admitto/auth/csp-trusted-origins";
 import type { PatchSystemSettingsBody, SettingSource, SystemSettingsDto } from "../api/types.js";
+import { parseListInput, joinListInput } from "../identity/cfAccessValidation.js";
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_MINUTE = 60_000;
@@ -10,6 +12,7 @@ export interface SecuritySettingsDraft {
   opIdleM: string;
   trustedDays: string;
   mfaRoles: string[];
+  cspTrustedOriginsRaw: string;
 }
 
 /** Parse a draft text field, clamp to bounds, and fall back when empty or non-numeric. */
@@ -37,11 +40,32 @@ export function draftFromSettings(s: SystemSettingsDto): SecuritySettingsDraft {
     opIdleM: String(Math.round(s.operator_session_idle_timeout_ms.value / MS_PER_MINUTE)),
     trustedDays: String(s.trusted_device_days.value),
     mfaRoles: [...s.mfa_required_roles.value],
+    cspTrustedOriginsRaw: joinListInput(s.csp_trusted_origins.value),
   };
 }
 
 function sortedRolesKey(roles: string[]): string {
   return [...roles].sort((a, b) => a.localeCompare(b)).join(",");
+}
+
+function sortedOriginsKey(origins: string[]): string {
+  return [...origins].sort((a, b) => a.localeCompare(b)).join(",");
+}
+
+/** Validation errors for the trusted-origins draft text, for `SettingsFooter`'s
+ *  `validationErrors` list. Empty array means the draft is ready to save. */
+export function cspTrustedOriginsErrors(raw: string): string[] {
+  const values = parseListInput(raw);
+  const errors: string[] = [];
+  if (values.length > MAX_CSP_TRUSTED_ORIGINS) {
+    errors.push(`At most ${MAX_CSP_TRUSTED_ORIGINS} trusted origins are allowed.`);
+  }
+  for (const value of values) {
+    if (!isValidCspTrustedOrigin(value)) {
+      errors.push(`"${value}" is not a valid https:// origin.`);
+    }
+  }
+  return errors;
 }
 
 /** Build a PATCH body from the current draft, skipping env-locked fields. */
@@ -110,6 +134,14 @@ export function buildSecurityPatchBody(
     sortedRolesKey(draft.mfaRoles) !== sortedRolesKey(settings.mfa_required_roles.value),
     () => {
       body.mfa_required_roles = draft.mfaRoles;
+    },
+  );
+  const cspTrustedOrigins = parseListInput(draft.cspTrustedOriginsRaw);
+  applyIfEditable(
+    fieldLocked(settings.csp_trusted_origins.source),
+    sortedOriginsKey(cspTrustedOrigins) !== sortedOriginsKey(settings.csp_trusted_origins.value),
+    () => {
+      body.csp_trusted_origins = cspTrustedOrigins;
     },
   );
 

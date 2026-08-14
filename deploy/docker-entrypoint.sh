@@ -8,28 +8,22 @@ log() {
   printf '%s\n' "$*" >&2
 }
 
-ensure_backup_dir_permissions() {
-  backup_dir="${MIGRATION_BACKUP_DIR:-/backups}"
-  if [ "$(id -u)" = "0" ] && [ -d "$backup_dir" ]; then
-    chown root:root "$backup_dir"
-    chmod 700 "$backup_dir"
-  fi
-}
-
-# A no-op unless run as root — chown needs root, so this only actually fixes anything inside
-# `migrate` (always root) or an explicit `--user root` override. `app` calls this too (its "node"
-# CLI-passthrough branch below) but is non-root by default, so for `app` it's a no-op relying on
-# `migrate` already having chowned this directory once: `docker compose run --rm app node ...`
-# (undocumented `--no-deps` aside) always starts `migrate` first via depends_on on a truly fresh
-# stack, and a durable host-filesystem chown doesn't need repeating on later app-only restarts.
-ensure_emergency_export_dir_permissions() {
+# Every service runs as the unprivileged `node` user (UID 1000). Compose creates missing bind-mount
+# paths as root-owned; validate (or create when the parent allows) before emergency CLI export runs.
+ensure_emergency_export_dir_writable() {
   export_dir="${EMERGENCY_EXPORT_DIR:-/app/emergency-exports}"
-  if [ "$(id -u)" != "0" ]; then
-    return 0
+  if [ ! -d "$export_dir" ] && ! mkdir -p "$export_dir" 2>/dev/null; then
+    log "error: emergency export directory does not exist and could not be created: $export_dir"
+    log "hint: on the Docker host run: cd deploy && ./scripts/init-host-dirs.sh"
+    log "hint: or: mkdir -p emergency-exports uploads && chown 1000:1000 emergency-exports uploads && chmod 700 emergency-exports"
+    exit 1
   fi
-  mkdir -p "$export_dir"
-  chown node:node "$export_dir"
-  chmod 700 "$export_dir"
+  if [ ! -w "$export_dir" ]; then
+    log "error: emergency export directory is not writable by the app user: $export_dir"
+    log "hint: on the Docker host run: cd deploy && ./scripts/init-host-dirs.sh"
+    log "hint: or: chown 1000:1000 emergency-exports && chmod 700 emergency-exports"
+    exit 1
+  fi
 }
 
 quote_cmd_args() {
@@ -51,24 +45,6 @@ run_as_node_cmd() {
   else
     "$@"
   fi
-}
-
-# Parse DATABASE_URL via node stdout — never eval (password may contain shell metacharacters).
-load_pg_env_from_database_url() {
-  if [ -z "${DATABASE_URL:-}" ]; then
-    log "error: DATABASE_URL is not set"
-    exit 1
-  fi
-  PGHOST="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(u.hostname)")"
-  PGPORT="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(u.port || '5432')")"
-  PGUSER="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.username))")"
-  PGPASSWORD="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.password))")"
-  PGDATABASE="$(node -e "const u = new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.pathname.replace(/^\\//, '')))")"
-  export PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
-}
-
-unset_pg_env() {
-  unset PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE
 }
 
 migration_status_output() {
@@ -97,100 +73,6 @@ is_schema_up_to_date() {
   printf '%s' "$check_output" | grep -q 'Database schema is up to date'
 }
 
-check_backup_dir() {
-  backup_dir="$1"
-  if [ ! -d "$backup_dir" ]; then
-    log "error: migration backup directory does not exist: $backup_dir"
-    log "hint: mount a backups volume at /backups or set MIGRATION_BACKUP_DISABLE=true for dev/test"
-    exit 1
-  fi
-  if [ ! -w "$backup_dir" ]; then
-    log "error: migration backup directory is not writable: $backup_dir"
-    exit 1
-  fi
-}
-
-check_backup_disk_space() {
-  backup_dir="$1"
-  min_mb="${MIGRATION_BACKUP_MIN_FREE_MB:-512}"
-  free_kb="$(df -Pk "$backup_dir" | awk 'NR==2 {print $4}')"
-  if [ -z "$free_kb" ]; then
-    log "error: could not determine free disk space for $backup_dir"
-    exit 1
-  fi
-  free_mb=$((free_kb / 1024))
-  if [ "$free_mb" -lt "$min_mb" ]; then
-    log "error: insufficient disk space for pre-migration backup (${free_mb}MB free, need at least ${min_mb}MB)"
-    log "hint: raise MIGRATION_BACKUP_MIN_FREE_MB or free space on the backups volume"
-    exit 1
-  fi
-}
-
-run_pg_dump_to_file() {
-  tmp_sql="$1"
-  # Do not pass DATABASE_URL directly to pg_dump — special characters in passwords break URI parsing.
-  pg_dump \
-    -h "$PGHOST" \
-    -p "$PGPORT" \
-    -U "$PGUSER" \
-    -d "$PGDATABASE" \
-    --no-owner \
-    --no-acl \
-    > "$tmp_sql"
-}
-
-write_pre_migration_backup() {
-  backup_dir="${MIGRATION_BACKUP_DIR:-/backups}"
-  retention="${MIGRATION_BACKUP_RETENTION:-10}"
-  backup_file="${backup_dir}/pre-migration-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
-  tmp_sql=""
-
-  check_backup_dir "$backup_dir"
-  check_backup_disk_space "$backup_dir"
-  load_pg_env_from_database_url
-
-  tmp_sql="$(mktemp)"
-  trap 'rm -f "$tmp_sql"' EXIT INT HUP
-
-  install -m 600 /dev/null "$backup_file"
-
-  if ! run_pg_dump_to_file "$tmp_sql"; then
-    rm -f "$backup_file"
-    unset_pg_env
-    log "error: pg_dump failed — aborting before migrate deploy"
-    exit 1
-  fi
-  unset_pg_env
-
-  if ! gzip -c "$tmp_sql" > "$backup_file"; then
-    rm -f "$backup_file"
-    log "error: gzip failed while writing pre-migration backup"
-    exit 1
-  fi
-
-  if ! gzip -t "$backup_file"; then
-    rm -f "$backup_file"
-    log "error: pre-migration backup failed integrity check (gzip -t)"
-    exit 1
-  fi
-
-  rm -f "$tmp_sql"
-  trap - EXIT INT HUP
-
-  log "pre-migration backup written: $backup_file"
-
-  if [ "$retention" -gt 0 ] 2>/dev/null; then
-    count=0
-    # shellcheck disable=SC2012
-    ls -1t "$backup_dir"/pre-migration-*.sql.gz 2>/dev/null | while IFS= read -r f; do
-      count=$((count + 1))
-      if [ "$count" -gt "$retention" ]; then
-        rm -f "$f"
-      fi
-    done
-  fi
-}
-
 # docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin
 if [ "${1:-}" = "npm" ] || [ "${1:-}" = "npx" ]; then
   log "npm/npx are not available in the production image. Use: node <script> ..."
@@ -198,12 +80,12 @@ if [ "${1:-}" = "npm" ] || [ "${1:-}" = "npx" ]; then
 fi
 
 if [ "${1:-}" = "node" ]; then
-  ensure_emergency_export_dir_permissions
+  ensure_emergency_export_dir_writable
   run_as_node "$@"
 fi
 
-# "serve": the app service (non-root by default) — migration/backup/backfill already ran to
-# completion in the migrate service (compose depends_on: condition: service_completed_successfully).
+# "serve": the app service — migration/backfill already ran to completion in the migrate service
+# (compose depends_on: condition: service_completed_successfully).
 # Retention runs only on the Admitto worker (ADR 0042), not on every app start.
 if [ "${1:-}" = "serve" ]; then
   exec node apps/web/dist/src/index.js
@@ -218,9 +100,6 @@ if [ "${1:-}" != "migrate" ]; then
   log "usage: docker-entrypoint.sh migrate|serve|worker|node <script> ..."
   exit 64
 fi
-
-ensure_backup_dir_permissions
-ensure_emergency_export_dir_permissions
 
 set +e
 status_out="$(migration_status_output)"
@@ -239,14 +118,12 @@ if has_failed_migrations "$status_out"; then
   exit 1
 fi
 
-if has_pending_migrations "$status_out"; then
-  if [ "${MIGRATION_BACKUP_DISABLE:-}" = "true" ]; then
-    log "warning: pending migrations detected; MIGRATION_BACKUP_DISABLE=true — skipping pre-migration backup"
-  else
-    write_pre_migration_backup
-  fi
-elif is_schema_up_to_date "$status_out"; then
-  : # fast path — no backup on routine restarts
+# has_pending_migrations / is_schema_up_to_date are the only two known-good states; anything else
+# with a nonzero exit is an unrecognized `migrate status` output — fail-closed rather than deploy
+# against a schema state we don't understand. Backup is the operator's responsibility (ADR 0043),
+# not a step here — both branches proceed straight to `migrate deploy`.
+if has_pending_migrations "$status_out" || is_schema_up_to_date "$status_out"; then
+  : # known state — proceed
 elif [ "$status_exit" -ne 0 ]; then
   log "error: prisma migrate status failed with unknown output — aborting (fail-closed)"
   log "$status_out"
@@ -266,5 +143,7 @@ log "running event actor-attribution backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-event-actor-attribution.js
 log "running email delivery template-label-snapshot backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-email-delivery-template-label-snapshot.js
+log "running JIT password-hash backfill with 120s timeout"
+run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-jit-password-hash.js
 
 log "migrate: startup tasks complete"

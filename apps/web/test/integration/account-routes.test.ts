@@ -150,6 +150,23 @@ describe("GET /api/account", () => {
     expect(body).not.toHaveProperty("password_hash");
   });
 
+  it("returns has_local_password: false for an SSO-linked account with no local password", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "account-get-no-password-subject", user_id: oidcUserId },
+    });
+    const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
+
+    const res = await app.request("/api/account", {
+      headers: { Cookie: `admitto_session=${oidcSession.rawToken}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.has_local_password).toBe(false);
+
+    await prisma.session.delete({ where: { id: oidcSession.session.id } });
+    await prisma.externalIdentity.deleteMany({ where: { user_id: oidcUserId } });
+  });
+
   it("resolves an event-scoped role's scope_id to the event's title", async () => {
     const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
     const body = (await res.json()) as { roles: Array<{ scope_type: string; scope_id: string | null; scope_label: string | null }> };
@@ -1007,6 +1024,63 @@ describe("PATCH /api/account/profile — preferred_locale", () => {
   });
 });
 
+describe("PATCH /api/account/profile — preferred_time_format", () => {
+  afterEach(async () => {
+    await prisma.user.update({ where: { id: userId }, data: { preferred_time_format: null } });
+  });
+
+  it("stores an explicit 12-hour preference and returns it from the profile", async () => {
+    const patch = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: "12h" }),
+    });
+    expect(patch.status).toBe(200);
+    expect((await patch.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: "12h" }),
+    );
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.preferred_time_format).toBe("12h");
+
+    const get = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    expect((await get.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: "12h" }),
+    );
+  });
+
+  it("clears the time preference with null", async () => {
+    const set = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: "24h" }),
+    });
+    expect(set.status).toBe(200);
+    expect((await set.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: "24h" }),
+    );
+
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: null }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { preferred_time_format: string | null }).toEqual(
+      expect.objectContaining({ preferred_time_format: null }),
+    );
+  });
+
+  it("rejects unsupported time formats", async () => {
+    const res = await app.request("/api/account/profile", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred_time_format: "13h" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("PATCH /api/account/profile — phone", () => {
   afterEach(async () => {
     await prisma.user.update({ where: { id: userId }, data: { phone_country_code: null, phone_number: null } });
@@ -1219,6 +1293,25 @@ describe("DELETE /api/account/external-identity", () => {
       body: JSON.stringify({ new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("returns 400 insufficient_verification for an SSO-only account with no local password and no TOTP, and the identity survives", async () => {
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-no-proof-subject", user_id: oidcUserId },
+    });
+    const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: `admitto_session=${oidcSession.rawToken}`, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("insufficient_verification");
+    expect(await prisma.externalIdentity.count({ where: { user_id: oidcUserId } })).toBe(1);
+
+    await prisma.session.delete({ where: { id: oidcSession.session.id } });
+    await prisma.externalIdentity.deleteMany({ where: { user_id: oidcUserId } });
   });
 });
 

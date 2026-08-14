@@ -40,6 +40,7 @@ export function useClickOutside(
   containerRef: RefObject<HTMLElement | null>,
   open: boolean,
   onOutside: (reason: OutsideInteraction) => void,
+  additionalInsideRefs: readonly RefObject<HTMLElement | null>[] = [],
 ): void {
   const onOutsideRef = useRef(onOutside);
   useEffect(() => {
@@ -49,7 +50,10 @@ export function useClickOutside(
   useEffect(() => {
     if (!open) return;
     const onOutsideInteraction = (event: PointerEvent | FocusEvent) => {
-      if (!resolvesInsideContainer(event.target, containerRef.current)) {
+      const isInside = [containerRef, ...additionalInsideRefs].some((ref) =>
+        resolvesInsideContainer(event.target, ref.current),
+      );
+      if (!isInside) {
         onOutsideRef.current(event.type === "focusin" ? "focus" : "pointer");
       }
     };
@@ -59,5 +63,5 @@ export function useClickOutside(
       document.removeEventListener("pointerdown", onOutsideInteraction);
       document.removeEventListener("focusin", onOutsideInteraction);
     };
-  }, [open, containerRef]);
+  }, [open, containerRef, additionalInsideRefs]);
 }

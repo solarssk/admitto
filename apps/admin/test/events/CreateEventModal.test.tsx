@@ -45,14 +45,67 @@ describe("CreateEventModal", () => {
     vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((value) => value);
   });
 
-  it("auto-generates slug from title until slug is manually edited", () => {
+  it("hides Link name and still submits an auto-generated slug from the title", async () => {
+    mockCreateEvent.mockResolvedValueOnce({
+      id: "evt-1",
+      title: "Autumn Summit 2026",
+      slug: "autumn-summit-2026",
+      date: "2026-09-29",
+      timezone: "Europe/Warsaw",
+      location: null,
+      organization_id: "org-1",
+      archived_at: null,
+    });
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
 
     fireEvent.change(screen.getByLabelText(/Event title/), {
       target: { value: "Autumn Summit 2026" },
     });
+    expect(screen.queryByLabelText(/Link name/)).toBeNull();
+    pickEventDate("2026-09-29");
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    expect((screen.getByLabelText(/Link name/) as HTMLInputElement).value).toBe("autumn-summit-2026");
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Autumn Summit 2026",
+          slug: "autumn-summit-2026",
+        }),
+      );
+    });
+  });
+
+  it("keeps Create enabled for a non-ASCII title via a stable event-* slug fallback", async () => {
+    mockCreateEvent.mockResolvedValueOnce({
+      id: "evt-cyr",
+      title: "Осенний саммит",
+      slug: "event-placeholder",
+      date: "2026-09-29",
+      timezone: "Europe/Warsaw",
+      location: null,
+      organization_id: "org-1",
+      archived_at: null,
+    });
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText(/Event title/), {
+      target: { value: "Осенний саммит" },
+    });
+    pickEventDate("2026-09-29");
+
+    expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Осенний саммит",
+          slug: expect.stringMatching(/^event-[a-z0-9]+$/),
+        }),
+      );
+    });
   });
 
   it("keeps submit disabled until date is set", () => {
@@ -85,23 +138,108 @@ describe("CreateEventModal", () => {
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
-  it("shows a slug-specific error when creation returns 409", async () => {
+  it("shows a title-focused error when creation returns 409", async () => {
     mockCreateEvent.mockRejectedValueOnce(new ApiError(409, "slug_taken"));
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    expect(await screen.findByText("This link name is already in use. Choose another.")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "An event with a similar name already exists. Change the title slightly and try again.",
+      ),
+    ).toBeTruthy();
   });
 
-  it("keeps a manually edited slug when the title changes", () => {
+  it("mentions Optional only once on the location field", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    expect(screen.getByText("Add a title and date.")).toBeTruthy();
+    expect(screen.getByLabelText("Location (optional)")).toBeTruthy();
+    expect(screen.queryByText(/Location is optional/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Find on map" })).toBeNull();
+  });
+
+  it("submits the event hours range when both fields are set", async () => {
+    mockCreateEvent.mockResolvedValueOnce({ id: "evt-1" } as never);
     render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
-    fireEvent.change(screen.getByLabelText(/Link name/), { target: { value: "custom-event" } });
-    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Renamed Event" } });
+    pickEventDate("2026-09-29");
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), {
+      target: { value: "18:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
+    fireEvent.change(screen.getByLabelText("Event hours (end)"), {
+      target: { value: "22:00" },
+    });
+    fireEvent.blur(screen.getByLabelText("Event hours (end)"));
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
-    expect((screen.getByLabelText(/Link name/) as HTMLInputElement).value).toBe("custom-event");
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+      );
+    });
+  });
+
+  it("does not create an event while a manually entered time is invalid", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const startTime = screen.getByLabelText("Event hours (start)");
+    fireEvent.change(startTime, { target: { value: "6" } });
+    fireEvent.blur(startTime);
+
+    const createButton = screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement;
+    expect(createButton.disabled).toBe(true);
+    fireEvent.click(createButton);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not create an event while the end time is invalid", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
+    pickEventDate("2026-09-29");
+    const endTime = screen.getByLabelText("Event hours (end)");
+    fireEvent.change(endTime, { target: { value: "6" } });
+    fireEvent.blur(endTime);
+
+    expect((screen.getByRole("button", { name: "Create event" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the event-hours hint with its paired controls", () => {
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+
+    expect(
+      screen.getByText("Optional. Shown on tickets and wallet passes as a time range.").closest(".add-attendee-modal__time-range"),
+    ).not.toBeNull();
+  });
+
+  it("submits the timezone chosen from the picker rather than the browser default", async () => {
+    mockCreateEvent.mockResolvedValueOnce({ id: "evt-1" } as never);
+    render(<CreateEventModal open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Tokyo Event" } });
+    // Do not use pickEventDate here: it deliberately restores focus asynchronously, which is
+    // irrelevant to this picker-flow assertion and would close a just-opened listbox in jsdom.
+    const dateInput = screen.getByLabelText(/Event date/);
+    fireEvent.change(dateInput, { target: { value: "2026-09-29" } });
+    fireEvent.blur(dateInput);
+
+    fireEvent.click(screen.getByLabelText("Event timezone *"));
+    fireEvent.change(screen.getByLabelText("Search timezones"), { target: { value: "tokyo" } });
+    const tokyo = await screen.findByRole("option", { name: /Asia\/Tokyo/ });
+    fireEvent.click(tokyo);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Event timezone *").textContent).toContain("Asia/Tokyo");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => {
+      expect(mockCreateEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ timezone: "Asia/Tokyo" }),
+      );
+    });
   });
 
   it("ignores close while submission is pending", async () => {
@@ -181,10 +319,9 @@ describe("CreateEventModal", () => {
 
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
-    fireEvent.change(screen.getByLabelText("Location"), {
+    fireEvent.change(screen.getByLabelText("Location (optional)"), {
       target: { value: "Example Square" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /1 Example Square/ }));
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -223,9 +360,8 @@ describe("CreateEventModal", () => {
 
     fireEvent.change(screen.getByLabelText(/Event title/), { target: { value: "Test Event" } });
     pickEventDate("2026-09-29");
-    const venue = screen.getByLabelText("Location");
+    const venue = screen.getByLabelText("Location (optional)");
     fireEvent.change(venue, { target: { value: "Convention Center" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find on map" }));
     fireEvent.click(await screen.findByRole("button", { name: /Convention Center/ }));
 
     fireEvent.change(venue, { target: { value: "Convention Center Annex" } });

@@ -159,6 +159,32 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** PassCreator webhook deliveries. Two checks (both must pass): per-event, since PassCreator's
+   * own servers (not the attendee's browser) are the caller and retryEnabled means one event's
+   * bursts must not throttle another's; and per-IP, since :eventId is an unauthenticated,
+   * caller-controlled path segment - without this second check, rotating fake event ids gets a
+   * fresh 120-request allowance every time and the per-event check alone bounds nothing. The IP
+   * ceiling is deliberately generous (matches PassCreator's own documented 600 req/min outbound
+   * limit, ADR 0041 §3) so a real instance's legitimate multi-event traffic from PassCreator's
+   * servers is never the thing that trips it. */
+  "wallet:webhook": {
+    checks: [
+      {
+        keyOf: (c) => `wallet:webhook:event:${c.req.param("eventId") ?? "unknown"}`,
+        windowMs: 60_000,
+        max: 120,
+        onExceeded: (c) => c.body(null, 429),
+        logOnExceeded: { scope: "wallet_webhook" },
+      },
+      {
+        keyOf: (c) => `wallet:webhook:ip:${resolveClientIp(c)}`,
+        windowMs: 60_000,
+        max: 600,
+        onExceeded: (c) => c.body(null, 429),
+        logOnExceeded: { scope: "wallet_webhook" },
+      },
+    ],
+  },
   "auth:oidc": {
     checks: [
       {
@@ -296,6 +322,17 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Polling GET …/wallet-push/jobs/:jobId - same ~2s interval and budget as import-job-status. */
+  "admin:wallet-push-job-status": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "wallet-push-job-status"),
+        windowMs: 60_000,
+        max: 120,
+        logOnExceeded: { scope: "admin_wallet_push_job_status", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:template-preview": {
     checks: [
       {
@@ -362,9 +399,31 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Per-attendee, not per-event or per-route: bounds how fast one admin can loop PATCH requests
+  // against a single attendee, which is what a scripted resubmit-to-trigger-a-wallet-push abuse
+  // pattern would target (bot review, PR3) - a real admin editing several different attendees in
+  // a burst never approaches this. 20/min is generous for legitimate back-to-back corrections on
+  // the same record, tight enough that a scripted loop hits it almost immediately.
+  "admin:attendee-patch": {
+    checks: [
+      {
+        keyOf: (c) => {
+          const attendeeId = c.req.param("id");
+          const userId = authUserId(c);
+          return userId
+            ? `admin:attendee-patch:user:${userId}:attendee:${attendeeId}`
+            : `admin:attendee-patch:ip:${resolveClientIp(c)}:attendee:${attendeeId}`;
+        },
+        windowMs: 60_000,
+        max: 20,
+        logOnExceeded: { scope: "admin_attendee_patch", keyHint: "user_attendee" },
+      },
+    ],
+  },
   "admin:resend-bulk": {
     checks: [
       {
+        when: (c) => c.get("bulkSendDryRun") !== true,
         keyOf: (c) => {
           const userId = authUserId(c);
           return userId
@@ -373,6 +432,14 @@ export const RATE_POLICIES = {
         },
         windowMs: 600_000,
         max: 3,
+        onExceeded: (c) =>
+          c.json(
+            {
+              error: "bulk_send_rate_limited",
+              detail: "Bulk sends are limited to 3 requests every 10 minutes. Try again later.",
+            },
+            429,
+          ),
         logOnExceeded: { scope: "admin_resend_bulk", keyHint: "user" },
       },
     ],

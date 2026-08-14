@@ -34,9 +34,19 @@ import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { adminAuditFromContext } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { resolveOidcRedirectUri } from "./oidc-redirect-uri.js";
 
 const MAPPING_ROLE = z.enum(["superadmin", "admin", "operator"]);
 const MAPPING_SCOPE = z.enum(["instance", "organization", "event"]);
+
+// Same pairing enforced at write time in validateGroupRoleMappingInput (packages/auth) - kept
+// here too so a mismatched pair is rejected as a normal 400 validation error instead of falling
+// through to that function's generic save_failed 500.
+const MAPPING_ROLE_SCOPE: Record<z.infer<typeof MAPPING_ROLE>, z.infer<typeof MAPPING_SCOPE>> = {
+  superadmin: "instance",
+  admin: "organization",
+  operator: "event",
+};
 
 const mappingSchema = z
   .object({
@@ -50,7 +60,11 @@ const mappingSchema = z
       m.scope_type === "instance" ||
       (typeof m.scope_id === "string" && m.scope_id.trim().length > 0),
     { message: "scope_id is required for organization/event scoped mappings", path: ["scope_id"] },
-  );
+  )
+  .refine((m) => m.scope_type === MAPPING_ROLE_SCOPE[m.role], {
+    message: "scope_type must match the role (superadmin: instance, admin: organization, operator: event)",
+    path: ["scope_type"],
+  });
 
 const providerBodySchema = z.strictObject({
   display_name: z.string().trim().min(1).max(200),
@@ -134,6 +148,8 @@ const cfAccessTestBodySchema = z.strictObject({
 
 interface ProviderDetailDto extends IdentityProviderFormView {
   mappings: { group: string; role: string; scope_type: string; scope_id: string }[];
+  /** Exact OIDC callback URL to register at the IdP; null when no public base URL is resolvable. */
+  redirect_uri: string | null;
 }
 
 function actorUserId(c: Context): string {
@@ -206,6 +222,7 @@ function toProviderInput(body: z.infer<typeof providerBodySchema>): IdentityProv
 async function providerDetailDto(
   db: PrismaClient,
   provider: NonNullable<Awaited<ReturnType<typeof findOidcProviderById>>>,
+  injectedBaseUrl?: string,
 ): Promise<ProviderDetailDto> {
   const rows = await listProviderGroupMappings(db, provider.id);
   return {
@@ -216,6 +233,7 @@ async function providerDetailDto(
       scope_type: r.scope_type,
       scope_id: r.scope_id ?? "",
     })),
+    redirect_uri: await resolveOidcRedirectUri(db, provider.id, injectedBaseUrl),
   };
 }
 
@@ -233,15 +251,23 @@ export async function handleApiListProviders(c: Context, db: PrismaClient): Prom
 }
 
 /** GET /api/admin/identity/providers/:id */
-export async function handleApiGetProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiGetProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   const id = c.req.param("id") ?? "";
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.json({ error: "not_found" }, 404);
-  return c.json(await providerDetailDto(db, provider));
+  return c.json(await providerDetailDto(db, provider, injectedBaseUrl));
 }
 
 /** POST /api/admin/identity/providers */
-export async function handleApiCreateProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiCreateProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   let body: z.infer<typeof providerBodySchema>;
   try {
     body = providerBodySchema.parse(await c.req.json());
@@ -279,11 +305,15 @@ export async function handleApiCreateProvider(c: Context, db: PrismaClient): Pro
     actionType: "identity_provider_created",
     metadata: { providerId: provider.id, displayName: provider.display_name },
   });
-  return c.json(await providerDetailDto(db, provider), 201);
+  return c.json(await providerDetailDto(db, provider, injectedBaseUrl), 201);
 }
 
 /** PUT /api/admin/identity/providers/:id */
-export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiUpdateProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   const id = c.req.param("id") ?? "";
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.json({ error: "not_found" }, 404);
@@ -326,7 +356,7 @@ export async function handleApiUpdateProvider(c: Context, db: PrismaClient): Pro
     actionType: "identity_provider_updated",
     metadata: { providerId: id },
   });
-  return c.json(await providerDetailDto(db, updated));
+  return c.json(await providerDetailDto(db, updated, injectedBaseUrl));
 }
 
 /** POST /api/admin/identity/providers/:id/toggle */
@@ -367,7 +397,11 @@ export async function handleApiToggleProvider(c: Context, db: PrismaClient): Pro
 }
 
 /** POST /api/admin/identity/providers/:id/discover */
-export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): Promise<Response> {
+export async function handleApiDiscoverProvider(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   const id = c.req.param("id") ?? "";
   const provider = await findOidcProviderById(db, id);
   if (!provider) return c.json({ error: "not_found" }, 404);
@@ -391,6 +425,12 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
       token_endpoint: discovery.token_endpoint,
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? undefined,
+      // Explicit null, not undefined: this persists immediately (unlike the discover-preview
+      // paths below, which only fill the draft form), so it must be able to clear a stored
+      // endpoint the provider no longer advertises - undefined here would mean "preserve
+      // existing" a layer down (updateIdentityProvider's own existing.end_session_endpoint
+      // fallback), silently keeping a stale logout redirect target forever.
+      end_session_endpoint: discovery.end_session_endpoint ?? null,
       enabled: provider.enabled,
     });
   } catch (err) {
@@ -426,8 +466,9 @@ export async function handleApiDiscoverProvider(c: Context, db: PrismaClient): P
       token_endpoint: discovery.token_endpoint,
       jwks_uri: discovery.jwks_uri,
       userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+      end_session_endpoint: discovery.end_session_endpoint ?? null,
     },
-    provider: refreshed ? await providerDetailDto(db, refreshed) : null,
+    provider: refreshed ? await providerDetailDto(db, refreshed, injectedBaseUrl) : null,
   });
 }
 
@@ -479,6 +520,7 @@ export async function handleApiDiscoverProviderPreview(c: Context): Promise<Resp
         token_endpoint: discovery.token_endpoint,
         jwks_uri: discovery.jwks_uri,
         userinfo_endpoint: discovery.userinfo_endpoint ?? null,
+        end_session_endpoint: discovery.end_session_endpoint ?? null,
       },
     });
   } catch (err) {

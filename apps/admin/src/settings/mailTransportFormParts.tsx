@@ -4,7 +4,7 @@
  * grid, secret field UI, provider-specific cards, test result preview, and footer
  * are identical between the two scopes; only what fetches/saves/tests differs.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Badge, Button, Card, HintLabel, Input, Notice, Switch, Tooltip } from "@admitto/ui";
 import type {
   MailPlainFieldDto,
@@ -197,7 +197,9 @@ export function makeSecretHandlers(
 }
 
 export function SecretFieldRow({
+  id,
   label,
+  hint,
   field,
   edit,
   onReplace,
@@ -206,7 +208,10 @@ export function SecretFieldRow({
   onCancel,
   disabled = false,
 }: Readonly<{
+  id: string;
   label: string;
+  /** Optional visible hint below the field, same placement/styling as Input's own `hint` prop. */
+  hint?: string;
   field: MailSecretFieldDto;
   edit: SecretEdits[keyof SecretEdits];
   onReplace: () => void;
@@ -218,6 +223,7 @@ export function SecretFieldRow({
   disabled?: boolean;
 }>) {
   const editing = edit.mode !== "idle";
+  const hintId = useId();
   const [confirmed, setConfirmed] = useState(false);
   useEffect(() => {
     if (!editing) setConfirmed(false);
@@ -238,8 +244,10 @@ export function SecretFieldRow({
           {editing && !confirmed && (
             <>
               <Input
+                id={id}
                 type="password"
                 aria-label={label}
+                aria-describedby={hint ? hintId : undefined}
                 {...NO_AUTOFILL_PROPS}
                 className="mail-secret-field__input"
                 placeholder={edit.mode === "clear" ? "Will be cleared on save" : "New value"}
@@ -316,6 +324,11 @@ export function SecretFieldRow({
             </>
           )}
         </div>
+        {hint && (
+          <span id={hintId} className="at-hint">
+            {hint}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -539,6 +552,7 @@ export function SmtpConnectionCard({
           />
           <div className="smtp-connection-password-and-test">
             <SecretFieldRow
+              id="mail-smtp-password"
               label="Password"
               field={smtpPasswordField}
               edit={smtpPasswordEdit}
@@ -785,6 +799,7 @@ export function GraphCard({
             placeholder="00000000-0000-0000-0000-000000000000"
           />
           <SecretFieldRow
+            id="mail-graph-client-secret"
             label="Client secret"
             field={graphClientSecretField}
             edit={graphClientSecretEdit}
@@ -830,6 +845,7 @@ export function PowerAutomateCard({
         <p className="settings-card-intro">{POWER_AUTOMATE_CARD_INTRO}</p>
         <div className="mail-transport-section">
         <SecretFieldRow
+          id="mail-power-automate-url"
           label="Flow URL"
           field={powerAutomateUrlField}
           edit={powerAutomateUrlEdit}
@@ -837,6 +853,7 @@ export function PowerAutomateCard({
           {...makeSecretHandlers("powerAutomateUrl", updateSecrets)}
         />
         <SecretFieldRow
+          id="mail-power-automate-key"
           label="Flow key"
           field={powerAutomateKeyField}
           edit={powerAutomateKeyEdit}

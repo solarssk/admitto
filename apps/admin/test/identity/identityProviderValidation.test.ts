@@ -223,14 +223,46 @@ import {
   areMappingsValid,
   emptyMappingRow,
   newMappingId,
+  scopeForRole,
   validateMappingRow,
   validateMappings,
+  withScopeForRole,
   type MappingRow,
 } from "../../src/identity/identityProviderValidation.js";
 
 function rowWith(overrides: Partial<MappingRow> = {}): MappingRow {
   return { ...emptyMappingRow(), ...overrides };
 }
+
+describe("scopeForRole", () => {
+  it("pairs superadmin with instance, admin with organization, operator with event", () => {
+    expect(scopeForRole("superadmin")).toBe("instance");
+    expect(scopeForRole("admin")).toBe("organization");
+    expect(scopeForRole("operator")).toBe("event");
+  });
+});
+
+describe("withScopeForRole", () => {
+  it("leaves an already-consistent row untouched", () => {
+    const row = rowWith({ role: "operator", scope_type: "event", scope_id: "evt-1" });
+    expect(withScopeForRole(row)).toEqual(row);
+  });
+
+  it("re-derives scope_type and clears scope_id when the role changes to a different scope", () => {
+    const row = rowWith({ role: "admin", scope_type: "organization", scope_id: "org-1" });
+    expect(withScopeForRole({ ...row, role: "operator" })).toEqual({
+      ...row,
+      role: "operator",
+      scope_type: "event",
+      scope_id: "",
+    });
+  });
+
+  it("self-heals a legacy/unrecognized stored scope_type to the one the role requires", () => {
+    const row = rowWith({ role: "admin", scope_type: "legacy_scope" as MappingRow["scope_type"], scope_id: "" });
+    expect(withScopeForRole(row).scope_type).toBe("organization");
+  });
+});
 
 describe("validateMappingRow", () => {
   it("flags a missing group", () => {
@@ -244,8 +276,13 @@ describe("validateMappingRow", () => {
   });
 
   it("passes a valid instance-scoped row without scope_id", () => {
-    const errors = validateMappingRow(rowWith({ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }));
+    const errors = validateMappingRow(rowWith({ group: "admins", role: "superadmin", scope_type: "instance", scope_id: "" }));
     expect(Object.keys(errors)).toHaveLength(0);
+  });
+
+  it("flags a role/scope pair that doesn't match (e.g. admin with instance scope)", () => {
+    const errors = validateMappingRow(rowWith({ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }));
+    expect(errors.scope_type).toMatch(/organization scope/);
   });
 
   it("requires scope_id for organization scope", () => {
@@ -310,7 +347,7 @@ describe("areMappingsValid", () => {
 
   it("validateMappings returns an aligned error array", () => {
     const rows: MappingRow[] = [
-      rowWith({ group: "admins", role: "admin", scope_type: "instance", scope_id: "" }),
+      rowWith({ group: "admins", role: "superadmin", scope_type: "instance", scope_id: "" }),
       rowWith({ group: "", role: "admin", scope_type: "organization", scope_id: "" }),
     ];
     const errors = validateMappings(rows);

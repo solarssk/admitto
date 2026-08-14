@@ -3,7 +3,7 @@
 > **Audience:** Check-in Operators
 > **Required role:** Check-in Operator for the event
 > **Feature status:** Available
-> **Last verified:** Admitto 0.4.12
+> **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -18,11 +18,12 @@ Scan tickets and respond consistently to every supported check-in result.
 ## Steps
 
 1. Open **Check-in**.
-2. Use **Use camera**, a hardware keyboard-wedge scanner, or the focused scan field.
-3. Point the camera at one QR code or scan one ticket.
+2. Use **Use camera** (desktop viewfinder is QR-sized; **Disable camera** turns it off), a hardware scanner, or the focused scan field. You can also paste or type a ticket token, URL, or agency QR and press Enter.
+3. Point the camera at one QR code or scan one ticket. Admitto plays a short beep (and vibration where the device supports it), with distinct tones for valid, already checked in, and invalid results.
 4. Read the status, attendee name, and ticket type before acting.
 5. Confirm check-in when the screen shows **Ready to check in**.
-6. Mark required items as issued or returned when the attendee card offers those actions.
+6. Mark required items with **Mark issued** / **Mark given** when the attendee card offers those actions (attest after the physical hand-over).
+7. Open a row in **Recent scans** when you need to reopen that attendee's card.
 
 ## Expected result
 

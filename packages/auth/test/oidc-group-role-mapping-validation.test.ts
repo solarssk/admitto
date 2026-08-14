@@ -62,4 +62,29 @@ describe("validateGroupRoleMappingInput", () => {
       }),
     ).toThrow(/scope_id is required/);
   });
+
+  it("rejects a role/scope pair that doesn't match, even when both are individually valid values", () => {
+    expect(() =>
+      validateGroupRoleMappingInput({
+        group: "admins",
+        role: "admin",
+        scope_type: "instance",
+      }),
+    ).toThrow(/must use organization scope/);
+    expect(() =>
+      validateGroupRoleMappingInput({
+        group: "admins",
+        role: "operator",
+        scope_type: "instance",
+      }),
+    ).toThrow(/must use event scope/);
+    expect(() =>
+      validateGroupRoleMappingInput({
+        group: "admins",
+        role: "superadmin",
+        scope_type: "organization",
+        scope_id: "org_1",
+      }),
+    ).toThrow(/must use instance scope/);
+  });
 });

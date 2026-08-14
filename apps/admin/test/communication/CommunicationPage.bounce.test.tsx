@@ -10,6 +10,8 @@ const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
 const fetchEventTemplates = vi.fn();
 const fetchEventDeliveries = vi.fn();
+const dismissBounce = vi.fn();
+const resendTicket = vi.fn();
 const reportApiError = vi.fn();
 
 // A fresh `vi.fn()` per call (as this used to return) breaks CommunicationPage's own
@@ -37,17 +39,28 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
   fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
   fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
+  dismissBounce: (...args: unknown[]) => dismissBounce(...args),
+  resendTicket: (...args: unknown[]) => resendTicket(...args),
+  exportDeliveryLog: vi.fn(),
   fetchEventTemplateById: vi.fn(),
-  previewEventTemplate: vi.fn(),
-  previewEventTemplateById: vi.fn(),
+  // The Send tab (now the default landing tab) auto-renders a preview on mount - resolve these
+  // by default so that doesn't surface as an unrelated "Preview failed" error toast in tests
+  // that never cared about preview content.
+  previewEventTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
+  previewEventTemplateById: vi.fn().mockResolvedValue({ subject: "", html: "" }),
   saveEventTemplate: vi.fn(),
   saveEventTemplateById: vi.fn(),
   createEventTemplate: vi.fn(),
   deleteEventTemplate: vi.fn(),
+  updateEventTemplateMetadata: vi.fn(),
   testSendEventTemplate: vi.fn(),
   testSendEventTemplateById: vi.fn(),
   sendEventBulk: vi.fn(),
   fetchBulkSendStatus: vi.fn(),
+  fetchTicketTypes: vi.fn().mockResolvedValue([]),
+  fetchEventMailSettings: vi.fn().mockResolvedValue({
+    fields: { fromName: { value: null }, fromAddress: { value: null } },
+  }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -146,7 +159,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
     });
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -185,9 +198,22 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Compose/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
     });
     expect(screen.queryByText(/emails bounced/i)).toBeNull();
+  });
+
+  it("reports the API status when the overview fetch fails with an ApiError", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockRejectedValue(new ApiError(500, "internal_error"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+    });
+    expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
   it("clears stale bounce banner when navigating to another event", async () => {
@@ -234,5 +260,445 @@ describe("CommunicationPage bounce banner", () => {
     await waitFor(() => {
       expect(screen.queryByText(/emails bounced/i)).toBeNull();
     });
+  });
+
+  it("refreshes the bounce count after dismissing a bounce from the delivery log", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+    await waitFor(() => {
+      expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
+    });
+    expect(await screen.findByText("Dismissed the bounce notice for Guest One.")).toBeTruthy();
+    // Once on mount, once again after the dismiss succeeds.
+    await waitFor(() => {
+      expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("ignores a stale mount overview once a later bounce refresh has completed", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    let resolveMountOverview: (value: unknown) => void;
+    const mountOverview = new Promise((resolve) => {
+      resolveMountOverview = resolve;
+    });
+    let overviewCalls = 0;
+    fetchEventOverview.mockImplementation(() => {
+      overviewCalls += 1;
+      if (overviewCalls === 1) return mountOverview;
+      return Promise.resolve({
+        email_bounced: 0,
+        email_failed: 0,
+        email_sent: 10,
+        email_queued: 0,
+      });
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
+
+    renderPage();
+    // Open the log via the tab bar - the banner CTA is unavailable while mount overview is pending.
+    fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+    await waitFor(() => {
+      expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByText(/emails bounced/i)).toBeNull();
+
+    // Late mount response must not restore the pre-dismiss bounce count.
+    resolveMountOverview!({
+      email_bounced: 4,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText(/emails bounced/i)).toBeNull();
+  });
+
+  it("resends the bounced row's template and refreshes the bounce count", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: "tpl-reminder",
+          template_name: "reminder",
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    resendTicket.mockResolvedValue({ id: "dlv-2" });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+
+    await waitFor(() => {
+      expect(resendTicket).toHaveBeenCalledWith("evt-1", "att-1", { templateId: "tpl-reminder" });
+    });
+    expect(await screen.findByText("Resent to Guest One.")).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchEventOverview).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("resends without a templateId when the bounced row used the built-in default", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-default",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    resendTicket.mockResolvedValue({ id: "dlv-3" });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+
+    await waitFor(() => {
+      expect(resendTicket).toHaveBeenCalledWith("evt-1", "att-1", { templateId: undefined });
+    });
+    expect(await screen.findByText("Resent to Guest One.")).toBeTruthy();
+  });
+
+  it("ignores AbortError and aborted overview responses without clearing a successful bounce count", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    let resolveOverview: (value: unknown) => void;
+    const pendingOverview = new Promise((resolve) => {
+      resolveOverview = resolve;
+    });
+    fetchEventOverview.mockImplementation((_eventId: string, signal?: AbortSignal) => {
+      if (signal?.aborted) {
+        return Promise.reject(new DOMException("Aborted", "AbortError"));
+      }
+      return pendingOverview;
+    });
+
+    const { unmount } = renderPage();
+    // Unmount aborts the in-flight overview fetch before it resolves.
+    unmount();
+    resolveOverview!({
+      email_bounced: 9,
+      email_failed: 0,
+      email_sent: 1,
+      email_queued: 0,
+    });
+
+    // A fresh mount with a rejected AbortError must not paint a bounce banner from the stale resolve.
+    fetchEventOverview.mockRejectedValue(new DOMException("Aborted", "AbortError"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+    });
+    expect(screen.queryByText(/emails bounced/i)).toBeNull();
+    expect(reportApiError).not.toHaveBeenCalled();
+  });
+
+  it("toasts operator-safe errors when resend or dismiss fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: "tpl-1",
+          template_name: "ticket",
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    resendTicket.mockRejectedValue(new ApiError(500, "secret_internal"));
+    dismissBounce.mockRejectedValue(new ApiError(500, "secret_internal"));
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Resend" }));
+    expect(await screen.findByText("Resend failed.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+    expect(await screen.findByText("Failed to dismiss the bounce notice.")).toBeTruthy();
+  });
+
+  it("greys out Resend and Dismiss bounce for a row once its dismiss succeeds", async () => {
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+    await waitFor(() => {
+      expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Send" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
+    await screen.findByText("Guest One");
+
+    // Reopen the same row's menu - the row itself still reports status "bounced" forever (it's a
+    // historical record), so both actions must stay handled even after leaving the log tab.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    const resendItem = screen.getByRole("menuitem", { name: "Resend" }) as HTMLButtonElement;
+    const dismissItem = screen.getByRole("menuitem", { name: "Dismiss bounce" }) as HTMLButtonElement;
+    expect(resendItem.disabled).toBe(true);
+    expect(dismissItem.disabled).toBe(true);
+  });
+
+  it("disables Resend and Dismiss while a dismiss request is still in flight, and re-enables them if it fails", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventTemplate.mockResolvedValue(templatePayload);
+    fetchEventOverview.mockResolvedValue({
+      email_bounced: 1,
+      email_failed: 0,
+      email_sent: 10,
+      email_queued: 0,
+    });
+    fetchEventDeliveries.mockResolvedValue({
+      items: [
+        {
+          id: "dlv-1",
+          attendee_id: "att-1",
+          attendee_name: "Guest One",
+          purpose: "initial",
+          status: "bounced",
+          provider: "smtp",
+          provider_message_id: null,
+          attempts: 1,
+          retryable: null,
+          recipient_email: "guest@example.com",
+          rendered_subject: "Your ticket",
+          template_id: null,
+          template_name: null,
+          queued_at: "2026-09-01T12:00:00.000Z",
+          accepted_at: null,
+          sent_at: null,
+          failed_at: "2026-09-01T12:00:01.000Z",
+          error_code: "bounced",
+          error: "Mailbox does not exist",
+          client_timezone: null,
+        },
+      ],
+      total: 1,
+    });
+    let rejectDismiss: ((reason?: unknown) => void) | undefined;
+    dismissBounce.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDismiss = reject;
+        }),
+    );
+
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+    await waitFor(() => {
+      expect(dismissBounce).toHaveBeenCalledTimes(1);
+    });
+
+    // Still awaiting - reopen the menu; both bounce actions must already be locked.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    const pendingResend = screen.getByRole("menuitem", { name: "Resend" }) as HTMLButtonElement;
+    const pendingDismiss = screen.getByRole("menuitem", { name: "Dismiss bounce" }) as HTMLButtonElement;
+    expect(pendingResend.disabled).toBe(true);
+    expect(pendingDismiss.disabled).toBe(true);
+    fireEvent.click(pendingDismiss);
+    expect(dismissBounce).toHaveBeenCalledTimes(1);
+    // Close the menu before the request settles so the post-failure reopen is unambiguous.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+
+    rejectDismiss?.(new ApiError(500, "secret_internal"));
+    expect(await screen.findByText("Failed to dismiss the bounce notice.")).toBeTruthy();
+
+    // Failure clears pending - the operator can retry.
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    expect((screen.getByRole("menuitem", { name: "Dismiss bounce" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    expect((screen.getByRole("menuitem", { name: "Resend" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

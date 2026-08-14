@@ -80,8 +80,17 @@ export {
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
+  SETTING_CSP_TRUSTED_ORIGINS,
 } from "./settings/keys.js";
 export { getInstanceUrl } from "./settings/instance-url.js";
+export {
+  MAX_CSP_TRUSTED_ORIGINS,
+  isValidCspTrustedOrigin,
+  validateCspTrustedOrigins,
+  CspTrustedOriginsError,
+  sanitizeCspTrustedOrigins,
+  getCspTrustedOrigins,
+} from "./settings/csp-trusted-origins.js";
 export {
   InstanceUrlRequiredError,
   normalizePersistedInstanceUrl,
@@ -252,6 +261,7 @@ export {
   type OidcLinkStepUpFailureReason,
 } from "./oidc/link-step-up.js";
 export { extractClaims } from "./oidc/claims.js";
+export { resolveOidcEndSessionRedirect } from "./oidc/end-session.js";
 export {
   exchangeAuthorizationCode,
   validateIdToken,

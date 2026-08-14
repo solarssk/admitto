@@ -15,6 +15,9 @@ const bulkDeleteAttendees = vi.fn();
 const bulkCheckInAttendees = vi.fn();
 const bulkRevokeCheckIn = vi.fn();
 const bulkRevokePass = vi.fn();
+const bulkVoidWalletPass = vi.fn();
+const bulkReissueWalletPass = vi.fn();
+const bulkDeleteWalletPass = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const bulkChangeRsvpStatus = vi.fn();
 const exportSelectedAttendees = vi.fn();
@@ -23,6 +26,7 @@ const fetchEventItems = vi.fn();
 const bulkRevokeItems = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
+const pollWalletPushCompletion = vi.fn();
 
 function mailSettings(provider: string | null) {
   return {
@@ -91,6 +95,10 @@ vi.mock("../../src/attendees/pollBulkSendCompletion.js", async (importOriginal) 
   };
 });
 
+vi.mock("../../src/attendees/pollWalletPushCompletion.js", () => ({
+  pollWalletPushCompletion: (...args: unknown[]) => pollWalletPushCompletion(...args),
+}));
+
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
     status: number;
@@ -117,6 +125,9 @@ vi.mock("../../src/api/client.js", () => ({
   bulkCheckInAttendees: (...args: unknown[]) => bulkCheckInAttendees(...args),
   bulkRevokeCheckIn: (...args: unknown[]) => bulkRevokeCheckIn(...args),
   bulkRevokePass: (...args: unknown[]) => bulkRevokePass(...args),
+  bulkVoidWalletPass: (...args: unknown[]) => bulkVoidWalletPass(...args),
+  bulkReissueWalletPass: (...args: unknown[]) => bulkReissueWalletPass(...args),
+  bulkDeleteWalletPass: (...args: unknown[]) => bulkDeleteWalletPass(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -155,33 +166,22 @@ function bulkBar() {
 }
 
 /** Delete lives behind the bulk bar's "More actions" menu (not a bare button) - open it first.
- * The bulk-delete dialog's confirm button then stays disabled for 10s after opening
- * (ConfirmDialog's confirmDelaySeconds - an "arm before confirming" pause). Fake-timers just
- * the open+arm step, matching EventSettingsPage's own bulk-danger-action tests. */
+ * The accessible name concatenates the label and hint text, so a plain prefix match on "Delete"
+ * also catches "Delete wallet pass" - excluded via the lookahead. */
 function openAndArmDeleteDialog() {
-  return openMenuItemAndArmDialog(/^Delete/);
+  return openMenuItemAndArmDialog(/^Delete(?! wallet)/);
 }
 
-/** Opens the "More actions" menu, then clicks the given menu item and arms the resulting confirm
- * dialog - see clickMenuItemAndArmDialog below. */
+/** Opens the "More actions" menu, then clicks the given menu item and returns the confirm dialog. */
 function openMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
   fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
   return clickMenuItemAndArmDialog(menuItemName, dialogName);
 }
 
-/** Same "arm before confirming" cooldown as openAndArmDeleteDialog above, generalized for the
- * bulk Revoke check-in/items/pass dialogs and the CardPickerDialog-based Change ticket
- * type/attendance status dialogs (all five also carry confirmDelaySeconds) - for tests where the
- * "More actions" menu is already open (e.g. via a per-describe-block helper). */
+/** Opens a bulk confirm / card-picker dialog (no arming delay). */
 function clickMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
-  vi.useFakeTimers();
   fireEvent.click(bulkBar().getByRole("menuitem", { name: menuItemName }));
-  const dialog = dialogName ? screen.getByRole("dialog", { name: dialogName }) : screen.getByRole("dialog");
-  act(() => {
-    vi.advanceTimersByTime(10_000);
-  });
-  vi.useRealTimers();
-  return dialog;
+  return dialogName ? screen.getByRole("dialog", { name: dialogName }) : screen.getByRole("dialog");
 }
 
 beforeEach(() => {
@@ -937,6 +937,201 @@ describe("AttendeesPage bulk revoke pass (#549)", () => {
   });
 });
 
+/** A row with a WalletPass, so canBulkWallet (AttendeesTable) is true and the Void/Push
+ * updates/Delete wallet menu items aren't disabled - makeRow's own default omits wallet_status,
+ * so its default rows never exercise that gate at all. */
+function walletRow(id: string, name: string): AttendeeRowDto {
+  return {
+    ...makeRow(id, name),
+    wallet_status: {
+      apple_active_registrations: 1,
+      apple_inactive_registrations: 0,
+      google_active_registrations: 0,
+      google_inactive_registrations: 0,
+    },
+  };
+}
+
+describe("AttendeesPage bulk wallet actions (#879)", () => {
+  const walletA = walletRow("att-1", "Jane Doe");
+  const walletB = walletRow("att-2", "John Smith");
+
+  it("voids the wallet pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkVoidWalletPass.mockResolvedValue({ voided: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void" }));
+
+    await waitFor(() => {
+      expect(bulkVoidWalletPass).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 wallet pass voided.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("toasts that nobody had a pass to void when the whole selection is skipped", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkVoidWalletPass.mockResolvedValue({ voided: 0, skipped: 1, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "None of the selected attendees had a pass to void - no pass, or already voided.",
+        "info",
+      );
+    });
+  });
+
+  it("pushes updates to the wallet pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkReissueWalletPass.mockResolvedValue({ reissued: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Push updates/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => {
+      expect(bulkReissueWalletPass).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 wallet pass updated.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("deletes the wallet pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkDeleteWalletPass.mockResolvedValue({ deleted: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Delete wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(bulkDeleteWalletPass).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 wallet pass deleted.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("disables the wallet menu items with a tooltip when nothing in the selection has a wallet pass", async () => {
+    const noPassRow = { ...rowA, wallet_status: null };
+    fetchEventAttendees.mockResolvedValue({ items: [noPassRow, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const item = bulkBar().getByRole("menuitem", { name: /^Void wallet pass/ }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
+    expect(getTooltipText(item)).toBe("None of the selected attendees have added a wallet pass.");
+  });
+
+  it("Cancel closes the bulk-wallet-void dialog without calling bulkVoidWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkVoidWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the bulk-wallet-reissue dialog without calling bulkReissueWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Push updates/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkReissueWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("Cancel closes the bulk-wallet-delete dialog without calling bulkDeleteWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Delete wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkDeleteWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("toasts a mixed no-success error instead of the all-skipped info message when errored > 0", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkVoidWalletPass.mockResolvedValue({ voided: 0, skipped: 1, errored: 1 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Void wallet pass/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "No wallet passes voided (1 had no pass, or it was already voided, 1 failed unexpectedly).",
+        "error",
+      );
+    });
+    expect(addToast).not.toHaveBeenCalledWith(
+      "None of the selected attendees had a pass to void - no pass, or already voided.",
+      "info",
+    );
+  });
+});
+
 describe("AttendeesPage bulk check-in", () => {
   it("checks in the selected attendees via bulkCheckInAttendees, toasts, and clears the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
@@ -1612,6 +1807,54 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
   });
 
+  it("polls wallet push completion when the response includes a job id", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, walletPushJobId: "job-abc" });
+    pollWalletPushCompletion.mockResolvedValue(undefined);
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(pollWalletPushCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "job-abc",
+        addToast,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("toasts a fallback message when the wallet push poll itself fails to run", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, walletPushJobId: "job-abc" });
+    pollWalletPushCompletion.mockRejectedValue(new Error("network down"));
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
+    });
+  });
+
+  it("does not poll wallet push completion when nothing actually changed (no job enqueued)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 0, alreadySetCount: 2, walletPushJobId: null });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(bulkChangeTicketType).toHaveBeenCalledOnce());
+    expect(pollWalletPushCompletion).not.toHaveBeenCalled();
+  });
+
   it("closes the picker on Cancel without applying anything, and keeps the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
     fetchTicketTypes.mockResolvedValue(catalog);
@@ -1624,23 +1867,6 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     expect(screen.queryByRole("dialog", { name: "Change ticket type" })).toBeNull();
     expect(bulkChangeTicketType).not.toHaveBeenCalled();
     expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
-  });
-
-  // Regression: the disabled Apply button's wait message must go through the shared Tooltip
-  // (portal + role="tooltip"), not a native `title` attribute.
-  it("shows the wait message via the shared Tooltip, not a native title attribute, while unarmed", async () => {
-    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
-    fetchTicketTypes.mockResolvedValue(catalog);
-
-    await selectTwoRowsAndOpenMenu();
-    fireEvent.click(bulkBar().getByRole("menuitem", { name: /Change ticket type/ }));
-    const dialog = screen.getByRole("dialog", { name: "Change ticket type" });
-    const applyButton = within(dialog).getByRole("button", { name: "Apply" });
-    expect(applyButton.getAttribute("title")).toBeNull();
-    expect(screen.queryByRole("tooltip")).toBeNull();
-
-    fireEvent.mouseEnter(applyButton.closest(".at-tooltip-trigger")!);
-    expect(screen.getByRole("tooltip").textContent).toBe("Please wait 10s before confirming");
   });
 
   it("notes attendees that already had the type in the success toast", async () => {

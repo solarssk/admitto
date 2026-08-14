@@ -3,7 +3,6 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -18,6 +17,9 @@ import {
   bulkCheckInAttendees,
   bulkRevokeCheckIn,
   bulkRevokePass,
+  bulkVoidWalletPass,
+  bulkReissueWalletPass,
+  bulkDeleteWalletPass,
   bulkDeleteAttendees,
   bulkResendTickets,
   bulkRevokeItems,
@@ -27,7 +29,6 @@ import {
   fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
-  updateAttendee,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
@@ -43,6 +44,7 @@ import type {
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
+import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -58,27 +60,6 @@ import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
-/** Matches EventSettingsPage's Danger Zone bulk actions — a brief "don't act on reflex" pause
- * before a bulk, irreversible action's confirm button becomes clickable. */
-const BULK_DELETE_CONFIRM_DELAY_SECONDS = 10;
-/** Same "don't act on reflex" pause as BULK_DELETE_CONFIRM_DELAY_SECONDS above, for the bulk
- * Revoke check-in/items/pass dialogs — was missing on all three (PO review). */
-const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
-/** Same "don't act on reflex" pause as the constants above, for the CardPickerDialog Apply
- * button (bulk change ticket type / change attendance status) — a misclick on a large batch
- * would otherwise overwrite everyone's ticket type or RSVP status in one shot with no
- * confirmation at all (code review on #569). */
-const BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS = 10;
-
-function mergeAttendeeRow(prev: AttendeeRowDto, updated: AttendeeDetailDto): AttendeeRowDto {
-  return {
-    ...prev,
-    status: updated.status,
-    updated_at: updated.updated_at,
-    check_in_status: updated.check_in_status,
-    admitted_at: updated.admitted_at,
-  };
-}
 
 function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
@@ -217,6 +198,38 @@ function notifyBulkRevokePassResult(
   }
 
   addToast(`No passes revoked${noteSuffix}.`, "error");
+}
+
+/** Shared "N wallet passes {verb} / none had a pass" toast for a bulk wallet-lifecycle action
+ * result (void / push updates / delete) - the three call sites differ only in the past-tense verb,
+ * the skip reason, and the all-skipped info copy; the count/skipped/errored branching itself is
+ * identical (bot review). */
+function notifyBulkWalletActionResult(
+  result: { count: number; skipped: number; errored: number },
+  copy: { verb: string; skipReason: string; noneMessage: string },
+  addToast: (message: string, variant?: ToastVariant) => void,
+) {
+  const { count, skipped, errored } = result;
+  const { verb, skipReason, noneMessage } = copy;
+  const notes: string[] = [];
+  if (skipped > 0) notes.push(`${skipped} ${skipReason}`);
+  if (errored > 0) notes.push(`${errored} failed unexpectedly`);
+  const noteSuffix = notes.length > 0 ? ` (${notes.join(", ")})` : "";
+
+  if (count > 0) {
+    addToast(
+      `${count} wallet ${count === 1 ? "pass" : "passes"} ${verb}${noteSuffix}.`,
+      errored > 0 ? "warning" : "success",
+    );
+    return;
+  }
+
+  if (skipped > 0 && errored === 0) {
+    addToast(noneMessage, "info");
+    return;
+  }
+
+  addToast(`No wallet passes ${verb}${noteSuffix}.`, "error");
 }
 
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
@@ -790,63 +803,6 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
   setLoadError(err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.");
 }
 
-interface PassStatusErrorContext {
-  reportApiError: (status: number) => void;
-  addToast: (message: string, variant?: ToastVariant) => void;
-  revokeOpen: boolean;
-  setRevokeOpen: (open: boolean) => void;
-  setRevokeTarget: (target: AttendeeRowDto | null) => void;
-  setRevokeError: (message: string | null) => void;
-  setReloadToken: (updater: (n: number) => number) => void;
-}
-
-/** The 409-conflict half of {@link reportPassStatusChangeError} — split out further so neither
- * function's own cognitive complexity creeps back over the threshold. */
-function reportPassStatusConflict(err: ApiError, ctx: PassStatusErrorContext): void {
-  const { addToast, revokeOpen, setRevokeOpen, setRevokeTarget, setRevokeError, setReloadToken } = ctx;
-  if (err.code === "event_full") {
-    addToast("Event is at capacity. Pass cannot be restored.", "error");
-    return;
-  }
-  if (err.code === "stale_write") {
-    addToast("Someone else updated this attendee. Reloading list.", "warning");
-    setRevokeOpen(false);
-    setRevokeTarget(null);
-    setRevokeError(null);
-    setReloadToken((n) => n + 1);
-    return;
-  }
-  if (revokeOpen) {
-    setRevokeError("Could not update pass status.");
-  } else {
-    addToast("Could not update pass status.", "error");
-  }
-}
-
-/** The catch-block error handling for handlePassStatusChange — split out to keep that function's
- * cognitive complexity under SonarCloud's threshold (bot review), matching the same extraction
- * pattern as reportBulkActionError/runBulkAction above. */
-function reportPassStatusChangeError(err: unknown, ctx: PassStatusErrorContext): void {
-  const { revokeOpen, setRevokeError, addToast, reportApiError } = ctx;
-  if (err instanceof ApiError) {
-    reportApiError(err.status);
-    if (err.status === 401) {
-      const next = encodeURIComponent(window.location.pathname);
-      window.location.assign(`/login?next=${next}`);
-      return;
-    }
-    if (err.status === 409) {
-      reportPassStatusConflict(err, ctx);
-      return;
-    }
-  }
-  if (revokeOpen) {
-    setRevokeError(operatorApiErrorMessage(err, "Could not update pass status."));
-  } else {
-    addToast(operatorApiErrorMessage(err, "Could not update pass status."), "error");
-  }
-}
-
 export function AttendeesPage() {
   const { eventId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -865,12 +821,16 @@ export function AttendeesPage() {
   /** Detached bulk-send status polls; abort on event change / unmount so toasts stay on-context. */
   const headerSendPollRef = useRef<AbortController | null>(null);
   const selectedSendPollRef = useRef<AbortController | null>(null);
+  /** Detached wallet_push job poll (bulk ticket-type change), same reasoning. */
+  const walletPushPollRef = useRef<AbortController | null>(null);
   useEffect(() => {
     return () => {
       headerSendPollRef.current?.abort();
       headerSendPollRef.current = null;
       selectedSendPollRef.current?.abort();
       selectedSendPollRef.current = null;
+      walletPushPollRef.current?.abort();
+      walletPushPollRef.current = null;
     };
   }, [eventId]);
 
@@ -931,17 +891,16 @@ export function AttendeesPage() {
   const [bulkRevokePassBusy, setBulkRevokePassBusy] = useState(false);
   const [bulkRevokePassConfirmOpen, setBulkRevokePassConfirmOpen] = useState(false);
   const [bulkRevokePassError, setBulkRevokePassError] = useState<string | null>(null);
+  const [bulkVoidWalletBusy, setBulkVoidWalletBusy] = useState(false);
+  const [bulkVoidWalletConfirmOpen, setBulkVoidWalletConfirmOpen] = useState(false);
+  const [bulkVoidWalletError, setBulkVoidWalletError] = useState<string | null>(null);
+  const [bulkReissueWalletBusy, setBulkReissueWalletBusy] = useState(false);
+  const [bulkReissueWalletConfirmOpen, setBulkReissueWalletConfirmOpen] = useState(false);
+  const [bulkReissueWalletError, setBulkReissueWalletError] = useState<string | null>(null);
+  const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
+  const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
+  const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const [revokeOpen, setRevokeOpen] = useState(false);
-  const [revokeTarget, setRevokeTarget] = useState<AttendeeRowDto | null>(null);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
-  const passActionBusyRef = useRef(new Set<string>());
-  const [passActionBusyVersion, setPassActionBusyVersion] = useState(0);
-  const passActionBusyIds = useMemo(
-    () => new Set(passActionBusyRef.current),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- passActionBusyVersion is a version counter; the ref holds the data, the state is the invalidation signal
-    [passActionBusyVersion],
-  );
 
   // Lets the debounce timer below compare against the *currently committed* search value
   // without adding `searchQuery` itself as a dependency (which would reschedule this effect
@@ -1116,41 +1075,6 @@ export function AttendeesPage() {
     setPage(1);
     setReloadToken((n) => n + 1);
   };
-
-  const handlePassStatusChange = useCallback(
-    async (row: AttendeeRowDto, nextStatus: "registered" | "revoked") => {
-      if (!eventId) return;
-      if (passActionBusyRef.current.has(row.id)) return;
-      passActionBusyRef.current.add(row.id);
-      setPassActionBusyVersion((version) => version + 1);
-      setRevokeError(null);
-      try {
-        const updated = await updateAttendee(eventId, row.id, {
-          status: nextStatus,
-          expected_updated_at: row.updated_at,
-        });
-        setItems((prev) => prev.map((item) => (item.id === row.id ? mergeAttendeeRow(item, updated) : item)));
-        setRevokeOpen(false);
-        setRevokeTarget(null);
-        addToast(nextStatus === "revoked" ? "Pass revoked" : "Pass restored", "success");
-      } catch (err) {
-        reportPassStatusChangeError(err, {
-          reportApiError,
-          addToast,
-          revokeOpen,
-          setRevokeOpen,
-          setRevokeTarget,
-          setRevokeError,
-          setReloadToken,
-        });
-      } finally {
-        if (passActionBusyRef.current.delete(row.id)) {
-          setPassActionBusyVersion((version) => version + 1);
-        }
-      }
-    },
-    [addToast, eventId, reportApiError, revokeOpen],
-  );
 
   const handleSendTicketsConfirm = async () => {
     if (!eventId) return;
@@ -1355,6 +1279,21 @@ export function AttendeesPage() {
         setChangeTypeOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
+        // ticket_type is always wallet-content-relevant - a second, later toast reports the
+        // wallet-side effect once the background job finishes (never blocks this action; the
+        // job can genuinely take minutes for a large selection, rate-limited by PassCreator
+        // itself, not by anything Admitto controls).
+        if (eventId && result.walletPushJobId) {
+          walletPushPollRef.current?.abort();
+          const ac = new AbortController();
+          walletPushPollRef.current = ac;
+          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
+            signal: ac.signal,
+          }).catch(() => {
+            if (ac.signal.aborted) return;
+            addToast("Could not refresh wallet push status.", "info");
+          });
+        }
       },
     });
   };
@@ -1467,6 +1406,102 @@ export function AttendeesPage() {
       },
     });
 
+  /** Bulk "Void wallet pass" for an explicit subset of selected attendees - same effect as the
+   * attendee detail page's single "Void wallet pass" action, run once per selected attendee.
+   * An attendee with no wallet pass, or one already voided, is left untouched server-side and
+   * counted separately, not treated as a failure. */
+  const handleBulkVoidWalletSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkVoidWalletBusy,
+      setError: setBulkVoidWalletError,
+      addToast,
+      apiErrorFallback: "Void wallet pass failed.",
+      genericFallback: "Failed to void wallet passes.",
+      action: (id) => bulkVoidWalletPass(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkWalletActionResult(
+          { count: result.voided, skipped: result.skipped, errored: result.errored },
+          {
+            verb: "voided",
+            skipReason: "had no pass, or it was already voided",
+            noneMessage: "None of the selected attendees had a pass to void - no pass, or already voided.",
+          },
+          addToast,
+        );
+        setBulkVoidWalletConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
+  /** Bulk "Reissue wallet pass" for an explicit subset of selected attendees - pushes each
+   * selected attendee's current name/ticket type/event details to their already-issued wallet
+   * pass at once, e.g. after an Event Settings change. An attendee with no wallet pass, or no
+   * resolvable ticket to rebuild from, is left untouched server-side and counted separately. */
+  const handleBulkReissueWalletSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkReissueWalletBusy,
+      setError: setBulkReissueWalletError,
+      addToast,
+      apiErrorFallback: "Push updates failed.",
+      genericFallback: "Failed to push updates to wallet passes.",
+      action: (id) => bulkReissueWalletPass(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkWalletActionResult(
+          { count: result.reissued, skipped: result.skipped, errored: result.errored },
+          {
+            verb: "updated",
+            skipReason: "had no pass to update",
+            noneMessage: "None of the selected attendees had a wallet pass to update.",
+          },
+          addToast,
+        );
+        setBulkReissueWalletConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
+  /** Bulk "Delete wallet pass" for an explicit subset of selected attendees - same effect as the
+   * attendee detail page's single "Delete wallet pass" action, run once per selected attendee.
+   * Irreversible; an attendee with no wallet pass is left untouched server-side and counted
+   * separately, not treated as a failure. */
+  const handleBulkDeleteWalletSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkDeleteWalletBusy,
+      setError: setBulkDeleteWalletError,
+      addToast,
+      apiErrorFallback: "Delete wallet pass failed.",
+      genericFallback: "Failed to delete wallet passes.",
+      action: (id) => bulkDeleteWalletPass(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkWalletActionResult(
+          { count: result.deleted, skipped: result.skipped, errored: result.errored },
+          {
+            verb: "deleted",
+            skipReason: "had no pass to delete",
+            noneMessage: "None of the selected attendees had a wallet pass to delete.",
+          },
+          addToast,
+        );
+        setBulkDeleteWalletConfirmOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
   const isUnfilteredEmpty =
     total === 0 &&
     !searchQuery &&
@@ -1499,6 +1534,14 @@ export function AttendeesPage() {
   // the impact (PO review follow-up, #549).
   const revokablePassCount = items.filter(
     (row) => selectedIds.has(row.id) && row.status !== "cancelled" && row.status !== "revoked",
+  ).length;
+
+  // How many of the selection have added a wallet pass at all - shown in the Void/Reissue
+  // confirm dialog titles instead of the raw selection size, same reasoning as
+  // revokablePassCount above. May still include an already-voided pass for Void (skipped
+  // server-side and reported in the result toast) - the row list doesn't carry that finer status.
+  const walletPassCount = items.filter(
+    (row) => selectedIds.has(row.id) && row.wallet_status !== null,
   ).length;
 
   if (!eventId) return <p>Missing event.</p>;
@@ -1599,13 +1642,6 @@ export function AttendeesPage() {
           setPage(1);
         }}
         onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}
-        onRevokePass={(row) => {
-          setRevokeTarget(row);
-          setRevokeError(null);
-          setRevokeOpen(true);
-        }}
-        onRestorePass={(row) => void handlePassStatusChange(row, "registered")}
-        passActionBusyIds={passActionBusyIds}
         onPageChange={setPage}
         onPageSizeChange={(v) => {
           setPageSize(v);
@@ -1650,6 +1686,21 @@ export function AttendeesPage() {
           setBulkRevokePassConfirmOpen(true);
         }}
         bulkRevokePassBusy={bulkRevokePassBusy}
+        onBulkVoidWallet={() => {
+          setBulkVoidWalletError(null);
+          setBulkVoidWalletConfirmOpen(true);
+        }}
+        bulkVoidWalletBusy={bulkVoidWalletBusy}
+        onBulkReissueWallet={() => {
+          setBulkReissueWalletError(null);
+          setBulkReissueWalletConfirmOpen(true);
+        }}
+        bulkReissueWalletBusy={bulkReissueWalletBusy}
+        onBulkDeleteWallet={() => {
+          setBulkDeleteWalletError(null);
+          setBulkDeleteWalletConfirmOpen(true);
+        }}
+        bulkDeleteWalletBusy={bulkDeleteWalletBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -1681,7 +1732,6 @@ export function AttendeesPage() {
         onValueChange={setChangeTypeValue}
         radioGroupName="bulk-ticket-type"
         requireValue
-        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkChangeTicketTypeConfirm()}
         onClose={() => {
           if (!changeTypeBusy) setChangeTypeOpen(false);
@@ -1702,7 +1752,6 @@ export function AttendeesPage() {
         value={changeRsvpValue}
         onValueChange={(key) => setChangeRsvpValue(key as RsvpStatus)}
         radioGroupName="bulk-rsvp-status"
-        confirmDelaySeconds={BULK_CARD_PICKER_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkChangeRsvpConfirm()}
         onClose={() => {
           if (!changeRsvpBusy) setChangeRsvpOpen(false);
@@ -1721,29 +1770,6 @@ export function AttendeesPage() {
         }}
       />
 
-      <ConfirmDialog
-        open={revokeOpen}
-        title="Revoke pass?"
-        message={
-          revokeTarget
-            ? `Revoke the pass for ${revokeTarget.name}? They will no longer be able to check in until the pass is restored.`
-            : ""
-        }
-        confirmLabel="Revoke"
-        confirmVariant="danger"
-        loading={revokeTarget ? passActionBusyIds.has(revokeTarget.id) : false}
-        errorMessage={revokeError ?? undefined}
-        onConfirm={() => {
-          if (revokeTarget) void handlePassStatusChange(revokeTarget, "revoked");
-        }}
-        onCancel={() => {
-          if (!revokeTarget || !passActionBusyIds.has(revokeTarget.id)) {
-            setRevokeOpen(false);
-            setRevokeTarget(null);
-            setRevokeError(null);
-          }
-        }}
-      />
 
       <ConfirmDialog
         open={bulkSendConfirmOpen}
@@ -1768,7 +1794,6 @@ export function AttendeesPage() {
         confirmLabel="Delete"
         confirmVariant="danger"
         loading={bulkDeleteBusy}
-        confirmDelaySeconds={BULK_DELETE_CONFIRM_DELAY_SECONDS}
         onConfirm={() => void handleBulkDeleteSelected()}
         onCancel={() => {
           if (!bulkDeleteBusy) {
@@ -1792,7 +1817,6 @@ export function AttendeesPage() {
         errorMessage={bulkRevokeCheckInError}
         confirmLabel="Revoke"
         confirmVariant="warning"
-        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokeCheckInBusy}
         onConfirm={() => void handleBulkRevokeCheckInSelected()}
         onCancel={() => {
@@ -1810,7 +1834,6 @@ export function AttendeesPage() {
         errorMessage={bulkRevokeItemsError}
         confirmLabel="Revoke"
         confirmVariant="warning"
-        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokeItemsBusy}
         onConfirm={() => void handleBulkRevokeItemsSelected()}
         onCancel={() => {
@@ -1828,7 +1851,6 @@ export function AttendeesPage() {
         errorMessage={bulkRevokePassError}
         confirmLabel="Revoke"
         confirmVariant="danger"
-        confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={bulkRevokePassBusy}
         onConfirm={() => void handleBulkRevokePassSelected()}
         onCancel={() => {
@@ -1838,6 +1860,63 @@ export function AttendeesPage() {
           }
         }}
       />
+
+      <ConfirmDialog
+        open={bulkVoidWalletConfirmOpen}
+        title={`Void the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
+        message="Their pass stays installed on their phone but shows as invalid in their wallet. Attendees with no pass, or one already voided, are left untouched."
+        errorMessage={bulkVoidWalletError}
+        confirmLabel="Void"
+        confirmVariant="danger"
+        loading={bulkVoidWalletBusy}
+        onConfirm={() => void handleBulkVoidWalletSelected()}
+        onCancel={() => {
+          if (!bulkVoidWalletBusy) {
+            setBulkVoidWalletConfirmOpen(false);
+            setBulkVoidWalletError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkReissueWalletConfirmOpen}
+        title={`Push updates to the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
+        message="Pushes each attendee's current name, ticket type, and event details to their already-installed wallet pass. Attendees with no pass are left untouched."
+        errorMessage={bulkReissueWalletError}
+        confirmLabel="Push updates"
+        confirmVariant="primary"
+        loading={bulkReissueWalletBusy}
+        onConfirm={() => void handleBulkReissueWalletSelected()}
+        onCancel={() => {
+          if (!bulkReissueWalletBusy) {
+            setBulkReissueWalletConfirmOpen(false);
+            setBulkReissueWalletError(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteWalletConfirmOpen}
+        title={`Delete the wallet pass for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
+        message="Permanently deletes each attendee's pass record at the provider."
+        errorMessage={bulkDeleteWalletError}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        loading={bulkDeleteWalletBusy}
+        onConfirm={() => void handleBulkDeleteWalletSelected()}
+        onCancel={() => {
+          if (!bulkDeleteWalletBusy) {
+            setBulkDeleteWalletConfirmOpen(false);
+            setBulkDeleteWalletError(null);
+          }
+        }}
+      >
+        <ul className="confirm-dialog__list">
+          <li>Apple/Google Wallet gives us no way to remove it from their phones - only they can do that</li>
+          <li>Doesn't affect check-in - use Revoke pass to block entry</li>
+          <li>Attendees with no pass are left untouched</li>
+        </ul>
+      </ConfirmDialog>
     </>
   );
 }

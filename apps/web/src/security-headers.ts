@@ -8,6 +8,7 @@ export function getBaselineSecurityHeaders(): Record<string, string> {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "X-Robots-Tag": "noindex, nofollow",
   };
 }
 

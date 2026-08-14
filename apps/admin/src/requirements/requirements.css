@@ -8,10 +8,31 @@
    horizontal scroll. */
 .requirements-section .attendees-table-wrap .table {
   min-width: 0;
+  table-layout: fixed;
+}
+
+/* Shared first-column width so Item / Field line up with Description the same way
+   in both Requirements tables (auto layout made Event items look more spaced). */
+.requirements-section .table th:first-child,
+.requirements-section .table td:first-child {
+  width: 28%;
+}
+
+/* Match Event items / Custom fields row height. Items include a Switch (+ label) in
+   the actions cell; fields only have text + icon buttons - without a shared floor the
+   item rows look taller even with the same cell padding. */
+.requirements-section .table tbody td {
+  padding-block: var(--space-3);
+  vertical-align: middle;
+}
+
+.requirements-section .table tbody tr {
+  height: 3.75rem;
 }
 
 @media (max-width: 640px) {
-  .requirements-item-desc-col {
+  /* Narrow screens: keep Description, drop Active / Required (edit via row actions). */
+  .requirements-item-status-col {
     display: none;
   }
 
@@ -19,12 +40,6 @@
   .requirements-type-col {
     display: none;
   }
-}
-
-/* Normalise card header height across all Requirements sections so cards with
-   and without action buttons appear the same height. */
-.requirements-section .at-card__header {
-  min-height: calc(var(--control-h-sm) + 2 * var(--space-4));
 }
 
 .requirements-section-hint {
@@ -47,14 +62,27 @@
 .requirements-item-name {
   font-weight: 600;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .requirements-item-info {
-  flex-shrink: 0;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .requirements-item-desc-col {
-  width: 46%;
+  /* Flexible middle column - status + actions stay content-sized on the right. */
+  width: auto;
+}
+
+/* Active (Switch) and Required (Yes/No) share the same column so they line up. */
+.requirements-item-status-col {
+  width: 8.5rem;
+  white-space: nowrap;
+  text-align: left;
+  vertical-align: middle;
 }
 
 .requirements-item-desc {
@@ -67,17 +95,49 @@
   line-height: var(--lh-normal, 1.4);
 }
 
+.requirements-item-id,
+.requirements-item-id code,
+.event-item-modal__id code,
+.add-item-label-row code.requirements-item-id {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-mono);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .requirements-item-id {
   margin-top: 2px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--fs-xs);
+}
+
+.requirements-item-id code {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.event-item-modal__id {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
+  line-height: var(--lh-normal);
+}
+
+.event-item-modal__id code {
+  font-size: var(--fs-mono);
 }
 
 .requirements-item-actions {
-  width: 1%;
+  width: 5.5rem;
   white-space: nowrap;
   vertical-align: middle;
+  text-align: right;
+}
+
+.requirements-section .table th.requirements-item-actions {
+  text-align: right;
 }
 
 .requirements-item-actions__wrap {
@@ -85,6 +145,7 @@
   align-items: center;
   gap: var(--space-1);
   justify-content: flex-end;
+  min-height: var(--control-h-sm);
 }
 
 .requirements-item-cell {
@@ -97,6 +158,15 @@
   font-size: 1.25rem;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+.requirements-item-type-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 1.25rem;
+  color: var(--text-muted);
+  line-height: 1;
 }
 
 .requirements-item-key {
@@ -195,51 +265,6 @@
   white-space: nowrap;
 }
 
-.icon-picker {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.icon-picker__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-  gap: var(--space-1);
-  padding: var(--space-2);
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.icon-picker__item {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: none;
-  cursor: pointer;
-  color: var(--text-secondary);
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.icon-picker__item:hover {
-  background: var(--surface-sunken);
-  border-color: var(--border);
-}
-
-.icon-picker__item--selected {
-  background: var(--surface-card);
-  border-color: var(--primary);
-  color: var(--text-primary);
-}
-
-.icon-picker__item i {
-  font-size: 1.1rem;
-}
-
 .contents-row__label-group {
   display: flex;
   flex-direction: column;
@@ -276,7 +301,26 @@
 }
 
 .contents-row__type-picker--block {
-  align-self: flex-start;
+  align-self: stretch;
+  width: 100%;
+  height: auto;
+  min-height: var(--control-h);
+}
+
+.contents-row__type-picker--block > .at-tooltip-trigger {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+}
+
+.contents-row__type-picker--block .contents-row__type-btn {
+  flex: 1;
+  width: 100%;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
 }
 
 .contents-row__type-btn {
@@ -289,6 +333,7 @@
   color: var(--text-secondary);
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   font-size: 1rem;
   position: relative;
   transition: background 0.1s, color 0.1s;
@@ -363,7 +408,10 @@
 .event-item-modal__panel {
   position: relative;
   width: min(100%, 600px);
+  /* dvh follows iOS Safari's dynamic toolbar; vh is the fallback for browsers without dvh
+     support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow: hidden;
   background: var(--surface-card);
   border: 1px solid var(--border);
@@ -380,14 +428,30 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: var(--space-4);
+  /* No divider under the subtitle — same as add-attendee / FontFamily modals. */
+  padding-bottom: 0;
 }
 
 .event-item-modal__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: var(--fs-h3);
   font-weight: 600;
+}
+
+.event-item-modal__title i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary-tint);
+  color: var(--primary);
+  font-size: 1rem;
 }
 
 .event-item-modal__subtitle {
@@ -417,7 +481,33 @@
      clipped flush against a focused input's edges. Bleed out by the ring width and pad back
      in by the same amount so field content still lines up with the header/footer above/below. */
   margin: 0 calc(-1 * var(--ring-width));
-  padding: 0 var(--ring-width);
+  padding-left: var(--ring-width);
+  /* Extra 8px on the right so the slim thumb sits beside controls (Active switch, icon grid)
+   * instead of painting over them - same lane as .overview-timeline. */
+  padding-right: calc(var(--ring-width) + 8px);
+  /* Item/Badge bodies almost always overflow; reserve the track like .main-scroll /
+   * .overview-timeline / .attendee-deliveries-scroll. (Short add-attendee modals skip this on
+   * purpose - they rarely scroll and would keep a permanent dead gutter.) */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.event-item-modal__body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.event-item-modal__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.event-item-modal__body::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.event-item-modal__body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .event-item-modal__section-title {
@@ -432,8 +522,16 @@
 .event-item-modal__footer {
   flex-shrink: 0;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
+}
+
+.event-item-modal__footer-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
 }

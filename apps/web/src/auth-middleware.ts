@@ -32,6 +32,7 @@ declare module "hono" {
     parsedScanBody: Record<string, unknown>;
     checkinAuth: "bearer" | "session";
     operatorUserId: string;
+    bulkSendDryRun: boolean;
   }
 }
 

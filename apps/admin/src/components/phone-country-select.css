@@ -36,6 +36,10 @@
   color: var(--text-muted);
 }
 
+.phone-country-select__flag {
+  font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
+
 .phone-country-select__chevron {
   margin-left: auto;
   color: var(--text-muted);
@@ -73,6 +77,16 @@
   font: inherit;
   color: var(--text-primary);
   background: var(--surface-card);
+}
+
+/* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
+   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
+   matching the same fix (pointer: coarse, not a max-width - see its own comment) for
+   .at-input/.at-select/.at-textarea in packages/ui. */
+@media (pointer: coarse) {
+  .phone-country-select__search {
+    font-size: 16px;
+  }
 }
 
 .phone-country-select__search:focus {

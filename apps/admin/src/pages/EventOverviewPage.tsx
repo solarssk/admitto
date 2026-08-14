@@ -34,7 +34,6 @@ import type {
 } from "../api/types.js";
 import {
   calendarDateInZone,
-  formatEventCalendarDate,
   formatEventDate,
   formatEventDateTime,
   formatRelativeTime as formatRelativeTimeShared,
@@ -55,8 +54,12 @@ import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
+import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
+const OVERVIEW_SUBTITLE =
+  "Track attendance, check-in progress, and setup status for this event.";
 const RECENT_CHECKINS_MAX = 8;
 // Mirrors RECENT_ACTIVITY_LIMIT in apps/web/src/admin/overview-routes.ts — the merged feed must
 // honor the same 30-item contract as the server response it's reconciling against.
@@ -93,6 +96,17 @@ function formatRelativeTime(iso: string | null): string {
 }
 
 /** "13:00" -> "13:00–14:00" for the check-in progress card's busiest-hour glance stat. */
+/** Decorative live signal in card headers. Active look (not a disabled button) with a
+ * breathing dot; Overview/Reports have no pause toggle. */
+function LiveStatusIndicator() {
+  return (
+    <output className="overview-live-indicator" aria-label="Live">
+      <span className="overview-live-indicator__dot" aria-hidden="true" />
+      <span>Live</span>
+    </output>
+  );
+}
+
 function formatBusiestHourRange(hour: string): string {
   const [hh, mm = "00"] = hour.split(":");
   const h = Number(hh);
@@ -218,22 +232,20 @@ function buildReadinessItems(overview: EventOverviewDto): ReadinessItem[] {
   ];
 }
 
-// Errors before warnings so the most urgent item is never bumped off the top-3 by an earlier,
-// less pressing warning (mirrors the old Needs attention card's own priority order).
-function topUnresolvedReadinessItems(items: ReadinessItem[]): ReadinessItem[] {
-  const urgency: Record<ReadinessItem["status"], number> = { error: 0, warn: 1, ok: 2, neutral: 3 };
-  return items
-    .filter((i) => i.status === "warn" || i.status === "error")
-    .sort((a, b) => urgency[a.status] - urgency[b.status])
-    .slice(0, 3);
-}
-
 /** Placeholder text for a card whose `overview` hasn't arrived yet: blank during the no-flash
  * grace window, "Loading…" once the fetch has genuinely taken a moment, "Unavailable" once it's
  * settled with nothing (shared by SetupChecklistCard and CheckInProgressCard). */
 function unavailablePlaceholderText(loading: boolean, showLoading: boolean): string {
   if (loading) return showLoading ? "Loading…" : "";
   return "Unavailable";
+}
+
+
+function checklistStatusIcon(status: ReadinessItem["status"]): string {
+  if (status === "error") return "ti-x";
+  if (status === "ok") return "ti-check";
+  if (status === "warn") return "ti-alert-triangle";
+  return "ti-minus";
 }
 
 function SetupChecklistCard({
@@ -260,7 +272,6 @@ function SetupChecklistCard({
   const items = buildReadinessItems(overview);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
-  const notOk = topUnresolvedReadinessItems(items);
 
   return (
     <Card
@@ -272,30 +283,19 @@ function SetupChecklistCard({
         </span>
       }
     >
-      {notOk.length === 0 ? (
-        <p className="overview-muted overview-all-clear">
-          <i className="ti ti-circle-check" aria-hidden="true" />{" "}
-          All checks look good
-        </p>
-      ) : (
-        <div className="overview-checklist">
-          {notOk.map((item) => (
-            <div key={item.label} className="overview-readiness-item">
-              <span className={`status-circle status-circle--${item.status}`} aria-hidden="true">
-                {item.status === "error" ? (
-                  <i className="ti ti-x" aria-hidden="true" />
-                ) : (
-                  <i className="ti ti-alert-triangle" aria-hidden="true" />
-                )}
-              </span>
-              <div className="overview-readiness-item__body">
-                <strong>{item.label}</strong>
-                <span className="overview-readiness-item__detail">{item.detail}</span>
-              </div>
+      <div className="overview-checklist">
+        {items.map((item) => (
+          <div key={item.label} className="overview-readiness-item">
+            <span className={`status-circle status-circle--${item.status}`} aria-hidden="true">
+              <i className={`ti ${checklistStatusIcon(item.status)}`} aria-hidden="true" />
+            </span>
+            <div className="overview-readiness-item__body">
+              <strong>{item.label}</strong>
+              <span className="overview-readiness-item__detail">{item.detail}</span>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
       <Link to={`/admin/events/${eventId}/settings?tab=general`} className="overview-checklist__link">
         View full checklist in Event settings <i className="ti ti-arrow-right" aria-hidden="true" />
       </Link>
@@ -349,6 +349,31 @@ function CheckInProgressCard({
   const breakdown = (overview.ticket_type_breakdown ?? []).filter((t) => t.count > 0);
   const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
 
+  let ticketTypeBar: ReactNode = null;
+  if (breakdown.length === 1) {
+    ticketTypeBar = (
+      <span
+        className="overview-tt-bar__seg"
+        style={{
+          width: "100%",
+          background: ticketTypeChartColor(breakdown[0]!.color),
+        }}
+      />
+    );
+  } else if (breakdown.length > 1) {
+    // breakdown only includes count > 0, so breakdownTotal is always > 0 here.
+    ticketTypeBar = breakdown.map((t) => (
+      <span
+        key={t.key}
+        className="overview-tt-bar__seg"
+        style={{
+          width: `${(t.count / breakdownTotal) * 100}%`,
+          background: ticketTypeChartColor(t.color),
+        }}
+      />
+    ));
+  }
+
   // A ring at a permanent 0% is noise, not information, when there's nobody to check in yet —
   // same icon+text placeholder treatment as Recent activity's empty state instead (PO review).
   const body =
@@ -387,21 +412,10 @@ function CheckInProgressCard({
           </div>
         </div>
 
-        {breakdown.length > 1 && (
-          <div className="overview-tt-breakdown">
-            <span className="overline">By ticket type</span>
-            <div className="overview-tt-bar">
-              {breakdown.map((t) => (
-                <span
-                  key={t.key}
-                  className="overview-tt-bar__seg"
-                  style={{
-                    width: `${breakdownTotal > 0 ? (t.count / breakdownTotal) * 100 : 0}%`,
-                    background: ticketTypeChartColor(t.color),
-                  }}
-                />
-              ))}
-            </div>
+        <div className="overview-tt-breakdown">
+          <span className="overline">By ticket type</span>
+          <div className="overview-tt-bar">{ticketTypeBar}</div>
+          {breakdown.length > 0 && (
             <div className="overview-tt-legend">
               {breakdown.map((t) => (
                 <span key={t.key} className="overview-tt-legend__item">
@@ -413,8 +427,8 @@ function CheckInProgressCard({
                 </span>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="overview-glance">
           <div className="overview-glance__tile">
@@ -458,6 +472,10 @@ const ACTIVITY_ICONS: Record<EventRecentActivityEntry["type"], string> = {
   mail_failed: "ti-mail-x",
   mail_resent: "ti-mail-forward",
   import: "ti-upload",
+  attendee_added: "ti-user-plus",
+  item_issued: "ti-package",
+  item_returned: "ti-package",
+  item_revoked: "ti-arrow-back-up",
 };
 
 // Uniform icon+tone treatment across every activity type, checkin included — was previously an
@@ -551,7 +569,8 @@ const ACTIVITY_FILTER_OPTIONS: ReadonlyArray<SegmentedOption<ActivityFilter>> = 
 ];
 
 /** Recent activity card (replaces "Recent check-ins", #373 + Part B): a day-grouped timeline of
- * check-ins, mail failures/bounces, and imports, with an All/Issues filter. */
+ * check-ins, mail failures/bounces, imports, attendees added, and item issue/return, with an
+ * All/Issues filter. */
 function RecentActivityCard({
   eventId,
   activity,
@@ -582,7 +601,7 @@ function RecentActivityCard({
       <EmptyState
         icon={<i className="ti ti-history" aria-hidden="true" />}
         title="No activity yet"
-        description="Check-ins, mail, and imports will appear here."
+        description="Check-ins, emails, and imports will appear here."
       />
     );
 
@@ -604,18 +623,9 @@ function RecentActivityCard({
             ariaLabel="Filter activity"
             className="overview-activity-filter"
           />
-          {/* Reuses the app's established dot-badge pattern for a live/active signal (Badge
-           * variant="ok" dot — same as CfAccessEditor/IdentityProvidersPanel's "Active"/"Enabled"
-           * pills) instead of a bespoke dot+text pair; .overview-live-badge only adds the pulse.
-           * Always rendered (#C review): this affirms "this feed receives live updates" as a
-           * static design element, matching the mockup, not the literal SSE handshake state — it
-           * used to be gated behind `streamConnected`, which is false for a beat right after page
-           * load and during a reconnect, making the badge flicker in and out. The actual
-           * connection health already has its own surface (e.g. CheckInPage's stream status
-           * banner), so this one stays unconditional. */}
-          <Badge variant="ok" dot className="overview-live-badge">
-            live
-          </Badge>
+          {/* Decorative success Live button (role=status), matching Org Settings Logs —
+           * always rendered as a static design element, not gated on the SSE handshake. */}
+          <LiveStatusIndicator />
         </>
       }
     >
@@ -714,12 +724,16 @@ function NotesSection({
 function OverviewModal({
   titleId,
   title,
+  iconClass,
+  description,
   onClose,
   footer,
   children,
 }: Readonly<{
   titleId: string;
   title: string;
+  iconClass: string;
+  description: string;
   onClose: () => void;
   footer: ReactNode;
   children: ReactNode;
@@ -732,8 +746,10 @@ function OverviewModal({
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="overview-modal__panel">
         <h2 id={titleId} className="overview-modal__title">
+          <i className={`ti ${iconClass}`} aria-hidden="true" />
           {title}
         </h2>
+        <p className="overview-modal__subtitle">{description}</p>
         <div className="overview-modal__body">{children}</div>
         <div className="overview-modal__footer">{footer}</div>
       </div>
@@ -770,6 +786,8 @@ function PinnedNoteModal({
     <OverviewModal
       titleId={titleId}
       title={note ? "Edit pinned note" : "Add pinned note"}
+      iconClass="ti-pin"
+      description="Shown to all staff on this overview. Use for day-of instructions."
       onClose={onClose}
       footer={
         <>
@@ -806,12 +824,14 @@ function ContactModal({
   onUpdate: (id: string, data: { name: string; role?: string | null; phone?: string | null; email?: string | null }) => Promise<void>;
 }>) {
   const titleId = useId();
+  const initialPhone = splitPhoneForPicker(contact?.phone ?? "");
   const [form, setForm] = useState({
     name: contact?.name ?? "",
     role: contact?.role ?? "",
-    phone: contact?.phone ?? "",
     email: contact?.email ?? "",
   });
+  const [phoneCountryCode, setPhoneCountryCode] = useState(initialPhone.dialCode);
+  const [phoneNumber, setPhoneNumber] = useState(initialPhone.nationalNumber);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
@@ -821,7 +841,7 @@ function ContactModal({
       const data = {
         name: form.name.trim(),
         role: form.role.trim() || null,
-        phone: form.phone.trim() || null,
+        phone: composePhoneE164(phoneCountryCode, phoneNumber) || null,
         email: form.email.trim() || null,
       };
       if (contact) {
@@ -850,6 +870,8 @@ function ContactModal({
     <OverviewModal
       titleId={titleId}
       title={contact ? "Edit contact" : "Add contact"}
+      iconClass="ti-address-book"
+      description="Add a key person staff can reach during the event."
       onClose={onClose}
       footer={
         <>
@@ -880,12 +902,30 @@ function ContactModal({
         value={form.role}
         onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
       />
-      <Input
-        label="Phone"
-        icon={<i className="ti ti-phone" aria-hidden="true" />}
-        value={form.phone}
-        onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-      />
+      <div className="overview-contact-modal__field">
+        <label htmlFor="overview-contact-phone-number" className="at-label">
+          Phone number
+        </label>
+        <div className="overview-contact-modal__phone-row">
+          <PhoneCountrySelect
+            id="overview-contact-phone-country-code"
+            label="Phone country code"
+            value={phoneCountryCode}
+            disabled={saving}
+            onChange={setPhoneCountryCode}
+          />
+          <Input
+            id="overview-contact-phone-number"
+            icon={<i className="ti ti-phone" aria-hidden="true" />}
+            type="tel"
+            name="event-contact-phone"
+            value={phoneNumber}
+            disabled={saving}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            {...NO_AUTOFILL_PROPS}
+          />
+        </div>
+      </div>
       <Input
         label="Email"
         // type="email" is what actually triggers Safari's iCloud "Hide My Email" suggestion chip
@@ -967,6 +1007,8 @@ function ResourceModal({
     <OverviewModal
       titleId={titleId}
       title={resource ? "Edit link or file" : "Add link or file"}
+      iconClass="ti-link"
+      description="Share a useful link or file reference with staff on this overview."
       onClose={onClose}
       footer={
         <>
@@ -1477,10 +1519,12 @@ export function EventOverviewPage() {
     setPinnedNote(data.event.pinned_note);
   }, []);
 
+  // Bounded, not a plain reset-on-every-call debounce: a pending timer is left alone rather than
+  // restarted, so a steady stream of signals (busy handout desk issuing items back-to-back) still
+  // reconciles within ~3s of the *first* one instead of only after a quiet gap - important since
+  // activity_changed (unlike checkin) has no optimistic local render to fall back on in between.
   const scheduleReconcile = useCallback(() => {
-    if (reconcileTimerRef.current != null) {
-      window.clearTimeout(reconcileTimerRef.current);
-    }
+    if (reconcileTimerRef.current != null) return;
     reconcileTimerRef.current = window.setTimeout(() => {
       reconcileTimerRef.current = null;
       void fetchEventOverview(event.id)
@@ -1500,7 +1544,7 @@ export function EventOverviewPage() {
     [scheduleReconcile],
   );
 
-  useEventStream(event.id, handleLiveCheckin);
+  useEventStream(event.id, handleLiveCheckin, scheduleReconcile);
 
   const handleSaveNote = useCallback(async (note: string | null) => {
     const capturedEventId = event.id;
@@ -1679,10 +1723,8 @@ export function EventOverviewPage() {
   return (
     <div className="screen">
       <PageHeader
-        title={event.title}
-        subtitle={
-          [formatEventCalendarDate(eventDateIso), event.location].filter(Boolean).join(" · ")
-        }
+        title="Overview"
+        subtitle={OVERVIEW_SUBTITLE}
         actions={event.archived_at ? <Badge variant="neutral">Archived · read-only</Badge> : undefined}
       />
 

@@ -8,6 +8,7 @@ export type { DeliveryDetailDto, DeliveryDto, HealthOverallStatus, HealthRowStat
 export type { EventSettingsDto, LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
+export type PreferredTimeFormat = "12h" | "24h";
 
 export interface MailerStatus {
   configured: boolean;
@@ -19,6 +20,7 @@ export interface AuthUser {
   email: string;
   display_name: string | null;
   preferred_locale?: string | null;
+  preferred_time_format?: PreferredTimeFormat | null;
   is_active: boolean;
   created_at: string;
   mailer_status?: MailerStatus | null;
@@ -45,6 +47,9 @@ export interface EventDto {
   slug: string;
   date: string;
   timezone: string;
+  /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   location: string | null;
   /** True when EventLocation has both latitude and longitude. */
   has_coordinates?: boolean;
@@ -90,6 +95,9 @@ export interface CreateEventBody {
   slug: string;
   date: string;
   timezone: string;
+  /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
+  event_hours_start?: string;
+  event_hours_end?: string;
   /** Short display name, e.g. "National Stadium" - free text, or picked from a geocoding
    * suggestion alongside the fields below. */
   venue_name?: string;
@@ -204,7 +212,27 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
-import type { AttendeeStatus } from "@admitto/db/status";
+import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
+
+export interface WalletPassActionDto {
+  status: WalletPassStatus;
+  issued_at: string | null;
+  voided_at: string | null;
+  apple_url: string | null;
+  android_url: string | null;
+  last_synced_at: string | null;
+  last_error_code: string | null;
+  apple_active_registrations: number | null;
+  apple_inactive_registrations: number | null;
+  google_active_registrations: number | null;
+  google_inactive_registrations: number | null;
+  /** Provider-reported "YYYY-MM-DD HH:MM:SS" string, deliberately not a Date. PassCreator's own
+   * docs don't state which timezone this is in; the admin UI treats it as UTC (the attendee's own
+   * action, in a timezone we have no way to know) and formats it - see formatFirstDownloadedAt in
+   * AttendeeDetailPage.tsx. */
+  first_downloaded_at: string | null;
+  registration_checked_at: string | null;
+}
 
 export interface AttendeeRowDto {
   id: string;
@@ -222,6 +250,15 @@ export interface AttendeeRowDto {
   /** Whether this attendee currently has at least one issued/returned item hand-out — lets the
    * bulk "Revoke items" action report how many of the selection it would actually affect. */
   has_issued_items: boolean;
+  /** Same registration-status fields as WalletPassActionDto, shown compactly in the Wallet
+   * column - null when no WalletPass row exists yet for this attendee. */
+  wallet_status: Pick<
+    WalletPassActionDto,
+    | "apple_active_registrations"
+    | "apple_inactive_registrations"
+    | "google_active_registrations"
+    | "google_inactive_registrations"
+  > | null;
 }
 
 /** Redacted rendered message for the "View sent message" preview — the recipient's real QR
@@ -262,20 +299,27 @@ export interface AttendeeNoteDto {
 export interface AttendeeDetailDto {
   id: string;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
   email: string;
   company: string | null;
   department: string | null;
   ticket_type: string | null;
   status: AttendeeStatus;
   check_in_status: "admitted" | "not_admitted";
-  admitted_at: string | null;
   created_at: string;
+  admitted_at: string | null;
   /** Acting admin's IANA timezone at attendee-creation time, when known (manual add / import). */
   client_timezone: string | null;
   updated_at: string;
   rsvp_status: RsvpStatus;
-  rsvp_updated_at: string | null;
   rsvp_source: string | null;
+  rsvp_updated_at: string | null;
+  wallet_pass: WalletPassActionDto | null;
+  /** On-demand wallet install links (same routes the ticket page's own buttons use) - available
+   * whether or not wallet_pass exists yet, null when wallet isn't configured for this event. */
+  wallet_apple_link: string | null;
+  wallet_google_link: string | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
@@ -313,7 +357,8 @@ export interface AttendeesListParams {
 }
 
 export interface UpdateAttendeePatch {
-  name?: string;
+  first_name?: string;
+  last_name?: string;
   email?: string;
   company?: string | null;
   department?: string | null;
@@ -335,6 +380,13 @@ export interface EventFullErrorBody {
 
 export interface ResendTicketBody {
   to?: string;
+  /** Resend this specific template instead of the event's current default - the Delivery log
+   * row's "Resend" passes the row's own template_id so it resends what actually bounced/failed. */
+  templateId?: string;
+}
+
+export interface DismissBounceResponse {
+  email_bounce_dismissed_at: string;
 }
 
 export interface ImportInvalidRow {
@@ -463,6 +515,30 @@ export interface BulkRevokePassResponse {
   /** Already revoked or cancelled - nothing to revoke, left untouched. */
   skipped: number;
   /** revokeOneAttendeePass threw for this id (unexpected) - safe to retry. */
+  errored: number;
+}
+
+/** Bulk wallet-void summary from POST .../attendees/bulk-wallet-void. */
+export interface BulkWalletVoidResponse {
+  voided: number;
+  /** No WalletPass row, or already voided - nothing to void, left untouched. */
+  skipped: number;
+  errored: number;
+}
+
+/** Bulk wallet-reissue summary from POST .../attendees/bulk-wallet-reissue. */
+export interface BulkWalletReissueResponse {
+  reissued: number;
+  /** No WalletPass row, or no resolvable ticket to rebuild from - left untouched. */
+  skipped: number;
+  errored: number;
+}
+
+/** Bulk wallet-delete summary from POST .../attendees/bulk-wallet-delete. */
+export interface BulkWalletDeleteResponse {
+  deleted: number;
+  /** No WalletPass row - nothing to delete, left untouched. */
+  skipped: number;
   errored: number;
 }
 
@@ -618,12 +694,25 @@ export interface EventTemplateDto {
   /** Subset of `allowed_placeholders` that render as an image — the editor inserts a ready
    * `<img>`/`<mj-image>` element for these instead of a bare `{{name}}` token. */
   image_placeholders: string[];
+  /** Resolved `{{logo_url}}` / `{{header_image_url}}` (event → organization → empty) - the same
+   * values a real send would use, for the placeholder-chip hover preview. Empty string means
+   * nothing is configured at either scope. */
+  logo_url: string;
+  header_image_url: string;
 }
 
 export interface SaveTemplateBody {
   subject_template: string;
   body_template: string;
   template_format: "mjml" | "html";
+}
+
+/** Identity-only edit for PATCH .../templates/:id - label/icon/description, no content or
+ * format. `null` (icon/description only) clears the field back to its picker-side default. */
+export interface UpdateTemplateMetadataBody {
+  label?: string;
+  icon?: string | null;
+  description?: string | null;
 }
 
 export interface PreviewTemplateResponse {
@@ -669,6 +758,8 @@ export interface MailTemplateListItem {
   id: string;
   name: string;
   label: string;
+  icon: string | null;
+  description: string | null;
   template_format: "mjml" | "html";
   subject_template: string;
   updated_at: string;
@@ -835,7 +926,9 @@ export interface SaveEventBounceIngestSettingsBody {
   enabled?: boolean;
 }
 
-export interface BounceIngestTestResponse {
+/** Shared shape for every "test this connection" endpoint (bounce ingest, SMTP probe, Wallet,
+ * external services) - named for the response contract, not any one caller's domain. */
+export interface ConnectionTestResponse {
   ok: boolean;
   message?: string;
   error?: string;
@@ -850,7 +943,7 @@ export interface BounceIngestRunResponse {
 }
 
 /** SMTP connection probe (nodemailer verify, no send) — org or event dedicated SMTP. */
-export type MailSmtpProbeResponse = BounceIngestTestResponse;
+export type MailSmtpProbeResponse = ConnectionTestResponse;
 
 export interface SaveMailSettingsBody {
   /** Omit = unchanged; `""` clears stored provider (Not configured). */
@@ -1054,7 +1147,7 @@ export interface MapsConnectionTestBody {
   geocodingBaseUrl: string;
 }
 
-export type ExternalServicesConnectionTestResponse = BounceIngestTestResponse & {
+export type ExternalServicesConnectionTestResponse = ConnectionTestResponse & {
   latency_ms?: number;
 };
 
@@ -1084,6 +1177,8 @@ export interface SessionListDto {
   expiresAt: string;
   authMethod: string;
   stage: string;
+  /** Signer's IANA timezone at login — null for older sessions / non-browser captures. */
+  timezone: string | null;
   isCurrent: boolean;
 }
 
@@ -1104,6 +1199,7 @@ export interface SystemSettingsDto {
   trusted_device_days: SecuritySettingField<number>;
   mfa_required_roles: SecuritySettingField<string[]>;
   instance_url: SecuritySettingField<string | null>;
+  csp_trusted_origins: SecuritySettingField<string[]>;
 }
 
 export interface PatchSystemSettingsBody {
@@ -1114,6 +1210,7 @@ export interface PatchSystemSettingsBody {
   trusted_device_days?: number | null;
   mfa_required_roles?: string[] | null;
   instance_url?: string | null;
+  csp_trusted_origins?: string[] | null;
 }
 
 export interface RoleAssignmentDto {
@@ -1307,6 +1404,8 @@ export interface SecurityAuditLogEntryDto {
   user_display_name: string | null;
   ip: string | null;
   country: IpLocationDto;
+  /** Actor's IANA timezone at the event — null for older rows, bots, or non-browser captures. */
+  actor_timezone: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
@@ -1368,6 +1467,7 @@ export interface AccountDto {
   email: string;
   display_name: string | null;
   preferred_locale: string | null;
+  preferred_time_format: PreferredTimeFormat | null;
   is_active: boolean;
   must_change_password: boolean;
   has_local_password: boolean;
@@ -1382,6 +1482,7 @@ export interface AccountDto {
 export interface PatchAccountProfileBody {
   display_name?: string;
   preferred_locale?: string | null;
+  preferred_time_format?: PreferredTimeFormat | null;
   phone_country_code?: string | null;
   phone_number?: string | null;
 }
@@ -1444,7 +1545,16 @@ export interface EventResourceDto {
 
 export interface EventRecentActivityEntry {
   id: string;
-  type: "checkin" | "mail_bounced" | "mail_failed" | "mail_resent" | "import";
+  type:
+    | "checkin"
+    | "mail_bounced"
+    | "mail_failed"
+    | "mail_resent"
+    | "import"
+    | "attendee_added"
+    | "item_issued"
+    | "item_returned"
+    | "item_revoked";
   tone: "ok" | "warn" | "error" | "info" | "muted";
   attendee_name?: string | null;
   /** Links the entry to the attendee's detail view; null for entries with no single attendee
@@ -1607,6 +1717,8 @@ export interface ProviderDetailDto {
   enabled: boolean;
   login_button_label: string | null;
   mappings: ProviderMappingDto[];
+  /** Exact callback to register at the IdP; null when Instance URL / BASE_URL is unresolved. */
+  redirect_uri: string | null;
 }
 
 /** Request body for POST/PUT /api/admin/identity/providers[/:id].

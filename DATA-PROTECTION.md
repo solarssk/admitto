@@ -3,8 +3,8 @@
 > **Legal basis:** to be confirmed by your organisation's privacy officer or legal team. This
 > document captures **design intent**, not legal advice.
 
-**Corp pack:** [GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md) ·
-[SUBPROCESSORS.md](docs/SUBPROCESSORS.md) · [SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md)
+**Corp pack:** [GDPR-ONE-PAGER.md](docs/security/GDPR-ONE-PAGER.md) ·
+[SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md) · [SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md)
 
 ## Data processed
 
@@ -53,6 +53,11 @@ Attendee-facing data — a ticket email's recipient address, import file content
 redacted or minimised in these logs, and database query logs never include the actual query values,
 only the query shape and how long it took.
 
+The per-request access log line (`http_request`, source of the System-logs live tail below) follows
+the same rule for IP address: it's included only when the request carries a verified staff/operator
+session, mirroring an identity provider's actor-attributed activity log. Anonymous, attendee-facing
+requests (ticket views, public check-in) never get their IP logged this way.
+
 This does **not** apply to the admin audit trail (`AttendeeActionLog`, `AdminAuditLog`), which is a
 first-class, access-controlled product feature, not an operational log line — see below.
 
@@ -89,13 +94,14 @@ is the reliable source for reconstructing login/MFA/OIDC history during an incid
   closes that gap independently of container/log configuration (issue #473).
 - **Access:** superadmin-only, same gate as the central admin audit log below.
 - **Fields:** `event_type`, a resolved `user_id` when the subject is known (null for failed logins
-  against a possibly-nonexistent account — an intentionally uniform, enumeration-safe shape), `ip`,
-  a small `metadata` object, and `created_at`. Email in `metadata` follows the same rule as
-  **Logs** above (redacted for failed logins, full once authenticated) *when the email identifies
-  the person being held accountable* — e.g. the user who just logged in or completed OIDC. MFA
-  break-glass events are the exception: `email`/`userId` there identify the operator's *target*
-  account, not the accountable actor, and `user_id` already resolves that target via the admin
-  panel's user join, so `metadata` omits the raw email there.
+  against a possibly-nonexistent account — an intentionally uniform, enumeration-safe shape), immutable
+  `user_email` / `user_display_name` snapshot columns written at event time (survive hard delete of
+  the account), `ip`, a small `metadata` object, and `created_at`. Failed logins keep `user_id` and
+  the snapshot columns null (enumeration-safe) and store the full attempted address in
+  `metadata.email` so superadmins can investigate targeted attacks; older rows may still have
+  `email_redacted` instead. Authenticated events store the accountable staff identity in the
+  snapshot columns, not in metadata. Operational stdout / System-log still emit the redacted form
+  for failed logins (see **Logs** above).
 - **Not covered, by design:** rate-limit-exceeded events (span many unrelated features — throttling
   signal, not itself a discrete auth incident; better served by metrics/alerting) and admin settings
   changes (already durable via the central `AdminAuditLog` below — no need to duplicate into both
@@ -150,6 +156,9 @@ This is a narrower, more deliberate exception than it looks:
   still genuinely gone from every attendee-facing table and surface).
 - **Access:** superadmin-only (`GET /api/admin/organizations`-tier gate), stricter than the
   admin-level access the per-attendee log gets.
+- **Actor identity:** each row stores immutable `actor_email` / `actor_display_name` snapshot columns
+  at write time (alongside `actor_user_id`), so deleted staff accounts remain identifiable in the
+  audit trail for the table's retention window.
 - **Retention — operator-run, not automated (no scheduled purge job exists for this table):** the
   Retention table below already lists "IP addresses in admin audit log… operator, 30 days or your
   policy, product does not auto-purge" — the same applies to the name/email fields added here, and
@@ -179,46 +188,46 @@ This is a narrower, more deliberate exception than it looks:
 
 ## Retention
 
-Retention uses two responsibility layers: **product-automated** cleanup (best-effort at container
-startup) and **operator-controlled** data (export/delete per your policy). Different retention
-periods for different categories are intentional — not an inconsistency.
+Retention uses two responsibility layers: **product-automated** cleanup (best-effort on the Admitto
+**worker** at boot and about every 24 hours) and **operator-controlled** data (export/delete per your
+policy). Different retention periods for different categories are intentional — not an inconsistency.
 
 | Data | Who is responsible | How |
 |---|---|---|
-| Login sessions, trusted devices | Product — automatic | Best-effort purge at container startup when expired/revoked |
+| Login sessions, trusted devices | Product — automatic | Best-effort purge on the worker when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
-| Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge at container startup and daily thereafter; default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
+| Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge on the worker (boot + ~24h); default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
 | IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
 | System logs live tail (in-memory only) | Product — automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
-| Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
+| Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
 Automated post-event attendee purge is planned for **v1.0**. Until then, use **Attendees → Export**,
 then erase records via the admin SPA (single or bulk) or `DELETE /api/admin/events/:eventId/attendees/:id`
-directly, as described in [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md).
+directly, as described in [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md).
 
 | Mechanism | Status |
 |-----------|--------|
 | Policy documented | Yes (this document + GDPR one-pager) |
 | Organizer export before purge | Admin UI — **Attendees → Export** (CSV/XLSX/PDF; v0.4.2+) |
 | Per-attendee erasure | Admin SPA (single and bulk) + `DELETE` API (v0.4.6+ API, SPA delete action added in this batch) |
-| Automated purge job | Partial — auth-state and email delivery snapshot cleanup at container startup; full attendee PII purge planned for v1.0 |
+| Automated purge job | Partial — auth-state and email delivery snapshot cleanup on the Admitto worker; full attendee PII purge planned for v1.0 |
 
 ## Data subject rights
 
 Attendees may have rights of access, rectification, and erasure under applicable law.
 **Choose an operating model with legal** — both options are described in
-[GDPR-ONE-PAGER.md](docs/GDPR-ONE-PAGER.md):
+[GDPR-ONE-PAGER.md](docs/security/GDPR-ONE-PAGER.md):
 
 | Model | Summary |
 |-------|---------|
 | **Self-service API** | Dedicated export/delete endpoints — build if legal requires |
-| **Organizer-mediated** | Staff export via admin UI; erasure per [DSAR-PROCEDURE.md](docs/DSAR-PROCEDURE.md) |
+| **Organizer-mediated** | Staff export via admin UI; erasure per [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
 ## Subprocessors
 
 Depends on customer configuration — hosting, corporate email (e.g. Microsoft 365 / Graph or SMTP
 relay), optional CDN/WAF, optional future wallet provider. Template:
-[SUBPROCESSORS.md](docs/SUBPROCESSORS.md).
+[SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md).
 
 ## Hosting
 
@@ -226,7 +235,7 @@ relay), optional CDN/WAF, optional future wallet provider. Template:
 - Secrets outside the repository (environment variables / secret manager).
 - Database not exposed to the public internet.
 
-See [CORPORATE-DEPLOYMENT.md](docs/CORPORATE-DEPLOYMENT.md).
+See [CORPORATE-DEPLOYMENT.md](docs/security/CORPORATE-DEPLOYMENT.md).
 
 ## Before production use with real personal data
 

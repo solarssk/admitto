@@ -2,7 +2,13 @@ export { generateToken } from "./token.js";
 export { hashToken } from "./hash.js";
 export { buildTicketUrl, extractTokenFromUrl, looksLikeInternalToken } from "./url.js";
 export { generateQrPng, buildQrPayload } from "./qr.js";
-export { resolveTicket, resolveTicketLogoUrl, toResolved, parseTicketAddressComponents } from "./resolve.js";
+export {
+  resolveTicket,
+  resolveTicketLogoUrl,
+  toResolved,
+  parseTicketAddressComponents,
+  parseWalletFieldMapping,
+} from "./resolve.js";
 export { issueTicket, issueTicketsForEvent } from "./issue.js";
 export { checkInScan, getRecentCheckIns, isAdmittable } from "./checkin.js";
 export { ADMITTABLE_STATUS_LIST } from "./admittable.js";
@@ -112,6 +118,10 @@ export type {
 export { claimNextAdminJob } from "./claim-admin-job.js";
 export { drainExportJobs } from "./drain-export-jobs.js";
 export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
+export { formatDate, resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
+export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
+export { drainWalletPushJobs } from "./drain-wallet-push-jobs.js";
+export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
 export {
   reclaimStaleExportJobs,
   parseExportJobStaleRunningMs,

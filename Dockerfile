@@ -46,18 +46,13 @@ RUN cp -rn /opt/node_modules-full/. node_modules/ && rm -rf /opt/node_modules-fu
 
 FROM node:24-bookworm-slim AS production
 
-# postgresql-client-16 for pre-migration pg_dump (ADR 0027; server is postgres:16).
 # Global npm is unused at runtime (Prisma/app invoked via node directly).
 # Removes bundled picomatch 4.0.3 flagged by Trivy (CVE-2026-33671).
+# fontconfig + fonts-dejavu-core: debian-slim ships no fonts at all, so sharp's SVG compositor
+# (apps/web/src/maps/static-map.ts, font-family "DejaVu Sans, Arial, Helvetica, sans-serif") has
+# nothing to resolve glyphs against and draws the static-map attribution/placeholder text as tofu.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl gnupg openssl wget \
-  && curl -fsSL --proto '=https' --proto-redir '=https' https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-    | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
-  && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
-    > /etc/apt/sources.list.d/pgdg.list \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends postgresql-client-16 \
-  && apt-get purge -y curl gnupg \
+  && apt-get install -y --no-install-recommends ca-certificates fontconfig fonts-dejavu-core openssl wget \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /usr/local/lib/node_modules/npm \
@@ -65,6 +60,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
+COPY LICENSE NOTICE THIRD-PARTY-NOTICES.md ./
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/crypto/package.json packages/crypto/
@@ -72,6 +68,7 @@ COPY packages/storage/package.json packages/storage/
 COPY packages/location/package.json packages/location/
 COPY packages/db/package.json packages/db/
 COPY packages/tickets/package.json packages/tickets/
+COPY packages/wallet/package.json packages/wallet/
 COPY packages/auth/package.json packages/auth/
 COPY packages/mailer/package.json packages/mailer/
 COPY packages/mailer-config/package.json packages/mailer-config/
@@ -97,6 +94,7 @@ COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
 COPY --from=builder /app/packages/db/prisma.config.ts ./packages/db/prisma.config.ts
 COPY --from=builder /app/packages/tickets/dist ./packages/tickets/dist
+COPY --from=builder /app/packages/wallet/dist ./packages/wallet/dist
 COPY --from=builder /app/packages/auth/dist ./packages/auth/dist
 COPY --from=builder /app/packages/mailer/dist ./packages/mailer/dist
 COPY --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/dist
@@ -110,9 +108,7 @@ COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 RUN chmod +x ./deploy/docker-entrypoint.sh \
   && chown -R node:node /app
 
-# Non-root by default. The one compose service that genuinely needs root — writing pre-migration
-# backups into the root-only migration_backups volume — overrides this with `user: root` (see
-# deploy/docker-compose.yml's `migrate` service); the long-running web server never runs as root.
+# Non-root always — no compose service (app, migrate, or worker) runs as root (ADR 0043).
 USER node
 
 ENV NODE_ENV=production

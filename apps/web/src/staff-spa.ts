@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join, normalize, sep } from "node:path";
 import type { Context, MiddlewareHandler } from "hono";
+import type { PrismaClient } from "@admitto/db";
 import { resolveDefaultAdminDistRoot } from "./admin/admin-build-meta.js";
+import { resolveCspTrustedOriginsSafe } from "./csp-trusted-origins.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -43,17 +45,20 @@ type EnvLike = Record<string, string | undefined>;
  * are otherwise blocked outright since only `https:` is allowed above. Local-machine-only, so this
  * doesn't weaken the production policy (which never sets `NODE_ENV=development`).
  */
-function buildStaffSpaContentSecurityPolicy(env: EnvLike): string {
+function buildStaffSpaContentSecurityPolicy(
+  env: EnvLike,
+  trustedOrigins: readonly string[] = [],
+): string {
   const imgSrc =
     env["NODE_ENV"] === "development"
       ? [...STAFF_SPA_IMG_SRC, "http://localhost:*"]
       : STAFF_SPA_IMG_SRC;
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src ${["'self'", ...trustedOrigins].join(" ")}`,
     `style-src ${STAFF_SPA_STYLE_SRC.join(" ")}`,
     `img-src ${imgSrc.join(" ")}`,
-    "connect-src 'self'",
+    `connect-src ${["'self'", ...trustedOrigins].join(" ")}`,
     `font-src ${STAFF_SPA_FONT_SRC.join(" ")}`,
     "object-src 'none'",
     "base-uri 'none'",
@@ -62,11 +67,16 @@ function buildStaffSpaContentSecurityPolicy(env: EnvLike): string {
   ].join("; ");
 }
 
-/** Security headers for `/admin` and `/operator` SPA shell (Vite bundle). */
-export function getStaffSpaSecurityHeaders(env: EnvLike = process.env): Record<string, string> {
+/** Security headers for `/admin` and `/operator` SPA shell (Vite bundle). `trustedOrigins`
+ *  (Settings → Security, `csp_trusted_origins`) extends `script-src`/`connect-src` for
+ *  third-party analytics/monitoring beacons the operator has explicitly opted into. */
+export function getStaffSpaSecurityHeaders(
+  env: EnvLike = process.env,
+  trustedOrigins: readonly string[] = [],
+): Record<string, string> {
   return {
     "Cache-Control": "no-store",
-    "Content-Security-Policy": buildStaffSpaContentSecurityPolicy(env),
+    "Content-Security-Policy": buildStaffSpaContentSecurityPolicy(env, trustedOrigins),
     // same-origin (not no-referrer) so Safari sends Referer on same-origin form POSTs
     // (e.g. Sign out). no-referrer blocks Referer and Safari omits Origin for same-origin
     // form POST, causing the CSRF guard to reject the request.
@@ -96,11 +106,13 @@ function readDistFile(root: string, relative: string): { body: Buffer; contentTy
 
 export interface StaffSpaOptions {
   distRoot?: string;
+  db: PrismaClient;
 }
 
 /** Serve built Vite assets and SPA index.html fallback for staff routes. */
-export function createStaffSpaHandlers(options: StaffSpaOptions = {}) {
+export function createStaffSpaHandlers(options: StaffSpaOptions) {
   const root = normalize(options.distRoot ?? resolveDefaultAdminDistRoot());
+  const { db } = options;
   const indexHtml = () => readDistFile(root, "index.html");
 
   const serveAsset: MiddlewareHandler = async (c) => {
@@ -113,13 +125,16 @@ export function createStaffSpaHandlers(options: StaffSpaOptions = {}) {
     return c.body(new Uint8Array(file.body));
   };
 
-  const serveSpaIndex = (c: Context) => {
+  const serveSpaIndex = async (c: Context): Promise<Response> => {
     const file = indexHtml();
     if (!file) {
       return c.text("Staff UI not built. Run npm run build -w @admitto/admin.", 503);
     }
     c.header("Content-Type", file.contentType);
-    for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+    const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
+    for (const [name, value] of Object.entries(
+      getStaffSpaSecurityHeaders(process.env, trustedOrigins),
+    )) {
       c.header(name, value);
     }
     return c.body(new Uint8Array(file.body));

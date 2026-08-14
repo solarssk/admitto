@@ -12,6 +12,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./custom-data-reserved": {
+      "types": "./dist/custom-data-reserved.d.ts",
+      "default": "./dist/custom-data-reserved.js"
+    },
+    "./event-item-usability": {
+      "types": "./dist/event-item-usability.d.ts",
+      "default": "./dist/event-item-usability.js"
+    },
     "./attendees-export": {
       "types": "./dist/attendees-export.d.ts",
       "default": "./dist/attendees-export.js"
@@ -28,7 +36,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/mail-templates",
+    "pretest": "npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/location && npm run build -w @admitto/mail-templates && npm run build -w @admitto/wallet",
     "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
@@ -36,7 +44,9 @@
   "dependencies": {
     "@admitto/crypto": "*",
     "@admitto/db": "*",
+    "@admitto/location": "*",
     "@admitto/mail-templates": "*",
+    "@admitto/wallet": "*",
     "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
     "pdfkit": "^0.19.1",

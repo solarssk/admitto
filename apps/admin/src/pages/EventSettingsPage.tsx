@@ -7,22 +7,29 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, useToast, type ToastVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import {
   ApiError,
   archiveEvent,
   deleteEvent,
   exportEventPii,
+  fetchEventLocation,
   fetchEventSettings,
   fetchTicketTypes,
+  fetchWalletPushHistory,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
+  testWalletConnection,
   unarchiveEvent,
   uploadEventBrandingFile,
+  type WalletPushHistoryEntry,
 } from "../api/client.js";
+import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet";
+import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
+import type { EventLocationDto, EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import {
@@ -30,7 +37,8 @@ import {
   type EventBounceIngestPanelHandle,
 } from "../settings/EventBounceIngestPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
-import { SettingsFooter, NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import { SettingsFooter, NO_AUTOFILL_PROPS, SecretFieldRow } from "../settings/mailTransportFormParts.js";
+import type { SecretEditMode } from "../settings/mailSettingsValidation.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -40,8 +48,9 @@ import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
+import { TimeInput } from "../components/TimeInput.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime, formatUtcDateTime, formatWalletDatePreview } from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -56,9 +65,22 @@ function formatActorStamp(iso: string, timezone: string | null | undefined): str
   return timezone ? formatEventDateTime(iso, timezone) : formatUtcDateTime(iso);
 }
 
+/** One editable row of the Wallet field mapping - PassCreator field key -> Admitto placeholder.
+ * `id` is a client-only React key, generated once per row (never sent to the server) - the
+ * server's own mapping shape is a plain key->placeholder record with no row identity. */
+type WalletFieldMappingRow = { id: string; key: string; value: string };
+
 type SettingsForm = {
   title: string;
   date: string;
+  eventHoursStart: string;
+  eventHoursEnd: string;
+  walletEnabled: boolean;
+  walletTemplateId: string;
+  walletApiKeyEdit: { mode: SecretEditMode; value: string };
+  walletAppleEnabled: boolean;
+  walletGoogleEnabled: boolean;
+  walletFieldMapping: WalletFieldMappingRow[];
   timezone: string;
   capacity: string;
   logoUrl: string;
@@ -69,6 +91,14 @@ type SettingsForm = {
 type SettingsPatch = Partial<{
   title: string;
   date: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
+  wallet_enabled: boolean;
+  wallet_template_id: string | null;
+  wallet_api_key: string | null;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
+  wallet_field_mapping: Record<string, string> | null;
   timezone: string;
   capacity: number | null;
   logo_url: string | null;
@@ -76,16 +106,26 @@ type SettingsPatch = Partial<{
   logo_crop: LogoCropMeta | null;
 }>;
 
-const EVENT_SETTINGS_SUBTITLE = "Manage this event's details, images, and access controls.";
+const EVENT_SETTINGS_SUBTITLE = "Manage event details, images, and access.";
 
 const BASIC_INFORMATION_HINT =
-  "Title and date appear on tickets and emails. Set the venue in the Location tab.";
+  "Title, date, capacity, and timezone.";
 const BASIC_INFORMATION_INTRO =
-  "Title, date, capacity, and timezone for this event.";
-const STATUS_HINT = "Read-only overview of this event's current state. Archive or delete it from the Danger zone tab.";
+  "Set the event details used across admin and tickets.";
+const STATUS_HINT = "Current event status and ownership.";
 const EVENT_LOGO_HINT =
-  "Replaces the organisation logo on tickets and emails for this event.";
-const DANGER_ZONE_HINT = "Irreversible actions affecting this event's data or availability. Most require superadmin.";
+  "Overrides the organisation logo for this event.";
+const DANGER_ZONE_HINT = "Actions that change event data or availability.";
+const WALLET_CARD_HINT = "Per-event Apple/Google Wallet pass configuration.";
+const WALLET_CARD_INTRO =
+  "Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and template are specific to this event, nothing is shared with other events.";
+const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
+const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
+const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
+const WALLET_FIELD_MAPPING_HEADER_DESC =
+  "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
+const WALLET_FIELD_MAPPING_EMPTY_NOTICE =
+  "No fields mapped yet - only the QR code is sent to PassCreator. Add a field for each value your template should show (name, event date, ticket type, and so on).";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -105,10 +145,155 @@ function pluralSuffix(count: number): string {
   return count === 1 ? "" : "s";
 }
 
+const WALLET_PLACEHOLDER_LABELS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string> = {
+  full_name: "Attendee full name",
+  first_name: "Attendee first name",
+  last_name: "Attendee last name",
+  email: "Attendee email",
+  company: "Attendee company",
+  department: "Attendee department",
+  event_name: "Event name",
+  event_date: "Event date",
+  event_hours: "Event hours",
+  event_location: "Event location",
+  directions_text: "Directions",
+  accessibility_text: "Accessibility notes",
+  google_maps_url: "Google Maps URL",
+  apple_maps_url: "Apple Maps URL",
+  object_name: "Venue name",
+  street: "Street address",
+  postcode: "Postal code",
+  city: "City",
+  region: "Region",
+  country: "Country",
+  ticket_type: "Ticket type",
+  ticket_url: "Ticket/QR value",
+};
+
+/** Groups the Value dropdown's options by category so the list is easier to scan - matches
+ * WALLET_MAPPING_PLACEHOLDERS' existing grouping order (attendee, event, notes, maps, address,
+ * ticket), just made visible with an icon per group instead of relying on option order alone. */
+const WALLET_PLACEHOLDER_ICONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string> = {
+  full_name: "user",
+  first_name: "user",
+  last_name: "user",
+  email: "user",
+  company: "user",
+  department: "user",
+  event_name: "calendar-event",
+  event_date: "calendar-event",
+  event_hours: "calendar-event",
+  event_location: "calendar-event",
+  directions_text: "notes",
+  accessibility_text: "notes",
+  google_maps_url: "map",
+  apple_maps_url: "map",
+  object_name: "map-pin",
+  street: "map-pin",
+  postcode: "map-pin",
+  city: "map-pin",
+  region: "map-pin",
+  country: "map-pin",
+  ticket_type: "ticket",
+  ticket_url: "ticket",
+};
+
+const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
+  id,
+  icon: WALLET_PLACEHOLDER_ICONS[id],
+  label: WALLET_PLACEHOLDER_LABELS[id],
+}));
+
+/** Placeholders whose real value depends on which attendee gets the pass, not on the event alone
+ * - there's no single "value for this event" to preview on this page. */
+const WALLET_ATTENDEE_SCOPED_HINTS: Partial<Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[number], string>> = {
+  full_name: "e.g. Jan Kowalski",
+  first_name: "e.g. Jan",
+  last_name: "e.g. Kowalski",
+  email: "e.g. jan.kowalski@example.com",
+  company: "e.g. Acme Sp. z o.o.",
+  department: "e.g. Marketing",
+  ticket_type: "e.g. VIP",
+  ticket_url: "e.g. 8f14e45fceea167a5a36",
+};
+
+const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.";
+
+/** The real value a field mapping row's hint icon shows on hover - what this specific event
+ * would actually send for the selected placeholder right now (apps/web/src/app.ts's own
+ * buildWalletPassInput), not a generic description of the field. `location` is `undefined` while
+ * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
+function computeWalletPlaceholderPreview(
+  id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
+  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd">,
+  location: EventLocationDto | null | undefined,
+): string {
+  const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
+  if (attendeeHint) return attendeeHint;
+  if (id === "event_name") return form.title;
+  if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
+  if (id === "event_hours") {
+    return form.eventHoursStart && form.eventHoursEnd
+      ? `${form.eventHoursStart}-${form.eventHoursEnd}`
+      : WALLET_VALUE_NOT_SET;
+  }
+  if (location === undefined) return "Loading…";
+  switch (id) {
+    case "event_location":
+      return location?.venue_name || WALLET_VALUE_NOT_SET;
+    case "directions_text":
+      return location?.directions_text || WALLET_VALUE_NOT_SET;
+    case "accessibility_text":
+      return location?.accessibility_text || WALLET_VALUE_NOT_SET;
+    case "google_maps_url":
+    case "apple_maps_url": {
+      if (!location || !isMapReady(location)) return WALLET_VALUE_NOT_SET;
+      const label = location.venue_name ?? location.formatted_address ?? undefined;
+      return id === "google_maps_url"
+        ? resolveGoogleMapsUrl(location.latitude!, location.longitude!, label, location.google_maps_url_override)
+        : resolveAppleMapsUrl(location.latitude!, location.longitude!, label, location.apple_maps_url_override);
+    }
+    case "object_name":
+    case "street":
+    case "postcode":
+    case "city":
+    case "region":
+    case "country":
+      return location?.address_components?.[id] || WALLET_VALUE_NOT_SET;
+    default:
+      return WALLET_VALUE_NOT_SET;
+  }
+}
+
+/** Renders field mapping rows grouped by category (attendee, event, notes, maps, address,
+ * ticket - WALLET_MAPPING_PLACEHOLDERS' own order) instead of insertion order, so a row's
+ * position is always determined by what it's mapped to, never by editing history. A row with no
+ * value picked yet (freshly added) sorts last, since it has no category to group under. Returns
+ * a new array - never mutates the form state array itself. */
+function sortWalletFieldMappingByCategory(rows: WalletFieldMappingRow[]): WalletFieldMappingRow[] {
+  const categoryRank = (value: string): number => {
+    const index = WALLET_MAPPING_PLACEHOLDERS.indexOf(value as (typeof WALLET_MAPPING_PLACEHOLDERS)[number]);
+    return index === -1 ? WALLET_MAPPING_PLACEHOLDERS.length : index;
+  };
+  return [...rows].sort((a, b) => categoryRank(a.value) - categoryRank(b.value));
+}
+
 function toForm(data: EventSettingsDto): SettingsForm {
   return {
     title: data.title,
     date: data.date.split("T")[0] ?? "",
+    eventHoursStart: data.event_hours_start ?? "",
+    eventHoursEnd: data.event_hours_end ?? "",
+    walletEnabled: data.wallet_enabled,
+    walletTemplateId: data.wallet_template_id ?? "",
+    walletApiKeyEdit: { mode: "idle", value: "" },
+    walletAppleEnabled: data.wallet_apple_enabled,
+    walletGoogleEnabled: data.wallet_google_enabled,
+    walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
+      id: crypto.randomUUID(),
+      key,
+      value,
+    })),
     timezone: data.timezone,
     capacity: data.capacity?.toString() ?? "",
     logoUrl: data.logo_url ?? "",
@@ -128,25 +313,112 @@ function parseCapacityInput(raw: string): number | null {
   return n;
 }
 
-function buildSettingsPatch(form: SettingsForm, original: SettingsForm): SettingsPatch {
+/** Wallet-only slice of buildSettingsPatch, extracted to keep the main function's cognitive
+ * complexity under the SonarCloud threshold (S3776). */
+function buildWalletPatch(
+  form: SettingsForm,
+  original: SettingsForm,
+): Pick<
+  SettingsPatch,
+  | "wallet_enabled"
+  | "wallet_template_id"
+  | "wallet_api_key"
+  | "wallet_apple_enabled"
+  | "wallet_google_enabled"
+  | "wallet_field_mapping"
+> {
   const patch: SettingsPatch = {};
-  const title = form.title.trim();
-  if (title !== original.title.trim()) patch.title = title;
-  if (form.date !== original.date) patch.date = form.date;
-  if (form.timezone !== original.timezone) patch.timezone = form.timezone;
-  if (form.capacity.trim() !== original.capacity.trim()) {
-    patch.capacity = parseCapacityInput(form.capacity);
+  if (form.walletEnabled !== original.walletEnabled) {
+    patch.wallet_enabled = form.walletEnabled;
   }
+  if (form.walletTemplateId !== original.walletTemplateId) {
+    patch.wallet_template_id = form.walletTemplateId.trim() || null;
+  }
+  if (form.walletApiKeyEdit.mode === "clear") {
+    patch.wallet_api_key = null;
+  } else if (form.walletApiKeyEdit.mode === "replace" && form.walletApiKeyEdit.value.trim()) {
+    patch.wallet_api_key = form.walletApiKeyEdit.value.trim();
+  }
+  if (form.walletAppleEnabled !== original.walletAppleEnabled) {
+    patch.wallet_apple_enabled = form.walletAppleEnabled;
+  }
+  if (form.walletGoogleEnabled !== original.walletGoogleEnabled) {
+    patch.wallet_google_enabled = form.walletGoogleEnabled;
+  }
+  if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
+    patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
+  }
+  return patch;
+}
+
+/** Extracted out of buildWalletPatch to keep its own cognitive complexity under the SonarCloud
+ * threshold (S3776, same reasoning as this file's other buildXPatch helpers). */
+function buildWalletFieldMappingPatch(rows: WalletFieldMappingRow[]): Record<string, string> | null {
+  const mapping: Record<string, string> = {};
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (key && row.value) mapping[key] = row.value;
+  }
+  return Object.keys(mapping).length > 0 ? mapping : null;
+}
+
+/** buildWalletFieldMappingPatch silently drops a row with a value but no key, and lets a later
+ * row's key overwrite an earlier one - both intentional (a half-filled-in row shouldn't block
+ * saving the rest), but neither has any other signal. Surfaced here so the Wallet tab's own
+ * SettingsFooter can show it instead of the row just quietly not being there after "Event
+ * settings saved". */
+function computeWalletFieldMappingErrors(rows: WalletFieldMappingRow[]): string[] {
+  const errors: string[] = [];
+  const keyCounts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (row.value && !key) {
+      const label = WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value)?.label ?? row.value;
+      errors.push(`"${label}" has no PassCreator field key - this row won't be saved.`);
+    }
+    if (key) keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+  }
+  for (const [key, count] of keyCounts) {
+    if (count > 1) errors.push(`The key "${key}" is used by more than one row - only the last one will be saved.`);
+  }
+  return errors;
+}
+
+/** Logo-only slice of buildSettingsPatch, extracted for the same reason as buildWalletPatch. */
+function buildLogoPatch(
+  form: SettingsForm,
+  original: SettingsForm,
+): Pick<SettingsPatch, "logo_url" | "logo_original_url" | "logo_crop"> {
+  const patch: SettingsPatch = {};
   if (form.logoUrl !== original.logoUrl) patch.logo_url = form.logoUrl.trim() || null;
   if (form.logoOriginalUrl !== original.logoOriginalUrl) {
     patch.logo_original_url = form.logoOriginalUrl.trim() || null;
   }
-  const cropChanged = JSON.stringify(form.logoCrop) !== JSON.stringify(original.logoCrop);
-  if (cropChanged) patch.logo_crop = form.logoCrop;
+  if (JSON.stringify(form.logoCrop) !== JSON.stringify(original.logoCrop)) {
+    patch.logo_crop = form.logoCrop;
+  }
   // When display logo changes, always send original+crop together so the server stays consistent.
   if (patch.logo_url !== undefined) {
     patch.logo_original_url = form.logoOriginalUrl.trim() || null;
     patch.logo_crop = form.logoCrop;
+  }
+  return patch;
+}
+
+function buildSettingsPatch(form: SettingsForm, original: SettingsForm): SettingsPatch {
+  const patch: SettingsPatch = { ...buildWalletPatch(form, original), ...buildLogoPatch(form, original) };
+  const title = form.title.trim();
+  if (title !== original.title.trim()) patch.title = title;
+  if (form.date !== original.date) patch.date = form.date;
+  if (form.eventHoursStart !== original.eventHoursStart) {
+    patch.event_hours_start = form.eventHoursStart.trim() || null;
+  }
+  if (form.eventHoursEnd !== original.eventHoursEnd) {
+    patch.event_hours_end = form.eventHoursEnd.trim() || null;
+  }
+  if (form.timezone !== original.timezone) patch.timezone = form.timezone;
+  if (form.capacity.trim() !== original.capacity.trim()) {
+    patch.capacity = parseCapacityInput(form.capacity);
   }
   return patch;
 }
@@ -192,10 +464,34 @@ function describeRevokeItems(issuedItemsCount: number): string {
     : "No items have been issued yet.";
 }
 
-function describeDeleteEvent(isDeletable: boolean): string {
-  return isDeletable
-    ? "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log."
-    : "Only events with no attendees, custom items, custom ticket types, contacts, resources, pinned note, event-specific mail template, or recorded activity can be permanently deleted.";
+const DELETION_BLOCKER_LABELS: Record<string, string> = {
+  attendees: "attendees",
+  custom_items: "custom items",
+  custom_ticket_types: "custom ticket types",
+  contacts: "contacts",
+  resources: "resources",
+  pinned_note: "pinned note",
+  event_mail_template: "event-specific mail template",
+};
+
+function formatDeletionBlockers(blockers: readonly string[]): string {
+  return blockers
+    .map((key) => DELETION_BLOCKER_LABELS[key] ?? key.replaceAll("_", " "))
+    .join(", ");
+}
+
+function describeDeleteEvent(
+  isDeletable: boolean,
+  deletionBlockers: readonly string[] | undefined,
+): string {
+  if (isDeletable) {
+    return "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.";
+  }
+  const blockers = deletionBlockers ?? [];
+  if (blockers.length > 0) {
+    return `Still blocking delete: ${formatDeletionBlockers(blockers)}.`;
+  }
+  return "This event still has content that must be cleared before it can be permanently deleted.";
 }
 
 interface ArchiveDialogCopy {
@@ -543,6 +839,81 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
   );
 }
 
+interface WalletPushHistoryCardProps {
+  readonly history: WalletPushHistoryEntry[] | null;
+  readonly error: string | null;
+  readonly eventTimezone: string | undefined;
+  readonly onRetry: () => void;
+  readonly showLoading: boolean;
+}
+
+/** Recent wallet_push jobs for this event, from the async job system's own triggers (currently:
+ * bulk ticket type change). Single-attendee field edits push directly and don't create a job, so
+ * they never appear in this list. */
+function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoading }: WalletPushHistoryCardProps) {
+  let body: ReactNode;
+  if (error) {
+    body = (
+      <EmptyState
+        title="Could not load wallet push history"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  } else if (history === null) {
+    // settings-card-intro (already scoped to this page's own CSS) matches ImportHistoryCard's
+    // muted-hint look without importing ImportPage's page-scoped import.css into this lazy chunk
+    // (bot review - a component's CSS must live in its own file, per AGENTS.md's compounding
+    // rules).
+    body = showLoading ? <p className="settings-card-intro">Loading…</p> : null;
+  } else if (history.length === 0) {
+    body = (
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="No wallet pushes yet"
+        description="Pushes appear here after a bulk wallet push for this event, such as a ticket-type change."
+      />
+    );
+  } else {
+    body = (
+      <div className="sessions-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th>Skipped</th>
+              <th>Errored</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((entry) => (
+              <tr key={entry.id}>
+                <td>{formatEventDateTime(entry.created_at, eventTimezone)}</td>
+                <td>{entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}</td>
+                <td>{entry.reissued}</td>
+                <td>{entry.skipped}</td>
+                <td>{entry.errored}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <Card title="Wallet push history" className="event-settings-card">
+      {body}
+    </Card>
+  );
+}
+
 /** Event-scoped settings: General / Images / Wallet / Danger zone tabs. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
@@ -564,6 +935,7 @@ export function EventSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [walletTesting, setWalletTesting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -614,6 +986,53 @@ export function EventSettingsPage() {
     }
   }, [searchParams, tab, isSa]);
 
+  // Read-only preview data for the Wallet tab's field mapping hint icons (computeWalletPlaceholder
+  // Preview) - the event's own Location tab data, fetched independently of LocationSettingsPanel
+  // (which owns the editable copy) so opening Wallet alone doesn't require visiting Location
+  // first. Fetched once, only once the Wallet tab is actually visited - undefined stays "loading"
+  // rather than a misleading "not set" for the brief window before this resolves.
+  const [walletLocationPreview, setWalletLocationPreview] = useState<EventLocationDto | null | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    if (!eventId || !visitedTabs.has("wallet") || walletLocationPreview !== undefined) return;
+    const controller = new AbortController();
+    fetchEventLocation(eventId, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) setWalletLocationPreview(data);
+      })
+      .catch(() => {
+        /* preview-only: a failed fetch just leaves hint icons showing "Loading…" */
+      });
+    return () => controller.abort();
+  }, [eventId, visitedTabs, walletLocationPreview]);
+
+  // Wallet push history: re-fetched every time the admin switches to the Wallet tab (not just
+  // once) - unlike walletLocationPreview above (a static reference value), this list reflects
+  // background jobs triggered from elsewhere (currently only the Attendees list's bulk
+  // ticket-type change), so it can go stale while this tab stays mounted between visits.
+  const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
+  const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
+  const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
+  const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
+  const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
+  useEffect(() => {
+    if (!eventId || tab !== "wallet") return;
+    const controller = new AbortController();
+    setWalletPushHistoryError(null);
+    setWalletPushHistoryLoading(true);
+    fetchWalletPushHistory(eventId, controller.signal)
+      .then((items) => setWalletPushHistory(items))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setWalletPushHistoryError("Couldn't load wallet push history.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
+      });
+    return () => controller.abort();
+  }, [eventId, tab, walletPushHistoryToken]);
+
   const handleTabChange = useCallback(
     (id: string) => {
       if (!isEventSettingsTab(id)) return;
@@ -623,8 +1042,23 @@ export function EventSettingsPage() {
     [setSearchParams, isSa],
   );
 
-  const dirty =
-    form !== null && original !== null && JSON.stringify(form) !== JSON.stringify(original);
+  // Derived from buildSettingsPatch's own result, not a raw form/original diff - an in-progress
+  // secret edit (e.g. clicking "Set" on the wallet API key without typing a value) changes
+  // form.walletApiKeyEdit.mode without producing anything buildSettingsPatch would actually send.
+  // A raw JSON diff flagged the page dirty in that state forever: Save's own "nothing to send"
+  // early return (below) never resets form/original, so the unsaved-changes banner, the
+  // beforeunload warning, and the navigation blocker never cleared.
+  // buildSettingsPatch can throw mid-typing (e.g. an invalid capacity value) - this runs on every
+  // render, not just on Save, so a thrown validation error must not crash the page. Fail safe:
+  // treat "couldn't tell" as dirty, same as the raw diff this replaced would have.
+  let dirty = false;
+  if (form !== null && original !== null) {
+    try {
+      dirty = Object.keys(buildSettingsPatch(form, original)).length > 0;
+    } catch {
+      dirty = true;
+    }
+  }
   // Combines the General form's own dirty state with the Mail and Location tabs' — navigating
   // away or running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits, pending secret replacements, or a pending pin move
@@ -720,6 +1154,36 @@ export function EventSettingsPage() {
     });
   }
 
+  async function handleTestWallet() {
+    if (!eventId || !form) return;
+    const templateId = form.walletTemplateId.trim();
+    if (!templateId) {
+      addToast("Enter a Template ID before testing the connection.", "error");
+      return;
+    }
+    if (form.walletApiKeyEdit.mode === "clear") {
+      addToast("The API key will be cleared on save - set a new one to test the connection.", "error");
+      return;
+    }
+    setWalletTesting(true);
+    try {
+      const result = await testWalletConnection(eventId, {
+        templateId,
+        ...(form.walletApiKeyEdit.mode === "replace" && form.walletApiKeyEdit.value.trim()
+          ? { apiKey: form.walletApiKeyEdit.value.trim() }
+          : {}),
+      });
+      addToast(
+        result.ok ? (result.message ?? "Connected.") : (result.error ?? "Could not reach PassCreator."),
+        result.ok ? "success" : "error",
+      );
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Could not test the wallet connection."), "error");
+    } finally {
+      setWalletTesting(false);
+    }
+  }
+
   async function handleArchiveConfirm() {
     if (!eventId) return;
     await confirmArchiveToggle({
@@ -813,10 +1277,11 @@ export function EventSettingsPage() {
     event.issued_items_count === 0,
     "No items to revoke",
   );
+  const deleteEventDescription = describeDeleteEvent(event.is_deletable, event.deletion_blockers);
   const deleteEventTooltip = computeSuperadminTooltip(
     isSa,
     !event.is_deletable,
-    "This event has data and cannot be deleted",
+    deleteEventDescription,
   );
   const archiveDialogCopy = getArchiveDialogCopy(archiveMode);
 
@@ -953,18 +1418,43 @@ export function EventSettingsPage() {
               </div>
             </div>
 
-            <div className="settings-field-group event-settings-timezone">
-              <label className="at-label" htmlFor="event-timezone">
-                Event timezone
-              </label>
-              <TimezoneSelect
-                id="event-timezone"
-                compact
-                value={form.timezone}
-                onChange={(tz) => setForm({ ...form, timezone: tz })}
-                disabled={isArchived || saving}
-              />
-              <span className="at-hint">All check-in times and reports use this timezone.</span>
+            <div className="settings-event-schedule">
+              <div className="settings-event-schedule__hours">
+                <div className="settings-field-row">
+                  <div className="settings-field-group">
+                    <TimeInput
+                      label="Event hours (start)"
+                      value={form.eventHoursStart}
+                      disabled={isArchived || saving}
+                      onChange={(value) => setForm({ ...form, eventHoursStart: value })}
+                    />
+                  </div>
+                  <div className="settings-field-group">
+                    <TimeInput
+                      label="Event hours (end)"
+                      value={form.eventHoursEnd}
+                      disabled={isArchived || saving}
+                      onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
+                      pickerAlign="end"
+                    />
+                  </div>
+                </div>
+                <span className="at-hint">Optional. Shown on tickets and wallet passes as a time range.</span>
+              </div>
+
+              <div className="settings-field-group event-settings-timezone">
+                <label className="at-label" htmlFor="event-timezone">
+                  Event timezone
+                </label>
+                <TimezoneSelect
+                  id="event-timezone"
+                  compact
+                  value={form.timezone}
+                  onChange={(tz) => setForm({ ...form, timezone: tz })}
+                  disabled={isArchived || saving}
+                />
+                <span className="at-hint">All check-in times and reports use this timezone.</span>
+              </div>
             </div>
 
             <div className="settings-field-group slug-field">
@@ -1067,17 +1557,7 @@ export function EventSettingsPage() {
           )}
         </Card>
 
-        {isSa ? (
-          <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
-        ) : (
-          <Card title="Image assets" className="event-settings-card">
-            <EmptyState
-              icon={<i className="ti ti-photo" aria-hidden="true" />}
-              title="Superadmin only"
-              description="Uploading and managing named branding images for this event's email templates is restricted to superadmins."
-            />
-          </Card>
-        )}
+        <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
 
         {!isArchived && (
           <SettingsFooter
@@ -1148,13 +1628,253 @@ export function EventSettingsPage() {
         </EventSettingsTabPanel>
       )}
 
-      <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
-        <EmptyState
-          icon={<i className="ti ti-wallet" aria-hidden="true" />}
-          title="Wallet passes are on the roadmap"
-          description="Attendees will be able to add their ticket to Apple Wallet or Google Wallet. This isn't built yet."
-        />
-      </EventSettingsTabPanel>
+      {isSa && (
+        <EventSettingsTabPanel tab="wallet" activeTab={tab} visited={visitedTabs} label="Wallet">
+          <Card
+            title={<HintLabel hint={WALLET_CARD_HINT}>Wallet</HintLabel>}
+            className="event-settings-card"
+            actions={
+              <Switch
+                id="event-wallet-enabled"
+                label={form.walletEnabled ? "On" : "Off"}
+                checked={form.walletEnabled}
+                disabled={isArchived || saving}
+                onChange={(e) => setForm({ ...form, walletEnabled: e.target.checked })}
+              />
+            }
+          >
+            <div className="settings-card-stack">
+              <p className="settings-card-intro">{WALLET_CARD_INTRO}</p>
+              <div className="mail-transport-section">
+                <div className="mail-field-row">
+                  <div className="at-field">
+                    <span className="at-label">
+                      <HintLabel hint={WALLET_PROVIDER_HINT}>Provider</HintLabel>
+                    </span>
+                    <div className="external-provider-and-test">
+                      <SearchableSelect
+                        id="event-wallet-provider"
+                        label="Provider"
+                        placeholder="Select provider…"
+                        searchPlaceholder="Search providers…"
+                        emptyLabel="No providers found"
+                        showLabel={false}
+                        value="passcreator"
+                        options={[{ id: "passcreator", label: "PassCreator" }]}
+                        disabled
+                        onChange={() => {}}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={
+                          isArchived || walletTesting || saving || !form.walletTemplateId.trim()
+                        }
+                        onClick={() => void handleTestWallet()}
+                        icon={<i className="ti ti-plug" aria-hidden="true" />}
+                      >
+                        {walletTesting ? "Testing…" : "Test connection"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <SecretFieldRow
+                  id="event-wallet-api-key"
+                  label="API key"
+                  hint={WALLET_API_KEY_HINT}
+                  field={{
+                    set: event?.wallet_api_key?.configured ?? false,
+                    masked: event?.wallet_api_key?.configured ? "••••" : null,
+                    source: "db",
+                    locked: false,
+                  }}
+                  edit={form.walletApiKeyEdit}
+                  disabled={isArchived || saving}
+                  onReplace={() =>
+                    setForm({ ...form, walletApiKeyEdit: { mode: "replace", value: "" } })
+                  }
+                  onClear={() => setForm({ ...form, walletApiKeyEdit: { mode: "clear", value: "" } })}
+                  onValueChange={(value) =>
+                    setForm({ ...form, walletApiKeyEdit: { mode: "replace", value } })
+                  }
+                  onCancel={() => setForm({ ...form, walletApiKeyEdit: { mode: "idle", value: "" } })}
+                />
+                <Input
+                  id="event-wallet-template-id"
+                  label="Template ID"
+                  value={form.walletTemplateId}
+                  disabled={isArchived || saving}
+                  placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+                  hint={WALLET_TEMPLATE_HINT}
+                  {...NO_AUTOFILL_PROPS}
+                  onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
+                />
+              </div>
+              <div className="smtp-connection-tls-pair">
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <span className="wallet-platform-row__icon">
+                    <i className="ti ti-brand-apple" aria-hidden="true" />
+                  </span>
+                  <div className="settings-row__text">
+                    <strong>Apple Wallet</strong>
+                    <p>Shows the Add to Apple Wallet button on this event's tickets.</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-apple-enabled"
+                    aria-label="Apple Wallet"
+                    checked={form.walletAppleEnabled}
+                    disabled={isArchived || saving}
+                    onChange={(e) => setForm({ ...form, walletAppleEnabled: e.target.checked })}
+                  />
+                </div>
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <span className="wallet-platform-row__icon">
+                    <i className="ti ti-brand-google" aria-hidden="true" />
+                  </span>
+                  <div className="settings-row__text">
+                    <strong>Google Wallet</strong>
+                    <p>Shows the Add to Google Wallet button on this event's tickets.</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-google-enabled"
+                    aria-label="Google Wallet"
+                    checked={form.walletGoogleEnabled}
+                    disabled={isArchived || saving}
+                    onChange={(e) => setForm({ ...form, walletGoogleEnabled: e.target.checked })}
+                  />
+                </div>
+              </div>
+              <div className="wallet-field-mapping">
+                <div className="settings-row wallet-field-mapping__header">
+                  <div className="settings-row__text">
+                    <strong>Field mapping</strong>
+                    <p>{WALLET_FIELD_MAPPING_HEADER_DESC}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={isArchived || saving}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        walletFieldMapping: [
+                          ...form.walletFieldMapping,
+                          { id: crypto.randomUUID(), key: "", value: "" },
+                        ],
+                      })
+                    }
+                  >
+                    Add field
+                  </Button>
+                </div>
+                {form.walletFieldMapping.length === 0 && (
+                  <Notice variant="warning">{WALLET_FIELD_MAPPING_EMPTY_NOTICE}</Notice>
+                )}
+                {form.walletFieldMapping.length > 0 &&
+                  sortWalletFieldMappingByCategory(form.walletFieldMapping).map((row) => {
+                    // Options already picked by a *different* row are excluded, not just
+                    // visually flagged - two rows both sending the same source value under
+                    // different PassCreator keys is never intentional and only invites the kind
+                    // of mismatched-row confusion this field mapping list has already caused.
+                    const usedByOtherRows = new Set(
+                      form.walletFieldMapping.filter((r) => r.id !== row.id).map((r) => r.value),
+                    );
+                    const availableOptions = WALLET_PLACEHOLDER_OPTIONS.filter(
+                      (o) => o.id === row.value || !usedByOtherRows.has(o.id),
+                    );
+                    const selectedOption = WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value);
+                    const hintPreview = selectedOption
+                      ? computeWalletPlaceholderPreview(selectedOption.id, form, walletLocationPreview)
+                      : undefined;
+                    return (
+                    <div className="wallet-field-mapping__row" key={row.id}>
+                      <SearchableSelect
+                        id={`event-wallet-field-mapping-${row.id}`}
+                        label="Value"
+                        placeholder="Select value…"
+                        searchPlaceholder="Search values…"
+                        emptyLabel="No values found"
+                        showLabel={false}
+                        value={row.value}
+                        options={availableOptions}
+                        disabled={isArchived || saving}
+                        onChange={(value) =>
+                          setForm({
+                            ...form,
+                            walletFieldMapping: form.walletFieldMapping.map((r) =>
+                              r.id === row.id ? { ...r, value } : r,
+                            ),
+                          })
+                        }
+                      />
+                      <Input
+                        id={`event-wallet-field-mapping-key-${row.id}`}
+                        name={`event-wallet-field-mapping-key-${row.id}`}
+                        aria-label="PassCreator field key"
+                        value={row.key}
+                        disabled={isArchived || saving}
+                        placeholder="PassCreator field key"
+                        {...NO_AUTOFILL_PROPS}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            walletFieldMapping: form.walletFieldMapping.map((r) =>
+                              r.id === row.id ? { ...r, key: e.target.value } : r,
+                            ),
+                          })
+                        }
+                      />
+                      <Tooltip
+                        content={hintPreview}
+                        className="at-btn at-btn--secondary wallet-field-mapping__hint"
+                      >
+                        {selectedOption ? (
+                          <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
+                        ) : (
+                          <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
+                        )}
+                      </Tooltip>
+                      <Button
+                        type="button"
+                        id={`event-wallet-field-mapping-remove-${row.id}`}
+                        name={`event-wallet-field-mapping-remove-${row.id}`}
+                        variant="secondary"
+                        disabled={isArchived || saving}
+                        aria-label="Remove field"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
+                          })
+                        }
+                        icon={<i className="ti ti-trash" aria-hidden="true" />}
+                      />
+                    </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </Card>
+          {!isArchived && (
+            <SettingsFooter
+              validationErrors={computeWalletFieldMappingErrors(form.walletFieldMapping)}
+              validationErrorsRef={basicValidationErrorsRef}
+              hasUnsavedChanges={dirty}
+              saving={saving}
+              onReset={handleBasicReset}
+              onSave={() => void handleSave()}
+            />
+          )}
+          <WalletPushHistoryCard
+            history={walletPushHistory}
+            error={walletPushHistoryError}
+            eventTimezone={form.timezone}
+            onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
+            showLoading={showWalletPushHistoryLoading}
+          />
+        </EventSettingsTabPanel>
+      )}
 
       {isSa && (
         <EventSettingsTabPanel
@@ -1165,8 +1885,8 @@ export function EventSettingsPage() {
         >
           <EmptyState
             icon={<i className="ti ti-plug-connected" aria-hidden="true" />}
-            title="Inbound API tokens are on the roadmap"
-            description="Each event will get its own API token for automatic attendee imports and attendance responses (Ingest/RSVP). This is separate from Organisation Settings → External services (maps, weather). Not built yet - superadmin-only."
+            title="Event API connections are on the roadmap"
+            description="Connect external systems to push attendee data into this event automatically."
           />
         </EventSettingsTabPanel>
       )}
@@ -1258,8 +1978,8 @@ export function EventSettingsPage() {
             <div className="danger-zone__info">
               <div className="danger-zone__title">Revoke all Wallet passes</div>
               <p className="danger-zone__desc">
-                Apple and Google Wallet passes aren&apos;t built yet - planned for a future
-                release.
+                Bulk revoke isn&apos;t built yet - planned for a future release. Attendees can
+                still add their ticket to Apple or Google Wallet from the ticket page.
               </p>
             </div>
             <ArchivedGuard event={null} reasonId="wallet-revoke-reason" disabled tooltip="Not built yet">
@@ -1303,7 +2023,7 @@ export function EventSettingsPage() {
           <div className="danger-zone__item">
             <div className="danger-zone__info">
               <div className="danger-zone__title">Delete event</div>
-              <p className="danger-zone__desc">{describeDeleteEvent(event.is_deletable)}</p>
+              <p className="danger-zone__desc">{deleteEventDescription}</p>
             </div>
             <ArchivedGuard
               event={null}

@@ -388,6 +388,7 @@ describe("IdentityProvidersPanel", () => {
       enabled: true,
       login_button_label: null,
       mappings: [],
+      redirect_uri: "https://tickets.example.com/api/auth/oidc/p1/callback",
     });
 
     renderPanelAt(`${IDENTITY_PROVIDERS_ROUTE}/p1`);

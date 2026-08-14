@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@admitto/db";
 import { describeMailConfigForOrg } from "@admitto/mailer-config";
-import { sanitizePreferredLocale } from "@admitto/shared";
+import { sanitizePreferredLocale, sanitizePreferredTimeFormat } from "@admitto/shared";
 import { resolveInstanceOrganizationId } from "../admin/instance-org.js";
 import {
   SESSION_COOKIE_NAME,
@@ -38,6 +38,7 @@ import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
+import { resolveClientTimezone } from "../admin/admin-helpers.js";
 
 const AUTH_ERROR = { error: "unauthorized" } as const;
 
@@ -141,6 +142,7 @@ export async function handleLogin(
     ip: resolveClientIp(c),
     userAgent: c.req.header("user-agent"),
     trustedDeviceToken,
+    timezone: resolveClientTimezone(c),
   });
 
   if (!result.ok) {
@@ -219,6 +221,7 @@ export async function handleMe(
       email: true,
       display_name: true,
       preferred_locale: true,
+      preferred_time_format: true,
       is_active: true,
       created_at: true,
     },
@@ -257,6 +260,7 @@ export async function handleMe(
     user: {
       ...user,
       preferred_locale: sanitizePreferredLocale(user.preferred_locale),
+      preferred_time_format: sanitizePreferredTimeFormat(user.preferred_time_format),
     },
     assignments,
     device_label,

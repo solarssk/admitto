@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { FOCUSABLE_SELECTOR } from "./focusable.js";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import { attachFixedOverlayLifecycle } from "../utils/fixed-overlay-lifecycle.js";
+import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
 
 const VIEWPORT_PAD_PX = 8;
 
@@ -113,21 +113,42 @@ export function useDropdownMenu<
     /* v8 ignore if */
     if (!trigger || !panel) return;
 
+    // Which side the panel opens on is re-decided only when the *available space* around the
+    // trigger actually changes (a real window/viewport resize, e.g. a mobile keyboard opening) -
+    // not every time the panel's own content changes size. Without this lock, SearchableSelect's
+    // list shrinking as the user types (e.g. a search narrowing to one result) could flip a panel
+    // that opened upward - because the *full* option list didn't fit below - down to below the
+    // trigger the instant the narrower result count suddenly does fit there, yanking the panel
+    // out from under the user mid-keystroke (PO report).
+    let lastSpaceBelow: number | undefined;
+    let lastSpaceAbove: number | undefined;
+    let lockedAbove = false;
+
     const updatePlacement = () => {
       const triggerRect = trigger.getBoundingClientRect();
       const panelWidth = matchTriggerWidth
         ? Math.max(minWidth ?? 0, triggerRect.width)
         : panel.getBoundingClientRect().width;
-      const panelHeight = panel.getBoundingClientRect().height;
-      const spaceBelow = window.innerHeight - triggerRect.bottom;
-      const spaceAbove = triggerRect.top;
+      // `scrollHeight` stays natural after this effect applies a maxHeight, while the bounding
+      // rect covers test environments and panels whose content has no scroll container.
+      const panelHeight = Math.max(panel.scrollHeight, panel.getBoundingClientRect().height);
+      const viewport = getFixedOverlayViewport();
+      const spaceBelow = viewport.bottom - triggerRect.bottom;
+      const spaceAbove = triggerRect.top - viewport.top;
+      const spaceUnchanged = spaceBelow === lastSpaceBelow && spaceAbove === lastSpaceAbove;
       // Only flip when upward genuinely has more room - never flip into an even tighter fit.
-      const above = panelHeight > spaceBelow && spaceAbove > spaceBelow;
-      const top = above ? triggerRect.top - panelHeight - gap : triggerRect.bottom + gap;
+      const above = spaceUnchanged ? lockedAbove : panelHeight > spaceBelow && spaceAbove > spaceBelow;
+      lockedAbove = above;
+      lastSpaceBelow = spaceBelow;
+      lastSpaceAbove = spaceAbove;
+      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - gap - VIEWPORT_PAD_PX);
+      const maxHeight = panelHeight > available ? available : undefined;
+      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
+      const top = above ? triggerRect.top - usedHeight - gap : triggerRect.bottom + gap;
 
       let left = align === "end" ? triggerRect.right - panelWidth : triggerRect.left;
-      left = Math.min(left, window.innerWidth - VIEWPORT_PAD_PX - panelWidth);
-      left = Math.max(left, VIEWPORT_PAD_PX);
+      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
 
       setOpenUpward(above);
       setPanelStyle({
@@ -135,6 +156,8 @@ export function useDropdownMenu<
         top,
         left,
         width: matchTriggerWidth ? panelWidth : undefined,
+        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
+        overflowY: maxHeight !== undefined ? "auto" : undefined,
         visibility: "visible",
       });
     };
