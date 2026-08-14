@@ -276,6 +276,8 @@ describe("CfAccessEditor (slice 4)", () => {
     try {
       renderEditorAt();
       await screen.findByDisplayValue("https://t");
+      // Save is disabled on a clean load - dirty the field so it becomes clickable.
+      fireEvent.change(screen.getByLabelText("Cloudflare team URL"), { target: { value: "https://t2" } });
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -381,6 +383,8 @@ describe("CfAccessEditor (slice 4)", () => {
     mockUpdate.mockRejectedValueOnce(new ApiError(400, "Invalid configuration"));
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Cloudflare team URL"), { target: { value: "https://t2" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Invalid configuration")).toBeTruthy();
   });
@@ -422,6 +426,8 @@ describe("CfAccessEditor (slice 4)", () => {
     mockUpdate.mockRejectedValueOnce(new Error("network down"));
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Cloudflare team URL"), { target: { value: "https://t2" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Failed to save settings.")).toBeTruthy();
   });

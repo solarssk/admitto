@@ -459,6 +459,7 @@ export function DeliveryLogTab({
   return (
     <Card
       padded={false}
+      className="communication-delivery-header"
       title={<HintLabel hint={DELIVERY_LOG_HINT}>Delivery log</HintLabel>}
       actions={
         <>

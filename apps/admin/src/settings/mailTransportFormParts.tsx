@@ -1253,10 +1253,10 @@ export function SettingsFooter({
         )}
       </div>
       <div className="settings-footer__buttons">
-        <Button type="button" variant="secondary" disabled={saving} onClick={onReset}>
+        <Button type="button" variant="secondary" disabled={saving || !hasUnsavedChanges} onClick={onReset}>
           Reset
         </Button>
-        <Button type="button" variant="primary" disabled={saving} onClick={onSave}>
+        <Button type="button" variant="primary" disabled={saving || !hasUnsavedChanges} onClick={onSave}>
           {saveLabel}
         </Button>
       </div>

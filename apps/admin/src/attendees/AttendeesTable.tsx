@@ -289,9 +289,18 @@ function AttendeeCard({
         </div>
       )}
       <div className="attendees-card__badges">
-        <PassStatusBadge status={row.status} />
-        <RsvpStatusBadge status={row.rsvp_status} />
-        <MailStatusBadge status={row.last_mail_status} />
+        <span className="attendees-card__badge-item">
+          <span className="attendees-card__badge-label">Pass</span>
+          <PassStatusBadge status={row.status} />
+        </span>
+        <span className="attendees-card__badge-item">
+          <span className="attendees-card__badge-label">Attendance</span>
+          <RsvpStatusBadge status={row.rsvp_status} />
+        </span>
+        <span className="attendees-card__badge-item">
+          <span className="attendees-card__badge-label">Mail</span>
+          <MailStatusBadge status={row.last_mail_status} />
+        </span>
       </div>
       <div className="attendees-card__foot">
         {row.admitted_at ? (
