@@ -1,6 +1,6 @@
 # Event Items and Check-in Behaviour
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers |
 | **Required role** | Organisation Admin |

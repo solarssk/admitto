@@ -1,6 +1,6 @@
 # Custom Attendee Fields
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers |
 | **Required role** | Organisation Admin |

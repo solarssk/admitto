@@ -1,6 +1,6 @@
 # Superadmin Quick Start
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Superadmins |
 | **Required role** | Superadmin |

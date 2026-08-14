@@ -1,6 +1,6 @@
 # Reports and Archiving
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers and Superadmins |
 | **Required role** | Organisation Admin for reports; Superadmin for archiving |

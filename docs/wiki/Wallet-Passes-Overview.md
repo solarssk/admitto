@@ -1,6 +1,6 @@
 # Wallet Passes Overview
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Superadmins (configuration), all staff (attendee actions) |
 | **Required role** | Superadmin for Event Settings → Wallet; Staff Admin or higher for attendee wallet actions |

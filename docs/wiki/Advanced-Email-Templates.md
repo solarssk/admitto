@@ -1,6 +1,6 @@
 # Advanced Email Templates
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Technical Event Manager |
 | **Required role** | Organisation Admin |

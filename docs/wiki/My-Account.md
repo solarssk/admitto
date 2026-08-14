@@ -1,6 +1,6 @@
 # My Account
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | All staff (Operators, Organisation Admins, Superadmins) |
 | **Required role** | Any signed-in staff account |

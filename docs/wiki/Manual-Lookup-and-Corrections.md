@@ -1,6 +1,6 @@
 # Manual Lookup and Corrections
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Check-in Operators and Event Managers |
 | **Required role** | Check-in Operator for lookup; Organisation Admin for administrative corrections |

@@ -1,6 +1,6 @@
 # Identity and SSO
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Superadmins |
 | **Required role** | Superadmin |

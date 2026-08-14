@@ -1,6 +1,6 @@
 # Roles and Permissions
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers and Superadmins |
 | **Required role** | Organisation Admin or Superadmin |

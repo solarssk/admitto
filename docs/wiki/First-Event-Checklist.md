@@ -1,6 +1,6 @@
 # First Event Checklist
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Manager |
 | **Required role** | Organisation Admin |

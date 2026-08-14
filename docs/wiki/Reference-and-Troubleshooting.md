@@ -1,6 +1,6 @@
 # Reference Hub
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | All staff |
 | **Required role** | Any staff role |

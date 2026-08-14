@@ -1,6 +1,6 @@
 # Importing Attendees
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers |
 | **Required role** | Organisation Admin |

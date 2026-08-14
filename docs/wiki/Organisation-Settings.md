@@ -1,6 +1,6 @@
 # Organisation Settings
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Superadmins |
 | **Required role** | Superadmin |

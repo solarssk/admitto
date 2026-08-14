@@ -1,6 +1,6 @@
 # Mail Delivery Administration
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Superadmins |
 | **Required role** | Superadmin for organisation transport; Superadmin for event Mailing settings |

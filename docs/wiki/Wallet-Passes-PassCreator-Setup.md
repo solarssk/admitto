@@ -1,6 +1,6 @@
 # Wallet Passes - PassCreator Template Setup
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Superadmins |
 | **Required role** | Superadmin |

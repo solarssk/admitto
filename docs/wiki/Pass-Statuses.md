@@ -1,6 +1,6 @@
 # Pass Statuses
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers and Check-in Operators |
 | **Required role** | Organisation Admin for changes; Operator for check-in results |

@@ -1,6 +1,6 @@
 # Scanning Tickets and Results
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Check-in Operators |
 | **Required role** | Check-in Operator for the event |

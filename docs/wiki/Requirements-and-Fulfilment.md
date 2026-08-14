@@ -1,6 +1,6 @@
 # Requirements and Fulfilment
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers |
 | **Required role** | Organisation Admin |

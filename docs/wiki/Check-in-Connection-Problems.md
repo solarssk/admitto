@@ -1,6 +1,6 @@
 # Check-in Connection Problems
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Check-in Operators and Event Managers |
 | **Required role** | Check-in Operator for the event |

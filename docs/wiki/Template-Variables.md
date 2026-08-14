@@ -1,6 +1,6 @@
 # Template Variables
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers and Technical Event Managers |
 | **Required role** | Organisation Admin |

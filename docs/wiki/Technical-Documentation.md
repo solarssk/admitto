@@ -1,6 +1,6 @@
 # Technical Documentation
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Maintainers and Technical Superadmins |
 | **Required role** | Repository access as required by the linked document |

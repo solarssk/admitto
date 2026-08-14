@@ -1,6 +1,6 @@
 # Logs and Audit
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Superadmins |
 | **Required role** | Superadmin |

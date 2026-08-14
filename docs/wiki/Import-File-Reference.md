@@ -1,6 +1,6 @@
 # Import File Reference
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers |
 | **Required role** | Organisation Admin |

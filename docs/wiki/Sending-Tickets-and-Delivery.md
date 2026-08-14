@@ -1,6 +1,6 @@
 # Sending Messages and Delivery
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Event Managers |
 | **Required role** | Organisation Admin |

@@ -1,6 +1,6 @@
 # Operator Quick Start
 
-| | |
+| Field | Value |
 |---|---|
 | **Audience** | Check-in Operators |
 | **Required role** | Operator for the event |
