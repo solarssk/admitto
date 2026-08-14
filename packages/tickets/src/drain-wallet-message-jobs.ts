@@ -7,15 +7,9 @@
  * concurrency to manage here.
  */
 import type { PrismaClient } from "@admitto/db";
-import {
-  DEFAULT_WORKER_HEARTBEAT_STALE_MS,
-  isWorkerHeartbeatStale,
-  positiveMsOr,
-  staleAdminJobOrClauses,
-} from "@admitto/db";
-import { resolveWalletProvider, type WalletPassProvider } from "@admitto/wallet";
 import { claimNextAdminJob } from "./claim-admin-job.js";
-import { parseWalletFieldMapping } from "./resolve.js";
+import { reclaimStaleAdminJobsByType } from "./reclaim-stale-admin-jobs-by-type.js";
+import { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 import { loadWalletMessageTargets, sendWalletMessage } from "./send-wallet-message.js";
 
 /** Same 30-minute budget as wallet_push - a large send is expected to take a while, bounded by
@@ -54,25 +48,6 @@ function readRequest(job: { result_json: unknown }): WalletMessageRequest | null
   if (!Array.isArray(req.attendeeIds) || !req.attendeeIds.every((id) => typeof id === "string")) return null;
   if (typeof req.text !== "string" || !req.text.trim()) return null;
   return { eventId: req.eventId, attendeeIds: req.attendeeIds as string[], text: req.text };
-}
-
-async function resolveEventWalletProvider(db: PrismaClient, eventId: string): Promise<WalletPassProvider | null> {
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: {
-      wallet_enabled: true,
-      wallet_template_id: true,
-      wallet_api_key_enc: true,
-      wallet_field_mapping: true,
-    },
-  });
-  if (!event) return null;
-  return resolveWalletProvider({
-    walletEnabled: event.wallet_enabled,
-    walletTemplateId: event.wallet_template_id,
-    walletApiKeyEnc: event.wallet_api_key_enc,
-    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
-  });
 }
 
 async function markWalletMessageFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
@@ -153,28 +128,13 @@ export async function reclaimStaleWalletMessageJobs(
   db: PrismaClient,
   options: { olderThanMs?: number; heartbeatStaleMs?: number; now?: Date } = {},
 ): Promise<{ reclaimed: number }> {
-  const olderThanMs = positiveMsOr(options.olderThanMs, DEFAULT_WALLET_MESSAGE_JOB_STALE_RUNNING_MS);
-  const heartbeatStaleMs = positiveMsOr(options.heartbeatStaleMs, DEFAULT_WORKER_HEARTBEAT_STALE_MS);
-  const now = options.now ?? new Date();
-  const cutoff = new Date(now.getTime() - olderThanMs);
-  const reclaimPending = await isWorkerHeartbeatStale(db, now, heartbeatStaleMs);
-
-  const stale = await db.adminJob.findMany({
-    where: { type: "wallet_message", OR: staleAdminJobOrClauses(cutoff, reclaimPending) },
-    select: { id: true, status: true },
-    orderBy: { created_at: "asc" },
-  });
-
-  let reclaimed = 0;
-  for (const job of stale) {
-    const error = job.status === "pending" ? STALE_WALLET_MESSAGE_PENDING_ERROR : STALE_WALLET_MESSAGE_JOB_ERROR;
-    const updated = await db.adminJob.updateMany({
-      where: { id: job.id, status: job.status },
-      data: { status: "failed", error, finished_at: now },
-    });
-    if (updated.count > 0) reclaimed += 1;
-  }
-  return { reclaimed };
+  return reclaimStaleAdminJobsByType(
+    db,
+    "wallet_message",
+    { running: STALE_WALLET_MESSAGE_JOB_ERROR, pending: STALE_WALLET_MESSAGE_PENDING_ERROR },
+    DEFAULT_WALLET_MESSAGE_JOB_STALE_RUNNING_MS,
+    options,
+  );
 }
 
 export async function drainWalletMessageJobs(
