@@ -25,6 +25,7 @@ import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
+import "./attendees.css";
 
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
 function AttendeesTableSkeleton() {

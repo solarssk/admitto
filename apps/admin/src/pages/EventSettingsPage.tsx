@@ -564,13 +564,19 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
  * create/update/delete, without touching `form`/`original` - those hold another tab's possibly
  * unsaved draft, and `loadEventSettings`'s full reload would silently discard it. Best-effort:
  * a failed background refresh here is a lesser problem than a toast unrelated to what the
- * operator just did in the Ticket types card. */
+ * operator just did in the Ticket types card. `currentEventIdRef` guards against this request
+ * resolving after the operator has already navigated to a different event's settings (the page
+ * component isn't remounted on an `:eventId` param change alone) - applying a stale event's
+ * snapshot would otherwise mislabel this event's deletion status/blockers. */
 async function refreshEventDeletionStatus(
   eventId: string,
+  currentEventIdRef: RefObject<string | undefined>,
   setEvent: (event: EventSettingsDto) => void,
 ): Promise<void> {
   try {
-    setEvent(await fetchEventSettings(eventId));
+    const data = await fetchEventSettings(eventId);
+    if (currentEventIdRef.current !== eventId) return;
+    setEvent(data);
   } catch {
     // Best-effort - see comment above.
   }
@@ -1110,6 +1116,12 @@ export function EventSettingsPage() {
     await loadEventSettings({ eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
+  // Tracks the currently active :eventId for refreshEventDeletionStatus's staleness guard -
+  // read during render (not an effect) so it's already current by the time an in-flight
+  // request from a previous eventId resolves.
+  const currentEventIdRef = useRef(eventId);
+  currentEventIdRef.current = eventId;
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -1547,7 +1559,7 @@ export function EventSettingsPage() {
             // Every create/update/delete here can flip is_deletable/deletion_blockers (e.g.
             // clearing the last non-standard type) - keep the Danger Zone's Delete button
             // accurate without reloading the whole page (see refreshEventDeletionStatus).
-            void refreshEventDeletionStatus(eventId, setEvent);
+            void refreshEventDeletionStatus(eventId, currentEventIdRef, setEvent);
           }}
         />
       </EventSettingsTabPanel>
