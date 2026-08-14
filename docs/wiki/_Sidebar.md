@@ -63,6 +63,7 @@
 
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Identity and SSO](Identity-and-SSO)
+- [Wallet Passes Overview](Wallet-Passes-Overview)
 
 **Reference**
 
