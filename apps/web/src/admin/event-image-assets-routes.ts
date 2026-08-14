@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { ALLOWED_PLACEHOLDERS } from "@admitto/mail-templates";
+import { ALLOWED_PLACEHOLDERS, logoCropFromDb, parseLogoCrop, type LogoCropMeta } from "@admitto/mail-templates";
 import { writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -54,6 +54,10 @@ export type EventImageAssetDto = {
   token: string;
   filename: string;
   url: string;
+  /** Full pre-crop file for re-Edit; null for assets created before this field existed. */
+  original_url: string | null;
+  /** Last crop framing applied - null if there's nothing to restore (e.g. no original stored). */
+  crop: LogoCropMeta | null;
   size_bytes: number;
   mime_type: string;
   created_at: string;
@@ -64,6 +68,8 @@ function serializeImageAsset(row: {
   token: string;
   filename: string;
   url: string;
+  original_url: string | null;
+  crop: unknown;
   size_bytes: number;
   mime_type: string;
   created_at: Date;
@@ -73,6 +79,8 @@ function serializeImageAsset(row: {
     token: row.token,
     filename: row.filename,
     url: row.url,
+    original_url: row.original_url,
+    crop: logoCropFromDb(row.crop),
     size_bytes: row.size_bytes,
     mime_type: row.mime_type,
     created_at: row.created_at.toISOString(),
@@ -96,6 +104,8 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
       token: true,
       filename: true,
       url: true,
+      original_url: true,
+      crop: true,
       size_bytes: true,
       mime_type: true,
       created_at: true,
@@ -113,8 +123,40 @@ export async function handleListEventImageAssets(c: Context, db: PrismaClient): 
  * with guardArchivedEvent).
  */
 type CreateAssetValidation =
-  | { ok: true; fileField: File; displayName: string; tokenBase: string }
+  | {
+      ok: true;
+      fileField: File;
+      displayName: string;
+      tokenBase: string;
+      originalUrl: string | null;
+      crop: LogoCropMeta | null;
+    }
   | { ok: false; response: Response };
+
+/** Same field length as `logo_original_url` (event-settings-routes.ts) - just a same-origin
+ * `/uploads/…` path, never user-visible. */
+const ORIGINAL_URL_MAX = 2000;
+
+/** Parses the optional pre-crop original URL + crop framing sent alongside `file`/`name` at
+ * create time (the admin UI always crops before submitting, but both are optional so a create
+ * without a crop step - if one is ever added - doesn't break). Returns null for either field
+ * when absent; throws a short machine-ish message on a malformed `crop` payload. */
+function parseOriginalAndCrop(body: Record<string, string | File>): {
+  originalUrl: string | null;
+  crop: LogoCropMeta | null;
+} {
+  const originalUrlField = body.original_url;
+  const originalUrl =
+    typeof originalUrlField === "string" && originalUrlField.trim()
+      ? originalUrlField.trim().slice(0, ORIGINAL_URL_MAX)
+      : null;
+  const cropField = body.crop;
+  const crop =
+    typeof cropField === "string" && cropField.trim()
+      ? parseLogoCrop(JSON.parse(cropField))
+      : null;
+  return { originalUrl, crop };
+}
 
 const DISPLAY_NAME_MAX = 80;
 
@@ -194,6 +236,14 @@ async function validateCreateAssetRequest(
     return { ok: false, response: c.json({ error: "invalid_name" }, 400) };
   }
 
+  let originalUrl: string | null;
+  let crop: LogoCropMeta | null;
+  try {
+    ({ originalUrl, crop } = parseOriginalAndCrop(body));
+  } catch {
+    return { ok: false, response: c.json({ error: "invalid_crop" }, 400) };
+  }
+
   // Fast-path rejection only (avoids writing a file to disk when the library is obviously
   // already full); handleCreateEventImageAsset's transaction rechecks this for real.
   const count = await db.eventImageAsset.count({ where: { event_id: eventId } });
@@ -204,7 +254,7 @@ async function validateCreateAssetRequest(
     };
   }
 
-  return { ok: true, fileField, displayName, tokenBase };
+  return { ok: true, fileField, displayName, tokenBase, originalUrl, crop };
 }
 
 export async function handleCreateEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
@@ -223,7 +273,7 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
 
   const validation = await validateCreateAssetRequest(c, db, eventId);
   if (!validation.ok) return validation.response;
-  const { fileField, displayName, tokenBase } = validation;
+  const { fileField, displayName, tokenBase, originalUrl, crop } = validation;
 
   // TODO(multi-org): same single-tenant assumption as handlePostEventBrandingUpload.
   const orgId = "default";
@@ -257,6 +307,8 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
           token,
           filename: displayName,
           url: uploaded.url,
+          original_url: originalUrl,
+          crop: crop ?? Prisma.JsonNull,
           size_bytes: uploaded.sizeBytes,
           mime_type: uploaded.mimeType,
         },
@@ -265,6 +317,8 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
           token: true,
           filename: true,
           url: true,
+          original_url: true,
+          crop: true,
           size_bytes: true,
           mime_type: true,
           created_at: true,
@@ -301,10 +355,99 @@ export async function handleCreateEventImageAsset(c: Context, db: PrismaClient):
 async function loadImageAssetInEvent(db: PrismaClient, eventId: string, assetId: string) {
   const row = await db.eventImageAsset.findUnique({
     where: { id: assetId },
-    select: { id: true, event_id: true, token: true, url: true },
+    select: { id: true, event_id: true, token: true, url: true, original_url: true },
   });
   if (row?.event_id !== eventId) return null;
   return row;
+}
+
+/**
+ * PATCH /api/admin/events/:eventId/image-assets/:assetId - multipart re-crop of an existing
+ * asset (fields: `file` the newly-cropped image, optional `crop` framing). Re-crops the same
+ * pre-crop original the asset already has - `token`/`filename`/`original_url` never change here;
+ * to use a different source image, delete and re-add instead. Event managers (org admin /
+ * superadmin). Archive guard applied by the caller (app.ts wraps with guardArchivedEvent).
+ */
+export async function handleUpdateEventImageAsset(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const assetId = c.req.param("assetId");
+  if (!assetId) return c.json({ error: "assetId required" }, 400);
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const existing = await loadImageAssetInEvent(db, eventId, assetId);
+  if (!existing) return c.json({ error: "forbidden" }, 403);
+
+  let body: Record<string, string | File>;
+  try {
+    body = await c.req.parseBody();
+  } catch {
+    return c.json({ error: "invalid_form_data" }, 400);
+  }
+  const fileField = body.file;
+  if (!(fileField instanceof File)) {
+    return c.json({ error: "file_required" }, 400);
+  }
+  let crop: LogoCropMeta | null;
+  try {
+    ({ crop } = parseOriginalAndCrop(body));
+  } catch {
+    return c.json({ error: "invalid_crop" }, 400);
+  }
+
+  // TODO(multi-org): same single-tenant assumption as handleCreateEventImageAsset.
+  const orgId = "default";
+
+  try {
+    const uploaded = await saveEventUpload(fileField, orgId, eventId);
+    const updated = await db.$transaction(async (tx) => {
+      await acquireEventImageAssetsLock(tx, eventId);
+      const row = await tx.eventImageAsset.update({
+        where: { id: assetId },
+        data: {
+          url: uploaded.url,
+          crop: crop ?? Prisma.JsonNull,
+          size_bytes: uploaded.sizeBytes,
+          mime_type: uploaded.mimeType,
+        },
+        select: {
+          id: true,
+          token: true,
+          filename: true,
+          url: true,
+          original_url: true,
+          crop: true,
+          size_bytes: true,
+          mime_type: true,
+          created_at: true,
+        },
+      });
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "event_image_asset_updated",
+        audit: adminAuditFromContext(c),
+        metadata: { token: row.token },
+      });
+      return row;
+    });
+    // Best-effort: the previous cropped file is now unreferenced (interim orphan cleanup, same
+    // as delete's cleanup below; full StorageAdapter GC is ADR 0008).
+    await bestEffortDeleteUploadUrl(existing.url, {
+      expectedOrgId: orgId,
+      expectedKind: "event",
+      expectedEventId: eventId,
+    });
+    return c.json(serializeImageAsset(updated));
+  } catch (err) {
+    if (err instanceof BrandingUploadError) {
+      return c.json({ error: err.code, ...err.details }, err.status as 400 | 413 | 415 | 503);
+    }
+    logger.error("handleUpdateEventImageAsset failed", { err });
+    return c.json({ error: "server error" }, 500);
+  }
 }
 
 /**
@@ -376,5 +519,12 @@ export async function handleDeleteEventImageAsset(c: Context, db: PrismaClient):
     expectedKind: "event",
     expectedEventId: eventId,
   });
+  if (existing.original_url) {
+    await bestEffortDeleteUploadUrl(existing.original_url, {
+      expectedOrgId: "default",
+      expectedKind: "event",
+      expectedEventId: eventId,
+    });
+  }
   return c.json({ ok: true });
 }

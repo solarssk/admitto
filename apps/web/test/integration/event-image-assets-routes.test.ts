@@ -490,6 +490,124 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
   });
 });
 
+function recropForm(crop?: object): FormData {
+  const fd = new FormData();
+  fd.append("file", new Blob([PNG_BYTES], { type: "image/png" }), "recrop.png");
+  if (crop) fd.append("crop", JSON.stringify(crop));
+  return fd;
+}
+
+const SAMPLE_CROP = { unit: "%", x: 5, y: 5, width: 80, height: 80, zoom: 1.2 };
+
+describe("PATCH /api/admin/events/:eventId/image-assets/:assetId", () => {
+  it("re-crops an existing asset: replaces the cropped file, keeps token/filename/original_url", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("recrop_target"),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as {
+      id: string;
+      token: string;
+      filename: string;
+      url: string;
+      original_url: string | null;
+    };
+    const oldDiskPath = join(uploadDir, created.url.slice("/uploads/".length));
+    expect(existsSync(oldDiskPath)).toBe(true);
+
+    const patchRes = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
+      {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: recropForm(SAMPLE_CROP),
+      },
+    );
+    expect(patchRes.status).toBe(200);
+    const updated = (await patchRes.json()) as {
+      id: string;
+      token: string;
+      filename: string;
+      url: string;
+      original_url: string | null;
+      crop: unknown;
+    };
+    expect(updated.id).toBe(created.id);
+    expect(updated.token).toBe(created.token);
+    expect(updated.filename).toBe(created.filename);
+    expect(updated.original_url).toBe(created.original_url);
+    expect(updated.url).not.toBe(created.url);
+    expect(updated.crop).toEqual(SAMPLE_CROP);
+
+    // The replaced cropped file is best-effort deleted; the new one exists.
+    expect(existsSync(oldDiskPath)).toBe(false);
+    const newDiskPath = join(uploadDir, updated.url.slice("/uploads/".length));
+    expect(existsSync(newDiskPath)).toBe(true);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_IA, action_type: "event_image_asset_updated" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log?.attendee_id).toBeNull();
+    expect(log?.metadata).toEqual({ token: created.token });
+  });
+
+  it("returns 400 file_required when no file is sent", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("recrop_no_file"),
+    });
+    const created = (await createRes.json()) as { id: string };
+
+    const fd = new FormData();
+    fd.append("crop", JSON.stringify(SAMPLE_CROP));
+    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("file_required");
+  });
+
+  it("returns 403 for an asset belonging to a different event", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("recrop_cross_event"),
+    });
+    const created = (await createRes.json()) as { id: string };
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_IA_LIMIT}/image-assets/${created.id}`,
+      { method: "PATCH", headers: { Cookie: superCookie, ...sameOrigin }, body: recropForm() },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a non-existent asset id", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/does-not-exist`,
+      { method: "PATCH", headers: { Cookie: superCookie, ...sameOrigin }, body: recropForm() },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 event_archived for an archived event", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_IA_ARCHIVED}/image-assets/does-not-exist`,
+      { method: "PATCH", headers: { Cookie: superCookie, ...sameOrigin }, body: recropForm() },
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("event_archived");
+  });
+});
+
 describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
   it("deletes the asset and it no longer appears in the list", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {

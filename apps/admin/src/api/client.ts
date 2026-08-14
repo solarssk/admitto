@@ -285,6 +285,20 @@ function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestIni
   };
 }
 
+/** Build a same-origin multipart PATCH request (browser sets Content-Type boundary). */
+function multipartPatchInit(formData: FormData, signal?: AbortSignal): RequestInit {
+  return {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: {
+      Origin: window.location.origin,
+      "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
+    body: formData,
+    signal,
+  };
+}
+
 /** Build multipart form fields for an attendee import upload. */
 function importFormData(file: File, overwrite: boolean): FormData {
   const fd = new FormData();
@@ -527,18 +541,44 @@ export async function fetchEventImageAssets(
   return data.items;
 }
 
-/** Upload a new named branding image asset (file + display name); server slugifies the token. */
+/** Upload a new named branding image asset (file + display name); server slugifies the token.
+ * `original` is the pre-crop file's already-uploaded `/uploads/…` URL plus the crop framing
+ * applied to produce `file` - stored so the gallery's Edit button can later re-open the crop
+ * modal on the true original instead of the already-cropped output. */
 export async function createEventImageAsset(
   eventId: string,
   file: File,
   name: string,
+  original?: { url: string; crop: LogoCropMeta },
 ): Promise<EventImageAssetDto> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("name", name);
+  if (original) {
+    fd.append("original_url", original.url);
+    fd.append("crop", JSON.stringify(original.crop));
+  }
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/image-assets`,
     multipartPostInit(fd),
+  );
+  return parseJson<EventImageAssetDto>(res);
+}
+
+/** Re-crop an already-uploaded image asset in place - `token`/`filename`/`original_url` are
+ * unchanged; only the cropped `file` and its crop framing are replaced. */
+export async function updateEventImageAsset(
+  eventId: string,
+  assetId: string,
+  file: File,
+  crop: LogoCropMeta,
+): Promise<EventImageAssetDto> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("crop", JSON.stringify(crop));
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/image-assets/${encodeURIComponent(assetId)}`,
+    multipartPatchInit(fd),
   );
   return parseJson<EventImageAssetDto>(res);
 }

@@ -13,55 +13,84 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     fetchEventImageAssets: vi.fn(),
     createEventImageAsset: vi.fn(),
+    updateEventImageAsset: vi.fn(),
     deleteEventImageAsset: vi.fn(),
     uploadEventBrandingFile: vi.fn(),
     deleteUploadedFile: vi.fn(),
   };
 });
 
-vi.mock("../../src/components/crop/CropImageModal.js", () => ({
-  CropImageModal: ({
-    open,
-    onApply,
-    onCancel,
-  }: {
-    open: boolean;
-    onApply: (
-      blob: Blob,
-      meta: { crop: { unit: "%"; x: number; y: number; width: number; height: number }; zoom: number },
-    ) => void | Promise<void>;
-    onCancel: () => void;
-  }) =>
-    open ? (
-      <div role="dialog" aria-label="Adjust image">
-        <button
-          type="button"
-          onClick={() =>
-            void onApply(new Blob(["x"], { type: "image/png" }), {
-              crop: { unit: "%", x: 4, y: 4, width: 92, height: 92 },
-              zoom: 1,
-            })
-          }
+vi.mock("../../src/components/crop/CropImageModal.js", async () => {
+  const { useState } = await import("react");
+  return {
+    // Mirrors the real modal's own async onApply handling (catches a thrown Error and shows
+    // its message inline) so a rejected onApply can be asserted on without the real component.
+    CropImageModal: ({
+      open,
+      imageSrc,
+      initialCrop,
+      initialZoom,
+      onApply,
+      onCancel,
+    }: {
+      open: boolean;
+      imageSrc: string;
+      initialCrop?: { unit: "%"; x: number; y: number; width: number; height: number };
+      initialZoom?: number;
+      onApply: (
+        blob: Blob,
+        meta: { crop: { unit: "%"; x: number; y: number; width: number; height: number }; zoom: number },
+      ) => void | Promise<void>;
+      onCancel: () => void;
+    }) => {
+      const [error, setError] = useState<string | null>(null);
+      if (!open) return null;
+      return (
+        <div
+          role="dialog"
+          aria-label="Adjust image"
+          data-image-src={imageSrc}
+          data-initial-crop={initialCrop ? JSON.stringify(initialCrop) : ""}
+          data-initial-zoom={initialZoom ?? ""}
         >
-          Apply changes
-        </button>
-        <button type="button" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    ) : null,
-}));
+          {error ? <p role="alert">{error}</p> : null}
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              Promise.resolve(
+                onApply(new Blob(["x"], { type: "image/png" }), {
+                  crop: { unit: "%", x: 4, y: 4, width: 92, height: 92 },
+                  zoom: 1,
+                }),
+              ).catch((err: unknown) => {
+                setError(err instanceof Error ? err.message : "Could not crop image.");
+              });
+            }}
+          >
+            Apply changes
+          </button>
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      );
+    },
+  };
+});
 
 import {
   createEventImageAsset,
   deleteEventImageAsset,
   deleteUploadedFile,
   fetchEventImageAssets,
+  updateEventImageAsset,
   uploadEventBrandingFile,
 } from "../../src/api/client.js";
 
 const mockFetch = vi.mocked(fetchEventImageAssets);
 const mockCreate = vi.mocked(createEventImageAsset);
+const mockUpdate = vi.mocked(updateEventImageAsset);
 const mockDelete = vi.mocked(deleteEventImageAsset);
 const mockUploadPreview = vi.mocked(uploadEventBrandingFile);
 const mockDeleteUploadedFile = vi.mocked(deleteUploadedFile);
@@ -80,6 +109,8 @@ const asset: EventImageAssetDto = {
   token: "sponsor_logo",
   filename: "sponsor.png",
   url: "/uploads/default/events/evt-1/sponsor.png",
+  original_url: null,
+  crop: null,
   size_bytes: 2048,
   mime_type: "image/png",
   created_at: "2026-01-15T00:00:00.000Z",
@@ -251,7 +282,10 @@ describe("EventImageAssetLibrary", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add image" }));
 
     await waitFor(() => {
-      expect(mockCreate).toHaveBeenCalledWith("evt-1", expect.any(File), "sponsor_logo");
+      expect(mockCreate).toHaveBeenCalledWith("evt-1", expect.any(File), "sponsor_logo", {
+        url: "/uploads/default/events/evt-1/preview.png",
+        crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 },
+      });
     });
     expect(await screen.findByText("sponsor.png")).toBeTruthy();
     expect((screen.getByLabelText("Image name") as HTMLInputElement).value).toBe("");
@@ -394,6 +428,7 @@ describe("EventImageAssetLibrary", () => {
     expect(fileInput.disabled).toBe(true);
     expect((screen.getByLabelText("Image name") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByRole("button", { name: "Add image" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Edit" }).hasAttribute("disabled")).toBe(true);
     expect(
       screen.getByRole("button", { name: "Remove sponsor.png" }).hasAttribute("disabled"),
     ).toBe(true);
@@ -593,6 +628,99 @@ describe("EventImageAssetLibrary", () => {
       expect(mockDeleteUploadedFile).toHaveBeenCalledWith(
         "/uploads/default/events/evt-1/orphan-preview.png",
       );
+    });
+  });
+
+  describe("Edit (re-crop an existing asset)", () => {
+    const assetWithOriginal: EventImageAssetDto = {
+      ...asset,
+      original_url: "/uploads/default/events/evt-1/sponsor-original.png",
+      crop: { unit: "%", x: 10, y: 10, width: 60, height: 60, zoom: 1.5 },
+    };
+
+    it("opens the crop modal on the persisted original with the previous crop restored", async () => {
+      mockFetch.mockResolvedValueOnce([assetWithOriginal]);
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      const dialog = await screen.findByRole("dialog", { name: "Adjust image" });
+      expect(dialog.getAttribute("data-image-src")).toBe(
+        "/uploads/default/events/evt-1/sponsor-original.png",
+      );
+      expect(JSON.parse(dialog.getAttribute("data-initial-crop") || "null")).toEqual({
+        unit: "%",
+        x: 10,
+        y: 10,
+        width: 60,
+        height: 60,
+      });
+      expect(dialog.getAttribute("data-initial-zoom")).toBe("1.5");
+    });
+
+    it("falls back to the current cropped image with an info toast when no original is stored", async () => {
+      mockFetch.mockResolvedValueOnce([asset]);
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      expect(await screen.findByText(/original image isn't available/i)).toBeTruthy();
+      const dialog = await screen.findByRole("dialog", { name: "Adjust image" });
+      expect(dialog.getAttribute("data-image-src")).toBe(asset.url);
+      expect(dialog.getAttribute("data-initial-crop")).toBe("");
+    });
+
+    it("calls updateEventImageAsset with the re-cropped file and updates the asset in place", async () => {
+      mockFetch.mockResolvedValueOnce([assetWithOriginal]);
+      const updated: EventImageAssetDto = {
+        ...assetWithOriginal,
+        url: "/uploads/default/events/evt-1/sponsor-v2.png",
+        crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 },
+      };
+      mockUpdate.mockResolvedValueOnce(updated);
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
+
+      await waitFor(() => {
+        expect(mockUpdate).toHaveBeenCalledWith("evt-1", "asset-1", expect.any(File), {
+          unit: "%",
+          x: 4,
+          y: 4,
+          width: 92,
+          height: 92,
+          zoom: 1,
+        });
+      });
+      expect(await screen.findByText('Updated "sponsor.png"')).toBeTruthy();
+      expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+    });
+
+    it("shows an inline error and keeps the dialog open when the update fails", async () => {
+      mockFetch.mockResolvedValueOnce([assetWithOriginal]);
+      mockUpdate.mockRejectedValueOnce(new ApiError(500, "server error"));
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
+
+      expect(await screen.findByText("Something went wrong. Try again.")).toBeTruthy();
+      expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+
+    it("cancelling the edit crop modal does not call updateEventImageAsset", async () => {
+      mockFetch.mockResolvedValueOnce([assetWithOriginal]);
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
   });
 });

@@ -143,6 +143,11 @@ model EventImageAsset {
   token      String
   filename   String
   url        String
+  // Full pre-crop file for re-Edit; display still uses `url` (cropped). Null for assets
+  // created before this column existed - Edit falls back to re-cropping the cropped `url`.
+  original_url String?
+  // Percent crop + zoom last applied: { unit:"%", x, y, width, height, zoom }.
+  crop       Json?
   size_bytes Int
   mime_type  String
   created_at DateTime @default(now())
