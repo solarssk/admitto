@@ -7,6 +7,7 @@ import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { AttendeePicker } from "./AttendeePicker.js";
+import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
 import "./communication.css";
 
 interface WalletsSendPanelProps {
@@ -236,43 +237,17 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
         <p className="settings-card-intro">
           Choose which attendees get this message, check how many that is, then send.
         </p>
-        <div className="communication-recipient-cards" role="radiogroup" aria-label="Recipients">
-          {RECIPIENT_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={filterType === opt.value}
-              aria-label={opt.label}
-              aria-describedby={`wallets-recipient-${opt.value}-desc`}
-              disabled={pickerLocked}
-              className={[
-                "communication-recipient-card",
-                filterType === opt.value && "communication-recipient-card--active",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() => {
-                setFilterType(opt.value);
-                setRecipientCount(null);
-                setError(null);
-              }}
-            >
-              <i className={`ti ${opt.icon}`} aria-hidden="true" />
-              <span className="communication-recipient-card__text">
-                <span className="communication-recipient-card__label" aria-hidden="true">
-                  {opt.label}
-                </span>
-                <span
-                  id={`wallets-recipient-${opt.value}-desc`}
-                  className="communication-recipient-card__description"
-                >
-                  {opt.description}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
+        <RecipientOptionCards
+          options={RECIPIENT_OPTIONS}
+          value={filterType}
+          idPrefix="wallets-recipient"
+          disabled={pickerLocked}
+          onChange={(value) => {
+            setFilterType(value);
+            setRecipientCount(null);
+            setError(null);
+          }}
+        />
         {filterType === "ticket_type" && (
           <>
             <div className="communication-half-field">
@@ -332,16 +307,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
             {!textReady && (
               <Notice variant="warning">Write a message above before sending.</Notice>
             )}
-            {recipientCount != null &&
-              (recipientCount === 0 ? (
-                <Notice variant="warning" as="output">
-                  No recipients match this filter.
-                </Notice>
-              ) : (
-                <Notice variant="success" as="output">
-                  <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
-                </Notice>
-              ))}
+            <RecipientCountNotice count={recipientCount} />
             <div className="communication-send-panel__actions">
               <Button
                 type="button"
