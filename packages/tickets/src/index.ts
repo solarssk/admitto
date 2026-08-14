@@ -128,6 +128,10 @@ export { formatDate, resolveTicketPageDisplay, buildWalletPassInput } from "./wa
 export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
 export { drainWalletPushJobs } from "./drain-wallet-push-jobs.js";
 export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
+export { loadWalletMessageTargets } from "./send-wallet-message.js";
+export type { SendWalletMessageTarget } from "./send-wallet-message.js";
+export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
+export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";
 export {
   reclaimStaleExportJobs,
   parseExportJobStaleRunningMs,

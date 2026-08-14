@@ -13,6 +13,7 @@ const drainPendingDeliveries = vi.fn();
 const drainImportJobs = vi.fn();
 const drainExportJobs = vi.fn();
 const drainWalletPushJobs = vi.fn();
+const drainWalletMessageJobs = vi.fn();
 const ingestBounces = vi.fn(async () => ({
   eventsProcessed: 0,
   messagesSeen: 0,
@@ -51,6 +52,7 @@ vi.mock("../src/lib/sse-publish.js", () => ({
 }));
 vi.mock("../src/commands/export-jobs.js", () => ({ drainExportJobs }));
 vi.mock("../src/commands/wallet-push-jobs.js", () => ({ drainWalletPushJobs }));
+vi.mock("../src/commands/wallet-message-jobs.js", () => ({ drainWalletMessageJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat: vi.fn() }));
 
@@ -76,6 +78,7 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
     drainImportJobs.mockReset();
     drainExportJobs.mockReset();
     drainWalletPushJobs.mockReset();
+    drainWalletMessageJobs.mockReset();
     drainPendingDeliveries.mockResolvedValue({
       claimed: 0,
       sent: 0,
@@ -93,6 +96,7 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
     });
     drainExportJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
     drainWalletPushJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
+    drainWalletMessageJobs.mockResolvedValue({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
   });
 
   it("signals more when mail_delivery fills its batch limit", async () => {
@@ -136,6 +140,11 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
 
   it("signals more when wallet_push claims a job, even though it only ever takes one", async () => {
     drainWalletPushJobs.mockResolvedValue({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
+    await expect(tick()).resolves.toBe(true);
+  });
+
+  it("signals more when wallet_message claims a job, even though it only ever takes one", async () => {
+    drainWalletMessageJobs.mockResolvedValue({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
     await expect(tick()).resolves.toBe(true);
   });
 

@@ -11,6 +11,7 @@ const drainPendingDeliveries = vi.fn(async () => ({ claimed: 0, sent: 0, failed:
 const drainImportJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0, healed: 0, eventIds: [] }));
 const drainExportJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 }));
 const drainWalletPushJobs = vi.fn();
+const drainWalletMessageJobs = vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 }));
 const ingestBounces = vi.fn(async () => ({ eventsProcessed: 0, messagesSeen: 0, bouncesApplied: 0, errors: 0 }));
 const runWalletRegistrationSync = vi.fn(async () => ({ checked: 0, updated: 0, skippedNoProvider: 0, failed: 0 }));
 const touchWorkerHeartbeat = vi.fn(async () => undefined);
@@ -40,6 +41,7 @@ vi.mock("../src/lib/sse-publish.js", () => ({
 }));
 vi.mock("../src/commands/export-jobs.js", () => ({ drainExportJobs }));
 vi.mock("../src/commands/wallet-push-jobs.js", () => ({ drainWalletPushJobs }));
+vi.mock("../src/commands/wallet-message-jobs.js", () => ({ drainWalletMessageJobs }));
 vi.mock("../src/commands/wallet-sync.js", () => ({ runWalletRegistrationSync }));
 vi.mock("../src/commands/worker-heartbeat.js", () => ({ touchWorkerHeartbeat }));
 
@@ -61,6 +63,7 @@ describe("withHeartbeatRefresh (via runWorkerTick's wallet_push drain)", () => {
     drainImportJobs.mockClear();
     drainExportJobs.mockClear();
     drainWalletPushJobs.mockReset();
+    drainWalletMessageJobs.mockClear();
     touchWorkerHeartbeat.mockClear();
   });
 

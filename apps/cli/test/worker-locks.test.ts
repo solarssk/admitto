@@ -24,6 +24,8 @@ describe("WORKER_LOCK_KEYS", () => {
     expect(WORKER_LOCK_KEYS.import).toBe("admitto:worker:import");
     expect(WORKER_LOCK_KEYS.export).toBe("admitto:worker:export");
     expect(WORKER_LOCK_KEYS.wallet_sync).toBe("admitto:worker:wallet_sync");
+    expect(WORKER_LOCK_KEYS.wallet_push).toBe("admitto:worker:wallet_push");
+    expect(WORKER_LOCK_KEYS.wallet_message).toBe("admitto:worker:wallet_message");
   });
 });
 
