@@ -136,6 +136,44 @@ describe("handleWalletMessageSend", () => {
     expect(c.json).toHaveBeenCalledWith({ error: "unknown_ticket_type" }, 400);
   });
 
+  it("propagates a non-UnknownTicketTypeError failure from ticket type validation instead of swallowing it", async () => {
+    vi.mocked(loadEventTicketTypes).mockRejectedValueOnce(new Error("db unavailable"));
+    const db = {};
+    const c = fakeContext({
+      req: {
+        param: vi.fn(() => "evt-1"),
+        query: vi.fn(),
+        json: vi.fn(async () => ({ filter: { type: "ticket_type", value: "vip" }, text: "Hi" })),
+      },
+    });
+
+    await expect(handleWalletMessageSend(c as never, db as never)).rejects.toThrow("db unavailable");
+  });
+
+  it("returns the eventId-required response when the route has no eventId param", async () => {
+    const db = {};
+    const c = fakeContext({
+      req: { param: vi.fn(() => undefined), query: vi.fn(), json: vi.fn(async () => ({})) },
+    });
+
+    await handleWalletMessageSend(c as never, db as never);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "eventId required" }, 400);
+  });
+
+  it("returns the forbidden response from assertEventManageAccess without proceeding", async () => {
+    const forbiddenResponse = new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(forbiddenResponse);
+    const db = {};
+    const c = fakeContext({
+      req: { param: vi.fn(() => "evt-1"), query: vi.fn(), json: vi.fn(async () => ({})) },
+    });
+
+    const res = await handleWalletMessageSend(c as never, db as never);
+
+    expect(res).toBe(forbiddenResponse);
+  });
+
   it("dry run returns only recipientCount, never creates a job", async () => {
     const findMany = vi.fn().mockResolvedValue([{ id: "att-1" }, { id: "att-2" }]);
     const create = vi.fn();
@@ -282,6 +320,28 @@ describe("handleWalletMessageSend", () => {
     expect(c.json).toHaveBeenCalledWith({ jobId: "job-1", recipientCount: 1 });
     consoleErrorSpy.mockRestore();
   });
+
+  it("returns not_found when the event disappears between the recipient check and the job insert", async () => {
+    const findMany = vi.fn().mockResolvedValue([{ id: "att-1" }]);
+    const create = vi.fn();
+    const db = {
+      attendee: { findMany },
+      adminJob: { create },
+      event: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const c = fakeContext({
+      req: {
+        param: vi.fn(() => "evt-1"),
+        query: vi.fn(),
+        json: vi.fn(async () => ({ filter: { type: "all" }, text: "Hi" })),
+      },
+    });
+
+    await handleWalletMessageSend(c as never, db as never);
+
+    expect(create).not.toHaveBeenCalled();
+    expect(c.json).toHaveBeenCalledWith({ error: "not_found" }, 404);
+  });
 });
 
 describe("handleGetWalletMessageJob", () => {
@@ -322,6 +382,36 @@ describe("handleGetWalletMessageJob", () => {
     await handleGetWalletMessageJob(c as never, db as never);
 
     expect(c.json).toHaveBeenCalledWith({ error: "not_found" }, 404);
+  });
+
+  it("falls back to nulls when the job has no result yet and hasn't started", async () => {
+    const job = {
+      id: "job-1",
+      status: "pending",
+      error: null,
+      progress_total: null,
+      progress_done: 0,
+      result_json: null,
+      created_at: new Date("2026-08-14T10:00:00Z"),
+      started_at: null,
+    };
+    const db = { adminJob: { findFirst: vi.fn().mockResolvedValue(job) } };
+    const c = fakeContext({ req: { param: vi.fn(() => "job-1"), query: vi.fn(), json: vi.fn() } });
+
+    await handleGetWalletMessageJob(c as never, db as never);
+
+    expect(c.json).toHaveBeenCalledWith({
+      jobId: "job-1",
+      status: "pending",
+      error: null,
+      progressTotal: null,
+      progressDone: 0,
+      sent: null,
+      skipped: null,
+      errored: null,
+      created_at: "2026-08-14T10:00:00.000Z",
+      started_at: null,
+    });
   });
 });
 
@@ -378,6 +468,28 @@ describe("handleGetWalletMessageHistory", () => {
       ],
     });
   });
+
+  it("returns the eventId-required response when the route has no eventId param", async () => {
+    const db = { adminJob: { findMany: vi.fn() } };
+    const c = fakeContext({ req: { param: vi.fn(() => undefined), query: vi.fn(), json: vi.fn() } });
+
+    await handleGetWalletMessageHistory(c as never, db as never);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "eventId required" }, 400);
+  });
+
+  it("returns the forbidden response from assertEventManageAccess without querying jobs", async () => {
+    const forbiddenResponse = new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(forbiddenResponse);
+    const findMany = vi.fn();
+    const db = { adminJob: { findMany } };
+    const c = fakeContext();
+
+    const res = await handleGetWalletMessageHistory(c as never, db as never);
+
+    expect(findMany).not.toHaveBeenCalled();
+    expect(res).toBe(forbiddenResponse);
+  });
 });
 
 describe("handleSearchWalletMessageAttendees", () => {
@@ -390,6 +502,39 @@ describe("handleSearchWalletMessageAttendees", () => {
 
     expect(findMany).not.toHaveBeenCalled();
     expect(c.json).toHaveBeenCalledWith({ items: [] });
+  });
+
+  it("returns an empty list without querying the db when no query param is present at all", async () => {
+    const findMany = vi.fn();
+    const db = { attendee: { findMany } };
+    const c = fakeContext({ req: { param: vi.fn(() => "evt-1"), query: vi.fn(() => undefined), json: vi.fn() } });
+
+    await handleSearchWalletMessageAttendees(c as never, db as never);
+
+    expect(findMany).not.toHaveBeenCalled();
+    expect(c.json).toHaveBeenCalledWith({ items: [] });
+  });
+
+  it("returns the eventId-required response when the route has no eventId param", async () => {
+    const db = { attendee: { findMany: vi.fn() } };
+    const c = fakeContext({ req: { param: vi.fn(() => undefined), query: vi.fn(() => "jane"), json: vi.fn() } });
+
+    await handleSearchWalletMessageAttendees(c as never, db as never);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "eventId required" }, 400);
+  });
+
+  it("returns the forbidden response from assertEventManageAccess without querying attendees", async () => {
+    const forbiddenResponse = new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+    vi.mocked(assertEventManageAccess).mockResolvedValueOnce(forbiddenResponse);
+    const findMany = vi.fn();
+    const db = { attendee: { findMany } };
+    const c = fakeContext({ req: { param: vi.fn(() => "evt-1"), query: vi.fn(() => "jane"), json: vi.fn() } });
+
+    const res = await handleSearchWalletMessageAttendees(c as never, db as never);
+
+    expect(findMany).not.toHaveBeenCalled();
+    expect(res).toBe(forbiddenResponse);
   });
 
   it("searches only attendees with an active wallet pass, by name or email", async () => {

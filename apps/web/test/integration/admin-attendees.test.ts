@@ -6624,6 +6624,139 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
   });
 });
 
+/** Route-wiring coverage for the four wallet-message endpoints (app.ts) - the handler logic
+ * itself is unit-tested in wallet-message-routes.test.ts against a mocked db; this only proves
+ * each route is actually reachable through the real app (auth gate, path, middleware order). */
+describe("wallet-message routes — POST send, GET jobs/:jobId, GET history, GET attendees", () => {
+  const WALLET_MESSAGE_EVENT = "evt-admin-att-wallet-message";
+  const WALLET_MESSAGE_ATTENDEE = "att-admin-att-wallet-message";
+
+  beforeAll(async () => {
+    await prisma.event.create({
+      data: {
+        id: WALLET_MESSAGE_EVENT,
+        title: "Wallet Message Event",
+        slug: "wallet-message-event",
+        date: new Date("2026-09-01"),
+        organization_id: ORG_A,
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: WALLET_MESSAGE_ATTENDEE,
+        event_id: WALLET_MESSAGE_EVENT,
+        email: "wallet-message-attendee@example.com",
+        name: "Wallet Message Attendee",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: WALLET_MESSAGE_ATTENDEE,
+        provider: "passcreator",
+        provider_pass_id: `pc-${WALLET_MESSAGE_ATTENDEE}`,
+        status: "active",
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: WALLET_MESSAGE_EVENT, type: "wallet_message" } });
+    await prisma.walletPass.deleteMany({ where: { attendee_id: WALLET_MESSAGE_ATTENDEE } });
+    await prisma.attendee.deleteMany({ where: { id: WALLET_MESSAGE_ATTENDEE } });
+    await prisma.event.deleteMany({ where: { id: WALLET_MESSAGE_EVENT } });
+  });
+
+  it("dry-run counts recipients without creating a job, then a real send enqueues one", async () => {
+    const dryRun = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ filter: { type: "all" }, dryRun: true }),
+    });
+    expect(dryRun.status).toBe(200);
+    expect(await dryRun.json()).toEqual({ recipientCount: 1 });
+
+    const sent = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ filter: { type: "all" }, text: "Doors open at 6pm." }),
+    });
+    expect(sent.status).toBe(200);
+    const body = (await sent.json()) as { jobId: string | null; recipientCount: number };
+    expect(body.recipientCount).toBe(1);
+    expect(body.jobId).toBeTruthy();
+
+    const job = await prisma.adminJob.findUnique({ where: { id: body.jobId! } });
+    expect(job?.type).toBe("wallet_message");
+    expect(job?.status).toBe("pending");
+  });
+
+  it("returns 403 for an operator on send", async () => {
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/send`, {
+      method: "POST",
+      headers: { Cookie: opCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ filter: { type: "all" }, dryRun: true }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("GET jobs/:jobId surfaces a queued job's status", async () => {
+    const job = await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "pending",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        result_json: {
+          request: { eventId: WALLET_MESSAGE_EVENT, attendeeIds: [WALLET_MESSAGE_ATTENDEE], text: "Hi" },
+        },
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/jobs/${job.id}`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(await res.json()).toMatchObject({ jobId: job.id, status: "pending" });
+  });
+
+  it("GET history returns only terminal jobs", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: WALLET_MESSAGE_EVENT, type: "wallet_message" } });
+    await prisma.adminJob.create({
+      data: {
+        type: "wallet_message",
+        status: "succeeded",
+        organization_id: ORG_A,
+        event_id: WALLET_MESSAGE_EVENT,
+        result_json: { sent: 1, skipped: 0, errored: 0 },
+        finished_at: new Date(),
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<Record<string, unknown>> };
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({ status: "succeeded", sent: 1 });
+  });
+
+  it("GET attendees searches only wallet-pass holders by name", async () => {
+    const res = await app.request(`/api/admin/events/${WALLET_MESSAGE_EVENT}/wallet-message/attendees?q=Wallet`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<{ id: string }> };
+    expect(body.items.map((i) => i.id)).toEqual([WALLET_MESSAGE_ATTENDEE]);
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-rsvp-" } } });

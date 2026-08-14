@@ -105,6 +105,16 @@ describe("RATE_POLICIES registry", () => {
       "admin:event-mail-transport-test:user:user-42",
     );
   });
+
+  it("scopes admin:wallet-message-job-status by user and event via adminUserEventKey", () => {
+    const ctx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+      req: { param: (name: string) => (name === "eventId" ? "evt-1" : undefined) },
+    } as never;
+    expect(RATE_POLICIES["admin:wallet-message-job-status"].checks[0]!.keyOf(ctx)).toBe(
+      "admin:wallet-message-job-status:user:user-42:event:evt-1",
+    );
+  });
 });
 
 describe("INLINE_RATE_LIMITS", () => {
