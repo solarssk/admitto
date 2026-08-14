@@ -557,6 +557,15 @@
       "summary": "Fail wallet_push AdminJobs stuck in running after this many ms (default 30 minutes)."
     },
     {
+      "name": "WALLET_MESSAGE_JOB_STALE_RUNNING_MS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Fail wallet_message AdminJobs stuck in running after this many ms (default 30 minutes)."
+    },
+    {
       "name": "OPS_HEALTH_TOKEN",
       "group": "ops",
       "boot": "optional",
