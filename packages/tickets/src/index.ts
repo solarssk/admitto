@@ -121,7 +121,7 @@ export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-job
 export { formatDate, resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
 export { drainWalletPushJobs } from "./drain-wallet-push-jobs.js";
-export type { DrainWalletPushJobsResult } from "./drain-wallet-push-jobs.js";
+export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
 export {
   reclaimStaleExportJobs,
   parseExportJobStaleRunningMs,
