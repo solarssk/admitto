@@ -68,6 +68,7 @@ import {
   resolveTicketPageDisplay,
   buildWalletPassInput,
   reissueOneWalletPass,
+  resolveEventWalletProvider,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "../instance-base-url.js";
@@ -2833,30 +2834,6 @@ const bulkWalletAttendeesBodySchema = z
   })
   .strict();
 
-/** Resolves the event's wallet provider once for a whole bulk request, rather than once per
- * attendee - same reasoning as deleteWalletPassesBestEffort's own single resolve+decrypt. */
-async function resolveEventWalletProviderForBulk(
-  db: PrismaClient,
-  eventId: string,
-): Promise<WalletPassProvider | null> {
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: {
-      wallet_enabled: true,
-      wallet_template_id: true,
-      wallet_api_key_enc: true,
-      wallet_field_mapping: true,
-    },
-  });
-  if (!event) return null;
-  return resolveWalletProvider({
-    walletEnabled: event.wallet_enabled,
-    walletTemplateId: event.wallet_template_id,
-    walletApiKeyEnc: event.wallet_api_key_enc,
-    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
-  });
-}
-
 /** Attendees (within the given, event-owned set) that have a WalletPass row with a known
  * provider_pass_id - the ones a bulk wallet action can actually touch. Attendees missing from
  * the returned array (never created a pass) count as skipped by the caller. */
@@ -2943,7 +2920,7 @@ async function runBulkWalletAction<K extends string>(
   const label = action.slice("wallet_".length);
   const counts = { [successKey]: 0, skipped: 0, errored: 0 } as Record<K | "skipped" | "errored", number>;
   try {
-    const provider = await resolveEventWalletProviderForBulk(db, eventId);
+    const provider = await resolveEventWalletProvider(db, eventId);
     if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
 
     const targets = await loadBulkWalletTargets(db, eventId, parsed.data.attendeeIds);
