@@ -2492,6 +2492,7 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     const input = screen.getByDisplayValue("VIP") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "VIP Gold" } });
     fireEvent.blur(input);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateTicketType).toHaveBeenCalled();
     });
@@ -2558,16 +2559,27 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
       await Promise.resolve();
     });
 
+    const saveButton = () => screen.getByRole("button", { name: "Save" });
+
+    // First edit + Save - its own refreshEventDeletionStatus call is held open.
     const firstInput = screen.getByDisplayValue("VIP") as HTMLInputElement;
     fireEvent.change(firstInput, { target: { value: "VIP Gold" } });
     fireEvent.blur(firstInput);
+    fireEvent.click(saveButton());
     await waitFor(() => {
       expect(updateTicketType).toHaveBeenCalledTimes(1);
     });
 
+    // Second edit + Save, fired once the first Save has gone through (the button re-disables,
+    // then re-enables once this new edit dirties the draft again) - its own refresh resolves
+    // immediately with the current, correct snapshot.
     const secondInput = (await screen.findByDisplayValue("VIP Gold")) as HTMLInputElement;
     fireEvent.change(secondInput, { target: { value: "VIP Gold 2" } });
     fireEvent.blur(secondInput);
+    await waitFor(() => {
+      expect(saveButton()).toHaveProperty("disabled", false);
+    });
+    fireEvent.click(saveButton());
     await waitFor(() => {
       expect(updateTicketType).toHaveBeenCalledTimes(2);
     });
