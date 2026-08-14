@@ -3145,6 +3145,12 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-pass", () => {
 });
 
 describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
+  // admin:attendee-patch is scoped per-attendee (20/min) - this block's many tests reuse a
+  // handful of shared fixture attendees (ATT_A2 etc.) across dozens of PATCH calls, which would
+  // otherwise trip the limit purely as an artifact of running the whole suite back-to-back, not
+  // from anything resembling real traffic (bot review's own rate-limit fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   async function currentUpdatedAt(attendeeId: string): Promise<string> {
     const row = await prisma.attendee.findUniqueOrThrow({
       where: { id: attendeeId },
@@ -3804,6 +3810,212 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("validation_failed");
+  });
+
+  describe("auto-push to the already-issued wallet pass on save", () => {
+    const WP_EVENT = "evt-admin-att-wallet-push";
+    const WP_ATTENDEE = "att-admin-att-wallet-push";
+    const WP_PROVIDER_PASS_ID = `pc-${WP_ATTENDEE}`;
+
+    beforeAll(async () => {
+      const token = generateToken();
+      await prisma.event.create({
+        data: {
+          id: WP_EVENT,
+          title: "Attendee Wallet Push Gala",
+          slug: "attendee-wallet-push-gala",
+          date: new Date("2026-11-01"),
+          organization_id: ORG_A,
+          wallet_template_id: "tmpl-attendee-push",
+          wallet_api_key_enc: encryptToString("attendee-push-api-key"),
+        },
+      });
+      await prisma.attendee.create({
+        data: {
+          id: WP_ATTENDEE,
+          event_id: WP_EVENT,
+          email: "attendee-wallet-push@example.com",
+          name: "Wallet Push Attendee",
+          first_name: "Wallet",
+          last_name: "Push Attendee",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await prisma.walletPass.deleteMany({ where: { attendee_id: WP_ATTENDEE } });
+      await prisma.attendee.deleteMany({ where: { id: WP_ATTENDEE } });
+      await prisma.event.deleteMany({ where: { id: WP_EVENT } });
+    });
+
+    // Restores both the event's wallet config and the pass's status to a known-good baseline
+    // before every test - individual tests below deliberately flip one or the other to exercise
+    // a specific guard branch.
+    beforeEach(async () => {
+      await prisma.walletPass.upsert({
+        where: { attendee_id: WP_ATTENDEE },
+        create: {
+          attendee_id: WP_ATTENDEE,
+          provider: "passcreator",
+          provider_pass_id: WP_PROVIDER_PASS_ID,
+          status: "active",
+        },
+        update: { status: "active", provider_pass_id: WP_PROVIDER_PASS_ID, last_error_code: null },
+      });
+      await prisma.event.update({
+        where: { id: WP_EVENT },
+        data: {
+          wallet_enabled: true,
+          wallet_template_id: "tmpl-attendee-push",
+          wallet_api_key_enc: encryptToString("attendee-push-api-key"),
+        },
+      });
+    });
+
+    async function patchWpAttendee(body: Record<string, unknown>) {
+      const expectedUpdatedAt = await currentUpdatedAt(WP_ATTENDEE);
+      return app.request(`/api/admin/events/${WP_EVENT}/attendees/${WP_ATTENDEE}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, expected_updated_at: expectedUpdatedAt }),
+      });
+    }
+
+    it("pushes to the already-issued active pass when a wallet-relevant field (first_name) changes", async () => {
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/attendee-pushed",
+        androidUrl: "https://pc.test/android/attendee-pushed",
+      });
+      try {
+        const res = await patchWpAttendee({ first_name: "Renamed" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+        expect(updateSpy.mock.calls[0]?.[0]).toBe(WP_PROVIDER_PASS_ID);
+
+        // Awaited synchronously (not job-based, unlike the event-wide triggers) - the response
+        // already reflects the fresh push, no polling needed. Asserted on the response body
+        // itself (not just the DB row) - walletPassMaybeStale's re-read is what makes this true;
+        // a regression there would leave the response showing the pre-push snapshot even though
+        // the DB is correct (bot review, mirroring the existing statusChange-cascade coverage).
+        const body = (await res.json()) as { wallet_pass: { apple_url: string | null } | null };
+        expect(body.wallet_pass?.apple_url).toBe("https://pc.test/apple/attendee-pushed");
+
+        const pass = await prisma.walletPass.findUnique({ where: { attendee_id: WP_ATTENDEE } });
+        expect(pass?.apple_url).toBe("https://pc.test/apple/attendee-pushed");
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("still pushes the content change when the same PATCH also revokes the pass (bot review, Codex)", async () => {
+      // Regression for a race Codex flagged: the status cascade (revoke) runs before the
+      // content-push guard, so a plain active-only check would see the pass as already voided by
+      // the time it re-reads it and silently drop the content change - leaving the pass stale
+      // forever, since a later status-only restore never rebuilds content either. The fix lets the
+      // content push through when this same request is the one that just voided the pass.
+      const voidSpy = vi.spyOn(PassCreatorClient.prototype, "voidPass").mockResolvedValue(undefined);
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/pushed-while-revoking",
+        androidUrl: "https://pc.test/android/pushed-while-revoking",
+      });
+      try {
+        const res = await patchWpAttendee({ status: "revoked", first_name: "Renamed While Revoking" });
+        expect(res.status).toBe(200);
+        expect(voidSpy).toHaveBeenCalledWith(WP_PROVIDER_PASS_ID);
+        expect(updateSpy).toHaveBeenCalledWith(WP_PROVIDER_PASS_ID, expect.anything());
+
+        const body = (await res.json()) as {
+          wallet_pass: { status: string; apple_url: string | null } | null;
+        };
+        expect(body.wallet_pass?.status).toBe("voided");
+        expect(body.wallet_pass?.apple_url).toBe("https://pc.test/apple/pushed-while-revoking");
+
+        const pass = await prisma.walletPass.findUnique({ where: { attendee_id: WP_ATTENDEE } });
+        expect(pass?.status).toBe("voided");
+        expect(pass?.apple_url).toBe("https://pc.test/apple/pushed-while-revoking");
+      } finally {
+        voidSpy.mockRestore();
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("does not push when only an unrelated field (rsvp_status) changes", async () => {
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/unexpected",
+        androidUrl: "https://pc.test/android/unexpected",
+      });
+      try {
+        const res = await patchWpAttendee({ rsvp_status: "confirmed" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("does not push when the wallet pass is voided", async () => {
+      await prisma.walletPass.update({ where: { attendee_id: WP_ATTENDEE }, data: { status: "voided" } });
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/unexpected",
+        androidUrl: "https://pc.test/android/unexpected",
+      });
+      try {
+        const res = await patchWpAttendee({ first_name: "Should Not Push" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it.each([
+      ["wallet_enabled is false", { wallet_enabled: false }],
+      ["wallet_template_id is missing", { wallet_template_id: null }],
+      ["wallet_api_key_enc is missing", { wallet_api_key_enc: null }],
+    ])("does not push when %s (guard)", async (_label, unconfigured) => {
+      await prisma.event.update({ where: { id: WP_EVENT }, data: unconfigured });
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/unexpected",
+        androidUrl: "https://pc.test/android/unexpected",
+      });
+      try {
+        const res = await patchWpAttendee({ first_name: "Should Not Push Either" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("still saves the field change (200) when the push itself fails", async () => {
+      resetSystemLogBufferForTest();
+      const updateSpy = vi
+        .spyOn(PassCreatorClient.prototype, "updatePass")
+        .mockRejectedValue(new Error("provider outage"));
+      try {
+        const res = await patchWpAttendee({ first_name: "Still Saved" });
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { first_name: string };
+        expect(body.first_name).toBe("Still Saved");
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_attendee_change_push_failed" });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_attendee_change_push_failed",
+          fields: { eventId: WP_EVENT, attendeeId: WP_ATTENDEE },
+        });
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
   });
 });
 

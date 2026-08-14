@@ -71,7 +71,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 
 ## What changes after this action
 
-Saved attendee details become available to templates, ticket rendering, filters, exports, and check-in. A pass-state change can immediately affect whether the ticket can be admitted. Deletion removes the attendee from the event permanently. A bulk ticket type change reports the wallet push outcome in a toast once it finishes; a pass that could not be reached stays on its previous ticket type until you retry with **Push updates**.
+Saved attendee details become available to templates, ticket rendering, filters, exports, and check-in. A pass-state change can immediately affect whether the ticket can be admitted. Deletion removes the attendee from the event permanently. A bulk ticket type change reports the wallet push outcome in a toast once it finishes; a pass that could not be reached stays on its previous ticket type until you retry with **Push updates**. Editing an attendee's name, email, company, department, or ticket type also refreshes their already-issued active wallet pass, if they have one - unlike the bulk ticket type change above, this push happens immediately and doesn't appear in Event settings → Wallet's Wallet push history list.
 
 ## Common problems
 

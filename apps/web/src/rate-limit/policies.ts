@@ -399,6 +399,27 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Per-attendee, not per-event or per-route: bounds how fast one admin can loop PATCH requests
+  // against a single attendee, which is what a scripted resubmit-to-trigger-a-wallet-push abuse
+  // pattern would target (bot review, PR3) - a real admin editing several different attendees in
+  // a burst never approaches this. 20/min is generous for legitimate back-to-back corrections on
+  // the same record, tight enough that a scripted loop hits it almost immediately.
+  "admin:attendee-patch": {
+    checks: [
+      {
+        keyOf: (c) => {
+          const attendeeId = c.req.param("id");
+          const userId = authUserId(c);
+          return userId
+            ? `admin:attendee-patch:user:${userId}:attendee:${attendeeId}`
+            : `admin:attendee-patch:ip:${resolveClientIp(c)}:attendee:${attendeeId}`;
+        },
+        windowMs: 60_000,
+        max: 20,
+        logOnExceeded: { scope: "admin_attendee_patch", keyHint: "user_attendee" },
+      },
+    ],
+  },
   "admin:resend-bulk": {
     checks: [
       {

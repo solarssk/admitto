@@ -34,6 +34,7 @@ const EXPECTED_POLICIES: Record<
   "admin:template-preview": { windowMs: [60_000], max: [20], checks: 1 },
   "admin:resend": { windowMs: [60_000, 3_600_000], max: [5, 30], checks: 2 },
   "admin:resend-bulk": { windowMs: [600_000], max: [3], checks: 1 },
+  "admin:attendee-patch": { windowMs: [60_000], max: [20], checks: 1 },
   "checkin:scan": { windowMs: [60_000], max: [120], checks: 1 },
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
   "checkin:stream": { windowMs: [60_000], max: [12], checks: 1 },

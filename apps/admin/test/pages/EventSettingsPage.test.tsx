@@ -65,6 +65,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     reverseGeocoding: vi.fn(),
     fetchTimezoneForCoordinates: vi.fn(),
     testWalletConnection: vi.fn(),
+    fetchWalletPushHistory: vi.fn(),
   };
 });
 
@@ -127,6 +128,7 @@ import {
   unarchiveEvent,
   updateTicketType,
   uploadEventBrandingFile,
+  fetchWalletPushHistory,
 } from "../../src/api/client.js";
 import type {
   EventBounceIngestSettingsResponse,
@@ -304,6 +306,7 @@ beforeEach(() => {
   vi.mocked(searchGeocoding).mockResolvedValue({ results: [], contact_configured: true });
   vi.mocked(reverseGeocoding).mockResolvedValue({ result: null, contact_configured: true });
   vi.mocked(fetchTimezoneForCoordinates).mockResolvedValue({ timezone: null });
+  vi.mocked(fetchWalletPushHistory).mockResolvedValue([]);
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
   // window.matchMedia isn't implemented by jsdom; default to desktop so any component on
   // this page relying on useIsDesktop() (elsewhere in the app, not this page's Save button)
@@ -781,6 +784,106 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
+  });
+
+  it("shows wallet push history rows once fetched", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
+      {
+        id: "job-1",
+        created_at: "2026-06-07T10:00:00.000Z",
+        reissued: 3,
+        skipped: 1,
+        errored: 0,
+        status: "succeeded",
+        error: null,
+      },
+      {
+        id: "job-2",
+        created_at: "2026-06-06T10:00:00.000Z",
+        reissued: 0,
+        skipped: 0,
+        errored: 2,
+        status: "failed",
+        error: "provider outage",
+      },
+    ]);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Succeeded")).toBeTruthy();
+    expect(screen.getByText("provider outage")).toBeTruthy();
+    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", expect.anything());
+  });
+
+  it("shows an error and retries wallet push history on demand", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Could not load wallet push history")).toBeTruthy();
+
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Could not load wallet push history")).toBeNull();
+    });
+    expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
+  });
+
+  it("re-fetches wallet push history every time the admin returns to the Wallet tab (bot review)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory)
+      .mockResolvedValueOnce([
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "job-2",
+          created_at: "2026-06-08T10:00:00.000Z",
+          reissued: 2,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+        },
+      ]);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+
+    // Proves the effect is keyed on the active tab (re-fetches on every visit), not on mount
+    // alone - a future simplification that drops that dependency would leave the list stale
+    // after a background push runs elsewhere, and this is the only test that would catch it.
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows Loading… while wallet push history is in flight, then clears it", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    let resolveHistory!: (items: never[]) => void;
+    vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Loading…")).toBeTruthy();
+
+    resolveHistory([]);
+
+    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+    expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
   });
 
   it("saves the wallet Template ID through the event patch", async () => {

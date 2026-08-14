@@ -17,12 +17,14 @@ import {
   fetchEventLocation,
   fetchEventSettings,
   fetchTicketTypes,
+  fetchWalletPushHistory,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
   testWalletConnection,
   unarchiveEvent,
   uploadEventBrandingFile,
+  type WalletPushHistoryEntry,
 } from "../api/client.js";
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
@@ -837,6 +839,81 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
   );
 }
 
+interface WalletPushHistoryCardProps {
+  readonly history: WalletPushHistoryEntry[] | null;
+  readonly error: string | null;
+  readonly eventTimezone: string | undefined;
+  readonly onRetry: () => void;
+  readonly showLoading: boolean;
+}
+
+/** Recent wallet_push jobs for this event, from the async job system's own triggers (currently:
+ * bulk ticket type change). Single-attendee field edits push directly and don't create a job, so
+ * they never appear in this list. */
+function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoading }: WalletPushHistoryCardProps) {
+  let body: ReactNode;
+  if (error) {
+    body = (
+      <EmptyState
+        title="Could not load wallet push history"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  } else if (history === null) {
+    // settings-card-intro (already scoped to this page's own CSS) matches ImportHistoryCard's
+    // muted-hint look without importing ImportPage's page-scoped import.css into this lazy chunk
+    // (bot review - a component's CSS must live in its own file, per AGENTS.md's compounding
+    // rules).
+    body = showLoading ? <p className="settings-card-intro">Loading…</p> : null;
+  } else if (history.length === 0) {
+    body = (
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="No wallet pushes yet"
+        description="Pushes appear here after a bulk wallet push for this event, such as a ticket-type change."
+      />
+    );
+  } else {
+    body = (
+      <div className="sessions-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th>Skipped</th>
+              <th>Errored</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((entry) => (
+              <tr key={entry.id}>
+                <td>{formatEventDateTime(entry.created_at, eventTimezone)}</td>
+                <td>{entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}</td>
+                <td>{entry.reissued}</td>
+                <td>{entry.skipped}</td>
+                <td>{entry.errored}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <Card title="Wallet push history" className="event-settings-card">
+      {body}
+    </Card>
+  );
+}
+
 /** Event-scoped settings: General / Images / Wallet / Danger zone tabs. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
@@ -929,6 +1006,32 @@ export function EventSettingsPage() {
       });
     return () => controller.abort();
   }, [eventId, visitedTabs, walletLocationPreview]);
+
+  // Wallet push history: re-fetched every time the admin switches to the Wallet tab (not just
+  // once) - unlike walletLocationPreview above (a static reference value), this list reflects
+  // background jobs triggered from elsewhere (currently only the Attendees list's bulk
+  // ticket-type change), so it can go stale while this tab stays mounted between visits.
+  const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
+  const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
+  const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
+  const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
+  const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
+  useEffect(() => {
+    if (!eventId || tab !== "wallet") return;
+    const controller = new AbortController();
+    setWalletPushHistoryError(null);
+    setWalletPushHistoryLoading(true);
+    fetchWalletPushHistory(eventId, controller.signal)
+      .then((items) => setWalletPushHistory(items))
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setWalletPushHistoryError("Couldn't load wallet push history.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
+      });
+    return () => controller.abort();
+  }, [eventId, tab, walletPushHistoryToken]);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -1763,6 +1866,13 @@ export function EventSettingsPage() {
               onSave={() => void handleSave()}
             />
           )}
+          <WalletPushHistoryCard
+            history={walletPushHistory}
+            error={walletPushHistoryError}
+            eventTimezone={form.timezone}
+            onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
+            showLoading={showWalletPushHistoryLoading}
+          />
         </EventSettingsTabPanel>
       )}
 

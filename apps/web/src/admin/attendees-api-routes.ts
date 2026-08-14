@@ -1710,13 +1710,28 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
     );
 
     let walletPass = updated.wallet_pass;
+    let walletPassMaybeStale = false;
     if (statusChange !== undefined) {
       await syncWalletPassOnStatusChangeBestEffort(db, eventId, attendeeId, statusChange);
-      // The cascade above runs after `updated` was already selected inside the transaction, and
-      // may have just voided/restored the pass - re-read it fresh rather than serializing the
-      // pre-cascade snapshot below, or the response (and whatever setDetail(response) installs
-      // client-side) shows the wrong wallet badge/lifecycle action until a manual reload
-      // (CodeRabbit review).
+      walletPassMaybeStale = true;
+    }
+    if (profileChanges?.fields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) {
+      await pushWalletUpdateOnAttendeeChangeBestEffort(
+        db,
+        c,
+        eventId,
+        attendeeId,
+        profileChanges.fields,
+        statusChange === "revoked",
+      );
+      walletPassMaybeStale = true;
+    }
+    if (walletPassMaybeStale) {
+      // Either cascade above runs after `updated` was already selected inside the transaction,
+      // and may have just changed the pass's status/last_synced_at/urls - re-read it fresh rather
+      // than serializing the pre-cascade snapshot below, or the response (and whatever
+      // setDetail(response) installs client-side) shows stale wallet data until a manual reload
+      // (CodeRabbit review, extended to the field-change push above).
       walletPass = await db.walletPass.findUnique({
         where: { attendee_id: attendeeId },
         select: ATTENDEE_DETAIL_SELECT.wallet_pass.select,
@@ -1878,6 +1893,100 @@ async function syncWalletPassOnStatusChangeBestEffort(
       source: "admin",
       message: "wallet_pass_status_cascade_failed",
       fields: { eventId, attendeeId, statusChange },
+    });
+  }
+}
+
+/** Attendee fields that appear in a wallet pass via buildWalletPassInput (packages/tickets/src/
+ * wallet-pass-input.ts) - name, email, company, department, ticket type. Only these are worth an
+ * automatic push to an already-issued pass; a patch that touches only, say, custom_data or RSVP
+ * never reaches pushWalletUpdateOnAttendeeChangeBestEffort below. */
+const WALLET_RELEVANT_ATTENDEE_FIELDS: ReadonlySet<string> = new Set([
+  "first_name",
+  "last_name",
+  "email",
+  "company",
+  "department",
+  "ticket_type",
+]);
+
+/** Best-effort: pushes the attendee's current name/ticket type/event details to their
+ * already-issued *active* wallet pass whenever a save changes one of
+ * WALLET_RELEVANT_ATTENDEE_FIELDS above - the attendee-scoped counterpart of
+ * event-settings-routes.ts's own pushWalletUpdatesBestEffort for the event's basic fields. A
+ * single attendee is one PassCreator call, cheap enough to push synchronously rather than through
+ * the wallet_push job system built for the event-wide/bulk triggers. Only an *active* pass is
+ * pushed - a voided one shows its void state regardless, so refreshing its content isn't useful
+ * background work (same reasoning as the event-wide push's own status: "active" filter). Runs
+ * after the caller's own DB transaction has committed, same posture as
+ * syncWalletPassOnStatusChangeBestEffort above.
+ *
+ * `justVoidedThisRequest` overrides the active-only gate: when the very same PATCH also set
+ * status: revoked, syncWalletPassOnStatusChangeBestEffort above already flipped the pass to
+ * voided before this function re-reads it, so the plain active check would silently drop the
+ * content change instead of just skipping a no-op push. updatePass only ever touches content,
+ * never the voided flag (see reissueOneWalletPass), so pushing here is safe and keeps the pass
+ * accurate for whenever it's later restored, rather than leaving stale name/company/etc. behind
+ * for a status-only restore to (not) fix (bot review, Codex).
+ *
+ * Self-gates on `changedFields` (bot review) rather than trusting the caller to have already
+ * filtered - the call site below also checks this first to skip the call (and the response's
+ * wallet_pass re-read) entirely on a no-op-for-wallet-purposes patch, but a future caller must
+ * not be able to reintroduce an unconditional push just by skipping that pre-check. Everything
+ * after the guard, including the two lookups the reissue itself depends on, is inside the
+ * try/catch - a transient DB error here must be swallowed the same as a PassCreator failure,
+ * never surfaced as a 500 for an attendee edit that already committed (bot review). */
+async function pushWalletUpdateOnAttendeeChangeBestEffort(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  attendeeId: string,
+  changedFields: readonly string[],
+  justVoidedThisRequest: boolean,
+): Promise<void> {
+  if (!changedFields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) return;
+
+  try {
+    const [event, walletPass] = await Promise.all([
+      db.event.findUnique({
+        where: { id: eventId },
+        select: {
+          wallet_enabled: true,
+          wallet_template_id: true,
+          wallet_api_key_enc: true,
+          wallet_field_mapping: true,
+        },
+      }),
+      db.walletPass.findUnique({
+        where: { attendee_id: attendeeId },
+        select: { provider_pass_id: true, status: true },
+      }),
+    ]);
+    if (!event || !walletPass?.provider_pass_id) return;
+    if (walletPass.status !== "active" && !justVoidedThisRequest) return;
+
+    const provider = resolveWalletProvider({
+      walletEnabled: event.wallet_enabled,
+      walletTemplateId: event.wallet_template_id,
+      walletApiKeyEnc: event.wallet_api_key_enc,
+      walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+    });
+    if (!provider) return;
+
+    await reissueOneWalletPass(
+      db,
+      eventId,
+      { attendeeId, providerPassId: walletPass.provider_pass_id },
+      provider,
+      adminAuditFromContext(c),
+    );
+  } catch (err) {
+    console.error("wallet attendee-change push failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "wallet_attendee_change_push_failed",
+      fields: { eventId, attendeeId },
     });
   }
 }
