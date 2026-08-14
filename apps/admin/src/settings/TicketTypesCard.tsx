@@ -1,26 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, EmptyState, HintLabel, IconButton, Input, Notice, TICKET_TYPE_COLORS, TicketTypeBadge, useToast } from "@admitto/ui";
 import type { TicketTypeColor } from "@admitto/ui";
-import { ApiError, createTicketType, deleteTicketType, updateTicketType } from "../api/client.js";
+import { ApiError, createTicketType, deleteTicketType, fetchTicketTypes, updateTicketType } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventSettingsDto, TicketTypeDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { whenShown } from "../hooks/useDelayedLoading.js";
+import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
+import { SettingsFooter } from "./mailTransportFormParts.js";
 import "./ticket-types-card.css";
 
 export interface TicketTypesCardProps {
   readonly eventId: string;
   readonly event: EventSettingsDto;
-  readonly types: TicketTypeDto[];
-  readonly loading: boolean;
-  readonly showLoading: boolean;
-  /** Set when the catalog failed to load (initial load or a background refresh) - renders in
-   * place of the list, with a Retry button (CodeRabbit review, batch 04 / #351). */
-  readonly error?: string | null;
-  readonly onRetry?: () => void;
-  readonly onChanged: () => void;
+  readonly onDirtyChange?: (dirty: boolean) => void;
+  readonly onSavingChange?: (saving: boolean) => void;
+  /** Called after a successful save so the shell can refresh is_deletable/deletion_blockers. */
+  readonly onSaved?: () => void;
 }
+
+/** A not-yet-created row: no server id yet, so Save must POST it instead of PATCHing. */
+type DraftTicketType = TicketTypeDto & { pending?: boolean };
 
 const COLOR_ENTRIES = Object.entries(TICKET_TYPE_COLORS) as Array<
   [TicketTypeColor, (typeof TICKET_TYPE_COLORS)[TicketTypeColor]]
@@ -32,6 +32,22 @@ function pluralSuffix(count: number): string {
 
 const TICKET_TYPES_HINT =
   "Types used across attendees, check-in, and reports.";
+
+function isTicketTypeDirty(item: DraftTicketType, saved: TicketTypeDto[]): boolean {
+  if (item.pending) return true;
+  const original = saved.find((s) => s.id === item.id);
+  return !original || original.label !== item.label || original.color !== item.color;
+}
+
+function describeTicketTypeSaveError(label: string, err: unknown): string {
+  if (err instanceof ApiError && hasApiErrorCode(err, "label_conflict")) {
+    return `"${label}" is already used by another ticket type in this event.`;
+  }
+  if (err instanceof ApiError && hasApiErrorCode(err, "type_limit_reached")) {
+    return "Ticket type limit reached for this event.";
+  }
+  return operatorApiErrorMessage(err, `Failed to save "${label}".`);
+}
 
 /** Click the current color to open a small swatch grid — same popover pattern as the app's other
  * menus (ExportMenu, ActionMenu): one clean chip that reveals choices on demand. */
@@ -101,29 +117,27 @@ function ColorSwatchPicker({
 function TicketTypeRow({
   type,
   disabled,
-  onUpdate,
+  onLabelChange,
+  onColorChange,
   onRemove,
 }: {
-  readonly type: TicketTypeDto;
+  readonly type: DraftTicketType;
   readonly disabled: boolean;
-  readonly onUpdate: (id: string, patch: { label?: string; color?: TicketTypeColor }) => Promise<boolean>;
+  readonly onLabelChange: (id: string, label: string) => void;
+  readonly onColorChange: (id: string, color: TicketTypeColor) => void;
   readonly onRemove: () => void;
 }) {
   const [label, setLabel] = useState(type.label);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => setLabel(type.label), [type.label]);
 
-  async function commitLabel() {
+  function commitLabel() {
     const trimmed = label.trim();
     if (!trimmed || trimmed === type.label) {
       setLabel(type.label);
       return;
     }
-    // Revert the optimistically-typed value on failure - otherwise the field keeps showing an
-    // edit that was never actually saved, with only a transient toast as a clue (CodeRabbit
-    // review).
-    const ok = await onUpdate(type.id, { label: trimmed });
-    if (!ok) setLabel(type.label);
+    onLabelChange(type.id, trimmed);
   }
 
   return (
@@ -132,7 +146,7 @@ function TicketTypeRow({
         <ColorSwatchPicker
           color={type.color}
           disabled={disabled}
-          onChange={(color) => onUpdate(type.id, { color })}
+          onChange={(color) => onColorChange(type.id, color)}
         />
         <div className="tt-row__label-input">
           <Input
@@ -168,18 +182,17 @@ function TicketTypeRow({
   );
 }
 
-/** The not-yet-created row shown after "Add ticket type" - unlike TicketTypeRow it has no `id` to
- * PATCH yet, so it holds label/color locally and only calls the server once a real name is
- * committed. This is what makes the type's `key` (slugified from the label at create time, then
- * immutable) derive from the name the admin actually typed instead of always starting from a
- * throwaway "New type" placeholder that gets renamed a second later. */
+/** The not-yet-added row shown after "Add ticket type" - committing it queues a pending row in
+ * the draft list (Save creates it for real); it holds label/color locally until then so the
+ * type's `key` (slugified from the label at create time, then immutable) derives from the name
+ * the admin actually typed instead of a throwaway placeholder. */
 function DraftTicketTypeRow({
   disabled,
   onCommit,
   onCancel,
 }: {
   readonly disabled: boolean;
-  readonly onCommit: (label: string, color: TicketTypeColor) => Promise<boolean>;
+  readonly onCommit: (label: string, color: TicketTypeColor) => void;
   readonly onCancel: () => void;
 }) {
   const [label, setLabel] = useState("");
@@ -189,17 +202,13 @@ function DraftTicketTypeRow({
     inputRef.current?.focus();
   }, []);
 
-  async function commit() {
+  function commit() {
     const trimmed = label.trim();
     if (!trimmed) {
       onCancel();
       return;
     }
-    // onCommit returns whether the create failed in a retryable way (e.g. a name conflict) - keep
-    // this row open and refocused so the admin can just fix the name, rather than losing what they
-    // typed and having to click "Add ticket type" again.
-    const keepEditing = await onCommit(trimmed, color);
-    if (keepEditing) inputRef.current?.focus();
+    onCommit(trimmed, color);
   }
 
   return (
@@ -208,11 +217,11 @@ function DraftTicketTypeRow({
       onBlur={(e) => {
         // Commit only once focus actually leaves the whole row - clicking the color swatch (or a
         // color inside its popover) blurs the label input first, and committing right then would
-        // create the type with whatever `color` was still set at that moment (the "blue" default,
+        // queue the row with whatever `color` was still set at that moment (the "blue" default,
         // if the admin clicked the swatch before typing a color choice) instead of the one they
         // were about to pick (CodeRabbit review).
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-          void commit();
+          commit();
         }
       }}
     >
@@ -231,7 +240,7 @@ function DraftTicketTypeRow({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                void commit();
+                commit();
               }
               if (e.key === "Escape") onCancel();
             }}
@@ -242,79 +251,135 @@ function DraftTicketTypeRow({
   );
 }
 
+let pendingIdSeq = 0;
+function nextPendingId(): string {
+  pendingIdSeq += 1;
+  return `pending-${pendingIdSeq}`;
+}
+
 /** Event Settings tab: the only place a ticket type's name and color are set (batch 04 / #351).
  * Every other screen (add/edit attendee, import, filters, bulk-send, check-in, Reports) reads
- * this catalog through TicketTypeBadge's resolver instead of accepting free text. */
-export function TicketTypesCard({
-  eventId,
-  event,
-  types,
-  loading,
-  showLoading,
-  error,
-  onRetry,
-  onChanged,
-}: TicketTypesCardProps) {
+ * this catalog through TicketTypeBadge's resolver instead of accepting free text.
+ *
+ * Adding a type and editing a label/color are buffered in a local draft and only sent to the
+ * server on Save (Reset discards them) - the standard explicit Save/Reset pattern every other
+ * Event Settings tab uses. Deleting stays immediate: its own confirm dialog is already the
+ * explicit gesture, and it needs the instant "still assigned to attendees" feedback a deferred
+ * batch save couldn't attach anywhere once the row was gone from the draft. */
+export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange, onSaved }: TicketTypesCardProps) {
   const { addToast } = useToast();
+  const [saved, setSaved] = useState<TicketTypeDto[]>([]);
+  const [draft, setDraft] = useState<DraftTicketType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const showLoading = useDelayedLoading(loading);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TicketTypeDto | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBlockedByAttendees, setDeleteBlockedByAttendees] = useState(false);
   const disabled = event.status === "archived";
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const validationErrorsRef = useRef<HTMLUListElement | null>(null);
 
-  // No per-row "mutating" disabled state here on purpose: PATCH (color/label) is idempotent and
-  // safe to fire again before the previous one lands, and briefly disabling the row's own input/
-  // icon for the ~10-20ms round trip read as a visible flicker on every click (PO review).
-  //
-  // Requests for the SAME id are still serialized through this per-id chain, though — rapid edits
-  // (e.g. clicking through colors quickly) fire concurrent PATCHes that could land out of order
-  // over the network and leave an older value as the last write. Different rows stay fully
-  // independent (CodeRabbit review).
-  const pendingByIdRef = useRef(new Map<string, Promise<boolean>>());
-  function handleUpdate(id: string, patch: { label?: string; color?: TicketTypeColor }): Promise<boolean> {
-    const prior = pendingByIdRef.current.get(id) ?? Promise.resolve(true);
-    const run = prior.then(async () => {
-      try {
-        await updateTicketType(eventId, id, patch);
-        onChanged();
-        return true;
-      } catch (err) {
-        if (err instanceof ApiError && hasApiErrorCode(err, "label_conflict")) {
-          addToast(`"${patch.label}" is already used by another ticket type in this event.`, "warning");
-        } else {
-          addToast(operatorApiErrorMessage(err, "Failed to update ticket type."), "error");
-        }
-        return false;
-      }
-    });
-    pendingByIdRef.current.set(id, run);
-    return run;
+  const load = useCallback(() => {
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+    setLoading(true);
+    setLoadError(null);
+    fetchTicketTypes(eventId, controller.signal)
+      .then((types) => {
+        if (controller.signal.aborted) return;
+        setSaved(types);
+        setDraft(types);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setLoadError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+  }, [eventId]);
+
+  useEffect(() => {
+    load();
+    return () => loadAbortRef.current?.abort();
+  }, [load]);
+
+  const dirty = draft.some((item) => isTicketTypeDirty(item, saved));
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    onSavingChange?.(saving);
+  }, [saving, onSavingChange]);
+
+  function updateDraft(id: string, patch: { label?: string; color?: TicketTypeColor }) {
+    setDraft((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
 
-  async function handleCommitDraft(label: string, color: TicketTypeColor): Promise<boolean> {
-    setCreating(true);
-    try {
-      await createTicketType(eventId, { label, color });
-      setDraftOpen(false);
-      onChanged();
-      return false;
-    } catch (err) {
-      if (err instanceof ApiError && hasApiErrorCode(err, "type_limit_reached")) {
-        addToast("Ticket type limit reached for this event.", "warning");
-        setDraftOpen(false);
-        return false;
+  function commitDraftRow(label: string, color: TicketTypeColor) {
+    setDraft((prev) => [
+      ...prev,
+      {
+        id: nextPendingId(),
+        key: "",
+        label,
+        color,
+        sort_order: prev.length,
+        attendee_count: 0,
+        created_at: "",
+        pending: true,
+      },
+    ]);
+    setDraftOpen(false);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    const nextDraft: DraftTicketType[] = [];
+    const nextSaved: TicketTypeDto[] = [];
+    let failureCount = 0;
+
+    for (const item of draft) {
+      const original = item.pending ? undefined : saved.find((s) => s.id === item.id);
+      if (!item.pending && !isTicketTypeDirty(item, saved)) {
+        nextDraft.push(item);
+        if (original) nextSaved.push(original);
+        continue;
       }
-      if (err instanceof ApiError && hasApiErrorCode(err, "label_conflict")) {
-        addToast(`"${label}" is already used by another ticket type in this event.`, "warning");
-        return true;
+      try {
+        const result = item.pending
+          ? await createTicketType(eventId, { label: item.label, color: item.color })
+          : await updateTicketType(eventId, item.id, { label: item.label, color: item.color });
+        nextDraft.push(result);
+        nextSaved.push(result);
+      } catch (err) {
+        failureCount += 1;
+        addToast(describeTicketTypeSaveError(item.label, err), "error");
+        nextDraft.push(item);
+        if (original) nextSaved.push(original);
       }
-      addToast(operatorApiErrorMessage(err, "Failed to add ticket type."), "error");
-      return true;
-    } finally {
-      setCreating(false);
     }
+
+    setDraft(nextDraft);
+    setSaved(nextSaved);
+    setSaving(false);
+
+    if (failureCount === 0) {
+      addToast("Ticket types saved.", "success");
+      onSaved?.();
+    }
+  }
+
+  function handleReset() {
+    setDraft(saved);
+    setDraftOpen(false);
   }
 
   async function handleDelete() {
@@ -324,8 +389,10 @@ export function TicketTypesCard({
     setDeleteBlockedByAttendees(false);
     try {
       await deleteTicketType(eventId, deleteTarget.id);
+      setDraft((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      setSaved((prev) => prev.filter((t) => t.id !== deleteTarget.id));
       setDeleteTarget(null);
-      onChanged();
+      onSaved?.();
     } catch (err) {
       // Keep the dialog open on failure instead of closing it out from under the user - the
       // "in use" case in particular is retryable once attendees are reassigned, without having to
@@ -348,7 +415,7 @@ export function TicketTypesCard({
         actions={
           <>
             <span className="tt-count-badge">
-              {types.length} type{pluralSuffix(types.length)}
+              {draft.length} type{pluralSuffix(draft.length)}
             </span>
             <ArchivedGuard event={event} reasonId="add-ticket-type-reason" disabled={draftOpen}>
               {(guard) => (
@@ -371,16 +438,14 @@ export function TicketTypesCard({
           <p className="field-hint ticket-types-card__intro settings-card-intro">
             Define the names and colours attendees can be assigned.
           </p>
-          {error && !loading ? (
+          {loadError ? (
             <EmptyState
               title="Could not load ticket types"
-              description={error}
+              description={loadError}
               action={
-                onRetry && (
-                  <Button type="button" variant="secondary" onClick={onRetry}>
-                    Retry
-                  </Button>
-                )
+                <Button type="button" variant="secondary" onClick={load}>
+                  Retry
+                </Button>
               }
             />
           ) : (
@@ -389,23 +454,24 @@ export function TicketTypesCard({
                 whenShown(showLoading, <p className="field-hint">Loading…</p>)
               ) : (
                 <div className="tt-list">
-                  {types.map((type) => (
+                  {draft.map((type) => (
                     <TicketTypeRow
                       key={type.id}
                       type={type}
-                      disabled={disabled}
-                      onUpdate={handleUpdate}
+                      disabled={disabled || saving}
+                      onLabelChange={(id, label) => updateDraft(id, { label })}
+                      onColorChange={(id, color) => updateDraft(id, { color })}
                       onRemove={() => setDeleteTarget(type)}
                     />
                   ))}
                   {draftOpen && (
                     <DraftTicketTypeRow
-                      disabled={disabled || creating}
-                      onCommit={handleCommitDraft}
+                      disabled={disabled || saving}
+                      onCommit={commitDraftRow}
                       onCancel={() => setDraftOpen(false)}
                     />
                   )}
-                  {types.length === 0 && !draftOpen && (
+                  {draft.length === 0 && !draftOpen && (
                     <p className="field-hint">No ticket types yet. Add at least one before sending tickets.</p>
                   )}
                 </div>
@@ -414,6 +480,21 @@ export function TicketTypesCard({
           )}
         </div>
       </Card>
+
+      {disabled ? (
+        <p className="field-hint event-settings-archived-note">
+          This event is archived - ticket types cannot be changed.
+        </p>
+      ) : (
+        <SettingsFooter
+          validationErrors={[]}
+          validationErrorsRef={validationErrorsRef}
+          hasUnsavedChanges={dirty}
+          saving={saving}
+          onReset={handleReset}
+          onSave={() => void handleSave()}
+        />
+      )}
 
       <ConfirmDialog
         open={deleteTarget !== null}

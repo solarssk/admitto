@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Attendee export/import and mail sending now start almost immediately after you trigger them, instead of waiting up to a minute for the background worker's next scheduled check.
+- Event settings → Ticket types now uses the same explicit Save/Reset pattern as every other settings tab, instead of saving each name/color edit or new type immediately with no Save button. Deleting a type is unchanged - it still removes immediately once you confirm.
 
 ### Fixed
 
