@@ -99,13 +99,19 @@ export {
 } from "./attendees-export.js";
 export type { SanitizedExportRow, ExportAttendeesCsvResult } from "./attendees-export.js";
 export {
-  EXPORT_BASE_PDF_WIDTHS,
-  EXPORT_ATTRIBUTE_PDF_WIDTH,
-  PDF_PRINTABLE_WIDTH,
-  PDF_CELL_HEIGHT,
-  pdfCellTextOptions,
-  buildExportPdfColumnWidths,
+  PDF_A4_PRINTABLE_WIDTH,
+  PDF_A3_PRINTABLE_WIDTH,
+  PDF_MIN_COLUMN_WIDTH,
+  PDF_MIN_ROW_HEIGHT,
+  measurePdfColumnMetrics,
+  resolvePdfPageSize,
+  distributePdfColumnWidths,
   buildExportPdfBuffer,
+} from "./attendees-export-pdf.js";
+export type {
+  PdfColumnMetrics,
+  PdfColumnWidthPlan,
+  PdfPageSize,
 } from "./attendees-export-pdf.js";
 export { buildExportXlsxBuffer } from "./attendees-export-xlsx.js";
 export {
