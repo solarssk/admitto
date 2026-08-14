@@ -7,7 +7,7 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, StatusBadge, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import {
   ApiError,
@@ -24,6 +24,7 @@ import {
   unarchiveEvent,
   uploadEventBrandingFile,
   type WalletPushHistoryEntry,
+  type WalletPushHistoryScope,
 } from "../api/client.js";
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
@@ -862,9 +863,25 @@ interface WalletPushHistoryCardProps {
   readonly showLoading: boolean;
 }
 
-/** Recent wallet_push jobs for this event, from the async job system's own triggers (currently:
- * bulk ticket type change). Single-attendee field edits push directly and don't create a job, so
- * they never appear in this list. */
+/** "3 attendees", "Whole event · location update" - the scope column's text. `null` (a job from
+ * before this field existed) reads as an em-dash rather than a blank cell, so it's visibly "we
+ * don't know" and not confused with a genuinely-scopeless push. */
+function describeWalletPushScope(scope: WalletPushHistoryScope | null): string {
+  if (!scope) return "—";
+  if (scope.kind === "attendee_ids") {
+    return `${scope.count} ${scope.count === 1 ? "attendee" : "attendees"}`;
+  }
+  if (scope.reason === "location") return "Whole event · location update";
+  if (scope.reason === "settings") return "Whole event · settings update";
+  return "Whole event";
+}
+
+/** Recent wallet_push jobs for this event, from the async job system's own triggers (bulk
+ * ticket-type change, or an event settings/location save that touches a wallet-relevant field).
+ * Single-attendee field edits push directly and don't create a job, so they never appear here.
+ * This is the automatic *data* refresh (name/ticket type/venue/etc. already on an issued pass) -
+ * not the same thing as a custom text message, which is Communication > Wallets > Send, and has
+ * its own separate history there. */
 function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoading }: WalletPushHistoryCardProps) {
   let body: ReactNode;
   if (error) {
@@ -901,6 +918,7 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
             <tr>
               <th>Date</th>
               <th>Status</th>
+              <th>Scope</th>
               <th>Updated</th>
               <th>Skipped</th>
               <th>Errored</th>
@@ -910,7 +928,13 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
             {history.map((entry) => (
               <tr key={entry.id}>
                 <td>{formatEventDateTime(entry.created_at, eventTimezone)}</td>
-                <td>{entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}</td>
+                <td>
+                  <StatusBadge status={entry.status} />
+                  {entry.status === "failed" && entry.error && (
+                    <div style={{ color: "var(--text-muted)" }}>{entry.error}</div>
+                  )}
+                </td>
+                <td>{describeWalletPushScope(entry.scope)}</td>
                 <td>{entry.reissued}</td>
                 <td>{entry.skipped}</td>
                 <td>{entry.errored}</td>
@@ -924,6 +948,12 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
 
   return (
     <Card title="Wallet push history" className="event-settings-card">
+      <p className="settings-card-intro">
+        Automatic pushes that refresh data (name, ticket type, venue, etc.) already on an
+        attendee's issued wallet pass, triggered by a bulk ticket-type change or a wallet-relevant
+        event settings/location save. Not a custom message - send those from Communication &gt;
+        Wallets.
+      </p>
       {body}
     </Card>
   );

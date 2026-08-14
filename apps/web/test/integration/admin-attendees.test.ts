@@ -6623,6 +6623,64 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
     const body = (await res.json()) as { items: Array<{ created_at: string }> };
     expect(body.items[0]!.created_at).toBe(createdAt.toISOString());
   });
+
+  it("derives scope from the stored request - attendee count, or event-wide with its trigger reason", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    await prisma.adminJob.createMany({
+      data: [
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          result_json: {
+            request: { kind: "attendee_ids", eventId: EVENT_A, attendeeIds: ["att-1", "att-2", "att-3"] },
+            reissued: 3,
+            skipped: 0,
+            errored: 0,
+          },
+          created_at: new Date("2026-06-05T08:00:00Z"),
+          finished_at: new Date("2026-06-05T08:01:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          result_json: {
+            request: { kind: "event_wide", eventId: EVENT_A, reason: "location" },
+            reissued: 5,
+            skipped: 0,
+            errored: 0,
+          },
+          created_at: new Date("2026-06-05T09:00:00Z"),
+          finished_at: new Date("2026-06-05T09:01:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          // No `request` at all - a job predating this field, or an unrecognized shape.
+          result_json: { reissued: 1, skipped: 0, errored: 0 },
+          created_at: new Date("2026-06-05T10:00:00Z"),
+          finished_at: new Date("2026-06-05T10:01:00Z"),
+        },
+      ],
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    const body = (await res.json()) as { items: Array<{ scope: unknown }> };
+    // Newest finished_at first: no-request, then event_wide/location, then attendee_ids/3.
+    expect(body.items.map((item) => item.scope)).toEqual([
+      null,
+      { kind: "event_wide", reason: "location" },
+      { kind: "attendee_ids", count: 3 },
+    ]);
+  });
 });
 
 /** Route-wiring coverage for the four wallet-message endpoints (app.ts) - the handler logic

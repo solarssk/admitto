@@ -779,7 +779,7 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({
       status: "pending",
-      result_json: { request: { kind: "event_wide", eventId: WALLET_LOC_EVENT } },
+      result_json: { request: { kind: "event_wide", eventId: WALLET_LOC_EVENT, reason: "location" } },
     });
   });
 

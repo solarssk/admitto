@@ -14,8 +14,29 @@ const WALLET_PUSH_HISTORY_LIMIT = 20;
 
 /** Shape written by drainWalletPushJobs (packages/tickets/src/drain-wallet-push-jobs.ts) into
  * AdminJob.result_json once a job finishes - named once so the two response shapes below can't
- * drift apart from the worker's actual payload. */
-type WalletPushResultJson = { reissued?: number; skipped?: number; errored?: number } | null;
+ * drift apart from the worker's actual payload. `request` is the same value createWalletPushJob
+ * stored at enqueue time (see WalletPushRequest) - the worker round-trips it into the final
+ * write, unchanged, alongside the outcome counts. */
+type WalletPushResultJson = {
+  request?: WalletPushRequest;
+  reissued?: number;
+  skipped?: number;
+  errored?: number;
+} | null;
+
+/** Scope shown in the history list - "how many/which attendees" for an operator-bounded push,
+ * or "the whole event" plus, when known, which wallet-relevant save triggered it. `null` for
+ * jobs created before this field existed, or if result_json.request was somehow never a valid
+ * WalletPushRequest - the history row still renders, just without this detail. */
+export type WalletPushHistoryScope =
+  | { kind: "attendee_ids"; count: number }
+  | { kind: "event_wide"; reason: "location" | "settings" | null };
+
+function historyScope(request: WalletPushRequest | undefined): WalletPushHistoryScope | null {
+  if (!request) return null;
+  if (request.kind === "attendee_ids") return { kind: "attendee_ids", count: request.attendeeIds.length };
+  return { kind: "event_wide", reason: request.reason ?? null };
+}
 
 /** Shared insert behind both enqueue helpers below - the two request kinds differ only in
  * `result_json.request`'s shape, everything else about creating the job row is identical. */
@@ -102,12 +123,13 @@ export async function enqueueEventWideWalletPushJob(
   c: Context,
   eventId: string,
   organizationId: string,
+  reason?: "location" | "settings",
 ): Promise<string> {
   const alreadyQueued = await findPendingEventWideWalletPushJob(db, eventId);
   if (alreadyQueued) return alreadyQueued;
 
   try {
-    return await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId });
+    return await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId, reason });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const winner = await findPendingEventWideWalletPushJob(db, eventId);
@@ -166,6 +188,7 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
       errored: result?.errored ?? 0,
       status: job.status === "failed" ? ("failed" as const) : ("succeeded" as const),
       error: job.status === "failed" ? job.error : null,
+      scope: historyScope(result?.request),
     };
   });
 

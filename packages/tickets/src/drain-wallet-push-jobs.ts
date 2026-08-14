@@ -46,10 +46,12 @@ export type DrainWalletPushJobsResult = {
  * location saves, with no selection cap) - there's no predetermined id list to diff against, so
  * every row the query finds simply *is* a target; a voided pass is deliberately excluded (matches
  * the previous best-effort push's own behaviour - refreshing a voided pass's content is not
- * useful background work). */
+ * useful background work). `reason` is display-only metadata for the history list (which
+ * wallet-relevant save triggered this) - the drain worker itself never reads it, both event_wide
+ * triggers resolve targets identically regardless of which field actually changed. */
 export type WalletPushRequest =
   | { kind: "attendee_ids"; eventId: string; attendeeIds: string[] }
-  | { kind: "event_wide"; eventId: string };
+  | { kind: "event_wide"; eventId: string; reason?: "location" | "settings" };
 
 type ClaimedWalletPushJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 

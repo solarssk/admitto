@@ -787,7 +787,7 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
-  it("shows wallet push history rows once fetched", async () => {
+  it("shows wallet push history rows once fetched, with scope and status", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
       {
@@ -798,6 +798,7 @@ describe("EventSettingsPage tabs", () => {
         errored: 0,
         status: "succeeded",
         error: null,
+        scope: { kind: "attendee_ids", count: 3 },
       },
       {
         id: "job-2",
@@ -807,13 +808,36 @@ describe("EventSettingsPage tabs", () => {
         errored: 2,
         status: "failed",
         error: "provider outage",
+        scope: { kind: "event_wide", reason: "location" },
       },
     ]);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
     expect(await screen.findByText("Succeeded")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeTruthy();
     expect(screen.getByText("provider outage")).toBeTruthy();
+    expect(screen.getByText("3 attendees")).toBeTruthy();
+    expect(screen.getByText("Whole event · location update")).toBeTruthy();
     expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", expect.anything());
+  });
+
+  it("shows an em-dash scope for a job that predates the scope field", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
+      {
+        id: "job-1",
+        created_at: "2026-06-07T10:00:00.000Z",
+        reissued: 1,
+        skipped: 0,
+        errored: 0,
+        status: "succeeded",
+        error: null,
+        scope: null,
+      },
+    ]);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("—")).toBeTruthy();
   });
 
   it("shows an error and retries wallet push history on demand", async () => {
@@ -844,6 +868,7 @@ describe("EventSettingsPage tabs", () => {
           errored: 0,
           status: "succeeded",
           error: null,
+          scope: null,
         },
       ])
       .mockResolvedValueOnce([
@@ -855,6 +880,7 @@ describe("EventSettingsPage tabs", () => {
           errored: 0,
           status: "succeeded",
           error: null,
+          scope: null,
         },
       ]);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");

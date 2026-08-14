@@ -1067,6 +1067,12 @@ export async function fetchWalletPushJobStatus(
   return parseJson<WalletPushJobStatusResponse>(res);
 }
 
+/** Which attendees a wallet_push job actually targeted - `null` for a job that predates this
+ * field, or whose stored request wasn't recognized. */
+export type WalletPushHistoryScope =
+  | { kind: "attendee_ids"; count: number }
+  | { kind: "event_wide"; reason: "location" | "settings" | null };
+
 export interface WalletPushHistoryEntry {
   id: string;
   created_at: string;
@@ -1075,6 +1081,7 @@ export interface WalletPushHistoryEntry {
   errored: number;
   status: "succeeded" | "failed";
   error: string | null;
+  scope: WalletPushHistoryScope | null;
 }
 
 /** Recent terminal wallet_push jobs for the event (newest first) - the async job system's own
