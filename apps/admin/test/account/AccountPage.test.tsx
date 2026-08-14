@@ -1021,6 +1021,20 @@ describe("AccountPage toasts", () => {
     expect(screen.queryByRole("button", { name: "Set up" })).toBeNull();
   });
 
+  it("shows OIDC-only MFA reset guidance, not the methods list, when already enrolled with no local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...totpEnrolledAccount, has_local_password: false, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Two-factor reset requires a local password/i),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText("Authenticator app (TOTP)")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+  });
+
   it("copies the otpauth URI during enrollment", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const originalClipboard = navigator.clipboard;
