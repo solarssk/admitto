@@ -1,4 +1,4 @@
-# Advanced: Editing MJML and HTML
+# Advanced Email Templates
 
 > **Audience:** Technical Event Manager
 > **Required role:** Organisation Admin

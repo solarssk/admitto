@@ -1,4 +1,4 @@
-# Scanning Tickets and Check-in Results
+# Scanning Tickets and Results
 
 > **Audience:** Check-in Operators
 > **Required role:** Check-in Operator for the event
