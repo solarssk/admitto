@@ -92,8 +92,11 @@ describe("EditTemplateModal", () => {
     );
 
     // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    expect(saveButton).toHaveProperty("disabled", true);
     fireEvent.change(screen.getByLabelText("Template label"), { target: { value: "Reminder!" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(saveButton).toHaveProperty("disabled", false);
+    fireEvent.click(saveButton);
     expect(onSave).toHaveBeenCalledTimes(1);
 
     // Parent sets busy after the first click; submittingRef still guards a second click
