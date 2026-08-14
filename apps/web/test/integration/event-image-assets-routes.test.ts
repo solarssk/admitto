@@ -332,6 +332,19 @@ describe("POST /api/admin/events/:eventId/image-assets", () => {
     expect(body.token).toBe("dup_token_2");
   });
 
+  it("returns 400 invalid_crop when the crop field is not valid JSON", async () => {
+    const fd = uploadForm("bad_crop_on_create");
+    fd.append("crop", "{not json");
+    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_crop");
+  });
+
   it("rejects unsupported file type with 415", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
@@ -554,6 +567,23 @@ describe("PATCH /api/admin/events/:eventId/image-assets/:assetId", () => {
     expect(log?.metadata).toEqual({ token: created.token });
   });
 
+  it("clears the stored crop when the PATCH omits the crop field", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("recrop_no_crop_field"),
+    });
+    const created = (await createRes.json()) as { id: string };
+
+    const patchRes = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
+      { method: "PATCH", headers: { Cookie: superCookie, ...sameOrigin }, body: recropForm() },
+    );
+    expect(patchRes.status).toBe(200);
+    const updated = (await patchRes.json()) as { crop: unknown };
+    expect(updated.crop).toBeNull();
+  });
+
   it("returns 400 file_required when no file is sent", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",
@@ -653,9 +683,83 @@ describe("PATCH /api/admin/events/:eventId/image-assets/:assetId", () => {
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("event_archived");
   });
+
+  it("returns 500 server error for an unexpected failure", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("recrop_unexpected_error"),
+    });
+    const created = (await createRes.json()) as { id: string };
+
+    // $transaction itself (not tx.eventImageAsset.update, a distinct transaction-scoped method
+    // Prisma creates internally - see the concurrent-upload race test above) so the rejection
+    // reaches handleUpdateEventImageAsset's own catch block.
+    const transactionSpy = vi
+      .spyOn(prisma, "$transaction")
+      .mockRejectedValueOnce(new Error("unexpected"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets/${created.id}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin },
+        body: recropForm(SAMPLE_CROP),
+      });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("server error");
+    } finally {
+      transactionSpy.mockRestore();
+    }
+  });
 });
 
 describe("DELETE /api/admin/events/:eventId/image-assets/:assetId", () => {
+  it("also best-effort deletes the pre-crop original file when the asset has one", async () => {
+    // A raw pre-crop upload (no asset row yet) - same shape as the admin UI's upload-then-crop
+    // step, giving us a real, on-disk file to reference as this asset's original.
+    const rawUploadRes = await app.request(`/api/admin/events/${EVENT_IA}/branding-upload`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: (() => {
+        const fd = new FormData();
+        fd.append("file", new Blob([PNG_BYTES], { type: "image/png" }), "original.png");
+        return fd;
+      })(),
+    });
+    expect(rawUploadRes.status).toBe(201);
+    const { url: originalUrl } = (await rawUploadRes.json()) as { url: string };
+    const originalDiskPath = join(uploadDir, originalUrl.slice("/uploads/".length));
+    expect(existsSync(originalDiskPath)).toBe(true);
+
+    const fd = new FormData();
+    fd.append("file", new Blob([PNG_BYTES], { type: "image/png" }), "cropped.png");
+    fd.append("name", "delete_with_original");
+    fd.append("original_url", originalUrl);
+    fd.append("crop", JSON.stringify(SAMPLE_CROP));
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as {
+      id: string;
+      url: string;
+      original_url: string | null;
+    };
+    expect(created.original_url).toBe(originalUrl);
+    const croppedDiskPath = join(uploadDir, created.url.slice("/uploads/".length));
+    expect(existsSync(croppedDiskPath)).toBe(true);
+
+    const delRes = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/${created.id}`,
+      { method: "DELETE", headers: { Cookie: superCookie, ...sameOrigin } },
+    );
+    expect(delRes.status).toBe(200);
+    expect(existsSync(croppedDiskPath)).toBe(false);
+    expect(existsSync(originalDiskPath)).toBe(false);
+  });
+
   it("deletes the asset and it no longer appears in the list", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",

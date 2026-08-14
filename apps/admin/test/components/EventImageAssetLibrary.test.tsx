@@ -621,6 +621,26 @@ describe("EventImageAssetLibrary", () => {
       expect(dialog.getAttribute("data-initial-crop")).toBe("");
     });
 
+    it("opens the crop modal on the original with no crop framing when the asset has no stored crop metadata", async () => {
+      const originalWithoutCrop: EventImageAssetDto = {
+        ...asset,
+        original_url: "/uploads/default/events/evt-1/sponsor-original.png",
+        crop: null,
+      };
+      mockFetch.mockResolvedValueOnce([originalWithoutCrop]);
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      const dialog = await screen.findByRole("dialog", { name: "Adjust image" });
+      expect(dialog.getAttribute("data-image-src")).toBe(
+        "/uploads/default/events/evt-1/sponsor-original.png",
+      );
+      expect(dialog.getAttribute("data-initial-crop")).toBe("");
+      expect(dialog.getAttribute("data-initial-zoom")).toBe("");
+      expect(screen.queryByText(/original image isn't available/i)).toBeNull();
+    });
+
     it("calls updateEventImageAsset with the re-cropped file and updates the asset in place", async () => {
       mockFetch.mockResolvedValueOnce([assetWithOriginal]);
       const updated: EventImageAssetDto = {
@@ -660,6 +680,42 @@ describe("EventImageAssetLibrary", () => {
 
       expect(await screen.findByText("Something went wrong. Try again.")).toBeTruthy();
       expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
+    });
+
+    it("updates only the edited asset, leaving other assets in the list untouched", async () => {
+      const banner: EventImageAssetDto = {
+        ...asset,
+        id: "asset-2",
+        token: "banner",
+        filename: "banner.png",
+        url: "/uploads/default/events/evt-1/banner.png",
+      };
+      mockFetch.mockResolvedValueOnce([assetWithOriginal, banner]);
+      const updated: EventImageAssetDto = {
+        ...assetWithOriginal,
+        url: "/uploads/default/events/evt-1/sponsor-v2.png",
+        crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 },
+      };
+      mockUpdate.mockResolvedValueOnce(updated);
+      renderWithToast(<EventImageAssetLibrary eventId="evt-1" />);
+      await screen.findByText("sponsor.png");
+      await screen.findByText("banner.png");
+
+      const sponsorCard = screen
+        .getByText("sponsor.png")
+        .closest(".image-asset-library__card") as HTMLElement;
+      fireEvent.click(within(sponsorCard).getByRole("button", { name: "Edit" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Apply changes" }));
+
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+      expect(await screen.findByText('Updated "sponsor.png"')).toBeTruthy();
+
+      const bannerCard = screen
+        .getByText("banner.png")
+        .closest(".image-asset-library__card") as HTMLElement;
+      expect(
+        bannerCard.querySelector(".image-asset-library__card-thumb img")?.getAttribute("src"),
+      ).toBe("/uploads/default/events/evt-1/banner.png");
     });
 
     it("cancelling the edit crop modal does not call updateEventImageAsset", async () => {
