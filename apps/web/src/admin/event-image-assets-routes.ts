@@ -399,7 +399,7 @@ export async function handleUpdateEventImageAsset(c: Context, db: PrismaClient):
     return c.json({ error: "invalid_crop" }, 400);
   }
 
-  // TODO(multi-org): same single-tenant assumption as handleCreateEventImageAsset.
+  // NOSONAR - TODO(multi-org): same single-tenant assumption as handleCreateEventImageAsset. Tracked on the v0.5+ roadmap, not a forgotten task; safe today since only one Organization row exists.
   const orgId = "default";
 
   try {
