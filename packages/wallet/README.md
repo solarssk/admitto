@@ -64,7 +64,12 @@ stable `code` (`wallet_provider_unauthorized` / `_rate_limited` / `_duplicate` /
 
 Auth: `Authorization: <api_key>` header, no `Bearer` prefix. Rate limit: 600 req/min, exponential
 backoff on 429 (see `PassCreatorClient`'s retry logic). Config (API key, template ID, field
-mapping) is per-event, not per-instance - a leaked/rotated key only ever affects one event's logs.
+mapping) is stored per-event, not per-instance, so a leaked/rotated key's blast radius in Admitto's
+own logs/audit trail is scoped to one event. **This does not limit the key itself**: PassCreator
+API keys inherit the permissions of the account that created them, not a fixed scope to one
+template - `PassCreatorClient.listWebhooks()` is explicitly account-wide, for example. If the same
+PassCreator account backs multiple events, a leaked key can affect all of them at the provider; use
+a dedicated PassCreator service user scoped to one template for real per-event isolation.
 
 ## Data flow: field mapping (existing) vs semantics (new)
 
@@ -105,4 +110,9 @@ EC public key above. `apps/cli`'s `registration-sync` job polls `getRegistration
 fallback for events the webhook may have missed. `wallet_push` (`AdminJob`) is the background job
 that re-syncs already-issued passes when a wallet-relevant event field changes (title, date, hours,
 timezone, the Apple Wallet toggle, or the semantic tags toggle) - see
-`walletRelevantEventFieldsChanged` in `apps/web/src/admin/event-settings-routes.ts`.
+`walletRelevantEventFieldsChanged` in `apps/web/src/admin/event-settings-routes.ts`. Two things this
+job does *not* cover: it only targets `status: "active"` passes (`drain-wallet-push-jobs.ts`), so a
+voided pass stays untouched until it's restored *and* separately reissued - `restorePass()` only
+clears the void flag at the provider, it does not push fresh content; and a single-attendee edit
+(name, email, company, department, ticket type) pushes synchronously in the same request instead of
+going through this job queue, so it never appears in the admin UI's "Wallet push history" list.

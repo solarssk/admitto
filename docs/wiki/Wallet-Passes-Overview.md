@@ -44,18 +44,22 @@ works; Admitto never signs or hosts pass files itself.
   surfacing. No template setup needed - this is a fixed Apple-defined vocabulary, not something an
   admin maps field by field. No NFC hardware or PassCreator account approval required, and it has
   no effect on Google Wallet.
-- **Live updates to already-issued passes.** Editing an attendee (name, email, company, department,
-  ticket type) or a wallet-relevant event field (title, date, hours, timezone, the Apple Wallet
-  toggle, or the Semantic tags toggle) automatically refreshes passes already on attendees' devices
-  in the background - no manual re-issue needed. Event Settings → Wallet's "Wallet push history"
-  list shows recent runs of this background refresh.
+- **Live updates to already-issued, active passes.** Editing an attendee (name, email, company,
+  department, ticket type) or a wallet-relevant event field (title, date, hours, timezone, the
+  Apple Wallet toggle, or the Semantic tags toggle) automatically refreshes passes already on
+  attendees' devices - no manual re-issue needed. Two things this does not cover: a voided pass is
+  skipped until it is restored *and* separately pushed again, since restoring only clears the void
+  flag rather than refreshing content; and a single-attendee edit pushes immediately in the same
+  request rather than through the background job queue, so it never shows up in Event Settings →
+  Wallet's "Wallet push history" list - that list is event-wide and bulk pushes only.
 - **Registration status.** Whether an attendee has actually added the pass to their device (not
   just had one issued) is tracked from PassCreator via webhook, with periodic polling as a
   fallback - shown on Attendee Detail and the Attendees list's Wallet column.
-- **Wallet lifecycle actions.** From Attendee Detail (single attendee) or the Attendees list
-  (bulk): void, restore, push updates, and permanently delete a wallet pass at the provider.
-  Revoking an attendee's ticket also voids their wallet pass automatically; restoring the ticket
-  restores the pass the same way.
+- **Wallet lifecycle actions.** Void, push updates, and permanently delete a wallet pass at the
+  provider - available both from Attendee Detail (single attendee) and the Attendees list (bulk,
+  for a selection). Restore is Attendee Detail only, there is no bulk restore action. Revoking an
+  attendee's ticket also voids their wallet pass automatically; restoring the ticket restores the
+  pass the same way.
 
 ## What's not supported
 
