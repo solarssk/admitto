@@ -322,4 +322,51 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
     );
     expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
   });
+
+  it("keeps the stored calendar day for a UTC+14 event, even though noon UTC there is already the next local day", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { walletSemanticTagsEnabled: true, timezone: "Pacific/Kiritimati" },
+      }),
+      "b",
+    );
+    expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00+14:00");
+  });
+
+  it("resolves the offset at the event's own local time, not the day's noon-UTC sentinel (DST transition day)", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          walletSemanticTagsEnabled: true,
+          date: new Date("2026-03-29T12:00:00.000Z"),
+          timezone: "Europe/London",
+          eventHoursStart: "00:30",
+          eventHoursEnd: "03:00",
+        },
+      }),
+      "b",
+    );
+    // UK clocks spring forward 01:00 GMT -> 02:00 BST on 2026-03-29 - 00:30 local is still GMT
+    // even though noon UTC that same day is already BST (the bug this guards against).
+    expect(input.semantics?.eventStartDate).toBe("2026-03-29T00:30:00Z");
+    expect(input.semantics?.eventEndDate).toBe("2026-03-29T03:00:00+01:00");
+  });
+
+  it("computes duration from real elapsed time across a DST transition, not a wall-clock hour count", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          walletSemanticTagsEnabled: true,
+          date: new Date("2026-03-28T12:00:00.000Z"),
+          timezone: "Europe/London",
+          eventHoursStart: "22:00",
+          eventHoursEnd: "02:00",
+        },
+      }),
+      "b",
+    );
+    // 2026-03-28 22:00 GMT to 2026-03-29 02:00 BST is 3 real hours (clocks sprang forward at
+    // 01:00 GMT), not the 4 wall-clock hours naive HH:MM subtraction would give.
+    expect(input.semantics?.duration).toBe(3 * 60 * 60);
+  });
 });

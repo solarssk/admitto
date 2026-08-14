@@ -1208,6 +1208,13 @@ describe("PATCH /api/admin/events/:eventId", () => {
     });
 
     it("enqueues an event-wide wallet_push job when wallet_semantic_tags_enabled is toggled", async () => {
+      // PUSH_EVENT is fully configured (template + key), so this save also runs
+      // subscribeWalletWebhooksBestEffort (patchesWallet is true for this field) - stub the
+      // PassCreator client the same way "webhook subscription on wallet-config save" below
+      // does, or this makes a real network call and hangs until the test times out (no network
+      // egress in CI).
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
       try {
         const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
           method: "PATCH",
@@ -1223,11 +1230,15 @@ describe("PATCH /api/admin/events/:eventId", () => {
           result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
         });
       } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
         await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_semantic_tags_enabled: false } });
       }
     });
 
     it("enqueues an event-wide wallet_push job when wallet_apple_enabled is toggled (semantics gating depends on it too)", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
       try {
         const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
           method: "PATCH",
@@ -1243,6 +1254,8 @@ describe("PATCH /api/admin/events/:eventId", () => {
           result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
         });
       } finally {
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
         await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_apple_enabled: true } });
       }
     });
