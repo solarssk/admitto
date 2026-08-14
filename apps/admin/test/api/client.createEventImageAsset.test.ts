@@ -38,4 +38,38 @@ describe("createEventImageAsset (client)", () => {
     expect(body.get("file")).toBeInstanceOf(File);
     expect(body.get("token")).toBeNull();
   });
+
+  it("also sends the pre-crop original's URL and crop framing when provided", async () => {
+    const created = {
+      id: "asset-1",
+      token: "sponsor_logo",
+      filename: "sponsor.png",
+      url: "/uploads/default/events/evt-1/sponsor.png",
+      original_url: "/uploads/default/events/evt-1/sponsor-original.png",
+      crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 },
+      size_bytes: 12,
+      mime_type: "image/png",
+      created_at: "2026-01-15T00:00:00.000Z",
+    };
+    const fetchMock = vi
+      .fn(async (_input: string | URL, _init?: RequestInit) => ({
+        ok: true,
+        json: async () => created,
+      }))
+      .mockName("fetch");
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File(["x"], "sponsor.png", { type: "image/png" });
+    await createEventImageAsset("evt-1", file, "Sponsor logo", {
+      url: "/uploads/default/events/evt-1/sponsor-original.png",
+      crop: { unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 },
+    });
+
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    const body = init.body as FormData;
+    expect(body.get("original_url")).toBe("/uploads/default/events/evt-1/sponsor-original.png");
+    expect(body.get("crop")).toBe(
+      JSON.stringify({ unit: "%", x: 4, y: 4, width: 92, height: 92, zoom: 1 }),
+    );
+  });
 });

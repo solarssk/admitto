@@ -574,6 +574,53 @@ describe("PATCH /api/admin/events/:eventId/image-assets/:assetId", () => {
     expect(body.error).toBe("file_required");
   });
 
+  it("returns 403 for a non-managing operator", async () => {
+    const res = await app.request(
+      `/api/admin/events/${EVENT_IA}/image-assets/does-not-exist`,
+      { method: "PATCH", headers: { Cookie: opCookie, ...sameOrigin }, body: recropForm() },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 invalid_crop when the crop field is not valid JSON", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("recrop_bad_crop"),
+    });
+    const created = (await createRes.json()) as { id: string };
+
+    const fd = new FormData();
+    fd.append("file", new Blob([PNG_BYTES], { type: "image/png" }), "recrop.png");
+    fd.append("crop", "{not json");
+    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_crop");
+  });
+
+  it("rejects unsupported file type with 415", async () => {
+    const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: uploadForm("recrop_unsupported"),
+    });
+    const created = (await createRes.json()) as { id: string };
+
+    const fd = new FormData();
+    fd.append("file", new Blob(["MZ"], { type: "application/octet-stream" }), "bad.exe");
+    const res = await app.request(`/api/admin/events/${EVENT_IA}/image-assets/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin },
+      body: fd,
+    });
+    expect(res.status).toBe(415);
+  });
+
   it("returns 403 for an asset belonging to a different event", async () => {
     const createRes = await app.request(`/api/admin/events/${EVENT_IA}/image-assets`, {
       method: "POST",

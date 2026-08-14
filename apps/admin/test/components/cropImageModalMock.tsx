@@ -32,8 +32,8 @@ export function createCropImageModalMock(
     const [error, setError] = useState<string | null>(null);
     if (!open) return null;
     return (
-      <div
-        role="dialog"
+      <dialog
+        open
         aria-label="Adjust image"
         data-image-src={imageSrc}
         data-initial-crop={initialCrop ? JSON.stringify(initialCrop) : ""}
@@ -56,7 +56,7 @@ export function createCropImageModalMock(
         <button type="button" onClick={onCancel}>
           Cancel
         </button>
-      </div>
+      </dialog>
     );
   };
 }
