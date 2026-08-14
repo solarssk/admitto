@@ -140,11 +140,13 @@ function* markdownLinks(text) {
  * metadata check in its place. */
 function parseFieldValueMetadataTable(text) {
   const rows = new Map();
-  const tableMatch = text.match(/^\| Field \| Value \|\n\|---\|---\|\n((?:\|.*\|\n?)+)/m);
-  if (!tableMatch) return rows;
-  for (const line of tableMatch[1].split("\n")) {
-    const cellMatch = line.match(/^\|\s*\*\*(.+?)\*\*\s*\|\s*(.*?)\s*\|$/);
-    if (cellMatch) rows.set(cellMatch[1], cellMatch[2]);
+  const tableHeader = "| Field | Value |\n|---|---|\n";
+  const headerIndex = text.indexOf(tableHeader);
+  if (headerIndex === -1) return rows;
+  for (const line of text.slice(headerIndex + tableHeader.length).split("\n")) {
+    if (!line.startsWith("|")) break;
+    const cellMatch = line.match(/^\|\s*\*\*([^*|]+)\*\*\s*\|([^|]*)\|$/);
+    if (cellMatch) rows.set(cellMatch[1].trim(), cellMatch[2].trim());
   }
   return rows;
 }
