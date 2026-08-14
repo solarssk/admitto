@@ -154,6 +154,36 @@ describe("handleWalletMessageSend", () => {
     expect(c.json).toHaveBeenCalledWith({ recipientCount: 2 });
   });
 
+  it("dry run succeeds with no text at all - counting only resolves the filter, never reads text", async () => {
+    const db = { attendee: { findMany: vi.fn().mockResolvedValue([{ id: "att-1" }]) } };
+    const c = fakeContext({
+      req: {
+        param: vi.fn(() => "evt-1"),
+        query: vi.fn(),
+        json: vi.fn(async () => ({ filter: { type: "all" }, dryRun: true })),
+      },
+    });
+
+    await handleWalletMessageSend(c as never, db as never);
+
+    expect(c.json).toHaveBeenCalledWith({ recipientCount: 1 });
+  });
+
+  it("returns validation_failed for a real send with empty/whitespace-only text (not the dry-run path)", async () => {
+    const db = { attendee: { findMany: vi.fn().mockResolvedValue([{ id: "att-1" }]) } };
+    const c = fakeContext({
+      req: {
+        param: vi.fn(() => "evt-1"),
+        query: vi.fn(),
+        json: vi.fn(async () => ({ filter: { type: "all" }, text: "   " })),
+      },
+    });
+
+    await handleWalletMessageSend(c as never, db as never);
+
+    expect(c.json).toHaveBeenCalledWith({ error: "validation_failed" }, 400);
+  });
+
   it("too_many_attendees when the resolved recipient set exceeds the cap", async () => {
     const rows = Array.from({ length: WALLET_MESSAGE_RECIPIENT_LIMIT + 1 }, (_, i) => ({ id: `att-${i}` }));
     const db = { attendee: { findMany: vi.fn().mockResolvedValue(rows) } };

@@ -42,10 +42,14 @@ const walletMessageFilterSchema = z.discriminatedUnion("type", [
 
 export type WalletMessageFilter = z.infer<typeof walletMessageFilterSchema>;
 
+/** `text` is optional at the schema level and checked for real content only in the handler
+ * (below, gated on `!dryRun`) - a dry run only counts recipients from `filter` and never reads
+ * `text` at all, so requiring non-empty text here would reject a legitimate "count before I've
+ * written the message yet" request with no real reason. */
 const walletMessageSendBodySchema = z
   .object({
     filter: walletMessageFilterSchema,
-    text: z.string().trim().min(1).max(WALLET_MESSAGE_TEXT_MAX_LENGTH),
+    text: z.string().trim().max(WALLET_MESSAGE_TEXT_MAX_LENGTH).optional(),
     dryRun: z.boolean().optional(),
   })
   .strict();
@@ -156,6 +160,9 @@ export async function handleWalletMessageSend(c: Context, db: PrismaClient): Pro
     return c.json({ recipientCount: ids.length } satisfies WalletMessageDryRunDto);
   }
 
+  const text = body.text?.trim();
+  if (!text) return c.json({ error: "validation_failed" }, 400);
+
   if (ids.length === 0) {
     return c.json({ jobId: null, recipientCount: 0 } satisfies WalletMessageQueuedDto);
   }
@@ -173,7 +180,7 @@ export async function handleWalletMessageSend(c: Context, db: PrismaClient): Pro
       actor_user_id: audit.operator ?? null,
       session_id: audit.sessionId ?? null,
       client_timezone: resolveClientTimezone(c),
-      result_json: { request: { eventId, attendeeIds: ids, text: body.text } },
+      result_json: { request: { eventId, attendeeIds: ids, text } },
     },
   });
 
