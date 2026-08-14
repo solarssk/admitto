@@ -279,6 +279,52 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
     expect(input.semantics?.eventName).toBe("Admitto Conference");
   });
 
+  it("sets eventStartDate but leaves eventEndDate/duration undefined when only the start hour is set", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { walletSemanticTagsEnabled: true, eventHoursStart: "09:00", eventHoursEnd: null },
+      }),
+      "b",
+    );
+    expect(input.semantics?.eventStartDate).toBeDefined();
+    expect(input.semantics?.eventEndDate).toBeUndefined();
+    expect(input.semantics?.duration).toBeUndefined();
+  });
+
+  it("treats a malformed event-hours string as unset rather than producing a bad instant", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { walletSemanticTagsEnabled: true, eventHoursStart: "9am", eventHoursEnd: "18:00" },
+      }),
+      "b",
+    );
+    expect(input.semantics?.eventStartDate).toBeUndefined();
+  });
+
+  it("omits duration (rather than 0) for an event whose start and end hours are identical", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { walletSemanticTagsEnabled: true, eventHoursStart: "09:00", eventHoursEnd: "09:00" },
+      }),
+      "b",
+    );
+    expect(input.semantics?.duration).toBeUndefined();
+  });
+
+  it("omits eventName/venueName/entranceDescription/attendeeName when their source values are empty", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        attendee: { name: "" },
+        event: { walletSemanticTagsEnabled: true, title: "", location: "", directionsText: "" },
+      }),
+      "b",
+    );
+    expect(input.semantics?.eventName).toBeUndefined();
+    expect(input.semantics?.venueName).toBeUndefined();
+    expect(input.semantics?.entranceDescription).toBeUndefined();
+    expect(input.semantics?.attendeeName).toBeUndefined();
+  });
+
   it("wraps an overnight event's duration past midnight instead of going negative", () => {
     const input = buildWalletPassInput(
       fullResolved({
