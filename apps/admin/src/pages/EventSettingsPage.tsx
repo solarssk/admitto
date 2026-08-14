@@ -26,7 +26,7 @@ import {
   uploadEventBrandingFile,
   type WalletPushHistoryEntry,
 } from "../api/client.js";
-import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet";
+import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
