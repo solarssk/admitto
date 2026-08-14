@@ -87,6 +87,7 @@ import {
   rateLimit,
 } from "./rate-limit/policies.js";
 import { skipBulkSendRateLimitForDryRun } from "./rate-limit/skip-bulk-send-dry-run.js";
+import { skipWalletMessageRateLimitForDryRun } from "./rate-limit/skip-wallet-message-rate-limit-for-dry-run.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import {
@@ -164,6 +165,13 @@ import {
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
 import { handleGetWalletPushJob, handleGetWalletPushHistory } from "./admin/wallet-push-routes.js";
+import {
+  handleWalletMessageSend,
+  handleGetWalletMessageJob,
+  handleGetWalletMessageHistory,
+  handleSearchWalletMessageAttendees,
+  WALLET_MESSAGE_SEND_BODY_MAX_BYTES,
+} from "./admin/wallet-message-routes.js";
 import { handleImportPreview, handleImportCommit, handleGetImportJob, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
   handleListEventItems,
@@ -582,6 +590,8 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminImportJobStatusRateLimit = rateLimit(rateLimitStore, "admin:import-job-status");
   const adminWalletPushJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-push-job-status");
+  const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
+  const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
@@ -606,6 +616,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const mailSettingsBodyLimit = bodyLimit({
     maxSize: MAX_MAIL_SETTINGS_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const walletMessageBodyLimit = bodyLimit({
+    maxSize: WALLET_MESSAGE_SEND_BODY_MAX_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const uploadBodyLimit = bodyLimit({
@@ -1238,6 +1252,30 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/wallet-push/history", staffAdminGate, (c) =>
     handleGetWalletPushHistory(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/wallet-message/send",
+    jsonPostCsrf,
+    staffAdminGate,
+    walletMessageBodyLimit,
+    skipWalletMessageRateLimitForDryRun,
+    adminWalletMessageSendRateLimit,
+    guardArchivedEvent((c) => handleWalletMessageSend(c, db)),
+  );
+  app.get(
+    "/api/admin/events/:eventId/wallet-message/jobs/:jobId",
+    staffAdminGate,
+    adminWalletMessageJobStatusRateLimit,
+    (c) => handleGetWalletMessageJob(c, db),
+  );
+  app.get("/api/admin/events/:eventId/wallet-message/history", staffAdminGate, (c) =>
+    handleGetWalletMessageHistory(c, db),
+  );
+  app.get(
+    "/api/admin/events/:eventId/wallet-message/attendees",
+    staffAdminGate,
+    adminAttendeesSearchRateLimit,
+    (c) => handleSearchWalletMessageAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/export-selected",
