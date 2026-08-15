@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- "Remember this device" (MFA-skip) cookies are now bound to the IP address and/or browser User-Agent recorded when you checked the box. A cookie used later from a browser and network that both look different is no longer accepted silently - it falls back to asking for your two-factor code again, so a copied or stolen cookie can't skip MFA from an attacker's own device.
+
 ### Added
 
 - Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.

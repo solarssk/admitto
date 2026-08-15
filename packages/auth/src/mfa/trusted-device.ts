@@ -9,6 +9,12 @@ export interface CreateTrustedDeviceInput {
   label?: string;
 }
 
+/** Current request's IP/User-Agent, checked against what was recorded when the device was trusted. */
+export interface ValidateTrustedDeviceContext {
+  ip?: string;
+  userAgent?: string;
+}
+
 /** Create trusted-device row; returns raw token for cookie (once). */
 export async function createTrustedDevice(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -35,11 +41,39 @@ export async function createTrustedDevice(
   return { trustedDevice, rawToken };
 }
 
-/** Validate trusted-device cookie token for a user. Returns false immediately when trusted_device_days = 0 (feature disabled). */
+/**
+ * A trusted-device cookie must still look like the same browser it was minted for, otherwise it's
+ * a fully portable bearer token for its whole validity window if exfiltrated (infostealer, stolen
+ * laptop, leaked browser-profile backup) - see security finding on this function.
+ *
+ * Rows with no recorded IP/User-Agent (created before this check shipped) have no baseline to
+ * compare against, so they stay valid. Otherwise either signal matching is enough: User-Agent
+ * alone survives IP rotation from mobile networks/ISP DHCP renewal (an exact-IP-only requirement
+ * would re-prompt MFA on nearly every trip for those users), IP alone survives a browser update
+ * changing the User-Agent string. Only a request that differs on *both* - the expected shape of an
+ * exfiltrated cookie used from a different device on a different network - is rejected.
+ */
+function deviceContextMatches(
+  row: Pick<TrustedDevice, "ip" | "user_agent">,
+  context: ValidateTrustedDeviceContext,
+): boolean {
+  if (row.ip === null && row.user_agent === null) return true;
+
+  const ipMatches = row.ip !== null && row.ip === context.ip;
+  const userAgentMatches = row.user_agent !== null && row.user_agent === context.userAgent;
+  return ipMatches || userAgentMatches;
+}
+
+/**
+ * Validate trusted-device cookie token for a user. Returns false immediately when
+ * trusted_device_days = 0 (feature disabled), or when `context` no longer matches the IP/User-Agent
+ * recorded at creation time closely enough (see `deviceContextMatches`).
+ */
 export async function validateTrustedDevice(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
   rawToken: string,
+  context: ValidateTrustedDeviceContext = {},
 ): Promise<boolean> {
   const days = await getTrustedDeviceDays(prisma);
   if (days === 0) return false;
@@ -52,6 +86,7 @@ export async function validateTrustedDevice(
   if (row?.user_id !== userId) return false;
   if (row.revoked_at) return false;
   if (row.expires_at.getTime() <= Date.now()) return false;
+  if (!deviceContextMatches(row, context)) return false;
 
   await prisma.trustedDevice.update({
     where: { id: row.id },
