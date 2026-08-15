@@ -55,7 +55,13 @@ export type WalletPushRequest =
 
 type ClaimedWalletPushJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 
-function readRequest(job: { result_json: unknown }): WalletPushRequest | null {
+/** Validates and parses a stored WalletPushRequest out of an AdminJob's raw result_json - shared
+ * by this file's own runOneWalletPushJob (which round-trips the parsed value back into
+ * result_json on completion, so a dropped field here is a dropped field forever) and
+ * apps/web's wallet-push-routes.ts history endpoint (which must not throw on an unexpected shape
+ * - a single malformed row must degrade to an unscoped history entry, not a 500 for the whole
+ * list). */
+export function readWalletPushRequest(job: { result_json: unknown }): WalletPushRequest | null {
   if (!job.result_json || typeof job.result_json !== "object" || Array.isArray(job.result_json)) {
     return null;
   }
@@ -64,7 +70,10 @@ function readRequest(job: { result_json: unknown }): WalletPushRequest | null {
   if (!request || typeof request !== "object" || Array.isArray(request)) return null;
   const req = request as Record<string, unknown>;
   if (typeof req.eventId !== "string" || !req.eventId) return null;
-  if (req.kind === "event_wide") return { kind: "event_wide", eventId: req.eventId };
+  if (req.kind === "event_wide") {
+    const reason = req.reason === "location" || req.reason === "settings" ? req.reason : undefined;
+    return { kind: "event_wide", eventId: req.eventId, reason };
+  }
   if (req.kind !== "attendee_ids") return null;
   if (!Array.isArray(req.attendeeIds) || !req.attendeeIds.every((id) => typeof id === "string")) return null;
   return { kind: "attendee_ids", eventId: req.eventId, attendeeIds: req.attendeeIds as string[] };
@@ -152,7 +161,7 @@ async function markWalletPushFailed(db: PrismaClient, jobId: string, err: unknow
 
 async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob): Promise<"succeeded" | "failed"> {
   try {
-    const request = readRequest(job);
+    const request = readWalletPushRequest(job);
     if (!request) throw new Error("wallet_push_job_bad_request");
     const eventId = request.eventId;
 

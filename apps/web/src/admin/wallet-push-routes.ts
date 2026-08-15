@@ -6,7 +6,7 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import type { WalletPushRequest } from "@admitto/tickets";
+import { readWalletPushRequest, type WalletPushRequest } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveClientTimezone } from "./admin-helpers.js";
 import { loadEventAdminJob } from "./admin-job-http.js";
 
@@ -14,11 +14,9 @@ const WALLET_PUSH_HISTORY_LIMIT = 20;
 
 /** Shape written by drainWalletPushJobs (packages/tickets/src/drain-wallet-push-jobs.ts) into
  * AdminJob.result_json once a job finishes - named once so the two response shapes below can't
- * drift apart from the worker's actual payload. `request` is the same value createWalletPushJob
- * stored at enqueue time (see WalletPushRequest) - the worker round-trips it into the final
- * write, unchanged, alongside the outcome counts. */
+ * drift apart from the worker's actual payload. The `request` field also stored there is read
+ * separately via readWalletPushRequest below (validated), not through this loose cast. */
 type WalletPushResultJson = {
-  request?: WalletPushRequest;
   reissued?: number;
   skipped?: number;
   errored?: number;
@@ -32,7 +30,12 @@ export type WalletPushHistoryScope =
   | { kind: "attendee_ids"; count: number }
   | { kind: "event_wide"; reason: "location" | "settings" | null };
 
-function historyScope(request: WalletPushRequest | undefined): WalletPushHistoryScope | null {
+/** Re-validates the stored request via the same parser the drain worker itself trusts
+ * (packages/tickets), rather than the loose WalletPushResultJson cast below - a single
+ * malformed/unexpected-shape row must degrade to scope: null, not throw and 500 the whole
+ * history list. */
+function historyScope(job: { result_json: unknown }): WalletPushHistoryScope | null {
+  const request = readWalletPushRequest(job);
   if (!request) return null;
   if (request.kind === "attendee_ids") return { kind: "attendee_ids", count: request.attendeeIds.length };
   return { kind: "event_wide", reason: request.reason ?? null };
@@ -188,7 +191,7 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
       errored: result?.errored ?? 0,
       status: job.status === "failed" ? ("failed" as const) : ("succeeded" as const),
       error: job.status === "failed" ? job.error : null,
-      scope: historyScope(result?.request),
+      scope: historyScope(job),
     };
   });
 

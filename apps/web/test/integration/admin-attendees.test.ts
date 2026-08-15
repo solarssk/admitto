@@ -6681,6 +6681,36 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
       { kind: "attendee_ids", count: 3 },
     ]);
   });
+
+  it("degrades a malformed stored request to scope: null instead of failing the whole list", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    await prisma.adminJob.create({
+      data: {
+        type: "wallet_push",
+        status: "succeeded",
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        // attendeeIds is a string, not an array - the shape a naive `request.attendeeIds.length`
+        // read would throw on; readWalletPushRequest must reject it and return null instead.
+        result_json: {
+          request: { kind: "attendee_ids", eventId: EVENT_A, attendeeIds: "not-an-array" },
+          reissued: 0,
+          skipped: 0,
+          errored: 1,
+        },
+        created_at: new Date("2026-06-05T11:00:00Z"),
+        finished_at: new Date("2026-06-05T11:01:00Z"),
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<{ scope: unknown; errored: number }> };
+    expect(body.items).toEqual([expect.objectContaining({ scope: null, errored: 1 })]);
+  });
 });
 
 /** Route-wiring coverage for the four wallet-message endpoints (app.ts) - the handler logic
