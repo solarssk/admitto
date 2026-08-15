@@ -122,8 +122,11 @@ function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Respons
  * an active `tx` callback (which would need a second pooled connection and deadlock on a
  * single-connection deployment, e.g. `connection_limit=1`); only once the authoritative
  * in-transaction step-up check has passed does `body` run and do the actual sensitive write.
+ *
+ * Exported for reuse by users-routes.ts's admin-assisted MFA/password reset endpoints, which
+ * gate the ACTOR's own step-up (not the target's) when the reset target is another superadmin.
  */
-async function withStepUpGate<T>(
+export async function withStepUpGate<T>(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,

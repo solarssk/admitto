@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Users & roles: resetting another superadmin's two-factor authentication or password now requires the acting superadmin to confirm with their own authenticator code first, and is recorded distinctly in the audit log. Previously any superadmin could reset another superadmin's 2FA or password with no extra confirmation and no way to tell it apart from an ordinary staff reset in the audit trail, so a compromised superadmin session could be used to quietly take over every other superadmin account. Resetting your own account is unaffected.
+- Users & roles: the check that blocks resetting two-factor authentication or a password for an SSO-managed account is now applied at the exact moment the reset is written, closing a narrow timing window where linking single sign-on at the same moment as an admin's reset could still leave a local password or two-factor method silently in place.
+
 ### Added
 
 - Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.
