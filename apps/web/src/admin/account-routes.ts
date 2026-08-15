@@ -66,12 +66,15 @@ async function stepUpPreflight(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  userId: string,
-  currentSessionId: string | undefined,
-  code: string | undefined,
-  rateLimitAction: string,
-  forceRequired = false,
+  params: {
+    userId: string;
+    currentSessionId: string | undefined;
+    code: string | undefined;
+    rateLimitAction: string;
+    forceRequired?: boolean;
+  },
 ): Promise<Response | null> {
+  const { userId, currentSessionId, code, rateLimitAction, forceRequired } = params;
   if (forceRequired || (await userRequiresMfaStepUp(db, userId))) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
     if (!code) return c.json({ code: "totp_required" }, 400);
@@ -151,16 +154,13 @@ export async function withStepUpGate<T>(
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
   const { userId, currentSessionId, rateLimitAction, forceRequired } = params;
   const code = params.rawCode?.trim();
-  const preflightDenied = await stepUpPreflight(
-    c,
-    db,
-    rateLimitStore,
+  const preflightDenied = await stepUpPreflight(c, db, rateLimitStore, {
     userId,
     currentSessionId,
     code,
     rateLimitAction,
     forceRequired,
-  );
+  });
   if (preflightDenied) return { ok: false, response: preflightDenied };
 
   const orgId = await resolveInstanceOrganizationId(db);
