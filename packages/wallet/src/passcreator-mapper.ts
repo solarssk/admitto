@@ -69,8 +69,7 @@ function walletPlaceholderValues(input: WalletPassInput): Record<string, string 
  *
  * Confirmed live against app.passcreator.com 2026-08-06: `templateId`,
  * `userProvidedId`, and `enforceUniqueUserProvidedId` all live INSIDE the
- * `data` object, not as siblings — internal integration notes' example
- * (siblings) does not match the real API.
+ * `data` object, not as siblings.
  *
  * No default field mapping: PassCreator templates don't share a common set of Additional
  * Property names, so guessing keys like `name`/`eventDate` only ever matched one specific

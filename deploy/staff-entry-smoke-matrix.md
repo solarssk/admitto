@@ -6,8 +6,6 @@ Manual verification after deploy or auth changes. Assumes hostname e.g. `staff.e
 Access on admin paths, WireGuard bypass for the event network, Authentik as shared IdP for CF ZTNA and
 the OIDC button on `/login`.
 
-See also the internal design docs for background.
-
 ## Product interpretation (owner decision, post–foundation #56)
 
 - CF ZTNA is a **transparent entry layer** for city admins on `/admin`, not a separate user model.
