@@ -39,7 +39,7 @@ npm run start -w @admitto/web
 | `/api/checkin/*` | operator | Scan validation + history |
 | `/admin/*` | admin (+ optional CF Access JWT) | Superadmin config (IdP, CF Access) |
 
-Path classification for Cloudflare Access: [`_ops/design/deployment-cloudflare-access.md`](../../_ops/design/deployment-cloudflare-access.md).
+Path classification for Cloudflare Access: see internal design docs.
 
 Staff entry smoke matrix (manual QA): [`deploy/staff-entry-smoke-matrix.md`](../../deploy/staff-entry-smoke-matrix.md).
 
