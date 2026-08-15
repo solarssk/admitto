@@ -403,7 +403,7 @@ See [`../../_ops/design/deployment-cloudflare-access.md`](../../_ops/design/depl
 
 - Path classification (what stays bypass vs Access-protected)
 - Origin invariant: reachable only via Cloudflare or WireGuard tunnel
-- Pre-linking admins before enabling `CF_ACCESS_ENABLED`
+- Pre-linking staff identities and selecting the direct OIDC source before enabling `CF_ACCESS_ENABLED`
 
 Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 

@@ -3,6 +3,7 @@ import {
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_ENABLED,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
+  SETTING_CF_ACCESS_SOURCE_PROVIDER_ID,
   SETTING_CF_ACCESS_TEAM_DOMAIN,
 } from "../settings/keys.js";
 import { getSetting } from "../settings/resolver.js";
@@ -12,6 +13,8 @@ export interface CfAccessConfig {
   teamDomain: string;
   audience: string[];
   protectedPrefixes: string[];
+  /** Direct OIDC provider that owns the canonical Authentik subject. */
+  sourceProviderId: string;
   jwksUri: string;
 }
 
@@ -112,6 +115,7 @@ export function buildCfAccessConfigFromFields(input: {
   teamDomainRaw: string;
   audience: string[];
   protectedPrefixes: string[];
+  sourceProviderId: string;
 }): CfAccessConfig {
   const prefixes =
     input.protectedPrefixes.length > 0 ? input.protectedPrefixes : ["/admin", "/api/admin"];
@@ -121,6 +125,7 @@ export function buildCfAccessConfigFromFields(input: {
     teamDomain,
     audience: input.audience,
     protectedPrefixes: prefixes,
+    sourceProviderId: input.sourceProviderId.trim(),
     jwksUri: teamDomain ? `${teamDomain}/cdn-cgi/access/certs` : "",
   };
 }
@@ -149,6 +154,9 @@ export async function getCfAccessConfig(
   const protectedPrefixes = parsePrefixes(
     await getSetting(prisma, SETTING_CF_ACCESS_PROTECTED_PREFIXES),
   );
+  const sourceProviderId = String(
+    await getSetting<string>(prisma, SETTING_CF_ACCESS_SOURCE_PROVIDER_ID),
+  ).trim();
 
   let teamDomain = "";
   if (teamRaw.trim()) {
@@ -161,6 +169,7 @@ export async function getCfAccessConfig(
     teamDomain,
     audience,
     protectedPrefixes,
+    sourceProviderId,
     jwksUri: teamDomain ? `${teamDomain}/cdn-cgi/access/certs` : "",
   };
 }
@@ -184,6 +193,22 @@ export function validateCfAccessBootConfigFromResolved(config: CfAccessConfig): 
   console.warn(
     "WARNING: CF_ACCESS_ENABLED=true; ensure origin is reachable only via Cloudflare Tunnel/firewall (see deployment-cloudflare-access.md)",
   );
+}
+
+/**
+ * Identity-link configuration required when a verified Access JWT is used as a
+ * passwordless staff sign-in assertion. This is deliberately separate from boot
+ * validation: existing break-glass deployments may be upgraded before an
+ * operator has selected their direct OIDC source, but the JWT path then fails
+ * closed instead of guessing an account from e-mail.
+ */
+export function validateCfAccessIdentityLinkConfig(config: CfAccessConfig): void {
+  if (!config.enabled) return;
+  if (!config.sourceProviderId) {
+    throw new Error(
+      "CF_ACCESS_SOURCE_PROVIDER_ID is required when Cloudflare Access is enabled",
+    );
+  }
 }
 
 /** Resolve team domain for JWKS test — allow loopback mocks in test only. */

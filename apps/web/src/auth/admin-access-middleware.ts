@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import type { IdentityProvider, PrismaClient } from "@admitto/db";
+import type { JWTPayload } from "jose";
 import { getCookie } from "hono/cookie";
 import {
   SESSION_COOKIE_NAME,
@@ -10,14 +11,13 @@ import {
   validateAccessJwt,
   CfAccessJwtError,
   findCloudflareAccessProvider,
-  resolveOrCreateUserFromExternalIdentity,
+  resolveCfAccessIdentityFromValidatedJwt,
   ExternalIdentityLinkError,
   extractClaims,
-  applyOidcGroupRoleMappings,
+  type ExternalIdentityClaims,
   logCfAccessAuth,
   logAccessDenied,
   type CfAccessConfig,
-  type ExternalIdentityClaims,
 } from "@admitto/auth";
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
@@ -44,23 +44,26 @@ function rejectInvalidJwt(c: Context, reason: string): Response {
   return c.text("Forbidden", 403);
 }
 
-/** Resolve (or JIT-create) the local user for a validated CF Access identity. */
-async function resolveCfAccessIdentity(
+/** Resolve the local user only through the configured direct OIDC identity binding. */
+async function resolveCfAccessPrincipal(
   c: Context,
   prisma: PrismaClient,
+  config: CfAccessConfig,
   provider: IdentityProvider,
   subject: string,
+  payload: JWTPayload,
   claims: ExternalIdentityClaims,
   path: string,
 ): Promise<{ userId: string } | { response: Response }> {
   try {
-    const resolved = await resolveOrCreateUserFromExternalIdentity(
-      prisma,
-      provider,
-      subject,
+    const resolved = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+      config,
+      cloudflareProvider: provider,
+      cloudflareSubject: subject,
+      payload,
       claims,
-    );
-    return { userId: resolved.user.id };
+    });
+    return { userId: resolved.userId };
   } catch (err) {
     const reason =
       err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";
@@ -96,14 +99,20 @@ async function handleCfAccessToken(
     }
 
     const claims = extractClaims(payload, provider);
-    const resolution = await resolveCfAccessIdentity(c, prisma, provider, subject, claims, path);
+    const resolution = await resolveCfAccessPrincipal(
+      c,
+      prisma,
+      config,
+      provider,
+      subject,
+      payload,
+      claims,
+      path,
+    );
     if ("response" in resolution) {
       return resolution.response;
     }
     const { userId } = resolution;
-
-    // Reconcile grants against current mapping rules (revocation when rules or groups change).
-    await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
 
     // Set as soon as the identity is resolved, before the admin-role check below - a denied
     // request here is still a known, verified actor, and request-log's IP attribution

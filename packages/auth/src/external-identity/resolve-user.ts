@@ -102,8 +102,8 @@ async function resyncExistingIdentity(
   if (!existing.user.is_active) {
     throw new ExternalIdentityLinkError("user_inactive");
   }
-  const nextGroups = claims.groups ?? [];
-  const groupsChanged = !groupsEqual(existing.groups ?? [], nextGroups);
+  const nextGroups = claims.groups ?? existing.groups ?? [];
+  const groupsChanged = claims.groups !== undefined && !groupsEqual(existing.groups ?? [], nextGroups);
   const nextName = claims.name ?? existing.name;
   const nextPhone = claims.phone ?? existing.phone;
   const userUpdate: Prisma.UserUpdateInput = {};
@@ -119,7 +119,9 @@ async function resyncExistingIdentity(
       email: claims.email ?? existing.email,
       name: nextName,
       phone: nextPhone,
-      groups: nextGroups,
+      // Keep the last known membership if this IdP response omitted groups. An explicit empty
+      // claim still replaces the stored membership and triggers revocation at the caller.
+      ...(claims.groups === undefined ? {} : { groups: nextGroups }),
       last_login_at: new Date(),
     },
   });

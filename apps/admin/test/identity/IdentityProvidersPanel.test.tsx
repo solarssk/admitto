@@ -68,7 +68,15 @@ const emptyCf = () => ({
   teamDomain: "",
   audience: [] as string[],
   protectedPrefixes: [] as string[],
-  locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+  sourceProviderId: "",
+  sourceProviders: [],
+  locks: {
+    enabled: false,
+    teamDomain: false,
+    audience: false,
+    protectedPrefixes: false,
+    sourceProviderId: false,
+  },
 });
 
 afterEach(() => {

@@ -1744,6 +1744,13 @@ export interface CfAccessEnvLocks {
   teamDomain: boolean;
   audience: boolean;
   protectedPrefixes: boolean;
+  sourceProviderId: boolean;
+}
+
+export interface CfAccessSourceProvider {
+  id: string;
+  displayName: string;
+  enabled: boolean;
 }
 
 export interface CfAccessSummaryDto {
@@ -1751,6 +1758,8 @@ export interface CfAccessSummaryDto {
   teamDomain: string;
   audience: string[];
   protectedPrefixes: string[];
+  sourceProviderId: string;
+  sourceProviders: CfAccessSourceProvider[];
   locks: CfAccessEnvLocks;
 }
 
@@ -1858,6 +1867,7 @@ export interface CfAccessUpdateBody {
   teamDomain?: string;
   audience?: string[] | string;
   protectedPrefixes?: string[] | string;
+  sourceProviderId?: string;
 }
 
 /** POST /api/admin/identity/cf-access/test result. */
