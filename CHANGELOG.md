@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-15
+
 ### Security
 
 - Account and two-factor management endpoints (change password, reset two-factor, remove single sign-on, etc.) no longer share their request throttle with the public sign-in page. Previously, a burst of a few dozen requests against those endpoints - even without a valid session - could exhaust the shared limit and lock every user behind the same office or VPN connection out of signing in. Re-entering your current password to confirm a sensitive change (password change, two-factor reset, removing single sign-on) is now also throttled per account rather than only by network address, so repeatedly guessing a password from different addresses is caught instead of slipping through.
@@ -993,7 +995,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/solarssk/admitto/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/solarssk/admitto/compare/v0.4.14...v0.5.0
 [0.4.14]: https://github.com/solarssk/admitto/compare/v0.4.13...v0.4.14
 [0.4.13]: https://github.com/solarssk/admitto/compare/v0.4.12...v0.4.13
