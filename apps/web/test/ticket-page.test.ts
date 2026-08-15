@@ -276,6 +276,35 @@ describe("renderTicket", () => {
     expect(html).not.toContain("M12 7v5l3 3");
   });
 
+  it("renders the event date in en-GB long-month text when the event has no country set", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
+    expect(html).toContain("1 September 2026");
+  });
+
+  it("renders the event date and hours in the event's own regional convention (US-style)", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          eventHoursStart: "18:00",
+          eventHoursEnd: "22:00",
+          addressComponents: {
+            object_name: null,
+            street: null,
+            postcode: null,
+            city: "New York",
+            region: "NY",
+            country: "United States",
+          },
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("September 1, 2026");
+    expect(html).toContain("6:00 PM–10:00 PM");
+  });
+
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {
     const html = renderTicket(
       {
