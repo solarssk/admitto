@@ -107,6 +107,7 @@ beforeAll(async () => {
       jwks_uri: "https://authentik.test/application/o/jwks/",
       display_name: "Authentik direct",
       enabled: true,
+      claim_groups: "admitto_groups",
     },
   });
   await prisma.externalIdentity.createMany({
@@ -345,6 +346,121 @@ describe("CF Access admin collision point", () => {
     expect(text).toContain("authenticated via Cloudflare Access");
   });
 
+  it("reconciles source-provider group grants on every Cloudflare Access sign-in", async () => {
+    const group = "cf-managed-superadmins";
+    const subject = "cf-group-sync-sub";
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+        group,
+        role: "superadmin",
+        scope_type: "instance",
+        scope_id: "",
+      },
+    });
+
+    try {
+      const grantedToken = await signCfAccessJwt(mock, {
+        sub: subject,
+        email: NO_ROLE_EMAIL,
+        custom: {
+          admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT,
+          admitto_groups: [group],
+        },
+      });
+      const granted = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: grantedToken },
+      });
+      expect(granted.status).toBe(200);
+      expect(
+        await prisma.oidcRoleGrant.count({
+          where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, user_id: NO_ROLE_ID },
+        }),
+      ).toBe(1);
+
+      const revokedToken = await signCfAccessJwt(mock, {
+        sub: subject,
+        email: NO_ROLE_EMAIL,
+        custom: {
+          admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT,
+          admitto_groups: [],
+        },
+      });
+      const revoked = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: revokedToken },
+      });
+      expect(revoked.status).toBe(403);
+      expect(
+        await prisma.oidcRoleGrant.count({
+          where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, user_id: NO_ROLE_ID },
+        }),
+      ).toBe(0);
+      await expect(
+        prisma.externalIdentity.findUniqueOrThrow({
+          where: {
+            provider_id_subject: {
+              provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+              subject: AUTHENTIK_NO_ROLE_SUBJECT,
+            },
+          },
+          select: { groups: true },
+        }),
+      ).resolves.toEqual({ groups: [] });
+    } finally {
+      await prisma.oidcGroupRoleMapping.deleteMany({
+        where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, group },
+      });
+      await prisma.roleAssignment.deleteMany({
+        where: { user_id: NO_ROLE_ID, role: "superadmin", scope_type: "instance" },
+      });
+      await prisma.externalIdentity.update({
+        where: {
+          provider_id_subject: {
+            provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+            subject: AUTHENTIK_NO_ROLE_SUBJECT,
+          },
+        },
+        data: { groups: [] },
+      });
+    }
+  });
+
+  it("fails closed when a mapped source group claim was not copied into the Access JWT", async () => {
+    const group = "cf-required-group-claim";
+    const subject = "cf-missing-group-claim-sub";
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+        group,
+        role: "superadmin",
+        scope_type: "instance",
+        scope_id: "",
+      },
+    });
+
+    try {
+      const token = await signCfAccessJwt(mock, {
+        sub: subject,
+        email: NO_ROLE_EMAIL,
+        custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+      });
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+      expect(
+        await prisma.oidcRoleGrant.count({
+          where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, user_id: NO_ROLE_ID },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.oidcGroupRoleMapping.deleteMany({
+        where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, group },
+      });
+    }
+  });
+
   it("invalid CF JWT rejects even with valid session", async () => {
     const res = await app.request("/admin", {
       headers: {
@@ -490,6 +606,24 @@ describe("CF Access admin collision point", () => {
         where: { id: AUTHENTIK_SOURCE_PROVIDER_ID },
         data: { enabled: true },
       });
+    }
+  });
+
+  it("rejects a CF JWT when its linked source account is inactive", async () => {
+    await prisma.user.update({ where: { id: NO_ROLE_ID }, data: { is_active: false } });
+    try {
+      const token = await signCfAccessJwt(mock, {
+        sub: "cf-source-user-inactive-sub",
+        email: NO_ROLE_EMAIL,
+        custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+      });
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+    } finally {
+      await prisma.user.update({ where: { id: NO_ROLE_ID }, data: { is_active: true } });
     }
   });
 

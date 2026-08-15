@@ -687,6 +687,23 @@ describe("cloudflare access API", () => {
     expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "validation_failed" });
   });
 
+  it("rejects enabling Cloudflare Access with a disabled direct identity provider", async () => {
+    await prisma.identityProvider.update({ where: { id: PROVIDER_ID }, data: { enabled: false } });
+
+    const res = await json("/api/admin/identity/cf-access", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: true,
+        teamDomain: "https://team.cloudflareaccess.com",
+        audience: ["aud-x"],
+        protectedPrefixes: ["/admin"],
+        sourceProviderId: PROVIDER_ID,
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "source_provider_unavailable" });
+  });
+
   it("saves CF Access changes, preserves omitted fields, and honors an env-locked audience", async () => {
     try {
       const enabled = await json("/api/admin/identity/cf-access", {

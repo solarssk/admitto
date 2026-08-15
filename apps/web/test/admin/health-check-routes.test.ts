@@ -1478,6 +1478,7 @@ describe("collectAdminHealth", () => {
       teamDomain: "https://team.cloudflareaccess.com",
       audience: ["aud-1"],
       protectedPrefixes: ["/admin"],
+      sourceProviderId: "idp-1",
       jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
     });
     testCfAccessConnection.mockResolvedValueOnce({ ok: false, error: "jwks" });
@@ -1744,8 +1745,12 @@ describe("collectAdminHealth", () => {
       teamDomain: "https://team.cloudflareaccess.com",
       audience: ["a", "b"],
       protectedPrefixes: ["/"],
+      sourceProviderId: "idp-1",
       jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
     });
+    listOidcProviders.mockResolvedValue([
+      { id: "idp-1", provider_type: "oidc", display_name: "Direct identity provider", enabled: true },
+    ]);
     const enabled = await collectAdminHealth({
       db: healthDb(),
       rateLimitStore: {} as never,
@@ -1754,6 +1759,45 @@ describe("collectAdminHealth", () => {
     expect(enabled.groups[1]!.checks.find((c) => c.id === "cloudflare_access")?.summary).toBe(
       "Configured · enabled",
     );
+  });
+
+  it("reports an unavailable direct identity provider before Cloudflare Access is probed", async () => {
+    collectSetupChecks.mockResolvedValue(okSetup);
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+    getCfAccessConfig.mockResolvedValue({
+      enabled: true,
+      teamDomain: "https://team.cloudflareaccess.com",
+      audience: ["a"],
+      protectedPrefixes: ["/admin"],
+      sourceProviderId: "missing-idp",
+      jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+    });
+
+    const missing = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+    });
+    const missingRow = missing.groups[1]!.checks.find((check) => check.id === "cloudflare_access");
+    expect(missingRow?.status).toBe("down");
+    expect(missingRow?.summary).toBe("Direct identity provider missing");
+
+    listOidcProviders.mockResolvedValue([
+      { id: "missing-idp", provider_type: "oidc", display_name: "Disabled provider", enabled: false },
+    ]);
+    const disabled = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+    });
+    expect(disabled.groups[1]!.checks.find((check) => check.id === "cloudflare_access")?.summary).toBe(
+      "Direct identity provider disabled",
+    );
+    expect(testCfAccessConnection).not.toHaveBeenCalled();
   });
 
   it("labels map tiles for CARTO and custom hosts, and not_configured when maps disabled", async () => {

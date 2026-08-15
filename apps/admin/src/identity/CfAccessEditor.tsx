@@ -92,6 +92,17 @@ export function CfAccessEditor() {
   const retryLoad = useCallback(() => setLoadTick((n) => n + 1), []);
 
   const dirty = isCfDraftDirty(draft, baseline);
+  // Keep a legacy, now-disabled provider visible as a recovery problem, but never offer it as
+  // a new selection. SearchableSelect intentionally has no per-option disabled state.
+  const enabledSourceProviders = sourceProviders.filter((provider) => provider.enabled);
+  const sourceProviderUnavailable =
+    Boolean(draft.sourceProviderId) &&
+    !enabledSourceProviders.some((provider) => provider.id === draft.sourceProviderId);
+  const sourceProviderError =
+    errors.sourceProviderId ??
+    (sourceProviderUnavailable
+      ? "The selected direct identity provider is unavailable. Select an enabled provider before enabling Cloudflare Access."
+      : undefined);
 
   // Router-level dirty guard — same shape as IdentityProviderEditor. The Identity
   // tabs / Settings sidebar / SPA back button are in-app navigations that
@@ -309,24 +320,22 @@ export function CfAccessEditor() {
                 id="cf-access-source-provider"
                 label="Direct identity provider"
                 value={draft.sourceProviderId}
-                options={sourceProviders.map((provider) => ({
+                options={enabledSourceProviders.map((provider) => ({
                   id: provider.id,
-                  label: provider.enabled
-                    ? provider.displayName
-                    : `${provider.displayName} (disabled)`,
+                  label: provider.displayName,
                 }))}
                 placeholder="Select the direct OIDC provider"
                 searchPlaceholder="Search identity providers"
                 emptyLabel="No OIDC identity providers are configured."
                 disabled={locks.sourceProviderId}
-                invalid={Boolean(errors.sourceProviderId)}
-                describedBy={errors.sourceProviderId ? "cf-access-source-provider-error" : undefined}
+                invalid={Boolean(sourceProviderError)}
+                describedBy={sourceProviderError ? "cf-access-source-provider-error" : undefined}
                 hint="Select the direct OIDC provider (usually Authentik) that already owns staff identities. Admitto uses its immutable subject forwarded by Cloudflare, never an e-mail address."
                 onChange={(sourceProviderId) => setDraft((d) => ({ ...d, sourceProviderId }))}
               />
-              {errors.sourceProviderId && (
+              {sourceProviderError && (
                 <span id="cf-access-source-provider-error" className="at-error" role="alert">
-                  {errors.sourceProviderId}
+                  {sourceProviderError}
                 </span>
               )}
               {locks.sourceProviderId && <Badge variant="neutral">Locked by env</Badge>}

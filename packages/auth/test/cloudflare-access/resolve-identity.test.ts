@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ExternalIdentityLinkError } from "../../src/external-identity/resolve-user.js";
-import { extractCfAccessSourceSubject } from "../../src/cloudflare-access/resolve-identity.js";
+import {
+  extractCfAccessSourceGroups,
+  extractCfAccessSourceSubject,
+} from "../../src/cloudflare-access/resolve-identity.js";
 
 describe("extractCfAccessSourceSubject", () => {
   it("accepts an opaque canonical subject copied into the verified Access JWT", () => {
@@ -19,5 +22,25 @@ describe("extractCfAccessSourceSubject", () => {
     [{ custom: { admitto_identity: ["not-a-subject"] } }, "non-string identity value"],
   ])("rejects %s", (payload) => {
     expect(() => extractCfAccessSourceSubject(payload)).toThrow(ExternalIdentityLinkError);
+  });
+});
+
+describe("extractCfAccessSourceGroups", () => {
+  it("keeps an explicit empty group assertion so mapped grants can be revoked", () => {
+    expect(
+      extractCfAccessSourceGroups(
+        { custom: { admitto_groups: [] } },
+        "admitto_groups",
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    [{}, "no copied custom claims"],
+    [{ custom: {} }, "no configured group claim"],
+    [{ custom: { admitto_groups: ["operators", 42] } }, "a partially malformed group array"],
+    [{ custom: { admitto_groups: "   " } }, "a blank group string"],
+  ])("does not turn %s into an empty revocation assertion", (payload) => {
+    expect(extractCfAccessSourceGroups(payload, "admitto_groups")).toBeUndefined();
   });
 });

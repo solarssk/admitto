@@ -6,22 +6,25 @@ import {
   resolveOrCreateUserFromExternalIdentity,
   ExternalIdentityLinkError,
 } from "../../src/external-identity/resolve-user.js";
+import { resolveCfAccessIdentityFromValidatedJwt } from "../../src/cloudflare-access/resolve-identity.js";
 import { encryptClientSecret } from "../../src/oidc/provider-secret.js";
 import { canManageInstance } from "../../src/authorization.js";
 
 const PROVIDER_ID = "oidc-prov-resolve-test";
+const CF_PROVIDER_ID = "cloudflare-access-resolve-test";
 const USER_EXISTING = "oidc-user-existing-resolve";
 const USER_LINK = "oidc-user-link-resolve";
 
 let prisma: PrismaClient;
 let provider: Awaited<ReturnType<typeof prisma.identityProvider.create>>;
+let cloudflareProvider: Awaited<ReturnType<typeof prisma.identityProvider.create>>;
 
 beforeAll(async () => {
   prisma = createTestPrismaClient();
 
   await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
-  await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
-  await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
+  await prisma.externalIdentity.deleteMany({ where: { provider_id: { in: [PROVIDER_ID, CF_PROVIDER_ID] } } });
+  await prisma.identityProvider.deleteMany({ where: { id: { in: [PROVIDER_ID, CF_PROVIDER_ID] } } });
   await prisma.roleAssignment.deleteMany({
     where: { user_id: { in: [USER_EXISTING, USER_LINK] } },
   });
@@ -40,6 +43,21 @@ beforeAll(async () => {
       token_endpoint: "https://idp.example.com/token",
       jwks_uri: "https://idp.example.com/jwks",
       display_name: "Test IdP",
+      enabled: true,
+      claim_groups: "admitto_groups",
+    },
+  });
+
+  cloudflareProvider = await prisma.identityProvider.create({
+    data: {
+      id: CF_PROVIDER_ID,
+      provider_type: "cloudflare_access",
+      issuer: "https://team.cloudflareaccess.test",
+      client_id: "__cloudflare_access__",
+      authorization_endpoint: "https://team.cloudflareaccess.test/cdn-cgi/access/login",
+      token_endpoint: "https://team.cloudflareaccess.test/cdn-cgi/access/login",
+      jwks_uri: "https://team.cloudflareaccess.test/cdn-cgi/access/certs",
+      display_name: "Cloudflare Access",
       enabled: true,
     },
   });
@@ -70,8 +88,8 @@ afterAll(async () => {
   const userIds = [...new Set([USER_EXISTING, USER_LINK, ...linked.map((x) => x.user_id)])];
 
   await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
-  await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
-  await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
+  await prisma.externalIdentity.deleteMany({ where: { provider_id: { in: [PROVIDER_ID, CF_PROVIDER_ID] } } });
+  await prisma.identityProvider.deleteMany({ where: { id: { in: [PROVIDER_ID, CF_PROVIDER_ID] } } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: { in: userIds } } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   await prisma.$disconnect();
@@ -286,5 +304,153 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
 
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: first.user.id } });
     expect(stored.phone_number).toBe("+15559999999");
+  });
+
+  it("reconciles direct-provider role grants through a pre-linked Cloudflare Access identity", async () => {
+    const sourceSubject = "cf-edge-linked-source-subject";
+    const cloudflareSubject = "cf-edge-linked-subject";
+    const group = "cf-edge-operators";
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: provider.id,
+        subject: sourceSubject,
+        user_id: USER_LINK,
+        email: "linker@example.com",
+      },
+    });
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: provider.id,
+        group,
+        role: "operator",
+        scope_type: "instance",
+        scope_id: "",
+      },
+    });
+
+    try {
+      const granted = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+        config: { enabled: true, sourceProviderId: provider.id },
+        cloudflareProvider,
+        cloudflareSubject,
+        payload: {
+          sub: cloudflareSubject,
+          custom: { admitto_identity: sourceSubject, admitto_groups: [group] },
+        },
+        claims: { email: "linker@example.com" },
+      });
+      expect(granted).toEqual({ userId: USER_LINK });
+      expect(
+        await prisma.oidcRoleGrant.count({ where: { provider_id: provider.id, user_id: USER_LINK } }),
+      ).toBe(1);
+
+      const revoked = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+        config: { enabled: true, sourceProviderId: provider.id },
+        cloudflareProvider,
+        cloudflareSubject,
+        payload: {
+          sub: cloudflareSubject,
+          custom: { admitto_identity: sourceSubject, admitto_groups: [] },
+        },
+        claims: { email: "linker@example.com" },
+      });
+      expect(revoked).toEqual({ userId: USER_LINK });
+      expect(
+        await prisma.oidcRoleGrant.count({ where: { provider_id: provider.id, user_id: USER_LINK } }),
+      ).toBe(0);
+      await expect(
+        prisma.externalIdentity.findUniqueOrThrow({
+          where: { provider_id_subject: { provider_id: provider.id, subject: sourceSubject } },
+          select: { groups: true },
+        }),
+      ).resolves.toEqual({ groups: [] });
+    } finally {
+      await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: provider.id, group } });
+      await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: provider.id, user_id: USER_LINK } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: USER_LINK, role: "operator" } });
+      await prisma.externalIdentity.deleteMany({
+        where: {
+          OR: [
+            { provider_id: provider.id, subject: sourceSubject },
+            { provider_id: cloudflareProvider.id, subject: cloudflareSubject },
+          ],
+        },
+      });
+    }
+  });
+
+  it("fails closed when a mapped direct-provider group assertion is absent at the edge", async () => {
+    const sourceSubject = "cf-edge-missing-groups-source-subject";
+    const group = "cf-edge-required-group";
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: provider.id,
+        subject: sourceSubject,
+        user_id: USER_LINK,
+        email: "linker@example.com",
+      },
+    });
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: provider.id,
+        group,
+        role: "operator",
+        scope_type: "instance",
+        scope_id: "",
+      },
+    });
+
+    try {
+      await expect(
+        resolveCfAccessIdentityFromValidatedJwt(prisma, {
+          config: { enabled: true, sourceProviderId: provider.id },
+          cloudflareProvider,
+          cloudflareSubject: "cf-edge-missing-groups",
+          payload: { sub: "cf-edge-missing-groups", custom: { admitto_identity: sourceSubject } },
+          claims: { email: "linker@example.com" },
+        }),
+      ).rejects.toMatchObject({
+        name: "ExternalIdentityLinkError",
+        message: "source_groups_unavailable",
+      });
+    } finally {
+      await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: provider.id, group } });
+      await prisma.externalIdentity.deleteMany({
+        where: { provider_id: provider.id, subject: sourceSubject },
+      });
+    }
+  });
+
+  it("rejects an inactive linked direct-provider account before binding Cloudflare Access", async () => {
+    const sourceSubject = "cf-edge-inactive-source-subject";
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: provider.id,
+        subject: sourceSubject,
+        user_id: USER_LINK,
+        email: "linker@example.com",
+      },
+    });
+    await prisma.user.update({ where: { id: USER_LINK }, data: { is_active: false } });
+
+    try {
+      await expect(
+        resolveCfAccessIdentityFromValidatedJwt(prisma, {
+          config: { enabled: true, sourceProviderId: provider.id },
+          cloudflareProvider,
+          cloudflareSubject: "cf-edge-inactive-user",
+          payload: { sub: "cf-edge-inactive-user", custom: { admitto_identity: sourceSubject } },
+          claims: { email: "linker@example.com" },
+        }),
+      ).rejects.toMatchObject({
+        name: "ExternalIdentityLinkError",
+        message: "source_user_inactive",
+      });
+    } finally {
+      await prisma.user.update({ where: { id: USER_LINK }, data: { is_active: true } });
+      await prisma.externalIdentity.deleteMany({
+        where: { provider_id: provider.id, subject: sourceSubject },
+      });
+    }
   });
 });

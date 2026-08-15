@@ -131,6 +131,26 @@ describe("CfAccessEditor (slice 4)", () => {
     expect(screen.getByText("Active")).toBeTruthy();
   });
 
+  it("does not offer disabled direct providers and flags a legacy selection", async () => {
+    mockFetch.mockResolvedValueOnce(
+      summary({
+        sourceProviderId: "legacy-disabled",
+        sourceProviders: [
+          { id: "enabled-provider", displayName: "Enabled provider", enabled: true },
+          { id: "legacy-disabled", displayName: "Disabled provider", enabled: false },
+        ],
+      }),
+    );
+    renderEditorAt();
+
+    await screen.findByText(/selected direct identity provider is unavailable/i);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Direct identity provider, none selected" }),
+    );
+    expect(screen.getByRole("button", { name: "Enabled provider" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Disabled provider" })).toBeNull();
+  });
+
   it("saves the edited config and shows a success toast", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://old", audience: ["a"] }));
     mockUpdate.mockResolvedValueOnce(

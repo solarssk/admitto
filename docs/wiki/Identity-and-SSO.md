@@ -107,25 +107,44 @@ A local password always keeps working as a fallback (unless the account has no l
 
 Do this in Cloudflare's own dashboard first, then in Admitto:
 
-1. In **Cloudflare Zero Trust**, create an **Access application** that protects your Admitto staff
+1. First configure and enable the direct OIDC provider in Admitto. It remains the authoritative
+   identity and role source; Cloudflare Access is the edge gate, not a second staff directory.
+   Before enabling the edge flow, every staff account that will use it must sign in through that
+   direct provider once. This safely creates the provider-to-account link; Admitto never guesses a
+   link from an email address.
+2. In **Cloudflare Zero Trust**, create an **Access application** that protects your Admitto staff
    URLs (for example `admin.example.com/*`) and set the policy for who's allowed through (by email
-   domain, group, or identity provider).
-2. From that Access application, copy the **team domain** (looks like
+   domain, group, or identity provider). Configure its upstream generic OIDC login method so the
+   Access JWT's `custom` claims include an opaque `admitto_identity` value that is **exactly the
+   same stable subject (`sub`)** emitted by the selected direct OIDC provider. Do not use email,
+   display name, or a mutable username. Use Cloudflare's IdP test to confirm that this copied claim
+   appears in `oidc_fields` before continuing.
+3. If the direct provider has group-to-role mappings, configure it to emit a small,
+   purpose-limited group claim (for example `admitto_groups`), set that exact claim name in the
+   provider's **Group claim** field in Admitto, and configure Cloudflare to copy it to the Access
+   JWT. Keep this claim bounded; do not forward a large directory-wide group list, which can exceed
+   the Access token/cookie budget. A missing or malformed group assertion fails the Cloudflare
+   sign-in closed when mappings exist; an explicit empty list revokes the provider-managed grants.
+4. From that Access application, copy the **team domain** (looks like
    `https://yourteam.cloudflareaccess.com`) and the **Application Audience (AUD) tag**, a long
    hex string Cloudflare shows on the application's Overview tab.
-3. In Admitto, open **Organisation settings → Identity → Cloudflare Access** and fill in:
+5. In Admitto, open **Organisation settings → Identity → Cloudflare Access** and fill in:
 
    | Field in Admitto | What it is | Example |
    |---|---|---|
    | Cloudflare team URL | Your Zero Trust team domain | `https://yourteam.cloudflareaccess.com` |
    | Application token (AUD) | The Application Audience tag from Cloudflare | `a1b2c3d4-e5f6-7890-abcd-ef1234567890` |
    | Protected URL paths | Which paths this rule applies to, comma-separated | `/admin, /api/admin` |
+   | Direct identity provider | The enabled direct OIDC provider from steps 1–3 | `Corporate OIDC` |
 
-4. Use **Test connection**, confirm it succeeds, and only then enable enforcement.
+6. Use **Test connection**, confirm it succeeds, and only then enable enforcement. Test in a
+   private browser window: after Cloudflare has authenticated the staff member, Admitto should
+   enter as the already linked direct-provider account without showing a second Admitto sign-in
+   screen.
 
 ## Expected result
 
-The test account can sign in through the configured provider and receives only the roles produced by approved mappings. Cloudflare Access protects only the configured paths when enabled.
+The test account can sign in through the configured provider and receives only the roles produced by approved mappings. Cloudflare Access protects only the configured paths when enabled. Its verified edge sign-ins bind to the same pre-linked direct-provider account and reconcile that provider's managed group roles on every sign-in.
 
 ## Important decisions
 
@@ -139,6 +158,9 @@ The test account can sign in through the configured provider and receives only t
   during **Discover**. If it didn't (or the provider was configured before this existed, re-run
   **Discover** to pick it up), signing out only ends the local Admitto session, same as before.
 - A group mapping can add or remove scoped roles on later sign-ins. Manual assignments are not treated as provider-owned grants.
+- Cloudflare Access verifies the edge session; the selected direct OIDC provider remains the source
+  of account identity and group-based authorization. Changing or removing a group there takes
+  effect at the next Cloudflare Access sign-in.
 - A signed-in user's display name and phone number re-sync from the provider on every sign-in. A superadmin's own manual edit to either field in Users and Roles Administration takes priority and is not overwritten by a later sign-in.
 - The system prevents removal of the last active instance Superadmin assignment.
 - Enabling Cloudflare Access with incorrect audience or path values can block staff access.
