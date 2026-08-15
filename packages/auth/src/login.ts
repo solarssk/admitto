@@ -183,10 +183,11 @@ type CompleteMfaTxResult =
 /**
  * Thrown only inside `completeMfaInTransaction`, and only after `verifyTotpOrRecoveryCodeDetailed`
  * has already verified (and, for a recovery code, consumed) the code. Letting this escape the
- * `$transaction` callback aborts it, rolling the consumption back too — otherwise a locked-out
+ * `$transaction` callback aborts it, rolling the consumption back too - otherwise a locked-out
  * user's single active emergency code could be permanently burned for nothing just because their
  * partial session expired or was concurrently revoked between code entry and promotion. Caught in
- * `completeMfa`, which turns it back into a normal `session_not_promoted` failure result.
+ * `completeMfa` and turned back into a normal `session_not_promoted` failure result, but only
+ * when `completeMfa` opened this transaction itself - see that function's own docstring.
  */
 class SessionPromotionFailedAfterCodeVerifiedError extends Error {
   constructor(public readonly method: MfaMethod) {
@@ -237,7 +238,7 @@ async function completeMfaInTransaction(
 }
 
 /** Emit MFA audit events, and the repeated-failure alert side effect, after the DB transaction
- * settles (both success and failure paths — every failure reason is now audited, not just a
+ * settles (both success and failure paths - every failure reason is now audited, not just a
  * wrong code, so a `session_not_promoted` rollback still leaves a forensic trail). */
 async function emitMfaAudit(
   db: PrismaClient | Prisma.TransactionClient,
@@ -253,7 +254,7 @@ async function emitMfaAudit(
   };
   if (!result.ok) {
     await logMfaFailure(db, auditCtx, result.reason, result.reason === "session_not_promoted" ? result.method : undefined);
-    // Only a wrong code counts toward the repeated-guessing alert streak — a recovery-consume
+    // Only a wrong code counts toward the repeated-guessing alert streak - a recovery-consume
     // race or a session-promotion failure both mean the code itself was correct.
     if (result.reason === "invalid_code") {
       await recordFailedMfaFailureSideEffects(db, input.userId, { ip: input.ip });
@@ -277,6 +278,15 @@ async function emitMfaAudit(
  * verifies correctly but promotion still fails afterward, the transaction rolls back
  * (see `SessionPromotionFailedAfterCodeVerifiedError`) so the code is never burned for
  * nothing, and the failure is still audited via `emitMfaAudit`.
+ *
+ * That rollback guarantee only holds when `prisma` is a root client: this function opens its
+ * own `$transaction` there, so it's the one rolling the consumption back before converting the
+ * thrown sentinel into a normal `session_not_promoted` result. When `prisma` is already a
+ * `Prisma.TransactionClient` (a caller-owned transaction), this function has no authority to
+ * roll that transaction back itself - swallowing the sentinel here would let the caller commit
+ * a verified, consumed code with no session ever granted. So in that mode the sentinel is left
+ * to propagate uncaught: the caller's own transaction wrapper must abort on it (and, if it wants
+ * one, produce its own audit record - `emitMfaAudit` below never runs on this path).
  */
 export async function completeMfa(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -284,15 +294,15 @@ export async function completeMfa(
   audit?: MfaAuditContext,
 ): Promise<CompleteMfaResult> {
   let txResult: CompleteMfaTxResult;
-  try {
-    if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
+  if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
+    try {
       txResult = await prisma.$transaction((tx) => completeMfaInTransaction(tx, input));
-    } else {
-      txResult = await completeMfaInTransaction(prisma, input);
+    } catch (err) {
+      if (!(err instanceof SessionPromotionFailedAfterCodeVerifiedError)) throw err;
+      txResult = { ok: false, reason: "session_not_promoted", method: err.method };
     }
-  } catch (err) {
-    if (!(err instanceof SessionPromotionFailedAfterCodeVerifiedError)) throw err;
-    txResult = { ok: false, reason: "session_not_promoted", method: err.method };
+  } else {
+    txResult = await completeMfaInTransaction(prisma, input);
   }
 
   await emitMfaAudit(prisma, audit, input, txResult);

@@ -201,7 +201,7 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
 
 /** Why a login attempt was rejected, recorded in `auth.login.fail`'s `reason` field so an
  * investigator can tell a bad password apart from a correct password against a deactivated
- * account (the latter has no session-granting outcome either way, but is a distinct signal —
+ * account (the latter has no session-granting outcome either way, but is a distinct signal -
  * e.g. a breached credential still being probed after offboarding). Never shown to the caller,
  * which always sees the same generic failure regardless of reason. */
 export type LoginFailureReason = "invalid_credentials" | "inactive";
@@ -297,7 +297,7 @@ export async function logMfaSuccess(db: Db, ctx: MfaAuditContext, method: MfaMet
 /** Why an MFA completion attempt failed, recorded in `auth.mfa.fail`'s `reason` field: a wrong
  * TOTP/recovery code, a recovery code that matched but lost a race to consume its row, or a
  * code that verified correctly but session promotion failed afterward (e.g. the partial session
- * expired or was concurrently revoked between code entry and promotion — the transaction rolls
+ * expired or was concurrently revoked between code entry and promotion - the transaction rolls
  * back in that last case, see `completeMfaInTransaction`, so this is what makes the outcome
  * reconstructable after the fact instead of leaving a silent, unaudited failure). */
 export type MfaFailureReason = "invalid_code" | "recovery_consume_conflict" | "session_not_promoted";

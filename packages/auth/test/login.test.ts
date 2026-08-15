@@ -77,7 +77,15 @@ vi.mock("../src/settings/resolver.js", () => ({
 
 import { login, completeMfa } from "../src/login.js";
 
-const prisma = {} as PrismaClient;
+// $transaction just invokes the callback with `prisma` itself as the stand-in `tx` - login()
+// never calls $transaction directly, and completeMfa's mocked internals (verifyTotpOrRecoveryCodeDetailed
+// et al.) don't distinguish tx from the root client. This makes completeMfa exercise its
+// real root-client branch (open $transaction, catch-and-convert SessionPromotionFailedAfterCodeVerifiedError
+// on failure) rather than the caller-owned-transaction branch (which now lets that error
+// propagate uncaught - see completeMfa's own docstring).
+const prisma = {
+  $transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(prisma),
+} as unknown as PrismaClient;
 
 const testUser = {
   id: "user-1",
@@ -252,5 +260,26 @@ describe("completeMfa failure audit", () => {
     );
     expect(mocks.recordFailedMfaFailureSideEffects).not.toHaveBeenCalled();
     expect(mocks.logMfaSuccess).not.toHaveBeenCalled();
+  });
+
+  it("propagates the session-promotion failure uncaught when the caller already owns the transaction, instead of letting the caller commit a burned code", async () => {
+    // A caller-owned Prisma.TransactionClient has no $transaction method - completeMfa must not
+    // swallow SessionPromotionFailedAfterCodeVerifiedError here, since it has no authority to
+    // roll back a transaction it didn't open itself. See completeMfa's own docstring.
+    const callerOwnedTx = {} as PrismaClient;
+    mocks.verifyTotpOrRecoveryCodeDetailed.mockResolvedValue({ ok: true, method: "emergency" });
+    mocks.promoteSessionToFull.mockResolvedValue(null);
+
+    await expect(
+      completeMfa(callerOwnedTx, {
+        userId: "user-1",
+        sessionId: "sess-1",
+        code: "EEEE-FFFF-0000-1111",
+      }),
+    ).rejects.toThrow("mfa session promotion failed after code verification");
+
+    // emitMfaAudit never runs on this path (see completeMfa's docstring) - the caller's own
+    // transaction wrapper is responsible for handling/auditing the propagated failure.
+    expect(mocks.logMfaFailure).not.toHaveBeenCalled();
   });
 });

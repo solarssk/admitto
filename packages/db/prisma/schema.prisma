@@ -707,7 +707,7 @@ model User {
   failed_login_streak   Int                @default(0)
   // Consecutive failed MFA verification attempts (wrong TOTP/recovery code) for admin/superadmin
   // accounts, tracked separately from failed_login_streak since that one resets on password
-  // success, before MFA is even attempted — this catches an attacker who already has a valid
+  // success, before MFA is even attempted - this catches an attacker who already has a valid
   // password grinding MFA-code guesses. Reset to 0 on successful MFA verification or once the
   // streak crosses the alert threshold (see auth.mfa.repeated_failures).
   failed_mfa_streak     Int                @default(0)
