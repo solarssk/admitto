@@ -840,6 +840,47 @@ describe("EventSettingsPage tabs", () => {
     expect(await screen.findByText("—")).toBeTruthy();
   });
 
+  it("describes every other scope shape: singular attendee count, settings reason, and no reason at all", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
+      {
+        id: "job-1",
+        created_at: "2026-06-07T10:00:00.000Z",
+        reissued: 1,
+        skipped: 0,
+        errored: 0,
+        status: "succeeded",
+        error: null,
+        scope: { kind: "attendee_ids", count: 1 },
+      },
+      {
+        id: "job-2",
+        created_at: "2026-06-07T09:00:00.000Z",
+        reissued: 4,
+        skipped: 0,
+        errored: 0,
+        status: "succeeded",
+        error: null,
+        scope: { kind: "event_wide", reason: "settings" },
+      },
+      {
+        id: "job-3",
+        created_at: "2026-06-07T08:00:00.000Z",
+        reissued: 2,
+        skipped: 0,
+        errored: 0,
+        status: "succeeded",
+        error: null,
+        scope: { kind: "event_wide", reason: null },
+      },
+    ]);
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("1 attendee")).toBeTruthy();
+    expect(screen.getByText("Whole event · settings update")).toBeTruthy();
+    expect(screen.getByText("Whole event")).toBeTruthy();
+  });
+
   it("shows an error and retries wallet push history on demand", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchWalletPushHistory).mockRejectedValueOnce(new Error("network down"));

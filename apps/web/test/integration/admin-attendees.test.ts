@@ -6661,6 +6661,22 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
           status: "succeeded",
           organization_id: ORG_A,
           event_id: EVENT_A,
+          // event_wide with no reason at all - a job queued before enqueueEventWideWalletPushJob
+          // gained the reason parameter, or a caller that never passed one.
+          result_json: {
+            request: { kind: "event_wide", eventId: EVENT_A },
+            reissued: 2,
+            skipped: 0,
+            errored: 0,
+          },
+          created_at: new Date("2026-06-05T09:30:00Z"),
+          finished_at: new Date("2026-06-05T09:31:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
           // No `request` at all - a job predating this field, or an unrecognized shape.
           result_json: { reissued: 1, skipped: 0, errored: 0 },
           created_at: new Date("2026-06-05T10:00:00Z"),
@@ -6674,9 +6690,10 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
     });
 
     const body = (await res.json()) as { items: Array<{ scope: unknown }> };
-    // Newest finished_at first: no-request, then event_wide/location, then attendee_ids/3.
+    // Newest finished_at first: no-request, event_wide/no-reason, event_wide/location, attendee_ids/3.
     expect(body.items.map((item) => item.scope)).toEqual([
       null,
+      { kind: "event_wide", reason: null },
       { kind: "event_wide", reason: "location" },
       { kind: "attendee_ids", count: 3 },
     ]);
