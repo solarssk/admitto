@@ -20,6 +20,7 @@ import {
   verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import { checkAccountPasswordRateLimit } from "../rate-limit/policies.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -34,6 +35,34 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
+}
+
+/** Verify the caller's own current password before a sensitive local-credential action (account
+ * password change, MFA reset via password) - rejects SSO-managed accounts (no local password to
+ * check against), rate-limits attempts via checkAccountPasswordRateLimit, and verifies the
+ * candidate against the stored hash. Returns the failure Response to short-circuit on, or null
+ * once verification passed. */
+async function verifyCurrentPasswordOrFail(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  userId: string,
+  candidatePassword: string,
+): Promise<Response | null> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  if (!hasLocalPassword(user.password_hash)) {
+    return c.json({ code: "no_local_password" }, 400);
+  }
+
+  const passwordCheckIp = resolveMfaClientIp(c);
+  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
+
+  const passwordOk = await verifyPasswordOrDummy(candidatePassword, user.password_hash);
+  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  return null;
 }
 
 /** Revoke every other session for `userId`, or all of them if no current session to keep. */
@@ -492,6 +521,35 @@ async function verifySelfUnlinkProof(
  * consciously picking the local password this account will use going forward, whether or not one
  * already existed - not silently reusing whatever was there before.
  */
+/**
+ * Rate-limits the two proof paths self-unlink accepts, independently of each other and before
+ * either is actually verified by `verifySelfUnlinkProof`: a caller who supplied `current_password`
+ * must not be able to grind guesses just by omitting `code`, or vice versa.
+ */
+async function unlinkSsoPreflightRateLimit(
+  c: Context,
+  rateLimitStore: RateLimitStore,
+  userId: string,
+  currentSessionId: string | undefined,
+  code: string | undefined,
+  currentPassword: string | undefined,
+): Promise<Response | null> {
+  if (code) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  if (currentPassword) {
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, ip))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  return null;
+}
+
 export async function handleDeleteAccountExternalIdentity(
   c: Context,
   db: PrismaClient,
@@ -518,13 +576,15 @@ export async function handleDeleteAccountExternalIdentity(
   if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
 
   const code = parsed.data.code?.trim();
-  if (code) {
-    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
-    const ip = resolveMfaClientIp(c);
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
-      return c.json({ error: "too many requests" }, 429);
-    }
-  }
+  const rateLimited = await unlinkSsoPreflightRateLimit(
+    c,
+    rateLimitStore,
+    userId,
+    currentSessionId,
+    code,
+    parsed.data.current_password,
+  );
+  if (rateLimited) return rateLimited;
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -622,17 +682,8 @@ export async function handlePatchAccountPassword(
     return c.json({ error: "passwords do not match" }, 400);
   }
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { password_hash: true },
-  });
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  if (!hasLocalPassword(user.password_hash)) {
-    return c.json({ code: "no_local_password" }, 400);
-  }
-
-  const passwordOk = await verifyPasswordOrDummy(current_password, user.password_hash);
-  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, current_password);
+  if (passwordFailure) return passwordFailure;
 
   if (isPasswordTooCommon(new_password)) {
     return c.json(passwordTooCommonJsonBody(), 400);
@@ -850,17 +901,8 @@ export async function handlePostMfaReset(
   const parsed = resetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { password_hash: true },
-  });
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  if (!hasLocalPassword(user.password_hash)) {
-    return c.json({ code: "no_local_password" }, 400);
-  }
-
-  const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
-  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, parsed.data.password);
+  if (passwordFailure) return passwordFailure;
 
   // A recovery code is consumed as soon as it's checked, so if the reset work below fails for
   // any other reason, the whole transaction (including that consumption) rolls back rather than
