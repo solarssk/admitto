@@ -37,6 +37,34 @@ function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
 }
 
+/** Verify the caller's own current password before a sensitive local-credential action (account
+ * password change, MFA reset via password) - rejects SSO-managed accounts (no local password to
+ * check against), rate-limits attempts via checkAccountPasswordRateLimit, and verifies the
+ * candidate against the stored hash. Returns the failure Response to short-circuit on, or null
+ * once verification passed. */
+async function verifyCurrentPasswordOrFail(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  userId: string,
+  candidatePassword: string,
+): Promise<Response | null> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  if (!hasLocalPassword(user.password_hash)) {
+    return c.json({ code: "no_local_password" }, 400);
+  }
+
+  const passwordCheckIp = resolveMfaClientIp(c);
+  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
+
+  const passwordOk = await verifyPasswordOrDummy(candidatePassword, user.password_hash);
+  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  return null;
+}
+
 /** Revoke every other session for `userId`, or all of them if no current session to keep. */
 async function revokeSessionsExcludingCurrent(
   tx: Prisma.TransactionClient,
@@ -617,22 +645,8 @@ export async function handlePatchAccountPassword(
     return c.json({ error: "passwords do not match" }, 400);
   }
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { password_hash: true },
-  });
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  if (!hasLocalPassword(user.password_hash)) {
-    return c.json({ code: "no_local_password" }, 400);
-  }
-
-  const passwordCheckIp = resolveMfaClientIp(c);
-  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
-    return c.json({ error: "too many requests" }, 429);
-  }
-
-  const passwordOk = await verifyPasswordOrDummy(current_password, user.password_hash);
-  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, current_password);
+  if (passwordFailure) return passwordFailure;
 
   if (isPasswordTooCommon(new_password)) {
     return c.json(passwordTooCommonJsonBody(), 400);
@@ -850,22 +864,8 @@ export async function handlePostMfaReset(
   const parsed = resetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { password_hash: true },
-  });
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  if (!hasLocalPassword(user.password_hash)) {
-    return c.json({ code: "no_local_password" }, 400);
-  }
-
-  const passwordCheckIp = resolveMfaClientIp(c);
-  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
-    return c.json({ error: "too many requests" }, 429);
-  }
-
-  const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
-  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, parsed.data.password);
+  if (passwordFailure) return passwordFailure;
 
   // A recovery code is consumed as soon as it's checked, so if the reset work below fails for
   // any other reason, the whole transaction (including that consumption) rolls back rather than
