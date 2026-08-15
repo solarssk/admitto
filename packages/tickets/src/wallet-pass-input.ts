@@ -3,18 +3,11 @@ import type { WalletPassInput, WalletPassSemantics } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { loadEventTicketTypes } from "./ticket-types.js";
 import type { resolveTicket } from "./resolve.js";
+import { formatDate, formatEventHour } from "./region-date-format.js";
 
 type ResolvedTicket = NonNullable<Awaited<ReturnType<typeof resolveTicket>>>;
 
-/** "long month" en-GB style, e.g. "24 September 2026" - shared by the ticket page and wallet
- * pass content (now rendered from two different processes, apps/web and the apps/cli worker) so
- * both show the event date identically. Explicit UTC (bot review) rather than relying on the
- * two processes sharing a host TZ - parseEventDateInput already anchors a date-only input at
- * noon UTC specifically so this never crosses a day boundary for any real deployment, but pinning
- * it here too means that stays true even if that anchoring ever changes. */
-export function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-}
+export { formatDate };
 
 /**
  * ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
@@ -40,10 +33,14 @@ export async function resolveTicketPageDisplay(
   }
 }
 
-/** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
-function formatEventHours(event: { eventHoursStart: string | null; eventHoursEnd: string | null }): string | undefined {
+/** "HH:MM-HH:MM" for the pass (each bound in the event's regional convention, see
+ * region-date-format.ts), or undefined when either bound is unset (independently optional). */
+function formatEventHours(
+  event: { eventHoursStart: string | null; eventHoursEnd: string | null },
+  country: string | null | undefined,
+): string | undefined {
   if (!event.eventHoursStart || !event.eventHoursEnd) return undefined;
-  return `${event.eventHoursStart}-${event.eventHoursEnd}`;
+  return `${formatEventHour(event.eventHoursStart, country)}-${formatEventHour(event.eventHoursEnd, country)}`;
 }
 
 /** UTC offset suffix ("+02:00" / "-05:00" / "Z") for `timeZone` at `instant` - `instant` must be
@@ -151,8 +148,8 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
     attendeeCompanyLabel: attendee.company || undefined,
     attendeeDepartmentLabel: attendee.department || undefined,
     eventNameLabel: event.title,
-    eventDateLabel: formatDate(event.date),
-    eventHoursLabel: formatEventHours(event),
+    eventDateLabel: formatDate(event.date, event.addressComponents?.country),
+    eventHoursLabel: formatEventHours(event, event.addressComponents?.country),
     eventLocationLabel: event.location || undefined,
     directionsTextLabel: event.directionsText || undefined,
     accessibilityTextLabel: event.accessibilityText || undefined,
