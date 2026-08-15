@@ -406,6 +406,25 @@ describe("audit", () => {
         },
       });
     });
+
+    it("records the bootstrap_superadmin action used by both break-glass CLI entry points", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logMfaBreakGlassCli(fakeDb(create), {
+        action: "bootstrap_superadmin",
+        email: "admin@example.com",
+        userId: "user-1",
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            event_type: "auth.mfa.break_glass",
+            user_id: "user-1",
+            metadata: { action: "bootstrap_superadmin" },
+          }),
+        }),
+      );
+    });
   });
 
   describe("logMfaRecoveryConsumed", () => {

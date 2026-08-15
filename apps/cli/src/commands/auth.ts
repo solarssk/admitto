@@ -92,6 +92,7 @@ export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void
   assertNoPasswordArgv(process.argv);
   const password = await readPasswordFromStdin();
   const userId = await bootstrapSuperadminChecked(db, email, password);
+  await logMfaBreakGlassCli(db, { action: "bootstrap_superadmin", email, userId });
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

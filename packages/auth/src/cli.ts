@@ -115,6 +115,7 @@ async function runBootstrapSuperadmin(): Promise<void> {
     }
   }
 
+  assertNoPasswordArgv(process.argv);
   const password = await readPasswordFromStdin();
   let userId: string;
   try {
@@ -130,6 +131,7 @@ async function runBootstrapSuperadmin(): Promise<void> {
     }
     throw err;
   }
+  await logMfaBreakGlassCli(prisma, { action: "bootstrap_superadmin", email, userId });
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

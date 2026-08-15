@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The break-glass `bootstrap-superadmin` CLI command now records an entry in the security audit log after creating a superadmin, matching the existing audit trail for `reset-mfa` and `generate-emergency-recovery`. It also now rejects `--password` on the command line (previously only the space-separated form was blocked, not `--password=<value>`), so an operator's password can no longer end up in shell history or the process list when running any of these break-glass commands.
+
 ### Added
 
 - Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.
