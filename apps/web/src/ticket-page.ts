@@ -1,5 +1,5 @@
 import type { ResolvedTicket } from "@admitto/tickets";
-import { formatDate } from "@admitto/tickets";
+import { formatDate, formatEventHour } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
 import {
   buildEventStaticMapPath,
@@ -20,11 +20,16 @@ function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-/** "18:00–22:00" range, or an open-ended "from"/"until" when only one side is set. */
-function formatEventHoursRange(start: string | null, end: string | null): string | null {
-  if (start && end) return `${start}–${end}`;
-  if (start) return `from ${start}`;
-  if (end) return `until ${end}`;
+/** "18:00–22:00" range, or an open-ended "from"/"until" when only one side is set - each bound
+ * in the event's regional convention (see @admitto/tickets' region-date-format.ts). */
+function formatEventHoursRange(
+  start: string | null,
+  end: string | null,
+  country: string | null | undefined,
+): string | null {
+  if (start && end) return `${formatEventHour(start, country)}–${formatEventHour(end, country)}`;
+  if (start) return `from ${formatEventHour(start, country)}`;
+  if (end) return `until ${formatEventHour(end, country)}`;
   return null;
 }
 
@@ -283,7 +288,11 @@ function renderGettingThereSection(parts: {
 /** Shared brand header + event/attendee block (open `ticket__body`); caller closes the div. */
 function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
   const { attendee, event } = resolved;
-  const eventHoursText = formatEventHoursRange(event.eventHoursStart, event.eventHoursEnd);
+  const eventHoursText = formatEventHoursRange(
+    event.eventHoursStart,
+    event.eventHoursEnd,
+    event.addressComponents?.country,
+  );
   return `<header class="ticket__top">
       <div class="ticket__brand">
         ${
@@ -297,7 +306,7 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
     <div class="ticket__body">
       <h1 class="ticket__event-name">${esc(event.title)}</h1>
       <div class="ticket__meta">
-        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
+        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date, event.addressComponents?.country))}</span></span>
         ${eventHoursText ? `<span>${CLOCK_ICON}<span class="ticket__meta-text">${esc(eventHoursText)}</span></span>` : ""}
         ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
       </div>
