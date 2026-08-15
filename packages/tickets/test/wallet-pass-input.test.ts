@@ -569,4 +569,76 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
       expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
     });
   });
+
+  describe("localWallClockReading ICU data variance", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    // localWallClockReading's own Intl.DateTimeFormat call is the only one in this flow with
+    // hour/minute but no second and no timeZoneName - zonedWallClockToUtcIso's internal probe
+    // always requests seconds too, tzOffsetSuffix always requests timeZoneName instead.
+    function isLocalWallClockReadingCall(format: Intl.DateTimeFormat): boolean {
+      const resolved = format.resolvedOptions();
+      return resolved.hour !== undefined && resolved.second === undefined && !resolved.timeZoneName;
+    }
+
+    it("treats an ICU build reporting midnight as hour '24' the same as '00'", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        if (!isLocalWallClockReadingCall(this)) return parts;
+        return parts.map((p) => (p.type === "hour" && p.value === "00" ? { ...p, value: "24" } : p));
+      });
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "UTC", eventHoursStart: "00:00" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T00:00:00Z");
+    });
+
+    it("defaults a missing hour/minute part to '00' rather than throwing", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        return isLocalWallClockReadingCall(this) ? parts.filter((p) => p.type !== "minute") : parts;
+      });
+      // With "minute" stripped, localWallClockReading reads back "09:00" (its own fallback) for
+      // an actual 09:00 request - matches, so this doesn't trip the skipped-time fallback path;
+      // asserts the defensive default doesn't throw or corrupt the (still correct here) result.
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York", eventHoursStart: "09:00" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00-04:00");
+    });
+
+    it("defaults a missing hour part to '00' rather than throwing", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        return isLocalWallClockReadingCall(this) ? parts.filter((p) => p.type !== "hour") : parts;
+      });
+      // With "hour" stripped, localWallClockReading reads back "00:00" for a UTC midnight
+      // request - matches, so this stays on the normal (non-fallback) path too.
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "UTC", eventHoursStart: "00:00" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T00:00:00Z");
+    });
+  });
 });
