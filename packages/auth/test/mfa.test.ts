@@ -627,7 +627,7 @@ describe("trusted device", () => {
     ).toBe(true);
   });
 
-  it("accepts when the IP rotates but the User-Agent still matches (mobile/ISP IP rotation)", async () => {
+  it("rejects when the IP rotates even though the User-Agent still matches - a bare User-Agent match is not proof of device (guessable, client-controlled header)", async () => {
     const { rawToken } = await createTrustedDevice(prisma, {
       userId: USER_ADMIN,
       ip: "203.0.113.10",
@@ -639,10 +639,10 @@ describe("trusted device", () => {
         ip: "198.51.100.99",
         userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it("accepts when the User-Agent changes but the IP still matches (browser update)", async () => {
+  it("accepts when the User-Agent changes but the IP still matches (browser update) - User-Agent is recorded but never gates the decision", async () => {
     const { rawToken } = await createTrustedDevice(prisma, {
       userId: USER_ADMIN,
       ip: "203.0.113.10",
@@ -692,6 +692,40 @@ describe("trusted device", () => {
       trustedDeviceToken: rawToken,
       ip: "198.51.100.20",
       userAgent: "Mozilla/5.0 DifferentBrowser/9.9",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.next).toBe(LOGIN_NEXT.MFA_REQUIRED);
+  });
+
+  it("login() still requires MFA for a stolen password + stolen cookie replayed from a different network with a guessed User-Agent", async () => {
+    // The exact attack a bare User-Agent match used to permit: attacker has the account
+    // password (phishing/breach) and a copied trusted-device cookie value (infostealer, leaked
+    // browser-profile backup) but is not on the victim's network - they send a common,
+    // easily-guessed User-Agent string hoping it alone vouches for the device.
+    await resetUserMfa(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const { rawToken } = await createTrustedDevice(prisma, {
+      userId: USER_ADMIN,
+      ip: "203.0.113.10",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+    });
+
+    const result = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+      trustedDeviceToken: rawToken,
+      ip: "198.51.100.20",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0", // guessed/copied exactly - IP is the only signal that differs
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- "Remember this device" (MFA-skip) cookies are now bound to the IP address and/or browser User-Agent recorded when you checked the box. A cookie used later from a browser and network that both look different is no longer accepted silently - it falls back to asking for your two-factor code again, so a copied or stolen cookie can't skip MFA from an attacker's own device.
+- "Remember this device" (MFA-skip) cookies are now bound to the IP address recorded when you checked the box. A cookie used later from a different network is no longer accepted silently - it falls back to asking for your two-factor code again, so a copied or stolen cookie can't skip MFA from an attacker's own network. Browser User-Agent alone is no longer enough on its own to vouch for a device (it's a value the browser sends and any HTTP client can copy or guess), so it's recorded for context but no longer decides whether a cookie is trusted.
 
 ### Added
 
