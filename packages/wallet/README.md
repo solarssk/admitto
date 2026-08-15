@@ -5,10 +5,7 @@ domain types, plus the PassCreator HTTP client (ADR 0041) that implements it tod
 Admitto depends on `WalletPassProvider`, never on PassCreator specifics directly - a future second
 provider would only need to implement this interface.
 
-This README is the current technical reference. `_ops/adr/0009-wallet-provider-strategy.md` and
-`_ops/adr/0041-wallet-passcreator-api-contract.md` (in the wrapper repo, one level up from this
-checkout) record *why* these decisions were made and the live-verification history behind them -
-read this file for *what is true today*, those for the reasoning trail.
+This README is the current technical reference for how the wallet integration works today.
 
 ## Architecture
 
