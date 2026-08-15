@@ -33,6 +33,11 @@ describe("extractClaims", () => {
     expect(extractClaims(payload, provider).phone).toBe("+14155552671");
   });
 
+  it("distinguishes an omitted groups claim from an explicit empty assertion", () => {
+    expect(extractClaims({} as JWTPayload, provider).groups).toBeUndefined();
+    expect(extractClaims({ groups: [] } as JWTPayload, provider).groups).toEqual([]);
+  });
+
   it("composes name from given_name + family_name when the combined name claim is absent", () => {
     const payload = { given_name: "Ada", family_name: "Lovelace" } as JWTPayload;
 

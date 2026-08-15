@@ -27,7 +27,13 @@ const mockFetch = vi.mocked(fetchCfAccessSummary);
 const mockUpdate = vi.mocked(updateCfAccess);
 const mockTest = vi.mocked(testCfAccess);
 
-const noLocks = { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false };
+const noLocks = {
+  enabled: false,
+  teamDomain: false,
+  audience: false,
+  protectedPrefixes: false,
+  sourceProviderId: false,
+};
 
 function summary(over: Partial<Awaited<ReturnType<typeof fetchCfAccessSummary>>> = {}) {
   return {
@@ -35,6 +41,8 @@ function summary(over: Partial<Awaited<ReturnType<typeof fetchCfAccessSummary>>>
     teamDomain: "",
     audience: [],
     protectedPrefixes: [],
+    sourceProviderId: "authentik",
+    sourceProviders: [{ id: "authentik", displayName: "Authentik", enabled: true }],
     locks: noLocks,
     ...over,
   };

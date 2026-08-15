@@ -11,7 +11,13 @@ import {
 } from "../../src/identity/cfAccessValidation.js";
 import type { CfAccessSummaryDto } from "../../src/api/types.js";
 
-const noLocks = { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false };
+const noLocks = {
+  enabled: false,
+  teamDomain: false,
+  audience: false,
+  protectedPrefixes: false,
+  sourceProviderId: false,
+};
 
 function summary(over: Partial<CfAccessSummaryDto> = {}): CfAccessSummaryDto {
   return {
@@ -19,6 +25,8 @@ function summary(over: Partial<CfAccessSummaryDto> = {}): CfAccessSummaryDto {
     teamDomain: "",
     audience: [],
     protectedPrefixes: [],
+    sourceProviderId: "authentik",
+    sourceProviders: [{ id: "authentik", displayName: "Authentik", enabled: true }],
     locks: noLocks,
     ...over,
   };
@@ -57,6 +65,7 @@ describe("cfAccessValidation", () => {
       teamDomain: "https://t",
       audienceRaw: "a",
       protectedPrefixesRaw: "/admin",
+      sourceProviderId: "authentik",
     });
   });
 
@@ -71,6 +80,7 @@ describe("cfAccessValidation", () => {
     expect(isCfDraftDirty({ ...base, audienceRaw: "a, " }, base)).toBe(false);
     expect(isCfDraftDirty({ ...base, audienceRaw: "a, b" }, base)).toBe(true);
     expect(isCfDraftDirty({ ...base, protectedPrefixesRaw: "/admin, /x" }, base)).toBe(true);
+    expect(isCfDraftDirty({ ...base, sourceProviderId: "other" }, base)).toBe(true);
   });
 
   it("validateCfDraft flags missing team domain + audience when enabled", () => {
@@ -79,9 +89,11 @@ describe("cfAccessValidation", () => {
       teamDomain: "",
       audienceRaw: "",
       protectedPrefixesRaw: "/admin",
+      sourceProviderId: "",
     });
     expect(errors.teamDomain).toMatch(/Team URL is required/);
     expect(errors.audience).toMatch(/AUD/);
+    expect(errors.sourceProviderId).toMatch(/identity provider/);
     expect(errors.protectedPrefixes).toBeUndefined();
   });
 
@@ -92,6 +104,7 @@ describe("cfAccessValidation", () => {
       teamDomain: "http://team.cloudflareaccess.com",
       audienceRaw: "a",
       protectedPrefixesRaw: "/admin",
+      sourceProviderId: "authentik",
     });
     expect(httpScheme.teamDomain).toMatch(/https/);
 
@@ -101,6 +114,7 @@ describe("cfAccessValidation", () => {
       teamDomain: "ftp://team.cloudflareaccess.com",
       audienceRaw: "a",
       protectedPrefixesRaw: "/admin",
+      sourceProviderId: "authentik",
     });
     expect(ftpScheme.teamDomain).toMatch(/https/);
 
@@ -111,6 +125,7 @@ describe("cfAccessValidation", () => {
       teamDomain: "team.cloudflareaccess.com",
       audienceRaw: "a",
       protectedPrefixesRaw: "/admin",
+      sourceProviderId: "authentik",
     });
     expect(schemeless.teamDomain).toBeUndefined();
   });
@@ -121,6 +136,7 @@ describe("cfAccessValidation", () => {
       teamDomain: "",
       audienceRaw: "",
       protectedPrefixesRaw: "admin",
+      sourceProviderId: "",
     });
     expect(errors.protectedPrefixes).toMatch(/start with \//);
   });
@@ -131,6 +147,7 @@ describe("cfAccessValidation", () => {
       teamDomain: "https://team.cloudflareaccess.com",
       audienceRaw: "a",
       protectedPrefixesRaw: "/admin",
+      sourceProviderId: "authentik",
     });
     expect(errors).toEqual({});
   });
@@ -141,25 +158,34 @@ describe("cfAccessValidation", () => {
       teamDomain: "https://t",
       audienceRaw: "a, b",
       protectedPrefixesRaw: "/admin, /api/admin",
+      sourceProviderId: "authentik",
     };
     const body = buildCfUpdateBody(draft, {
       enabled: true,
       teamDomain: false,
       audience: false,
       protectedPrefixes: false,
+      sourceProviderId: false,
     });
     expect(body).toEqual({
       teamDomain: "https://t",
       audience: ["a", "b"],
       protectedPrefixes: ["/admin", "/api/admin"],
+      sourceProviderId: "authentik",
     });
     expect(body.enabled).toBeUndefined();
   });
 
   it("buildCfUpdateBody omits every field when all are locked", () => {
     const body = buildCfUpdateBody(
-      { enabled: true, teamDomain: "https://t", audienceRaw: "a", protectedPrefixesRaw: "/admin" },
-      { enabled: true, teamDomain: true, audience: true, protectedPrefixes: true },
+      {
+        enabled: true,
+        teamDomain: "https://t",
+        audienceRaw: "a",
+        protectedPrefixesRaw: "/admin",
+        sourceProviderId: "authentik",
+      },
+      { enabled: true, teamDomain: true, audience: true, protectedPrefixes: true, sourceProviderId: true },
     );
     expect(body).toEqual({});
   });

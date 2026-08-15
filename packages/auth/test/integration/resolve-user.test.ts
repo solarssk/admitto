@@ -179,6 +179,31 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
       groups: ["a"],
     });
     expect(third.groupsChanged).toBe(false);
+
+    // A missing group claim is not the same assertion as an explicit empty group list. OIDC
+    // gateways can omit optional claims, so preserving the prior snapshot avoids revoking every
+    // role grant on a partial token.
+    const withoutGroups = await resolveOrCreateUserFromExternalIdentity(prisma, provider, subject, {
+      email: "known@example.com",
+    });
+    expect(withoutGroups.groupsChanged).toBe(false);
+    const identity = await prisma.externalIdentity.findUniqueOrThrow({
+      where: { provider_id_subject: { provider_id: provider.id, subject } },
+    });
+    expect(identity.groups).toEqual(["a"]);
+
+    const explicitEmptyGroups = await resolveOrCreateUserFromExternalIdentity(
+      prisma,
+      provider,
+      subject,
+      { email: "known@example.com", groups: [] },
+    );
+    expect(explicitEmptyGroups.groupsChanged).toBe(true);
+    expect(
+      (await prisma.externalIdentity.findUniqueOrThrow({
+        where: { provider_id_subject: { provider_id: provider.id, subject } },
+      })).groups,
+    ).toEqual([]);
   });
 
   it("re-syncs User.display_name from fresh IdP claims on a later login", async () => {

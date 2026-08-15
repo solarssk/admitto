@@ -34,6 +34,7 @@ import { createRateLimitStore, type InMemoryRateLimitStore } from "../../src/rat
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const PROVIDER_ID = "web-idp-api-provider";
+const CF_SOURCE_PROVIDER_ID = "web-cf-source-provider";
 const SUPER_ID = "web-idp-api-super";
 const OPERATOR_ID = "web-idp-api-operator";
 const ADMIN_ID = "web-idp-api-admin";
@@ -56,7 +57,7 @@ beforeAll(async () => {
   // defensively instead of depending on other test files' cleanup.
   await prisma.systemSettings.deleteMany({ where: { key: { startsWith: "cf_access_" } } });
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
-  await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
+  await prisma.identityProvider.deleteMany({ where: { id: { in: [PROVIDER_ID, CF_SOURCE_PROVIDER_ID] } } });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: { in: [SUPER_ID, OPERATOR_ID, ADMIN_ID] } } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: { in: [SUPER_ID, OPERATOR_ID, ADMIN_ID] } } });
   await prisma.session.deleteMany({ where: { user_id: { in: [SUPER_ID, OPERATOR_ID, ADMIN_ID] } } });
@@ -120,6 +121,19 @@ beforeAll(async () => {
       enabled: false,
     },
   });
+  await prisma.identityProvider.create({
+    data: {
+      id: CF_SOURCE_PROVIDER_ID,
+      provider_type: "oidc",
+      issuer: "https://authentik-source-test.example.com/",
+      client_id: "authentik-source-client",
+      authorization_endpoint: "https://authentik-source-test.example.com/a",
+      token_endpoint: "https://authentik-source-test.example.com/t",
+      jwks_uri: "https://authentik-source-test.example.com/j",
+      display_name: "Authentik source",
+      enabled: true,
+    },
+  });
 
   rateLimitStore = createRateLimitStore() as InMemoryRateLimitStore;
   app = createApp({
@@ -135,7 +149,7 @@ beforeEach(() => rateLimitStore.reset());
 
 afterAll(async () => {
   await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
-  await prisma.identityProvider.deleteMany({ where: { id: PROVIDER_ID } });
+  await prisma.identityProvider.deleteMany({ where: { id: { in: [PROVIDER_ID, CF_SOURCE_PROVIDER_ID] } } });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: { in: [SUPER_ID, OPERATOR_ID, ADMIN_ID] } } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: { in: [SUPER_ID, OPERATOR_ID, ADMIN_ID] } } });
   await prisma.session.deleteMany({ where: { user_id: { in: [SUPER_ID, OPERATOR_ID, ADMIN_ID] } } });
@@ -181,7 +195,15 @@ interface CfAccessResponse {
   teamDomain: string;
   audience: string[];
   protectedPrefixes: string[];
-  locks: { enabled: boolean; teamDomain: boolean; audience: boolean; protectedPrefixes: boolean };
+  sourceProviderId: string;
+  sourceProviders: Array<{ id: string; displayName: string; enabled: boolean }>;
+  locks: {
+    enabled: boolean;
+    teamDomain: boolean;
+    audience: boolean;
+    protectedPrefixes: boolean;
+    sourceProviderId: boolean;
+  };
 }
 interface TestResult {
   ok: boolean;
@@ -600,11 +622,13 @@ describe("cloudflare access API", () => {
     expect(body).toHaveProperty("teamDomain");
     expect(Array.isArray(body.audience)).toBe(true);
     expect(Array.isArray(body.protectedPrefixes)).toBe(true);
+    expect(Array.isArray(body.sourceProviders)).toBe(true);
     expect(body.locks).toMatchObject({
       enabled: expect.any(Boolean),
       teamDomain: expect.any(Boolean),
       audience: expect.any(Boolean),
       protectedPrefixes: expect.any(Boolean),
+      sourceProviderId: expect.any(Boolean),
     });
   });
 
@@ -648,6 +672,21 @@ describe("cloudflare access API", () => {
     expect(body.error).toBe("validation_failed");
   });
 
+  it("rejects enabling CF Access without an explicit source provider (400)", async () => {
+    const res = await json("/api/admin/identity/cf-access", {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: true,
+        teamDomain: "https://team.cloudflareaccess.com",
+        audience: ["aud-x"],
+        protectedPrefixes: ["/admin"],
+        sourceProviderId: "",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonAs<{ error: string }>(res)).toEqual({ error: "validation_failed" });
+  });
+
   it("saves CF Access changes, preserves omitted fields, and honors an env-locked audience", async () => {
     try {
       const enabled = await json("/api/admin/identity/cf-access", {
@@ -657,6 +696,7 @@ describe("cloudflare access API", () => {
           teamDomain: "https://team.cloudflareaccess.com",
           audience: ["aud-test"],
           protectedPrefixes: ["/admin"],
+          sourceProviderId: CF_SOURCE_PROVIDER_ID,
         }),
       });
       expect(enabled.status).toBe(200);
@@ -665,6 +705,7 @@ describe("cloudflare access API", () => {
         teamDomain: "https://team.cloudflareaccess.com",
         audience: ["aud-test"],
         protectedPrefixes: ["/admin"],
+        sourceProviderId: CF_SOURCE_PROVIDER_ID,
       });
       expect(
         await prisma.adminAuditLog.findFirst({
@@ -714,6 +755,7 @@ describe("cloudflare access API", () => {
           teamDomain: "",
           audience: [],
           protectedPrefixes: [],
+          sourceProviderId: "",
         }),
       });
       expect(reset.status).toBe(200);

@@ -17,7 +17,7 @@ function asString(value: unknown): string | undefined {
   return undefined;
 }
 
-function asStringArray(value: unknown): string[] {
+function asStringArray(value: unknown): string[] | undefined {
   if (Array.isArray(value)) {
     return value
       .filter((v): v is string => typeof v === "string")
@@ -28,7 +28,7 @@ function asStringArray(value: unknown): string[] {
     const trimmed = value.trim();
     return trimmed.length > 0 ? [trimmed] : [];
   }
-  return [];
+  return undefined;
 }
 
 /** Composes "given family" from separate claims, for IdPs that omit a combined name claim. */
@@ -57,10 +57,14 @@ export function extractClaims(
     "claim_email" | "claim_name" | "claim_groups" | "claim_given_name" | "claim_family_name" | "claim_phone"
   >,
 ): ExternalIdentityClaims {
+  const groups = asStringArray(claimValue(payload, provider.claim_groups));
   return {
     email: asString(claimValue(payload, provider.claim_email)),
     name: asString(claimValue(payload, provider.claim_name)) ?? fallbackName(payload, provider),
-    groups: asStringArray(claimValue(payload, provider.claim_groups)),
+    // Absence (or an invalid shape) is deliberately not the same as an explicit empty group
+    // list. Login-time group synchronisation must not revoke prior OIDC grants merely because
+    // an IdP omitted a claim in this particular token.
+    ...(groups === undefined ? {} : { groups }),
     phone: asString(claimValue(payload, provider.claim_phone)),
   };
 }
