@@ -147,6 +147,7 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.login.success": "Login succeeded",
   "auth.login.fail": "Login failed",
   "auth.login.repeated_failures": "Repeated login failures",
+  "auth.mfa.repeated_failures": "Repeated 2FA failures",
   "auth.mfa.success": "2FA verified",
   "auth.mfa.fail": "2FA failed",
   "auth.mfa.break_glass": "2FA break-glass override",
@@ -177,6 +178,7 @@ const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
   "auth.superadmin.bootstrap": "warn",
   "auth.mfa.recovery_consumed": "warn",
   "auth.login.repeated_failures": "warn",
+  "auth.mfa.repeated_failures": "warn",
 };
 
 function securityEventTone(type: string): BadgeVariant {
