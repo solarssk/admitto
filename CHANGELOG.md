@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- A break-glass emergency or backup recovery code is no longer consumed when two-factor sign-in fails to complete right after the code was entered correctly (for example, the partial sign-in session expired or was signed out from elsewhere in that instant) - the code stays valid for a retry instead of a locked-out user silently losing their one working recovery code for nothing. This kind of failure is also now recorded in the security audit log so it can be investigated after the fact.
+- Superadmins reviewing the security audit log now get an aggregated alert after repeated incorrect two-factor codes against an admin or superadmin account, the same way repeated wrong-password attempts already trigger one. Previously, someone who already had a valid password for a privileged account could try two-factor codes indefinitely without ever tripping that alert.
+- Signing in with the correct password to a deactivated staff account now takes the same amount of time, and is recorded distinctly in the security audit log, from a plain wrong-password attempt. Previously the deactivated-account case responded faster, which could let someone testing a leaked password/email pair infer from response speed alone that the password was still correct.
+- Regenerating a superadmin's emergency recovery code is now an all-or-nothing operation, matching how backup recovery codes are already regenerated - an interruption partway through can no longer leave the account with no active emergency code.
+
 ### Added
 
 - Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.

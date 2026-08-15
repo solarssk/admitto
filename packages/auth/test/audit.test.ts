@@ -16,6 +16,7 @@ import {
   logOidcSuperadminRevokeBlocked,
   logRateLimitExceeded,
   logRepeatedFailedLogins,
+  logRepeatedFailedMfaAttempts,
   logTrustedDeviceCreated,
   redactEmail,
 } from "../src/audit.js";
@@ -215,7 +216,7 @@ describe("audit", () => {
   describe("logLoginFailure", () => {
     it("emits a redacted email in stdout / System-log (operational logs stay redacted)", async () => {
       const spy = vi.spyOn(console, "info").mockImplementation(() => {});
-      await logLoginFailure(fakeDb(), { email: "bob@example.com", ip: "1.2.3.4" });
+      await logLoginFailure(fakeDb(), { email: "bob@example.com", ip: "1.2.3.4" }, "invalid_credentials");
       const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
       expect(payload.event).toBe("auth.login.fail");
       expect(payload.email).toBe("b***@example.com");
@@ -230,7 +231,7 @@ describe("audit", () => {
     it("persists a durable row with user_id null (never resolved against a real account) and the full attempted email in metadata", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
-      await logLoginFailure(fakeDb(create), { email: "bob@example.com", ip: "1.2.3.4" });
+      await logLoginFailure(fakeDb(create), { email: "bob@example.com", ip: "1.2.3.4" }, "invalid_credentials");
       expect(create).toHaveBeenCalledWith({
         data: {
           event_type: "auth.login.fail",
@@ -239,9 +240,23 @@ describe("audit", () => {
           user_display_name: null,
           ip: "1.2.3.4",
           actor_timezone: null,
-          metadata: { email: "bob@example.com", userAgent: null },
+          metadata: { email: "bob@example.com", reason: "invalid_credentials", userAgent: null },
         },
       });
+    });
+
+    it("distinguishes a deactivated account from invalid credentials via the reason field, without changing the event shape otherwise", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logLoginFailure(fakeDb(create), { email: "bob@example.com", ip: "1.2.3.4" }, "inactive");
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            event_type: "auth.login.fail",
+            metadata: { email: "bob@example.com", reason: "inactive", userAgent: null },
+          }),
+        }),
+      );
     });
   });
 
@@ -288,7 +303,7 @@ describe("audit", () => {
     it("persists the raw user id and session id in metadata", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
-      await logMfaFailure(fakeDb(create), { userId: "user-1", sessionId: "sess-1" });
+      await logMfaFailure(fakeDb(create), { userId: "user-1", sessionId: "sess-1" }, "invalid_code");
       expect(create).toHaveBeenCalledWith({
         data: {
           event_type: "auth.mfa.fail",
@@ -297,7 +312,7 @@ describe("audit", () => {
           user_display_name: STAFF_SNAPSHOT.display_name,
           ip: null,
           actor_timezone: null,
-          metadata: { sessionId: "sess-1", userAgent: null },
+          metadata: { sessionId: "sess-1", reason: "invalid_code", method: null, userAgent: null },
         },
       });
     });
@@ -305,9 +320,32 @@ describe("audit", () => {
     it("persists sessionId null when the caller has no session id", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
-      await logMfaFailure(fakeDb(create), { userId: "user-1" });
+      await logMfaFailure(fakeDb(create), { userId: "user-1" }, "invalid_code");
       expect(create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ metadata: expect.objectContaining({ sessionId: null }) }) }),
+      );
+    });
+
+    it("distinguishes recovery-consume-conflict and session-not-promoted reasons, and records the method for the latter", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const conflictCreate = vi.fn().mockResolvedValue({});
+      await logMfaFailure(fakeDb(conflictCreate), { userId: "user-1" }, "recovery_consume_conflict");
+      expect(conflictCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({ reason: "recovery_consume_conflict", method: null }),
+          }),
+        }),
+      );
+
+      const promotionCreate = vi.fn().mockResolvedValue({});
+      await logMfaFailure(fakeDb(promotionCreate), { userId: "user-1" }, "session_not_promoted", "emergency");
+      expect(promotionCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: expect.objectContaining({ reason: "session_not_promoted", method: "emergency" }),
+          }),
+        }),
       );
     });
   });
@@ -628,6 +666,45 @@ describe("audit", () => {
       const entries = querySystemLogs({ source: "security" });
       expect(entries[0]?.level).toBe("warn");
       expect(entries[0]?.message).toBe("auth.login.repeated_failures");
+    });
+  });
+
+  describe("logRepeatedFailedMfaAttempts", () => {
+    it("persists the raw user id and streak in metadata (same shape as logRepeatedFailedLogins)", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logRepeatedFailedMfaAttempts(
+        fakeDb(create, { email: "admin@example.com", display_name: null }),
+        {
+          userId: "user-1",
+          email: "admin@example.com",
+          ip: "1.2.3.4",
+          streak: 5,
+        },
+      );
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.mfa.repeated_failures",
+          user_id: "user-1",
+          user_email: "admin@example.com",
+          user_display_name: null,
+          ip: "1.2.3.4",
+          actor_timezone: null,
+          metadata: { streak: 5 },
+        },
+      });
+    });
+
+    it("records into the System logs buffer at warn level", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      await logRepeatedFailedMfaAttempts(fakeDb(), {
+        userId: "user-1",
+        email: "admin@example.com",
+        streak: 5,
+      });
+      const entries = querySystemLogs({ source: "security" });
+      expect(entries[0]?.level).toBe("warn");
+      expect(entries[0]?.message).toBe("auth.mfa.repeated_failures");
     });
   });
 });

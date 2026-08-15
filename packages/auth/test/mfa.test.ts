@@ -262,7 +262,7 @@ describe("login MFA flow", () => {
     expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
   });
 
-  it("consumes recovery code before promotion and does not grant access when promotion fails", async () => {
+  it("rolls back backup-code consumption when session promotion fails, and audits the failure", async () => {
     await resetUserMfa(prisma, USER_ADMIN);
     const { codes } = await regenerateBackupRecoveryCodes(prisma, USER_ADMIN);
     const secret = generateTotpSecret();
@@ -282,7 +282,53 @@ describe("login MFA flow", () => {
     expect(loginResult.ok).toBe(true);
     if (!loginResult.ok) return;
 
-    // Force the session out of a promotable stage so promotion fails after consume.
+    // Force the session out of a promotable stage so promotion fails after the code verifies
+    // (e.g. it expired or was concurrently revoked between code entry and promotion).
+    await prisma.session.update({
+      where: { id: loginResult.sessionId },
+      data: { stage: SESSION_STAGE.FULL },
+    });
+
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const mfa = await completeMfa(prisma, {
+      userId: USER_ADMIN,
+      sessionId: loginResult.sessionId,
+      code: codes[0]!,
+    });
+    const events = infoSpy.mock.calls.map(([line]) => JSON.parse(String(line)));
+    infoSpy.mockRestore();
+
+    expect(mfa.ok).toBe(false);
+    // A correct code that can't be promoted must not burn a locked-out user's one-shot
+    // recovery code for nothing - consumption rolls back with the rest of the transaction, so
+    // the code stays usable on a subsequent attempt.
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(true);
+
+    const failEvent = events.find((e) => e.event === "auth.mfa.fail");
+    expect(failEvent?.reason).toBe("session_not_promoted");
+    expect(failEvent?.method).toBe("backup");
+  });
+
+  it("rolls back emergency-code consumption when session promotion fails", async () => {
+    await resetUserMfa(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+    const { code: emergencyCode } = await generateEmergencyRecoveryCode(prisma, USER_ADMIN);
+
+    const loginResult = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+
     await prisma.session.update({
       where: { id: loginResult.sessionId },
       data: { stage: SESSION_STAGE.FULL },
@@ -291,12 +337,12 @@ describe("login MFA flow", () => {
     const mfa = await completeMfa(prisma, {
       userId: USER_ADMIN,
       sessionId: loginResult.sessionId,
-      code: codes[0]!,
+      code: emergencyCode,
     });
+
     expect(mfa.ok).toBe(false);
-    // Consume happens before promotion so a race cannot leave a promoted session
-    // behind with an unconsumed recovery row.
-    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(false);
+    // A single active break-glass code must survive a failed promotion attempt intact.
+    expect(await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode)).toBe(true);
   });
 
   it("completes MFA with a backup recovery code, reports method, and consumes it", async () => {
@@ -606,6 +652,36 @@ describe("emergency recovery", () => {
     });
     expect(row?.credential_hash).toBeTruthy();
     expect(row?.credential_hash).not.toContain(code);
+  });
+
+  it("wraps the delete-then-create rotation in a single transaction (matching regenerateBackupRecoveryCodes)", async () => {
+    const tx = {
+      userMfaMethod: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue({}),
+      },
+    };
+    const order: string[] = [];
+    tx.userMfaMethod.deleteMany.mockImplementation(async () => {
+      order.push("delete");
+      return { count: 1 };
+    });
+    tx.userMfaMethod.create.mockImplementation(async () => {
+      order.push("create");
+      return {};
+    });
+    const fakePrisma = {
+      $transaction: vi.fn(async (fn: (inner: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+
+    const result = await generateEmergencyRecoveryCode(fakePrisma as never, USER_ADMIN);
+
+    expect(fakePrisma.$transaction).toHaveBeenCalledOnce();
+    expect(order).toEqual(["delete", "create"]);
+    expect(result.code).toBeTruthy();
+    expect(tx.userMfaMethod.deleteMany).toHaveBeenCalledWith({
+      where: { user_id: USER_ADMIN, type: "recovery", label: "emergency", last_used_at: null },
+    });
   });
 });
 
