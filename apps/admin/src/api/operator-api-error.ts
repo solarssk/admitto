@@ -4,6 +4,8 @@ const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 
 /** Known API error codes and operator-safe literals mapped to UI copy. */
 const CODE_MESSAGES: Record<string, string> = {
+  actor_mfa_required:
+    "You need a confirmed authenticator app on your own account before you can reset another superadmin's two-factor or password. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has an authenticator app to do this instead.",
   api_key_required:
     "API key is required for the Open-Meteo customer API (customer-api.open-meteo.com).",
   invalid_base_url: "Weather base URL must be a valid public http(s) URL.",
