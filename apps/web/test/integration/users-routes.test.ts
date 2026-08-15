@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
+import { AUTH_METHOD, createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "@admitto/auth/testing";
 import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
@@ -1475,6 +1475,52 @@ describe("POST /api/admin/users/:id/reset-2fa and reset-password — superadmin-
       orderBy: { created_at: "desc" },
     });
     expect(audit?.metadata).toMatchObject({ userId: superTargetId, superadminTarget: true });
+  });
+
+  it("reset-2fa: returns 403 actor_mfa_required (not a silent skip) when the actor has no confirmed local TOTP, and leaves the target's MFA untouched", async () => {
+    // Simulates a superadmin role granted purely through OIDC group mapping, who has never
+    // enrolled a local TOTP method. A LOCAL session for such a user would already be rejected
+    // by validateSession's assertFullSessionMfaPolicy (packages/auth/src/session.ts) - but an
+    // OIDC session is exempt from that check entirely (auth_method === AUTH_METHOD.OIDC always
+    // returns true there), so this actor reaches a fully-privileged SESSION_STAGE.FULL session
+    // with nothing to step up with, exactly the gap actorMustStepUpForReset must fail closed on.
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    const oidcActorSession = await createSession(prisma, {
+      userId: superId,
+      stage: SESSION_STAGE.FULL,
+      authMethod: AUTH_METHOD.OIDC,
+    });
+    const oidcActorCookie = `admitto_session=${oidcActorSession.rawToken}`;
+
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: oidcActorCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("actor_mfa_required");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBeGreaterThan(0);
+  });
+
+  it("reset-password: returns 403 actor_mfa_required (not a silent skip) when the actor has no confirmed local TOTP, and leaves the target's password untouched", async () => {
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    const oidcActorSession = await createSession(prisma, {
+      userId: superId,
+      stage: SESSION_STAGE.FULL,
+      authMethod: AUTH_METHOD.OIDC,
+    });
+    const oidcActorCookie = `admitto_session=${oidcActorSession.rawToken}`;
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-password`, {
+      method: "POST",
+      headers: { Cookie: oidcActorCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("actor_mfa_required");
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+    expect(after.password_hash).toBe(before.password_hash);
   });
 
   it("does not require step-up when a superadmin resets their OWN MFA via the admin endpoint", async () => {

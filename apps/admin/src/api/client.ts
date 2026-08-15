@@ -2236,8 +2236,11 @@ export async function revokeUserRole(id: string, assignmentId: string): Promise<
   }
 }
 
-export async function resetUserMfa(id: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/reset-2fa`, jsonPostInit({}));
+export async function resetUserMfa(id: string, code?: string): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/reset-2fa`,
+    jsonPostInit(code ? { code } : {}),
+  );
   return parseJson<{ ok: boolean }>(res);
 }
 

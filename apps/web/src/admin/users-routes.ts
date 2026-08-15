@@ -21,6 +21,7 @@ import {
   resetUserMfa,
   revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
+  userHasConfirmedTotp,
 } from "@admitto/auth";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -61,6 +62,53 @@ async function actorMustStepUpForReset(
 ): Promise<boolean> {
   if (actorId === targetId) return false;
   return canManageInstance(db, targetId);
+}
+
+/** Runs `perform` inside a transaction, requiring the ACTOR to prove themselves with their own
+ * TOTP/recovery code first when `requiresStepUp` is true (actorMustStepUpForReset). Deliberately
+ * does NOT defer to withStepUpGate's own userRequiresMfaStepUp check for that decision: that
+ * check is `userRequiresMfa && userHasConfirmedTotp`, so it silently reads "no confirmed local
+ * TOTP" as "step-up not needed" - correct for withStepUpGate's other, self-service callers (an
+ * account-routes.ts action about the user's own data, gated by the instance's configurable
+ * MFA-required-roles policy), but wrong here: a superadmin actor can reach this endpoint with a
+ * fully-privileged SESSION_STAGE.FULL session and zero local TOTP simply by authenticating
+ * entirely through OIDC (finalizeOidcLogin never depends on local MFA state), and letting that
+ * fall through as "skip" would silently defeat the entire privilege-escalation protection this
+ * feature exists to add. So this check is unconditional whenever requiresStepUp is true,
+ * independent of the instance's MFA-required-roles setting: an actor with no confirmed TOTP has
+ * nothing to step up with and is denied outright (actor_mfa_required) rather than waved through. */
+async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  params: {
+    requiresStepUp: boolean;
+    actorUserId: string;
+    currentSessionId: string | undefined;
+    rawCode: string | undefined;
+    rateLimitAction: string;
+  },
+  perform: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
+  const { requiresStepUp, actorUserId, currentSessionId, rawCode, rateLimitAction } = params;
+
+  if (!requiresStepUp) {
+    const orgId = await resolveInstanceOrganizationId(db);
+    const audit = adminAuditFromContext(c);
+    return { ok: true, value: await db.$transaction((tx) => perform(tx, orgId, audit)) };
+  }
+
+  if (!(await userHasConfirmedTotp(db, actorUserId))) {
+    return { ok: false, response: c.json({ code: "actor_mfa_required" }, 403) };
+  }
+
+  return withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId: actorUserId, currentSessionId, rawCode, rateLimitAction },
+    perform,
+  );
 }
 
 async function respondRoleDeleteGone(
@@ -986,7 +1034,20 @@ type ResetMfaOutcome = { ok: true } | { ok: false; code: "cannot_reset_mfa_sso_m
  * window between that check and this transaction's commit can't leave a hybrid account's local
  * TOTP silently removed - the same TOCTOU class this file already closes for role changes (see
  * performRoleTypeSwitch, handleDeleteUserRole). `flagSuperadminTarget` only controls the audit
- * metadata: the step-up gate around this call (when required) has already authorized the actor. */
+ * metadata: the step-up gate around this call (when required) has already authorized the actor.
+ *
+ * Known residual gap (not closed here): this closes the coarse race (an SSO link that already
+ * committed before this transaction's re-check), but not a narrower one - under this
+ * transaction's default READ COMMITTED isolation, the guarantee is per-statement, not
+ * per-transaction, so a concurrent link that commits strictly between this findFirst and the
+ * write below would still be missed. Closing that fully needs SERIALIZABLE isolation (see
+ * runSerializableTransaction) on BOTH this transaction and the OIDC link-completion write
+ * (resolveOrCreateUserFromExternalIdentity, packages/auth/src/external-identity/resolve-user.ts)
+ * - Postgres's serializable conflict detection only tracks transactions actually running at that
+ * level, so elevating just one side gives no real guarantee. That function is the shared, hot
+ * path for every OIDC login/link in the app; elevating it is disproportionate to close a rare,
+ * non-attacker-controlled race between an admin-assisted reset and an unrelated SSO link
+ * finishing in the same narrow window. Left as a documented limitation. */
 async function performResetUserMfa(
   tx: Prisma.TransactionClient,
   id: string,
@@ -1046,29 +1107,26 @@ export async function handlePostResetUserMfa(
   const actorUserId = auth.userId;
   const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
 
-  let outcome: ResetMfaOutcome;
+  let rawCode: string | undefined;
   if (requiresStepUp) {
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-    const rawCode = typeof body?.code === "string" ? body.code : undefined;
-    const gated = await withStepUpGate(
-      c,
-      db,
-      rateLimitStore,
-      {
-        userId: actorUserId,
-        currentSessionId: auth.sessionId,
-        rawCode,
-        rateLimitAction: "admin-reset-2fa-superadmin",
-      },
-      (tx, orgId, audit) => performResetUserMfa(tx, id, orgId, audit, actorUserId, true),
-    );
-    if (!gated.ok) return gated.response;
-    outcome = gated.value;
-  } else {
-    const orgId = await resolveInstanceOrganizationId(db);
-    const audit = adminAuditFromContext(c);
-    outcome = await db.$transaction((tx) => performResetUserMfa(tx, id, orgId, audit, actorUserId, false));
+    rawCode = typeof body?.code === "string" ? body.code : undefined;
   }
+  const gated = await runAdminResetWithActorStepUp(
+    c,
+    db,
+    rateLimitStore,
+    {
+      requiresStepUp,
+      actorUserId,
+      currentSessionId: auth.sessionId,
+      rawCode,
+      rateLimitAction: "admin-reset-2fa-superadmin",
+    },
+    (tx, orgId, audit) => performResetUserMfa(tx, id, orgId, audit, actorUserId, requiresStepUp),
+  );
+  if (!gated.ok) return gated.response;
+  const outcome = gated.value;
 
   if (!outcome.ok) return c.json({ code: outcome.code }, 409);
 
@@ -1177,7 +1235,8 @@ type ResetPasswordOutcome = { ok: true } | { ok: false; code: "cannot_reset_pass
  * this check passes (and, when gated by withStepUpGate, only once step-up itself has passed),
  * so a request refused for either reason never pays for the hash. `flagSuperadminTarget` only
  * controls the audit metadata: the step-up gate around this call (when required) has already
- * authorized the actor. */
+ * authorized the actor. Same residual narrower-race limitation as performResetUserMfa's own
+ * docstring - not closed here, see that comment for why. */
 async function performResetUserPassword(
   tx: Prisma.TransactionClient,
   id: string,
@@ -1251,31 +1310,23 @@ export async function handlePostResetUserPassword(
   const auth = c.get("auth");
   const actorUserId = auth.userId;
   const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
+  const rawCode = requiresStepUp && typeof body?.code === "string" ? body.code : undefined;
 
-  let outcome: ResetPasswordOutcome;
-  if (requiresStepUp) {
-    const rawCode = typeof body?.code === "string" ? body.code : undefined;
-    const gated = await withStepUpGate(
-      c,
-      db,
-      rateLimitStore,
-      {
-        userId: actorUserId,
-        currentSessionId: auth.sessionId,
-        rawCode,
-        rateLimitAction: "admin-reset-password-superadmin",
-      },
-      (tx, orgId, audit) => performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, true),
-    );
-    if (!gated.ok) return gated.response;
-    outcome = gated.value;
-  } else {
-    const orgId = await resolveInstanceOrganizationId(db);
-    const audit = adminAuditFromContext(c);
-    outcome = await db.$transaction((tx) =>
-      performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, false),
-    );
-  }
+  const gated = await runAdminResetWithActorStepUp(
+    c,
+    db,
+    rateLimitStore,
+    {
+      requiresStepUp,
+      actorUserId,
+      currentSessionId: auth.sessionId,
+      rawCode,
+      rateLimitAction: "admin-reset-password-superadmin",
+    },
+    (tx, orgId, audit) => performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, requiresStepUp),
+  );
+  if (!gated.ok) return gated.response;
+  const outcome = gated.value;
 
   if (!outcome.ok) return c.json({ code: outcome.code }, 409);
 
