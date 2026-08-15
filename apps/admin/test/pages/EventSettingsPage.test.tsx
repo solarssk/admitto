@@ -2766,3 +2766,60 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
     expect(screen.queryByText(/Still blocking delete/)).toBeNull();
   });
 });
+
+describe("EventSettingsPage — Wallet push history cross-event staleness (CodeRabbit)", () => {
+  const eventB = { ...activeEvent, id: "evt-2", title: "Gala Dinner" };
+
+  // Same reasoning as the ticket-types describe block above: createMemoryRouter + RouterProvider
+  // so router.navigate() changes the :eventId param in place, the same way a real in-app
+  // navigation from one event's settings to another's does.
+  function renderSettingsRouter(entry: string) {
+    return createMemoryRouter(
+      [
+        { path: "/admin", element: <div>events picker</div> },
+        { path: "/admin/events/:eventId/settings", element: <EventSettingsPage /> },
+      ],
+      { initialEntries: [entry] },
+    );
+  }
+
+  it("resets rows, total, and page instead of showing event A's history or requesting event B at event A's page", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation((eventId: string) =>
+      Promise.resolve(eventId === "evt-1" ? activeEvent : eventB),
+    );
+    const eventARow = {
+      id: "evt-1-job",
+      created_at: "2026-06-07T10:00:00.000Z",
+      client_timezone: null,
+      reissued: 1,
+      skipped: 0,
+      errored: 0,
+      status: "succeeded" as const,
+      error: null,
+      scope: null,
+    };
+    const eventBRow = { ...eventARow, id: "evt-2-job" };
+    vi.mocked(fetchWalletPushHistory).mockImplementation((eventId: string) =>
+      eventId === "evt-1"
+        ? Promise.resolve({ items: [eventARow], total: 15 })
+        : Promise.resolve({ items: [eventBRow], total: 1 }),
+    );
+
+    const router = renderSettingsRouter("/admin/events/evt-1/settings?tab=wallet");
+    renderWithToast(<RouterProvider router={router} />);
+
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything()));
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
+
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    await router.navigate("/admin/events/evt-2/settings?tab=wallet");
+
+    // The request for event B must be page 1, never a leftover page 2 from event A - the whole
+    // point of resetting walletPushHistoryPage on eventId change.
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-2", 1, 10, expect.anything()));
+    expect(vi.mocked(fetchWalletPushHistory).mock.calls.some((call) => call[0] === "evt-2" && call[1] === 2)).toBe(
+      false,
+    );
+  });
+});

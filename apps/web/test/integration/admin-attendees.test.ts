@@ -6633,6 +6633,39 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
     expect(page2Body.items.map((item) => item.reissued)).toEqual([0]);
   });
 
+  it("keeps pagination stable across a shared finished_at via an id tiebreaker (CodeRabbit)", async () => {
+    // reclaimStaleWalletPushJobs assigns the same `now` to every job it reclaims in one pass, so
+    // several rows can genuinely share finished_at - ordering only by that field would let a
+    // paginated request repeat or skip rows between pages.
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    const sharedFinishedAt = new Date("2026-06-11T00:00:00Z");
+    const ids = ["job-tie-a", "job-tie-b", "job-tie-c", "job-tie-d"];
+    await prisma.adminJob.createMany({
+      data: ids.map((id) => ({
+        id,
+        type: "wallet_push",
+        status: "succeeded" as const,
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        result_json: { reissued: 1, skipped: 0, errored: 0 },
+        created_at: sharedFinishedAt,
+        finished_at: sharedFinishedAt,
+      })),
+    });
+
+    const page1 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=1&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page2 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=2&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page1Ids = ((await page1.json()) as { items: Array<{ id: string }> }).items.map((item) => item.id);
+    const page2Ids = ((await page2.json()) as { items: Array<{ id: string }> }).items.map((item) => item.id);
+
+    // Every seeded id appears exactly once across both pages, in a fixed (id desc) order.
+    expect([...page1Ids, ...page2Ids]).toEqual([...ids].sort().reverse());
+  });
+
   it("falls back to created_at for the displayed timestamp when finished_at is unset", async () => {
     await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
     const createdAt = new Date("2026-06-04T08:00:00Z");

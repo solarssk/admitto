@@ -193,7 +193,11 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
   const [jobs, total] = await Promise.all([
     db.adminJob.findMany({
       where,
-      orderBy: { finished_at: "desc" },
+      // `id` tiebreaker: reclaimStaleWalletPushJobs assigns the same `now` to every job it
+      // reclaims in one pass, so finished_at alone isn't a stable sort key - without a unique
+      // secondary key, ties among rows sharing a finished_at can be ordered differently between
+      // two paginated requests, making offset-based paging repeat or skip rows (CodeRabbit).
+      orderBy: [{ finished_at: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {

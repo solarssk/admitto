@@ -1129,12 +1129,27 @@ export function EventSettingsPage() {
   const [walletPushHistoryPage, setWalletPushHistoryPage] = useState(1);
   const [walletPushHistoryPageSize, setWalletPushHistoryPageSize] = useState(WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT);
   const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
+  // Navigating from one event to another while the Wallet tab stays mounted must not keep the
+  // outgoing event's rows/total/page - a separate reset effect keyed on eventId alone would still
+  // let this effect run once more with the stale page for the new event first (both effects fire
+  // on the same eventId-change render pass, before the reset effect's setState is applied) -
+  // detecting the event change inline, in this same effect, is what actually avoids that request
+  // (CodeRabbit).
+  const walletPushHistoryEventIdRef = useRef(eventId);
   useEffect(() => {
     if (!eventId || tab !== "wallet") return;
+    const isNewEvent = eventId !== walletPushHistoryEventIdRef.current;
+    walletPushHistoryEventIdRef.current = eventId;
+    const page = isNewEvent ? 1 : walletPushHistoryPage;
+    if (isNewEvent) {
+      setWalletPushHistory(null);
+      setWalletPushHistoryTotal(0);
+      if (walletPushHistoryPage !== 1) setWalletPushHistoryPage(1);
+    }
     const controller = new AbortController();
     setWalletPushHistoryError(null);
     setWalletPushHistoryLoading(true);
-    fetchWalletPushHistory(eventId, walletPushHistoryPage, walletPushHistoryPageSize, controller.signal)
+    fetchWalletPushHistory(eventId, page, walletPushHistoryPageSize, controller.signal)
       .then(({ items, total }) => {
         setWalletPushHistory(items);
         setWalletPushHistoryTotal(total);
