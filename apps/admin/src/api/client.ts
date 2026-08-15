@@ -1067,29 +1067,46 @@ export async function fetchWalletPushJobStatus(
   return parseJson<WalletPushJobStatusResponse>(res);
 }
 
+/** Which attendees a wallet_push job actually targeted - `null` for a job that predates this
+ * field, or whose stored request wasn't recognized. */
+export type WalletPushHistoryScope =
+  | { kind: "attendee_ids"; count: number }
+  | { kind: "event_wide"; reason: "location" | "settings" | null };
+
 export interface WalletPushHistoryEntry {
   id: string;
   created_at: string;
+  client_timezone: string | null;
   reissued: number;
   skipped: number;
   errored: number;
   status: "succeeded" | "failed";
   error: string | null;
+  scope: WalletPushHistoryScope | null;
 }
 
-/** Recent terminal wallet_push jobs for the event (newest first) - the async job system's own
- * triggers only (currently: bulk ticket type change). Single-attendee field edits push directly
- * and synchronously (see handlePatchEventAttendee), so they never appear here. */
+export interface WalletPushHistoryPage {
+  items: WalletPushHistoryEntry[];
+  total: number;
+}
+
+/** Paginated terminal wallet_push jobs for the event (newest first) - the async job system's own
+ * triggers only (currently: bulk ticket type change, or a wallet-relevant settings/location
+ * save). Single-attendee field edits push directly and synchronously (see
+ * handlePatchEventAttendee), so they never appear here. */
 export async function fetchWalletPushHistory(
   eventId: string,
+  page: number,
+  pageSize: number,
   signal?: AbortSignal,
-): Promise<WalletPushHistoryEntry[]> {
-  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/history`, {
-    credentials: "same-origin",
-    signal,
-  });
-  const body = await parseJson<{ items: WalletPushHistoryEntry[] }>(res);
-  return body.items;
+): Promise<WalletPushHistoryPage> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/history?${params.toString()}`,
+    { credentials: "same-origin", signal },
+  );
+  const body = await parseJson<{ items: WalletPushHistoryEntry[]; total: number }>(res);
+  return { items: body.items, total: body.total };
 }
 
 /** Same shape as BulkTicketTypeResponse - one type for both structurally identical bulk

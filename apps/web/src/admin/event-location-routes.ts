@@ -307,7 +307,7 @@ async function pushWalletUpdatesBestEffort(
   if (!walletRelevantLocationFieldsChanged(existingLocation, updatedLocation)) return;
   if (!event.wallet_enabled || !event.wallet_template_id || !event.wallet_api_key_enc) return;
 
-  await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id);
+  await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id, "location");
 }
 
 /** Wraps pushWalletUpdatesBestEffort above in its own try/catch + logging - factored out of

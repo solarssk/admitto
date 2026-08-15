@@ -1,20 +1,14 @@
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassInput, WalletPassSemantics } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
+import { zonedWallClockToUtcIso } from "@admitto/shared";
 import { loadEventTicketTypes } from "./ticket-types.js";
 import type { resolveTicket } from "./resolve.js";
+import { formatDate, formatEventHour } from "./region-date-format.js";
 
 type ResolvedTicket = NonNullable<Awaited<ReturnType<typeof resolveTicket>>>;
 
-/** "long month" en-GB style, e.g. "24 September 2026" - shared by the ticket page and wallet
- * pass content (now rendered from two different processes, apps/web and the apps/cli worker) so
- * both show the event date identically. Explicit UTC (bot review) rather than relying on the
- * two processes sharing a host TZ - parseEventDateInput already anchors a date-only input at
- * noon UTC specifically so this never crosses a day boundary for any real deployment, but pinning
- * it here too means that stays true even if that anchoring ever changes. */
-export function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
-}
+export { formatDate };
 
 /**
  * ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
@@ -40,19 +34,23 @@ export async function resolveTicketPageDisplay(
   }
 }
 
-/** "HH:MM-HH:MM" for the pass, or undefined when either bound is unset (independently optional). */
-function formatEventHours(event: { eventHoursStart: string | null; eventHoursEnd: string | null }): string | undefined {
+/** "HH:MM-HH:MM" for the pass (each bound in the event's regional convention, see
+ * region-date-format.ts), or undefined when either bound is unset (independently optional). */
+function formatEventHours(
+  event: { eventHoursStart: string | null; eventHoursEnd: string | null },
+  country: string | null | undefined,
+): string | undefined {
   if (!event.eventHoursStart || !event.eventHoursEnd) return undefined;
-  return `${event.eventHoursStart}-${event.eventHoursEnd}`;
+  return `${formatEventHour(event.eventHoursStart, country)}-${formatEventHour(event.eventHoursEnd, country)}`;
 }
 
 /** UTC offset suffix ("+02:00" / "-05:00" / "Z") for `timeZone` at `instant` - `instant` must be
- * the actual local wall-clock time being formatted (see zonedDateTimeToIso), not just any instant
- * on the right calendar day: on a DST transition day, the offset can differ between the morning
- * and the evening of the same day, so sampling the wrong instant emits the wrong offset for a
- * time near the transition (bot review). Node/V8's `longOffset` gives "GMT+02:00" (or bare "GMT"
- * for UTC); the regex also tolerates an unpadded "GMT+2" in case of ICU data variance across
- * environments. */
+ * the actual, correctly-resolved local wall-clock instant being formatted (see
+ * zonedDateTimeToIso), not just any instant on the right calendar day: on a DST transition day,
+ * the offset can differ between the morning and the evening of the same day, so sampling the
+ * wrong instant emits the wrong offset for a time near the transition. Node/V8's `longOffset`
+ * gives "GMT+02:00" (or bare "GMT" for UTC); the regex also tolerates an unpadded "GMT+2" in case
+ * of ICU data variance across environments. */
 function tzOffsetSuffix(instant: Date, timeZone: string): string {
   const part = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
     .formatToParts(instant)
@@ -78,21 +76,43 @@ function tzOffsetSuffix(instant: Date, timeZone: string): string {
  * zone (e.g. Pacific/Kiritimati, UTC+14) to the *next* calendar day, corrupting the stored event
  * date (bot review: P1, "Keep the stored event day when formatting semantics").
  *
- * The offset is resolved at a naive instant built from that same day plus `hhmm`, treated as if
- * it were UTC (`Date.UTC(y, m, d, hh, mm)`) - close enough to land on the correct side of a DST
- * transition for the *actual* local time being formatted, unlike passing the noon-UTC `date`
- * through unchanged (bot review: P2, "Resolve the offset at the event's wall-clock time"). This
- * can only be wrong within the transition's own ~1h gap/overlap, an inherent ambiguity of civil
- * time - not something resolvable from a plain "HH:MM" with no UTC offset of its own. */
+ * The offset is resolved via `@admitto/shared`'s `zonedWallClockToUtcIso` - the correct instant
+ * for `hhmm` on that day in `timeZone`, not a "treat the digits as UTC" proxy. That shortcut
+ * looked close enough to land on the right side of a DST transition, but review (2026-08-15)
+ * found it wrong for a same-day start/end pair straddling a transition in a zone with a
+ * non-zero standard offset: an America/New_York event from 01:00 to 03:00 on 2026-03-08 (the US
+ * spring-forward date) had both probes land on the pre-transition side, computing a 2-hour
+ * duration for what is actually a 1-hour local span (2:00-3:00am doesn't exist that day).
+ *
+ * When `hhmm` itself falls inside a spring-forward gap (e.g. 02:30 that same day, which the
+ * local clock skips straight over), `zonedWallClockToUtcIso` resolves to the nearest valid
+ * instant instead - recombining that instant's offset with the original, nonexistent `hhmm`
+ * digits would silently label a *different* instant (bot review, confirmed: 02:30 resolves to
+ * 07:30Z, but the string "...T02:30:00-04:00" parses as 06:30Z). Detect that mismatch and emit
+ * the resolved instant directly (a plain UTC ISO string) rather than a wrong local-digit one. */
 function zonedDateTimeToIso(date: Date, hhmm: string | null, timeZone: string): string | undefined {
   if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return undefined;
-  const [hh = 0, mm = 0] = hhmm.split(":").map(Number);
   const y = date.getUTCFullYear();
   const m = date.getUTCMonth();
   const d = date.getUTCDate();
-  const naiveInstant = new Date(Date.UTC(y, m, d, hh, mm));
   const dayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  return `${dayStr}T${hhmm}:00${tzOffsetSuffix(naiveInstant, timeZone)}`;
+  const correctInstant = new Date(zonedWallClockToUtcIso(dayStr, `${hhmm}:00.000`, timeZone));
+  if (localWallClockReading(correctInstant, timeZone) !== hhmm) return correctInstant.toISOString();
+  return `${dayStr}T${hhmm}:00${tzOffsetSuffix(correctInstant, timeZone)}`;
+}
+
+/** "HH:MM" wall-clock reading of `instant` in `timeZone` - used to detect whether
+ * zonedDateTimeToIso's requested `hhmm` actually exists on that day (see above). */
+function localWallClockReading(instant: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(instant);
+  const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${hour === "24" ? "00" : hour}:${minute}`;
 }
 
 /** Builds Apple Wallet semantic tag values from the resolved event/attendee - only the fields
@@ -151,8 +171,8 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
     attendeeCompanyLabel: attendee.company || undefined,
     attendeeDepartmentLabel: attendee.department || undefined,
     eventNameLabel: event.title,
-    eventDateLabel: formatDate(event.date),
-    eventHoursLabel: formatEventHours(event),
+    eventDateLabel: formatDate(event.date, event.addressComponents?.country),
+    eventHoursLabel: formatEventHours(event, event.addressComponents?.country),
     eventLocationLabel: event.location || undefined,
     directionsTextLabel: event.directionsText || undefined,
     accessibilityTextLabel: event.accessibilityText || undefined,
