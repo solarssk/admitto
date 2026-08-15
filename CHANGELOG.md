@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Account and two-factor management endpoints (change password, reset two-factor, remove single sign-on, etc.) no longer share their request throttle with the public sign-in page. Previously, a burst of a few dozen requests against those endpoints - even without a valid session - could exhaust the shared limit and lock every user behind the same office or VPN connection out of signing in. Re-entering your current password to confirm a sensitive change (password change, two-factor reset, removing single sign-on) is now also throttled per account rather than only by network address, so repeatedly guessing a password from different addresses is caught instead of slipping through.
+
 ### Added
 
 - Bulk-changing ticket type from the Attendees list now also pushes the new type to every affected attendee's already-issued wallet pass in the background, with a toast reporting how many were updated once it finishes. Previously this only updated Admitto's own records; a wallet pass kept showing the old ticket type until someone manually clicked Push updates.

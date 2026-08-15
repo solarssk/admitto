@@ -20,6 +20,7 @@ import {
   verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import { checkAccountPasswordRateLimit } from "../rate-limit/policies.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -510,6 +511,15 @@ export async function handleDeleteAccountExternalIdentity(
       return c.json({ error: "too many requests" }, 429);
     }
   }
+  // Throttled independently of the code check above: a caller who instead (or additionally)
+  // supplied current_password is about to have it checked by verifySelfUnlinkProof below, and
+  // that check must not be gate-able by rotating source IPs.
+  if (parsed.data.current_password) {
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, ip))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -614,6 +624,11 @@ export async function handlePatchAccountPassword(
   if (!user) return c.json({ error: "unauthorized" }, 401);
   if (!hasLocalPassword(user.password_hash)) {
     return c.json({ code: "no_local_password" }, 400);
+  }
+
+  const passwordCheckIp = resolveMfaClientIp(c);
+  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
+    return c.json({ error: "too many requests" }, 429);
   }
 
   const passwordOk = await verifyPasswordOrDummy(current_password, user.password_hash);
@@ -842,6 +857,11 @@ export async function handlePostMfaReset(
   if (!user) return c.json({ error: "unauthorized" }, 401);
   if (!hasLocalPassword(user.password_hash)) {
     return c.json({ code: "no_local_password" }, 400);
+  }
+
+  const passwordCheckIp = resolveMfaClientIp(c);
+  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
+    return c.json({ error: "too many requests" }, 429);
   }
 
   const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);

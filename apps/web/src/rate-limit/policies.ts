@@ -67,6 +67,7 @@ export const INLINE_RATE_LIMITS = {
   "mfa:verify-totp": { windowMs: 15 * 60_000, max: 10 },
   "mfa:verify-recovery": { windowMs: 15 * 60_000, max: 30 },
   "mfa:enroll": { windowMs: 15 * 60_000, max: 10 },
+  "account:password-check": { windowMs: 60_000, max: 10 },
 } as const satisfies Record<string, InlineRateLimit>;
 
 export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
@@ -220,6 +221,24 @@ export const RATE_POLICIES = {
         windowMs: 60_000,
         max: 10,
         logOnExceeded: { scope: "login_ip" },
+      },
+    ],
+  },
+  /** Whole /api/account/* route group - own IP bucket, deliberately separate from
+   * auth:login-ip. These routes run before requireSession (some pre-date the current
+   * caller's session even being established), so without their own bucket a handful of
+   * cheap, credential-free requests here would drain the same IP's budget for the public
+   * login route (or vice versa) - a shared office/VPN egress address then locks every
+   * legitimate user behind it out of login. Same 10/60s shape as auth:login-ip: this is
+   * the same class of pre-auth-reachable endpoint, just reached via /api/account/* instead
+   * of /api/auth/login. */
+  "auth:account-ip": {
+    checks: [
+      {
+        keyOf: (c) => `auth:account:ip:${resolveClientIp(c)}`,
+        windowMs: 60_000,
+        max: 10,
+        logOnExceeded: { scope: "account_ip" },
       },
     ],
   },
@@ -626,6 +645,33 @@ export async function checkOidcLinkStepUpRateLimit(
   const ipResult = await store.hit(`oidc:link:stepup:ip:${ip}`, windowMs, max);
   if (!ipResult.allowed) {
     logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "ip" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Throttle current-password verification on account/step-up endpoints (password change, MFA
+ * reset, SSO unlink) per user and IP (inline, not middleware) - same shape as
+ * {@link checkOidcLinkStepUpRateLimit}. The user-scoped bucket is the load-bearing one: it stays
+ * fixed to the account being attacked regardless of which IP the request comes from, so an
+ * attacker holding a stolen session cookie can't outrun it by rotating source IPs. The IP-scoped
+ * bucket is defense-in-depth on top of that.
+ */
+export async function checkAccountPasswordRateLimit(
+  store: RateLimitStore,
+  userId: string,
+  ip: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["account:password-check"];
+  const userResult = await store.hit(`account:password-check:user:${userId}`, windowMs, max);
+  if (!userResult.allowed) {
+    logRateLimitExceeded({ scope: "account_password_check", ip, keyHint: "user" });
+    return false;
+  }
+  const ipResult = await store.hit(`account:password-check:ip:${ip}`, windowMs, max);
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope: "account_password_check", ip, keyHint: "ip" });
     return false;
   }
   return true;

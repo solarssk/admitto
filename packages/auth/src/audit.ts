@@ -150,6 +150,8 @@ export type RateLimitScope =
   | "mfa_enroll"
   | "oidc_auth"
   | "oidc_link_stepup"
+  | "account_ip"
+  | "account_password_check"
   | "public"
   | "readyz"
   | "healthz"

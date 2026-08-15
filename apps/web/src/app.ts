@@ -552,6 +552,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
+  const accountIpRateLimit = rateLimit(rateLimitStore, "auth:account-ip");
   const oidcAuthRateLimit = rateLimit(rateLimitStore, "auth:oidc");
   const mfaEnrollRateLimitJson = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "json" });
   const mfaEnrollRateLimitHtml = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "text" });
@@ -1719,14 +1720,18 @@ export function createApp(options: CreateAppOptions = {}) {
     (c) => handlePostThemeFontUpload(c, db),
   );
 
+  // Own auth:account-ip bucket for the whole group (see policies.ts) - kept separate from
+  // auth:login-ip so consuming one never throttles the other, and applied once here rather than
+  // per-route so it automatically covers any future /api/account/* endpoint too.
+  app.use("/api/account/*", accountIpRateLimit);
   app.get("/api/account", requireSession, (c) => handleGetAccount(c, db));
   app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
     handlePatchAccountProfile(c, db),
   );
-  app.patch("/api/account/password", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.patch("/api/account/password", jsonPostCsrf, requireSession, (c) =>
     handlePatchAccountPassword(c, db, rateLimitStore),
   );
-  app.delete("/api/account/external-identity", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.delete("/api/account/external-identity", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountExternalIdentity(c, db, rateLimitStore),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
@@ -1736,7 +1741,6 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post(
     "/api/account/mfa/totp/enroll",
     jsonPostCsrf,
-    loginRateLimitJson,
     requireSession,
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
     (c) => handlePostAccountMfaEnroll(c, db),
@@ -1744,10 +1748,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.delete("/api/account/mfa/totp/enroll", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountMfaEnroll(c, db),
   );
-  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, requireSession, (c) =>
     handlePostAccountMfaConfirm(c, db, rateLimitStore),
   );
-  app.post("/api/account/mfa/reset", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.post("/api/account/mfa/reset", jsonPostCsrf, requireSession, (c) =>
     handlePostAccountMfaReset(c, db, rateLimitStore),
   );
 
