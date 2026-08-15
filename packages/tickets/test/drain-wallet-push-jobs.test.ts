@@ -372,6 +372,27 @@ describe("drainWalletPushJobs", () => {
       });
     });
 
+    it("preserves the trigger reason through the success write-back, not just the initial insert", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({
+          result_json: { request: { kind: "event_wide", eventId: "evt-1", reason: "location" } },
+        }) as never,
+      );
+      vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued");
+
+      await drainWalletPushJobs(db as never);
+
+      const finalCall = db.adminJob.update.mock.calls.find(
+        (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+      );
+      // The finished job's own result_json.request is what the history endpoint reads back out -
+      // readWalletPushRequest must round-trip reason unchanged, not silently drop it while
+      // reconstructing the validated request object.
+      expect(finalCall![0].data.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: "evt-1", reason: "location" },
+      });
+    });
+
     it("still succeeds with an all-zero tally when the event has no active wallet passes at all", async () => {
       vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
         baseJob({ result_json: { request: { kind: "event_wide", eventId: "evt-1" } } }) as never,

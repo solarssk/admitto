@@ -6,16 +6,47 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import type { WalletPushRequest } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveClientTimezone } from "./admin-helpers.js";
+import { readWalletPushRequest, type WalletPushRequest } from "@admitto/tickets";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  positiveIntQuery,
+  requireEventId,
+  resolveClientTimezone,
+} from "./admin-helpers.js";
 import { loadEventAdminJob } from "./admin-job-http.js";
 
-const WALLET_PUSH_HISTORY_LIMIT = 20;
+const WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT = 10;
+const WALLET_PUSH_HISTORY_PAGE_SIZE_MAX = 50;
 
 /** Shape written by drainWalletPushJobs (packages/tickets/src/drain-wallet-push-jobs.ts) into
  * AdminJob.result_json once a job finishes - named once so the two response shapes below can't
- * drift apart from the worker's actual payload. */
-type WalletPushResultJson = { reissued?: number; skipped?: number; errored?: number } | null;
+ * drift apart from the worker's actual payload. The `request` field also stored there is read
+ * separately via readWalletPushRequest below (validated), not through this loose cast. */
+type WalletPushResultJson = {
+  reissued?: number;
+  skipped?: number;
+  errored?: number;
+} | null;
+
+/** Scope shown in the history list - "how many/which attendees" for an operator-bounded push,
+ * or "the whole event" plus, when known, which wallet-relevant save triggered it. `null` for
+ * jobs created before this field existed, or if result_json.request was somehow never a valid
+ * WalletPushRequest - the history row still renders, just without this detail. */
+export type WalletPushHistoryScope =
+  | { kind: "attendee_ids"; count: number }
+  | { kind: "event_wide"; reason: "location" | "settings" | null };
+
+/** Re-validates the stored request via the same parser the drain worker itself trusts
+ * (packages/tickets), rather than the loose WalletPushResultJson cast below - a single
+ * malformed/unexpected-shape row must degrade to scope: null, not throw and 500 the whole
+ * history list. */
+function historyScope(job: { result_json: unknown }): WalletPushHistoryScope | null {
+  const request = readWalletPushRequest(job);
+  if (!request) return null;
+  if (request.kind === "attendee_ids") return { kind: "attendee_ids", count: request.attendeeIds.length };
+  return { kind: "event_wide", reason: request.reason ?? null };
+}
 
 /** Shared insert behind both enqueue helpers below - the two request kinds differ only in
  * `result_json.request`'s shape, everything else about creating the job row is identical. */
@@ -102,12 +133,13 @@ export async function enqueueEventWideWalletPushJob(
   c: Context,
   eventId: string,
   organizationId: string,
+  reason?: "location" | "settings",
 ): Promise<string> {
   const alreadyQueued = await findPendingEventWideWalletPushJob(db, eventId);
   if (alreadyQueued) return alreadyQueued;
 
   try {
-    return await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId });
+    return await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId, reason });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const winner = await findPendingEventWideWalletPushJob(db, eventId);
@@ -140,7 +172,8 @@ export async function handleGetWalletPushJob(c: Context, db: PrismaClient): Prom
   });
 }
 
-/** GET /api/admin/events/:eventId/wallet-push/history - recent terminal wallet_push jobs. */
+/** GET /api/admin/events/:eventId/wallet-push/history - paginated terminal wallet_push jobs,
+ * newest first. */
 export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -148,12 +181,37 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const jobs = await db.adminJob.findMany({
-    where: { event_id: eventId, type: "wallet_push", status: { in: ["succeeded", "failed"] } },
-    orderBy: { finished_at: "desc" },
-    take: WALLET_PUSH_HISTORY_LIMIT,
-    select: { id: true, created_at: true, finished_at: true, status: true, error: true, result_json: true },
-  });
+  const page = positiveIntQuery(c.req.query("page"), 1);
+  const pageSize = positiveIntQuery(
+    c.req.query("pageSize"),
+    WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT,
+    WALLET_PUSH_HISTORY_PAGE_SIZE_MAX,
+  );
+
+  const where = { event_id: eventId, type: "wallet_push", status: { in: ["succeeded", "failed"] } };
+
+  const [jobs, total] = await Promise.all([
+    db.adminJob.findMany({
+      where,
+      // `id` tiebreaker: reclaimStaleWalletPushJobs assigns the same `now` to every job it
+      // reclaims in one pass, so finished_at alone isn't a stable sort key - without a unique
+      // secondary key, ties among rows sharing a finished_at can be ordered differently between
+      // two paginated requests, making offset-based paging repeat or skip rows (CodeRabbit).
+      orderBy: [{ finished_at: "desc" }, { id: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        created_at: true,
+        finished_at: true,
+        status: true,
+        error: true,
+        result_json: true,
+        client_timezone: true,
+      },
+    }),
+    db.adminJob.count({ where }),
+  ]);
 
   const items = jobs.map((job) => {
     const result = (job.result_json ?? null) as WalletPushResultJson;
@@ -161,14 +219,16 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
     return {
       id: job.id,
       created_at: when.toISOString(),
+      client_timezone: job.client_timezone,
       reissued: result?.reissued ?? 0,
       skipped: result?.skipped ?? 0,
       errored: result?.errored ?? 0,
       status: job.status === "failed" ? ("failed" as const) : ("succeeded" as const),
       error: job.status === "failed" ? job.error : null,
+      scope: historyScope(job),
     };
   });
 
   c.header("Cache-Control", "no-store");
-  return c.json({ items });
+  return c.json({ items, total, page, pageSize });
 }
