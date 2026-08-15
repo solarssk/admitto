@@ -70,8 +70,9 @@ async function stepUpPreflight(
   currentSessionId: string | undefined,
   code: string | undefined,
   rateLimitAction: string,
+  forceRequired = false,
 ): Promise<Response | null> {
-  if (await userRequiresMfaStepUp(db, userId)) {
+  if (forceRequired || (await userRequiresMfaStepUp(db, userId))) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
     if (!code) return c.json({ code: "totp_required" }, 400);
   }
@@ -86,15 +87,22 @@ async function stepUpPreflight(
 
 /**
  * Authoritative step-up check, read via `tx` rather than the pre-check's `db`, so a role change
- * racing this request can't let a password-only call skip step-up entirely.
+ * racing this request can't let a password-only call skip step-up entirely. `forceRequired`
+ * bypasses `userRequiresMfaStepUp`'s own policy check (`userRequiresMfa && userHasConfirmedTotp`)
+ * entirely - needed by callers (users-routes.ts's superadmin-on-superadmin reset) for whom
+ * step-up must be unconditional: if the instance's configurable `mfa_required_roles` setting
+ * doesn't include "superadmin", `userRequiresMfa` alone would return false for the actor despite
+ * them having a confirmed TOTP method, and this whole check would silently no-op - exactly the
+ * bypass a compromised session could exploit regardless of that setting.
  */
 async function checkStepUpInTransaction(
   tx: Prisma.TransactionClient,
   userId: string,
   currentSessionId: string | undefined,
   code: string | undefined,
+  forceRequired = false,
 ): Promise<{ ok: true } | { ok: false; reason: StepUpFailureReason }> {
-  if (!(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
+  if (!forceRequired && !(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
   if (!currentSessionId) return { ok: false, reason: "unauthorized" };
   if (!code) return { ok: false, reason: "totp_required" };
   if (!(await verifyTotpOrRecoveryCode(tx, userId, code))) {
@@ -124,7 +132,9 @@ function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Respons
  * in-transaction step-up check has passed does `body` run and do the actual sensitive write.
  *
  * Exported for reuse by users-routes.ts's admin-assisted MFA/password reset endpoints, which
- * gate the ACTOR's own step-up (not the target's) when the reset target is another superadmin.
+ * gate the ACTOR's own step-up (not the target's) when the reset target is another superadmin -
+ * always passing `forceRequired: true`, since that protection must hold regardless of the
+ * instance's configurable `mfa_required_roles` policy (see checkStepUpInTransaction's docstring).
  */
 export async function withStepUpGate<T>(
   c: Context,
@@ -135,10 +145,11 @@ export async function withStepUpGate<T>(
     currentSessionId: string | undefined;
     rawCode: string | undefined;
     rateLimitAction: string;
+    forceRequired?: boolean;
   },
   body: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const { userId, currentSessionId, rateLimitAction } = params;
+  const { userId, currentSessionId, rateLimitAction, forceRequired } = params;
   const code = params.rawCode?.trim();
   const preflightDenied = await stepUpPreflight(
     c,
@@ -148,6 +159,7 @@ export async function withStepUpGate<T>(
     currentSessionId,
     code,
     rateLimitAction,
+    forceRequired,
   );
   if (preflightDenied) return { ok: false, response: preflightDenied };
 
@@ -155,7 +167,7 @@ export async function withStepUpGate<T>(
   const audit = adminAuditFromContext(c);
 
   const result = await runInTransaction(db, async (tx) => {
-    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, code);
+    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, code, forceRequired);
     if (!step.ok) return step;
     return { ok: true as const, value: await body(tx, orgId, audit) };
   });

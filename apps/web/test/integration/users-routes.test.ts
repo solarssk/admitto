@@ -1523,6 +1523,39 @@ describe("POST /api/admin/users/:id/reset-2fa and reset-password — superadmin-
     expect(after.password_hash).toBe(before.password_hash);
   });
 
+  it("reset-2fa: still demands and validates the actor's code even when the instance's mfa_required_roles setting excludes superadmin", async () => {
+    // withStepUpGate's own default behavior re-derives "is step-up needed" via
+    // userRequiresMfaStepUp (userRequiresMfa && userHasConfirmedTotp) - userRequiresMfa alone
+    // depends on this configurable policy, so without runAdminResetWithActorStepUp's
+    // forceRequired: true, an instance that scoped mfa_required_roles down to just "admin" would
+    // make this whole check silently no-op for a superadmin actor, even one with confirmed TOTP.
+    await prisma.systemSettings.upsert({
+      where: { key: "mfa_required_roles" },
+      create: { key: "mfa_required_roles", value_json: JSON.stringify(["admin"]) },
+      update: { value_json: JSON.stringify(["admin"]) },
+    });
+    try {
+      const noCode = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(noCode.status).toBe(400);
+      expect(((await noCode.json()) as { code: string }).code).toBe("totp_required");
+      expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBeGreaterThan(0);
+
+      const withCode = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ code: generateTotpCode(actorSecret) }),
+      });
+      expect(withCode.status).toBe(200);
+      expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBe(0);
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: "mfa_required_roles" } });
+    }
+  });
+
   it("does not require step-up when a superadmin resets their OWN MFA via the admin endpoint", async () => {
     // resetUserMfa revokes every session for the target, with no "except current" exemption
     // (unlike the self-service /api/account/mfa/reset flow) - since actor === target here, that

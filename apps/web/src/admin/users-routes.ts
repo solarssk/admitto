@@ -102,11 +102,16 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
     return { ok: false, response: c.json({ code: "actor_mfa_required" }, 403) };
   }
 
+  // forceRequired: true - withStepUpGate's own default behavior re-derives "is step-up needed"
+  // via userRequiresMfaStepUp (userRequiresMfa && userHasConfirmedTotp), so without this an
+  // instance whose configurable mfa_required_roles setting omits "superadmin" would make
+  // userRequiresMfa false for this actor and skip requiring/validating rawCode entirely, even
+  // though the userHasConfirmedTotp check just above already committed to demanding one.
   return withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId: actorUserId, currentSessionId, rawCode, rateLimitAction },
+    { userId: actorUserId, currentSessionId, rawCode, rateLimitAction, forceRequired: true },
     perform,
   );
 }

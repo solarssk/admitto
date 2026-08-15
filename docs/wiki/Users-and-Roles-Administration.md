@@ -41,7 +41,7 @@ The user sees only the administration or check-in surfaces allowed by their curr
 - Disabling a user blocks the account; removing one assignment only removes that scope.
 - Do not remove or disable the last active Superadmin.
 - Local Admin and Superadmin accounts must follow the configured MFA policy. OIDC sessions follow the identity provider flow.
-- Resetting another Superadmin's two-factor or password requires the acting Superadmin to confirm their own authenticator app or backup code first. This protects against a single compromised Superadmin session being used to silently take over another Superadmin account. Resetting your own account never requires this. If you have not set up two-factor authentication yourself, set it up before you can perform this specific action on another Superadmin.
+- Resetting another Superadmin's two-factor or password requires the acting Superadmin to confirm their own authenticator app or backup code first. This protects against a single compromised Superadmin session being used to silently take over another Superadmin account. Resetting your own account never requires this. If you signed in through single sign-on and have no local password, you cannot set up an authenticator app yourself to satisfy this - ask another Superadmin who already has one confirmed to perform the reset instead.
 - Deleting a staff account is permanent. Prefer disable when you only need to stop access.
 
 ## What changes after this action
@@ -54,7 +54,7 @@ New sessions use the updated assignments. Use **Active sessions** when access mu
 - **The user sees the wrong events:** inspect every scope for their role type, not only the newest one.
 - **A role option is unavailable:** your own role may not manage that scope.
 - **No role assigned after sign-in:** the account lands on My account with a notice until a Superadmin grants a usable assignment.
-- **"You need a confirmed authenticator app..." when resetting another Superadmin:** set up two-factor authentication on your own account first, then retry the reset.
+- **"You need a confirmed authenticator app..." when resetting another Superadmin:** set up two-factor authentication on your own account first, then retry the reset. If you have no local password (single sign-on only), you cannot do this yourself - ask another Superadmin with a confirmed authenticator app to perform the reset instead.
 
 ## Related pages
 
