@@ -294,11 +294,16 @@ export class PassCreatorClient implements WalletPassProvider {
    * (resultsTotal: 1) regardless of how many other passes exist, so it scales correctly instead of
    * depending on the true match happening to land within whatever page a naive list call returns.
    * The row's own echoed userProvidedId is still checked against the query as defense in depth,
-   * not because the filter is expected to misbehave. */
+   * not because the filter is expected to misbehave.
+   *
+   * Each filter object also sets `type: "text"`, matching the example PassCreator support sent us
+   * when we reported the shorthand-search bug above - not documented as a required property in the
+   * query-language reference's own JSON Schema (which only requires field/operator/value), but
+   * included here to match their example exactly. */
   private async searchByUserProvidedId(userProvidedId: string): Promise<PassCreatorSearchRow | null> {
     const query = {
       templateId: this.templateId,
-      groups: [[{ field: "userProvidedId", operator: "equals", value: [userProvidedId] }]],
+      groups: [[{ field: "userProvidedId", operator: "equals", type: "text", value: [userProvidedId] }]],
     };
     const encoded = Buffer.from(JSON.stringify(query)).toString("base64url");
     const rows = await this.request<PassCreatorSearchRow[]>("GET", `/api/v3/pass?query=${encoded}`);
