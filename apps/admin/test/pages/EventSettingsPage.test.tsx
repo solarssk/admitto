@@ -307,7 +307,7 @@ beforeEach(() => {
   vi.mocked(searchGeocoding).mockResolvedValue({ results: [], contact_configured: true });
   vi.mocked(reverseGeocoding).mockResolvedValue({ result: null, contact_configured: true });
   vi.mocked(fetchTimezoneForCoordinates).mockResolvedValue({ timezone: null });
-  vi.mocked(fetchWalletPushHistory).mockResolvedValue([]);
+  vi.mocked(fetchWalletPushHistory).mockResolvedValue({ items: [], total: 0 });
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
   // window.matchMedia isn't implemented by jsdom; default to desktop so any component on
   // this page relying on useIsDesktop() (elsewhere in the app, not this page's Save button)
@@ -789,28 +789,31 @@ describe("EventSettingsPage tabs", () => {
 
   it("shows wallet push history rows once fetched, with scope and status", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
-      {
-        id: "job-1",
-        created_at: "2026-06-07T10:00:00.000Z",
-        reissued: 3,
-        skipped: 1,
-        errored: 0,
-        status: "succeeded",
-        error: null,
-        scope: { kind: "attendee_ids", count: 3 },
-      },
-      {
-        id: "job-2",
-        created_at: "2026-06-06T10:00:00.000Z",
-        reissued: 0,
-        skipped: 0,
-        errored: 2,
-        status: "failed",
-        error: "provider outage",
-        scope: { kind: "event_wide", reason: "location" },
-      },
-    ]);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 3,
+          skipped: 1,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "attendee_ids", count: 3 },
+        },
+        {
+          id: "job-2",
+          created_at: "2026-06-06T10:00:00.000Z",
+          reissued: 0,
+          skipped: 0,
+          errored: 2,
+          status: "failed",
+          error: "provider outage",
+          scope: { kind: "event_wide", reason: "location" },
+        },
+      ],
+      total: 2,
+    });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
     expect(await screen.findByText("Succeeded")).toBeTruthy();
@@ -818,23 +821,26 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("provider outage")).toBeTruthy();
     expect(screen.getByText("3 attendees")).toBeTruthy();
     expect(screen.getByText("Whole event · location update")).toBeTruthy();
-    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", expect.anything());
+    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything());
   });
 
   it("shows an em-dash scope for a job that predates the scope field", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
-      {
-        id: "job-1",
-        created_at: "2026-06-07T10:00:00.000Z",
-        reissued: 1,
-        skipped: 0,
-        errored: 0,
-        status: "succeeded",
-        error: null,
-        scope: null,
-      },
-    ]);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: null,
+        },
+      ],
+      total: 1,
+    });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
     expect(await screen.findByText("—")).toBeTruthy();
@@ -842,38 +848,41 @@ describe("EventSettingsPage tabs", () => {
 
   it("describes every other scope shape: singular attendee count, settings reason, and no reason at all", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
-      {
-        id: "job-1",
-        created_at: "2026-06-07T10:00:00.000Z",
-        reissued: 1,
-        skipped: 0,
-        errored: 0,
-        status: "succeeded",
-        error: null,
-        scope: { kind: "attendee_ids", count: 1 },
-      },
-      {
-        id: "job-2",
-        created_at: "2026-06-07T09:00:00.000Z",
-        reissued: 4,
-        skipped: 0,
-        errored: 0,
-        status: "succeeded",
-        error: null,
-        scope: { kind: "event_wide", reason: "settings" },
-      },
-      {
-        id: "job-3",
-        created_at: "2026-06-07T08:00:00.000Z",
-        reissued: 2,
-        skipped: 0,
-        errored: 0,
-        status: "succeeded",
-        error: null,
-        scope: { kind: "event_wide", reason: null },
-      },
-    ]);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "attendee_ids", count: 1 },
+        },
+        {
+          id: "job-2",
+          created_at: "2026-06-07T09:00:00.000Z",
+          reissued: 4,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "event_wide", reason: "settings" },
+        },
+        {
+          id: "job-3",
+          created_at: "2026-06-07T08:00:00.000Z",
+          reissued: 2,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "event_wide", reason: null },
+        },
+      ],
+      total: 3,
+    });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
     expect(await screen.findByText("1 attendee")).toBeTruthy();
@@ -888,7 +897,7 @@ describe("EventSettingsPage tabs", () => {
 
     expect(await screen.findByText("Could not load wallet push history")).toBeTruthy();
 
-    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([]);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [], total: 0 });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {
@@ -900,30 +909,36 @@ describe("EventSettingsPage tabs", () => {
   it("re-fetches wallet push history every time the admin returns to the Wallet tab (bot review)", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchWalletPushHistory)
-      .mockResolvedValueOnce([
-        {
-          id: "job-1",
-          created_at: "2026-06-07T10:00:00.000Z",
-          reissued: 1,
-          skipped: 0,
-          errored: 0,
-          status: "succeeded",
-          error: null,
-          scope: null,
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: "job-2",
-          created_at: "2026-06-08T10:00:00.000Z",
-          reissued: 2,
-          skipped: 0,
-          errored: 0,
-          status: "succeeded",
-          error: null,
-          scope: null,
-        },
-      ]);
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "job-1",
+            created_at: "2026-06-07T10:00:00.000Z",
+            reissued: 1,
+            skipped: 0,
+            errored: 0,
+            status: "succeeded",
+            error: null,
+            scope: null,
+          },
+        ],
+        total: 1,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "job-2",
+            created_at: "2026-06-08T10:00:00.000Z",
+            reissued: 2,
+            skipped: 0,
+            errored: 0,
+            status: "succeeded",
+            error: null,
+            scope: null,
+          },
+        ],
+        total: 1,
+      });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1));
 
@@ -938,7 +953,7 @@ describe("EventSettingsPage tabs", () => {
 
   it("shows Loading… while wallet push history is in flight, then clears it", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    let resolveHistory!: (items: never[]) => void;
+    let resolveHistory!: (page: { items: never[]; total: number }) => void;
     vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(
       new Promise((resolve) => {
         resolveHistory = resolve;
@@ -948,10 +963,34 @@ describe("EventSettingsPage tabs", () => {
 
     expect(await screen.findByText("Loading…")).toBeTruthy();
 
-    resolveHistory([]);
+    resolveHistory({ items: [], total: 0 });
 
     await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
     expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
+  });
+
+  it("paginates wallet push history via the shared PaginationFooter", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    const row = {
+      id: "job-1",
+      created_at: "2026-06-07T10:00:00.000Z",
+      reissued: 1,
+      skipped: 0,
+      errored: 0,
+      status: "succeeded" as const,
+      error: null,
+      scope: null,
+    };
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row], total: 15 });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Showing 1–10 of 15")).toBeTruthy();
+    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything());
+
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row], total: 15 });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
   });
 
   it("saves the wallet Template ID through the event patch", async () => {

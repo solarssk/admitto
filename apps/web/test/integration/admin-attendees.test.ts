@@ -6600,6 +6600,38 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
     expect(res.status).toBe(403);
   });
 
+  it("paginates via page/pageSize query params, with total reflecting the full unpaged count", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    await prisma.adminJob.createMany({
+      data: [0, 1, 2].map((i) => ({
+        type: "wallet_push",
+        status: "succeeded" as const,
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        result_json: { reissued: i, skipped: 0, errored: 0 },
+        created_at: new Date(`2026-06-10T0${i}:00:00Z`),
+        finished_at: new Date(`2026-06-10T0${i}:01:00Z`),
+      })),
+    });
+
+    const page1 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=1&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page1Body = (await page1.json()) as { items: Array<{ reissued: number }>; total: number; page: number; pageSize: number };
+    expect(page1Body.total).toBe(3);
+    expect(page1Body.page).toBe(1);
+    expect(page1Body.pageSize).toBe(2);
+    // Newest finished_at first: the two jobs finished at 02:01 and 01:01.
+    expect(page1Body.items.map((item) => item.reissued)).toEqual([2, 1]);
+
+    const page2 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=2&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page2Body = (await page2.json()) as { items: Array<{ reissued: number }>; total: number };
+    expect(page2Body.total).toBe(3);
+    expect(page2Body.items.map((item) => item.reissued)).toEqual([0]);
+  });
+
   it("falls back to created_at for the displayed timestamp when finished_at is unset", async () => {
     await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
     const createdAt = new Date("2026-06-04T08:00:00Z");

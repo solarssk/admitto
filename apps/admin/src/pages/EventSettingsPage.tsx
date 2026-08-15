@@ -8,6 +8,7 @@ import {
   type NavigateFunction,
 } from "react-router";
 import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, StatusBadge, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import {
   ApiError,
@@ -855,12 +856,20 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
   );
 }
 
+const WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+export const WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT = 10;
+
 interface WalletPushHistoryCardProps {
   readonly history: WalletPushHistoryEntry[] | null;
+  readonly total: number;
   readonly error: string | null;
   readonly eventTimezone: string | undefined;
   readonly onRetry: () => void;
   readonly showLoading: boolean;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly onPageChange: (page: number) => void;
+  readonly onPageSizeChange: (pageSize: number) => void;
 }
 
 /** "3 attendees", "Whole event · location update" - the scope column's text. `null` (a job from
@@ -882,7 +891,18 @@ function describeWalletPushScope(scope: WalletPushHistoryScope | null): string {
  * This is the automatic *data* refresh (name/ticket type/venue/etc. already on an issued pass) -
  * not the same thing as a custom text message, which is Communication > Wallets > Send, and has
  * its own separate history there. */
-function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoading }: WalletPushHistoryCardProps) {
+function WalletPushHistoryCard({
+  history,
+  total,
+  error,
+  eventTimezone,
+  onRetry,
+  showLoading,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: WalletPushHistoryCardProps) {
   let body: ReactNode;
   if (error) {
     body = (
@@ -900,8 +920,11 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
     // settings-card-intro (already scoped to this page's own CSS) matches ImportHistoryCard's
     // muted-hint look without importing ImportPage's page-scoped import.css into this lazy chunk
     // (bot review - a component's CSS must live in its own file, per AGENTS.md's compounding
-    // rules).
-    body = showLoading ? <p className="settings-card-intro">Loading…</p> : null;
+    // rules). wallet-push-history-card__body-note adds the padding .sessions-table-wrap used to
+    // give this card for free, now that the Card itself is unpadded (see below).
+    body = showLoading ? (
+      <p className="settings-card-intro wallet-push-history-card__body-note">Loading…</p>
+    ) : null;
   } else if (history.length === 0) {
     body = (
       <EmptyState
@@ -912,7 +935,7 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
     );
   } else {
     body = (
-      <div className="sessions-table-wrap">
+      <div className="wallet-push-history-table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -946,15 +969,36 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
     );
   }
 
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
   return (
-    <Card title="Wallet push history" className="event-settings-card">
-      <p className="settings-card-intro">
+    <Card title="Wallet push history" className="event-settings-card wallet-push-history-card" padded={false}>
+      <p className="settings-card-intro wallet-push-history-card__intro">
         Automatic pushes that refresh data (name, ticket type, venue, etc.) already on an
         attendee's issued wallet pass, triggered by a bulk ticket-type change or a wallet-relevant
         event settings/location save. Not a custom message - send those from Communication &gt;
         Wallets.
       </p>
       {body}
+      {total > 0 && (
+        <div className="wallet-push-history-card__footer">
+          <PaginationFooter
+            idPrefix="wallet-push-history"
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalRows={total}
+            pageSizeOptions={WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS}
+            onPageSizeChange={(size) => {
+              onPageSizeChange(size);
+              onPageChange(1);
+            }}
+            onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
+            onNext={() => onPageChange(safePage + 1)}
+          />
+        </div>
+      )}
     </Card>
   );
 }
@@ -1058,17 +1102,23 @@ export function EventSettingsPage() {
   // background jobs triggered from elsewhere (currently only the Attendees list's bulk
   // ticket-type change), so it can go stale while this tab stays mounted between visits.
   const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
+  const [walletPushHistoryTotal, setWalletPushHistoryTotal] = useState(0);
   const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
   const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
   const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
+  const [walletPushHistoryPage, setWalletPushHistoryPage] = useState(1);
+  const [walletPushHistoryPageSize, setWalletPushHistoryPageSize] = useState(WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT);
   const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
   useEffect(() => {
     if (!eventId || tab !== "wallet") return;
     const controller = new AbortController();
     setWalletPushHistoryError(null);
     setWalletPushHistoryLoading(true);
-    fetchWalletPushHistory(eventId, controller.signal)
-      .then((items) => setWalletPushHistory(items))
+    fetchWalletPushHistory(eventId, walletPushHistoryPage, walletPushHistoryPageSize, controller.signal)
+      .then(({ items, total }) => {
+        setWalletPushHistory(items);
+        setWalletPushHistoryTotal(total);
+      })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setWalletPushHistoryError("Couldn't load wallet push history.");
@@ -1077,7 +1127,7 @@ export function EventSettingsPage() {
         if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
       });
     return () => controller.abort();
-  }, [eventId, tab, walletPushHistoryToken]);
+  }, [eventId, tab, walletPushHistoryToken, walletPushHistoryPage, walletPushHistoryPageSize]);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -1917,10 +1967,15 @@ export function EventSettingsPage() {
           </Card>
           <WalletPushHistoryCard
             history={walletPushHistory}
+            total={walletPushHistoryTotal}
             error={walletPushHistoryError}
             eventTimezone={form.timezone}
             onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
             showLoading={showWalletPushHistoryLoading}
+            page={walletPushHistoryPage}
+            pageSize={walletPushHistoryPageSize}
+            onPageChange={setWalletPushHistoryPage}
+            onPageSizeChange={setWalletPushHistoryPageSize}
           />
           {!isArchived && (
             <SettingsFooter

@@ -7,10 +7,17 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { readWalletPushRequest, type WalletPushRequest } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveClientTimezone } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  positiveIntQuery,
+  requireEventId,
+  resolveClientTimezone,
+} from "./admin-helpers.js";
 import { loadEventAdminJob } from "./admin-job-http.js";
 
-const WALLET_PUSH_HISTORY_LIMIT = 20;
+const WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT = 10;
+const WALLET_PUSH_HISTORY_PAGE_SIZE_MAX = 50;
 
 /** Shape written by drainWalletPushJobs (packages/tickets/src/drain-wallet-push-jobs.ts) into
  * AdminJob.result_json once a job finishes - named once so the two response shapes below can't
@@ -165,7 +172,8 @@ export async function handleGetWalletPushJob(c: Context, db: PrismaClient): Prom
   });
 }
 
-/** GET /api/admin/events/:eventId/wallet-push/history - recent terminal wallet_push jobs. */
+/** GET /api/admin/events/:eventId/wallet-push/history - paginated terminal wallet_push jobs,
+ * newest first. */
 export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -173,12 +181,25 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const jobs = await db.adminJob.findMany({
-    where: { event_id: eventId, type: "wallet_push", status: { in: ["succeeded", "failed"] } },
-    orderBy: { finished_at: "desc" },
-    take: WALLET_PUSH_HISTORY_LIMIT,
-    select: { id: true, created_at: true, finished_at: true, status: true, error: true, result_json: true },
-  });
+  const page = positiveIntQuery(c.req.query("page"), 1);
+  const pageSize = positiveIntQuery(
+    c.req.query("pageSize"),
+    WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT,
+    WALLET_PUSH_HISTORY_PAGE_SIZE_MAX,
+  );
+
+  const where = { event_id: eventId, type: "wallet_push", status: { in: ["succeeded", "failed"] } };
+
+  const [jobs, total] = await Promise.all([
+    db.adminJob.findMany({
+      where,
+      orderBy: { finished_at: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: { id: true, created_at: true, finished_at: true, status: true, error: true, result_json: true },
+    }),
+    db.adminJob.count({ where }),
+  ]);
 
   const items = jobs.map((job) => {
     const result = (job.result_json ?? null) as WalletPushResultJson;
@@ -196,5 +217,5 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
   });
 
   c.header("Cache-Control", "no-store");
-  return c.json({ items });
+  return c.json({ items, total, page, pageSize });
 }
