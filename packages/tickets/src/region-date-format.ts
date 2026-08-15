@@ -87,12 +87,12 @@ let countryNameToRegion: Map<string, string> | null = null;
 function normalizeCountryKey(value: string): string {
   return value
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[‘’'`]/g, "'")
-    .replace(/[-–—]/g, " ")
-    .replace(/&/g, "and")
+    .replaceAll(/[̀-ͯ]/g, "")
+    .replaceAll(/[‘’'`]/g, "'")
+    .replaceAll(/[-–—]/g, " ")
+    .replaceAll("&", "and")
     .toLowerCase()
-    .replace(/\s+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
 }
 
