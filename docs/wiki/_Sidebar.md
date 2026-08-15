@@ -64,6 +64,7 @@
 
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Identity and SSO](Identity-and-SSO)
+- [Cloudflare Access - Authentik Setup](Cloudflare-Access-Authentik-Setup)
 - [Wallet Passes Overview](Wallet-Passes-Overview)
 
 **Reference**

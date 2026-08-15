@@ -138,12 +138,68 @@ export interface ResolveCfAccessIdentityInput {
 }
 
 /**
+ * A staff admin page load fires many parallel `/api/admin/*` requests, each carrying the same
+ * Cloudflare-issued JWT and each independently reaching this resolver. Without this cache, every
+ * one of them opens its own SERIALIZABLE transaction against the same two ExternalIdentity rows,
+ * which Postgres then aborts and retries under write-write conflict - functionally harmless (the
+ * retry loop below absorbs it) but a real source of DB load and log noise. Keying on `sub:iat`
+ * (not just `sub`) means a genuinely new Cloudflare-issued token - e.g. after a role/group change
+ * takes effect at Cloudflare's next Access session refresh - always misses the cache and re-runs
+ * the real resolution; only literally-repeated presentations of the same token within the window
+ * short-circuit. JWT signature/issuer/audience/expiry validation upstream of this function is
+ * unaffected and still runs on every single request.
+ */
+const CF_ACCESS_RESOLUTION_CACHE_TTL_MS = 30_000;
+
+interface CachedResolution {
+  promise: Promise<{ userId: string }>;
+  expiresAt: number;
+}
+
+let resolutionCache = new Map<string, CachedResolution>();
+
+/** For tests - reset the resolution cache between cases. */
+export function clearCfAccessIdentityCacheForTests(): void {
+  resolutionCache = new Map();
+}
+
+function resolutionCacheKey(payload: JWTPayload): string | undefined {
+  const sub = ownValue(payload, "sub");
+  const iat = ownValue(payload, "iat");
+  if (typeof sub !== "string" || !sub || typeof iat !== "number") return undefined;
+  return `${sub}:${iat}`;
+}
+
+/**
  * Resolve a Cloudflare Access subject to an already-linked identity from one explicitly selected
  * OIDC provider. This intentionally has no JIT-user or e-mail-link path. Cloudflare's fully
  * verified JWT and the configured provider are the trust boundary that authorizes this automatic
  * link; interactive OIDC link step-up is therefore not applicable here.
  */
 export async function resolveCfAccessIdentityFromValidatedJwt(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  input: ResolveCfAccessIdentityInput,
+): Promise<{ userId: string }> {
+  const key = resolutionCacheKey(input.payload);
+  const cached = key ? resolutionCache.get(key) : undefined;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.promise;
+  }
+
+  const promise = resolveCfAccessIdentityUncached(prisma, input);
+  if (key) {
+    resolutionCache.set(key, { promise, expiresAt: Date.now() + CF_ACCESS_RESOLUTION_CACHE_TTL_MS });
+    // Never cache a failure - a fixed misconfiguration (or a transient DB error) must be able to
+    // succeed on the very next request instead of repeating the same rejection for the full TTL.
+    promise.catch(() => {
+      if (resolutionCache.get(key) === undefined) return;
+      resolutionCache.delete(key);
+    });
+  }
+  return promise;
+}
+
+async function resolveCfAccessIdentityUncached(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: ResolveCfAccessIdentityInput,
 ): Promise<{ userId: string }> {
