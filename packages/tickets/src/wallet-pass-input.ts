@@ -82,7 +82,14 @@ function tzOffsetSuffix(instant: Date, timeZone: string): string {
  * found it wrong for a same-day start/end pair straddling a transition in a zone with a
  * non-zero standard offset: an America/New_York event from 01:00 to 03:00 on 2026-03-08 (the US
  * spring-forward date) had both probes land on the pre-transition side, computing a 2-hour
- * duration for what is actually a 1-hour local span (2:00-3:00am doesn't exist that day). */
+ * duration for what is actually a 1-hour local span (2:00-3:00am doesn't exist that day).
+ *
+ * When `hhmm` itself falls inside a spring-forward gap (e.g. 02:30 that same day, which the
+ * local clock skips straight over), `zonedWallClockToUtcIso` resolves to the nearest valid
+ * instant instead - recombining that instant's offset with the original, nonexistent `hhmm`
+ * digits would silently label a *different* instant (bot review, confirmed: 02:30 resolves to
+ * 07:30Z, but the string "...T02:30:00-04:00" parses as 06:30Z). Detect that mismatch and emit
+ * the resolved instant directly (a plain UTC ISO string) rather than a wrong local-digit one. */
 function zonedDateTimeToIso(date: Date, hhmm: string | null, timeZone: string): string | undefined {
   if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return undefined;
   const y = date.getUTCFullYear();
@@ -90,7 +97,22 @@ function zonedDateTimeToIso(date: Date, hhmm: string | null, timeZone: string): 
   const d = date.getUTCDate();
   const dayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   const correctInstant = new Date(zonedWallClockToUtcIso(dayStr, `${hhmm}:00.000`, timeZone));
+  if (localWallClockReading(correctInstant, timeZone) !== hhmm) return correctInstant.toISOString();
   return `${dayStr}T${hhmm}:00${tzOffsetSuffix(correctInstant, timeZone)}`;
+}
+
+/** "HH:MM" wall-clock reading of `instant` in `timeZone` - used to detect whether
+ * zonedDateTimeToIso's requested `hhmm` actually exists on that day (see above). */
+function localWallClockReading(instant: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(instant);
+  const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${hour === "24" ? "00" : hour}:${minute}`;
 }
 
 /** Builds Apple Wallet semantic tag values from the resolved event/attendee - only the fields

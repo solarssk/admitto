@@ -507,6 +507,28 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
     expect(input.semantics?.duration).toBe(1 * 60 * 60);
   });
 
+  it("emits the resolved instant, not a stale-digits recombination, when eventHoursStart falls inside a spring-forward gap", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          walletSemanticTagsEnabled: true,
+          date: new Date("2026-03-08T12:00:00.000Z"),
+          timezone: "America/New_York",
+          eventHoursStart: "02:30",
+          eventHoursEnd: "09:00",
+        },
+      }),
+      "b",
+    );
+    // 02:30 doesn't exist on 2026-03-08 in America/New_York (clocks skip 2:00-3:00am) -
+    // zonedWallClockToUtcIso resolves it to the nearest valid instant, 03:30 EDT (07:30Z).
+    // Recombining that offset with the original "02:30" digits would emit
+    // "2026-03-08T02:30:00-04:00", which parses as 06:30Z - a full hour off from the instant
+    // actually resolved and a different, wrong value from what the naive pre-fix code emitted too.
+    expect(input.semantics?.eventStartDate).toBe("2026-03-08T07:30:00.000Z");
+    expect(new Date(input.semantics!.eventStartDate!).toISOString()).toBe("2026-03-08T07:30:00.000Z");
+  });
+
   describe("tzOffsetSuffix ICU data variance", () => {
     afterEach(() => vi.restoreAllMocks());
 
