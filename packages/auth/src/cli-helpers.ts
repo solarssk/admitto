@@ -12,9 +12,10 @@ export class CliError extends Error {
   }
 }
 
-/** Break-glass commands must never accept passwords on argv. */
+/** Break-glass commands must never accept passwords on argv. Catches both the
+ * space-separated form (`--password x`) and the single-token `--password=x` form. */
 export function assertNoPasswordArgv(argv: string[]): void {
-  if (argv.includes("--password")) {
+  if (argv.some((a) => a === "--password" || a.startsWith("--password="))) {
     throw new CliError("Password cannot be passed via --password; use the stdin prompt.");
   }
 }

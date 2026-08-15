@@ -82,6 +82,12 @@ async function verifyTargetUserPassword(
 }
 
 export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void> {
+  // Checked before any DB lookup or interactive prompt below - assertBootstrapForceAllowed's
+  // confirmForce() prompt (on --force against an existing instance) is blocking, and would
+  // otherwise leave a --password=<value> argv sitting in the process list for the whole time
+  // the operator spends answering it.
+  assertNoPasswordArgv(process.argv);
+
   const email = arg("email");
   if (!email) {
     throw new CliError("Usage: admitto auth bootstrap-superadmin --email <email> [--force]");
@@ -89,9 +95,10 @@ export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void
 
   await assertBootstrapForceAllowed(db, hasFlag("force"));
 
-  assertNoPasswordArgv(process.argv);
   const password = await readPasswordFromStdin();
   const userId = await bootstrapSuperadminChecked(db, email, password);
+  // bootstrapSuperadmin writes the auth.superadmin.bootstrap audit record itself, inside the
+  // same transaction as the account creation - no separate call needed here.
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 
