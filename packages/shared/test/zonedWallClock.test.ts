@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { zonedWallClockToUtcIso } from "../src/zonedWallClock.js";
 
 describe("zonedWallClockToUtcIso", () => {
@@ -44,5 +44,60 @@ describe("zonedWallClockToUtcIso", () => {
     expect(zonedWallClockToUtcIso("2026-03-08", "03:00:00.000", "America/New_York")).toBe(
       "2026-03-08T07:00:00.000Z",
     );
+  });
+
+  describe("ICU data variance", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("treats an ICU build reporting midnight as hour '24' the same as '00'", () => {
+      // Some ICU builds render local midnight as "24:00" instead of "00:00" for hour12:false -
+      // readZonedWallClockAsUtcMillis normalizes that back to hour 0 (same day), not hour 24
+      // (which Date.UTC would silently roll into the next day).
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        return parts.map((p) => (p.type === "hour" && p.value === "00" ? { ...p, value: "24" } : p));
+      });
+      expect(zonedWallClockToUtcIso("2026-06-28", "00:00:00.000", "UTC")).toBe(
+        "2026-06-28T00:00:00.000Z",
+      );
+    });
+
+    it("defaults a missing formatToParts field to 0 rather than throwing", () => {
+      // Defensive fallback for an ICU build that omits a requested part entirely - shouldn't be
+      // reachable with real Intl data, but must degrade to a value instead of NaN/undefined.
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        return real.apply(this, args).filter((p) => p.type !== "second");
+      });
+      expect(zonedWallClockToUtcIso("2026-06-28", "12:30:00.000", "UTC")).toBe(
+        "2026-06-28T12:30:00.000Z",
+      );
+    });
+
+    it("falls back to the best-available candidate when neither correction pass converges", () => {
+      // A frozen/broken formatToParts (always reports the same wall-clock reading regardless of
+      // the instant queried) never lets the iterative correction converge - both the last
+      // candidate and its "other" sibling read back below target, so the `.find(...)` in the
+      // fallback branch finds nothing and must fall through to `options.at(-1)!` rather than
+      // throwing on an empty result.
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockReturnValue([
+        { type: "year", value: "2020" },
+        { type: "month", value: "01" },
+        { type: "day", value: "01" },
+        { type: "hour", value: "00" },
+        { type: "minute", value: "00" },
+        { type: "second", value: "00" },
+      ]);
+      const result = zonedWallClockToUtcIso("2026-06-28", "12:30:00.000", "UTC");
+      expect(() => new Date(result)).not.toThrow();
+      expect(Number.isNaN(new Date(result).getTime())).toBe(false);
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { buildWalletPassInput, formatDate, resolveTicketPageDisplay } from "../src/wallet-pass-input.js";
 import { formatEventHour } from "../src/region-date-format.js";
@@ -505,5 +505,46 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
     expect(input.semantics?.eventStartDate).toBe("2026-03-08T01:00:00-05:00");
     expect(input.semantics?.eventEndDate).toBe("2026-03-08T03:00:00-04:00");
     expect(input.semantics?.duration).toBe(1 * 60 * 60);
+  });
+
+  describe("tzOffsetSuffix ICU data variance", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("falls back to Z when the offset formatter omits the timeZoneName part entirely", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        return this.resolvedOptions().timeZoneName ? parts.filter((p) => p.type !== "timeZoneName") : parts;
+      });
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
+    });
+
+    it("falls back to Z when the offset formatter returns a string that doesn't match the GMT±HH:MM shape", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        if (!this.resolvedOptions().timeZoneName) return parts;
+        return parts.map((p) => (p.type === "timeZoneName" ? { ...p, value: "???" } : p));
+      });
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
+    });
   });
 });
