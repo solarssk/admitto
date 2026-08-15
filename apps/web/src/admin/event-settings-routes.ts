@@ -632,7 +632,7 @@ async function pushWalletUpdatesBestEffort(
   if (!walletRelevantEventFieldsChanged(existing, updated)) return;
   if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
 
-  await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id);
+  await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id, "settings");
 }
 
 /** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */

@@ -7,7 +7,8 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, StatusBadge, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import {
   ApiError,
@@ -24,6 +25,7 @@ import {
   unarchiveEvent,
   uploadEventBrandingFile,
   type WalletPushHistoryEntry,
+  type WalletPushHistoryScope,
 } from "../api/client.js";
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
@@ -50,7 +52,12 @@ import { DatePicker } from "../components/DatePicker.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime, formatWalletDatePreview } from "../utils/event-dates.js";
+import {
+  formatEventDateTime,
+  formatUtcDateTime,
+  formatWalletDatePreview,
+  formatZonedClockTime,
+} from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -854,18 +861,59 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
   );
 }
 
+const WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+export const WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT = 10;
+
+/** This is when the push job ran on the server, not an event-schedule fact - always UTC-primary
+ * with the triggering admin's own local time underneath, same as Delivery log's "Sent / Queued"
+ * column. Deliberately not event-timezone: an admin in one timezone triggering a push for an
+ * event venue in another would otherwise see neither their own clock nor a real operational
+ * instant, just a third, unrelated time. */
+const WALLET_PUSH_HISTORY_TIME_HINT =
+  "Top: when this ran, in UTC. Below: the same moment in the local time of whoever's browser triggered it, when known.";
+
 interface WalletPushHistoryCardProps {
   readonly history: WalletPushHistoryEntry[] | null;
+  readonly total: number;
   readonly error: string | null;
-  readonly eventTimezone: string | undefined;
   readonly onRetry: () => void;
   readonly showLoading: boolean;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly onPageChange: (page: number) => void;
+  readonly onPageSizeChange: (pageSize: number) => void;
 }
 
-/** Recent wallet_push jobs for this event, from the async job system's own triggers (currently:
- * bulk ticket type change). Single-attendee field edits push directly and don't create a job, so
- * they never appear in this list. */
-function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoading }: WalletPushHistoryCardProps) {
+/** "3 attendees", "Whole event · location update" - the scope column's text. `null` (a job from
+ * before this field existed) reads as an em-dash rather than a blank cell, so it's visibly "we
+ * don't know" and not confused with a genuinely-scopeless push. */
+function describeWalletPushScope(scope: WalletPushHistoryScope | null): string {
+  if (!scope) return "—";
+  if (scope.kind === "attendee_ids") {
+    return `${scope.count} ${scope.count === 1 ? "attendee" : "attendees"}`;
+  }
+  if (scope.reason === "location") return "Whole event · location update";
+  if (scope.reason === "settings") return "Whole event · settings update";
+  return "Whole event";
+}
+
+/** Recent wallet_push jobs for this event, from the async job system's own triggers (bulk
+ * ticket-type change, or an event settings/location save that touches a wallet-relevant field).
+ * Single-attendee field edits push directly and don't create a job, so they never appear here.
+ * This is the automatic *data* refresh (name/ticket type/venue/etc. already on an issued pass) -
+ * not the same thing as a custom text message, which is Communication > Wallets > Send, and has
+ * its own separate history there. */
+function WalletPushHistoryCard({
+  history,
+  total,
+  error,
+  onRetry,
+  showLoading,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: WalletPushHistoryCardProps) {
   let body: ReactNode;
   if (error) {
     body = (
@@ -883,8 +931,11 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
     // settings-card-intro (already scoped to this page's own CSS) matches ImportHistoryCard's
     // muted-hint look without importing ImportPage's page-scoped import.css into this lazy chunk
     // (bot review - a component's CSS must live in its own file, per AGENTS.md's compounding
-    // rules).
-    body = showLoading ? <p className="settings-card-intro">Loading…</p> : null;
+    // rules). wallet-push-history-card__body-note adds the padding .sessions-table-wrap used to
+    // give this card for free, now that the Card itself is unpadded (see below).
+    body = showLoading ? (
+      <p className="settings-card-intro wallet-push-history-card__body-note">Loading…</p>
+    ) : null;
   } else if (history.length === 0) {
     body = (
       <EmptyState
@@ -895,12 +946,15 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
     );
   } else {
     body = (
-      <div className="sessions-table-wrap">
+      <div className="wallet-push-history-table-wrap">
         <table className="table">
           <thead>
             <tr>
-              <th>Date</th>
+              <th>
+                <HintLabel hint={WALLET_PUSH_HISTORY_TIME_HINT}>Date</HintLabel>
+              </th>
               <th>Status</th>
+              <th>Scope</th>
               <th>Updated</th>
               <th>Skipped</th>
               <th>Errored</th>
@@ -909,8 +963,21 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
           <tbody>
             {history.map((entry) => (
               <tr key={entry.id}>
-                <td>{formatEventDateTime(entry.created_at, eventTimezone)}</td>
-                <td>{entry.status === "failed" ? (entry.error ?? "Failed") : "Succeeded"}</td>
+                <td>
+                  {formatUtcDateTime(entry.created_at)}
+                  {entry.client_timezone && (
+                    <div className="sessions-subdued">
+                      {formatZonedClockTime(entry.created_at, entry.client_timezone)}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  <StatusBadge status={entry.status} />
+                  {entry.status === "failed" && entry.error && (
+                    <div style={{ color: "var(--text-muted)" }}>{entry.error}</div>
+                  )}
+                </td>
+                <td>{describeWalletPushScope(entry.scope)}</td>
                 <td>{entry.reissued}</td>
                 <td>{entry.skipped}</td>
                 <td>{entry.errored}</td>
@@ -922,9 +989,36 @@ function WalletPushHistoryCard({ history, error, eventTimezone, onRetry, showLoa
     );
   }
 
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
   return (
-    <Card title="Wallet push history" className="event-settings-card">
+    <Card title="Wallet push history" className="event-settings-card wallet-push-history-card" padded={false}>
+      <p className="settings-card-intro wallet-push-history-card__intro">
+        Automatic pushes that refresh data (name, ticket type, venue, etc.) already on an
+        attendee's issued wallet pass, triggered by a bulk ticket-type change or a wallet-relevant
+        event settings/location save. Not a custom message - send those from Communication &gt;
+        Wallets.
+      </p>
       {body}
+      {total > 0 && (
+        <div className="wallet-push-history-card__footer">
+          <PaginationFooter
+            idPrefix="wallet-push-history"
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalRows={total}
+            pageSizeOptions={WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS}
+            onPageSizeChange={(size) => {
+              onPageSizeChange(size);
+              onPageChange(1);
+            }}
+            onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
+            onNext={() => onPageChange(safePage + 1)}
+          />
+        </div>
+      )}
     </Card>
   );
 }
@@ -1028,17 +1122,38 @@ export function EventSettingsPage() {
   // background jobs triggered from elsewhere (currently only the Attendees list's bulk
   // ticket-type change), so it can go stale while this tab stays mounted between visits.
   const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
+  const [walletPushHistoryTotal, setWalletPushHistoryTotal] = useState(0);
   const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
   const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
   const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
+  const [walletPushHistoryPage, setWalletPushHistoryPage] = useState(1);
+  const [walletPushHistoryPageSize, setWalletPushHistoryPageSize] = useState(WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT);
   const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
+  // Navigating from one event to another while the Wallet tab stays mounted must not keep the
+  // outgoing event's rows/total/page - a separate reset effect keyed on eventId alone would still
+  // let this effect run once more with the stale page for the new event first (both effects fire
+  // on the same eventId-change render pass, before the reset effect's setState is applied) -
+  // detecting the event change inline, in this same effect, is what actually avoids that request
+  // (CodeRabbit).
+  const walletPushHistoryEventIdRef = useRef(eventId);
   useEffect(() => {
     if (!eventId || tab !== "wallet") return;
+    const isNewEvent = eventId !== walletPushHistoryEventIdRef.current;
+    walletPushHistoryEventIdRef.current = eventId;
+    const page = isNewEvent ? 1 : walletPushHistoryPage;
+    if (isNewEvent) {
+      setWalletPushHistory(null);
+      setWalletPushHistoryTotal(0);
+      if (walletPushHistoryPage !== 1) setWalletPushHistoryPage(1);
+    }
     const controller = new AbortController();
     setWalletPushHistoryError(null);
     setWalletPushHistoryLoading(true);
-    fetchWalletPushHistory(eventId, controller.signal)
-      .then((items) => setWalletPushHistory(items))
+    fetchWalletPushHistory(eventId, page, walletPushHistoryPageSize, controller.signal)
+      .then(({ items, total }) => {
+        setWalletPushHistory(items);
+        setWalletPushHistoryTotal(total);
+      })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setWalletPushHistoryError("Couldn't load wallet push history.");
@@ -1047,7 +1162,7 @@ export function EventSettingsPage() {
         if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
       });
     return () => controller.abort();
-  }, [eventId, tab, walletPushHistoryToken]);
+  }, [eventId, tab, walletPushHistoryToken, walletPushHistoryPage, walletPushHistoryPageSize]);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -1887,10 +2002,14 @@ export function EventSettingsPage() {
           </Card>
           <WalletPushHistoryCard
             history={walletPushHistory}
+            total={walletPushHistoryTotal}
             error={walletPushHistoryError}
-            eventTimezone={form.timezone}
             onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
             showLoading={showWalletPushHistoryLoading}
+            page={walletPushHistoryPage}
+            pageSize={walletPushHistoryPageSize}
+            onPageChange={setWalletPushHistoryPage}
+            onPageSizeChange={setWalletPushHistoryPageSize}
           />
           {!isArchived && (
             <SettingsFooter
