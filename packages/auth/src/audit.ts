@@ -272,17 +272,27 @@ export async function logMfaBreakGlassCli(
  * Activity's UI (`AuditLogPanel.tsx`) labels/filters purely off `event_type`; sharing the MFA
  * type would show account creation as "2FA break-glass override" and obscure it in that view.
  * Called from inside `bootstrapSuperadmin`'s own transaction so account creation and its audit
- * record commit or roll back together - never a persisted superadmin with no audit trail. */
+ * record commit or roll back together - never a persisted superadmin with no audit trail. Writes
+ * the `SecurityAuditLog` row directly rather than through `writeSecurityAuditLog`, which swallows
+ * persistence errors by design (correct for its other, best-effort login/MFA callers, but wrong
+ * here: a swallowed error would let this transaction commit the new superadmin with no audit
+ * record at all, exactly what this function exists to prevent) - a failure here must propagate
+ * and roll back the whole transaction instead. */
 export async function logSuperadminBootstrapCli(
   db: Db,
   ctx: { email: string; userId: string },
 ): Promise<void> {
   emitAuditEvent("auth.superadmin.bootstrap", { email: ctx.email }, { quiet: true });
-  await writeSecurityAuditLog(db, {
-    event_type: "auth.superadmin.bootstrap",
-    user_id: ctx.userId,
-    ip: null,
-    metadata: {},
+  await db.securityAuditLog.create({
+    data: {
+      event_type: "auth.superadmin.bootstrap",
+      user_id: ctx.userId,
+      user_email: ctx.email,
+      user_display_name: null,
+      ip: null,
+      actor_timezone: null,
+      metadata: {} as Prisma.InputJsonValue,
+    },
   });
 }
 

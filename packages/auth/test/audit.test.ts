@@ -438,6 +438,14 @@ describe("audit", () => {
       await logSuperadminBootstrapCli(fakeDb(), { email: "admin@example.com", userId: "user-1" });
       expect(infoSpy).not.toHaveBeenCalled();
     });
+
+    it("propagates a persistence failure instead of swallowing it like writeSecurityAuditLog", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockRejectedValue(new Error("db down"));
+      await expect(
+        logSuperadminBootstrapCli(fakeDb(create), { email: "admin@example.com", userId: "user-1" }),
+      ).rejects.toThrow("db down");
+    });
   });
 
   describe("logMfaRecoveryConsumed", () => {

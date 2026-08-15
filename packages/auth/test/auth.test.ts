@@ -533,6 +533,35 @@ describe("bootstrap", () => {
     await expect(bootstrapSuperadmin(prisma, email, "short")).rejects.toThrow();
     expect(await prisma.user.count({ where: { email } })).toBe(0);
   });
+
+  it("rolls back the new user and role assignment when the audit write fails", async () => {
+    // logSuperadminBootstrapCli writes SecurityAuditLog directly (not through the swallow-all-
+    // errors writeSecurityAuditLog) precisely so a failure here propagates and aborts the whole
+    // transaction - a persisted superadmin must never end up with no audit trail. Spying on the
+    // root client's securityAuditLog.create doesn't reach this: $transaction's callback runs
+    // against its own `tx` object, a distinct client Prisma builds for the transaction, not the
+    // root `prisma` instance - only a client extension (inherited into `tx` since it's part of
+    // the client's query pipeline, not the transaction mechanism) can intercept it here.
+    const email = "bootstrap-audit-fail@example.com";
+    const failingPrisma = prisma.$extends({
+      query: {
+        securityAuditLog: {
+          create() {
+            throw new Error("audit db unavailable");
+          },
+        },
+      },
+    }) as unknown as PrismaClient;
+
+    await expect(bootstrapSuperadmin(failingPrisma, email, "bootstrap-pass-xyz")).rejects.toThrow(
+      "audit db unavailable",
+    );
+
+    // No user row means no role assignment either - Postgres transaction atomicity guarantees
+    // every statement in bootstrapSuperadmin's $transaction rolled back together, and a role
+    // assignment can only exist for a user_id that was actually returned by user.create.
+    expect(await prisma.user.count({ where: { email } })).toBe(0);
+  });
 });
 
 describe("auth retention purge", () => {
