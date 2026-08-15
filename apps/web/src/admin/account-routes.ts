@@ -506,6 +506,35 @@ async function verifySelfUnlinkProof(
  * consciously picking the local password this account will use going forward, whether or not one
  * already existed - not silently reusing whatever was there before.
  */
+/**
+ * Rate-limits the two proof paths self-unlink accepts, independently of each other and before
+ * either is actually verified by `verifySelfUnlinkProof`: a caller who supplied `current_password`
+ * must not be able to grind guesses just by omitting `code`, or vice versa.
+ */
+async function unlinkSsoPreflightRateLimit(
+  c: Context,
+  rateLimitStore: RateLimitStore,
+  userId: string,
+  currentSessionId: string | undefined,
+  code: string | undefined,
+  currentPassword: string | undefined,
+): Promise<Response | null> {
+  if (code) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  if (currentPassword) {
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, ip))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  return null;
+}
+
 export async function handleDeleteAccountExternalIdentity(
   c: Context,
   db: PrismaClient,
@@ -532,22 +561,15 @@ export async function handleDeleteAccountExternalIdentity(
   if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
 
   const code = parsed.data.code?.trim();
-  if (code) {
-    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
-    const ip = resolveMfaClientIp(c);
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
-      return c.json({ error: "too many requests" }, 429);
-    }
-  }
-  // Throttled independently of the code check above: a caller who instead (or additionally)
-  // supplied current_password is about to have it checked by verifySelfUnlinkProof below, and
-  // that check must not be gate-able by rotating source IPs.
-  if (parsed.data.current_password) {
-    const ip = resolveMfaClientIp(c);
-    if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, ip))) {
-      return c.json({ error: "too many requests" }, 429);
-    }
-  }
+  const rateLimited = await unlinkSsoPreflightRateLimit(
+    c,
+    rateLimitStore,
+    userId,
+    currentSessionId,
+    code,
+    parsed.data.current_password,
+  );
+  if (rateLimited) return rateLimited;
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);

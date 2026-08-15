@@ -105,11 +105,11 @@ describe("createApp rate-limit wiring", () => {
     ).toBe(429);
 
     // Login's bucket is exhausted, but an unauthenticated account request (its own bucket) is
-    // still reachable — it fails auth (401), not the shared rate limit (429).
+    // still reachable - it fails auth (401), not the shared rate limit (429).
     expect((await app.request("/api/account")).status).toBe(401);
   });
 
-  it("rate-limits /api/account/* independently in the other direction — exhausting it never blocks login", async () => {
+  it("rate-limits /api/account/* independently in the other direction - exhausting it never blocks login", async () => {
     const store = new InMemoryRateLimitStore();
     const app = createWiringApp(store);
 
