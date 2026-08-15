@@ -852,6 +852,26 @@ async function cloudflareAccessRow(
     };
   }
 
+  const sourceProvider = config.sourceProviderId
+    ? (await listOidcProviders(db)).find((provider) => provider.id === config.sourceProviderId)
+    : undefined;
+  if (!sourceProvider || !sourceProvider.enabled) {
+    const sourceStatus = sourceProvider ? "disabled" : "missing";
+    return {
+      id: "cloudflare_access",
+      label,
+      status: "down",
+      summary: `Direct identity provider ${sourceStatus}`,
+      details: detailsFromEntries([
+        ["status", "down"],
+        ["enabled", "yes"],
+        ["direct_identity_provider", sourceStatus],
+        ["endpoint", endpoint],
+        ["last_checked", checkedAt],
+      ]),
+    };
+  }
+
   if (!live) {
     return {
       id: "cloudflare_access",
@@ -861,6 +881,7 @@ async function cloudflareAccessRow(
       details: detailsFromEntries([
         ["status", "ok"],
         ["enabled", "yes"],
+        ["direct_identity_provider", "enabled"],
         ["endpoint", endpoint],
         ["audiences", String(config.audience.length)],
         ["last_checked", checkedAt],
@@ -878,6 +899,7 @@ async function cloudflareAccessRow(
       details: detailsFromEntries([
         ["status", "down"],
         ["enabled", "yes"],
+        ["direct_identity_provider", "enabled"],
         ["endpoint", endpoint],
         ["live_check", "failed"],
         ["last_checked", checkedAt],
@@ -893,6 +915,7 @@ async function cloudflareAccessRow(
     details: detailsFromEntries([
       ["status", "ok"],
       ["enabled", "yes"],
+      ["direct_identity_provider", "enabled"],
       ["endpoint", endpoint],
       ["audiences", String(config.audience.length)],
       ["live_check", "ok"],

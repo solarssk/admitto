@@ -99,6 +99,8 @@ const CODE_MESSAGES: Record<string, string> = {
   "server error": "Something went wrong. Try again.",
   setup_not_ready: "Complete the setup steps before finishing.",
   source_field_conflict: "A custom field with this key already exists for this event.",
+  source_provider_unavailable:
+    "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",
   stale_write: "Someone else changed this record. Reload and try again.",
   template_in_use: "This template already has deliveries and cannot be deleted.",
   template_limit_reached: "Template limit reached for this event.",

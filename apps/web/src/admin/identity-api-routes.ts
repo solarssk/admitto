@@ -18,6 +18,7 @@ import {
   setSetting,
   buildCfAccessConfigFromFields,
   validateCfAccessBootConfigFromResolved,
+  validateCfAccessIdentityLinkConfig,
   clearCfAccessRuntimeConfigCache,
   resolveCfAccessTeamDomainForConnection,
   testCfAccessConnection,
@@ -26,6 +27,7 @@ import {
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
+  SETTING_CF_ACCESS_SOURCE_PROVIDER_ID,
   type GroupRoleMappingInput,
   type IdentityProviderFormView,
   type IdentityProviderInput,
@@ -140,6 +142,7 @@ const cfAccessBodySchema = z.strictObject({
   teamDomain: z.union([z.string().trim().max(2000), z.literal("")]).optional(),
   audience: z.union([z.array(z.string()), z.string()]).optional(),
   protectedPrefixes: z.union([z.array(z.string()), z.string()]).optional(),
+  sourceProviderId: z.union([z.string().trim().max(200), z.literal("")]).optional(),
 });
 
 const cfAccessTestBodySchema = z.strictObject({
@@ -552,26 +555,36 @@ interface CfAccessDto {
   teamDomain: string;
   audience: string[];
   protectedPrefixes: string[];
+  sourceProviderId: string;
+  sourceProviders: Array<{ id: string; displayName: string; enabled: boolean }>;
   locks: {
     enabled: boolean;
     teamDomain: boolean;
     audience: boolean;
     protectedPrefixes: boolean;
+    sourceProviderId: boolean;
   };
 }
 
 async function cfAccessDto(db: PrismaClient): Promise<CfAccessDto> {
-  const config = await getCfAccessConfig(db);
+  const [config, sourceProviders] = await Promise.all([getCfAccessConfig(db), listOidcProviders(db)]);
   return {
     enabled: config.enabled,
     teamDomain: config.teamDomain,
     audience: config.audience,
     protectedPrefixes: config.protectedPrefixes,
+    sourceProviderId: config.sourceProviderId,
+    sourceProviders: sourceProviders.map((provider) => ({
+      id: provider.id,
+      displayName: provider.display_name,
+      enabled: provider.enabled,
+    })),
     locks: {
       enabled: isSettingEnvLocked(SETTING_CF_ACCESS_ENABLED),
       teamDomain: isSettingEnvLocked(SETTING_CF_ACCESS_TEAM_DOMAIN),
       audience: isSettingEnvLocked(SETTING_CF_ACCESS_AUD),
       protectedPrefixes: isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES),
+      sourceProviderId: isSettingEnvLocked(SETTING_CF_ACCESS_SOURCE_PROVIDER_ID),
     },
   };
 }
@@ -605,12 +618,26 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
   const protectedPrefixes = isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES)
     ? current.protectedPrefixes
     : protectedPrefixesOverride;
+  const sourceProviderId = isSettingEnvLocked(SETTING_CF_ACCESS_SOURCE_PROVIDER_ID)
+    ? current.sourceProviderId
+    : (body.sourceProviderId?.trim() ?? current.sourceProviderId);
 
   let resolved;
   try {
-    resolved = buildCfAccessConfigFromFields({ enabled, teamDomainRaw: teamDomain, audience, protectedPrefixes });
+    resolved = buildCfAccessConfigFromFields({
+      enabled,
+      teamDomainRaw: teamDomain,
+      audience,
+      protectedPrefixes,
+      sourceProviderId,
+    });
     if (resolved.enabled) {
       validateCfAccessBootConfigFromResolved(resolved);
+      validateCfAccessIdentityLinkConfig(resolved);
+      const sourceProvider = await findOidcProviderById(db, resolved.sourceProviderId);
+      if (!sourceProvider?.enabled) {
+        return c.json({ error: "source_provider_unavailable" }, 400);
+      }
     }
   } catch {
     return c.json({ error: "validation_failed" }, 400);
@@ -630,6 +657,9 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
       }
       if (!isSettingEnvLocked(SETTING_CF_ACCESS_PROTECTED_PREFIXES)) {
         await setSetting(tx, SETTING_CF_ACCESS_PROTECTED_PREFIXES, resolved.protectedPrefixes);
+      }
+      if (!isSettingEnvLocked(SETTING_CF_ACCESS_SOURCE_PROVIDER_ID)) {
+        await setSetting(tx, SETTING_CF_ACCESS_SOURCE_PROVIDER_ID, resolved.sourceProviderId);
       }
       await ensureCloudflareAccessProvider(tx, resolved);
     });

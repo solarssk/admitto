@@ -687,9 +687,18 @@
       "group": "identity",
       "boot": "optional",
       "consumers": ["app"],
-      "secret": true,
+      "secret": false,
       "ui": "Settings → Identity",
-      "summary": "Cloudflare Access application audience tag."
+      "summary": "Cloudflare Access application audience tag; this is not a bearer token or client secret."
+    },
+    {
+      "name": "CF_ACCESS_SOURCE_PROVIDER_ID",
+      "group": "identity",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Settings → Identity",
+      "summary": "ID of the direct OIDC provider whose immutable subject is forwarded by Cloudflare Access for safe staff SSO linking."
     },
     {
       "name": "CF_ACCESS_PROTECTED_PREFIXES",

@@ -145,7 +145,8 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 |----------|------|-----------|----|--------|---------|
 | `CF_ACCESS_ENABLED` | optional | app | Settings → Identity (preferred); env locks UI | no | When true with other CF_ACCESS_* vars, locks Cloudflare Access config from env. |
 | `CF_ACCESS_TEAM_DOMAIN` | optional | app | Settings → Identity | no | Cloudflare Access team domain URL. |
-| `CF_ACCESS_AUD` | optional | app | Settings → Identity | yes | Cloudflare Access application audience tag. |
+| `CF_ACCESS_AUD` | optional | app | Settings → Identity | no | Cloudflare Access application audience tag; this is not a bearer token or client secret. |
+| `CF_ACCESS_SOURCE_PROVIDER_ID` | optional | app | Settings → Identity | no | ID of the direct OIDC provider whose immutable subject is forwarded by Cloudflare Access for safe staff SSO linking. |
 | `CF_ACCESS_PROTECTED_PREFIXES` | optional | app | Settings → Identity | no | JSON array of path prefixes protected by Access. |
 | `SSO_PRIVATE_DESTINATION_ALLOWLIST` | optional | app | none | no | Comma-separated exact hostnames/IPs allowed to resolve privately for identity SSO (OIDC Issuer/endpoints today; same list for future SAML). One list covers every provider sharing those hosts. Set on app. Providers themselves are configured only in Settings → Identity. |
 
@@ -188,4 +189,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 100 distinct keys seen in scan (tests excluded)._
+_Last generated from 101 distinct keys seen in scan (tests excluded)._
