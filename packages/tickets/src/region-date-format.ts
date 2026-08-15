@@ -136,7 +136,7 @@ export function formatDate(d: Date, country?: string | null): string {
  * 12h-style ones. `hhmm` is validated input from a plain `<input type="time">` on the event
  * form; malformed input is returned unchanged rather than guessed. */
 export function formatEventHour(hhmm: string, country?: string | null): string {
-  const match = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
   if (!match) return hhmm;
   const [, hh, mm] = match;
   const locale = resolveEventLocale(country);

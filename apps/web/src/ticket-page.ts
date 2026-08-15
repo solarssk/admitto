@@ -20,8 +20,9 @@ function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-/** "18:00–22:00" range, or an open-ended "from"/"until" when only one side is set - each bound
- * in the event's regional convention (see @admitto/tickets' region-date-format.ts). */
+/** Event-hours range with the two times joined by an en dash, or an open-ended "from"/"until"
+ * when only one side is set - each bound in the event's regional convention (see
+ * @admitto/tickets' region-date-format.ts). */
 function formatEventHoursRange(
   start: string | null,
   end: string | null,

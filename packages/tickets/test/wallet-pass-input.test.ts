@@ -152,6 +152,11 @@ describe("formatEventHour", () => {
   it("returns malformed input unchanged rather than guessing", () => {
     expect(formatEventHour("9am", "United States")).toBe("9am");
   });
+
+  it("rejects out-of-range hour/minute values instead of letting Date.UTC normalize them", () => {
+    expect(formatEventHour("24:00", "United States")).toBe("24:00");
+    expect(formatEventHour("99:99", "United States")).toBe("99:99");
+  });
 });
 
 describe("buildWalletPassInput", () => {

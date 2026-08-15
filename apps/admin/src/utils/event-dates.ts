@@ -34,8 +34,9 @@ export function formatEventCalendarDate(iso: string): string {
  * Preview of the {{event_date}} wallet placeholder - mirrors apps/web/src/ticket-page.ts's own
  * formatDate default (en-GB, day/long month/year). The real pass is now region-aware (it adapts
  * to the event's own country via @admitto/tickets' region-date-format.ts), so this preview is
- * only exact for events with no country set / an unrecognized country - it does not thread the
- * event's address_components.country through, so a US-style event's actual pass date can differ
+ * exact for events with no country set, an unrecognized country, or a recognized United Kingdom
+ * country (all resolve to en-GB) - it does not thread the event's address_components.country
+ * through, so any other country's actual pass date (e.g. US-style month/day/year) can differ
  * from what's shown here. Deliberately NOT `getPreferredLocale()` like `formatEventDate` above:
  * the fallback the pass renders is fixed regardless of the admin's own locale, so this previews
  * that fixed output, not the viewer's own preference. Pinned to UTC since `Event.date` is stored
