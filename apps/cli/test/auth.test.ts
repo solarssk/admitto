@@ -60,18 +60,51 @@ describe("runAuthBootstrapSuperadmin", () => {
     process.argv = originalArgv;
   });
 
-  it("records a bootstrap_superadmin audit entry after a successful bootstrap", async () => {
+  it("bootstraps the superadmin and does not call logMfaBreakGlassCli itself", async () => {
     process.argv = ["node", "admitto", "auth", "bootstrap-superadmin", "--email", "admin@example.com"];
     bootstrapSuperadmin.mockResolvedValue({ userId: "user-1" });
     const db = fakeDb();
 
     await runAuthBootstrapSuperadmin(db);
 
-    expect(logMfaBreakGlassCli).toHaveBeenCalledWith(db, {
-      action: "bootstrap_superadmin",
-      email: "admin@example.com",
-      userId: "user-1",
+    expect(bootstrapSuperadmin).toHaveBeenCalledWith(db, "admin@example.com", "Sup3rSecret!23");
+    // bootstrapSuperadmin now writes its own auth.superadmin.bootstrap audit record atomically,
+    // inside the same transaction as account creation (see packages/auth/src/bootstrap.ts and
+    // its own test in packages/auth/test/auth.test.ts) - this layer must not also call
+    // logMfaBreakGlassCli, which would both double-log and use the wrong event type.
+    expect(logMfaBreakGlassCli).not.toHaveBeenCalled();
+  });
+
+  it("rejects a bad-password argv before checking whether a superadmin already exists", async () => {
+    process.argv = [
+      "node",
+      "admitto",
+      "auth",
+      "bootstrap-superadmin",
+      "--email",
+      "admin@example.com",
+      "--force",
+      "--password=hunter2",
+    ];
+    const callOrder: string[] = [];
+    assertNoPasswordArgv.mockImplementation(() => {
+      callOrder.push("assertNoPasswordArgv");
+      throw new Error("Password cannot be passed via --password; use the stdin prompt.");
     });
+    superadminInstanceExists.mockImplementation(async () => {
+      callOrder.push("superadminInstanceExists");
+      return true;
+    });
+
+    await expect(runAuthBootstrapSuperadmin(fakeDb())).rejects.toThrow(
+      "Password cannot be passed via --password; use the stdin prompt.",
+    );
+
+    // If the argv guard ran after the existence check (the pre-fix ordering), a --force run
+    // against an existing instance would have hit the blocking confirmForce() prompt first,
+    // leaving the plaintext password on argv for the whole time an operator spent answering it.
+    expect(callOrder).toEqual(["assertNoPasswordArgv"]);
+    expect(superadminInstanceExists).not.toHaveBeenCalled();
   });
 
   it("rejects --password=<value> on argv before ever prompting for a password or creating a superadmin", async () => {

@@ -25,7 +25,7 @@ async function resolveUserIdentitySnapshot(
   }
 }
 
-/** The 12 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
+/** The 13 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
  * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
  * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
  * call sites spanning login, MFA, OIDC, admin imports, check-in — an infra/throttle signal better
@@ -38,6 +38,7 @@ export type SecurityAuditEventType =
   | "auth.mfa.success"
   | "auth.mfa.fail"
   | "auth.mfa.break_glass"
+  | "auth.superadmin.bootstrap"
   | "auth.mfa.recovery_consumed"
   | "auth.logout"
   | "auth.oidc.success"
@@ -60,7 +61,7 @@ async function writeSecurityAuditLog(
     ip?: string | null;
     /** Actor's IANA timezone at write time — null when unknown (bots, older clients, CLI). */
     actor_timezone?: string | null;
-    // Every one of this module's 10 callers always supplies a metadata object - non-optional
+    // Every one of this module's 11 callers always supplies a metadata object - non-optional
     // here rather than a defensive `?? undefined` fallback for a shape nothing ever passes.
     metadata: Record<string, unknown>;
   },
@@ -260,6 +261,29 @@ export async function logMfaBreakGlassCli(
   ctx: { action: string; email: string; userId?: string; ip?: string },
 ): Promise<void> {
   await logMfaBreakGlass(db, { ...ctx, quiet: true });
+}
+
+/** Emit `auth.superadmin.bootstrap` (no codes/secrets) and persist a durable `SecurityAuditLog`
+ * row when the break-glass CLI mints a new superadmin (`bootstrap-superadmin`, both
+ * `packages/auth/src/cli.ts` and `apps/cli/src/commands/auth.ts`). Kept as its own event type
+ * rather than folded into `auth.mfa.break_glass` like this CLI's other commands
+ * (`reset-mfa`/`generate-emergency-recovery` genuinely are MFA break-glass actions) - minting a
+ * brand-new privileged account is a materially different, more significant action, and Recent
+ * Activity's UI (`AuditLogPanel.tsx`) labels/filters purely off `event_type`; sharing the MFA
+ * type would show account creation as "2FA break-glass override" and obscure it in that view.
+ * Called from inside `bootstrapSuperadmin`'s own transaction so account creation and its audit
+ * record commit or roll back together - never a persisted superadmin with no audit trail. */
+export async function logSuperadminBootstrapCli(
+  db: Db,
+  ctx: { email: string; userId: string },
+): Promise<void> {
+  emitAuditEvent("auth.superadmin.bootstrap", { email: ctx.email }, { quiet: true });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.superadmin.bootstrap",
+    user_id: ctx.userId,
+    ip: null,
+    metadata: {},
+  });
 }
 
 /** Emit `auth.mfa.success` after TOTP or recovery code verification and persist a durable

@@ -16,6 +16,7 @@ import {
   logOidcSuperadminRevokeBlocked,
   logRateLimitExceeded,
   logRepeatedFailedLogins,
+  logSuperadminBootstrapCli,
   logTrustedDeviceCreated,
   redactEmail,
 } from "../src/audit.js";
@@ -407,23 +408,35 @@ describe("audit", () => {
       });
     });
 
-    it("records the bootstrap_superadmin action used by both break-glass CLI entry points", async () => {
+  });
+
+  describe("logSuperadminBootstrapCli", () => {
+    // Kept as its own event type, not folded into auth.mfa.break_glass like reset_mfa/
+    // generate_emergency_recovery - see the doc comment on logSuperadminBootstrapCli for why
+    // (AuditLogPanel.tsx labels/filters purely off event_type, and minting a brand-new
+    // superadmin is materially different from an MFA break-glass action on an existing account).
+    it("records auth.superadmin.bootstrap, distinct from auth.mfa.break_glass", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
-      await logMfaBreakGlassCli(fakeDb(create), {
-        action: "bootstrap_superadmin",
+      await logSuperadminBootstrapCli(fakeDb(create), {
         email: "admin@example.com",
         userId: "user-1",
       });
       expect(create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            event_type: "auth.mfa.break_glass",
+            event_type: "auth.superadmin.bootstrap",
             user_id: "user-1",
-            metadata: { action: "bootstrap_superadmin" },
+            metadata: {},
           }),
         }),
       );
+    });
+
+    it("is quiet (no raw stdout emit), matching every other break-glass CLI audit call", async () => {
+      const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+      await logSuperadminBootstrapCli(fakeDb(), { email: "admin@example.com", userId: "user-1" });
+      expect(infoSpy).not.toHaveBeenCalled();
     });
   });
 

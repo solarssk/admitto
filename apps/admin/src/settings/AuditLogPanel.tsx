@@ -150,6 +150,7 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.mfa.success": "2FA verified",
   "auth.mfa.fail": "2FA failed",
   "auth.mfa.break_glass": "2FA break-glass override",
+  "auth.superadmin.bootstrap": "Superadmin created (bootstrap)",
   "auth.mfa.recovery_consumed": "2FA recovery code used",
   "auth.logout": "Logged out",
   "auth.oidc.success": "OIDC login succeeded",
@@ -173,6 +174,7 @@ const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
   "auth.access.denied": "error",
   "auth.oidc.superadmin_revoke_blocked": "error",
   "auth.mfa.break_glass": "warn",
+  "auth.superadmin.bootstrap": "warn",
   "auth.mfa.recovery_consumed": "warn",
   "auth.login.repeated_failures": "warn",
 };

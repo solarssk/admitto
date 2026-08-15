@@ -518,6 +518,13 @@ describe("bootstrap", () => {
       where: { user_id: user!.id, role: "superadmin", scope_type: "instance" },
     });
     expect(assignment).not.toBeNull();
+
+    // Written inside the same transaction as the user/role creation above - a persisted
+    // superadmin must never end up with no audit trail.
+    const audit = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.superadmin.bootstrap", user_id: user!.id },
+    });
+    expect(audit).not.toBeNull();
   });
 
   it("rejects bootstrap passwords that fail shared policy checks", async () => {

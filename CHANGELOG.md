@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- The break-glass `bootstrap-superadmin` CLI command now records an entry in the security audit log after creating a superadmin, matching the existing audit trail for `reset-mfa` and `generate-emergency-recovery`. It also now rejects `--password` on the command line (previously only the space-separated form was blocked, not `--password=<value>`), so an operator's password can no longer end up in shell history or the process list when running any of these break-glass commands.
+- The break-glass `bootstrap-superadmin` CLI command now records a dedicated "Superadmin created (bootstrap)" entry in the security audit log, shown as its own event in Organisation Settings → Logs → Recent Activity rather than folded into the generic "2FA break-glass override" label the other break-glass commands use, since creating a new superadmin is a materially different, more significant action. That record is now written atomically with the account itself, so an interrupted command can no longer leave a superadmin with no audit trail. It also now rejects `--password` on the command line (previously only the space-separated form was blocked, not `--password=<value>`), checked before any other prompt or database lookup, so an operator's password can no longer end up in shell history or the process list when running any of these break-glass commands.
 
 ### Added
 
