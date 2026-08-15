@@ -111,6 +111,72 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
   );
 }
 
+/**
+ * Shared admin-assisted-reset flow for handlePostResetUserMfa/handlePostResetUserPassword: loads
+ * the target, blocks SSO-managed accounts (an SSO-managed account signs in via its identity
+ * provider, not a local credential - resetting one here would silently open or modify an
+ * unmonitored second sign-in path; unlink the identity provider first if the account needs to go
+ * local) - this is a fast pre-check only, `perform` (performResetUserMfa/performResetUserPassword)
+ * re-checks the same condition fresh inside its own transaction (TOCTOU) - computes whether the
+ * ACTOR must step up (actorMustStepUpForReset) and runs `perform` accordingly
+ * (runAdminResetWithActorStepUp - see its own docstring for the actor step-up/fail-closed
+ * semantics), then emits the security system log. `rawCode` is resolved by the caller and simply
+ * unused here when step-up isn't required.
+ */
+async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; code: string }>(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  params: {
+    id: string;
+    rawCode: string | undefined;
+    ssoManagedCode: string;
+    rateLimitAction: string;
+    logAction: string;
+  },
+  perform: (
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    audit: OpsAuditContext,
+    requiresStepUp: boolean,
+    actorUserId: string,
+  ) => Promise<T>,
+): Promise<Response> {
+  const { id, rawCode, ssoManagedCode, rateLimitAction, logAction } = params;
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
+  });
+  if (!user) return c.json({ error: "not_found" }, 404);
+  if (user.external_identities.length > 0) return c.json({ code: ssoManagedCode }, 409);
+
+  const auth = c.get("auth");
+  const actorUserId = auth.userId;
+  const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
+
+  const gated = await runAdminResetWithActorStepUp(
+    c,
+    db,
+    rateLimitStore,
+    { requiresStepUp, actorUserId, currentSessionId: auth.sessionId, rawCode, rateLimitAction },
+    (tx, orgId, audit) => perform(tx, orgId, audit, requiresStepUp, actorUserId),
+  );
+  if (!gated.ok) return gated.response;
+  const outcome = gated.value;
+  if (!outcome.ok) return c.json({ code: outcome.code }, 409);
+
+  emitSystemLog("security", "info", logAction, {
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ...(requiresStepUp ? { superadminTarget: true } : {}),
+  });
+
+  return c.json({ ok: true });
+}
+
 async function respondRoleDeleteGone(
   c: Context,
   db: PrismaClient,
@@ -1087,58 +1153,29 @@ export async function handlePostResetUserMfa(
   const id = c.req.param("id") ?? "";
   if (!id) return c.json({ error: "user id required" }, 400);
 
-  const user = await db.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
-  });
-  if (!user) return c.json({ error: "not_found" }, 404);
   // TOTP is a local-login concept (IdP-authenticated sessions skip local MFA policy entirely -
   // Session.auth_method), but a hybrid account (SSO-linked with a real fallback local password
   // and confirmed TOTP - see account-routes.ts's self-service password/unlink flows) still relies
   // on it for that local path. Resetting it here would silently drop that account's local sign-in
   // from password+TOTP to password-only, the same unmonitored weakening the reset-password guard
-  // above exists to prevent. Fast pre-check only - performResetUserMfa re-checks the same
-  // condition fresh inside the transaction below (TOCTOU).
-  if (user.external_identities.length > 0) {
-    return c.json({ code: "cannot_reset_mfa_sso_managed" }, 409);
-  }
+  // below exists to prevent. See handleAdminAssistedReset for the shared SSO-managed check.
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const rawCode = typeof body?.code === "string" ? body.code : undefined;
 
-  const auth = c.get("auth");
-  const actorUserId = auth.userId;
-  const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
-
-  let rawCode: string | undefined;
-  if (requiresStepUp) {
-    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-    rawCode = typeof body?.code === "string" ? body.code : undefined;
-  }
-  const gated = await runAdminResetWithActorStepUp(
+  return handleAdminAssistedReset(
     c,
     db,
     rateLimitStore,
     {
-      requiresStepUp,
-      actorUserId,
-      currentSessionId: auth.sessionId,
+      id,
       rawCode,
+      ssoManagedCode: "cannot_reset_mfa_sso_managed",
       rateLimitAction: "admin-reset-2fa-superadmin",
+      logAction: "user_mfa_reset",
     },
-    (tx, orgId, audit) => performResetUserMfa(tx, id, orgId, audit, actorUserId, requiresStepUp),
+    (tx, orgId, audit, requiresStepUp, actorUserId) =>
+      performResetUserMfa(tx, id, orgId, audit, actorUserId, requiresStepUp),
   );
-  if (!gated.ok) return gated.response;
-  const outcome = gated.value;
-
-  if (!outcome.ok) return c.json({ code: outcome.code }, 409);
-
-  emitSystemLog("security", "info", "user_mfa_reset", {
-    targetUserId: user.id,
-    targetEmail: user.email,
-    actorUserId,
-    actorEmail: await resolveActorEmailForLog(db, actorUserId),
-    ...(requiresStepUp ? { superadminTarget: true } : {}),
-  });
-
-  return c.json({ ok: true });
 }
 
 /** DELETE /api/admin/users/:id/external-identity — unlink SSO, forcing local-password sign-in
@@ -1293,52 +1330,26 @@ export async function handlePostResetUserPassword(
     return c.json(passwordTooCommonJsonBody(), 400);
   }
 
-  const user = await db.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
-  });
-  if (!user) return c.json({ error: "not_found" }, 404);
   // An SSO-managed account signs in via its identity provider, not a local password - setting
   // one here would silently open a second, unmonitored sign-in path alongside SSO. Unlink the
   // identity provider first (DELETE .../external-identity) if the account needs to go local.
-  // Fast pre-check only - performResetUserPassword re-checks the same condition fresh inside
-  // the transaction below (TOCTOU).
-  if (user.external_identities.length > 0) {
-    return c.json({ code: "cannot_reset_password_sso_managed" }, 409);
-  }
+  // See handleAdminAssistedReset for the shared SSO-managed check.
+  const rawCode = typeof body?.code === "string" ? body.code : undefined;
 
-  const auth = c.get("auth");
-  const actorUserId = auth.userId;
-  const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
-  const rawCode = requiresStepUp && typeof body?.code === "string" ? body.code : undefined;
-
-  const gated = await runAdminResetWithActorStepUp(
+  return handleAdminAssistedReset(
     c,
     db,
     rateLimitStore,
     {
-      requiresStepUp,
-      actorUserId,
-      currentSessionId: auth.sessionId,
+      id,
       rawCode,
+      ssoManagedCode: "cannot_reset_password_sso_managed",
       rateLimitAction: "admin-reset-password-superadmin",
+      logAction: "user_password_reset",
     },
-    (tx, orgId, audit) => performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, requiresStepUp),
+    (tx, orgId, audit, requiresStepUp, actorUserId) =>
+      performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, requiresStepUp),
   );
-  if (!gated.ok) return gated.response;
-  const outcome = gated.value;
-
-  if (!outcome.ok) return c.json({ code: outcome.code }, 409);
-
-  emitSystemLog("security", "info", "user_password_reset", {
-    targetUserId: user.id,
-    targetEmail: user.email,
-    actorUserId,
-    actorEmail: await resolveActorEmailForLog(db, actorUserId),
-    ...(requiresStepUp ? { superadminTarget: true } : {}),
-  });
-
-  return c.json({ ok: true });
 }
 
 /** POST /api/admin/users/:id/revoke-sessions — revoke all sessions for a user. */
