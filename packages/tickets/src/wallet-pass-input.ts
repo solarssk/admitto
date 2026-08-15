@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassInput, WalletPassSemantics } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
+import { zonedWallClockToUtcIso } from "@admitto/shared";
 import { loadEventTicketTypes } from "./ticket-types.js";
 import type { resolveTicket } from "./resolve.js";
 import { formatDate, formatEventHour } from "./region-date-format.js";
@@ -44,12 +45,12 @@ function formatEventHours(
 }
 
 /** UTC offset suffix ("+02:00" / "-05:00" / "Z") for `timeZone` at `instant` - `instant` must be
- * the actual local wall-clock time being formatted (see zonedDateTimeToIso), not just any instant
- * on the right calendar day: on a DST transition day, the offset can differ between the morning
- * and the evening of the same day, so sampling the wrong instant emits the wrong offset for a
- * time near the transition (bot review). Node/V8's `longOffset` gives "GMT+02:00" (or bare "GMT"
- * for UTC); the regex also tolerates an unpadded "GMT+2" in case of ICU data variance across
- * environments. */
+ * the actual, correctly-resolved local wall-clock instant being formatted (see
+ * zonedDateTimeToIso), not just any instant on the right calendar day: on a DST transition day,
+ * the offset can differ between the morning and the evening of the same day, so sampling the
+ * wrong instant emits the wrong offset for a time near the transition. Node/V8's `longOffset`
+ * gives "GMT+02:00" (or bare "GMT" for UTC); the regex also tolerates an unpadded "GMT+2" in case
+ * of ICU data variance across environments. */
 function tzOffsetSuffix(instant: Date, timeZone: string): string {
   const part = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
     .formatToParts(instant)
@@ -75,21 +76,21 @@ function tzOffsetSuffix(instant: Date, timeZone: string): string {
  * zone (e.g. Pacific/Kiritimati, UTC+14) to the *next* calendar day, corrupting the stored event
  * date (bot review: P1, "Keep the stored event day when formatting semantics").
  *
- * The offset is resolved at a naive instant built from that same day plus `hhmm`, treated as if
- * it were UTC (`Date.UTC(y, m, d, hh, mm)`) - close enough to land on the correct side of a DST
- * transition for the *actual* local time being formatted, unlike passing the noon-UTC `date`
- * through unchanged (bot review: P2, "Resolve the offset at the event's wall-clock time"). This
- * can only be wrong within the transition's own ~1h gap/overlap, an inherent ambiguity of civil
- * time - not something resolvable from a plain "HH:MM" with no UTC offset of its own. */
+ * The offset is resolved via `@admitto/shared`'s `zonedWallClockToUtcIso` - the correct instant
+ * for `hhmm` on that day in `timeZone`, not a "treat the digits as UTC" proxy. That shortcut
+ * looked close enough to land on the right side of a DST transition, but review (2026-08-15)
+ * found it wrong for a same-day start/end pair straddling a transition in a zone with a
+ * non-zero standard offset: an America/New_York event from 01:00 to 03:00 on 2026-03-08 (the US
+ * spring-forward date) had both probes land on the pre-transition side, computing a 2-hour
+ * duration for what is actually a 1-hour local span (2:00-3:00am doesn't exist that day). */
 function zonedDateTimeToIso(date: Date, hhmm: string | null, timeZone: string): string | undefined {
   if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return undefined;
-  const [hh = 0, mm = 0] = hhmm.split(":").map(Number);
   const y = date.getUTCFullYear();
   const m = date.getUTCMonth();
   const d = date.getUTCDate();
-  const naiveInstant = new Date(Date.UTC(y, m, d, hh, mm));
   const dayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-  return `${dayStr}T${hhmm}:00${tzOffsetSuffix(naiveInstant, timeZone)}`;
+  const correctInstant = new Date(zonedWallClockToUtcIso(dayStr, `${hhmm}:00.000`, timeZone));
+  return `${dayStr}T${hhmm}:00${tzOffsetSuffix(correctInstant, timeZone)}`;
 }
 
 /** Builds Apple Wallet semantic tag values from the resolved event/attendee - only the fields

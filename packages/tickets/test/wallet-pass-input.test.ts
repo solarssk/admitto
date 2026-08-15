@@ -483,4 +483,27 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
     // 01:00 GMT), not the 4 wall-clock hours naive HH:MM subtraction would give.
     expect(input.semantics?.duration).toBe(3 * 60 * 60);
   });
+
+  it("resolves each bound's own offset on a spring-forward date in a non-zero-standard-offset zone (same-day event straddling the transition)", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          walletSemanticTagsEnabled: true,
+          date: new Date("2026-03-08T12:00:00.000Z"),
+          timezone: "America/New_York",
+          eventHoursStart: "01:00",
+          eventHoursEnd: "03:00",
+        },
+      }),
+      "b",
+    );
+    // America/New_York springs forward on 2026-03-08 (02:00 EST -> 03:00 EDT): 01:00 is still
+    // EST (-05:00, real instant 06:00Z), 03:00 is already EDT (-04:00, real instant 07:00Z) - a
+    // real 1-hour local span, not the 2 hours a "treat the wall-clock digits as UTC, probe the
+    // offset once" approximation used to compute for both bounds landing on the same
+    // pre-transition side.
+    expect(input.semantics?.eventStartDate).toBe("2026-03-08T01:00:00-05:00");
+    expect(input.semantics?.eventEndDate).toBe("2026-03-08T03:00:00-04:00");
+    expect(input.semantics?.duration).toBe(1 * 60 * 60);
+  });
 });
