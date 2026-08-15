@@ -111,7 +111,7 @@ A tag is only sent when Admitto's domain model actually has the data - never gue
 | `eventName` | `event.title` |
 | `eventType` | fixed `"PKEventTypeGeneric"` (no event-category field in the model) |
 | `eventStartDate` / `eventEndDate` | `event.date` + hours + `event.timezone`, via `zonedDateTimeToIso` |
-| `duration` | computed from the resolved start/end instants (DST-safe, not wall-clock subtraction) |
+| `duration` | computed from the resolved start/end instants, not wall-clock subtraction - correct across most DST transitions, but `zonedDateTimeToIso` resolves each bound's offset independently by probing its own wall-clock value as a proxy instant, so a same-day start/end pair that both land on the same side of that proxy check (while the real local clock skips a spring-forward hour between them) can still compute an incorrect duration - not a guaranteed-correct civil-time resolution |
 | `venueName` | `event.location` |
 | `venueLocation` | `event.latitude`/`longitude` |
 | `entranceDescription` | `event.directionsText` |
@@ -119,7 +119,7 @@ A tag is only sent when Admitto's domain model actually has the data - never gue
 
 | Available to add, not sent yet | Source |
 |---|---|
-| `admissionLevel` | `attendee.ticket_type` (already sent as a plain-text field via `ticketTypeLabel`) |
+| `admissionLevel` | `attendee.ticket_type` - already computed as `ticketTypeLabel` on `WalletPassInput`, but only reaches PassCreator if an admin maps a field to the `ticket_type` placeholder (Event Settings → Wallet → Field mapping); with no mapping configured, `toPassCreatorData` sends only `semantics` and the provider-controlled base fields |
 | `venueRegionName` | `event.addressComponents.city` / `.region` |
 
 Deliberately not sent - no corresponding field in Admitto's domain model: `venueRoom`,
