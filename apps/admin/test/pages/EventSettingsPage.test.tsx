@@ -307,7 +307,7 @@ beforeEach(() => {
   vi.mocked(searchGeocoding).mockResolvedValue({ results: [], contact_configured: true });
   vi.mocked(reverseGeocoding).mockResolvedValue({ result: null, contact_configured: true });
   vi.mocked(fetchTimezoneForCoordinates).mockResolvedValue({ timezone: null });
-  vi.mocked(fetchWalletPushHistory).mockResolvedValue([]);
+  vi.mocked(fetchWalletPushHistory).mockResolvedValue({ items: [], total: 0 });
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
   // window.matchMedia isn't implemented by jsdom; default to desktop so any component on
   // this page relying on useIsDesktop() (elsewhere in the app, not this page's Save button)
@@ -787,33 +787,156 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
-  it("shows wallet push history rows once fetched", async () => {
+  it("shows wallet push history rows once fetched, with scope and status", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([
-      {
-        id: "job-1",
-        created_at: "2026-06-07T10:00:00.000Z",
-        reissued: 3,
-        skipped: 1,
-        errored: 0,
-        status: "succeeded",
-        error: null,
-      },
-      {
-        id: "job-2",
-        created_at: "2026-06-06T10:00:00.000Z",
-        reissued: 0,
-        skipped: 0,
-        errored: 2,
-        status: "failed",
-        error: "provider outage",
-      },
-    ]);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 3,
+          skipped: 1,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "attendee_ids", count: 3 },
+        },
+        {
+          id: "job-2",
+          created_at: "2026-06-06T10:00:00.000Z",
+          reissued: 0,
+          skipped: 0,
+          errored: 2,
+          status: "failed",
+          error: "provider outage",
+          scope: { kind: "event_wide", reason: "location" },
+        },
+      ],
+      total: 2,
+    });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
     expect(await screen.findByText("Succeeded")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeTruthy();
     expect(screen.getByText("provider outage")).toBeTruthy();
-    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", expect.anything());
+    expect(screen.getByText("3 attendees")).toBeTruthy();
+    expect(screen.getByText("Whole event · location update")).toBeTruthy();
+    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything());
+  });
+
+  it("shows the push time in UTC, with the triggering admin's own local time underneath when known", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          client_timezone: "Asia/Kolkata",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: null,
+        },
+        {
+          id: "job-2",
+          created_at: "2026-06-06T10:00:00.000Z",
+          client_timezone: null,
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: null,
+        },
+      ],
+      total: 2,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findAllByText("Succeeded");
+
+    // Always UTC first, regardless of the event's own timezone - this is when the job actually
+    // ran on the server, not an event-schedule fact (Event settings for this fixture is IST).
+    // Locale-independent: check for "UTC" and the digits, not a full formatted string (see
+    // event-dates.test.ts for why - Intl output shape varies by locale). Filtered to <td> since
+    // the column header's own HintLabel hint text also contains the word "UTC".
+    const utcCells = screen.getAllByText(/UTC/).filter((el) => el.tagName === "TD");
+    expect(utcCells).toHaveLength(2);
+    expect(utcCells[0]!.textContent).toMatch(/10:00/);
+    expect(utcCells[1]!.textContent).toMatch(/10:00/);
+
+    // job-1 has a stored client_timezone - gets a second, subdued local-time line; job-2 (no
+    // client_timezone) doesn't, and nothing throws for its absence.
+    const localTimeLines = document.querySelectorAll(".sessions-subdued");
+    expect(localTimeLines).toHaveLength(1);
+    expect(localTimeLines[0]!.textContent).toMatch(/\d{1,2}:\d{2}/);
+  });
+
+  it("shows an em-dash scope for a job that predates the scope field", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: null,
+        },
+      ],
+      total: 1,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("—")).toBeTruthy();
+  });
+
+  it("describes every other scope shape: singular attendee count, settings reason, and no reason at all", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "attendee_ids", count: 1 },
+        },
+        {
+          id: "job-2",
+          created_at: "2026-06-07T09:00:00.000Z",
+          reissued: 4,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "event_wide", reason: "settings" },
+        },
+        {
+          id: "job-3",
+          created_at: "2026-06-07T08:00:00.000Z",
+          reissued: 2,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "event_wide", reason: null },
+        },
+      ],
+      total: 3,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("1 attendee")).toBeTruthy();
+    expect(screen.getByText("Whole event · settings update")).toBeTruthy();
+    expect(screen.getByText("Whole event")).toBeTruthy();
   });
 
   it("shows an error and retries wallet push history on demand", async () => {
@@ -823,7 +946,7 @@ describe("EventSettingsPage tabs", () => {
 
     expect(await screen.findByText("Could not load wallet push history")).toBeTruthy();
 
-    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce([]);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [], total: 0 });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {
@@ -835,28 +958,36 @@ describe("EventSettingsPage tabs", () => {
   it("re-fetches wallet push history every time the admin returns to the Wallet tab (bot review)", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchWalletPushHistory)
-      .mockResolvedValueOnce([
-        {
-          id: "job-1",
-          created_at: "2026-06-07T10:00:00.000Z",
-          reissued: 1,
-          skipped: 0,
-          errored: 0,
-          status: "succeeded",
-          error: null,
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: "job-2",
-          created_at: "2026-06-08T10:00:00.000Z",
-          reissued: 2,
-          skipped: 0,
-          errored: 0,
-          status: "succeeded",
-          error: null,
-        },
-      ]);
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "job-1",
+            created_at: "2026-06-07T10:00:00.000Z",
+            reissued: 1,
+            skipped: 0,
+            errored: 0,
+            status: "succeeded",
+            error: null,
+            scope: null,
+          },
+        ],
+        total: 1,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "job-2",
+            created_at: "2026-06-08T10:00:00.000Z",
+            reissued: 2,
+            skipped: 0,
+            errored: 0,
+            status: "succeeded",
+            error: null,
+            scope: null,
+          },
+        ],
+        total: 1,
+      });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledTimes(1));
 
@@ -871,7 +1002,7 @@ describe("EventSettingsPage tabs", () => {
 
   it("shows Loading… while wallet push history is in flight, then clears it", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
-    let resolveHistory!: (items: never[]) => void;
+    let resolveHistory!: (page: { items: never[]; total: number }) => void;
     vi.mocked(fetchWalletPushHistory).mockReturnValueOnce(
       new Promise((resolve) => {
         resolveHistory = resolve;
@@ -881,10 +1012,34 @@ describe("EventSettingsPage tabs", () => {
 
     expect(await screen.findByText("Loading…")).toBeTruthy();
 
-    resolveHistory([]);
+    resolveHistory({ items: [], total: 0 });
 
     await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
     expect(await screen.findByText("No wallet pushes yet")).toBeTruthy();
+  });
+
+  it("paginates wallet push history via the shared PaginationFooter", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    const row = {
+      id: "job-1",
+      created_at: "2026-06-07T10:00:00.000Z",
+      reissued: 1,
+      skipped: 0,
+      errored: 0,
+      status: "succeeded" as const,
+      error: null,
+      scope: null,
+    };
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row], total: 15 });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    expect(await screen.findByText("Showing 1–10 of 15")).toBeTruthy();
+    expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything());
+
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row], total: 15 });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
   });
 
   it("saves the wallet Template ID through the event patch", async () => {
@@ -2609,5 +2764,62 @@ describe("EventSettingsPage — ticket types cross-event staleness", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/Still blocking delete/)).toBeNull();
+  });
+});
+
+describe("EventSettingsPage — Wallet push history cross-event staleness (CodeRabbit)", () => {
+  const eventB = { ...activeEvent, id: "evt-2", title: "Gala Dinner" };
+
+  // Same reasoning as the ticket-types describe block above: createMemoryRouter + RouterProvider
+  // so router.navigate() changes the :eventId param in place, the same way a real in-app
+  // navigation from one event's settings to another's does.
+  function renderSettingsRouter(entry: string) {
+    return createMemoryRouter(
+      [
+        { path: "/admin", element: <div>events picker</div> },
+        { path: "/admin/events/:eventId/settings", element: <EventSettingsPage /> },
+      ],
+      { initialEntries: [entry] },
+    );
+  }
+
+  it("resets rows, total, and page instead of showing event A's history or requesting event B at event A's page", async () => {
+    vi.mocked(fetchEventSettings).mockImplementation((eventId: string) =>
+      Promise.resolve(eventId === "evt-1" ? activeEvent : eventB),
+    );
+    const eventARow = {
+      id: "evt-1-job",
+      created_at: "2026-06-07T10:00:00.000Z",
+      client_timezone: null,
+      reissued: 1,
+      skipped: 0,
+      errored: 0,
+      status: "succeeded" as const,
+      error: null,
+      scope: null,
+    };
+    const eventBRow = { ...eventARow, id: "evt-2-job" };
+    vi.mocked(fetchWalletPushHistory).mockImplementation((eventId: string) =>
+      eventId === "evt-1"
+        ? Promise.resolve({ items: [eventARow], total: 15 })
+        : Promise.resolve({ items: [eventBRow], total: 1 }),
+    );
+
+    const router = renderSettingsRouter("/admin/events/evt-1/settings?tab=wallet");
+    renderWithToast(<RouterProvider router={router} />);
+
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything()));
+    fireEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
+
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    await router.navigate("/admin/events/evt-2/settings?tab=wallet");
+
+    // The request for event B must be page 1, never a leftover page 2 from event A - the whole
+    // point of resetting walletPushHistoryPage on eventId change.
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-2", 1, 10, expect.anything()));
+    expect(vi.mocked(fetchWalletPushHistory).mock.calls.some((call) => call[0] === "evt-2" && call[1] === 2)).toBe(
+      false,
+    );
   });
 });

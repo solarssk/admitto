@@ -25,6 +25,8 @@ export const STATUS_MAP: Record<string, StatusMeta> = {
   pending: { variant: "warn", label: "Pending" },
   sent: { variant: "ok", label: "Sent" },
   delivered: { variant: "ok", label: "Sent" },
+  // AdminJob's own terminal states (import/export/wallet_push/wallet_message job history lists).
+  succeeded: { variant: "ok", label: "Succeeded" },
   failed: { variant: "error", label: "Failed" },
   rejected: { variant: "error", label: "Failed" },
   bounced: { variant: "error", label: "Bounced" },

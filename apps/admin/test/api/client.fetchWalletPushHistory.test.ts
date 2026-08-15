@@ -7,7 +7,7 @@ describe("fetchWalletPushHistory (client) — thin wrapper coverage", () => {
     vi.unstubAllGlobals();
   });
 
-  it("GETs the encoded wallet-push history endpoint and returns items", async () => {
+  it("GETs the encoded wallet-push history endpoint with page/pageSize and returns items + total", async () => {
     const items = [
       {
         id: "job-1",
@@ -21,31 +21,31 @@ describe("fetchWalletPushHistory (client) — thin wrapper coverage", () => {
     ];
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ items }),
+      json: async () => ({ items, total: 1 }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await fetchWalletPushHistory("evt with space");
+    const result = await fetchWalletPushHistory("evt with space", 2, 25);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/admin/events/evt%20with%20space/wallet-push/history",
+      "/api/admin/events/evt%20with%20space/wallet-push/history?page=2&pageSize=25",
       expect.objectContaining({ credentials: "same-origin", signal: undefined }),
     );
-    expect(result).toEqual(items);
+    expect(result).toEqual({ items, total: 1 });
   });
 
   it("forwards the abort signal", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ items: [] }),
+      json: async () => ({ items: [], total: 0 }),
     });
     vi.stubGlobal("fetch", fetchMock);
     const controller = new AbortController();
 
-    await fetchWalletPushHistory("evt-1", controller.signal);
+    await fetchWalletPushHistory("evt-1", 1, 10, controller.signal);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/admin/events/evt-1/wallet-push/history",
+      "/api/admin/events/evt-1/wallet-push/history?page=1&pageSize=10",
       expect.objectContaining({ signal: controller.signal }),
     );
   });
@@ -59,7 +59,7 @@ describe("fetchWalletPushHistory (client) — thin wrapper coverage", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(fetchWalletPushHistory("evt-1")).rejects.toMatchObject({
+    await expect(fetchWalletPushHistory("evt-1", 1, 10)).rejects.toMatchObject({
       status: 403,
       message: "forbidden",
     });

@@ -6558,6 +6558,7 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
           organization_id: ORG_A,
           event_id: EVENT_A,
           result_json: { reissued: 4, skipped: 1, errored: 0 },
+          client_timezone: "Asia/Kolkata",
           created_at: new Date("2026-06-01T10:00:00Z"),
           finished_at: new Date("2026-06-01T10:01:00Z"),
         },
@@ -6589,8 +6590,8 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
     const body = (await res.json()) as { items: Array<Record<string, unknown>> };
     // Running is excluded - only the two terminal jobs, newest finished_at first.
     expect(body.items).toHaveLength(2);
-    expect(body.items[0]).toMatchObject({ status: "failed", error: "wallet_not_configured", reissued: 0, skipped: 0, errored: 0 });
-    expect(body.items[1]).toMatchObject({ status: "succeeded", error: null, reissued: 4, skipped: 1, errored: 0 });
+    expect(body.items[0]).toMatchObject({ status: "failed", error: "wallet_not_configured", reissued: 0, skipped: 0, errored: 0, client_timezone: null });
+    expect(body.items[1]).toMatchObject({ status: "succeeded", error: null, reissued: 4, skipped: 1, errored: 0, client_timezone: "Asia/Kolkata" });
   });
 
   it("returns 403 for an operator", async () => {
@@ -6598,6 +6599,71 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
       headers: { Cookie: opCookie },
     });
     expect(res.status).toBe(403);
+  });
+
+  it("paginates via page/pageSize query params, with total reflecting the full unpaged count", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    await prisma.adminJob.createMany({
+      data: [0, 1, 2].map((i) => ({
+        type: "wallet_push",
+        status: "succeeded" as const,
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        result_json: { reissued: i, skipped: 0, errored: 0 },
+        created_at: new Date(`2026-06-10T0${i}:00:00Z`),
+        finished_at: new Date(`2026-06-10T0${i}:01:00Z`),
+      })),
+    });
+
+    const page1 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=1&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page1Body = (await page1.json()) as { items: Array<{ reissued: number }>; total: number; page: number; pageSize: number };
+    expect(page1Body.total).toBe(3);
+    expect(page1Body.page).toBe(1);
+    expect(page1Body.pageSize).toBe(2);
+    // Newest finished_at first: the two jobs finished at 02:01 and 01:01.
+    expect(page1Body.items.map((item) => item.reissued)).toEqual([2, 1]);
+
+    const page2 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=2&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page2Body = (await page2.json()) as { items: Array<{ reissued: number }>; total: number };
+    expect(page2Body.total).toBe(3);
+    expect(page2Body.items.map((item) => item.reissued)).toEqual([0]);
+  });
+
+  it("keeps pagination stable across a shared finished_at via an id tiebreaker (CodeRabbit)", async () => {
+    // reclaimStaleWalletPushJobs assigns the same `now` to every job it reclaims in one pass, so
+    // several rows can genuinely share finished_at - ordering only by that field would let a
+    // paginated request repeat or skip rows between pages.
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    const sharedFinishedAt = new Date("2026-06-11T00:00:00Z");
+    const ids = ["job-tie-a", "job-tie-b", "job-tie-c", "job-tie-d"];
+    await prisma.adminJob.createMany({
+      data: ids.map((id) => ({
+        id,
+        type: "wallet_push",
+        status: "succeeded" as const,
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        result_json: { reissued: 1, skipped: 0, errored: 0 },
+        created_at: sharedFinishedAt,
+        finished_at: sharedFinishedAt,
+      })),
+    });
+
+    const page1 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=1&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page2 = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history?page=2&pageSize=2`, {
+      headers: { Cookie: adminCookie },
+    });
+    const page1Ids = ((await page1.json()) as { items: Array<{ id: string }> }).items.map((item) => item.id);
+    const page2Ids = ((await page2.json()) as { items: Array<{ id: string }> }).items.map((item) => item.id);
+
+    // Every seeded id appears exactly once across both pages, in a fixed (id desc) order.
+    expect([...page1Ids, ...page2Ids]).toEqual([...ids].sort().reverse());
   });
 
   it("falls back to created_at for the displayed timestamp when finished_at is unset", async () => {
@@ -6622,6 +6688,111 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
 
     const body = (await res.json()) as { items: Array<{ created_at: string }> };
     expect(body.items[0]!.created_at).toBe(createdAt.toISOString());
+  });
+
+  it("derives scope from the stored request - attendee count, or event-wide with its trigger reason", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    await prisma.adminJob.createMany({
+      data: [
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          result_json: {
+            request: { kind: "attendee_ids", eventId: EVENT_A, attendeeIds: ["att-1", "att-2", "att-3"] },
+            reissued: 3,
+            skipped: 0,
+            errored: 0,
+          },
+          created_at: new Date("2026-06-05T08:00:00Z"),
+          finished_at: new Date("2026-06-05T08:01:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          result_json: {
+            request: { kind: "event_wide", eventId: EVENT_A, reason: "location" },
+            reissued: 5,
+            skipped: 0,
+            errored: 0,
+          },
+          created_at: new Date("2026-06-05T09:00:00Z"),
+          finished_at: new Date("2026-06-05T09:01:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          // event_wide with no reason at all - a job queued before enqueueEventWideWalletPushJob
+          // gained the reason parameter, or a caller that never passed one.
+          result_json: {
+            request: { kind: "event_wide", eventId: EVENT_A },
+            reissued: 2,
+            skipped: 0,
+            errored: 0,
+          },
+          created_at: new Date("2026-06-05T09:30:00Z"),
+          finished_at: new Date("2026-06-05T09:31:00Z"),
+        },
+        {
+          type: "wallet_push",
+          status: "succeeded",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          // No `request` at all - a job predating this field, or an unrecognized shape.
+          result_json: { reissued: 1, skipped: 0, errored: 0 },
+          created_at: new Date("2026-06-05T10:00:00Z"),
+          finished_at: new Date("2026-06-05T10:01:00Z"),
+        },
+      ],
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    const body = (await res.json()) as { items: Array<{ scope: unknown }> };
+    // Newest finished_at first: no-request, event_wide/no-reason, event_wide/location, attendee_ids/3.
+    expect(body.items.map((item) => item.scope)).toEqual([
+      null,
+      { kind: "event_wide", reason: null },
+      { kind: "event_wide", reason: "location" },
+      { kind: "attendee_ids", count: 3 },
+    ]);
+  });
+
+  it("degrades a malformed stored request to scope: null instead of failing the whole list", async () => {
+    await prisma.adminJob.deleteMany({ where: { event_id: EVENT_A, type: "wallet_push" } });
+    await prisma.adminJob.create({
+      data: {
+        type: "wallet_push",
+        status: "succeeded",
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        // attendeeIds is a string, not an array - the shape a naive `request.attendeeIds.length`
+        // read would throw on; readWalletPushRequest must reject it and return null instead.
+        result_json: {
+          request: { kind: "attendee_ids", eventId: EVENT_A, attendeeIds: "not-an-array" },
+          reissued: 0,
+          skipped: 0,
+          errored: 1,
+        },
+        created_at: new Date("2026-06-05T11:00:00Z"),
+        finished_at: new Date("2026-06-05T11:01:00Z"),
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/wallet-push/history`, {
+      headers: { Cookie: adminCookie },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: Array<{ scope: unknown; errored: number }> };
+    expect(body.items).toEqual([expect.objectContaining({ scope: null, errored: 1 })]);
   });
 });
 
