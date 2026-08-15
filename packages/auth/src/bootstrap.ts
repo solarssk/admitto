@@ -35,7 +35,7 @@ export async function bootstrapSuperadmin(
         scope_id: null,
       },
     });
-    await logSuperadminBootstrapCli(tx, { email, userId: user.id });
+    await logSuperadminBootstrapCli(tx, { email: user.email, userId: user.id });
     return { userId: user.id };
   });
   return { userId };

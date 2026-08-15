@@ -527,6 +527,19 @@ describe("bootstrap", () => {
     expect(audit).not.toBeNull();
   });
 
+  it("records the normalized email in the audit row, not the raw mixed-case/padded input", async () => {
+    const raw = "  Bootstrap-Case@Example.com  ";
+    const normalized = "bootstrap-case@example.com";
+    await bootstrapSuperadmin(prisma, raw, "bootstrap-pass-xyz");
+    const user = await prisma.user.findUnique({ where: { email: normalized } });
+    expect(user).not.toBeNull();
+
+    const audit = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.superadmin.bootstrap", user_id: user!.id },
+    });
+    expect(audit?.user_email).toBe(normalized);
+  });
+
   it("rejects bootstrap passwords that fail shared policy checks", async () => {
     const email = "bootstrap-weak@example.com";
     await expect(bootstrapSuperadmin(prisma, email, "password123")).rejects.toThrow();
