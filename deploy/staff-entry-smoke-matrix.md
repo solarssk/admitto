@@ -2,11 +2,9 @@
 
 Status: Operational runbook · Date: 2026-06-16 · Audience: PO, deploy, QA.
 
-Manual verification after deploy or auth changes. Assumes hostname e.g. `event.chochol.io`, Cloudflare
+Manual verification after deploy or auth changes. Assumes hostname e.g. `staff.example.com`, Cloudflare
 Access on admin paths, WireGuard bypass for the event network, Authentik as shared IdP for CF ZTNA and
 the OIDC button on `/login`.
-
-See also `_ops/design/deployment-cloudflare-access.md` in the workspace project docs.
 
 ## Product interpretation (owner decision, post–foundation #56)
 
