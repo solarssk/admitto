@@ -630,49 +630,65 @@ export function createHealthzRateLimitMiddleware(
   return rateLimit(store, "ops:healthz", { instanceId });
 }
 
+/**
+ * Throttle a sensitive re-auth check (OIDC link step-up password, account current-password
+ * verification) per user and IP (inline, not middleware). The user-scoped bucket is the
+ * load-bearing one: it stays fixed to the account being attacked regardless of which IP the
+ * request comes from, so an attacker holding a stolen session cookie can't outrun it by rotating
+ * source IPs. The IP-scoped bucket is defense-in-depth on top of that.
+ */
+async function checkReauthRateLimit(
+  store: RateLimitStore,
+  keyPrefix: string,
+  limitName: InlineRateLimitName,
+  scope: RateLimitScope,
+  userId: string,
+  ip: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS[limitName];
+  const userResult = await store.hit(`${keyPrefix}:user:${userId}`, windowMs, max);
+  if (!userResult.allowed) {
+    logRateLimitExceeded({ scope, ip, keyHint: "user" });
+    return false;
+  }
+  const ipResult = await store.hit(`${keyPrefix}:ip:${ip}`, windowMs, max);
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope, ip, keyHint: "ip" });
+    return false;
+  }
+  return true;
+}
+
 /** Throttle OIDC link step-up password attempts per user and IP (inline, not middleware). */
 export async function checkOidcLinkStepUpRateLimit(
   store: RateLimitStore,
   userId: string,
   ip: string,
 ): Promise<boolean> {
-  const { windowMs, max } = INLINE_RATE_LIMITS["oidc:link-stepup"];
-  const userResult = await store.hit(`oidc:link:stepup:user:${userId}`, windowMs, max);
-  if (!userResult.allowed) {
-    logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "user" });
-    return false;
-  }
-  const ipResult = await store.hit(`oidc:link:stepup:ip:${ip}`, windowMs, max);
-  if (!ipResult.allowed) {
-    logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "ip" });
-    return false;
-  }
-  return true;
+  return checkReauthRateLimit(
+    store,
+    "oidc:link:stepup",
+    "oidc:link-stepup",
+    "oidc_link_stepup",
+    userId,
+    ip,
+  );
 }
 
-/**
- * Throttle current-password verification on account/step-up endpoints (password change, MFA
+/** Throttle current-password verification on account/step-up endpoints (password change, MFA
  * reset, SSO unlink) per user and IP (inline, not middleware) - same shape as
- * {@link checkOidcLinkStepUpRateLimit}. The user-scoped bucket is the load-bearing one: it stays
- * fixed to the account being attacked regardless of which IP the request comes from, so an
- * attacker holding a stolen session cookie can't outrun it by rotating source IPs. The IP-scoped
- * bucket is defense-in-depth on top of that.
- */
+ * {@link checkOidcLinkStepUpRateLimit}, see {@link checkReauthRateLimit}. */
 export async function checkAccountPasswordRateLimit(
   store: RateLimitStore,
   userId: string,
   ip: string,
 ): Promise<boolean> {
-  const { windowMs, max } = INLINE_RATE_LIMITS["account:password-check"];
-  const userResult = await store.hit(`account:password-check:user:${userId}`, windowMs, max);
-  if (!userResult.allowed) {
-    logRateLimitExceeded({ scope: "account_password_check", ip, keyHint: "user" });
-    return false;
-  }
-  const ipResult = await store.hit(`account:password-check:ip:${ip}`, windowMs, max);
-  if (!ipResult.allowed) {
-    logRateLimitExceeded({ scope: "account_password_check", ip, keyHint: "ip" });
-    return false;
-  }
-  return true;
+  return checkReauthRateLimit(
+    store,
+    "account:password-check",
+    "account:password-check",
+    "account_password_check",
+    userId,
+    ip,
+  );
 }
