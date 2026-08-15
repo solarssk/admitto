@@ -1091,6 +1091,28 @@ describe("UserEditModal reset actions", () => {
     expect(mockResetUserMfa).not.toHaveBeenCalled();
   });
 
+  it("ignores a backdrop click on the reset-MFA dialog while the request is in flight", async () => {
+    let resolveReset!: () => void;
+    mockResetUserMfa.mockReturnValueOnce(new Promise((resolve) => (resolveReset = () => resolve(undefined))));
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
+
+    // The Edit user modal has its own outer backdrop too - scope the query to this
+    // ConfirmDialog's own <dialog> element so the click can't land on the wrong one.
+    fireEvent.click(dialog.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Reset two-factor" })).toBeTruthy();
+
+    resolveReset();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Reset two-factor" })).toBeNull();
+    });
+  });
+
   it("resets a password and reports that existing sessions were revoked", async () => {
     const { onClose, onUpdated } = renderModal();
     await screen.findByRole("button", { name: "Save changes" });
