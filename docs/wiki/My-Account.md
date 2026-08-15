@@ -63,6 +63,7 @@ A changed display name appears wherever your name is shown to other staff (role 
 - **Can't change email:** email isn't editable from this page by design; ask your administrator.
 - **Password section is missing:** the account is SSO-only (no local password) — sign-in and password are managed by the linked identity provider instead.
 - **Lost access to the authenticator app:** use a saved backup code to sign in, then reset 2FA and set it up again from this page.
+- **A correct backup code didn't sign you in:** if your sign-in session had just expired or been signed out from another device at that exact moment, the code is not consumed and stays valid, so entering it again completes sign-in normally. Only a wrong or already-used code is rejected outright.
 - **No "SSO" menu on the Profile card:** nothing is linked and no identity provider is currently configured for the instance — there's nothing to connect or unlink.
 - **"Connect" is missing for a provider:** either you're already linked to it, or your account has no local password yet — set one under Password first (or ask your administrator to set one for you).
 - **Unlink SSO asks for a password or authenticator code you don't recognize:** that's the required proof of identity, not an error — enter your current local password, or a code from your authenticator app / a saved backup code, whichever the dialog is asking for.
