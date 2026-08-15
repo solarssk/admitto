@@ -1691,13 +1691,13 @@ export function createApp(options: CreateAppOptions = {}) {
     handleDeleteUserRole(c, db),
   );
   app.post("/api/admin/users/:id/reset-2fa", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserMfa(c, db),
+    handlePostResetUserMfa(c, db, rateLimitStore),
   );
   app.delete("/api/admin/users/:id/external-identity", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteUserExternalIdentity(c, db),
   );
   app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserPassword(c, db),
+    handlePostResetUserPassword(c, db, rateLimitStore),
   );
   app.post("/api/admin/users/:id/revoke-sessions", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostRevokeUserSessions(c, db),

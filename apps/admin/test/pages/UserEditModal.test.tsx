@@ -1058,7 +1058,7 @@ describe("UserEditModal reset actions", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
     await waitFor(() => {
-      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1");
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", undefined);
     });
     expect(onUpdated).toHaveBeenCalledWith(user, "Two-factor reset. User must sign in again.");
     expect(onClose).toHaveBeenCalled();
@@ -1091,6 +1091,28 @@ describe("UserEditModal reset actions", () => {
     expect(mockResetUserMfa).not.toHaveBeenCalled();
   });
 
+  it("ignores a backdrop click on the reset-MFA dialog while the request is in flight", async () => {
+    let resolveReset!: () => void;
+    mockResetUserMfa.mockReturnValueOnce(new Promise((resolve) => (resolveReset = () => resolve(undefined))));
+    renderModal();
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
+
+    // The Edit user modal has its own outer backdrop too - scope the query to this
+    // ConfirmDialog's own <dialog> element so the click can't land on the wrong one.
+    fireEvent.click(dialog.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Reset two-factor" })).toBeTruthy();
+
+    resolveReset();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Reset two-factor" })).toBeNull();
+    });
+  });
+
   it("resets a password and reports that existing sessions were revoked", async () => {
     const { onClose, onUpdated } = renderModal();
     await screen.findByRole("button", { name: "Save changes" });
@@ -1101,7 +1123,10 @@ describe("UserEditModal reset actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
 
     await waitFor(() => {
-      expect(mockResetUserPassword).toHaveBeenCalledWith("usr-1", { new_password: "long-enough-password" });
+      expect(mockResetUserPassword).toHaveBeenCalledWith("usr-1", {
+        new_password: "long-enough-password",
+        code: undefined,
+      });
     });
     expect(onUpdated).toHaveBeenCalledWith(user, "Password reset. Sessions revoked.");
     expect(onClose).toHaveBeenCalled();
@@ -1145,6 +1170,91 @@ describe("UserEditModal reset actions", () => {
 
     expect(screen.queryByLabelText("New temporary password")).toBeNull();
     expect(mockResetUserPassword).not.toHaveBeenCalled();
+  });
+});
+
+describe("UserEditModal reset actions on another superadmin - actor step-up", () => {
+  const superadminUser: Partial<UserListItemDto> = {
+    roles: [{ id: "role-1", role: "superadmin", scope_type: "instance", scope_id: null, is_oidc: false }],
+  };
+
+  it("requires and sends the actor's own code when resetting another superadmin's MFA", async () => {
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
+    const resetButton = within(dialog).getByRole("button", { name: "Reset" });
+    expect(resetButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(within(dialog).getByLabelText("Your authenticator or backup code"), {
+      target: { value: "123456" },
+    });
+    expect(resetButton).toHaveProperty("disabled", false);
+    fireEvent.click(resetButton);
+
+    await waitFor(() => {
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", "123456");
+    });
+  });
+
+  it("does not show or require an actor code when resetting your own superadmin MFA", async () => {
+    useAuthMock.mockReturnValue({ user: { id: "usr-1" } });
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
+    expect(within(dialog).queryByLabelText("Your authenticator or backup code")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", undefined);
+    });
+  });
+
+  it("requires and sends the actor's own code when resetting another superadmin's password", async () => {
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    const resetButton = screen.getByRole("button", { name: "Reset password" });
+    expect(resetButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(screen.getByLabelText("Your authenticator or backup code"), { target: { value: "654321" } });
+    expect(resetButton).toHaveProperty("disabled", false);
+    fireEvent.click(resetButton);
+
+    await waitFor(() => {
+      expect(mockResetUserPassword).toHaveBeenCalledWith("usr-1", {
+        new_password: "long-enough-password",
+        code: "654321",
+      });
+    });
+  });
+
+  it("surfaces actor_mfa_required with a clear message instead of a generic failure", async () => {
+    mockResetUserPassword.mockRejectedValueOnce(
+      new ApiError(403, "actor_mfa_required", "actor_mfa_required"),
+    );
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.change(screen.getByLabelText("Your authenticator or backup code"), { target: { value: "654321" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reset password" }));
+
+    expect(
+      await screen.findByText(
+        "You need a confirmed authenticator app on your own account before you can reset another superadmin's two-factor or password. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has an authenticator app to do this instead.",
+      ),
+    ).toBeTruthy();
   });
 });
 

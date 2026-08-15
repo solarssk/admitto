@@ -25,7 +25,7 @@ async function resolveUserIdentitySnapshot(
   }
 }
 
-/** The 12 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
+/** The 13 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
  * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
  * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
  * call sites spanning login, MFA, OIDC, admin imports, check-in — an infra/throttle signal better
@@ -38,7 +38,9 @@ export type SecurityAuditEventType =
   | "auth.mfa.success"
   | "auth.mfa.fail"
   | "auth.mfa.break_glass"
+  | "auth.superadmin.bootstrap"
   | "auth.mfa.recovery_consumed"
+  | "auth.mfa.repeated_failures"
   | "auth.logout"
   | "auth.oidc.success"
   | "auth.oidc.superadmin_revoke_blocked"
@@ -60,7 +62,7 @@ async function writeSecurityAuditLog(
     ip?: string | null;
     /** Actor's IANA timezone at write time — null when unknown (bots, older clients, CLI). */
     actor_timezone?: string | null;
-    // Every one of this module's 10 callers always supplies a metadata object - non-optional
+    // Every one of this module's 11 callers always supplies a metadata object - non-optional
     // here rather than a defensive `?? undefined` fallback for a shape nothing ever passes.
     metadata: Record<string, unknown>;
   },
@@ -200,6 +202,13 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
   });
 }
 
+/** Why a login attempt was rejected, recorded in `auth.login.fail`'s `reason` field so an
+ * investigator can tell a bad password apart from a correct password against a deactivated
+ * account (the latter has no session-granting outcome either way, but is a distinct signal -
+ * e.g. a breached credential still being probed after offboarding). Never shown to the caller,
+ * which always sees the same generic failure regardless of reason. */
+export type LoginFailureReason = "invalid_credentials" | "inactive";
+
 /** Emit `auth.login.fail` as JSON to stdout and persist a durable `SecurityAuditLog` row.
  * `user_id: null` - the login attempt failed, so this never resolves against (or reveals whether
  * there is) a real account; the write path itself doesn't check account existence, avoiding a
@@ -209,9 +218,14 @@ export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId:
  * stores the full attempted email in `metadata.email` so investigations can attribute
  * brute-force/credential-stuffing to a specific address (OWASP Logging Cheat Sheet; PO decision
  * reversing PR #593's more conservative durable-row call). */
-export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<void> {
+export async function logLoginFailure(
+  db: Db,
+  ctx: LoginAuditContext,
+  reason: LoginFailureReason,
+): Promise<void> {
   emitAuditEvent("auth.login.fail", {
     email: redactEmail(ctx.email),
+    reason,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
@@ -220,7 +234,7 @@ export async function logLoginFailure(db: Db, ctx: LoginAuditContext): Promise<v
     user_id: null,
     ip: ctx.ip ?? null,
     actor_timezone: ctx.timezone ?? null,
-    metadata: { email: ctx.email, userAgent: ctx.userAgent ?? null },
+    metadata: { email: ctx.email, reason, userAgent: ctx.userAgent ?? null },
   });
 }
 
@@ -264,6 +278,39 @@ export async function logMfaBreakGlassCli(
   await logMfaBreakGlass(db, { ...ctx, quiet: true });
 }
 
+/** Emit `auth.superadmin.bootstrap` (no codes/secrets) and persist a durable `SecurityAuditLog`
+ * row when the break-glass CLI mints a new superadmin (`bootstrap-superadmin`, both
+ * `packages/auth/src/cli.ts` and `apps/cli/src/commands/auth.ts`). Kept as its own event type
+ * rather than folded into `auth.mfa.break_glass` like this CLI's other commands
+ * (`reset-mfa`/`generate-emergency-recovery` genuinely are MFA break-glass actions) - minting a
+ * brand-new privileged account is a materially different, more significant action, and Recent
+ * Activity's UI (`AuditLogPanel.tsx`) labels/filters purely off `event_type`; sharing the MFA
+ * type would show account creation as "2FA break-glass override" and obscure it in that view.
+ * Called from inside `bootstrapSuperadmin`'s own transaction so account creation and its audit
+ * record commit or roll back together - never a persisted superadmin with no audit trail. Writes
+ * the `SecurityAuditLog` row directly rather than through `writeSecurityAuditLog`, which swallows
+ * persistence errors by design (correct for its other, best-effort login/MFA callers, but wrong
+ * here: a swallowed error would let this transaction commit the new superadmin with no audit
+ * record at all, exactly what this function exists to prevent) - a failure here must propagate
+ * and roll back the whole transaction instead. */
+export async function logSuperadminBootstrapCli(
+  db: Db,
+  ctx: { email: string; userId: string },
+): Promise<void> {
+  emitAuditEvent("auth.superadmin.bootstrap", { email: ctx.email }, { quiet: true });
+  await db.securityAuditLog.create({
+    data: {
+      event_type: "auth.superadmin.bootstrap",
+      user_id: ctx.userId,
+      user_email: ctx.email,
+      user_display_name: null,
+      ip: null,
+      actor_timezone: null,
+      metadata: {} as Prisma.InputJsonValue,
+    },
+  });
+}
+
 /** Emit `auth.mfa.success` after TOTP or recovery code verification and persist a durable
  * `SecurityAuditLog` row (raw `user_id`, not the stdout fingerprint - a durable row needs to be
  * genuinely queryable/joinable to the User table). */
@@ -283,12 +330,28 @@ export async function logMfaSuccess(db: Db, ctx: MfaAuditContext, method: MfaMet
   });
 }
 
-/** Emit `auth.mfa.fail` after invalid MFA code (no code value) and persist a durable
- * `SecurityAuditLog` row (raw `user_id` - see logMfaSuccess). */
-export async function logMfaFailure(db: Db, ctx: MfaAuditContext): Promise<void> {
+/** Why an MFA completion attempt failed, recorded in `auth.mfa.fail`'s `reason` field: a wrong
+ * TOTP/recovery code, a recovery code that matched but lost a race to consume its row, or a
+ * code that verified correctly but session promotion failed afterward (e.g. the partial session
+ * expired or was concurrently revoked between code entry and promotion - the transaction rolls
+ * back in that last case, see `completeMfaInTransaction`, so this is what makes the outcome
+ * reconstructable after the fact instead of leaving a silent, unaudited failure). */
+export type MfaFailureReason = "invalid_code" | "recovery_consume_conflict" | "session_not_promoted";
+
+/** Emit `auth.mfa.fail` after a failed MFA completion attempt and persist a durable
+ * `SecurityAuditLog` row (raw `user_id` - see logMfaSuccess). `method` is only known for
+ * `session_not_promoted` (the code itself verified correctly); omitted otherwise. */
+export async function logMfaFailure(
+  db: Db,
+  ctx: MfaAuditContext,
+  reason: MfaFailureReason,
+  method?: MfaMethod,
+): Promise<void> {
   emitAuditEvent("auth.mfa.fail", {
     user_fingerprint: fingerprint(ctx.userId),
     session_fingerprint: ctx.sessionId ? fingerprint(ctx.sessionId) : null,
+    reason,
+    method: method ?? null,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
@@ -296,7 +359,7 @@ export async function logMfaFailure(db: Db, ctx: MfaAuditContext): Promise<void>
     event_type: "auth.mfa.fail",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
-    metadata: { sessionId: ctx.sessionId ?? null, userAgent: ctx.userAgent ?? null },
+    metadata: { sessionId: ctx.sessionId ?? null, reason, method: method ?? null, userAgent: ctx.userAgent ?? null },
   });
 }
 
@@ -466,6 +529,31 @@ export async function logRepeatedFailedLogins(
   });
   await writeSecurityAuditLog(db, {
     event_type: "auth.login.repeated_failures",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { streak: ctx.streak },
+  });
+}
+
+/** Emit `auth.mfa.repeated_failures` once consecutive failed MFA verification attempts against a
+ * single admin/superadmin account's session cross `PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD`, and
+ * persist a durable `SecurityAuditLog` row. Counterpart to `logRepeatedFailedLogins` for the MFA
+ * step: the password-failure streak resets on password success (before MFA is attempted), so an
+ * attacker who already has a valid password for a privileged account could otherwise grind
+ * unlimited MFA-code guesses without ever tripping that alert. Same enumeration-unsafe shape as
+ * `logRepeatedFailedLogins` (real `email`, not redacted) - this only ever fires for a real,
+ * elevated-role account already past password verification. */
+export async function logRepeatedFailedMfaAttempts(
+  db: Db,
+  ctx: { userId: string; email: string; ip?: string; streak: number },
+): Promise<void> {
+  emitAuditEvent("auth.mfa.repeated_failures", {
+    email: ctx.email,
+    streak: ctx.streak,
+    ip: ctx.ip ?? null,
+  });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.mfa.repeated_failures",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
     metadata: { streak: ctx.streak },

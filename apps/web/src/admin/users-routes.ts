@@ -21,6 +21,7 @@ import {
   resetUserMfa,
   revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
+  userHasConfirmedTotp,
 } from "@admitto/auth";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -29,6 +30,8 @@ import {
   positiveIntQuery,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
+import { withStepUpGate } from "./account-routes.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { runSerializableTransaction } from "./event-items-api-routes.js";
 import {
@@ -42,6 +45,141 @@ async function requireSuperadmin(c: Context, db: PrismaClient): Promise<Response
   const auth = c.get("auth");
   if (!(await canManageInstance(db, auth.userId))) return c.json({ error: "forbidden" }, 403);
   return null;
+}
+
+/** True when an admin-assisted MFA/password reset of `targetId` must step up the ACTOR beyond
+ * the ordinary requireSuperadmin gate: resetting another superadmin's credentials, not their
+ * own. Without this, a compromised superadmin session (phished cookie, XSS, stolen device, a
+ * malicious insider) could silently strip any OTHER superadmin's MFA and set a new password,
+ * then sign in as them - a full identity takeover indistinguishable in the audit log from a
+ * routine helpdesk reset, and one that never trips the last-superadmin-lockout guard (role
+ * assignments never change). Resetting your OWN account this way stays exempt, same as today -
+ * you can't use a stolen session to escalate past what that session already grants you. */
+async function actorMustStepUpForReset(
+  db: PrismaClient,
+  actorId: string,
+  targetId: string,
+): Promise<boolean> {
+  if (actorId === targetId) return false;
+  return canManageInstance(db, targetId);
+}
+
+/** Runs `perform` inside a transaction, requiring the ACTOR to prove themselves with their own
+ * TOTP/recovery code first when `requiresStepUp` is true (actorMustStepUpForReset). Deliberately
+ * does NOT defer to withStepUpGate's own userRequiresMfaStepUp check for that decision: that
+ * check is `userRequiresMfa && userHasConfirmedTotp`, so it silently reads "no confirmed local
+ * TOTP" as "step-up not needed" - correct for withStepUpGate's other, self-service callers (an
+ * account-routes.ts action about the user's own data, gated by the instance's configurable
+ * MFA-required-roles policy), but wrong here: a superadmin actor can reach this endpoint with a
+ * fully-privileged SESSION_STAGE.FULL session and zero local TOTP simply by authenticating
+ * entirely through OIDC (finalizeOidcLogin never depends on local MFA state), and letting that
+ * fall through as "skip" would silently defeat the entire privilege-escalation protection this
+ * feature exists to add. So this check is unconditional whenever requiresStepUp is true,
+ * independent of the instance's MFA-required-roles setting: an actor with no confirmed TOTP has
+ * nothing to step up with and is denied outright (actor_mfa_required) rather than waved through. */
+async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  params: {
+    requiresStepUp: boolean;
+    actorUserId: string;
+    currentSessionId: string | undefined;
+    rawCode: string | undefined;
+    rateLimitAction: string;
+  },
+  perform: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
+  const { requiresStepUp, actorUserId, currentSessionId, rawCode, rateLimitAction } = params;
+
+  if (!requiresStepUp) {
+    const orgId = await resolveInstanceOrganizationId(db);
+    const audit = adminAuditFromContext(c);
+    return { ok: true, value: await db.$transaction((tx) => perform(tx, orgId, audit)) };
+  }
+
+  if (!(await userHasConfirmedTotp(db, actorUserId))) {
+    return { ok: false, response: c.json({ code: "actor_mfa_required" }, 403) };
+  }
+
+  // forceRequired: true - withStepUpGate's own default behavior re-derives "is step-up needed"
+  // via userRequiresMfaStepUp (userRequiresMfa && userHasConfirmedTotp), so without this an
+  // instance whose configurable mfa_required_roles setting omits "superadmin" would make
+  // userRequiresMfa false for this actor and skip requiring/validating rawCode entirely, even
+  // though the userHasConfirmedTotp check just above already committed to demanding one.
+  return withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId: actorUserId, currentSessionId, rawCode, rateLimitAction, forceRequired: true },
+    perform,
+  );
+}
+
+/**
+ * Shared admin-assisted-reset flow for handlePostResetUserMfa/handlePostResetUserPassword: loads
+ * the target, blocks SSO-managed accounts (an SSO-managed account signs in via its identity
+ * provider, not a local credential - resetting one here would silently open or modify an
+ * unmonitored second sign-in path; unlink the identity provider first if the account needs to go
+ * local) - this is a fast pre-check only, `perform` (performResetUserMfa/performResetUserPassword)
+ * re-checks the same condition fresh inside its own transaction (TOCTOU) - computes whether the
+ * ACTOR must step up (actorMustStepUpForReset) and runs `perform` accordingly
+ * (runAdminResetWithActorStepUp - see its own docstring for the actor step-up/fail-closed
+ * semantics), then emits the security system log. `rawCode` is resolved by the caller and simply
+ * unused here when step-up isn't required.
+ */
+async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; code: string }>(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  params: {
+    id: string;
+    rawCode: string | undefined;
+    ssoManagedCode: string;
+    rateLimitAction: string;
+    logAction: string;
+  },
+  perform: (
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    audit: OpsAuditContext,
+    requiresStepUp: boolean,
+    actorUserId: string,
+  ) => Promise<T>,
+): Promise<Response> {
+  const { id, rawCode, ssoManagedCode, rateLimitAction, logAction } = params;
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
+  });
+  if (!user) return c.json({ error: "not_found" }, 404);
+  if (user.external_identities.length > 0) return c.json({ code: ssoManagedCode }, 409);
+
+  const auth = c.get("auth");
+  const actorUserId = auth.userId;
+  const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
+
+  const gated = await runAdminResetWithActorStepUp(
+    c,
+    db,
+    rateLimitStore,
+    { requiresStepUp, actorUserId, currentSessionId: auth.sessionId, rawCode, rateLimitAction },
+    (tx, orgId, audit) => perform(tx, orgId, audit, requiresStepUp, actorUserId),
+  );
+  if (!gated.ok) return gated.response;
+  const outcome = gated.value;
+  if (!outcome.ok) return c.json({ code: outcome.code }, 409);
+
+  emitSystemLog("security", "info", logAction, {
+    targetUserId: user.id,
+    targetEmail: user.email,
+    actorUserId,
+    actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ...(requiresStepUp ? { superadminTarget: true } : {}),
+  });
+
+  return c.json({ ok: true });
 }
 
 async function respondRoleDeleteGone(
@@ -960,54 +1098,89 @@ export async function handleDeleteUserRole(c: Context, db: PrismaClient): Promis
   return c.body(null, 204);
 }
 
-/** POST /api/admin/users/:id/reset-2fa — remove MFA methods and revoke sessions. */
-export async function handlePostResetUserMfa(c: Context, db: PrismaClient): Promise<Response> {
+type ResetMfaOutcome = { ok: true } | { ok: false; code: "cannot_reset_mfa_sso_managed" };
+
+/** Performs the actual reset-2fa write inside `tx`, re-checking the SSO-managed exclusion fresh
+ * (not just at handlePostResetUserMfa's earlier pre-check) so an SSO link completed in the
+ * window between that check and this transaction's commit can't leave a hybrid account's local
+ * TOTP silently removed - the same TOCTOU class this file already closes for role changes (see
+ * performRoleTypeSwitch, handleDeleteUserRole). `flagSuperadminTarget` only controls the audit
+ * metadata: the step-up gate around this call (when required) has already authorized the actor.
+ *
+ * Known residual gap (not closed here): this closes the coarse race (an SSO link that already
+ * committed before this transaction's re-check), but not a narrower one - under this
+ * transaction's default READ COMMITTED isolation, the guarantee is per-statement, not
+ * per-transaction, so a concurrent link that commits strictly between this findFirst and the
+ * write below would still be missed. Closing that fully needs SERIALIZABLE isolation (see
+ * runSerializableTransaction) on BOTH this transaction and the OIDC link-completion write
+ * (resolveOrCreateUserFromExternalIdentity, packages/auth/src/external-identity/resolve-user.ts)
+ * - Postgres's serializable conflict detection only tracks transactions actually running at that
+ * level, so elevating just one side gives no real guarantee. That function is the shared, hot
+ * path for every OIDC login/link in the app; elevating it is disproportionate to close a rare,
+ * non-attacker-controlled race between an admin-assisted reset and an unrelated SSO link
+ * finishing in the same narrow window. Left as a documented limitation. */
+async function performResetUserMfa(
+  tx: Prisma.TransactionClient,
+  id: string,
+  orgId: string,
+  audit: OpsAuditContext,
+  actorUserId: string,
+  flagSuperadminTarget: boolean,
+): Promise<ResetMfaOutcome> {
+  const linked = await tx.externalIdentity.findFirst({ where: { user_id: id }, select: { id: true } });
+  if (linked) return { ok: false, code: "cannot_reset_mfa_sso_managed" };
+
+  await resetUserMfa(tx, id);
+  await writeAdminAuditLog(tx, {
+    organizationId: orgId,
+    actorUserId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "user_mfa_reset",
+    metadata: flagSuperadminTarget ? { userId: id, superadminTarget: true } : { userId: id },
+  });
+  return { ok: true };
+}
+
+/** POST /api/admin/users/:id/reset-2fa — remove MFA methods and revoke sessions. Resetting
+ * another superadmin's MFA additionally requires the ACTOR to step up with their own TOTP/
+ * recovery code (actorMustStepUpForReset) and is flagged distinctly in the audit trail - see
+ * that function's docstring for why. */
+export async function handlePostResetUserMfa(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
   const id = c.req.param("id") ?? "";
   if (!id) return c.json({ error: "user id required" }, 400);
 
-  const user = await db.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
-  });
-  if (!user) return c.json({ error: "not_found" }, 404);
   // TOTP is a local-login concept (IdP-authenticated sessions skip local MFA policy entirely -
   // Session.auth_method), but a hybrid account (SSO-linked with a real fallback local password
   // and confirmed TOTP - see account-routes.ts's self-service password/unlink flows) still relies
   // on it for that local path. Resetting it here would silently drop that account's local sign-in
   // from password+TOTP to password-only, the same unmonitored weakening the reset-password guard
-  // above exists to prevent.
-  if (user.external_identities.length > 0) {
-    return c.json({ code: "cannot_reset_mfa_sso_managed" }, 409);
-  }
+  // below exists to prevent. See handleAdminAssistedReset for the shared SSO-managed check.
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const rawCode = typeof body?.code === "string" ? body.code : undefined;
 
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  const actorUserId = c.get("auth").userId;
-
-  await db.$transaction(async (tx) => {
-    await resetUserMfa(tx, id);
-    await writeAdminAuditLog(tx, {
-      organizationId: orgId,
-      actorUserId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "user_mfa_reset",
-      metadata: { userId: id },
-    });
-  });
-
-  emitSystemLog("security", "info", "user_mfa_reset", {
-    targetUserId: user.id,
-    targetEmail: user.email,
-    actorUserId,
-    actorEmail: await resolveActorEmailForLog(db, actorUserId),
-  });
-
-  return c.json({ ok: true });
+  return handleAdminAssistedReset(
+    c,
+    db,
+    rateLimitStore,
+    {
+      id,
+      rawCode,
+      ssoManagedCode: "cannot_reset_mfa_sso_managed",
+      rateLimitAction: "admin-reset-2fa-superadmin",
+      logAction: "user_mfa_reset",
+    },
+    (tx, orgId, audit, requiresStepUp, actorUserId) =>
+      performResetUserMfa(tx, id, orgId, audit, actorUserId, requiresStepUp),
+  );
 }
 
 /** DELETE /api/admin/users/:id/external-identity — unlink SSO, forcing local-password sign-in
@@ -1094,8 +1267,61 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
   return c.json({ ok: true });
 }
 
-/** POST /api/admin/users/:id/reset-password — set temporary password and revoke sessions. */
-export async function handlePostResetUserPassword(c: Context, db: PrismaClient): Promise<Response> {
+type ResetPasswordOutcome = { ok: true } | { ok: false; code: "cannot_reset_password_sso_managed" };
+
+/** Performs the actual reset-password write inside `tx`, re-checking the SSO-managed exclusion
+ * fresh (not just at handlePostResetUserPassword's earlier pre-check) so an SSO link completed
+ * in the window between that check and this transaction's commit can't leave a hybrid account
+ * with a silently-set local password - the same TOCTOU class this file already closes for role
+ * changes (see performRoleTypeSwitch, handleDeleteUserRole). The password is hashed only once
+ * this check passes (and, when gated by withStepUpGate, only once step-up itself has passed),
+ * so a request refused for either reason never pays for the hash. `flagSuperadminTarget` only
+ * controls the audit metadata: the step-up gate around this call (when required) has already
+ * authorized the actor. Same residual narrower-race limitation as performResetUserMfa's own
+ * docstring - not closed here, see that comment for why. */
+async function performResetUserPassword(
+  tx: Prisma.TransactionClient,
+  id: string,
+  newPassword: string,
+  orgId: string,
+  audit: OpsAuditContext,
+  actorUserId: string,
+  flagSuperadminTarget: boolean,
+): Promise<ResetPasswordOutcome> {
+  const linked = await tx.externalIdentity.findFirst({ where: { user_id: id }, select: { id: true } });
+  if (linked) return { ok: false, code: "cannot_reset_password_sso_managed" };
+
+  const hash = await hashPassword(newPassword);
+  await tx.user.update({
+    where: { id },
+    data: { password_hash: hash, must_change_password: true },
+  });
+  await tx.session.updateMany({
+    where: { user_id: id, revoked_at: null },
+    data: { revoked_at: new Date() },
+  });
+  await revokeAllTrustedDevicesForUser(tx, id);
+  await writeAdminAuditLog(tx, {
+    organizationId: orgId,
+    actorUserId,
+    sessionId: audit.sessionId,
+    ip: audit.ip,
+    timezone: audit.timezone,
+    actionType: "user_password_reset",
+    metadata: flagSuperadminTarget ? { userId: id, superadminTarget: true } : { userId: id },
+  });
+  return { ok: true };
+}
+
+/** POST /api/admin/users/:id/reset-password — set temporary password and revoke sessions.
+ * Resetting another superadmin's password additionally requires the ACTOR to step up with
+ * their own TOTP/recovery code (actorMustStepUpForReset) and is flagged distinctly in the audit
+ * trail - see that function's docstring for why. */
+export async function handlePostResetUserPassword(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
@@ -1109,52 +1335,26 @@ export async function handlePostResetUserPassword(c: Context, db: PrismaClient):
     return c.json(passwordTooCommonJsonBody(), 400);
   }
 
-  const user = await db.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, external_identities: { select: { id: true }, take: 1 } },
-  });
-  if (!user) return c.json({ error: "not_found" }, 404);
   // An SSO-managed account signs in via its identity provider, not a local password - setting
   // one here would silently open a second, unmonitored sign-in path alongside SSO. Unlink the
   // identity provider first (DELETE .../external-identity) if the account needs to go local.
-  if (user.external_identities.length > 0) {
-    return c.json({ code: "cannot_reset_password_sso_managed" }, 409);
-  }
+  // See handleAdminAssistedReset for the shared SSO-managed check.
+  const rawCode = typeof body?.code === "string" ? body.code : undefined;
 
-  const hash = await hashPassword(newPassword);
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  const actorUserId = c.get("auth").userId;
-
-  await db.$transaction(async (tx) => {
-    await tx.user.update({
-      where: { id },
-      data: { password_hash: hash, must_change_password: true },
-    });
-    await tx.session.updateMany({
-      where: { user_id: id, revoked_at: null },
-      data: { revoked_at: new Date() },
-    });
-    await revokeAllTrustedDevicesForUser(tx, id);
-    await writeAdminAuditLog(tx, {
-      organizationId: orgId,
-      actorUserId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "user_password_reset",
-      metadata: { userId: id },
-    });
-  });
-
-  emitSystemLog("security", "info", "user_password_reset", {
-    targetUserId: user.id,
-    targetEmail: user.email,
-    actorUserId,
-    actorEmail: await resolveActorEmailForLog(db, actorUserId),
-  });
-
-  return c.json({ ok: true });
+  return handleAdminAssistedReset(
+    c,
+    db,
+    rateLimitStore,
+    {
+      id,
+      rawCode,
+      ssoManagedCode: "cannot_reset_password_sso_managed",
+      rateLimitAction: "admin-reset-password-superadmin",
+      logAction: "user_password_reset",
+    },
+    (tx, orgId, audit, requiresStepUp, actorUserId) =>
+      performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, requiresStepUp),
+  );
 }
 
 /** POST /api/admin/users/:id/revoke-sessions — revoke all sessions for a user. */

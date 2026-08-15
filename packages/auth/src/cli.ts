@@ -98,6 +98,11 @@ async function verifyTargetUserPassword(email: string): Promise<{ userId: string
 }
 
 async function runBootstrapSuperadmin(): Promise<void> {
+  // Checked before any DB lookup or interactive prompt below - `--force` on an existing instance
+  // means the (blocking) confirmForce() prompt runs first otherwise, leaving a --password=<value>
+  // argv sitting in the process list for the whole time the operator spends answering it.
+  assertNoPasswordArgv(process.argv);
+
   const email = arg("email");
   if (!email) usage();
 
@@ -130,6 +135,8 @@ async function runBootstrapSuperadmin(): Promise<void> {
     }
     throw err;
   }
+  // bootstrapSuperadmin writes the auth.superadmin.bootstrap audit record itself, inside the
+  // same transaction as the account creation - no separate call needed here.
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

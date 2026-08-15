@@ -366,6 +366,9 @@ function SignInSecuritySection({
   resetPasswordTitleId,
   newPassword,
   setNewPassword,
+  requiresActorStepUp,
+  resetPasswordCode,
+  setResetPasswordCode,
   resetPasswordBusy,
   onCancelResetPassword,
   onResetPassword,
@@ -377,6 +380,9 @@ function SignInSecuritySection({
   resetPasswordTitleId: string;
   newPassword: string;
   setNewPassword: (value: string) => void;
+  requiresActorStepUp: boolean;
+  resetPasswordCode: string;
+  setResetPasswordCode: (value: string) => void;
   resetPasswordBusy: boolean;
   onCancelResetPassword: () => void;
   onResetPassword: () => void;
@@ -438,7 +444,30 @@ function SignInSecuritySection({
             onChange={(e) => setNewPassword(e.target.value)}
             {...NO_AUTOFILL_PROPS}
           />
-          <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
+          {requiresActorStepUp && (
+            <div className="mail-field-row">
+              <label className="mail-field-label" htmlFor="reset-password-actor-code">
+                Your authenticator or backup code
+              </label>
+              <Input
+                id="reset-password-actor-code"
+                name="reset-password-actor-code"
+                type="text"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={resetPasswordCode}
+                disabled={resetPasswordBusy}
+                onChange={(e) => setResetPasswordCode(e.target.value)}
+                {...NO_AUTOFILL_PROPS}
+                autoComplete="one-time-code"
+              />
+            </div>
+          )}
+          <p className="form-hint">
+            User sessions will be revoked. They must log in with the new password.
+            {requiresActorStepUp &&
+              " Resetting another superadmin's password requires your own authenticator or backup code."}
+          </p>
           <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
             <Button type="button" variant="secondary" disabled={resetPasswordBusy} onClick={onCancelResetPassword}>
               Cancel
@@ -446,7 +475,11 @@ function SignInSecuritySection({
             <Button
               type="button"
               variant="danger"
-              disabled={resetPasswordBusy || newPassword.length < PASSWORD_MIN_LENGTH}
+              disabled={
+                resetPasswordBusy ||
+                newPassword.length < PASSWORD_MIN_LENGTH ||
+                (requiresActorStepUp && resetPasswordCode.trim().length === 0)
+              }
               onClick={onResetPassword}
             >
               {resetPasswordBusy ? "Resetting…" : "Reset password"}
@@ -512,8 +545,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const [roleChangeConfirmOpen, setRoleChangeConfirmOpen] = useState(false);
   const [resetMfaOpen, setResetMfaOpen] = useState(false);
   const [resetMfaBusy, setResetMfaBusy] = useState(false);
+  const [resetMfaCode, setResetMfaCode] = useState("");
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [resetPasswordCode, setResetPasswordCode] = useState("");
   const [resetPasswordBusy, setResetPasswordBusy] = useState(false);
   const [revokeSessionsOpen, setRevokeSessionsOpen] = useState(false);
   const [revokeSessionsBusy, setRevokeSessionsBusy] = useState(false);
@@ -858,8 +893,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     if (!user) return;
     setResetMfaBusy(true);
     try {
-      await resetUserMfa(user.id);
+      await resetUserMfa(user.id, resetMfaCode || undefined);
       setResetMfaOpen(false);
+      setResetMfaCode("");
       onUpdated(user, "Two-factor reset. User must sign in again.");
       onClose();
     } catch (err) {
@@ -874,9 +910,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setResetPasswordBusy(true);
     setError(null);
     try {
-      await resetUserPassword(user.id, { new_password: newPassword });
+      await resetUserPassword(user.id, { new_password: newPassword, code: resetPasswordCode || undefined });
       setResetPasswordOpen(false);
       setNewPassword("");
+      setResetPasswordCode("");
       onUpdated(user, "Password reset. Sessions revoked.");
       onClose();
     } catch (err) {
@@ -968,6 +1005,11 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // below work over "the" current type, not several.
   const currentRoleType = user.roles[0]?.role ?? "";
   const isRoleTypeChange = newRole !== "" && currentRoleType !== "" && newRole !== currentRoleType;
+
+  // Mirrors the server's actorMustStepUpForReset (apps/web/src/admin/users-routes.ts): resetting
+  // another superadmin's 2FA/password requires the acting superadmin to prove themselves with
+  // their own TOTP/recovery code first, so the reset dialogs below show that field only then.
+  const requiresActorStepUp = !isSelf && currentRoleType === "superadmin";
 
   /** Resolves a role assignment's raw scope_id to the human label shown elsewhere in the admin
    * (event title / organization name) - this modal already fetches both lists for the "assign
@@ -1204,10 +1246,14 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
               resetPasswordTitleId={resetPasswordTitleId}
               newPassword={newPassword}
               setNewPassword={setNewPassword}
+              requiresActorStepUp={requiresActorStepUp}
+              resetPasswordCode={resetPasswordCode}
+              setResetPasswordCode={setResetPasswordCode}
               resetPasswordBusy={resetPasswordBusy}
               onCancelResetPassword={() => {
                 setResetPasswordOpen(false);
                 setNewPassword("");
+                setResetPasswordCode("");
               }}
               onResetPassword={() => void handleResetPassword()}
             />
@@ -1264,15 +1310,42 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={resetMfaOpen}
         title="Reset two-factor"
-        message="This will remove all two-factor methods and revoke all sessions for this user."
+        message={
+          requiresActorStepUp
+            ? "This will remove all two-factor methods and revoke all sessions for this user. Resetting another superadmin's two-factor requires your own authenticator or backup code."
+            : "This will remove all two-factor methods and revoke all sessions for this user."
+        }
         confirmLabel="Reset"
         confirmVariant="danger"
         loading={resetMfaBusy}
+        disableConfirm={requiresActorStepUp && resetMfaCode.trim().length === 0}
         onConfirm={() => void handleResetMfa()}
         onCancel={() => {
-          if (!resetMfaBusy) setResetMfaOpen(false);
+          if (resetMfaBusy) return;
+          setResetMfaOpen(false);
+          setResetMfaCode("");
         }}
-      />
+      >
+        {requiresActorStepUp && (
+          <div className="mail-field-row">
+            <label className="mail-field-label" htmlFor="reset-mfa-actor-code">
+              Your authenticator or backup code
+            </label>
+            <Input
+              id="reset-mfa-actor-code"
+              name="reset-mfa-actor-code"
+              type="text"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={resetMfaCode}
+              disabled={resetMfaBusy}
+              onChange={(e) => setResetMfaCode(e.target.value)}
+              {...NO_AUTOFILL_PROPS}
+              autoComplete="one-time-code"
+            />
+          </div>
+        )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={revokeSessionsOpen}

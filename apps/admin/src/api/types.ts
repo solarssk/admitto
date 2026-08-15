@@ -1345,6 +1345,9 @@ export interface GrantUserRoleBody {
 
 export interface ResetUserPasswordBody {
   new_password: string;
+  /** Actor's own TOTP/recovery code - required by the server only when resetting another
+   * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
+  code?: string;
 }
 
 export interface RoleAssignmentListItemDto {

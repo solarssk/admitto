@@ -24,4 +24,42 @@ describe("CLI break-glass", () => {
       assertNoPasswordArgv(["node", "cli.js", "reset-mfa", "--email", "admin@example.com"]),
     ).not.toThrow();
   });
+
+  it("rejects the single-token --password=<value> form, not just the space-separated form", () => {
+    expect(() =>
+      assertNoPasswordArgv(["node", "cli.js", "reset-mfa", "--email", "a@example.com", "--password=x"]),
+    ).toThrow(CliError);
+    expect(() =>
+      assertNoPasswordArgv([
+        "node",
+        "cli.js",
+        "generate-emergency-recovery",
+        "--email",
+        "a@example.com",
+        "--password=x",
+      ]),
+    ).toThrow(CliError);
+  });
+
+  it("rejects --password on argv for bootstrap-superadmin, both forms", () => {
+    expect(() =>
+      assertNoPasswordArgv(["node", "cli.js", "bootstrap-superadmin", "--email", "a@example.com", "--password", "x"]),
+    ).toThrow(CliError);
+    expect(() =>
+      assertNoPasswordArgv([
+        "node",
+        "cli.js",
+        "bootstrap-superadmin",
+        "--email",
+        "a@example.com",
+        "--password=x",
+      ]),
+    ).toThrow(CliError);
+  });
+
+  it("allows bootstrap-superadmin argv without --password", () => {
+    expect(() =>
+      assertNoPasswordArgv(["node", "cli.js", "bootstrap-superadmin", "--email", "admin@example.com", "--force"]),
+    ).not.toThrow();
+  });
 });
