@@ -79,21 +79,18 @@ async function runCfAccessIdentityTransaction<T>(
 ): Promise<T> {
   if (!isRootPrismaClient(prisma)) return fn(prisma);
 
-  for (let attempt = 0; attempt < SERIALIZATION_RETRY_ATTEMPTS; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     try {
       return await prisma.$transaction(fn, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     } catch (err) {
-      if (isSerializationFailure(err) && attempt < SERIALIZATION_RETRY_ATTEMPTS - 1) {
-        await sleep(randomInt(Math.min(500, 25 * 2 ** attempt) + 1));
-        continue;
+      if (!isSerializationFailure(err) || attempt >= SERIALIZATION_RETRY_ATTEMPTS - 1) {
+        throw err;
       }
-      throw err;
+      await sleep(randomInt(Math.min(500, 25 * 2 ** attempt) + 1));
     }
   }
-
-  throw new Error("unreachable: Cloudflare Access identity transaction retries exhausted");
 }
 
 type LockedSourceProvider = { id: string; enabled: boolean; claim_groups: string };

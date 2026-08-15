@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { IdentityProvider, PrismaClient } from "@admitto/db";
 import { ExternalIdentityLinkError } from "../../src/external-identity/resolve-user.js";
 import {
   extractCfAccessSourceGroups,
   extractCfAccessSourceSubject,
+  resolveCfAccessIdentityFromValidatedJwt,
 } from "../../src/cloudflare-access/resolve-identity.js";
 
 describe("extractCfAccessSourceSubject", () => {
@@ -42,5 +44,42 @@ describe("extractCfAccessSourceGroups", () => {
     [{ custom: { admitto_groups: "   " } }, "a blank group string"],
   ])("does not turn %s into an empty revocation assertion", (payload) => {
     expect(extractCfAccessSourceGroups(payload, "admitto_groups")).toBeUndefined();
+  });
+});
+
+describe("resolveCfAccessIdentityFromValidatedJwt", () => {
+  const input = {
+    config: { enabled: true, sourceProviderId: "source-provider" },
+    cloudflareProvider: {} as IdentityProvider,
+    cloudflareSubject: "edge-session-subject",
+    payload: { custom: { admitto_identity: "source-subject" } },
+    claims: {},
+  };
+
+  it.each([
+    [{ enabled: false, sourceProviderId: "source-provider" }, "disabled Cloudflare Access"],
+    [{ enabled: true, sourceProviderId: "   " }, "missing direct provider"],
+  ])("rejects %s before it opens a transaction", async (config) => {
+    await expect(
+      resolveCfAccessIdentityFromValidatedJwt({} as PrismaClient, { ...input, config }),
+    ).rejects.toMatchObject({
+      name: "ExternalIdentityLinkError",
+      message: "source_provider_not_configured",
+    });
+  });
+
+  it("retries a serialization conflict with serializable transactions", async () => {
+    const transaction = vi.fn(async () => {
+      throw { code: "P2034" };
+    });
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+    await expect(resolveCfAccessIdentityFromValidatedJwt(prisma, input)).rejects.toEqual({
+      code: "P2034",
+    });
+    expect(transaction).toHaveBeenCalledTimes(5);
+    expect(transaction).toHaveBeenLastCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
   });
 });

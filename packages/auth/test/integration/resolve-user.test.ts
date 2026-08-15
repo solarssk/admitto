@@ -453,4 +453,143 @@ describe("resolveOrCreateUserFromExternalIdentity", () => {
       });
     }
   });
+
+  it("rejects Cloudflare Access when its configured direct provider is disabled", async () => {
+    await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: false } });
+
+    try {
+      await expect(
+        resolveCfAccessIdentityFromValidatedJwt(prisma, {
+          config: { enabled: true, sourceProviderId: provider.id },
+          cloudflareProvider,
+          cloudflareSubject: "cf-edge-disabled-provider",
+          payload: {
+            sub: "cf-edge-disabled-provider",
+            custom: { admitto_identity: "unused-source-subject" },
+          },
+          claims: {},
+        }),
+      ).rejects.toMatchObject({
+        name: "ExternalIdentityLinkError",
+        message: "source_provider_unavailable",
+      });
+    } finally {
+      await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: true } });
+    }
+  });
+
+  it("rejects an edge identity subject that was already bound to another linked account", async () => {
+    const sourceSubject = "cf-edge-collision-source-subject";
+    const cloudflareSubject = "cf-edge-collision-subject";
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: provider.id,
+        subject: sourceSubject,
+        user_id: USER_LINK,
+        email: "linker@example.com",
+      },
+    });
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: cloudflareProvider.id,
+        subject: cloudflareSubject,
+        user_id: USER_EXISTING,
+        email: "existing@example.com",
+      },
+    });
+
+    try {
+      await expect(
+        resolveCfAccessIdentityFromValidatedJwt(prisma, {
+          config: { enabled: true, sourceProviderId: provider.id },
+          cloudflareProvider,
+          cloudflareSubject,
+          payload: { sub: cloudflareSubject, custom: { admitto_identity: sourceSubject } },
+          claims: {},
+        }),
+      ).rejects.toMatchObject({
+        name: "ExternalIdentityLinkError",
+        message: "cloudflare_subject_already_linked",
+      });
+    } finally {
+      await prisma.externalIdentity.deleteMany({
+        where: {
+          OR: [
+            { provider_id: provider.id, subject: sourceSubject },
+            { provider_id: cloudflareProvider.id, subject: cloudflareSubject },
+          ],
+        },
+      });
+    }
+  });
+
+  it("preserves a direct identity's groups when the source has no role mappings", async () => {
+    const sourceSubject = "cf-edge-optional-groups-source-subject";
+    const cloudflareSubject = "cf-edge-optional-groups-subject";
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: provider.id,
+        subject: sourceSubject,
+        user_id: USER_LINK,
+        email: "linker@example.com",
+        groups: ["retained-group"],
+      },
+    });
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        await expect(
+          resolveCfAccessIdentityFromValidatedJwt(tx, {
+            config: { enabled: true, sourceProviderId: provider.id },
+            cloudflareProvider,
+            cloudflareSubject,
+            payload: { sub: cloudflareSubject, custom: { admitto_identity: sourceSubject } },
+            claims: {},
+          }),
+        ).resolves.toEqual({ userId: USER_LINK });
+      });
+
+      await expect(
+        prisma.externalIdentity.findUniqueOrThrow({
+          where: { provider_id_subject: { provider_id: provider.id, subject: sourceSubject } },
+          select: { groups: true },
+        }),
+      ).resolves.toEqual({ groups: ["retained-group"] });
+      await expect(
+        prisma.externalIdentity.findUniqueOrThrow({
+          where: {
+            provider_id_subject: { provider_id: cloudflareProvider.id, subject: cloudflareSubject },
+          },
+          select: { email: true, name: true, phone: true },
+        }),
+      ).resolves.toEqual({ email: null, name: null, phone: null });
+    } finally {
+      await prisma.externalIdentity.deleteMany({
+        where: {
+          OR: [
+            { provider_id: provider.id, subject: sourceSubject },
+            { provider_id: cloudflareProvider.id, subject: cloudflareSubject },
+          ],
+        },
+      });
+    }
+  });
+
+  it("requires a one-time direct identity link before Cloudflare Access can sign in", async () => {
+    await expect(
+      resolveCfAccessIdentityFromValidatedJwt(prisma, {
+        config: { enabled: true, sourceProviderId: provider.id },
+        cloudflareProvider,
+        cloudflareSubject: "cf-edge-unlinked-subject",
+        payload: {
+          sub: "cf-edge-unlinked-subject",
+          custom: { admitto_identity: "cf-edge-never-linked-source-subject" },
+        },
+        claims: {},
+      }),
+    ).rejects.toMatchObject({
+      name: "ExternalIdentityLinkError",
+      message: "source_identity_not_linked",
+    });
+  });
 });
