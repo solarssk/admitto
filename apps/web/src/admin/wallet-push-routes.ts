@@ -196,7 +196,15 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
       orderBy: { finished_at: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: { id: true, created_at: true, finished_at: true, status: true, error: true, result_json: true },
+      select: {
+        id: true,
+        created_at: true,
+        finished_at: true,
+        status: true,
+        error: true,
+        result_json: true,
+        client_timezone: true,
+      },
     }),
     db.adminJob.count({ where }),
   ]);
@@ -207,6 +215,7 @@ export async function handleGetWalletPushHistory(c: Context, db: PrismaClient): 
     return {
       id: job.id,
       created_at: when.toISOString(),
+      client_timezone: job.client_timezone,
       reissued: result?.reissued ?? 0,
       skipped: result?.skipped ?? 0,
       errored: result?.errored ?? 0,

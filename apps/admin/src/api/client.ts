@@ -1076,6 +1076,7 @@ export type WalletPushHistoryScope =
 export interface WalletPushHistoryEntry {
   id: string;
   created_at: string;
+  client_timezone: string | null;
   reissued: number;
   skipped: number;
   errored: number;

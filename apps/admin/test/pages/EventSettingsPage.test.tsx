@@ -824,6 +824,55 @@ describe("EventSettingsPage tabs", () => {
     expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything());
   });
 
+  it("shows the push time in UTC, with the triggering admin's own local time underneath when known", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
+      items: [
+        {
+          id: "job-1",
+          created_at: "2026-06-07T10:00:00.000Z",
+          client_timezone: "Asia/Kolkata",
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: null,
+        },
+        {
+          id: "job-2",
+          created_at: "2026-06-06T10:00:00.000Z",
+          client_timezone: null,
+          reissued: 1,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: null,
+        },
+      ],
+      total: 2,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findAllByText("Succeeded");
+
+    // Always UTC first, regardless of the event's own timezone - this is when the job actually
+    // ran on the server, not an event-schedule fact (Event settings for this fixture is IST).
+    // Locale-independent: check for "UTC" and the digits, not a full formatted string (see
+    // event-dates.test.ts for why - Intl output shape varies by locale). Filtered to <td> since
+    // the column header's own HintLabel hint text also contains the word "UTC".
+    const utcCells = screen.getAllByText(/UTC/).filter((el) => el.tagName === "TD");
+    expect(utcCells).toHaveLength(2);
+    expect(utcCells[0]!.textContent).toMatch(/10:00/);
+    expect(utcCells[1]!.textContent).toMatch(/10:00/);
+
+    // job-1 has a stored client_timezone - gets a second, subdued local-time line; job-2 (no
+    // client_timezone) doesn't, and nothing throws for its absence.
+    const localTimeLines = document.querySelectorAll(".sessions-subdued");
+    expect(localTimeLines).toHaveLength(1);
+    expect(localTimeLines[0]!.textContent).toMatch(/\d{1,2}:\d{2}/);
+  });
+
   it("shows an em-dash scope for a job that predates the scope field", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({

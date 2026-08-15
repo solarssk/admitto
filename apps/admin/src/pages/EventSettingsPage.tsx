@@ -52,7 +52,12 @@ import { DatePicker } from "../components/DatePicker.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime, formatWalletDatePreview } from "../utils/event-dates.js";
+import {
+  formatEventDateTime,
+  formatUtcDateTime,
+  formatWalletDatePreview,
+  formatZonedClockTime,
+} from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -859,11 +864,18 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
 const WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
 export const WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT = 10;
 
+/** This is when the push job ran on the server, not an event-schedule fact - always UTC-primary
+ * with the triggering admin's own local time underneath, same as Delivery log's "Sent / Queued"
+ * column. Deliberately not event-timezone: an admin in one timezone triggering a push for an
+ * event venue in another would otherwise see neither their own clock nor a real operational
+ * instant, just a third, unrelated time. */
+const WALLET_PUSH_HISTORY_TIME_HINT =
+  "Top: when this ran, in UTC. Below: the same moment in the local time of whoever's browser triggered it, when known.";
+
 interface WalletPushHistoryCardProps {
   readonly history: WalletPushHistoryEntry[] | null;
   readonly total: number;
   readonly error: string | null;
-  readonly eventTimezone: string | undefined;
   readonly onRetry: () => void;
   readonly showLoading: boolean;
   readonly page: number;
@@ -895,7 +907,6 @@ function WalletPushHistoryCard({
   history,
   total,
   error,
-  eventTimezone,
   onRetry,
   showLoading,
   page,
@@ -939,7 +950,9 @@ function WalletPushHistoryCard({
         <table className="table">
           <thead>
             <tr>
-              <th>Date</th>
+              <th>
+                <HintLabel hint={WALLET_PUSH_HISTORY_TIME_HINT}>Date</HintLabel>
+              </th>
               <th>Status</th>
               <th>Scope</th>
               <th>Updated</th>
@@ -950,7 +963,14 @@ function WalletPushHistoryCard({
           <tbody>
             {history.map((entry) => (
               <tr key={entry.id}>
-                <td>{formatEventDateTime(entry.created_at, eventTimezone)}</td>
+                <td>
+                  {formatUtcDateTime(entry.created_at)}
+                  {entry.client_timezone && (
+                    <div className="sessions-subdued">
+                      {formatZonedClockTime(entry.created_at, entry.client_timezone)}
+                    </div>
+                  )}
+                </td>
                 <td>
                   <StatusBadge status={entry.status} />
                   {entry.status === "failed" && entry.error && (
@@ -1969,7 +1989,6 @@ export function EventSettingsPage() {
             history={walletPushHistory}
             total={walletPushHistoryTotal}
             error={walletPushHistoryError}
-            eventTimezone={form.timezone}
             onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
             showLoading={showWalletPushHistoryLoading}
             page={walletPushHistoryPage}

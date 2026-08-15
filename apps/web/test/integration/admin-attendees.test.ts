@@ -6558,6 +6558,7 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
           organization_id: ORG_A,
           event_id: EVENT_A,
           result_json: { reissued: 4, skipped: 1, errored: 0 },
+          client_timezone: "Asia/Kolkata",
           created_at: new Date("2026-06-01T10:00:00Z"),
           finished_at: new Date("2026-06-01T10:01:00Z"),
         },
@@ -6589,8 +6590,8 @@ describe("GET /api/admin/events/:eventId/wallet-push/history", () => {
     const body = (await res.json()) as { items: Array<Record<string, unknown>> };
     // Running is excluded - only the two terminal jobs, newest finished_at first.
     expect(body.items).toHaveLength(2);
-    expect(body.items[0]).toMatchObject({ status: "failed", error: "wallet_not_configured", reissued: 0, skipped: 0, errored: 0 });
-    expect(body.items[1]).toMatchObject({ status: "succeeded", error: null, reissued: 4, skipped: 1, errored: 0 });
+    expect(body.items[0]).toMatchObject({ status: "failed", error: "wallet_not_configured", reissued: 0, skipped: 0, errored: 0, client_timezone: null });
+    expect(body.items[1]).toMatchObject({ status: "succeeded", error: null, reissued: 4, skipped: 1, errored: 0, client_timezone: "Asia/Kolkata" });
   });
 
   it("returns 403 for an operator", async () => {
