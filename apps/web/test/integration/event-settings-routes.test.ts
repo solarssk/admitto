@@ -1203,7 +1203,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
       expect(jobs).toHaveLength(1);
       expect(jobs[0]).toMatchObject({
         status: "pending",
-        result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT, reason: "settings" } },
       });
     });
 

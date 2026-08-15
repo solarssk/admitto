@@ -133,6 +133,27 @@
   margin-top: 0;
 }
 
+/* Wallet push history: unpadded Card so the table bleeds edge-to-edge on desktop (same framing
+   as Communication's Delivery log, communication.css's .communication-table-wrap), instead of
+   the padded-Card + negative-margin-bleed trick (.sessions-table-wrap) this card used before -
+   the intro text and pagination footer need their own compensating padding since the Card body
+   itself no longer provides any. */
+.wallet-push-history-card__intro {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+.wallet-push-history-card__body-note {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.wallet-push-history-table-wrap {
+  overflow-x: auto;
+}
+
+.wallet-push-history-card__footer {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 /* Tab bar + panels ------------------------------------------------------ */
 /* Horizontal scroll + edge-fade behavior now lives in the shared
    ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
