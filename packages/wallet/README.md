@@ -90,6 +90,54 @@ Two separate, independently-configured mechanisms both feed the same `POST`/`PAT
 day-boundary and DST-transition handling (both were real bugs once; the comments explain why the
 current approach avoids them).
 
+### Standard: every date/time value sent to Apple is a real ISO 8601 instant
+
+Every date/time field in `WalletPassSemantics` (and any future one) is built with
+`zonedDateTimeToIso` - never a bare `"HH:MM"`, never a date without a UTC offset. This is
+independent from the visible-text formatting in `region-date-format.ts` (below): semantics are
+machine-readable metadata for Apple/Siri, field-mapping labels are human-readable text - the two
+never need to agree, and a new date-typed semantic tag should reuse `zonedDateTimeToIso`, not a
+new conversion.
+
+### Semantic tag coverage (data minimization, ADR 0009)
+
+A tag is only sent when Admitto's domain model actually has the data - never guessed or defaulted.
+
+| Sent today | Source |
+|---|---|
+| `eventName` | `event.title` |
+| `eventType` | fixed `"PKEventTypeGeneric"` (no event-category field in the model) |
+| `eventStartDate` / `eventEndDate` | `event.date` + hours + `event.timezone`, via `zonedDateTimeToIso` |
+| `duration` | computed from the resolved start/end instants, not wall-clock subtraction - correct across most DST transitions, but `zonedDateTimeToIso` resolves each bound's offset independently by probing its own wall-clock value as a proxy instant, so a same-day start/end pair that both land on the same side of that proxy check (while the real local clock skips a spring-forward hour between them) can still compute an incorrect duration - not a guaranteed-correct civil-time resolution |
+| `venueName` | `event.location` |
+| `venueLocation` | `event.latitude`/`longitude` |
+| `entranceDescription` | `event.directionsText` |
+| `attendeeName` | `attendee.name` |
+
+| Available to add, not sent yet | Source |
+|---|---|
+| `admissionLevel` | `attendee.ticket_type` - already computed as `ticketTypeLabel` on `WalletPassInput`, but only reaches PassCreator if an admin maps a field to the `ticket_type` placeholder (Event Settings → Wallet → Field mapping); with no mapping configured, `toPassCreatorData` sends only `semantics` and the provider-controlled base fields |
+| `venueRegionName` | `event.addressComponents.city` / `.region` |
+
+Deliberately not sent - no corresponding field in Admitto's domain model: `venueRoom`,
+`venueEntrance`/`venueEntranceGate`/`venueEntranceDoor` (no separate "room"/"gate" field, only free
+text), `venueDoorsOpenDate`/`venueGatesOpenDate` (no concept of a doors-open time distinct from
+`eventHoursStart`), `seats` (no assigned seating), and the sports/performance-specific tags (no
+matching event category).
+
+### Visible field text: region-aware formatting (`packages/tickets/src/region-date-format.ts`)
+
+`eventDateLabel`/`eventHoursLabel` and other `*Label` fields on `WalletPassInput` are the only way
+to influence the *visible* text on the pass card, because PassCreator's Additional Properties have
+no date type (`enum<'email','text','textarea','checkbox','select','radiobutton'>` - confirmed
+against their API docs) - Apple's native `dateStyle`/`timeStyle` field rendering only applies to a
+template's own `fields`, never to values injected through Additional Properties. `formatDate`/
+`formatEventHour` resolve the event's `addressComponents.country` to a region (`en-<ISO region>`)
+so the date order and 12h/24h convention match the event's own country while text stays English;
+no match falls back to `en-GB`. Shared by the ticket page and the wallet pass - any new visible-text
+variant (e.g. a shorter date) is a new field computed by this same module, not a parallel
+implementation.
+
 ## Explicitly out of scope
 
 - **Apple's "Enhanced"/poster event ticket style** (`preferredStyleScheme: "posterEventTicket"`,
