@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { buildWalletPassInput, formatDate, resolveTicketPageDisplay } from "../src/wallet-pass-input.js";
 import { formatEventHour } from "../src/region-date-format.js";
@@ -482,5 +482,163 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
     // 2026-03-28 22:00 GMT to 2026-03-29 02:00 BST is 3 real hours (clocks sprang forward at
     // 01:00 GMT), not the 4 wall-clock hours naive HH:MM subtraction would give.
     expect(input.semantics?.duration).toBe(3 * 60 * 60);
+  });
+
+  it("resolves each bound's own offset on a spring-forward date in a non-zero-standard-offset zone (same-day event straddling the transition)", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          walletSemanticTagsEnabled: true,
+          date: new Date("2026-03-08T12:00:00.000Z"),
+          timezone: "America/New_York",
+          eventHoursStart: "01:00",
+          eventHoursEnd: "03:00",
+        },
+      }),
+      "b",
+    );
+    // America/New_York springs forward on 2026-03-08 (02:00 EST -> 03:00 EDT): 01:00 is still
+    // EST (-05:00, real instant 06:00Z), 03:00 is already EDT (-04:00, real instant 07:00Z) - a
+    // real 1-hour local span, not the 2 hours a "treat the wall-clock digits as UTC, probe the
+    // offset once" approximation used to compute for both bounds landing on the same
+    // pre-transition side.
+    expect(input.semantics?.eventStartDate).toBe("2026-03-08T01:00:00-05:00");
+    expect(input.semantics?.eventEndDate).toBe("2026-03-08T03:00:00-04:00");
+    expect(input.semantics?.duration).toBe(1 * 60 * 60);
+  });
+
+  it("emits the resolved instant, not a stale-digits recombination, when eventHoursStart falls inside a spring-forward gap", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          walletSemanticTagsEnabled: true,
+          date: new Date("2026-03-08T12:00:00.000Z"),
+          timezone: "America/New_York",
+          eventHoursStart: "02:30",
+          eventHoursEnd: "09:00",
+        },
+      }),
+      "b",
+    );
+    // 02:30 doesn't exist on 2026-03-08 in America/New_York (clocks skip 2:00-3:00am) -
+    // zonedWallClockToUtcIso resolves it to the nearest valid instant, 03:30 EDT (07:30Z).
+    // Recombining that offset with the original "02:30" digits would emit
+    // "2026-03-08T02:30:00-04:00", which parses as 06:30Z - a full hour off from the instant
+    // actually resolved and a different, wrong value from what the naive pre-fix code emitted too.
+    expect(input.semantics?.eventStartDate).toBe("2026-03-08T07:30:00.000Z");
+    expect(new Date(input.semantics!.eventStartDate!).toISOString()).toBe("2026-03-08T07:30:00.000Z");
+  });
+
+  describe("tzOffsetSuffix ICU data variance", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("falls back to Z when the offset formatter omits the timeZoneName part entirely", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        return this.resolvedOptions().timeZoneName ? parts.filter((p) => p.type !== "timeZoneName") : parts;
+      });
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
+    });
+
+    it("falls back to Z when the offset formatter returns a string that doesn't match the GMT±HH:MM shape", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        if (!this.resolvedOptions().timeZoneName) return parts;
+        return parts.map((p) => (p.type === "timeZoneName" ? { ...p, value: "???" } : p));
+      });
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
+    });
+  });
+
+  describe("localWallClockReading ICU data variance", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    // localWallClockReading's own Intl.DateTimeFormat call is the only one in this flow with
+    // hour/minute but no second and no timeZoneName - zonedWallClockToUtcIso's internal probe
+    // always requests seconds too, tzOffsetSuffix always requests timeZoneName instead.
+    function isLocalWallClockReadingCall(format: Intl.DateTimeFormat): boolean {
+      const resolved = format.resolvedOptions();
+      return resolved.hour !== undefined && resolved.second === undefined && !resolved.timeZoneName;
+    }
+
+    it("treats an ICU build reporting midnight as hour '24' the same as '00'", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        if (!isLocalWallClockReadingCall(this)) return parts;
+        return parts.map((p) => (p.type === "hour" && p.value === "00" ? { ...p, value: "24" } : p));
+      });
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "UTC", eventHoursStart: "00:00" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T00:00:00Z");
+    });
+
+    it("defaults a missing hour/minute part to '00' rather than throwing", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        return isLocalWallClockReadingCall(this) ? parts.filter((p) => p.type !== "minute") : parts;
+      });
+      // With "minute" stripped, localWallClockReading reads back "09:00" (its own fallback) for
+      // an actual 09:00 request - matches, so this doesn't trip the skipped-time fallback path;
+      // asserts the defensive default doesn't throw or corrupt the (still correct here) result.
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York", eventHoursStart: "09:00" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00-04:00");
+    });
+
+    it("defaults a missing hour part to '00' rather than throwing", () => {
+      const real = Intl.DateTimeFormat.prototype.formatToParts;
+      vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(function (
+        this: Intl.DateTimeFormat,
+        ...args
+      ) {
+        const parts = real.apply(this, args);
+        return isLocalWallClockReadingCall(this) ? parts.filter((p) => p.type !== "hour") : parts;
+      });
+      // With "hour" stripped, localWallClockReading reads back "00:00" for a UTC midnight
+      // request - matches, so this stays on the normal (non-fallback) path too.
+      const input = buildWalletPassInput(
+        fullResolved({
+          event: { walletSemanticTagsEnabled: true, timezone: "UTC", eventHoursStart: "00:00" },
+        }),
+        "b",
+      );
+      expect(input.semantics?.eventStartDate).toBe("2026-09-24T00:00:00Z");
+    });
   });
 });
