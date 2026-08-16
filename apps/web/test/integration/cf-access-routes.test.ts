@@ -343,7 +343,7 @@ describe("CF Access admin collision point", () => {
     });
     expect(res.status).toBe(403);
     const text = await res.text();
-    expect(text).toContain("authenticated via Cloudflare Access");
+    expect(text).toContain("Cloudflare Access, but this account has no admin access");
   });
 
   it("reconciles source-provider group grants on every Cloudflare Access sign-in", async () => {

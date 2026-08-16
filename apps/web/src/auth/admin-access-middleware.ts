@@ -21,12 +21,25 @@ import {
 } from "@admitto/auth";
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { renderForbidden } from "../ticket-page.js";
+import { getStaffSpaSecurityHeaders } from "../staff-spa.js";
 
 const CF_ACCESS_FORBIDDEN_MESSAGE =
-  "authenticated via Cloudflare Access, but this account has no admin access";
+  "You signed in through Cloudflare Access, but this account has no admin access.";
+const NO_SUPERADMIN_MESSAGE = "Your account does not have the access needed for this page.";
+const INVALID_CF_ACCESS_MESSAGE =
+  "Your Cloudflare Access sign-in could not be verified. Sign in again, or contact your administrator if this continues.";
 
 function isApiAdminPath(path: string): boolean {
   return path === "/api/admin" || path.startsWith("/api/admin/");
+}
+
+/** Styled 403 for a top-level browser navigation - the specific reason stays in System logs. */
+function htmlForbidden(c: Context, message: string): Response {
+  for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+    c.header(name, value);
+  }
+  return c.html(renderForbidden(message), 403);
 }
 
 async function loginBoundaryResponse(c: Context, prisma: PrismaClient): Promise<Response> {
@@ -41,7 +54,7 @@ function rejectInvalidJwt(c: Context, reason: string): Response {
   if (isApiAdminPath(c.req.path)) {
     return c.json({ error: "cf_access_jwt_invalid" }, 403);
   }
-  return c.text("Forbidden", 403);
+  return htmlForbidden(c, INVALID_CF_ACCESS_MESSAGE);
 }
 
 /** Resolve the local user only through the configured direct OIDC identity binding. */
@@ -128,7 +141,7 @@ async function handleCfAccessToken(
         subject,
         path,
       });
-      return c.text(CF_ACCESS_FORBIDDEN_MESSAGE, 403);
+      return htmlForbidden(c, CF_ACCESS_FORBIDDEN_MESSAGE);
     }
 
     logCfAccessAuth({
@@ -201,7 +214,7 @@ async function sessionSuperadminGate(
     if (isApiAdminPath(c.req.path)) {
       return c.json({ error: "forbidden" }, 403);
     }
-    return c.text("Forbidden", 403);
+    return htmlForbidden(c, NO_SUPERADMIN_MESSAGE);
   }
   c.set("auth", {
     userId: validated.userId,
