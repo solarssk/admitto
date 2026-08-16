@@ -134,6 +134,7 @@ export {
   CF_ACCESS_IDENTITY_CLAIM,
   extractCfAccessSourceSubject,
   resolveCfAccessIdentityFromValidatedJwt,
+  clearCfAccessIdentityCacheForTests,
   type ResolveCfAccessIdentityInput,
 } from "./cloudflare-access/resolve-identity.js";
 export { testCfAccessConnection } from "./cloudflare-access/test-connection.js";
