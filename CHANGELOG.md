@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Being denied access to the admin panel or check-in panel (an unlinked Cloudflare Access sign-in, no admin role, no check-in access) now shows the same branded error page already used for a broken link or a server error, with a plain-language message explaining what happened, instead of the bare word "Forbidden."
+
 ## [0.5.1] - 2026-08-15
 
 ### Security
