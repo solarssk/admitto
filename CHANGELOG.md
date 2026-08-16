@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Signing in to the admin panel through Cloudflare Access no longer causes repeated "write conflict or a deadlock" errors in server logs on every page load. A page load fires many API requests at once, and each one was independently re-resolving and re-writing the signed-in identity to the database; a short-lived cache now resolves it once per Cloudflare-issued token instead, with no change to how quickly a revoked token or account stops working.
+- Being denied access to the admin panel or check-in panel (an unlinked Cloudflare Access sign-in, no admin role, no check-in access) now shows the same branded error page already used for a broken link or a server error, with a plain-language message explaining what happened, instead of the bare word "Forbidden."
 
 ## [0.5.1] - 2026-08-15
 

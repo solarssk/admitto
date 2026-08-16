@@ -441,17 +441,23 @@ export function renderTicket(
 }
 
 const PUBLIC_ERROR_404_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6 -6"/><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"/><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"/></svg>`;
+const PUBLIC_ERROR_403_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z"/><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0"/><path d="M8 11v-4a4 4 0 1 1 8 0v4"/></svg>`;
 const PUBLIC_ERROR_500_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></svg>`;
+const PUBLIC_ERROR_ICONS = {
+  404: PUBLIC_ERROR_404_ICON,
+  403: PUBLIC_ERROR_403_ICON,
+  500: PUBLIC_ERROR_500_ICON,
+};
 
-/** Shared branded shell for public HTML errors (404 and 500 share the same layout). */
+/** Shared branded shell for public HTML errors (404, 403, and 500 share the same layout). */
 export function renderPublicErrorPage(options: {
-  statusCode: 404 | 500;
+  statusCode: 404 | 403 | 500;
   heading: string;
   message: string;
   theme?: BrandingTheme | null;
 }): string {
   const styles = buildTicketPageStyles(options.theme);
-  const icon = options.statusCode === 404 ? PUBLIC_ERROR_404_ICON : PUBLIC_ERROR_500_ICON;
+  const icon = PUBLIC_ERROR_ICONS[options.statusCode];
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -495,6 +501,17 @@ export function renderServerError(theme?: BrandingTheme | null): string {
     statusCode: 500,
     heading: "Something went wrong",
     message: "Unable to load this page right now. Please try again later.",
+    theme,
+  });
+}
+
+/** `message` varies by caller (invalid Cloudflare Access assertion, no role, CSRF, ...) - the
+ * detailed reason belongs in System logs, not on a page anyone hitting the URL can read. */
+export function renderForbidden(message: string, theme?: BrandingTheme | null): string {
+  return renderPublicErrorPage({
+    statusCode: 403,
+    heading: "Access denied",
+    message,
     theme,
   });
 }
