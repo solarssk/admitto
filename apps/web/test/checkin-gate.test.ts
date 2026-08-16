@@ -1,6 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { PrismaClient } from "@admitto/db";
+
+// Bearer-token behavior is what this file tests; Cloudflare Access is exercised end-to-end in
+// apps/web/test/integration/cf-access-routes.test.ts. Reporting it disabled here keeps
+// resolveStaffAuthFromRequest's fallback (no session cookie in these requests either) a plain
+// "unauthenticated" instead of a real getSetting() call against the empty mock prisma below.
+vi.mock("@admitto/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/auth")>();
+  return {
+    ...actual,
+    getCfAccessConfigCached: vi.fn(async () => ({
+      enabled: false,
+      teamDomain: "",
+      audience: [],
+      protectedPrefixes: [],
+      sourceProviderId: "",
+      jwksUri: "",
+    })),
+  };
+});
+
 import { createCheckinPreAuth } from "../src/checkin-gate.js";
 
 const mockPrisma = {} as PrismaClient;
