@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-16
+
 ### Fixed
 
 - Signing in to the admin panel through Cloudflare Access no longer causes repeated "write conflict or a deadlock" errors in server logs on every page load. A page load fires many API requests at once, and each one was independently re-resolving and re-writing the signed-in identity to the database; a short-lived cache now resolves it once per Cloudflare-issued token instead, with no change to how quickly a revoked token or account stops working.
@@ -1000,7 +1002,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/solarssk/admitto/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/solarssk/admitto/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/solarssk/admitto/compare/v0.4.14...v0.5.0
 [0.4.14]: https://github.com/solarssk/admitto/compare/v0.4.13...v0.4.14
