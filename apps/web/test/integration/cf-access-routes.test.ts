@@ -1,8 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Hono } from "hono";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
+import { createAdminAccessMiddleware } from "../../src/auth/admin-access-middleware.js";
 import {
   hashPassword,
   createSession,
@@ -346,6 +348,20 @@ describe("CF Access admin collision point", () => {
     expect(text).toContain("Cloudflare Access, but this account has no admin access");
   });
 
+  it("valid CF JWT + no role on the SPA path shows the styled Access denied page", async () => {
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-norole-spa-sub",
+      email: NO_ROLE_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+    });
+    const res = await app.request("/admin", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).toContain("Your account does not have access to the admin panel.");
+  });
+
   it("reconciles source-provider group grants on every Cloudflare Access sign-in", async () => {
     const group = "cf-managed-superadmins";
     const subject = "cf-group-sync-sub";
@@ -662,5 +678,55 @@ describe("CF Access admin collision point", () => {
   it("public /t does not require CF JWT", async () => {
     const res = await app.request("/t/nonexistent-token");
     expect(res.status).not.toBe(401);
+  });
+});
+
+// requireAdminAccess (createAdminAccessMiddleware) is only ever mounted on /api/admin/identity/*
+// routes in app.ts, so its own non-API HTML branches never see real traffic there. Exercised here
+// directly, on a standalone Hono app mounting the same exported middleware on an arbitrary
+// non-API path, to cover the defensive HTML fallback every other gate in this codebase also has.
+describe("createAdminAccessMiddleware HTML fallback (no /api/admin caller today)", () => {
+  it("rejects an invalid CF JWT on a non-API path with the styled Access denied page", async () => {
+    const isolatedApp = new Hono();
+    isolatedApp.get("/not-an-api-path", createAdminAccessMiddleware(prisma), (c) => c.text("ok"));
+
+    const res = await isolatedApp.request("/not-an-api-path", {
+      headers: { [CF_ACCESS_HEADER]: "not.a.jwt" },
+    });
+
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).toContain("Your Cloudflare Access sign-in could not be verified");
+  });
+
+  it("rejects a break-glass session without the superadmin role on a non-API path", async () => {
+    await prisma.systemSettings.update({
+      where: { key: SETTING_CF_ACCESS_ENABLED },
+      data: { value_json: "false" },
+    });
+    clearCfAccessRuntimeConfigCache();
+    const { rawToken } = await createSession(prisma, {
+      userId: NO_ROLE_ID,
+      stage: SESSION_STAGE.FULL,
+    });
+    try {
+      const isolatedApp = new Hono();
+      isolatedApp.get("/not-an-api-path", createAdminAccessMiddleware(prisma), (c) => c.text("ok"));
+
+      const res = await isolatedApp.request("/not-an-api-path", {
+        headers: { Cookie: `admitto_session=${rawToken}` },
+      });
+
+      expect(res.status).toBe(403);
+      const text = await res.text();
+      expect(text).toContain("Your account does not have the access needed for this page.");
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: NO_ROLE_ID } });
+      await prisma.systemSettings.update({
+        where: { key: SETTING_CF_ACCESS_ENABLED },
+        data: { value_json: "true" },
+      });
+      clearCfAccessRuntimeConfigCache();
+    }
   });
 });
