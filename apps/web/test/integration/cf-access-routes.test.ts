@@ -332,20 +332,19 @@ describe("CF Access admin collision point", () => {
     expect(legacyMe.status).toBe(401);
   });
 
-  it("valid CF JWT + no role returns 403 message", async () => {
+  it("valid CF JWT + no role returns 403 JSON on the API path", async () => {
     const token = await signCfAccessJwt(mock, {
       sub: "cf-norole-sub",
       email: NO_ROLE_EMAIL,
       custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
     });
-    // Probe a requireAdminAccess-gated route: the CF no-role branch returns the
-    // CF-specific text body (staffAdminGate on /admin returns a generic Forbidden).
+    // requireAdminAccess is only ever mounted on /api/admin/identity/* (staffAdminGate covers
+    // /admin's own, separate no-role case with the branded page instead).
     const res = await app.request("/api/admin/identity/providers", {
       headers: { [CF_ACCESS_HEADER]: token },
     });
     expect(res.status).toBe(403);
-    const text = await res.text();
-    expect(text).toContain("Cloudflare Access, but this account has no admin access");
+    expect(await res.json()).toEqual({ error: "cf_access_no_admin_access" });
   });
 
   it("valid CF JWT + no role on the SPA path shows the styled Access denied page", async () => {
@@ -728,5 +727,23 @@ describe("createAdminAccessMiddleware HTML fallback (no /api/admin caller today)
       });
       clearCfAccessRuntimeConfigCache();
     }
+  });
+
+  it("rejects a resolved CF identity without the superadmin role on a non-API path", async () => {
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-norole-html-sub",
+      email: NO_ROLE_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+    });
+    const isolatedApp = new Hono();
+    isolatedApp.get("/not-an-api-path", createAdminAccessMiddleware(prisma), (c) => c.text("ok"));
+
+    const res = await isolatedApp.request("/not-an-api-path", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).toContain("Cloudflare Access, but this account has no admin access");
   });
 });

@@ -141,6 +141,9 @@ async function handleCfAccessToken(
         subject,
         path,
       });
+      if (isApiAdminPath(path)) {
+        return c.json({ error: "cf_access_no_admin_access" }, 403);
+      }
       return htmlForbidden(c, CF_ACCESS_FORBIDDEN_MESSAGE);
     }
 
