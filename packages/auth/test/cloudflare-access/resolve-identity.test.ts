@@ -115,6 +115,21 @@ describe("resolveCfAccessIdentityFromValidatedJwt caching", () => {
     expect(transaction).toHaveBeenCalledTimes(1);
   });
 
+  it("never serves a cached result once the resolution has settled, even for the identical token - a deactivated account or disabled provider must be caught on the very next call", async () => {
+    const transaction = vi.fn(async () => ({ userId: "resolved-user" }));
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+    const sameToken = {
+      ...input,
+      payload: { sub: "cf-sub-sequential", iat: 1000, custom: { admitto_identity: "source-subject" } },
+    };
+
+    await resolveCfAccessIdentityFromValidatedJwt(prisma, sameToken);
+    await resolveCfAccessIdentityFromValidatedJwt(prisma, sameToken);
+    await resolveCfAccessIdentityFromValidatedJwt(prisma, sameToken);
+
+    expect(transaction).toHaveBeenCalledTimes(3);
+  });
+
   it("does not reuse the cache once Cloudflare issues a new token (different iat)", async () => {
     const transaction = vi.fn(async () => ({ userId: "resolved-user" }));
     const prisma = { $transaction: transaction } as unknown as PrismaClient;

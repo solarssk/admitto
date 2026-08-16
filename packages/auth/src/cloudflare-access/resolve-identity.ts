@@ -139,28 +139,25 @@ export interface ResolveCfAccessIdentityInput {
 
 /**
  * A staff admin page load fires many parallel `/api/admin/*` requests, each carrying the same
- * Cloudflare-issued JWT and each independently reaching this resolver. Without this cache, every
- * one of them opens its own SERIALIZABLE transaction against the same two ExternalIdentity rows,
- * which Postgres then aborts and retries under write-write conflict - functionally harmless (the
- * retry loop below absorbs it) but a real source of DB load and log noise. Keying on `sub:iat`
- * (not just `sub`) means a genuinely new Cloudflare-issued token - e.g. after a role/group change
- * takes effect at Cloudflare's next Access session refresh - always misses the cache and re-runs
- * the real resolution; only literally-repeated presentations of the same token within the window
- * short-circuit. JWT signature/issuer/audience/expiry validation upstream of this function is
- * unaffected and still runs on every single request.
+ * Cloudflare-issued JWT and each independently reaching this resolver. Without this, every one of
+ * them opens its own SERIALIZABLE transaction against the same two ExternalIdentity rows, which
+ * Postgres then aborts and retries under write-write conflict - functionally harmless (the retry
+ * loop below absorbs it) but a real source of DB load and log noise.
+ *
+ * This coalesces only calls that are genuinely concurrent (arrive while an identical-token
+ * resolution is already in flight) - deliberately *not* a time-based cache. The entry is removed
+ * the instant that resolution settles, success or failure, so it can never outlive the burst that
+ * created it. `lockSourceUser`/`lockSourceProvider` re-check `is_active`/`enabled` fresh on every
+ * resolution and must keep doing so on every request: a superadmin deactivating this account or
+ * disabling the source provider has to take effect on the very next request, and a TTL here -
+ * however short - would let an already-revoked Cloudflare-authenticated caller keep working until
+ * it expired.
  */
-const CF_ACCESS_RESOLUTION_CACHE_TTL_MS = 30_000;
-
-interface CachedResolution {
-  promise: Promise<{ userId: string }>;
-  expiresAt: number;
-}
-
-let resolutionCache = new Map<string, CachedResolution>();
+const resolutionCache = new Map<string, Promise<{ userId: string }>>();
 
 /** For tests - reset the resolution cache between cases. */
 export function clearCfAccessIdentityCacheForTests(): void {
-  resolutionCache = new Map();
+  resolutionCache.clear();
 }
 
 function resolutionCacheKey(payload: JWTPayload): string | undefined {
@@ -182,19 +179,23 @@ export async function resolveCfAccessIdentityFromValidatedJwt(
 ): Promise<{ userId: string }> {
   const key = resolutionCacheKey(input.payload);
   const cached = key ? resolutionCache.get(key) : undefined;
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.promise;
+  if (cached) {
+    return cached;
   }
 
   const promise = resolveCfAccessIdentityUncached(prisma, input);
   if (key) {
-    resolutionCache.set(key, { promise, expiresAt: Date.now() + CF_ACCESS_RESOLUTION_CACHE_TTL_MS });
-    // Never cache a failure - a fixed misconfiguration (or a transient DB error) must be able to
-    // succeed on the very next request instead of repeating the same rejection for the full TTL.
-    promise.catch(() => {
-      if (resolutionCache.get(key) === undefined) return;
-      resolutionCache.delete(key);
-    });
+    resolutionCache.set(key, promise);
+    // Remove on both outcomes, not just failure - the moment this settles, this entry must stop
+    // being served. Guarded on identity so a later, different in-flight call for the same key
+    // (started after this one already cleaned up) is never evicted by this cleanup instead of its
+    // own. The rejection handler here only stops it from becoming an unhandled rejection on this
+    // internal chain - resolveCfAccessIdentityUncached's real rejection still propagates to every
+    // caller awaiting `promise` itself.
+    const evict = () => {
+      if (resolutionCache.get(key) === promise) resolutionCache.delete(key);
+    };
+    promise.then(evict, evict);
   }
   return promise;
 }
