@@ -11,6 +11,30 @@
 
 Bind Cloudflare Access sign-ins to an existing, already-linked Admitto account, so a staff member who has signed in through your direct OIDC provider (for example Authentik) once can pass through Cloudflare Access and land in the admin panel without a second Admitto sign-in screen. This page covers the identity-linking layer specifically. Set up the base Cloudflare Access connection first from [Identity and SSO](Identity-and-SSO).
 
+## Why two separate sign-ins
+
+Cloudflare Access and Admitto's own direct sign-in both end up talking to Authentik, but they answer two different questions, and neither replaces the other:
+
+```mermaid
+flowchart TD
+    Staff(("Staff member"))
+    Staff --> Login["Admitto /login"]
+    Staff --> Cloudflare["Cloudflare Access"]
+    Login --> AuthentikA["Authentik<br/>(Admitto's own app)"]
+    Cloudflare --> AuthentikC["Authentik<br/>(Cloudflare's app)"]
+    AuthentikA --> Login
+    AuthentikC --> Cloudflare
+    Login -->|"verifies the token itself,<br/>creates the account link"| Account[("Local Admitto account + role")]
+    Cloudflare -->|"only forwards a verified identity"| Check{"Matches an<br/>existing link?"}
+    Check -->|"yes"| Account
+    Check -->|"no"| Deny["Denied - no account guessed"]
+```
+
+- **Cloudflare Access decides whether a request reaches Admitto at all.** It is a perimeter control, closer to a guard checking ID at a building's front door than to Admitto's own sign-in. It has no concept of Admitto's user accounts or roles - it only knows "Authentik verified this person," using its own registered Authentik application, separate from Admitto's.
+- **Admitto's own direct sign-in decides who that person is inside Admitto, and what they can do.** That only ever comes from an account that has already signed in through the direct provider itself - the one thing that actually teaches Admitto "this Authentik identity is this specific local account with this specific role." Cloudflare passing someone through never creates or implies that link on its own.
+- Disabling Cloudflare Access does not disable sign-in: staff can still reach `/login` and sign in through the direct provider, entirely bypassing Cloudflare. The reverse also holds - if Cloudflare Access itself has an outage while Authentik is healthy, staff are not locked out as long as `/login` stays reachable outside Cloudflare's protected paths (see Important decisions below), since the direct sign-in talks to Authentik on its own, independent of Cloudflare.
+- Authentik's own event log may not show a clearly labelled "Admitto" entry for a Cloudflare Access sign-in - from Authentik's side, that sign-in only ever authorized the generic Cloudflare application, not Admitto specifically. The direct sign-in is the one Authentik logs against an application actually named for Admitto.
+
 ## Before you start
 
 - Complete both the direct OIDC provider setup and the base Cloudflare Access connection (team URL, audience tag, protected paths) described in [Identity and SSO](Identity-and-SSO) first.

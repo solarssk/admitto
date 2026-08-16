@@ -22,7 +22,9 @@ This page covers two independent, optional layers:
   identity and, optionally, their device before their request is even allowed to reach Admitto —
   a perimeter control, not a replacement for Admitto's own roles. Enable it if your organisation
   wants staff URLs unreachable to anyone who hasn't already authenticated at the network edge, on
-  top of signing in to Admitto itself.
+  top of signing in to Admitto itself. It is a separate layer in front of sign-in, not a
+  replacement for it - see [Cloudflare Access - Authentik Setup](Cloudflare-Access-Authentik-Setup)
+  for why both are needed.
 
 Both are optional; a deployment can use local passwords only, OIDC only, Cloudflare Access only,
 or any combination. See [Glossary](Glossary) for short definitions of SSO, OIDC, and ZTNA.
