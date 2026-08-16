@@ -23,7 +23,7 @@ This page covers two independent, optional layers:
   a perimeter control, not a replacement for Admitto's own roles. Enable it if your organisation
   wants staff URLs unreachable to anyone who hasn't already authenticated at the network edge, on
   top of signing in to Admitto itself. It is a separate layer in front of sign-in, not a
-  replacement for it - see [Cloudflare Access - Authentik Setup](Cloudflare-Access-Authentik-Setup)
+  replacement for it - see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)
   for why both are needed.
 
 Both are optional; a deployment can use local passwords only, OIDC only, Cloudflare Access only,
@@ -117,9 +117,9 @@ Do this in Cloudflare's own dashboard first, then in Admitto:
    `https://yourteam.cloudflareaccess.com`) and **Application Audience (AUD) tag**, a long hex
    string Cloudflare shows on the application's Overview tab.
 3. Bind Cloudflare sign-ins to the direct provider account from step 1, instead of a second,
-   untrusted identity: see [Cloudflare Access - Authentik Setup](Cloudflare-Access-Authentik-Setup)
-   for the exact custom claim Cloudflare must forward, the Authentik-side property mapping and
-   Subject mode requirement, and a full troubleshooting list. This is required, not optional -
+   untrusted identity: see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)
+   for the exact custom claim Cloudflare must forward, the identity-provider-side mapping and
+   stable-identifier requirement, and a full troubleshooting list. This is required, not optional -
    the **Direct identity provider** field in step 4 below has no effect until this is done, and
    every staff account that will sign in through Cloudflare must also sign in through the direct
    provider once first, which is what actually creates the link Admitto trusts later.
@@ -174,12 +174,12 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
 - **Sign-in redirects to an error at the identity provider ("redirect URI mismatch" or similar):** the callback registered at the provider must exactly match the **Redirect URI** shown in the provider editor (Instance URL + `/api/auth/oidc/<provider-id>/callback`). Check for a trailing slash, `http` vs `https`, or the wrong provider id. If Redirect URI is missing in the editor, set Instance URL under Organisation settings → General first. On the Add provider form, the URI appears only after the first save (the pattern is shown as a hint before then).
 - **Issuer rejected as private / link-local:** production blocks private destinations unless the exact hostname or IP literal is listed in `SSO_PRIVATE_DESTINATION_ALLOWLIST`. This is separate from the mail allowlist.
 - **Cloudflare test fails:** check the team URL and audience without copying tokens into support messages.
-- **Cloudflare sign-in fails with "Forbidden," or lands a staff member on Admitto's own sign-in screen instead of straight into the panel:** see [Cloudflare Access - Authentik Setup](Cloudflare-Access-Authentik-Setup)'s Common problems list, which maps each specific denial reason from System logs to its cause.
+- **Cloudflare sign-in fails with "Forbidden," or lands a staff member on Admitto's own sign-in screen instead of straight into the panel:** see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)'s Common problems list, which maps each specific denial reason from System logs to its cause.
 - **The change risks lockout:** stop and use the separate Superadmin session to restore the last known working configuration.
 
 ## Related pages
 
-- [Cloudflare Access - Authentik Setup](Cloudflare-Access-Authentik-Setup) - the identity-linking layer in full detail, with troubleshooting
+- [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking) - the identity-linking layer in full detail, with troubleshooting
 - [Users and Roles Administration](Users-and-Roles-Administration)
 - [Organisation Settings](Organisation-Settings)
 - [Logs and Audit](Logs-and-Audit)
