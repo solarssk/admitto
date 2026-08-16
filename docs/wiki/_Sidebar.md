@@ -64,6 +64,7 @@
 
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Identity and SSO](Identity-and-SSO)
+- [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)
 - [Wallet Passes Overview](Wallet-Passes-Overview)
 
 **Reference**
