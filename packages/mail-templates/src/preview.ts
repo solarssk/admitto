@@ -2,7 +2,7 @@ import type { PrismaClient } from "@admitto/db";
 import { resolvePublicBaseUrl } from "./baseUrl.js";
 import { resolveBrandingFromEvent, resolveEventImageAssetVars } from "./branding.js";
 import { validateHttpUrl } from "./escape.js";
-import { formatEventDate, resolvePreviewEventTimeZone } from "./formatEventDate.js";
+import { formatEventDate, formatEventHours, resolvePreviewEventTimeZone } from "./formatEventDate.js";
 import {
   buildEventLocationTemplateVars,
   type EventLocationForTemplateVars,
@@ -98,12 +98,16 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   apple_wallet_url: SAMPLE_APPLE_WALLET_URL,
   google_wallet_url: SAMPLE_GOOGLE_WALLET_URL,
   download_page_url: "",
+  ticket_type: "General",
+  event_hours: "10:00-17:00",
 };
 
 type EventForBaseTemplateVars = {
   id: string;
   title: string;
   date: Date;
+  event_hours_start?: string | null;
+  event_hours_end?: string | null;
   location_details?: EventLocationForTemplateVars;
 };
 
@@ -122,6 +126,7 @@ export function buildBaseTemplateVars(
     ...DEFAULT_SAMPLE_VARS,
     event_name: event.title,
     event_date: formatEventDate(event.date, resolvePreviewEventTimeZone(timeZone)),
+    event_hours: formatEventHours(event.event_hours_start, event.event_hours_end),
     ...buildEventLocationTemplateVars(event.id, event.location_details, baseUrl, env),
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,

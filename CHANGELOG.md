@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mail templates now support two more placeholders: `{{ticket_type}}` (the attendee's ticket type label) and `{{event_hours}}` (the event's start-end time, if set in Event settings). Both were already available on wallet passes but missing from the Communication tab's template editor.
 - Attendee detail's "More actions" menu now has a "Copy ticket link" action for admins and superadmins, which copies the attendee's existing ticket URL to the clipboard. Previously the only way to get that link was to resend the ticket email to yourself. The raw ticket token is still never exposed as attendee data - it's decrypted server-side only for this action, the same way the existing wallet-pass link actions already work, and each copy is recorded in the attendee's action log.
 
 ### Fixed

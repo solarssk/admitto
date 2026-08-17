@@ -12,6 +12,7 @@ import {
   retryDelivery,
   sendTicketEmails,
 } from "../src/index.js";
+import { resolveTicketTypeLabel } from "../src/send.js";
 
 const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-mail-send";
@@ -74,6 +75,14 @@ afterAll(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("resolveTicketTypeLabel", () => {
+  it("falls open to the raw key when the catalog has no match", () => {
+    expect(resolveTicketTypeLabel("deleted_type", new Map([["vip", "VIP"]]))).toBe(
+      "deleted_type",
+    );
+  });
 });
 
 describe("sendTicketEmails name fields", () => {
@@ -515,6 +524,89 @@ describe("sendTicketEmails", () => {
         { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       ),
     ).rejects.toThrow("recipientEmail requires exactly one attendeeId");
+  });
+
+  it("renders ticket_type label and event_hours from the event's start/end time", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: { event_hours_start: "10:00", event_hours_end: "17:00" },
+    });
+    await prisma.ticketType.create({
+      data: { event_id: EVENT_ID, key: "vip", label: "VIP", color: "purple", sort_order: 1 },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-ticket-type",
+        event_id: EVENT_ID,
+        email: "vip@example.com",
+        name: "VIP Example",
+        ticket_type: "vip",
+      },
+    });
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "ticket-type",
+        label: "Ticket type",
+        subject_template: "{{ticket_type}} - {{event_hours}}",
+        body_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        compiled_html_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        template_format: "html",
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-ticket-type"], templateId: template.id },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(1);
+    expect(exported[0]?.message.subject).toBe("VIP - 10:00-17:00");
+
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: { event_hours_start: null, event_hours_end: null },
+    });
+  });
+
+  it("falls back to General for ticket_type and empty string for event_hours when unset", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-no-ticket-type",
+        event_id: EVENT_ID,
+        email: "general@example.com",
+        name: "General Example",
+      },
+    });
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "no-ticket-type",
+        label: "No ticket type",
+        subject_template: "[{{ticket_type}}] [{{event_hours}}]",
+        body_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        compiled_html_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        template_format: "html",
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-no-ticket-type"], templateId: template.id },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(1);
+    expect(exported[0]?.message.subject).toBe("[General] []");
   });
 });
 
