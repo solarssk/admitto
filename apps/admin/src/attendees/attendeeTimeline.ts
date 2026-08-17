@@ -147,6 +147,7 @@ export function getTimelineIcon(actionType: string): string {
     ticket_sent: "send",
     ticket_resent: "refresh",
     resend_ticket: "refresh",
+    ticket_link_retrieved: "link",
     mail_delivered: "mail-check",
     mail_bounced: "mail-x",
     check_in: "circle-check",
@@ -196,6 +197,8 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "ticket_resent":
     case "resend_ticket":
       return "Ticket resent";
+    case "ticket_link_retrieved":
+      return "Ticket link copied";
     case "check_in":
     case "admitted":
       return "Checked in";

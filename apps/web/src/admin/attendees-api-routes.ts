@@ -3230,6 +3230,51 @@ export async function handleResendEventAttendeeTicket(
 }
 
 /**
+ * POST /api/admin/events/:eventId/attendees/:id/ticket-link
+ * Returns the attendee's existing ticket URL for an authorised admin to copy and hand to the
+ * attendee directly - same authorisation model as resend, and the raw token is decrypted only
+ * in the point of use (resolveAttendeeMailLinks), never returned as an attendee DTO field. Does
+ * not issue a ticket that hasn't been sent yet - `resend` is the action for that.
+ */
+export async function handleGetAttendeeTicketLink(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const attendeeContextOrRes = await requireManagedEventAttendee(c, db);
+  if (attendeeContextOrRes instanceof Response) return attendeeContextOrRes;
+  const { attendeeId, eventId } = attendeeContextOrRes;
+
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+
+  let ticketUrl: string;
+  try {
+    ticketUrl = (await resolveAttendeeMailLinks(attendeeId, db, baseUrlOrRes)).ticket_url;
+  } catch (err) {
+    // Only the specific "nothing to build a link from yet" shape is a real 422 - a decryption
+    // failure or a DB error hitting this same call is a genuine server error and must not be
+    // reported to the admin as "this attendee just hasn't been sent a ticket".
+    const notIssued =
+      err instanceof Error &&
+      (err.message.includes("missing token_enc") || err.message.includes("missing public_ref"));
+    if (!notIssued) throw err;
+    return c.json({ error: "ticket_not_issued" }, 422);
+  }
+
+  await db.$transaction(async (tx) => {
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: attendeeId,
+      action_type: "ticket_link_retrieved",
+      audit: adminAuditFromContext(c),
+    });
+  });
+
+  return c.json({ url: ticketUrl });
+}
+
+/**
  * POST /api/admin/events/:eventId/attendees/:id/dismiss-bounce
  * Acknowledges the Communication bounce notifier for this attendee (Delivery log row menu),
  * without resending anything. No "is this attendee actually bounced" guard - the UI only ever
