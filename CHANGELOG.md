@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The admin panel's Check-in tab now works for staff who sign in only through Cloudflare Access, not just staff with a local Admitto password. Previously it showed a "sign in to Admitto" notice and blocked live scanning entirely for Cloudflare-only sign-ins.
 - Signing in with a local password (or directly through your identity provider, not Cloudflare Access) no longer gets stuck after the two-factor code when the admin panel is one of the paths Cloudflare Access protects - it now lands on the check-in surface instead, which every admin and superadmin can already use once at least one event exists. It falls back once more, to My account, on a brand new instance with no events yet.
 - Pressing and holding a searchable dropdown's own caption (e.g. Attendance, Ticket type, Event timezone) while it was open inside a modal no longer closes it the instant you press down, then reopens it the instant you release. Clicking near the caption briefly moved keyboard focus to the surrounding modal window itself, which every one of these dropdowns mistook for "focus moved to something else" and closed for.
+- The Send test email result in Event/Organisation Settings → Mail no longer shows the bounce-detection message pressed directly against the details above it, with no visible gap.
 
 ## [0.5.2] - 2026-08-16
 
