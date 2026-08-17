@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Pressing and holding a searchable dropdown's own caption (e.g. Attendance, Ticket type, Event timezone) while it was open inside a modal no longer closes it the instant you press down, then reopens it the instant you release. Clicking near the caption briefly moved keyboard focus to the surrounding modal window itself, which every one of these dropdowns mistook for "focus moved to something else" and closed for.
+
 ## [0.5.2] - 2026-08-16
 
 ### Fixed
