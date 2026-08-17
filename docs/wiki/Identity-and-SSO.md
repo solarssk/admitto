@@ -129,7 +129,7 @@ Do this in Cloudflare's own dashboard first, then in Admitto:
    |---|---|---|
    | Cloudflare team URL | Your Zero Trust team domain | `https://yourteam.cloudflareaccess.com` |
    | Application token (AUD) | The Application Audience tag from Cloudflare | `a1b2c3d4-e5f6-7890-abcd-ef1234567890` |
-   | Protected URL paths | Which paths this rule applies to, comma-separated | `/admin, /api/admin` |
+   | Protected URL paths | Which paths this rule applies to, comma-separated | `/admin, /api/admin, /api/checkin` |
    | Direct identity provider | The enabled direct OIDC provider from step 1, linked per step 3 | `Corporate OIDC` |
 
 5. Use **Test connection**, confirm it succeeds, and only then enable enforcement. Test in a

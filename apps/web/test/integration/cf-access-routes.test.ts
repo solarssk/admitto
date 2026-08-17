@@ -669,6 +669,26 @@ describe("CF Access admin collision point", () => {
     }
   });
 
+  it("a Cloudflare Access identity can reach the check-in API, not just /admin", async () => {
+    // The header is attached manually below, same as every other test in this file - it proves
+    // Admitto's own pre-auth accepts a valid CF Access identity here, not that Cloudflare will
+    // actually forward one for /api/checkin out of the box. That still requires the operator to
+    // add /api/checkin to the real Cloudflare Access application's own path match, separately
+    // from Admitto's Protected URL paths setting - see docs/wiki/Cloudflare-Access-Identity-Linking.md.
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-checkin-sub",
+      email: SUPER_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+    });
+    // No eventId query param - proves this got past auth (createCheckinPreAuth) and into event
+    // scoping (createCheckinEventScope), not a 401. The scan endpoint shares the same pre-auth.
+    const res = await app.request("/api/checkin/history", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
   it("public /login does not require CF JWT", async () => {
     const res = await app.request("/login");
     expect(res.status).toBe(200);

@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
+import { CF_ACCESS_DEFAULT_PROTECTED_PREFIXES } from "../constants.js";
 import {
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_ENABLED,
@@ -67,21 +68,21 @@ function parseAudience(value: unknown): string[] {
 function parsePrefixes(value: unknown): string[] {
   if (Array.isArray(value)) {
     const prefixes = value.map((v) => String(v).trim()).filter(Boolean);
-    return prefixes.length > 0 ? prefixes : ["/admin", "/api/admin"];
+    return prefixes.length > 0 ? prefixes : CF_ACCESS_DEFAULT_PROTECTED_PREFIXES;
   }
   if (typeof value === "string" && value.trim()) {
     try {
       const parsed = JSON.parse(value) as unknown;
       if (Array.isArray(parsed)) {
         const prefixes = parsed.map((v) => String(v).trim()).filter(Boolean);
-        return prefixes.length > 0 ? prefixes : ["/admin", "/api/admin"];
+        return prefixes.length > 0 ? prefixes : CF_ACCESS_DEFAULT_PROTECTED_PREFIXES;
       }
     } catch {
       const prefixes = value.split(",").map((s) => s.trim()).filter(Boolean);
-      return prefixes.length > 0 ? prefixes : ["/admin", "/api/admin"];
+      return prefixes.length > 0 ? prefixes : CF_ACCESS_DEFAULT_PROTECTED_PREFIXES;
     }
   }
-  return ["/admin", "/api/admin"];
+  return CF_ACCESS_DEFAULT_PROTECTED_PREFIXES;
 }
 
 let runtimeConfigCache: CfAccessConfig | null = null;
@@ -118,7 +119,7 @@ export function buildCfAccessConfigFromFields(input: {
   sourceProviderId: string;
 }): CfAccessConfig {
   const prefixes =
-    input.protectedPrefixes.length > 0 ? input.protectedPrefixes : ["/admin", "/api/admin"];
+    input.protectedPrefixes.length > 0 ? input.protectedPrefixes : CF_ACCESS_DEFAULT_PROTECTED_PREFIXES;
   const teamDomain = input.teamDomainRaw ? resolveTeamDomainFromRaw(input.teamDomainRaw) : "";
   return {
     enabled: input.enabled,
