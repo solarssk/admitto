@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Attendee detail's "More actions" menu now has a "Copy ticket link" action for admins and superadmins, which copies the attendee's existing ticket URL to the clipboard. Previously the only way to get that link was to resend the ticket email to yourself. The raw ticket token is still never exposed as attendee data - it's decrypted server-side only for this action, the same way the existing wallet-pass link actions already work, and each copy is recorded in the attendee's action log.
+
 ### Fixed
 
 - Selecting attendees on the Attendees list and clicking "Send tickets" (single or bulk) no longer silently skips anyone who already received a ticket, reporting "No tickets were queued" with nothing actually sent. It now resends to whoever already has a ticket while still sending a first ticket to anyone who doesn't, correctly recorded in the delivery log either way.
