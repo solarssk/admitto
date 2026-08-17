@@ -67,6 +67,7 @@ export const INLINE_RATE_LIMITS = {
   "mfa:verify-totp": { windowMs: 15 * 60_000, max: 10 },
   "mfa:verify-recovery": { windowMs: 15 * 60_000, max: 30 },
   "mfa:enroll": { windowMs: 15 * 60_000, max: 10 },
+  "account:password-check": { windowMs: 60_000, max: 10 },
 } as const satisfies Record<string, InlineRateLimit>;
 
 export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
@@ -90,6 +91,23 @@ export function adminUserEventKey(c: Context, scope: string): string {
   return userId
     ? `admin:${scope}:user:${userId}:event:${eventId}`
     : `admin:${scope}:ip:${resolveClientIp(c)}:event:${eventId}`;
+}
+
+/** Shared shape for a per-user-per-event polling GET (job-status endpoints, ~2s interval) -
+ * factored out once a third near-identical entry (wallet-message-job-status, alongside
+ * import-job-status and wallet-push-job-status) would otherwise token-duplicate the other two,
+ * tripping SonarCloud's new-code duplication gate. */
+function pollingJobStatusPolicy(scope: RateLimitScope, keyHint: string): RatePolicy {
+  return {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, keyHint),
+        windowMs: 60_000,
+        max: 120,
+        logOnExceeded: { scope, keyHint: "user_event" },
+      },
+    ],
+  };
 }
 
 function checkinRateLimitKey(c: Context, kind: CheckinRateLimitKind): string {
@@ -203,6 +221,24 @@ export const RATE_POLICIES = {
         windowMs: 60_000,
         max: 10,
         logOnExceeded: { scope: "login_ip" },
+      },
+    ],
+  },
+  /** Whole /api/account/* route group - own IP bucket, deliberately separate from
+   * auth:login-ip. These routes run before requireSession (some pre-date the current
+   * caller's session even being established), so without their own bucket a handful of
+   * cheap, credential-free requests here would drain the same IP's budget for the public
+   * login route (or vice versa) - a shared office/VPN egress address then locks every
+   * legitimate user behind it out of login. Same 10/60s shape as auth:login-ip: this is
+   * the same class of pre-auth-reachable endpoint, just reached via /api/account/* instead
+   * of /api/auth/login. */
+  "auth:account-ip": {
+    checks: [
+      {
+        keyOf: (c) => `auth:account:ip:${resolveClientIp(c)}`,
+        windowMs: 60_000,
+        max: 10,
+        logOnExceeded: { scope: "account_ip" },
       },
     ],
   },
@@ -322,6 +358,38 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Polling GET …/wallet-push/jobs/:jobId - same ~2s interval and budget as import-job-status. */
+  "admin:wallet-push-job-status": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "wallet-push-job-status"),
+        windowMs: 60_000,
+        max: 120,
+        logOnExceeded: { scope: "admin_wallet_push_job_status", keyHint: "user_event" },
+      },
+    ],
+  },
+  /** Polling GET …/wallet-message/jobs/:jobId - same budget class as wallet-push-job-status. */
+  "admin:wallet-message-job-status": pollingJobStatusPolicy(
+    "admin_wallet_message_job_status",
+    "wallet-message-job-status",
+  ),
+  /** POST …/wallet-message/send handles both dry-run (recipient count) and the real send -
+   * dry-run is exempted via skipWalletMessageRateLimitForDryRun so adjusting filters while
+   * composing stays responsive; the real send itself is tightly bounded. Less strict than mail's
+   * admin:resend-bulk (3/10min) since a wallet push carries no email deliverability/spam-
+   * reputation risk, but still bounded against accidental or abusive repeat sends. */
+  "admin:wallet-message-send": {
+    checks: [
+      {
+        when: (c) => c.get("walletMessageDryRun") !== true,
+        keyOf: (c) => adminUserEventKey(c, "wallet-message-send"),
+        windowMs: 600_000,
+        max: 10,
+        logOnExceeded: { scope: "admin_wallet_message_send", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:template-preview": {
     checks: [
       {
@@ -385,6 +453,27 @@ export const RATE_POLICIES = {
         max: 30,
         onExceeded: (c) => c.json({ error: "resend_global_limit" }, 429),
         logOnExceeded: { scope: "admin_resend", keyHint: "user_global" },
+      },
+    ],
+  },
+  // Per-attendee, not per-event or per-route: bounds how fast one admin can loop PATCH requests
+  // against a single attendee, which is what a scripted resubmit-to-trigger-a-wallet-push abuse
+  // pattern would target (bot review, PR3) - a real admin editing several different attendees in
+  // a burst never approaches this. 20/min is generous for legitimate back-to-back corrections on
+  // the same record, tight enough that a scripted loop hits it almost immediately.
+  "admin:attendee-patch": {
+    checks: [
+      {
+        keyOf: (c) => {
+          const attendeeId = c.req.param("id");
+          const userId = authUserId(c);
+          return userId
+            ? `admin:attendee-patch:user:${userId}:attendee:${attendeeId}`
+            : `admin:attendee-patch:ip:${resolveClientIp(c)}:attendee:${attendeeId}`;
+        },
+        windowMs: 60_000,
+        max: 20,
+        logOnExceeded: { scope: "admin_attendee_patch", keyHint: "user_attendee" },
       },
     ],
   },
@@ -541,22 +630,65 @@ export function createHealthzRateLimitMiddleware(
   return rateLimit(store, "ops:healthz", { instanceId });
 }
 
+/**
+ * Throttle a sensitive re-auth check (OIDC link step-up password, account current-password
+ * verification) per user and IP (inline, not middleware). The user-scoped bucket is the
+ * load-bearing one: it stays fixed to the account being attacked regardless of which IP the
+ * request comes from, so an attacker holding a stolen session cookie can't outrun it by rotating
+ * source IPs. The IP-scoped bucket is defense-in-depth on top of that.
+ */
+async function checkReauthRateLimit(
+  store: RateLimitStore,
+  keyPrefix: string,
+  limitName: InlineRateLimitName,
+  scope: RateLimitScope,
+  userId: string,
+  ip: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS[limitName];
+  const userResult = await store.hit(`${keyPrefix}:user:${userId}`, windowMs, max);
+  if (!userResult.allowed) {
+    logRateLimitExceeded({ scope, ip, keyHint: "user" });
+    return false;
+  }
+  const ipResult = await store.hit(`${keyPrefix}:ip:${ip}`, windowMs, max);
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope, ip, keyHint: "ip" });
+    return false;
+  }
+  return true;
+}
+
 /** Throttle OIDC link step-up password attempts per user and IP (inline, not middleware). */
 export async function checkOidcLinkStepUpRateLimit(
   store: RateLimitStore,
   userId: string,
   ip: string,
 ): Promise<boolean> {
-  const { windowMs, max } = INLINE_RATE_LIMITS["oidc:link-stepup"];
-  const userResult = await store.hit(`oidc:link:stepup:user:${userId}`, windowMs, max);
-  if (!userResult.allowed) {
-    logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "user" });
-    return false;
-  }
-  const ipResult = await store.hit(`oidc:link:stepup:ip:${ip}`, windowMs, max);
-  if (!ipResult.allowed) {
-    logRateLimitExceeded({ scope: "oidc_link_stepup", ip, keyHint: "ip" });
-    return false;
-  }
-  return true;
+  return checkReauthRateLimit(
+    store,
+    "oidc:link:stepup",
+    "oidc:link-stepup",
+    "oidc_link_stepup",
+    userId,
+    ip,
+  );
+}
+
+/** Throttle current-password verification on account/step-up endpoints (password change, MFA
+ * reset, SSO unlink) per user and IP (inline, not middleware) - same shape as
+ * {@link checkOidcLinkStepUpRateLimit}, see {@link checkReauthRateLimit}. */
+export async function checkAccountPasswordRateLimit(
+  store: RateLimitStore,
+  userId: string,
+  ip: string,
+): Promise<boolean> {
+  return checkReauthRateLimit(
+    store,
+    "account:password-check",
+    "account:password-check",
+    "account_password_check",
+    userId,
+    ip,
+  );
 }

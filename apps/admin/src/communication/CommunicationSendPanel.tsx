@@ -8,6 +8,7 @@ import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { AttendeePicker } from "./AttendeePicker.js";
+import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
 
 interface CommunicationSendPanelProps {
   event: ArchivedGuardEvent;
@@ -313,43 +314,17 @@ export function CommunicationSendPanel({
         <p className="settings-card-intro">
           Choose which attendees get this template, check how many that is, then send.
         </p>
-        <div className="communication-recipient-cards" role="radiogroup" aria-label="Recipients">
-          {RECIPIENT_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={filterType === opt.value}
-              aria-label={opt.label}
-              aria-describedby={`communication-recipient-${opt.value}-desc`}
-              disabled={pickerLocked}
-              className={[
-                "communication-recipient-card",
-                filterType === opt.value && "communication-recipient-card--active",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() => {
-                setFilterType(opt.value);
-                setRecipientCount(null);
-                setError(null);
-              }}
-            >
-              <i className={`ti ${opt.icon}`} aria-hidden="true" />
-              <span className="communication-recipient-card__text">
-                <span className="communication-recipient-card__label" aria-hidden="true">
-                  {opt.label}
-                </span>
-                <span
-                  id={`communication-recipient-${opt.value}-desc`}
-                  className="communication-recipient-card__description"
-                >
-                  {opt.description}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
+        <RecipientOptionCards
+          options={RECIPIENT_OPTIONS}
+          value={filterType}
+          idPrefix="communication-recipient"
+          disabled={pickerLocked}
+          onChange={(value) => {
+            setFilterType(value);
+            setRecipientCount(null);
+            setError(null);
+          }}
+        />
         {filterType === "rsvp_status" && (
           <>
             <div className="communication-half-field">
@@ -434,16 +409,7 @@ export function CommunicationSendPanel({
                 sending delivers the last saved version, not what's on screen.
               </Notice>
             )}
-            {recipientCount != null &&
-              (recipientCount === 0 ? (
-                <Notice variant="warning" as="output">
-                  No recipients match this filter.
-                </Notice>
-              ) : (
-                <Notice variant="success" as="output">
-                  <strong>{recipientCount}</strong> recipient{recipientCount === 1 ? "" : "s"} matched
-                </Notice>
-              ))}
+            <RecipientCountNotice count={recipientCount} />
             <div className="communication-send-panel__actions">
               <Button
                 type="button"

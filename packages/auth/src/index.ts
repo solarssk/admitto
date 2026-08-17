@@ -79,6 +79,7 @@ export {
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
+  SETTING_CF_ACCESS_SOURCE_PROVIDER_ID,
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
   SETTING_WEBAUTHN_ENABLED,
@@ -115,6 +116,7 @@ export {
   normalizeCfAccessTeamDomain,
   resolveCfAccessTeamDomainForConnection,
   validateCfAccessBootConfigFromResolved,
+  validateCfAccessIdentityLinkConfig,
   pathMatchesCfProtectedPrefix,
   type CfAccessConfig,
 } from "./cloudflare-access/config.js";
@@ -130,6 +132,13 @@ export {
   clearCfAccessJwksCacheForTests,
 } from "./cloudflare-access/validate.js";
 export { logCfAccessAuth } from "./cloudflare-access/log.js";
+export {
+  CF_ACCESS_IDENTITY_CLAIM,
+  extractCfAccessSourceSubject,
+  resolveCfAccessIdentityFromValidatedJwt,
+  clearCfAccessIdentityCacheForTests,
+  type ResolveCfAccessIdentityInput,
+} from "./cloudflare-access/resolve-identity.js";
 export { testCfAccessConnection } from "./cloudflare-access/test-connection.js";
 export {
   ensureCloudflareAccessProvider,

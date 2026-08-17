@@ -218,16 +218,12 @@ describe("SecurityPanel — dangerous-value inline warnings (P0-4)", () => {
 });
 
 describe("SecurityPanel — save and reset", () => {
-  it("shows an info toast when Save is clicked with no draft changes", async () => {
+  it("disables Save when there are no draft changes", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     renderWithToastAndRouter(<SecurityPanel />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(patchSecuritySettings).not.toHaveBeenCalled();
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/No changes to save/);
-    });
+    expect(await screen.findByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    expect(patchSecuritySettings).not.toHaveBeenCalled();
   });
 
   it("discards unsaved edits when Reset is clicked", async () => {

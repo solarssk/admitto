@@ -47,6 +47,12 @@ import type {
   BulkSendDryRunResponse,
   BulkSendQueuedResponse,
   BulkSendStatusResponse,
+  WalletMessageSendBody,
+  WalletMessageDryRunResponse,
+  WalletMessageQueuedResponse,
+  WalletMessageJobStatusResponse,
+  WalletMessageHistoryResponse,
+  WalletMessageAttendeeSearchResponse,
   RsvpStatus,
   TestSendBody,
   TemplateTestSendResponse,
@@ -278,10 +284,14 @@ function isAdminAppPath(): boolean {
   return path === "/admin" || path.startsWith("/admin/");
 }
 
-/** Build a same-origin multipart POST request (browser sets Content-Type boundary). */
-function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestInit {
+/** Build a same-origin multipart request (browser sets Content-Type boundary). */
+function multipartRequestInit(
+  method: "POST" | "PATCH",
+  formData: FormData,
+  signal?: AbortSignal,
+): RequestInit {
   return {
-    method: "POST",
+    method,
     credentials: "same-origin",
     headers: {
       Origin: window.location.origin,
@@ -290,6 +300,14 @@ function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestIni
     body: formData,
     signal,
   };
+}
+
+function multipartPostInit(formData: FormData, signal?: AbortSignal): RequestInit {
+  return multipartRequestInit("POST", formData, signal);
+}
+
+function multipartPatchInit(formData: FormData, signal?: AbortSignal): RequestInit {
+  return multipartRequestInit("PATCH", formData, signal);
 }
 
 /** Build multipart form fields for an attendee import upload. */
@@ -495,6 +513,7 @@ export async function patchEvent(
     wallet_api_key: string | null;
     wallet_apple_enabled: boolean;
     wallet_google_enabled: boolean;
+    wallet_semantic_tags_enabled: boolean;
     wallet_field_mapping: Record<string, string> | null;
     location: string | null;
     capacity: number | null;
@@ -534,18 +553,44 @@ export async function fetchEventImageAssets(
   return data.items;
 }
 
-/** Upload a new named branding image asset (file + display name); server slugifies the token. */
+/** Upload a new named branding image asset (file + display name); server slugifies the token.
+ * `original` is the pre-crop file's already-uploaded `/uploads/…` URL plus the crop framing
+ * applied to produce `file` - stored so the gallery's Edit button can later re-open the crop
+ * modal on the true original instead of the already-cropped output. */
 export async function createEventImageAsset(
   eventId: string,
   file: File,
   name: string,
+  original?: { url: string; crop: LogoCropMeta },
 ): Promise<EventImageAssetDto> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("name", name);
+  if (original) {
+    fd.append("original_url", original.url);
+    fd.append("crop", JSON.stringify(original.crop));
+  }
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/image-assets`,
     multipartPostInit(fd),
+  );
+  return parseJson<EventImageAssetDto>(res);
+}
+
+/** Re-crop an already-uploaded image asset in place - `token`/`filename`/`original_url` are
+ * unchanged; only the cropped `file` and its crop framing are replaced. */
+export async function updateEventImageAsset(
+  eventId: string,
+  assetId: string,
+  file: File,
+  crop: LogoCropMeta,
+): Promise<EventImageAssetDto> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("crop", JSON.stringify(crop));
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/image-assets/${encodeURIComponent(assetId)}`,
+    multipartPatchInit(fd),
   );
   return parseJson<EventImageAssetDto>(res);
 }
@@ -983,18 +1028,92 @@ export interface BulkTicketTypeResponse {
   conflictCount: number;
 }
 
+/** ticket_type is always wallet-content-relevant, so a successful bulk change enqueues a
+ * wallet_push job for whichever rows actually changed - null when nothing changed (job would
+ * have been a no-op). Not part of BulkTicketTypeResponse itself: bulk RSVP reuses that type via
+ * BulkRsvpResponse below and has no wallet relevance. */
+export interface BulkTicketTypeResult extends BulkTicketTypeResponse {
+  walletPushJobId: string | null;
+}
+
 /** Assign one catalog ticket type to every selected attendee. Ids outside the event are
  * silently ignored server-side; rows already carrying the type are counted separately. */
 export async function bulkChangeTicketType(
   eventId: string,
   attendeeIds: string[],
   ticketType: string,
-): Promise<BulkTicketTypeResponse> {
+): Promise<BulkTicketTypeResult> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-ticket-type`,
     jsonPostInit({ attendeeIds, ticket_type: ticketType }),
   );
-  return parseJson<BulkTicketTypeResponse>(res);
+  return parseJson<BulkTicketTypeResult>(res);
+}
+
+export interface WalletPushJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  reissued: number | null;
+  skipped: number | null;
+  errored: number | null;
+}
+
+/** Poll async wallet_push job status - enqueued by bulkChangeTicketType above. */
+export async function fetchWalletPushJobStatus(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<WalletPushJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletPushJobStatusResponse>(res);
+}
+
+/** Which attendees a wallet_push job actually targeted - `null` for a job that predates this
+ * field, or whose stored request wasn't recognized. */
+export type WalletPushHistoryScope =
+  | { kind: "attendee_ids"; count: number }
+  | { kind: "event_wide"; reason: "location" | "settings" | null };
+
+export interface WalletPushHistoryEntry {
+  id: string;
+  created_at: string;
+  client_timezone: string | null;
+  reissued: number;
+  skipped: number;
+  errored: number;
+  status: "succeeded" | "failed";
+  error: string | null;
+  scope: WalletPushHistoryScope | null;
+}
+
+export interface WalletPushHistoryPage {
+  items: WalletPushHistoryEntry[];
+  total: number;
+}
+
+/** Paginated terminal wallet_push jobs for the event (newest first) - the async job system's own
+ * triggers only (currently: bulk ticket type change, or a wallet-relevant settings/location
+ * save). Single-attendee field edits push directly and synchronously (see
+ * handlePatchEventAttendee), so they never appear here. */
+export async function fetchWalletPushHistory(
+  eventId: string,
+  page: number,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<WalletPushHistoryPage> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-push/history?${params.toString()}`,
+    { credentials: "same-origin", signal },
+  );
+  const body = await parseJson<{ items: WalletPushHistoryEntry[]; total: number }>(res);
+  return { items: body.items, total: body.total };
 }
 
 /** Same shape as BulkTicketTypeResponse - one type for both structurally identical bulk
@@ -1414,6 +1533,68 @@ export async function fetchBulkSendStatus(
     { credentials: "same-origin", signal },
   );
   return parseJson<BulkSendStatusResponse>(res);
+}
+
+/** Queue or dry-run a wallet message send for selected attendees (see BulkSendFilter's
+ * counterpart WalletMessageFilter - only "all"/"ticket_type"/"attendee_ids", server-scoped to
+ * attendees with an active wallet pass). */
+export async function sendWalletMessage(
+  eventId: string,
+  body: WalletMessageSendBody & { dryRun: true },
+): Promise<WalletMessageDryRunResponse>;
+export async function sendWalletMessage(
+  eventId: string,
+  body: Omit<WalletMessageSendBody, "dryRun"> & { dryRun?: false },
+): Promise<WalletMessageQueuedResponse>;
+export async function sendWalletMessage(
+  eventId: string,
+  body: WalletMessageSendBody,
+): Promise<WalletMessageDryRunResponse | WalletMessageQueuedResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/send`,
+    jsonPostInit(body),
+  );
+  return parseJson<WalletMessageDryRunResponse | WalletMessageQueuedResponse>(res);
+}
+
+/** Poll async wallet_message job status - enqueued by sendWalletMessage above. */
+export async function fetchWalletMessageJob(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<WalletMessageJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletMessageJobStatusResponse>(res);
+}
+
+/** Recent terminal wallet_message sends for this event. */
+export async function fetchWalletMessageHistory(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<WalletMessageHistoryResponse> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/history`, {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<WalletMessageHistoryResponse>(res);
+}
+
+/** Type-to-search attendees who currently have an active wallet pass - the search function the
+ * Wallets tab's AttendeePicker instance uses instead of the general fetchEventAttendees. */
+export async function fetchWalletMessageAttendees(
+  eventId: string,
+  params: { q: string; pageSize: number },
+  signal?: AbortSignal,
+): Promise<WalletMessageAttendeeSearchResponse> {
+  const query = new URLSearchParams({ q: params.q, pageSize: String(params.pageSize) });
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-message/attendees?${query.toString()}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletMessageAttendeeSearchResponse>(res);
 }
 
 /** Build query string for paginated event delivery log requests. */
@@ -2079,8 +2260,11 @@ export async function revokeUserRole(id: string, assignmentId: string): Promise<
   }
 }
 
-export async function resetUserMfa(id: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/reset-2fa`, jsonPostInit({}));
+export async function resetUserMfa(id: string, code?: string): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/reset-2fa`,
+    jsonPostInit(code ? { code } : {}),
+  );
   return parseJson<{ ok: boolean }>(res);
 }
 

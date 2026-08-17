@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
 import { EMERGENCY_RECOVERY_LABEL } from "../constants.js";
+import { runInTransaction } from "../prisma-tx.js";
 import {
   generateRecoveryCodePlaintext,
   hashRecoveryCode,
@@ -20,26 +21,28 @@ export async function generateEmergencyRecoveryCode(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
 ): Promise<EmergencyRecoveryResult> {
-  await prisma.userMfaMethod.deleteMany({
-    where: {
-      user_id: userId,
-      type: "recovery",
-      label: EMERGENCY_RECOVERY_LABEL,
-      last_used_at: null,
-    },
-  });
+  return runInTransaction(prisma, async (tx) => {
+    await tx.userMfaMethod.deleteMany({
+      where: {
+        user_id: userId,
+        type: "recovery",
+        label: EMERGENCY_RECOVERY_LABEL,
+        last_used_at: null,
+      },
+    });
 
-  const code = generateRecoveryCodePlaintext();
-  await prisma.userMfaMethod.create({
-    data: {
-      user_id: userId,
-      type: "recovery",
-      credential_hash: await hashRecoveryCode(code),
-      label: EMERGENCY_RECOVERY_LABEL,
-    },
-  });
+    const code = generateRecoveryCodePlaintext();
+    await tx.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "recovery",
+        credential_hash: await hashRecoveryCode(code),
+        label: EMERGENCY_RECOVERY_LABEL,
+      },
+    });
 
-  return { code };
+    return { code };
+  });
 }
 
 /** Verify and consume emergency recovery code. */

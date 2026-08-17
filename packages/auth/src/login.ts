@@ -28,7 +28,12 @@ import { userRequiresMfa, userHasAnyConfirmedMfaMethod, userHasUnacknowledgedBac
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { verifyTotpOrRecoveryCodeDetailed } from "./mfa/verify-step-up-code.js";
 import { getTrustedDeviceDays } from "./settings/resolver.js";
-import { recordFailedLoginFailureSideEffects, resetFailedLoginStreak } from "./privileged-login-alert.js";
+import {
+  recordFailedLoginFailureSideEffects,
+  resetFailedLoginStreak,
+  recordFailedMfaFailureSideEffects,
+  resetFailedMfaFailureStreak,
+} from "./privileged-login-alert.js";
 
 /** Credentials and request metadata for `login()`. */
 export interface LoginInput {
@@ -66,6 +71,7 @@ export async function login(
     await logLoginFailure(
       prisma,
       audit ?? { email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone },
+      "invalid_credentials",
     );
     await recordFailedLoginFailureSideEffects(prisma, user, { ip: input.ip });
     return INVALID;
@@ -75,7 +81,13 @@ export async function login(
     await logLoginFailure(
       prisma,
       audit ?? { email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone },
+      "inactive",
     );
+    // Same side-effect round trips as the invalid-credentials branch above (P0 security
+    // review): a correct password against a deactivated account must take the same time as a
+    // wrong password, or response latency alone tells an attacker with a breached credential
+    // pair that the password is right and only the account is deactivated.
+    await recordFailedLoginFailureSideEffects(prisma, user, { ip: input.ip });
     return { ok: false, reason: "inactive" };
   }
 
@@ -90,7 +102,10 @@ export async function login(
       next = LOGIN_NEXT.ENROLLMENT_REQUIRED;
     } else if (
       input.trustedDeviceToken &&
-      (await validateTrustedDevice(prisma, user.id, input.trustedDeviceToken))
+      (await validateTrustedDevice(prisma, user.id, input.trustedDeviceToken, {
+        ip: input.ip,
+        userAgent: input.userAgent,
+      }))
     ) {
       stage = SESSION_STAGE.FULL;
       next = LOGIN_NEXT.COMPLETE;
@@ -158,7 +173,8 @@ export interface CompleteMfaResult {
 }
 
 type CompleteMfaTxResult =
-  | { ok: false; reason: "invalid_code" | "session_not_promoted" | "recovery_consume_conflict" }
+  | { ok: false; reason: "invalid_code" | "recovery_consume_conflict" }
+  | { ok: false; reason: "session_not_promoted"; method: MfaMethod }
   | {
       ok: true;
       method: MfaMethod;
@@ -166,6 +182,21 @@ type CompleteMfaTxResult =
       trustedDeviceRawToken?: string;
       stage: SessionStage;
     };
+
+/**
+ * Thrown only inside `completeMfaInTransaction`, and only after `verifyTotpOrRecoveryCodeDetailed`
+ * has already verified (and, for a recovery code, consumed) the code. Letting this escape the
+ * `$transaction` callback aborts it, rolling the consumption back too - otherwise a locked-out
+ * user's single active emergency code could be permanently burned for nothing just because their
+ * partial session expired or was concurrently revoked between code entry and promotion. Caught in
+ * `completeMfa` and turned back into a normal `session_not_promoted` failure result, but only
+ * when `completeMfa` opened this transaction itself - see that function's own docstring.
+ */
+class SessionPromotionFailedAfterCodeVerifiedError extends Error {
+  constructor(public readonly method: MfaMethod) {
+    super("mfa session promotion failed after code verification");
+  }
+}
 
 async function completeMfaInTransaction(
   tx: Prisma.TransactionClient,
@@ -182,7 +213,7 @@ async function completeMfaInTransaction(
   }
 
   const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
-  if (!promotedStage) return { ok: false, reason: "session_not_promoted" };
+  if (!promotedStage) throw new SessionPromotionFailedAfterCodeVerifiedError(codeResult.method);
 
   const method: MfaMethod = codeResult.method;
   const recoveryMethod = method === "totp" ? undefined : method;
@@ -209,7 +240,9 @@ async function completeMfaInTransaction(
   return { ok: true, method, recoveryMethod, stage: promotedStage };
 }
 
-/** Emit MFA audit events after the DB transaction commits (success paths only). */
+/** Emit MFA audit events, and the repeated-failure alert side effect, after the DB transaction
+ * settles (both success and failure paths - every failure reason is now audited, not just a
+ * wrong code, so a `session_not_promoted` rollback still leaves a forensic trail). */
 async function emitMfaAudit(
   db: PrismaClient | Prisma.TransactionClient,
   audit: MfaAuditContext | undefined,
@@ -223,8 +256,11 @@ async function emitMfaAudit(
     userAgent: input.userAgent,
   };
   if (!result.ok) {
+    await logMfaFailure(db, auditCtx, result.reason, result.reason === "session_not_promoted" ? result.method : undefined);
+    // Only a wrong code counts toward the repeated-guessing alert streak - a recovery-consume
+    // race or a session-promotion failure both mean the code itself was correct.
     if (result.reason === "invalid_code") {
-      await logMfaFailure(db, auditCtx);
+      await recordFailedMfaFailureSideEffects(db, input.userId, { ip: input.ip });
     }
     return;
   }
@@ -232,6 +268,7 @@ async function emitMfaAudit(
     await logMfaRecoveryConsumed(db, auditCtx, result.recoveryMethod);
   }
   await logMfaSuccess(db, auditCtx, result.method);
+  await resetFailedMfaFailureStreak(db, input.userId);
   if (result.trustedDeviceRawToken) {
     await logTrustedDeviceCreated(db, auditCtx);
   }
@@ -240,7 +277,19 @@ async function emitMfaAudit(
 /**
  * Complete MFA step: TOTP or backup/emergency recovery code.
  * Promotes session when the code is valid; recovery codes are consumed before
- * promotion so a consume race cannot leave a promoted session behind.
+ * promotion so a consume race cannot leave a promoted session behind. When a code
+ * verifies correctly but promotion still fails afterward, the transaction rolls back
+ * (see `SessionPromotionFailedAfterCodeVerifiedError`) so the code is never burned for
+ * nothing, and the failure is still audited via `emitMfaAudit`.
+ *
+ * That rollback guarantee only holds when `prisma` is a root client: this function opens its
+ * own `$transaction` there, so it's the one rolling the consumption back before converting the
+ * thrown sentinel into a normal `session_not_promoted` result. When `prisma` is already a
+ * `Prisma.TransactionClient` (a caller-owned transaction), this function has no authority to
+ * roll that transaction back itself - swallowing the sentinel here would let the caller commit
+ * a verified, consumed code with no session ever granted. So in that mode the sentinel is left
+ * to propagate uncaught: the caller's own transaction wrapper must abort on it (and, if it wants
+ * one, produce its own audit record - `emitMfaAudit` below never runs on this path).
  */
 export async function completeMfa(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -249,7 +298,12 @@ export async function completeMfa(
 ): Promise<CompleteMfaResult> {
   let txResult: CompleteMfaTxResult;
   if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
-    txResult = await prisma.$transaction((tx) => completeMfaInTransaction(tx, input));
+    try {
+      txResult = await prisma.$transaction((tx) => completeMfaInTransaction(tx, input));
+    } catch (err) {
+      if (!(err instanceof SessionPromotionFailedAfterCodeVerifiedError)) throw err;
+      txResult = { ok: false, reason: "session_not_promoted", method: err.method };
+    }
   } else {
     txResult = await completeMfaInTransaction(prisma, input);
   }

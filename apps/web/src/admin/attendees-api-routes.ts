@@ -16,7 +16,6 @@ import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
 import { decryptFromString } from "@admitto/crypto";
 import { WalletProviderError, resolveWalletProvider, type WalletPassProvider } from "@admitto/wallet";
-import { resolveTicketPageDisplay, buildWalletPassInput } from "../wallet-pass-input.js";
 import {
   loadEventCustomDataFields,
   buildCustomDataFromInput,
@@ -66,6 +65,10 @@ import {
   type AttendeeSortDir,
   type ExportAttendeeSqlRow,
   buildAttendeesExportArtifact,
+  resolveTicketPageDisplay,
+  buildWalletPassInput,
+  reissueOneWalletPass,
+  resolveEventWalletProvider,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "../instance-base-url.js";
@@ -79,6 +82,7 @@ import {
   resolveMailInstanceBaseUrl,
 } from "./admin-helpers.js";
 import { loadEventAdminJob } from "./admin-job-http.js";
+import { enqueueWalletPushJob } from "./wallet-push-routes.js";
 import { mailTransportSetupErrorResponse } from "./mail-settings-shared.js";
 import { assertEventCapacityForIncoming, acquireEventCapacityLock, isCapacityReactivation } from "./event-capacity.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
@@ -1707,13 +1711,28 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
     );
 
     let walletPass = updated.wallet_pass;
+    let walletPassMaybeStale = false;
     if (statusChange !== undefined) {
       await syncWalletPassOnStatusChangeBestEffort(db, eventId, attendeeId, statusChange);
-      // The cascade above runs after `updated` was already selected inside the transaction, and
-      // may have just voided/restored the pass - re-read it fresh rather than serializing the
-      // pre-cascade snapshot below, or the response (and whatever setDetail(response) installs
-      // client-side) shows the wrong wallet badge/lifecycle action until a manual reload
-      // (CodeRabbit review).
+      walletPassMaybeStale = true;
+    }
+    if (profileChanges?.fields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) {
+      await pushWalletUpdateOnAttendeeChangeBestEffort(
+        db,
+        c,
+        eventId,
+        attendeeId,
+        profileChanges.fields,
+        statusChange === "revoked",
+      );
+      walletPassMaybeStale = true;
+    }
+    if (walletPassMaybeStale) {
+      // Either cascade above runs after `updated` was already selected inside the transaction,
+      // and may have just changed the pass's status/last_synced_at/urls - re-read it fresh rather
+      // than serializing the pre-cascade snapshot below, or the response (and whatever
+      // setDetail(response) installs client-side) shows stale wallet data until a manual reload
+      // (CodeRabbit review, extended to the field-change push above).
       walletPass = await db.walletPass.findUnique({
         where: { attendee_id: attendeeId },
         select: ATTENDEE_DETAIL_SELECT.wallet_pass.select,
@@ -1875,6 +1894,100 @@ async function syncWalletPassOnStatusChangeBestEffort(
       source: "admin",
       message: "wallet_pass_status_cascade_failed",
       fields: { eventId, attendeeId, statusChange },
+    });
+  }
+}
+
+/** Attendee fields that appear in a wallet pass via buildWalletPassInput (packages/tickets/src/
+ * wallet-pass-input.ts) - name, email, company, department, ticket type. Only these are worth an
+ * automatic push to an already-issued pass; a patch that touches only, say, custom_data or RSVP
+ * never reaches pushWalletUpdateOnAttendeeChangeBestEffort below. */
+const WALLET_RELEVANT_ATTENDEE_FIELDS: ReadonlySet<string> = new Set([
+  "first_name",
+  "last_name",
+  "email",
+  "company",
+  "department",
+  "ticket_type",
+]);
+
+/** Best-effort: pushes the attendee's current name/ticket type/event details to their
+ * already-issued *active* wallet pass whenever a save changes one of
+ * WALLET_RELEVANT_ATTENDEE_FIELDS above - the attendee-scoped counterpart of
+ * event-settings-routes.ts's own pushWalletUpdatesBestEffort for the event's basic fields. A
+ * single attendee is one PassCreator call, cheap enough to push synchronously rather than through
+ * the wallet_push job system built for the event-wide/bulk triggers. Only an *active* pass is
+ * pushed - a voided one shows its void state regardless, so refreshing its content isn't useful
+ * background work (same reasoning as the event-wide push's own status: "active" filter). Runs
+ * after the caller's own DB transaction has committed, same posture as
+ * syncWalletPassOnStatusChangeBestEffort above.
+ *
+ * `justVoidedThisRequest` overrides the active-only gate: when the very same PATCH also set
+ * status: revoked, syncWalletPassOnStatusChangeBestEffort above already flipped the pass to
+ * voided before this function re-reads it, so the plain active check would silently drop the
+ * content change instead of just skipping a no-op push. updatePass only ever touches content,
+ * never the voided flag (see reissueOneWalletPass), so pushing here is safe and keeps the pass
+ * accurate for whenever it's later restored, rather than leaving stale name/company/etc. behind
+ * for a status-only restore to (not) fix (bot review, Codex).
+ *
+ * Self-gates on `changedFields` (bot review) rather than trusting the caller to have already
+ * filtered - the call site below also checks this first to skip the call (and the response's
+ * wallet_pass re-read) entirely on a no-op-for-wallet-purposes patch, but a future caller must
+ * not be able to reintroduce an unconditional push just by skipping that pre-check. Everything
+ * after the guard, including the two lookups the reissue itself depends on, is inside the
+ * try/catch - a transient DB error here must be swallowed the same as a PassCreator failure,
+ * never surfaced as a 500 for an attendee edit that already committed (bot review). */
+async function pushWalletUpdateOnAttendeeChangeBestEffort(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  attendeeId: string,
+  changedFields: readonly string[],
+  justVoidedThisRequest: boolean,
+): Promise<void> {
+  if (!changedFields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) return;
+
+  try {
+    const [event, walletPass] = await Promise.all([
+      db.event.findUnique({
+        where: { id: eventId },
+        select: {
+          wallet_enabled: true,
+          wallet_template_id: true,
+          wallet_api_key_enc: true,
+          wallet_field_mapping: true,
+        },
+      }),
+      db.walletPass.findUnique({
+        where: { attendee_id: attendeeId },
+        select: { provider_pass_id: true, status: true },
+      }),
+    ]);
+    if (!event || !walletPass?.provider_pass_id) return;
+    if (walletPass.status !== "active" && !justVoidedThisRequest) return;
+
+    const provider = resolveWalletProvider({
+      walletEnabled: event.wallet_enabled,
+      walletTemplateId: event.wallet_template_id,
+      walletApiKeyEnc: event.wallet_api_key_enc,
+      walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+    });
+    if (!provider) return;
+
+    await reissueOneWalletPass(
+      db,
+      eventId,
+      { attendeeId, providerPassId: walletPass.provider_pass_id },
+      provider,
+      adminAuditFromContext(c),
+    );
+  } catch (err) {
+    console.error("wallet attendee-change push failed:", err);
+    recordSystemLog({
+      level: "error",
+      source: "admin",
+      message: "wallet_attendee_change_push_failed",
+      fields: { eventId, attendeeId },
     });
   }
 }
@@ -2086,14 +2199,14 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
     column: Prisma.Sql;
     setClause: Prisma.Sql;
   },
-): Promise<{ updatedCount: number; alreadySetCount: number; conflictCount: number }> {
+): Promise<{ updatedCount: number; alreadySetCount: number; conflictCount: number; updatedIds: string[] }> {
   const changes: Array<{ id: string; oldValue: string | null; metadata: Record<string, unknown> }> = [];
   for (const row of owned) {
     const change = computeChange(row);
     if (change) changes.push({ id: row.id, oldValue: change.oldValue, metadata: change.metadata });
   }
   if (changes.length === 0) {
-    return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0 };
+    return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0, updatedIds: [] };
   }
 
   const values = Prisma.join(changes.map((x) => Prisma.sql`(${x.id}::text, ${x.oldValue}::text)`));
@@ -2126,6 +2239,7 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
     updatedCount: succeeded.length,
     alreadySetCount: owned.length - changes.length,
     conflictCount: changes.length - succeeded.length,
+    updatedIds: succeeded.map((x) => x.id),
   };
 }
 
@@ -2171,7 +2285,7 @@ export async function handleBulkTicketTypeEventAttendees(
   const { attendeeIds, ticket_type } = parsed.data;
 
   try {
-    const counts = await db.$transaction(async (tx) => {
+    const { updatedIds, ...counts } = await db.$transaction(async (tx) => {
       await acquireEventTicketTypesLock(tx, eventId);
       const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);
       if (ticketTypeError) throw c.json(ticketTypeError, 400);
@@ -2194,7 +2308,26 @@ export async function handleBulkTicketTypeEventAttendees(
       );
     });
 
-    return c.json(counts);
+    // Best-effort - ticket_type is always wallet-content-relevant (ticketTypeLabel), so any row
+    // this write actually changed is a candidate; enqueueWalletPushJob itself re-checks which
+    // ones still have an active WalletPass and no-ops entirely when none do. Outside the
+    // transaction above: job creation doesn't need atomicity with the ticket_type write, and an
+    // event lookup failure here must not roll back a change that already committed. Caught
+    // separately from the transaction (bot review): the ticket_type write already succeeded at
+    // this point, so a transient failure here must still report that success, not a blanket 500 -
+    // a 500 would make the operator retry, find every row already at the target type (zero
+    // updatedIds on the retry), and silently never get a replacement wallet push queued.
+    let walletPushJobId: string | null = null;
+    try {
+      const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+      if (event) {
+        walletPushJobId = await enqueueWalletPushJob(db, c, eventId, event.organization_id, updatedIds);
+      }
+    } catch (enqueueErr) {
+      console.error("handleBulkTicketTypeEventAttendees: wallet push enqueue failed:", enqueueErr);
+    }
+
+    return c.json({ ...counts, walletPushJobId });
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("handleBulkTicketTypeEventAttendees failed:", err);
@@ -2241,7 +2374,9 @@ export async function handleBulkRsvpEventAttendees(
   const { attendeeIds, rsvp_status } = parsed.data;
 
   try {
-    const counts = await db.$transaction(async (tx) => {
+    // updatedIds isn't part of the RSVP response - rsvp_status has no wallet relevance, unlike
+    // ticket_type's bulk sibling below, which does forward it (to enqueue a wallet_push job).
+    const { updatedIds: _updatedIds, ...counts } = await db.$transaction(async (tx) => {
       const owned = await tx.attendee.findMany({
         where: { id: { in: attendeeIds }, event_id: eventId },
         select: { id: true, rsvp_status: true },
@@ -2699,30 +2834,6 @@ const bulkWalletAttendeesBodySchema = z
   })
   .strict();
 
-/** Resolves the event's wallet provider once for a whole bulk request, rather than once per
- * attendee - same reasoning as deleteWalletPassesBestEffort's own single resolve+decrypt. */
-async function resolveEventWalletProviderForBulk(
-  db: PrismaClient,
-  eventId: string,
-): Promise<WalletPassProvider | null> {
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: {
-      wallet_enabled: true,
-      wallet_template_id: true,
-      wallet_api_key_enc: true,
-      wallet_field_mapping: true,
-    },
-  });
-  if (!event) return null;
-  return resolveWalletProvider({
-    walletEnabled: event.wallet_enabled,
-    walletTemplateId: event.wallet_template_id,
-    walletApiKeyEnc: event.wallet_api_key_enc,
-    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
-  });
-}
-
 /** Attendees (within the given, event-owned set) that have a WalletPass row with a known
  * provider_pass_id - the ones a bulk wallet action can actually touch. Attendees missing from
  * the returned array (never created a pass) count as skipped by the caller. */
@@ -2809,7 +2920,7 @@ async function runBulkWalletAction<K extends string>(
   const label = action.slice("wallet_".length);
   const counts = { [successKey]: 0, skipped: 0, errored: 0 } as Record<K | "skipped" | "errored", number>;
   try {
-    const provider = await resolveEventWalletProviderForBulk(db, eventId);
+    const provider = await resolveEventWalletProvider(db, eventId);
     if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
 
     const targets = await loadBulkWalletTargets(db, eventId, parsed.data.attendeeIds);
@@ -2849,69 +2960,6 @@ async function runBulkWalletAction<K extends string>(
  * with no WalletPass row, or whose pass is already voided, count as skipped rather than errored. */
 export async function handleBulkVoidAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
   return runBulkWalletAction(c, db, "voided", "wallet_void", voidOneWalletPass);
-}
-
-/** Rebuilds one attendee's wallet pass from their current data, same core logic as
- * handleReissueAttendeeWalletPass's single-attendee path. Attendees with no resolvable ticket
- * (never issued) count as skipped, matching that route's 409. Exported for reuse by
- * event-settings-routes.ts's own best-effort push when an event's wallet-relevant fields change. */
-export async function reissueOneWalletPass(
-  db: PrismaClient,
-  eventId: string,
-  target: { attendeeId: string; providerPassId: string },
-  provider: WalletPassProvider,
-  audit: OpsAuditContext,
-): Promise<"reissued" | "skipped"> {
-  const attendee = await db.attendee.findUnique({
-    where: { id: target.attendeeId },
-    select: { qr_payload: true, external_uuid: true, token_enc: true },
-  });
-  if (!attendee) return "skipped";
-  const scanned =
-    attendee.qr_payload ?? attendee.external_uuid ?? (attendee.token_enc ? decryptFromString(attendee.token_enc) : null);
-  if (!scanned) return "skipped";
-
-  const resolved = await resolveTicket(scanned, db, { eventId });
-  if (!resolved) return "skipped";
-
-  const display = await resolveTicketPageDisplay(db, resolved);
-  const input = buildWalletPassInput(display, scanned);
-
-  let result;
-  try {
-    result = await provider.updatePass(target.providerPassId, input);
-  } catch (err) {
-    await db.walletPass.update({
-      where: { attendee_id: target.attendeeId },
-      data: { last_error_code: err instanceof WalletProviderError ? err.code : "wallet_provider_rejected" },
-    });
-    throw err;
-  }
-
-  await db.$transaction(async (tx) => {
-    // updatePass only patches the provider's content, never its voided flag (that's Restore's
-    // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
-    // an already-voided pass stays voided instead of falsely reporting "active" while the
-    // installed pass is still invalid at the provider, which would also hide the Restore action.
-    await tx.walletPass.update({
-      where: { attendee_id: target.attendeeId },
-      data: {
-        download_url: result.downloadUrl,
-        apple_url: result.appleUrl,
-        android_url: result.androidUrl,
-        last_error_code: null,
-        last_synced_at: new Date(),
-      },
-    });
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: target.attendeeId,
-      action_type: "wallet_pass_reissued",
-      audit,
-      metadata: { bulk: true },
-    });
-  });
-  return "reissued";
 }
 
 /** POST /api/admin/events/:eventId/attendees/bulk-wallet-reissue - push each selected attendee's

@@ -1,0 +1,288 @@
+/**
+ * Claim and run pending AdminJob type=wallet_push - rebuilds each target attendee's already-
+ * issued wallet pass from their current data (name/ticket type/event details), via the same
+ * reissueOneWalletPass used by the single-attendee and bulk "Push updates" actions. Chunked at a
+ * low concurrency (ADR 0041 §3: PassCreator's own limit is 600 req/min, "keep client concurrency
+ * low (~8)") - a large push can genuinely take minutes regardless of how this is implemented,
+ * that's PassCreator's own rate limit, not something to optimize away.
+ */
+import type { PrismaClient } from "@admitto/db";
+import {
+  DEFAULT_WORKER_HEARTBEAT_STALE_MS,
+  isWorkerHeartbeatStale,
+  positiveMsOr,
+  staleAdminJobOrClauses,
+} from "@admitto/db";
+import { resolveWalletProvider, type WalletPassProvider } from "@admitto/wallet";
+import { claimNextAdminJob } from "./claim-admin-job.js";
+import { parseWalletFieldMapping } from "./resolve.js";
+import { reissueOneWalletPass } from "./reissue-wallet-pass.js";
+import type { OpsAuditContext } from "./ops-audit.js";
+
+/** Longer than import/export's 15 min - a large push is expected to run for many minutes,
+ * bounded by PassCreator's own rate limit, not a sign the worker died. */
+export const DEFAULT_WALLET_PUSH_JOB_STALE_RUNNING_MS = 30 * 60 * 1000;
+
+export const WALLET_PUSH_CONCURRENCY = 8;
+
+export const STALE_WALLET_PUSH_JOB_ERROR =
+  "Wallet push job abandoned (worker stopped while running). Start it again.";
+export const STALE_WALLET_PUSH_PENDING_ERROR =
+  "Wallet push job was never picked up by the worker. Start the worker and try again.";
+export const WALLET_PUSH_JOB_BAD_REQUEST_ERROR = "Wallet push job has an invalid request payload.";
+export const WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR = "Wallet is not configured for this event.";
+export const WALLET_PUSH_JOB_GENERIC_ERROR = "Wallet push failed unexpectedly. Contact support if this continues.";
+
+export type DrainWalletPushJobsResult = {
+  claimed: number;
+  succeeded: number;
+  failed: number;
+  reclaimed: number;
+};
+
+/** `attendee_ids` is an operator-bounded selection (e.g. bulk ticket-type change) - the request
+ * carries exactly which attendees to push, and a target with no resolvable pass is a "skip", not
+ * an error. `event_wide` is every already-issued *active* pass under the event (event settings /
+ * location saves, with no selection cap) - there's no predetermined id list to diff against, so
+ * every row the query finds simply *is* a target; a voided pass is deliberately excluded (matches
+ * the previous best-effort push's own behaviour - refreshing a voided pass's content is not
+ * useful background work). `reason` is display-only metadata for the history list (which
+ * wallet-relevant save triggered this) - the drain worker itself never reads it, both event_wide
+ * triggers resolve targets identically regardless of which field actually changed. */
+export type WalletPushRequest =
+  | { kind: "attendee_ids"; eventId: string; attendeeIds: string[] }
+  | { kind: "event_wide"; eventId: string; reason?: "location" | "settings" };
+
+type ClaimedWalletPushJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
+
+/** Validates and parses a stored WalletPushRequest out of an AdminJob's raw result_json - shared
+ * by this file's own runOneWalletPushJob (which round-trips the parsed value back into
+ * result_json on completion, so a dropped field here is a dropped field forever) and
+ * apps/web's wallet-push-routes.ts history endpoint (which must not throw on an unexpected shape
+ * - a single malformed row must degrade to an unscoped history entry, not a 500 for the whole
+ * list). */
+export function readWalletPushRequest(job: { result_json: unknown }): WalletPushRequest | null {
+  if (!job.result_json || typeof job.result_json !== "object" || Array.isArray(job.result_json)) {
+    return null;
+  }
+  const raw = job.result_json as Record<string, unknown>;
+  const request = raw.request;
+  if (!request || typeof request !== "object" || Array.isArray(request)) return null;
+  const req = request as Record<string, unknown>;
+  if (typeof req.eventId !== "string" || !req.eventId) return null;
+  if (req.kind === "event_wide") {
+    const reason = req.reason === "location" || req.reason === "settings" ? req.reason : undefined;
+    return { kind: "event_wide", eventId: req.eventId, reason };
+  }
+  if (req.kind !== "attendee_ids") return null;
+  if (!Array.isArray(req.attendeeIds) || !req.attendeeIds.every((id) => typeof id === "string")) return null;
+  return { kind: "attendee_ids", eventId: req.eventId, attendeeIds: req.attendeeIds as string[] };
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+async function resolveEventWalletProvider(db: PrismaClient, eventId: string): Promise<WalletPassProvider | null> {
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: {
+      wallet_enabled: true,
+      wallet_template_id: true,
+      wallet_api_key_enc: true,
+      wallet_field_mapping: true,
+    },
+  });
+  if (!event) return null;
+  return resolveWalletProvider({
+    walletEnabled: event.wallet_enabled,
+    walletTemplateId: event.wallet_template_id,
+    walletApiKeyEnc: event.wallet_api_key_enc,
+    walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+  });
+}
+
+async function loadTargets(
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: string[],
+): Promise<{ attendeeId: string; providerPassId: string }[]> {
+  const rows = await db.walletPass.findMany({
+    where: {
+      attendee_id: { in: attendeeIds },
+      provider_pass_id: { not: null },
+      attendee: { event_id: eventId },
+    },
+    select: { attendee_id: true, provider_pass_id: true },
+  });
+  return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
+}
+
+/** Every already-issued *active* pass under the event - see WalletPushRequest's own doc comment
+ * for why `status: "active"` is deliberate here but not in loadTargets above. */
+async function loadEventWideTargets(
+  db: PrismaClient,
+  eventId: string,
+): Promise<{ attendeeId: string; providerPassId: string }[]> {
+  const rows = await db.walletPass.findMany({
+    where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: eventId } },
+    select: { attendee_id: true, provider_pass_id: true },
+  });
+  return rows.map((row) => ({ attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! }));
+}
+
+/** Maps the two deliberately-thrown internal signals in runOneWalletPushJob below to their
+ * operator-facing copy, and everything else (an unexpected database, crypto, or provider
+ * exception) to one generic fixed message - AdminJob.error is read verbatim by both the polling
+ * toast and the Wallet push history table, so it must never carry raw exception text (AGENTS.md's
+ * "Admin API errors in the UI" convention, applied here at the point the message is stored rather
+ * than where it's displayed; bot review, Codex). The real error is still logged server-side. */
+function walletPushJobErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message === "wallet_push_job_bad_request") return WALLET_PUSH_JOB_BAD_REQUEST_ERROR;
+    if (err.message === "wallet_not_configured") return WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR;
+  }
+  return WALLET_PUSH_JOB_GENERIC_ERROR;
+}
+
+async function markWalletPushFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
+  console.error("wallet push job failed:", err);
+  await db.adminJob.update({
+    where: { id: jobId },
+    data: {
+      status: "failed",
+      finished_at: new Date(),
+      error: walletPushJobErrorMessage(err),
+    },
+  });
+}
+
+async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob): Promise<"succeeded" | "failed"> {
+  try {
+    const request = readWalletPushRequest(job);
+    if (!request) throw new Error("wallet_push_job_bad_request");
+    const eventId = request.eventId;
+
+    const provider = await resolveEventWalletProvider(db, eventId);
+    if (!provider) throw new Error("wallet_not_configured");
+
+    // event_wide has no predetermined id list to diff targets against - the query result *is*
+    // the full selection, so there's nothing to count as "requested but no pass" (always 0).
+    const targets =
+      request.kind === "event_wide" ? await loadEventWideTargets(db, eventId) : await loadTargets(db, eventId, request.attendeeIds);
+    const skippedNoPass = request.kind === "event_wide" ? 0 : request.attendeeIds.length - targets.length;
+
+    // Denominator is the full selection, not just targets.length - keeps progress_total and the
+    // final result_json counts (reissued+skipped+errored) referring to the same set (bot review).
+    await db.adminJob.update({
+      where: { id: job.id },
+      data: {
+        progress_total: request.kind === "event_wide" ? targets.length : request.attendeeIds.length,
+        progress_done: skippedNoPass,
+      },
+    });
+
+    const audit: OpsAuditContext = {
+      operator: job.actor_user_id ?? undefined,
+      sessionId: job.session_id ?? undefined,
+      timezone: job.client_timezone ?? undefined,
+    };
+
+    let reissued = 0;
+    let skipped = skippedNoPass;
+    let errored = 0;
+    let done = skippedNoPass;
+
+    for (const batch of chunk(targets, WALLET_PUSH_CONCURRENCY)) {
+      const settled = await Promise.allSettled(
+        batch.map((target) => reissueOneWalletPass(db, eventId, target, provider, audit)),
+      );
+      for (const outcome of settled) {
+        if (outcome.status === "rejected") errored += 1;
+        else if (outcome.value === "reissued") reissued += 1;
+        else skipped += 1;
+      }
+      done += batch.length;
+      await db.adminJob.update({ where: { id: job.id }, data: { progress_done: done } });
+    }
+
+    await db.adminJob.update({
+      where: { id: job.id },
+      data: {
+        status: "succeeded",
+        finished_at: new Date(),
+        result_json: { request, reissued, skipped, errored },
+        error: null,
+      },
+    });
+    return "succeeded";
+  } catch (err) {
+    await markWalletPushFailed(db, job.id, err);
+    return "failed";
+  }
+}
+
+export function parseWalletPushJobStaleRunningMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.WALLET_PUSH_JOB_STALE_RUNNING_MS?.trim();
+  if (!raw) return DEFAULT_WALLET_PUSH_JOB_STALE_RUNNING_MS;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_WALLET_PUSH_JOB_STALE_RUNNING_MS;
+  return n;
+}
+
+export async function reclaimStaleWalletPushJobs(
+  db: PrismaClient,
+  options: { olderThanMs?: number; heartbeatStaleMs?: number; now?: Date } = {},
+): Promise<{ reclaimed: number }> {
+  const olderThanMs = positiveMsOr(options.olderThanMs, DEFAULT_WALLET_PUSH_JOB_STALE_RUNNING_MS);
+  const heartbeatStaleMs = positiveMsOr(options.heartbeatStaleMs, DEFAULT_WORKER_HEARTBEAT_STALE_MS);
+  const now = options.now ?? new Date();
+  const cutoff = new Date(now.getTime() - olderThanMs);
+  const reclaimPending = await isWorkerHeartbeatStale(db, now, heartbeatStaleMs);
+
+  const stale = await db.adminJob.findMany({
+    where: { type: "wallet_push", OR: staleAdminJobOrClauses(cutoff, reclaimPending) },
+    select: { id: true, status: true },
+    orderBy: { created_at: "asc" },
+  });
+
+  let reclaimed = 0;
+  for (const job of stale) {
+    const error = job.status === "pending" ? STALE_WALLET_PUSH_PENDING_ERROR : STALE_WALLET_PUSH_JOB_ERROR;
+    const updated = await db.adminJob.updateMany({
+      where: { id: job.id, status: job.status },
+      data: { status: "failed", error, finished_at: now },
+    });
+    if (updated.count > 0) reclaimed += 1;
+  }
+  return { reclaimed };
+}
+
+export async function drainWalletPushJobs(
+  db: PrismaClient,
+  options: { limit?: number; staleRunningMs?: number; heartbeatStaleMs?: number } = {},
+): Promise<DrainWalletPushJobsResult> {
+  const limit = options.limit && options.limit > 0 ? Math.floor(options.limit) : 1;
+  const staleRunningMs = options.staleRunningMs ?? parseWalletPushJobStaleRunningMs();
+  const { reclaimed } = await reclaimStaleWalletPushJobs(db, {
+    olderThanMs: staleRunningMs,
+    heartbeatStaleMs: options.heartbeatStaleMs,
+  });
+
+  let claimed = 0;
+  let succeeded = 0;
+  let failed = 0;
+
+  for (let i = 0; i < limit; i += 1) {
+    const job = await claimNextAdminJob(db, "wallet_push");
+    if (!job) break;
+    claimed += 1;
+    const outcome = await runOneWalletPushJob(db, job);
+    if (outcome === "succeeded") succeeded += 1;
+    else failed += 1;
+  }
+
+  return { claimed, succeeded, failed, reclaimed };
+}

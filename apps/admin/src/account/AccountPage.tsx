@@ -688,7 +688,10 @@ export function AccountPage() {
         </p>
       )}
       {!account.has_local_password ? (
-        <p className="account-info-block">Password is managed by your identity provider.</p>
+        <EmptyState
+          icon={<i className="ti ti-cloud-lock" aria-hidden="true" />}
+          title="Password is managed by your identity provider"
+        />
       ) : (
         <>
           {account.must_change_password && (
@@ -1604,12 +1607,16 @@ export function AccountPage() {
               setUnlinkSsoError("Current password is incorrect.");
             } else if (hasApiErrorCode(err, "provider_managed_roles_exist")) {
               setUnlinkSsoOpen(false);
+              setUnlinkSsoPassword("");
+              setUnlinkSsoCurrentPassword("");
               addToast(
                 "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
                 "error",
               );
             } else if (hasApiErrorCode(err, "insufficient_verification")) {
               setUnlinkSsoOpen(false);
+              setUnlinkSsoPassword("");
+              setUnlinkSsoCurrentPassword("");
               addToast(
                 "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
                 "error",

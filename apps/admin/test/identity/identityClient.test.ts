@@ -34,7 +34,15 @@ const CF_SUMMARY = {
   teamDomain: "team.example.com",
   audience: ["aud-1"],
   protectedPrefixes: ["/admin"],
-  locks: { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false },
+  sourceProviderId: "authentik",
+  sourceProviders: [{ id: "authentik", displayName: "Authentik", enabled: true }],
+  locks: {
+    enabled: false,
+    teamDomain: false,
+    audience: false,
+    protectedPrefixes: false,
+    sourceProviderId: false,
+  },
 };
 
 describe("identity API client", () => {

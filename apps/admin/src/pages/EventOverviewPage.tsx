@@ -769,6 +769,7 @@ function PinnedNoteModal({
   const titleId = useId();
   const [draft, setDraft] = useState(note ?? "");
   const [saving, setSaving] = useState(false);
+  const dirty = draft.trim() !== (note ?? "").trim();
 
   const handleSave = async () => {
     setSaving(true);
@@ -794,7 +795,7 @@ function PinnedNoteModal({
           <Button type="button" variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="button" variant="primary" onClick={() => void handleSave()} disabled={saving}>
+          <Button type="button" variant="primary" onClick={() => void handleSave()} disabled={saving || !dirty}>
             {saving ? "Saving…" : "Save"}
           </Button>
         </>
@@ -833,6 +834,12 @@ function ContactModal({
   const [phoneCountryCode, setPhoneCountryCode] = useState(initialPhone.dialCode);
   const [phoneNumber, setPhoneNumber] = useState(initialPhone.nationalNumber);
   const [saving, setSaving] = useState(false);
+  const dirty =
+    form.name.trim() !== (contact?.name ?? "") ||
+    form.role.trim() !== (contact?.role ?? "") ||
+    form.email.trim() !== (contact?.email ?? "") ||
+    phoneCountryCode !== initialPhone.dialCode ||
+    phoneNumber !== initialPhone.nationalNumber;
 
   const handleSubmit = async () => {
     if (!form.name.trim() || saving) return;
@@ -882,7 +889,7 @@ function ContactModal({
             type="button"
             variant="primary"
             onClick={() => void handleSubmit()}
-            disabled={saving || !form.name.trim()}
+            disabled={saving || !form.name.trim() || !dirty}
           >
             {submitLabel}
           </Button>
@@ -965,6 +972,11 @@ function ResourceModal({
   });
   const [saving, setSaving] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
+  const dirty =
+    form.title.trim() !== (resource?.title ?? "") ||
+    form.type !== (resource?.type ?? "link") ||
+    form.url.trim() !== (resource?.url ?? "") ||
+    form.description.trim() !== (resource?.description ?? "");
 
   const handleSubmit = async () => {
     if (!form.title.trim() || !form.url.trim() || saving) return;
@@ -1019,7 +1031,7 @@ function ResourceModal({
             type="button"
             variant="primary"
             onClick={() => void handleSubmit()}
-            disabled={saving || !form.title.trim() || !form.url.trim()}
+            disabled={saving || !form.title.trim() || !form.url.trim() || !dirty}
           >
             {submitLabel}
           </Button>

@@ -1,5 +1,5 @@
 import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
-import type { LogoPersistenceDto } from "@admitto/mail-templates";
+import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 import type { PublicKeyCredentialCreationOptionsJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
@@ -573,6 +573,10 @@ export interface EventImageAssetDto {
   token: string;
   filename: string;
   url: string;
+  /** Full pre-crop file for re-Edit; null for assets created before this field existed. */
+  original_url: string | null;
+  /** Last crop framing applied - null if there's nothing to restore. */
+  crop: LogoCropMeta | null;
   size_bytes: number;
   mime_type: string;
   created_at: string;
@@ -810,6 +814,68 @@ export interface BulkSendStatusResponse {
   queued: number;
   sent: number;
   failed: number;
+}
+
+/** Audience filter for POST `/api/admin/events/:eventId/wallet-message/send` - narrower than
+ * mail's BulkSendFilter, since every branch is already scoped server-side to attendees with an
+ * active wallet pass ("all" means all such attendees, not literally everyone on the event). */
+export type WalletMessageFilter =
+  | { type: "all" }
+  | { type: "ticket_type"; value: string }
+  | { type: "attendee_ids"; ids: string[] };
+
+export interface WalletMessageSendBody {
+  filter: WalletMessageFilter;
+  text: string;
+  dryRun?: boolean;
+}
+
+export interface WalletMessageDryRunResponse {
+  recipientCount: number;
+}
+
+export interface WalletMessageQueuedResponse {
+  jobId: string | null;
+  recipientCount: number;
+}
+
+export interface WalletMessageJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  sent: number | null;
+  skipped: number | null;
+  errored: number | null;
+  created_at: string;
+  started_at: string | null;
+}
+
+export interface WalletMessageHistoryItem {
+  id: string;
+  created_at: string;
+  sent: number;
+  skipped: number;
+  errored: number;
+  status: "succeeded" | "failed";
+  error: string | null;
+}
+
+export interface WalletMessageHistoryResponse {
+  items: WalletMessageHistoryItem[];
+}
+
+/** Row shape returned by the wallet-message-scoped attendee search - a subset of AttendeeRowDto,
+ * matching what apps/web's handleSearchWalletMessageAttendees actually returns. */
+export interface WalletMessageAttendeeDto {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface WalletMessageAttendeeSearchResponse {
+  items: WalletMessageAttendeeDto[];
 }
 
 export type MailFieldSource = "env" | "db" | "default";
@@ -1280,6 +1346,9 @@ export interface GrantUserRoleBody {
 
 export interface ResetUserPasswordBody {
   new_password: string;
+  /** Actor's own TOTP/recovery code - required by the server only when resetting another
+   * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
+  code?: string;
 }
 
 export interface RoleAssignmentListItemDto {
@@ -1737,6 +1806,13 @@ export interface CfAccessEnvLocks {
   teamDomain: boolean;
   audience: boolean;
   protectedPrefixes: boolean;
+  sourceProviderId: boolean;
+}
+
+export interface CfAccessSourceProvider {
+  id: string;
+  displayName: string;
+  enabled: boolean;
 }
 
 export interface CfAccessSummaryDto {
@@ -1744,6 +1820,8 @@ export interface CfAccessSummaryDto {
   teamDomain: string;
   audience: string[];
   protectedPrefixes: string[];
+  sourceProviderId: string;
+  sourceProviders: CfAccessSourceProvider[];
   locks: CfAccessEnvLocks;
 }
 
@@ -1851,6 +1929,7 @@ export interface CfAccessUpdateBody {
   teamDomain?: string;
   audience?: string[] | string;
   protectedPrefixes?: string[] | string;
+  sourceProviderId?: string;
 }
 
 /** POST /api/admin/identity/cf-access/test result. */

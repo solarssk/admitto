@@ -1195,8 +1195,8 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     await goToDeliveryLogTab();
     await screen.findByText("Guest One");
 
-    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
-    await screen.findByRole("tab", { name: /Send/i, selected: true });
+    fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
+    await screen.findByRole("tab", { name: /Email/i, selected: true });
 
     fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
     const tab = await screen.findByRole("tab", { name: /Delivery log/i, selected: true });

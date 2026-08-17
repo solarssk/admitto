@@ -69,8 +69,7 @@ function walletPlaceholderValues(input: WalletPassInput): Record<string, string 
  *
  * Confirmed live against app.passcreator.com 2026-08-06: `templateId`,
  * `userProvidedId`, and `enforceUniqueUserProvidedId` all live INSIDE the
- * `data` object, not as siblings — `_ops/PASSCREATOR-INTEGRATION-DOCS.md`'s
- * example (siblings) does not match the real API.
+ * `data` object, not as siblings.
  *
  * No default field mapping: PassCreator templates don't share a common set of Additional
  * Property names, so guessing keys like `name`/`eventDate` only ever matched one specific
@@ -100,7 +99,14 @@ export function toPassCreatorData(
     // does not match any real Admitto ticket.
     barcodeValue: input.barcodeValue,
   };
-  if (!fieldMapping) return base;
+  // Apple's `semantics` object (developer.passcreator.com/en/apple-wallet/semantic-tags) is a
+  // fixed-vocabulary sibling of `data`'s other top-level fields, entirely separate from the
+  // admin-configurable fieldMapping below - PassCreator ignores it for Google Wallet rendering,
+  // so this is safe to send regardless of which platform button the attendee actually used.
+  const semantics =
+    input.semantics && Object.keys(input.semantics).length > 0 ? { semantics: input.semantics } : {};
+
+  if (!fieldMapping) return { ...semantics, ...base };
 
   const values = walletPlaceholderValues(input);
   const custom: Record<string, unknown> = {};
@@ -111,5 +117,7 @@ export function toPassCreatorData(
   // base last: an admin's own field-mapping key (e.g. accidentally named "userProvidedId" or
   // "barcodeValue" after PassCreator's own API vocabulary) must never override the provider-
   // controlled identity/QR fields - those decide idempotency and which pass the barcode matches.
-  return { ...custom, ...base };
+  // semantics after custom for the same reason, in the unlikely case an admin's own mapping key
+  // happens to collide with the reserved "semantics" name.
+  return { ...custom, ...semantics, ...base };
 }

@@ -400,8 +400,8 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByRole("button", { name: "Template, Ticket email" })).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
-    await screen.findByRole("tab", { name: /Send/i, selected: true });
+    fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
+    await screen.findByRole("tab", { name: /Email/i, selected: true });
 
     fireEvent.click(screen.getByRole("button", { name: "Template, Ticket email" }));
     fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
@@ -543,6 +543,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -567,6 +571,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -590,6 +598,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -1157,8 +1169,8 @@ describe("CommunicationPage templates", () => {
       expect(screen.getByLabelText("Subject")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
-    await screen.findByRole("tab", { name: /Send/i, selected: true });
+    fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
+    await screen.findByRole("tab", { name: /Email/i, selected: true });
 
     expect(
       await screen.findByText(/This event has no template of its own yet/),
@@ -1659,6 +1671,10 @@ describe("CommunicationPage templates", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
@@ -1691,6 +1707,11 @@ describe("CommunicationPage templates", () => {
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited reminder" } });
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    // The metadata dialog's own Save is disabled on a clean load - dirty its field so it
+    // becomes clickable (separate from the content Subject field dirtied above).
+    fireEvent.change(within(editDialog).getByLabelText("Template label"), {
+      target: { value: "Reminder!" },
+    });
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -1737,7 +1758,7 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     renderSendPage();
 
-    await screen.findByRole("tab", { name: /Send/i, selected: true });
+    await screen.findByRole("tab", { name: /Email/i, selected: true });
     fireEvent.click(screen.getByRole("tab", { name: /Templates/i }));
     expect(await screen.findByLabelText("Subject")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Saved" })).toBeTruthy();
@@ -2017,8 +2038,8 @@ describe("CommunicationPage templates", () => {
       });
       expect(fetchBulkSendStatus).toHaveBeenCalledTimes(2);
 
-      fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
-      expect(screen.getByRole("tab", { name: /Send/i, selected: true })).toBeTruthy();
+      fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
+      expect(screen.getByRole("tab", { name: /Email/i, selected: true })).toBeTruthy();
       expect(screen.getByText("Send complete: 2 sent, 0 failed.")).toBeTruthy();
     } finally {
       vi.useRealTimers();
@@ -2049,8 +2070,8 @@ describe("CommunicationPage templates", () => {
     );
 
     const callsBeforeSend = previewEventTemplateById.mock.calls.length;
-    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
-    await screen.findByRole("tab", { name: /Send/i, selected: true });
+    fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
+    await screen.findByRole("tab", { name: /Email/i, selected: true });
 
     await waitFor(() => {
       expect(previewEventTemplateById.mock.calls.length).toBeGreaterThan(callsBeforeSend);

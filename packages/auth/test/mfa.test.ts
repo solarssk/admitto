@@ -299,7 +299,7 @@ describe("login MFA flow", () => {
     expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
   });
 
-  it("consumes recovery code before promotion and does not grant access when promotion fails", async () => {
+  it("rolls back backup-code consumption when session promotion fails, and audits the failure", async () => {
     await resetUserMfa(prisma, USER_ADMIN);
     const { codes } = await regenerateBackupRecoveryCodes(prisma, USER_ADMIN);
     const secret = generateTotpSecret();
@@ -319,7 +319,53 @@ describe("login MFA flow", () => {
     expect(loginResult.ok).toBe(true);
     if (!loginResult.ok) return;
 
-    // Force the session out of a promotable stage so promotion fails after consume.
+    // Force the session out of a promotable stage so promotion fails after the code verifies
+    // (e.g. it expired or was concurrently revoked between code entry and promotion).
+    await prisma.session.update({
+      where: { id: loginResult.sessionId },
+      data: { stage: SESSION_STAGE.FULL },
+    });
+
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const mfa = await completeMfa(prisma, {
+      userId: USER_ADMIN,
+      sessionId: loginResult.sessionId,
+      code: codes[0]!,
+    });
+    const events = infoSpy.mock.calls.map(([line]) => JSON.parse(String(line)));
+    infoSpy.mockRestore();
+
+    expect(mfa.ok).toBe(false);
+    // A correct code that can't be promoted must not burn a locked-out user's one-shot
+    // recovery code for nothing - consumption rolls back with the rest of the transaction, so
+    // the code stays usable on a subsequent attempt.
+    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(true);
+
+    const failEvent = events.find((e) => e.event === "auth.mfa.fail");
+    expect(failEvent?.reason).toBe("session_not_promoted");
+    expect(failEvent?.method).toBe("backup");
+  });
+
+  it("rolls back emergency-code consumption when session promotion fails", async () => {
+    await resetUserMfa(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+    const { code: emergencyCode } = await generateEmergencyRecoveryCode(prisma, USER_ADMIN);
+
+    const loginResult = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+    });
+    expect(loginResult.ok).toBe(true);
+    if (!loginResult.ok) return;
+
     await prisma.session.update({
       where: { id: loginResult.sessionId },
       data: { stage: SESSION_STAGE.FULL },
@@ -328,12 +374,12 @@ describe("login MFA flow", () => {
     const mfa = await completeMfa(prisma, {
       userId: USER_ADMIN,
       sessionId: loginResult.sessionId,
-      code: codes[0]!,
+      code: emergencyCode,
     });
+
     expect(mfa.ok).toBe(false);
-    // Consume happens before promotion so a race cannot leave a promoted session
-    // behind with an unconsumed recovery row.
-    expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(false);
+    // A single active break-glass code must survive a failed promotion attempt intact.
+    expect(await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode)).toBe(true);
   });
 
   it("completes MFA with a backup recovery code, reports method, and consumes it", async () => {
@@ -688,6 +734,141 @@ describe("trusted device", () => {
     expect(await validateTrustedDevice(prisma, USER_ADMIN, first.rawToken)).toBe(false);
     expect(await validateTrustedDevice(prisma, USER_ADMIN, second.rawToken)).toBe(true);
   });
+
+  it("rejects when a later request's IP and User-Agent both differ from creation", async () => {
+    const { rawToken } = await createTrustedDevice(prisma, {
+      userId: USER_ADMIN,
+      ip: "203.0.113.10",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+    });
+
+    expect(
+      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
+        ip: "198.51.100.20",
+        userAgent: "Mozilla/5.0 DifferentBrowser/9.9",
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts a same-device follow-up request with matching IP and User-Agent", async () => {
+    const { rawToken } = await createTrustedDevice(prisma, {
+      userId: USER_ADMIN,
+      ip: "203.0.113.10",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+    });
+
+    expect(
+      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
+        ip: "203.0.113.10",
+        userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects when the IP rotates even though the User-Agent still matches - a bare User-Agent match is not proof of device (guessable, client-controlled header)", async () => {
+    const { rawToken } = await createTrustedDevice(prisma, {
+      userId: USER_ADMIN,
+      ip: "203.0.113.10",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+    });
+
+    expect(
+      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
+        ip: "198.51.100.99",
+        userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts when the User-Agent changes but the IP still matches (browser update) - User-Agent is recorded but never gates the decision", async () => {
+    const { rawToken } = await createTrustedDevice(prisma, {
+      userId: USER_ADMIN,
+      ip: "203.0.113.10",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+    });
+
+    expect(
+      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
+        ip: "203.0.113.10",
+        userAgent: "Mozilla/5.0 TrustedBrowser/2.0",
+      }),
+    ).toBe(true);
+  });
+
+  it("treats a trusted device with no recorded IP/User-Agent as still valid (pre-fix rows)", async () => {
+    const { rawToken } = await createTrustedDevice(prisma, { userId: USER_ADMIN });
+
+    expect(
+      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
+        ip: "203.0.113.10",
+        userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+      }),
+    ).toBe(true);
+  });
+
+  it("login() falls through to requiring MFA when the trusted-device token's IP/User-Agent no longer match", async () => {
+    await resetUserMfa(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const { rawToken } = await createTrustedDevice(prisma, {
+      userId: USER_ADMIN,
+      ip: "203.0.113.10",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+    });
+
+    const result = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+      trustedDeviceToken: rawToken,
+      ip: "198.51.100.20",
+      userAgent: "Mozilla/5.0 DifferentBrowser/9.9",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.next).toBe(LOGIN_NEXT.MFA_REQUIRED);
+  });
+
+  it("login() still requires MFA for a stolen password + stolen cookie replayed from a different network with a guessed User-Agent", async () => {
+    // The exact attack a bare User-Agent match used to permit: attacker has the account
+    // password (phishing/breach) and a copied trusted-device cookie value (infostealer, leaked
+    // browser-profile backup) but is not on the victim's network - they send a common,
+    // easily-guessed User-Agent string hoping it alone vouches for the device.
+    await resetUserMfa(prisma, USER_ADMIN);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: USER_ADMIN,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const { rawToken } = await createTrustedDevice(prisma, {
+      userId: USER_ADMIN,
+      ip: "203.0.113.10",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
+    });
+
+    const result = await login(prisma, {
+      email: "mfa-admin@example.com",
+      password: PASSWORD,
+      trustedDeviceToken: rawToken,
+      ip: "198.51.100.20",
+      userAgent: "Mozilla/5.0 TrustedBrowser/1.0", // guessed/copied exactly - IP is the only signal that differs
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.next).toBe(LOGIN_NEXT.MFA_REQUIRED);
+  });
 });
 
 describe("emergency recovery", () => {
@@ -698,6 +879,36 @@ describe("emergency recovery", () => {
     });
     expect(row?.credential_hash).toBeTruthy();
     expect(row?.credential_hash).not.toContain(code);
+  });
+
+  it("wraps the delete-then-create rotation in a single transaction (matching regenerateBackupRecoveryCodes)", async () => {
+    const tx = {
+      userMfaMethod: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue({}),
+      },
+    };
+    const order: string[] = [];
+    tx.userMfaMethod.deleteMany.mockImplementation(async () => {
+      order.push("delete");
+      return { count: 1 };
+    });
+    tx.userMfaMethod.create.mockImplementation(async () => {
+      order.push("create");
+      return {};
+    });
+    const fakePrisma = {
+      $transaction: vi.fn(async (fn: (inner: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+
+    const result = await generateEmergencyRecoveryCode(fakePrisma as never, USER_ADMIN);
+
+    expect(fakePrisma.$transaction).toHaveBeenCalledOnce();
+    expect(order).toEqual(["delete", "create"]);
+    expect(result.code).toBeTruthy();
+    expect(tx.userMfaMethod.deleteMany).toHaveBeenCalledWith({
+      where: { user_id: USER_ADMIN, type: "recovery", label: "emergency", last_used_at: null },
+    });
   });
 });
 

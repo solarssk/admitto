@@ -25,6 +25,7 @@ import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "./rsvpStatusBadge.js";
 import { TicketTypeBadge } from "./ticketTypeBadge.js";
 import { WalletColumnCell } from "./walletColumnCell.js";
 import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
+import "./attendees.css";
 
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
 function AttendeesTableSkeleton() {
@@ -289,9 +290,18 @@ function AttendeeCard({
         </div>
       )}
       <div className="attendees-card__badges">
-        <PassStatusBadge status={row.status} />
-        <RsvpStatusBadge status={row.rsvp_status} />
-        <MailStatusBadge status={row.last_mail_status} />
+        <span className="attendees-card__badge-item">
+          <span className="attendees-card__badge-label">Pass</span>
+          <PassStatusBadge status={row.status} />
+        </span>
+        <span className="attendees-card__badge-item">
+          <span className="attendees-card__badge-label">Attendance</span>
+          <RsvpStatusBadge status={row.rsvp_status} />
+        </span>
+        <span className="attendees-card__badge-item">
+          <span className="attendees-card__badge-label">Mail</span>
+          <MailStatusBadge status={row.last_mail_status} />
+        </span>
       </div>
       <div className="attendees-card__foot">
         {row.admitted_at ? (

@@ -24,6 +24,7 @@ export function createStubWalletProvider(): WalletPassProvider {
       passes.set(input.userProvidedId, result);
       return result;
     },
+    async sendPushMessage() {},
     async voidPass() {},
     async restorePass() {},
     async deletePass(providerPassId) {

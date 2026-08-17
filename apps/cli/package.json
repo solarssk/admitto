@@ -26,12 +26,12 @@
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "@admitto/wallet": "*",
-    "pg": "^8.16.0",
+    "pg": "^8.23.0",
     "redis": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/pg": "^8.15.0",
+    "@types/pg": "^8.21.0",
     "typescript": "^7.0.2",
     "vitest": "4.1.10"
   }

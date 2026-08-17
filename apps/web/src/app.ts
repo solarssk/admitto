@@ -22,6 +22,8 @@ import {
   buildQrPayload,
   isAdmittable,
   hashToken,
+  resolveTicketPageDisplay,
+  buildWalletPassInput,
 } from "@admitto/tickets";
 import {
   getTicketPageSecurityHeaders,
@@ -45,7 +47,6 @@ import {
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
 import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
-import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 import { handlePassCreatorWebhook } from "./wallet-webhook.js";
 import {
   resolveCheckinToken,
@@ -86,6 +87,7 @@ import {
   rateLimit,
 } from "./rate-limit/policies.js";
 import { skipBulkSendRateLimitForDryRun } from "./rate-limit/skip-bulk-send-dry-run.js";
+import { skipWalletMessageRateLimitForDryRun } from "./rate-limit/skip-wallet-message-rate-limit-for-dry-run.js";
 import { createRequireSession, createRequirePartialSession } from "./auth-middleware.js";
 import { createLoginRateLimitMiddleware } from "./auth/login-rate-limit.js";
 import {
@@ -162,6 +164,14 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
+import { handleGetWalletPushJob, handleGetWalletPushHistory } from "./admin/wallet-push-routes.js";
+import {
+  handleWalletMessageSend,
+  handleGetWalletMessageJob,
+  handleGetWalletMessageHistory,
+  handleSearchWalletMessageAttendees,
+  WALLET_MESSAGE_SEND_BODY_MAX_BYTES,
+} from "./admin/wallet-message-routes.js";
 import { handleImportPreview, handleImportCommit, handleGetImportJob, handleGetImportTemplate, handleGetImportHistory, MAX_IMPORT_BODY_BYTES } from "./admin/import-api-routes.js";
 import {
   handleListEventItems,
@@ -191,6 +201,7 @@ import {
 import {
   handleListEventImageAssets,
   handleCreateEventImageAsset,
+  handleUpdateEventImageAsset,
   handleDeleteEventImageAsset,
 } from "./admin/event-image-assets-routes.js";
 import {
@@ -548,6 +559,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
+  const accountIpRateLimit = rateLimit(rateLimitStore, "auth:account-ip");
   const oidcAuthRateLimit = rateLimit(rateLimitStore, "auth:oidc");
   const mfaEnrollRateLimitJson = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "json" });
   const mfaEnrollRateLimitHtml = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "text" });
@@ -585,6 +597,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminGeocodingTimezoneRateLimit = rateLimit(rateLimitStore, "admin:geocoding-timezone");
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminImportJobStatusRateLimit = rateLimit(rateLimitStore, "admin:import-job-status");
+  const adminWalletPushJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-push-job-status");
+  const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
+  const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
+  const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -608,6 +624,10 @@ export function createApp(options: CreateAppOptions = {}) {
   });
   const mailSettingsBodyLimit = bodyLimit({
     maxSize: MAX_MAIL_SETTINGS_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  const walletMessageBodyLimit = bodyLimit({
+    maxSize: WALLET_MESSAGE_SEND_BODY_MAX_BYTES,
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const uploadBodyLimit = bodyLimit({
@@ -1165,6 +1185,13 @@ export function createApp(options: CreateAppOptions = {}) {
     uploadBodyLimit,
     guardArchivedEvent((c) => handleCreateEventImageAsset(c, db)),
   );
+  app.patch(
+    "/api/admin/events/:eventId/image-assets/:assetId",
+    jsonPostCsrf,
+    staffAdminGate,
+    uploadBodyLimit,
+    guardArchivedEvent((c) => handleUpdateEventImageAsset(c, db)),
+  );
   app.delete(
     "/api/admin/events/:eventId/image-assets/:assetId",
     jsonPostCsrf,
@@ -1225,6 +1252,39 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/export/jobs/:jobId/download", staffAdminGate, (c) =>
     handleDownloadExportJob(c, db),
   );
+  app.get(
+    "/api/admin/events/:eventId/wallet-push/jobs/:jobId",
+    staffAdminGate,
+    adminWalletPushJobStatusRateLimit,
+    (c) => handleGetWalletPushJob(c, db),
+  );
+  app.get("/api/admin/events/:eventId/wallet-push/history", staffAdminGate, (c) =>
+    handleGetWalletPushHistory(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/wallet-message/send",
+    jsonPostCsrf,
+    staffAdminGate,
+    walletMessageBodyLimit,
+    skipWalletMessageRateLimitForDryRun,
+    adminWalletMessageSendRateLimit,
+    guardArchivedEvent((c) => handleWalletMessageSend(c, db)),
+  );
+  app.get(
+    "/api/admin/events/:eventId/wallet-message/jobs/:jobId",
+    staffAdminGate,
+    adminWalletMessageJobStatusRateLimit,
+    (c) => handleGetWalletMessageJob(c, db),
+  );
+  app.get("/api/admin/events/:eventId/wallet-message/history", staffAdminGate, (c) =>
+    handleGetWalletMessageHistory(c, db),
+  );
+  app.get(
+    "/api/admin/events/:eventId/wallet-message/attendees",
+    staffAdminGate,
+    adminAttendeesSearchRateLimit,
+    (c) => handleSearchWalletMessageAttendees(c, db),
+  );
   app.post(
     "/api/admin/events/:eventId/attendees/export-selected",
     jsonPostCsrf,
@@ -1254,9 +1314,13 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/admin/events/:eventId/attendees/:id", staffAdminGate, (c) =>
     handleGetEventAttendee(c, db),
   );
-  app.patch("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, guardArchivedEvent((c) =>
-    handlePatchEventAttendee(c, db),
-  ));
+  app.patch(
+    "/api/admin/events/:eventId/attendees/:id",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminAttendeePatchRateLimit,
+    guardArchivedEvent((c) => handlePatchEventAttendee(c, db)),
+  );
   app.delete("/api/admin/events/:eventId/attendees/:id", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteEventAttendee(c, db),
   );
@@ -1634,13 +1698,13 @@ export function createApp(options: CreateAppOptions = {}) {
     handleDeleteUserRole(c, db),
   );
   app.post("/api/admin/users/:id/reset-2fa", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserMfa(c, db),
+    handlePostResetUserMfa(c, db, rateLimitStore),
   );
   app.delete("/api/admin/users/:id/external-identity", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteUserExternalIdentity(c, db),
   );
   app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserPassword(c, db),
+    handlePostResetUserPassword(c, db, rateLimitStore),
   );
   app.post("/api/admin/users/:id/revoke-sessions", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostRevokeUserSessions(c, db),
@@ -1663,14 +1727,18 @@ export function createApp(options: CreateAppOptions = {}) {
     (c) => handlePostThemeFontUpload(c, db),
   );
 
+  // Own auth:account-ip bucket for the whole group (see policies.ts) - kept separate from
+  // auth:login-ip so consuming one never throttles the other, and applied once here rather than
+  // per-route so it automatically covers any future /api/account/* endpoint too.
+  app.use("/api/account/*", accountIpRateLimit);
   app.get("/api/account", requireSession, (c) => handleGetAccount(c, db));
   app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
     handlePatchAccountProfile(c, db),
   );
-  app.patch("/api/account/password", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.patch("/api/account/password", jsonPostCsrf, requireSession, (c) =>
     handlePatchAccountPassword(c, db, rateLimitStore),
   );
-  app.delete("/api/account/external-identity", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.delete("/api/account/external-identity", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountExternalIdentity(c, db, rateLimitStore),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
@@ -1680,7 +1748,6 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post(
     "/api/account/mfa/totp/enroll",
     jsonPostCsrf,
-    loginRateLimitJson,
     requireSession,
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
     (c) => handlePostAccountMfaEnroll(c, db),
@@ -1688,10 +1755,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.delete("/api/account/mfa/totp/enroll", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountMfaEnroll(c, db),
   );
-  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, requireSession, (c) =>
     handlePostAccountMfaConfirm(c, db, rateLimitStore),
   );
-  app.post("/api/account/mfa/reset", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.post("/api/account/mfa/reset", jsonPostCsrf, requireSession, (c) =>
     handlePostAccountMfaReset(c, db, rateLimitStore),
   );
   app.get("/api/account/mfa/webauthn", requireSession, (c) =>

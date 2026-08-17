@@ -4,6 +4,12 @@ import { canAccessAdminPanel, canAccessCheckInPanel, logAccessDenied, logCfAcces
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveStaffAuthFromRequest } from "./resolve-staff-auth.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { renderForbidden } from "../ticket-page.js";
+import { getStaffSpaSecurityHeaders } from "../staff-spa.js";
+
+const NO_ADMIN_ACCESS_MESSAGE = "Your account does not have access to the admin panel.";
+const INVALID_CF_ACCESS_MESSAGE =
+  "Your Cloudflare Access sign-in could not be verified. Sign in again, or contact your administrator if this continues.";
 
 function isAdminSpaPath(path: string): boolean {
   // Every /admin/* path is served by the SPA shell now that the legacy
@@ -14,6 +20,14 @@ function isAdminSpaPath(path: string): boolean {
 
 function isAdminApiPath(path: string): boolean {
   return path === "/api/admin" || path.startsWith("/api/admin/");
+}
+
+/** Styled 403 for a top-level browser navigation - the specific reason stays in System logs. */
+function htmlForbidden(c: Context, message: string): Response {
+  for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+    c.header(name, value);
+  }
+  return c.html(renderForbidden(message), 403);
 }
 
 async function loginBoundaryResponse(c: Context, prisma: PrismaClient): Promise<Response> {
@@ -28,7 +42,7 @@ function terminalForbiddenResponse(c: Context): Response {
     return c.json({ error: "forbidden" }, 403);
   }
   if (isAdminSpaPath(c.req.path)) {
-    return c.text("Forbidden", 403);
+    return htmlForbidden(c, NO_ADMIN_ACCESS_MESSAGE);
   }
   return c.json({ error: "forbidden" }, 403);
 }
@@ -61,7 +75,7 @@ function rejectInvalidJwt(c: Context, reason: string): Response {
   if (isAdminApiPath(c.req.path)) {
     return c.json({ error: "cf_access_jwt_invalid" }, 403);
   }
-  return c.text("Forbidden", 403);
+  return htmlForbidden(c, INVALID_CF_ACCESS_MESSAGE);
 }
 
 /** Staff admin gate for `/admin` SPA and `/api/admin/*` (ADR 0017 + P1). */

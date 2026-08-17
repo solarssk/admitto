@@ -1,9 +1,11 @@
 # Wallet Passes - PassCreator Template Setup
 
-> **Audience:** Superadmins
-> **Required role:** Superadmin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.14
+| Field | Value |
+|---|---|
+| **Audience** | Superadmins |
+| **Required role** | Superadmin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 
@@ -50,6 +52,12 @@ New and reissued wallet passes for this event's attendees show real data. Passes
 - **Test connection succeeds in Admitto but the pass still shows blank or wrong fields:** Test connection only checks that the API key and Template ID are valid and reachable - it does not check that Additional Properties are registered, that Field mapping rows exist for them, or that Value boxes reference them correctly.
 - **Scanning the wallet pass at check-in doesn't find the attendee, or the QR looks different from the ticket page's QR:** the template's Barcode Value box is still bound to `{userProvidedId}` (PassCreator's own pass identifier) instead of the ticket/QR value - see step 9.
 
+## Apple Wallet semantic tags (optional, no template setup)
+
+Event Settings → Wallet has a separate **Semantic tags** switch next to Apple Wallet, off by default. It adds Siri Suggestions, Maps, and Calendar smart data (event name, date/time, venue, entrance directions) to issued Apple Wallet passes - none of the Field mapping/Additional Properties setup above applies to it. Turning it on (or off) also refreshes already-issued Apple Wallet passes, the same way editing the event's title or hours does. It has no effect on Google Wallet passes, and does not require NFC or any special PassCreator account approval.
+
 ## Related pages
 
+- [Wallet Passes Overview](Wallet-Passes-Overview) - what the wallet integration supports overall, and where each piece is configured
 - [Event Overview and Settings](Event-Overview-and-Settings)
+- [Sending Wallet Messages](Sending-Wallet-Messages)

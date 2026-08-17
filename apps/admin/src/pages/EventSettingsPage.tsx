@@ -7,7 +7,8 @@ import {
   useSearchParams,
   type NavigateFunction,
 } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, PageHeader, StatusBadge, Switch, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import {
   ApiError,
@@ -16,18 +17,20 @@ import {
   exportEventPii,
   fetchEventLocation,
   fetchEventSettings,
-  fetchTicketTypes,
+  fetchWalletPushHistory,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
   testWalletConnection,
   unarchiveEvent,
   uploadEventBrandingFile,
+  type WalletPushHistoryEntry,
+  type WalletPushHistoryScope,
 } from "../api/client.js";
-import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet";
+import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventLocationDto, EventSettingsDto, LogoCropMeta, TicketTypeDto } from "../api/types.js";
+import type { EventLocationDto, EventSettingsDto, LogoCropMeta } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import {
@@ -47,8 +50,14 @@ import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { TimeInput } from "../components/TimeInput.js";
+import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { formatEventDateTime, formatUtcDateTime, formatWalletDatePreview } from "../utils/event-dates.js";
+import {
+  formatEventDateTime,
+  formatUtcDateTime,
+  formatWalletDatePreview,
+  formatZonedClockTime,
+} from "../utils/event-dates.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -78,6 +87,7 @@ type SettingsForm = {
   walletApiKeyEdit: { mode: SecretEditMode; value: string };
   walletAppleEnabled: boolean;
   walletGoogleEnabled: boolean;
+  walletSemanticTagsEnabled: boolean;
   walletFieldMapping: WalletFieldMappingRow[];
   timezone: string;
   capacity: string;
@@ -96,6 +106,7 @@ type SettingsPatch = Partial<{
   wallet_api_key: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_semantic_tags_enabled: boolean;
   wallet_field_mapping: Record<string, string> | null;
   timezone: string;
   capacity: number | null;
@@ -120,6 +131,7 @@ const WALLET_CARD_INTRO =
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
+const WALLET_SEMANTIC_TAGS_DESC = "Adds Siri Suggestions, Maps, and Calendar smart data to the pass.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
   "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
 const WALLET_FIELD_MAPPING_EMPTY_NOTICE =
@@ -287,6 +299,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     walletApiKeyEdit: { mode: "idle", value: "" },
     walletAppleEnabled: data.wallet_apple_enabled,
     walletGoogleEnabled: data.wallet_google_enabled,
+    walletSemanticTagsEnabled: data.wallet_semantic_tags_enabled,
     walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
       id: crypto.randomUUID(),
       key,
@@ -323,6 +336,7 @@ function buildWalletPatch(
   | "wallet_api_key"
   | "wallet_apple_enabled"
   | "wallet_google_enabled"
+  | "wallet_semantic_tags_enabled"
   | "wallet_field_mapping"
 > {
   const patch: SettingsPatch = {};
@@ -342,6 +356,9 @@ function buildWalletPatch(
   }
   if (form.walletGoogleEnabled !== original.walletGoogleEnabled) {
     patch.wallet_google_enabled = form.walletGoogleEnabled;
+  }
+  if (form.walletSemanticTagsEnabled !== original.walletSemanticTagsEnabled) {
+    patch.wallet_semantic_tags_enabled = form.walletSemanticTagsEnabled;
   }
   if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
     patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
@@ -549,37 +566,35 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
   }
 }
 
-interface LoadTicketTypesDeps {
-  eventId: string;
-  loadedRef: RefObject<boolean>;
-  abortRef: RefObject<AbortController | null>;
-  setTicketTypesLoading: (value: boolean) => void;
-  setTicketTypes: (types: TicketTypeDto[]) => void;
-  setTicketTypesError: (error: string | null) => void;
-}
-
-/** Extracted out of the `loadTicketTypes` callback (SonarCloud S3776). */
-async function loadTicketTypesForEvent(deps: LoadTicketTypesDeps): Promise<void> {
-  const { eventId, loadedRef, abortRef, setTicketTypesLoading, setTicketTypes, setTicketTypesError } = deps;
-  abortRef.current?.abort();
-  const ac = new AbortController();
-  abortRef.current = ac;
-  if (!loadedRef.current) setTicketTypesLoading(true);
+/** Re-syncs `event` (is_deletable/deletion_blockers for the Danger Zone) after a ticket-type
+ * create/update/delete, without touching `form`/`original` - those hold another tab's possibly
+ * unsaved draft, and `loadEventSettings`'s full reload would silently discard it. Best-effort:
+ * a failed background refresh here is a lesser problem than a toast unrelated to what the
+ * operator just did in the Ticket types card.
+ *
+ * `deletionStatusSeqRef` guards against two different kinds of stale response: (1) this request
+ * resolving after the operator has already navigated to a different event's settings (the page
+ * component isn't remounted on an `:eventId` param change alone - bumped separately in an effect
+ * keyed on `eventId`), and (2) two overlapping refreshes for the *same* event - e.g. two quick
+ * ticket-type edits - resolving out of order, where the earlier request's response would
+ * otherwise land after and overwrite the later, more current one (CodeRabbit review). Each call
+ * claims the next sequence number and only applies its result while it's still the latest. */
+async function refreshEventDeletionStatus(
+  eventId: string,
+  deletionStatusSeqRef: RefObject<number>,
+  setEvent: (event: EventSettingsDto) => void,
+): Promise<void> {
+  const mySeq = deletionStatusSeqRef.current + 1;
+  deletionStatusSeqRef.current = mySeq;
   try {
-    const types = await fetchTicketTypes(eventId, ac.signal);
-    if (ac.signal.aborted) return;
-    setTicketTypes(types);
-    setTicketTypesError(null);
-    loadedRef.current = true;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") return;
-    loadedRef.current = false;
-    setTicketTypes([]);
-    setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
-  } finally {
-    if (!ac.signal.aborted) setTicketTypesLoading(false);
+    const data = await fetchEventSettings(eventId);
+    if (deletionStatusSeqRef.current !== mySeq) return;
+    setEvent(data);
+  } catch {
+    // Best-effort - see comment above.
   }
 }
+
 
 interface SaveEventSettingsDeps {
   eventId: string;
@@ -629,6 +644,7 @@ interface ArchiveToggleDeps {
   setArchiveOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
+  setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -643,6 +659,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setArchiveOpen,
     setMailCardResetKey,
     setLocationCardResetKey,
+    setTicketTypesCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -659,6 +676,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setArchiveOpen(false);
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
+    setTicketTypesCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -737,6 +755,7 @@ interface RevokeCheckinsDeps {
   setRevokeCheckinsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
+  setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -750,6 +769,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setRevokeCheckinsOpen,
     setMailCardResetKey,
     setLocationCardResetKey,
+    setTicketTypesCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -766,6 +786,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setRevokeCheckinsOpen(false);
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
+    setTicketTypesCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -781,6 +802,7 @@ interface RevokeItemsDeps {
   setRevokeItemsOpen: (value: boolean) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
+  setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -794,6 +816,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setRevokeItemsOpen,
     setMailCardResetKey,
     setLocationCardResetKey,
+    setTicketTypesCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -810,6 +833,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setRevokeItemsOpen(false);
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
+    setTicketTypesCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -834,6 +858,168 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
     <div role="tabpanel" aria-label={label} hidden={activeTab !== tab} className="event-settings-tabpanel">
       {children}
     </div>
+  );
+}
+
+const WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+export const WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT = 10;
+
+/** This is when the push job ran on the server, not an event-schedule fact - always UTC-primary
+ * with the triggering admin's own local time underneath, same as Delivery log's "Sent / Queued"
+ * column. Deliberately not event-timezone: an admin in one timezone triggering a push for an
+ * event venue in another would otherwise see neither their own clock nor a real operational
+ * instant, just a third, unrelated time. */
+const WALLET_PUSH_HISTORY_TIME_HINT =
+  "Top: when this ran, in UTC. Below: the same moment in the local time of whoever's browser triggered it, when known.";
+
+interface WalletPushHistoryCardProps {
+  readonly history: WalletPushHistoryEntry[] | null;
+  readonly total: number;
+  readonly error: string | null;
+  readonly onRetry: () => void;
+  readonly showLoading: boolean;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly onPageChange: (page: number) => void;
+  readonly onPageSizeChange: (pageSize: number) => void;
+}
+
+/** "3 attendees", "Whole event · location update" - the scope column's text. `null` (a job from
+ * before this field existed) reads as an em-dash rather than a blank cell, so it's visibly "we
+ * don't know" and not confused with a genuinely-scopeless push. */
+function describeWalletPushScope(scope: WalletPushHistoryScope | null): string {
+  if (!scope) return "—";
+  if (scope.kind === "attendee_ids") {
+    return `${scope.count} ${scope.count === 1 ? "attendee" : "attendees"}`;
+  }
+  if (scope.reason === "location") return "Whole event · location update";
+  if (scope.reason === "settings") return "Whole event · settings update";
+  return "Whole event";
+}
+
+/** Recent wallet_push jobs for this event, from the async job system's own triggers (bulk
+ * ticket-type change, or an event settings/location save that touches a wallet-relevant field).
+ * Single-attendee field edits push directly and don't create a job, so they never appear here.
+ * This is the automatic *data* refresh (name/ticket type/venue/etc. already on an issued pass) -
+ * not the same thing as a custom text message, which is Communication > Wallets > Send, and has
+ * its own separate history there. */
+function WalletPushHistoryCard({
+  history,
+  total,
+  error,
+  onRetry,
+  showLoading,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: WalletPushHistoryCardProps) {
+  let body: ReactNode;
+  if (error) {
+    body = (
+      <EmptyState
+        title="Could not load wallet push history"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  } else if (history === null) {
+    // settings-card-intro (already scoped to this page's own CSS) matches ImportHistoryCard's
+    // muted-hint look without importing ImportPage's page-scoped import.css into this lazy chunk
+    // (bot review - a component's CSS must live in its own file, per AGENTS.md's compounding
+    // rules). wallet-push-history-card__body-note adds the padding .sessions-table-wrap used to
+    // give this card for free, now that the Card itself is unpadded (see below).
+    body = showLoading ? (
+      <p className="settings-card-intro wallet-push-history-card__body-note">Loading…</p>
+    ) : null;
+  } else if (history.length === 0) {
+    body = (
+      <EmptyState
+        icon={<i className="ti ti-history" aria-hidden="true" />}
+        title="No wallet pushes yet"
+        description="Pushes appear here after a bulk wallet push for this event, such as a ticket-type change."
+      />
+    );
+  } else {
+    body = (
+      <div className="wallet-push-history-table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>
+                <HintLabel hint={WALLET_PUSH_HISTORY_TIME_HINT}>Date</HintLabel>
+              </th>
+              <th>Status</th>
+              <th>Scope</th>
+              <th>Updated</th>
+              <th>Skipped</th>
+              <th>Errored</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((entry) => (
+              <tr key={entry.id}>
+                <td>
+                  {formatUtcDateTime(entry.created_at)}
+                  {entry.client_timezone && (
+                    <div className="sessions-subdued">
+                      {formatZonedClockTime(entry.created_at, entry.client_timezone)}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  <StatusBadge status={entry.status} />
+                  {entry.status === "failed" && entry.error && (
+                    <div style={{ color: "var(--text-muted)" }}>{entry.error}</div>
+                  )}
+                </td>
+                <td>{describeWalletPushScope(entry.scope)}</td>
+                <td>{entry.reissued}</td>
+                <td>{entry.skipped}</td>
+                <td>{entry.errored}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
+  return (
+    <Card title="Wallet push history" className="event-settings-card wallet-push-history-card" padded={false}>
+      <p className="settings-card-intro wallet-push-history-card__intro">
+        Automatic pushes that refresh data (name, ticket type, venue, etc.) already on an
+        attendee's issued wallet pass, triggered by a bulk ticket-type change or a wallet-relevant
+        event settings/location save. Not a custom message - send those from Communication &gt;
+        Wallets.
+      </p>
+      {body}
+      {total > 0 && (
+        <div className="wallet-push-history-card__footer">
+          <PaginationFooter
+            idPrefix="wallet-push-history"
+            page={safePage}
+            pageSize={pageSize}
+            totalPages={totalPages}
+            totalRows={total}
+            pageSizeOptions={WALLET_PUSH_HISTORY_PAGE_SIZE_OPTIONS}
+            onPageSizeChange={(size) => {
+              onPageSizeChange(size);
+              onPageChange(1);
+            }}
+            onPrevious={() => onPageChange(Math.max(1, safePage - 1))}
+            onNext={() => onPageChange(safePage + 1)}
+          />
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -871,9 +1057,10 @@ export function EventSettingsPage() {
   const [revokeCheckinsOpen, setRevokeCheckinsOpen] = useState(false);
   const [revokingItems, setRevokingItems] = useState(false);
   const [revokeItemsOpen, setRevokeItemsOpen] = useState(false);
-  const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
-  const [ticketTypesLoading, setTicketTypesLoading] = useState(true);
-  const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
+  const [ticketTypesDirty, setTicketTypesDirty] = useState(false);
+  const [ticketTypesSaving, setTicketTypesSaving] = useState(false);
+  // Same reasoning as mailCardResetKey below, applied to TicketTypesCard's own draft state.
+  const [ticketTypesCardResetKey, setTicketTypesCardResetKey] = useState(0);
   const [mailDirty, setMailDirty] = useState(false);
   const [mailSaving, setMailSaving] = useState(false);
   const [bounceDirty, setBounceDirty] = useState(false);
@@ -930,6 +1117,53 @@ export function EventSettingsPage() {
     return () => controller.abort();
   }, [eventId, visitedTabs, walletLocationPreview]);
 
+  // Wallet push history: re-fetched every time the admin switches to the Wallet tab (not just
+  // once) - unlike walletLocationPreview above (a static reference value), this list reflects
+  // background jobs triggered from elsewhere (currently only the Attendees list's bulk
+  // ticket-type change), so it can go stale while this tab stays mounted between visits.
+  const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
+  const [walletPushHistoryTotal, setWalletPushHistoryTotal] = useState(0);
+  const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
+  const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
+  const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
+  const [walletPushHistoryPage, setWalletPushHistoryPage] = useState(1);
+  const [walletPushHistoryPageSize, setWalletPushHistoryPageSize] = useState(WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT);
+  const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
+  // Navigating from one event to another while the Wallet tab stays mounted must not keep the
+  // outgoing event's rows/total/page - a separate reset effect keyed on eventId alone would still
+  // let this effect run once more with the stale page for the new event first (both effects fire
+  // on the same eventId-change render pass, before the reset effect's setState is applied) -
+  // detecting the event change inline, in this same effect, is what actually avoids that request
+  // (CodeRabbit).
+  const walletPushHistoryEventIdRef = useRef(eventId);
+  useEffect(() => {
+    if (!eventId || tab !== "wallet") return;
+    const isNewEvent = eventId !== walletPushHistoryEventIdRef.current;
+    walletPushHistoryEventIdRef.current = eventId;
+    const page = isNewEvent ? 1 : walletPushHistoryPage;
+    if (isNewEvent) {
+      setWalletPushHistory(null);
+      setWalletPushHistoryTotal(0);
+      if (walletPushHistoryPage !== 1) setWalletPushHistoryPage(1);
+    }
+    const controller = new AbortController();
+    setWalletPushHistoryError(null);
+    setWalletPushHistoryLoading(true);
+    fetchWalletPushHistory(eventId, page, walletPushHistoryPageSize, controller.signal)
+      .then(({ items, total }) => {
+        setWalletPushHistory(items);
+        setWalletPushHistoryTotal(total);
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setWalletPushHistoryError("Couldn't load wallet push history.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
+      });
+    return () => controller.abort();
+  }, [eventId, tab, walletPushHistoryToken, walletPushHistoryPage, walletPushHistoryPageSize]);
+
   const handleTabChange = useCallback(
     (id: string) => {
       if (!isEventSettingsTab(id)) return;
@@ -962,15 +1196,14 @@ export function EventSettingsPage() {
   // (CodeRabbit review).
   const mailTabDirty = mailDirty || bounceDirty;
   const mailTabSaving = mailSaving || bounceSaving;
-  const pageDirty = dirty || mailTabDirty || locationDirty;
+  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailTabSaving || locationSaving;
+  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving;
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
-  const showTicketTypesLoading = useDelayedLoading(ticketTypesLoading);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       (pageDirty || pageBusy) && currentLocation.pathname !== nextLocation.pathname,
@@ -982,44 +1215,17 @@ export function EventSettingsPage() {
     await loadEventSettings({ eventId, setLoading, setNotFound, setEvent, setForm, setOriginal, addToast });
   }, [eventId, addToast]);
 
+  // Sequence guard for refreshEventDeletionStatus - see that function's own comment. Bumped here
+  // on every :eventId change (in addition to each refresh call bumping it) so an in-flight
+  // request from a previous event can never be mistaken for still-current.
+  const deletionStatusSeqRef = useRef(0);
+  useEffect(() => {
+    deletionStatusSeqRef.current += 1;
+  }, [eventId]);
+
   useEffect(() => {
     void load();
   }, [load]);
-
-  // Only the very first load shows the card's "Loading…" placeholder - a background refresh
-  // after a color/label edit (TicketTypesCard's onChanged) must not swap the whole list out and
-  // back in, which read as a full-card flicker (PO review).
-  const ticketTypesLoadedRef = useRef(false);
-  const ticketTypesAbortRef = useRef<AbortController | null>(null);
-  const abortLatestTicketTypes = useCallback(() => ticketTypesAbortRef.current?.abort(), []);
-
-  // A stale in-flight request from a previous eventId (e.g. navigating between two events'
-  // settings before the first request lands) must not overwrite this event's state once it
-  // resolves - reset and discard it the same way RequirementsPage's own load effect does
-  // (CodeRabbit review).
-  useEffect(() => {
-    ticketTypesAbortRef.current?.abort();
-    setTicketTypes([]);
-    setTicketTypesError(null);
-    ticketTypesLoadedRef.current = false;
-  }, [eventId]);
-
-  const loadTicketTypes = useCallback(async () => {
-    if (!eventId) return;
-    await loadTicketTypesForEvent({
-      eventId,
-      loadedRef: ticketTypesLoadedRef,
-      abortRef: ticketTypesAbortRef,
-      setTicketTypesLoading,
-      setTicketTypes,
-      setTicketTypesError,
-    });
-  }, [eventId]);
-
-  useEffect(() => {
-    loadTicketTypes().catch(() => {});
-    return abortLatestTicketTypes;
-  }, [abortLatestTicketTypes, loadTicketTypes]);
 
   useEffect(() => {
     if (!pageDirty && !pageBusy) return;
@@ -1090,6 +1296,7 @@ export function EventSettingsPage() {
       setArchiveOpen,
       setMailCardResetKey,
       setLocationCardResetKey,
+      setTicketTypesCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1114,6 +1321,7 @@ export function EventSettingsPage() {
       setRevokeCheckinsOpen,
       setMailCardResetKey,
       setLocationCardResetKey,
+      setTicketTypesCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1128,6 +1336,7 @@ export function EventSettingsPage() {
       setRevokeItemsOpen,
       setMailCardResetKey,
       setLocationCardResetKey,
+      setTicketTypesCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1407,14 +1616,17 @@ export function EventSettingsPage() {
 
       <EventSettingsTabPanel tab="ticket-types" activeTab={tab} visited={visitedTabs} label="Ticket types">
         <TicketTypesCard
+          key={ticketTypesCardResetKey}
           eventId={eventId}
           event={event}
-          types={ticketTypes}
-          loading={ticketTypesLoading}
-          showLoading={showTicketTypesLoading}
-          error={ticketTypesError}
-          onRetry={() => loadTicketTypes().catch(() => {})}
-          onChanged={() => loadTicketTypes().catch(() => {})}
+          onDirtyChange={setTicketTypesDirty}
+          onSavingChange={setTicketTypesSaving}
+          onSaved={() => {
+            // A create/update/delete here can flip is_deletable/deletion_blockers (e.g.
+            // clearing the last non-standard type) - keep the Danger Zone's Delete button
+            // accurate without reloading the whole page (see refreshEventDeletionStatus).
+            void refreshEventDeletionStatus(eventId, deletionStatusSeqRef, setEvent);
+          }}
         />
       </EventSettingsTabPanel>
 
@@ -1625,6 +1837,19 @@ export function EventSettingsPage() {
                   />
                 </div>
                 <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <div className="settings-row__text">
+                    <strong>Semantic tags</strong>
+                    <p>{WALLET_SEMANTIC_TAGS_DESC}</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-semantic-tags-enabled"
+                    aria-label="Semantic tags"
+                    checked={form.walletSemanticTagsEnabled}
+                    disabled={isArchived || saving || !form.walletAppleEnabled}
+                    onChange={(e) => setForm({ ...form, walletSemanticTagsEnabled: e.target.checked })}
+                  />
+                </div>
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
                   <span className="wallet-platform-row__icon">
                     <i className="ti ti-brand-google" aria-hidden="true" />
                   </span>
@@ -1638,6 +1863,26 @@ export function EventSettingsPage() {
                     checked={form.walletGoogleEnabled}
                     disabled={isArchived || saving}
                     onChange={(e) => setForm({ ...form, walletGoogleEnabled: e.target.checked })}
+                  />
+                </div>
+                {/* Empty grid cell, paired with Google Wallet's row - pushes Samsung Wallet
+                    below onto its own row instead of sharing Google's, since the 2-column
+                    grid auto-flows every child in DOM order. */}
+                <div aria-hidden="true" />
+                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
+                  <span className="wallet-platform-row__icon">
+                    <SamsungWalletIcon />
+                  </span>
+                  <div className="settings-row__text">
+                    <strong>Samsung Wallet</strong>
+                    <p>Not supported yet.</p>
+                  </div>
+                  <Switch
+                    id="event-wallet-samsung-enabled"
+                    aria-label="Samsung Wallet"
+                    checked={false}
+                    disabled
+                    onChange={() => {}}
                   />
                 </div>
               </div>
@@ -1705,54 +1950,67 @@ export function EventSettingsPage() {
                           })
                         }
                       />
-                      <Input
-                        id={`event-wallet-field-mapping-key-${row.id}`}
-                        name={`event-wallet-field-mapping-key-${row.id}`}
-                        aria-label="PassCreator field key"
-                        value={row.key}
-                        disabled={isArchived || saving}
-                        placeholder="PassCreator field key"
-                        {...NO_AUTOFILL_PROPS}
-                        onChange={(e) =>
-                          setForm({
-                            ...form,
-                            walletFieldMapping: form.walletFieldMapping.map((r) =>
-                              r.id === row.id ? { ...r, key: e.target.value } : r,
-                            ),
-                          })
-                        }
-                      />
-                      <Tooltip
-                        content={hintPreview}
-                        className="at-btn at-btn--secondary wallet-field-mapping__hint"
-                      >
-                        {selectedOption ? (
-                          <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
-                        ) : (
-                          <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
-                        )}
-                      </Tooltip>
-                      <Button
-                        type="button"
-                        id={`event-wallet-field-mapping-remove-${row.id}`}
-                        name={`event-wallet-field-mapping-remove-${row.id}`}
-                        variant="secondary"
-                        disabled={isArchived || saving}
-                        aria-label="Remove field"
-                        onClick={() =>
-                          setForm({
-                            ...form,
-                            walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
-                          })
-                        }
-                        icon={<i className="ti ti-trash" aria-hidden="true" />}
-                      />
+                      <div className="wallet-field-mapping__row-detail">
+                        <Input
+                          id={`event-wallet-field-mapping-key-${row.id}`}
+                          name={`event-wallet-field-mapping-key-${row.id}`}
+                          aria-label="PassCreator field key"
+                          value={row.key}
+                          disabled={isArchived || saving}
+                          placeholder="PassCreator field key"
+                          {...NO_AUTOFILL_PROPS}
+                          onChange={(e) =>
+                            setForm({
+                              ...form,
+                              walletFieldMapping: form.walletFieldMapping.map((r) =>
+                                r.id === row.id ? { ...r, key: e.target.value } : r,
+                              ),
+                            })
+                          }
+                        />
+                        <Tooltip
+                          content={hintPreview}
+                          className="at-btn at-btn--secondary wallet-field-mapping__hint"
+                        >
+                          {selectedOption ? (
+                            <i className="ti ti-info-circle at-btn__icon" aria-label={hintPreview} />
+                          ) : (
+                            <i className="ti ti-info-circle at-btn__icon" aria-hidden="true" />
+                          )}
+                        </Tooltip>
+                        <Button
+                          type="button"
+                          id={`event-wallet-field-mapping-remove-${row.id}`}
+                          name={`event-wallet-field-mapping-remove-${row.id}`}
+                          variant="secondary"
+                          disabled={isArchived || saving}
+                          aria-label="Remove field"
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              walletFieldMapping: form.walletFieldMapping.filter((r) => r.id !== row.id),
+                            })
+                          }
+                          icon={<i className="ti ti-trash" aria-hidden="true" />}
+                        />
+                      </div>
                     </div>
                     );
                   })}
               </div>
             </div>
           </Card>
+          <WalletPushHistoryCard
+            history={walletPushHistory}
+            total={walletPushHistoryTotal}
+            error={walletPushHistoryError}
+            onRetry={() => setWalletPushHistoryToken((n) => n + 1)}
+            showLoading={showWalletPushHistoryLoading}
+            page={walletPushHistoryPage}
+            pageSize={walletPushHistoryPageSize}
+            onPageChange={setWalletPushHistoryPage}
+            onPageSizeChange={setWalletPushHistoryPageSize}
+          />
           {!isArchived && (
             <SettingsFooter
               validationErrors={computeWalletFieldMappingErrors(form.walletFieldMapping)}

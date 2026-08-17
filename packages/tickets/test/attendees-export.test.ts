@@ -55,6 +55,22 @@ describe("buildSanitizedExportRows — ticket type catalog resolution (batch 04 
   });
 });
 
+describe("buildSanitizedExportRows — check_in_status label", () => {
+  it("renders a human-readable label for an admitted attendee, not the raw DB value", () => {
+    const [row] = buildSanitizedExportRows(
+      [makeRow({ admitted_at: new Date("2026-08-01T09:00:00Z") })],
+      [],
+      "UTC",
+    );
+    expect(row!.check_in_status).toBe("Checked in");
+  });
+
+  it("renders a human-readable label for a not-yet-admitted attendee", () => {
+    const [row] = buildSanitizedExportRows([makeRow({ admitted_at: null })], [], "UTC");
+    expect(row!.check_in_status).toBe("Not checked in");
+  });
+});
+
 describe("buildExportCsv", () => {
   it("doubles embedded quotes in RFC 4180 cells", () => {
     const csv = buildExportCsv(

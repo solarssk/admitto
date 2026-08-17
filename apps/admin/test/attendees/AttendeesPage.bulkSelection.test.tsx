@@ -26,6 +26,7 @@ const fetchEventItems = vi.fn();
 const bulkRevokeItems = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
+const pollWalletPushCompletion = vi.fn();
 
 function mailSettings(provider: string | null) {
   return {
@@ -93,6 +94,10 @@ vi.mock("../../src/attendees/pollBulkSendCompletion.js", async (importOriginal) 
     pollBulkSendCompletion: (...args: unknown[]) => pollBulkSendCompletion(...args),
   };
 });
+
+vi.mock("../../src/attendees/pollWalletPushCompletion.js", () => ({
+  pollWalletPushCompletion: (...args: unknown[]) => pollWalletPushCompletion(...args),
+}));
 
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
@@ -1800,6 +1805,54 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
       expect(addToast).toHaveBeenCalledWith("2 attendees set to Standard", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("polls wallet push completion when the response includes a job id", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, walletPushJobId: "job-abc" });
+    pollWalletPushCompletion.mockResolvedValue(undefined);
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(pollWalletPushCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "job-abc",
+        addToast,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("toasts a fallback message when the wallet push poll itself fails to run", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, walletPushJobId: "job-abc" });
+    pollWalletPushCompletion.mockRejectedValue(new Error("network down"));
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
+    });
+  });
+
+  it("does not poll wallet push completion when nothing actually changed (no job enqueued)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 0, alreadySetCount: 2, walletPushJobId: null });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(bulkChangeTicketType).toHaveBeenCalledOnce());
+    expect(pollWalletPushCompletion).not.toHaveBeenCalled();
   });
 
   it("closes the picker on Cancel without applying anything, and keeps the selection", async () => {

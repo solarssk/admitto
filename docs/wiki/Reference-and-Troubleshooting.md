@@ -1,9 +1,11 @@
 # Reference Hub
 
-> **Audience:** All staff
-> **Required role:** Any staff role
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | All staff |
+| **Required role** | Any staff role |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 Use these pages when you need an exact field, value, status, or definition.
 

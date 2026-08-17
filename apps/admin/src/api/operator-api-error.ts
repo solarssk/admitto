@@ -4,6 +4,8 @@ const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 
 /** Known API error codes and operator-safe literals mapped to UI copy. */
 const CODE_MESSAGES: Record<string, string> = {
+  actor_mfa_required:
+    "You need a confirmed authenticator app on your own account before you can reset another superadmin's two-factor or password. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has an authenticator app to do this instead.",
   api_key_required:
     "API key is required for the Open-Meteo customer API (customer-api.open-meteo.com).",
   invalid_base_url: "Weather base URL must be a valid public http(s) URL.",
@@ -100,6 +102,8 @@ const CODE_MESSAGES: Record<string, string> = {
   "server error": "Something went wrong. Try again.",
   setup_not_ready: "Complete the setup steps before finishing.",
   source_field_conflict: "A custom field with this key already exists for this event.",
+  source_provider_unavailable:
+    "Select an enabled direct OIDC identity provider before enabling Cloudflare Access.",
   stale_write: "Someone else changed this record. Reload and try again.",
   template_in_use: "This template already has deliveries and cannot be deleted.",
   template_limit_reached: "Template limit reached for this event.",

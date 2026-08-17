@@ -261,7 +261,7 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
   }
 
   try {
-    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups ?? []);
+    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups);
   } catch (err) {
     logOidcError("group mapping", err);
     return oidcFailedRedirect(c);

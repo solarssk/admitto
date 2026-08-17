@@ -135,6 +135,22 @@ function* markdownLinks(text) {
   }
 }
 
+/** Parses just the page's own "| Field | Value |" metadata table into a label -> value map, so a
+ * label mentioned elsewhere in the page (an example, a code block, prose) can never satisfy the
+ * metadata check in its place. */
+function parseFieldValueMetadataTable(text) {
+  const rows = new Map();
+  const tableHeader = "| Field | Value |\n|---|---|\n";
+  const headerIndex = text.indexOf(tableHeader);
+  if (headerIndex === -1) return rows;
+  for (const line of text.slice(headerIndex + tableHeader.length).split("\n")) {
+    if (!line.startsWith("|")) break;
+    const cellMatch = line.match(/^\|\s*\*\*([^*|]+)\*\*\s*\|([^|]*)\|$/);
+    if (cellMatch) rows.set(cellMatch[1].trim(), cellMatch[2].trim());
+  }
+  return rows;
+}
+
 function isEmailCharacter(character) {
   return (character >= "a" && character <= "z")
     || (character >= "A" && character <= "Z")
@@ -178,10 +194,11 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
     const fileName = relative(wikiRoot, filePath);
     if (filePath !== resolve(wikiRoot, "_Sidebar.md")) {
       if (!text.startsWith("# ")) fail(`${relativePath} is missing its page title.`);
+      const metadataRows = parseFieldValueMetadataTable(text);
       for (const label of metadataLabels) {
-        if (!text.includes(`> **${label}:**`)) fail(`${relativePath} is missing ${label} metadata.`);
+        if (!metadataRows.get(label)?.trim()) fail(`${relativePath} is missing ${label} metadata.`);
       }
-      const status = text.match(/^> \*\*Feature status:\*\* (.+)$/m)?.[1]?.trim();
+      const status = metadataRows.get("Feature status")?.trim();
       if (!status || !validStatuses.has(status)) {
         fail(`${relativePath} has an invalid feature status.`);
       }

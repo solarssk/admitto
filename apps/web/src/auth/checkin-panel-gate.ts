@@ -3,6 +3,18 @@ import type { PrismaClient } from "@admitto/db";
 import { canAccessAdminPanel, canAccessCheckInPanel } from "@admitto/auth";
 
 import { resolveStaffEntryPath } from "../setup-routes.js";
+import { renderForbidden } from "../ticket-page.js";
+import { getStaffSpaSecurityHeaders } from "../staff-spa.js";
+
+const NO_CHECKIN_ACCESS_MESSAGE = "Your account does not have access to the check-in panel.";
+
+/** Styled 403 for a top-level browser navigation - the specific reason stays in System logs. */
+function htmlForbidden(c: Context, message: string): Response {
+  for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+    c.header(name, value);
+  }
+  return c.html(renderForbidden(message), 403);
+}
 
 /** Requires `auth` on context (apply `requireSession` first). */
 export function createCheckInPanelCapabilityGuard(prisma: PrismaClient) {
@@ -25,7 +37,7 @@ export function createCheckInPanelCapabilityGuard(prisma: PrismaClient) {
       if (c.req.path.startsWith("/api/")) {
         return c.json({ error: "forbidden" }, 403);
       }
-      return c.text("Forbidden", 403);
+      return htmlForbidden(c, NO_CHECKIN_ACCESS_MESSAGE);
     }
 
     const passwordChange = await prisma.user.findUnique({

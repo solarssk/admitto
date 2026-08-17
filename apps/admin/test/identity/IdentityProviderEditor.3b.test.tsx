@@ -837,6 +837,8 @@ describe("IdentityProviderEditor — submit error paths", () => {
     try {
       renderEditorAt("/admin/settings/identity/providers/p1");
       await screen.findByDisplayValue("Google");
+      // Save is disabled on a clean load - dirty the field so it becomes clickable.
+      fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google Workspace" } });
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -862,6 +864,9 @@ describe("IdentityProviderEditor — legacy invalid mapping role (Codex P2)", ()
     // trigger's own accessible name (CodeRabbit).
     expect(screen.getByRole("button", { name: /^Role, owner \(invalid/ })).toBeTruthy();
 
+    // Save is disabled on a clean load - dirty an unrelated field so it becomes clickable,
+    // exercising the mapping validation that still covers the untouched, already-invalid role.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google Workspace" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Pick a role.");

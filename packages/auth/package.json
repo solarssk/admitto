@@ -51,7 +51,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets",
+    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets",
     "precoverage": "npm run pretest",
     "test": "vitest run --project auth-unit && vitest run --project auth-integration",
     "coverage": "vitest run --coverage -c vitest.unit.config.ts && vitest run --coverage -c vitest.integration.config.ts",
@@ -75,7 +75,7 @@
   "devDependencies": {
     "@prisma/client": "^7.9.1",
     "@types/node": "^24.0.0",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "prisma": "^7.9.1",
     "tsx": "^4.23.10",
     "typescript": "^7.0.2",

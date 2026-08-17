@@ -9,12 +9,14 @@ export interface CfAccessDraft {
   teamDomain: string;
   audienceRaw: string;
   protectedPrefixesRaw: string;
+  sourceProviderId: string;
 }
 
 export type CfAccessFieldErrors = {
   teamDomain?: string;
   audience?: string;
   protectedPrefixes?: string;
+  sourceProviderId?: string;
 };
 
 /** Normalize a single parsed value: trim, drop empties. */
@@ -60,7 +62,13 @@ function arraysEqual(a: string[], b: string[]): boolean {
 }
 
 export function emptyCfDraft(): CfAccessDraft {
-  return { enabled: false, teamDomain: "", audienceRaw: "", protectedPrefixesRaw: "" };
+  return {
+    enabled: false,
+    teamDomain: "",
+    audienceRaw: "",
+    protectedPrefixesRaw: "",
+    sourceProviderId: "",
+  };
 }
 
 /** Seed a draft from the loaded summary DTO (the GET response already carries the
@@ -71,6 +79,7 @@ export function cfDraftFromSummary(summary: CfAccessSummaryDto): CfAccessDraft {
     teamDomain: summary.teamDomain,
     audienceRaw: joinListInput(summary.audience),
     protectedPrefixesRaw: joinListInput(summary.protectedPrefixes),
+    sourceProviderId: summary.sourceProviderId,
   };
 }
 
@@ -81,7 +90,11 @@ export function isCfDraftDirty(draft: CfAccessDraft, baseline: CfAccessDraft): b
     draft.enabled !== baseline.enabled ||
     draft.teamDomain.trim() !== baseline.teamDomain.trim() ||
     !arraysEqual(parseListInput(draft.audienceRaw), parseListInput(baseline.audienceRaw)) ||
-    !arraysEqual(parseListInput(draft.protectedPrefixesRaw), parseListInput(baseline.protectedPrefixesRaw))
+    !arraysEqual(
+      parseListInput(draft.protectedPrefixesRaw),
+      parseListInput(baseline.protectedPrefixesRaw),
+    ) ||
+    draft.sourceProviderId !== baseline.sourceProviderId
   );
 }
 
@@ -114,6 +127,10 @@ export function validateCfDraft(draft: CfAccessDraft): CfAccessFieldErrors {
     errors.audience = "At least one Application Audience (AUD) tag is required when enabled.";
   }
 
+  if (draft.enabled && !draft.sourceProviderId.trim()) {
+    errors.sourceProviderId = "Select the direct Authentik identity provider used by Cloudflare.";
+  }
+
   if (protectedPrefixes.some((p) => !p.startsWith("/"))) {
     errors.protectedPrefixes = "Each protected path must start with /.";
   }
@@ -132,5 +149,6 @@ export function buildCfUpdateBody(
   if (!locks.teamDomain) body.teamDomain = draft.teamDomain.trim();
   if (!locks.audience) body.audience = parseListInput(draft.audienceRaw);
   if (!locks.protectedPrefixes) body.protectedPrefixes = parseListInput(draft.protectedPrefixesRaw);
+  if (!locks.sourceProviderId) body.sourceProviderId = draft.sourceProviderId.trim();
   return body;
 }

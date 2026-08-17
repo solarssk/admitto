@@ -16,6 +16,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./passcreator-mapper": {
+      "types": "./dist/passcreator-mapper.d.ts",
+      "default": "./dist/passcreator-mapper.js"
     }
   },
   "scripts": {

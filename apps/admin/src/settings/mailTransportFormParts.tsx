@@ -1241,6 +1241,11 @@ export function SettingsFooter({
   onSave: () => void;
 }>) {
   const saveLabel = saving ? busyLabel : "Save";
+  // A failed save's validationErrors can outlive hasUnsavedChanges - e.g. the operator manually
+  // retypes a field back to its saved value after a rejected save, which zeroes the diff without
+  // touching the error state a caller only clears in its own onReset. Keep Reset enabled in that
+  // case so there's still a way to dismiss the stale error (every caller's onReset clears it).
+  const resetDisabled = saving || (!hasUnsavedChanges && validationErrors.length === 0);
 
   return (
     <div className="settings-footer">
@@ -1253,10 +1258,10 @@ export function SettingsFooter({
         )}
       </div>
       <div className="settings-footer__buttons">
-        <Button type="button" variant="secondary" disabled={saving} onClick={onReset}>
+        <Button type="button" variant="secondary" disabled={resetDisabled} onClick={onReset}>
           Reset
         </Button>
-        <Button type="button" variant="primary" disabled={saving} onClick={onSave}>
+        <Button type="button" variant="primary" disabled={saving || !hasUnsavedChanges} onClick={onSave}>
           {saveLabel}
         </Button>
       </div>

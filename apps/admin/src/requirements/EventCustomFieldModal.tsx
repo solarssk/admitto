@@ -62,6 +62,9 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
     labelTrimmed.length > 0 &&
     form.source_field.length > 0 &&
     (form.type !== "select" || selectOptions.length > 0);
+  // Create mode always has "something new to save" once canSubmit is true; edit mode also
+  // requires the draft to actually differ from the field being edited.
+  const dirty = field ? JSON.stringify(form) !== JSON.stringify(formFromField(field)) : true;
 
   function updateLabel(value: string) {
     setForm((f) => ({
@@ -239,7 +242,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
             <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving}>
+            <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving || !dirty}>
               {submitLabel}
             </Button>
           </div>

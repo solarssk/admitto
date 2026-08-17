@@ -1,9 +1,11 @@
 # Identity and SSO
 
-> **Audience:** Superadmins
-> **Required role:** Superadmin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | Superadmins |
+| **Required role** | Superadmin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.0 |
 
 ## What this page helps you do
 
@@ -20,7 +22,9 @@ This page covers two independent, optional layers:
   identity and, optionally, their device before their request is even allowed to reach Admitto —
   a perimeter control, not a replacement for Admitto's own roles. Enable it if your organisation
   wants staff URLs unreachable to anyone who hasn't already authenticated at the network edge, on
-  top of signing in to Admitto itself.
+  top of signing in to Admitto itself. It is a separate layer in front of sign-in, not a
+  replacement for it - see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)
+  for why both are needed.
 
 Both are optional; a deployment can use local passwords only, OIDC only, Cloudflare Access only,
 or any combination. See [Glossary](Glossary) for short definitions of SSO, OIDC, and ZTNA.
@@ -105,25 +109,37 @@ A local password always keeps working as a fallback (unless the account has no l
 
 Do this in Cloudflare's own dashboard first, then in Admitto:
 
-1. In **Cloudflare Zero Trust**, create an **Access application** that protects your Admitto staff
+1. First configure and enable the direct OIDC provider in Admitto. It remains the authoritative
+   identity and role source; Cloudflare Access is the edge gate, not a second staff directory.
+2. In **Cloudflare Zero Trust**, create an **Access application** that protects your Admitto staff
    URLs (for example `admin.example.com/*`) and set the policy for who's allowed through (by email
-   domain, group, or identity provider).
-2. From that Access application, copy the **team domain** (looks like
-   `https://yourteam.cloudflareaccess.com`) and the **Application Audience (AUD) tag**, a long
-   hex string Cloudflare shows on the application's Overview tab.
-3. In Admitto, open **Organisation settings → Identity → Cloudflare Access** and fill in:
+   domain, group, or identity provider). Copy that application's **team domain** (looks like
+   `https://yourteam.cloudflareaccess.com`) and **Application Audience (AUD) tag**, a long hex
+   string Cloudflare shows on the application's Overview tab.
+3. Bind Cloudflare sign-ins to the direct provider account from step 1, instead of a second,
+   untrusted identity: see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)
+   for the exact custom claim Cloudflare must forward, the identity-provider-side mapping and
+   stable-identifier requirement, and a full troubleshooting list. This is required, not optional -
+   the **Direct identity provider** field in step 4 below has no effect until this is done, and
+   every staff account that will sign in through Cloudflare must also sign in through the direct
+   provider once first, which is what actually creates the link Admitto trusts later.
+4. In Admitto, open **Organisation settings → Identity → Cloudflare Access** and fill in:
 
    | Field in Admitto | What it is | Example |
    |---|---|---|
    | Cloudflare team URL | Your Zero Trust team domain | `https://yourteam.cloudflareaccess.com` |
    | Application token (AUD) | The Application Audience tag from Cloudflare | `a1b2c3d4-e5f6-7890-abcd-ef1234567890` |
-   | Protected URL paths | Which paths this rule applies to, comma-separated | `/admin, /api/admin` |
+   | Protected URL paths | Which paths this rule applies to, comma-separated | `/admin, /api/admin, /api/checkin` |
+   | Direct identity provider | The enabled direct OIDC provider from step 1, linked per step 3 | `Corporate OIDC` |
 
-4. Use **Test connection**, confirm it succeeds, and only then enable enforcement.
+5. Use **Test connection**, confirm it succeeds, and only then enable enforcement. Test in a
+   private browser window: after Cloudflare has authenticated the staff member, Admitto should
+   enter as the already linked direct-provider account without showing a second Admitto sign-in
+   screen.
 
 ## Expected result
 
-The test account can sign in through the configured provider and receives only the roles produced by approved mappings. Cloudflare Access protects only the configured paths when enabled.
+The test account can sign in through the configured provider and receives only the roles produced by approved mappings. Cloudflare Access protects only the configured paths when enabled. Its verified edge sign-ins bind to the same pre-linked direct-provider account and reconcile that provider's managed group roles on every sign-in.
 
 ## Important decisions
 
@@ -137,6 +153,9 @@ The test account can sign in through the configured provider and receives only t
   during **Discover**. If it didn't (or the provider was configured before this existed, re-run
   **Discover** to pick it up), signing out only ends the local Admitto session, same as before.
 - A group mapping can add or remove scoped roles on later sign-ins. Manual assignments are not treated as provider-owned grants.
+- Cloudflare Access verifies the edge session; the selected direct OIDC provider remains the source
+  of account identity and group-based authorization. Changing or removing a group there takes
+  effect at the next Cloudflare Access sign-in.
 - A signed-in user's display name and phone number re-sync from the provider on every sign-in. A superadmin's own manual edit to either field in Users and Roles Administration takes priority and is not overwritten by a later sign-in.
 - The system prevents removal of the last active instance Superadmin assignment.
 - Enabling Cloudflare Access with incorrect audience or path values can block staff access.
@@ -155,10 +174,12 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
 - **Sign-in redirects to an error at the identity provider ("redirect URI mismatch" or similar):** the callback registered at the provider must exactly match the **Redirect URI** shown in the provider editor (Instance URL + `/api/auth/oidc/<provider-id>/callback`). Check for a trailing slash, `http` vs `https`, or the wrong provider id. If Redirect URI is missing in the editor, set Instance URL under Organisation settings → General first. On the Add provider form, the URI appears only after the first save (the pattern is shown as a hint before then).
 - **Issuer rejected as private / link-local:** production blocks private destinations unless the exact hostname or IP literal is listed in `SSO_PRIVATE_DESTINATION_ALLOWLIST`. This is separate from the mail allowlist.
 - **Cloudflare test fails:** check the team URL and audience without copying tokens into support messages.
+- **Cloudflare sign-in fails with "Forbidden," or lands a staff member on Admitto's own sign-in screen instead of straight into the panel:** see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)'s Common problems list, which maps each specific denial reason from System logs to its cause.
 - **The change risks lockout:** stop and use the separate Superadmin session to restore the last known working configuration.
 
 ## Related pages
 
+- [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking) - the identity-linking layer in full detail, with troubleshooting
 - [Users and Roles Administration](Users-and-Roles-Administration)
 - [Organisation Settings](Organisation-Settings)
 - [Logs and Audit](Logs-and-Audit)

@@ -1,9 +1,11 @@
 # Sending Messages and Delivery
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Administrator |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 ## What this page helps you do
 
@@ -55,3 +57,4 @@ Sending creates delivery records and can issue the attendee's ticket when needed
 - [Email Templates](Email-Templates)
 - [Email Delivery Statuses](Email-Delivery-Statuses)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
+- [Sending Wallet Messages](Sending-Wallet-Messages)
