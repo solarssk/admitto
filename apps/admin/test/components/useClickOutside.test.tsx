@@ -12,7 +12,7 @@ function Harness({ open, onOutside }: { open: boolean; onOutside: (reason: Outsi
   const ref = useRef<HTMLDivElement>(null);
   useClickOutside(ref, open, onOutside);
   return (
-    <div>
+    <dialog data-testid="ancestor-dialog" open>
       <div ref={ref} data-testid="inside">
         <button type="button" id="inside-button" data-testid="inside-button">
           inside
@@ -31,7 +31,7 @@ function Harness({ open, onOutside }: { open: boolean; onOutside: (reason: Outsi
       <label htmlFor="does-not-exist" data-testid="label-for-nothing">
         unrelated caption
       </label>
-    </div>
+    </dialog>
   );
 }
 
@@ -102,6 +102,21 @@ describe("useClickOutside", () => {
     expect(onOutside).toHaveBeenCalledTimes(1);
     expect(onOutside).toHaveBeenCalledWith("pointer");
   });
+
+  it("does not call onOutside when focus moves to an ancestor of the container", () => {
+    // Regression coverage: mousedown on non-focusable content inside the container (e.g. this
+    // field's own <label>) makes the browser fall back to focusing the nearest focusable
+    // ancestor - inside a real page, often the surrounding <dialog>/modal - firing a focusin
+    // whose target contains the container rather than a sibling control the user actually chose.
+    // A genuinely different control can never contain this one, so treating that fallback focus
+    // as "outside" closed the panel mid-press, and the label's own forwarded click then reopened
+    // it on release, flickering closed-then-open on every held click near the label inside a
+    // <dialog> (PO report, Attendee/Event edit modals).
+    const onOutside = vi.fn();
+    render(<Harness open onOutside={onOutside} />);
+    fireEvent.focusIn(screen.getByTestId("ancestor-dialog"));
+    expect(onOutside).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolvesInsideContainer", () => {
@@ -154,5 +169,12 @@ describe("resolvesInsideContainer", () => {
     const container = document.createElement("div");
     const label = document.createElement("label");
     expect(resolvesInsideContainer(label, container)).toBe(false);
+  });
+
+  it("is true when the target is an ancestor of the container (e.g. the enclosing <dialog>)", () => {
+    const dialog = document.createElement("dialog");
+    const container = document.createElement("div");
+    dialog.appendChild(container);
+    expect(resolvesInsideContainer(dialog, container)).toBe(true);
   });
 });
