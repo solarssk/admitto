@@ -281,38 +281,64 @@ async function processAttendeeForSend({
     sessionId: options.sessionId,
   };
 
-  if (purpose === "initial") {
-    const claim = await claimInitialDelivery(claimInput, prisma);
-    if (claim.action === "skip") {
-      return { kind: "skip", attendeeId: attendee.id, reason: claim.reason };
-    }
-    return {
-      kind: "pending",
-      pending: {
-        deliveryId: claim.deliveryId,
-        attendeeId: attendee.id,
-        to: claim.message.to,
-        frozenSubject: claim.message.subject,
-        frozenHtml: claim.message.html,
-        links,
-        idempotencyKey: `${attendee.id}:initial`,
-        incrementAttempts: claim.action === "retry_existing",
-      },
-    };
+  return claimOrResendPending(attendee.id, purpose, claimInput, links, prisma);
+}
+
+/**
+ * purpose:"resend" always creates a new resend row. purpose:"initial" claims the atomic
+ * (attendee, event) slot - except when that claim is skipped specifically because the
+ * attendee already has a successful ticket: an explicit send action (checkbox selection)
+ * against them is an implicit resend, not a silent no-op. A true in-flight duplicate is
+ * still skipped.
+ */
+async function claimOrResendPending(
+  attendeeId: string,
+  purpose: "initial" | "resend",
+  claimInput: ClaimInitialInput,
+  links: AttendeeMailLinks,
+  prisma: PrismaClient,
+): Promise<AttendeeSendOutcome> {
+  if (purpose !== "initial") {
+    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
   }
 
-  const created = await createResendDelivery(claimInput, prisma);
+  const claim = await claimInitialDelivery(claimInput, prisma);
+  if (claim.action === "skip") {
+    if (claim.reason !== "already_sent") {
+      return { kind: "skip", attendeeId, reason: claim.reason };
+    }
+    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
+  }
   return {
     kind: "pending",
     pending: {
-      deliveryId: created.deliveryId,
-      attendeeId: attendee.id,
-      to: created.message.to,
-      frozenSubject: created.message.subject,
-      frozenHtml: created.message.html,
+      deliveryId: claim.deliveryId,
+      attendeeId,
+      to: claim.message.to,
+      frozenSubject: claim.message.subject,
+      frozenHtml: claim.message.html,
       links,
-      idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
+      idempotencyKey: `${attendeeId}:initial`,
+      incrementAttempts: claim.action === "retry_existing",
     },
+  };
+}
+
+async function createResendPending(
+  attendeeId: string,
+  claimInput: ClaimInitialInput,
+  links: AttendeeMailLinks,
+  prisma: PrismaClient,
+): Promise<PendingSend> {
+  const created = await createResendDelivery(claimInput, prisma);
+  return {
+    deliveryId: created.deliveryId,
+    attendeeId,
+    to: created.message.to,
+    frozenSubject: created.message.subject,
+    frozenHtml: created.message.html,
+    links,
+    idempotencyKey: `${attendeeId}:resend:${created.deliveryId}`,
   };
 }
 
@@ -388,7 +414,10 @@ export async function deliverPendingBatch(
 /**
  * Issue / claim ticket emails for an event (initial or resend).
  * By default only enqueues `EmailDelivery` rows (`queued`); the Admitto worker drains them.
- * Skips individual attendees on not_issuable, token/link build errors, or dedup — does not abort the batch.
+ * Skips individual attendees on not_issuable, token/link build errors, or an in-flight duplicate
+ * — does not abort the batch. purpose:"initial" against an attendee who already has a successful
+ * ticket falls back to a resend rather than skipping, since that only happens on an explicit send
+ * action (e.g. checkbox selection), not an automated sweep.
  */
 export async function sendTicketEmails(
   eventId: string,

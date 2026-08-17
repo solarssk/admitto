@@ -10,12 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Mail templates now support two more placeholders: `{{ticket_type}}` (the attendee's ticket type label) and `{{event_hours}}` (the event's start-end time, if set in Event settings). Both were already available on wallet passes but missing from the Communication tab's template editor.
+- Attendee detail's "More actions" menu now has a "Copy ticket link" action for admins and superadmins, which copies the attendee's existing ticket URL to the clipboard. Previously the only way to get that link was to resend the ticket email to yourself. The raw ticket token is still never exposed as attendee data - it's decrypted server-side only for this action, the same way the existing wallet-pass link actions already work, and each copy is recorded in the attendee's action log.
 
 ### Fixed
 
+- Selecting attendees on the Attendees list and clicking "Send tickets" (single or bulk) no longer silently skips anyone who already received a ticket, reporting "No tickets were queued" with nothing actually sent. It now resends to whoever already has a ticket while still sending a first ticket to anyone who doesn't, correctly recorded in the delivery log either way.
 - The admin panel's Check-in tab now works for staff who sign in only through Cloudflare Access, not just staff with a local Admitto password. Previously it showed a "sign in to Admitto" notice and blocked live scanning entirely for Cloudflare-only sign-ins.
 - Signing in with a local password (or directly through your identity provider, not Cloudflare Access) no longer gets stuck after the two-factor code when the admin panel is one of the paths Cloudflare Access protects - it now lands on the check-in surface instead, which every admin and superadmin can already use once at least one event exists. It falls back once more, to My account, on a brand new instance with no events yet.
 - Pressing and holding a searchable dropdown's own caption (e.g. Attendance, Ticket type, Event timezone) while it was open inside a modal no longer closes it the instant you press down, then reopens it the instant you release. Clicking near the caption briefly moved keyboard focus to the surrounding modal window itself, which every one of these dropdowns mistook for "focus moved to something else" and closed for.
+- The Send test email result in Event/Organisation Settings → Mail no longer shows the bounce-detection message pressed directly against the details above it, with no visible gap.
 
 ## [0.5.2] - 2026-08-16
 

@@ -991,11 +991,7 @@ export function TestResultPreview({ testResult }: Readonly<{ testResult: TestRes
           )}
       </div>
       {testResult.bounceProbe && (
-        <Notice
-          variant={bounceProbeNoticeVariant(testResult.bounceProbe.status)}
-          role="status"
-          className="mail-preview__bounce-notice"
-        >
+        <Notice variant={bounceProbeNoticeVariant(testResult.bounceProbe.status)} role="status">
           {testResult.bounceProbe.message}
         </Notice>
       )}
