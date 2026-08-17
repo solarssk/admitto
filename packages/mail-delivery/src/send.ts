@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PrismaClient } from "@admitto/db";
+import { EMAIL_DELIVERY_SUCCESS_STATUSES, type PrismaClient } from "@admitto/db";
 import { decryptFromString } from "@admitto/crypto";
 import {
   buildEventLocationTemplateVars,
@@ -305,12 +305,29 @@ async function claimOrResendPending(
     return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
   }
 
+  // An explicit send for a delivery that had already completed before this request began is a
+  // resend. Check before attempting the atomic initial claim: a P2002 from that claim can also
+  // mean another concurrent request just completed its first send, which must remain a skip.
+  const existingInitial = await prisma.emailDelivery.findFirst({
+    where: {
+      attendee_id: claimInput.attendeeId,
+      event_id: claimInput.eventId,
+      purpose: "initial",
+    },
+    select: { status: true },
+  });
+  if (
+    existingInitial &&
+    EMAIL_DELIVERY_SUCCESS_STATUSES.includes(
+      existingInitial.status as (typeof EMAIL_DELIVERY_SUCCESS_STATUSES)[number],
+    )
+  ) {
+    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
+  }
+
   const claim = await claimInitialDelivery(claimInput, prisma);
   if (claim.action === "skip") {
-    if (claim.reason !== "already_sent") {
-      return { kind: "skip", attendeeId, reason: claim.reason };
-    }
-    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
+    return { kind: "skip", attendeeId, reason: claim.reason };
   }
   return {
     kind: "pending",
