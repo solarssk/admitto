@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An attendee's Wallet status now shows "Added" only once PassCreator confirms the pass was actually registered on an Apple or Google Wallet device. Previously it showed "Added" as soon as the attendee opened the "Add to Wallet" link, even if they backed out of the install prompt and never actually added it - it now shows "Sent" until a real device registration is confirmed.
 - Selecting attendees on the Attendees list and clicking "Send tickets" (single or bulk) no longer silently skips anyone who already received a ticket, reporting "No tickets were queued" with nothing actually sent. It now resends to whoever already has a ticket while still sending a first ticket to anyone who doesn't, correctly recorded in the delivery log either way.
 - The admin panel's Check-in tab now works for staff who sign in only through Cloudflare Access, not just staff with a local Admitto password. Previously it showed a "sign in to Admitto" notice and blocked live scanning entirely for Cloudflare-only sign-ins.
 - Signing in with a local password (or directly through your identity provider, not Cloudflare Access) no longer gets stuck after the two-factor code when the admin panel is one of the paths Cloudflare Access protects - it now lands on the check-in surface instead, which every admin and superadmin can already use once at least one event exists. It falls back once more, to My account, on a brand new instance with no events yet.
