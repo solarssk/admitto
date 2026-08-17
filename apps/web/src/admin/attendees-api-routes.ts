@@ -3251,7 +3251,14 @@ export async function handleGetAttendeeTicketLink(
   let ticketUrl: string;
   try {
     ticketUrl = (await resolveAttendeeMailLinks(attendeeId, db, baseUrlOrRes)).ticket_url;
-  } catch {
+  } catch (err) {
+    // Only the specific "nothing to build a link from yet" shape is a real 422 - a decryption
+    // failure or a DB error hitting this same call is a genuine server error and must not be
+    // reported to the admin as "this attendee just hasn't been sent a ticket".
+    const notIssued =
+      err instanceof Error &&
+      (err.message.includes("missing token_enc") || err.message.includes("missing public_ref"));
+    if (!notIssued) throw err;
     return c.json({ error: "ticket_not_issued" }, 422);
   }
 
@@ -3259,7 +3266,7 @@ export async function handleGetAttendeeTicketLink(
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: attendeeId,
-      action_type: "ticket_link_copied",
+      action_type: "ticket_link_retrieved",
       audit: adminAuditFromContext(c),
     });
   });

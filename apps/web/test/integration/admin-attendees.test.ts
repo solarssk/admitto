@@ -4210,7 +4210,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/ticket-link", () => {
     expect(body.url).toMatch(/^https:\/\/tickets\.example\.com\/t\/.+/);
 
     const log = await prisma.attendeeActionLog.findFirst({
-      where: { attendee_id: ATT_A1, action_type: "ticket_link_copied" },
+      where: { attendee_id: ATT_A1, action_type: "ticket_link_retrieved" },
       orderBy: { created_at: "desc" },
     });
     expect(log).not.toBeNull();
@@ -4254,6 +4254,33 @@ describe("POST /api/admin/events/:eventId/attendees/:id/ticket-link", () => {
       expect(body.error).toBe("ticket_not_issued");
     } finally {
       await prisma.attendee.delete({ where: { id: unissued.id } });
+    }
+  });
+
+  it("returns 500 (not 422) when token_enc exists but can't be decrypted", async () => {
+    const corrupt = await prisma.attendee.create({
+      data: {
+        id: "att-admin-ticket-link-corrupt-token",
+        event_id: EVENT_A,
+        email: "corrupt-token@example.com",
+        name: "Corrupt Token",
+        token_hash: hashToken(generateToken()),
+        token_enc: "not-valid-encrypted-payload",
+      },
+    });
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${corrupt.id}/ticket-link`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("internal_error");
+    } finally {
+      await prisma.attendee.delete({ where: { id: corrupt.id } });
     }
   });
 });

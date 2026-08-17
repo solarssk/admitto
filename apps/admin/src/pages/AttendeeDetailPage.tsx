@@ -1753,11 +1753,14 @@ export function AttendeeDetailPage() {
 
   async function handleCopyTicketLink() {
     if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
     try {
       const { url } = await fetchTicketLink(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
       await navigator.clipboard.writeText(url);
       addToast("Ticket link copied to clipboard", "success");
     } catch (err) {
+      if (!isStillSelected(target)) return;
       addToast(operatorApiErrorMessage(err, "Could not copy the ticket link."), "error");
     }
   }
