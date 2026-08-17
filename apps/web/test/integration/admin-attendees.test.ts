@@ -4283,6 +4283,32 @@ describe("POST /api/admin/events/:eventId/attendees/:id/ticket-link", () => {
       await prisma.attendee.delete({ where: { id: corrupt.id } });
     }
   });
+
+  it("returns 422 for an agency-import attendee missing public_ref, same as an unissued Mode A ticket", async () => {
+    const agency = await prisma.attendee.create({
+      data: {
+        id: "att-admin-ticket-link-agency-no-ref",
+        event_id: EVENT_A,
+        email: "agency-no-ref@example.com",
+        name: "Agency No Ref",
+        external_uuid: "agency-external-uuid-1",
+      },
+    });
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${agency.id}/ticket-link`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("ticket_not_issued");
+    } finally {
+      await prisma.attendee.delete({ where: { id: agency.id } });
+    }
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/:id/resend with templateId", () => {

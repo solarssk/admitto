@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { RouterProvider } from "react-router/dom";
+import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ApiError } from "../../src/api/client.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
@@ -129,5 +130,72 @@ describe("AttendeeDetailPage — Copy ticket link", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/hasn.t been sent yet/);
     });
+  });
+
+  it("ignores a stale ticket-link success after navigating to a different attendee mid-request", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    let resolveFetch!: (value: { url: string }) => void;
+    fetchTicketLink.mockReturnValueOnce(
+      new Promise<{ url: string }>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    mockLoad(baseDetail());
+    mockLoad(baseDetail({ id: "att-2", name: "Bob Beta" }));
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees/:attendeeId", element: <AttendeeDetailPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees/att-1"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copy ticket link/ }));
+
+    // Navigate to a different attendee while the fetch is still in flight - the resolution
+    // below must not copy Anna's link into the clipboard on Bob's behalf.
+    await act(async () => router.navigate("/admin/events/evt-1/attendees/att-2"));
+    await screen.findByRole("heading", { name: "Bob Beta" });
+
+    await act(async () => {
+      resolveFetch({ url: "https://tickets.example.com/t/anna123" });
+      await Promise.resolve();
+    });
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+  });
+
+  it("ignores a stale ticket-link failure after navigating to a different attendee mid-request", async () => {
+    let rejectFetch!: (err: unknown) => void;
+    fetchTicketLink.mockReturnValueOnce(
+      new Promise<{ url: string }>((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+    mockLoad(baseDetail());
+    mockLoad(baseDetail({ id: "att-2", name: "Bob Beta" }));
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees/:attendeeId", element: <AttendeeDetailPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees/att-1"] },
+    );
+    renderWithToast(<RouterProvider router={router} />);
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Copy ticket link/ }));
+
+    await act(async () => router.navigate("/admin/events/evt-1/attendees/att-2"));
+    await screen.findByRole("heading", { name: "Bob Beta" });
+
+    await act(async () => {
+      rejectFetch(new ApiError(422, "ticket_not_issued", "ticket_not_issued"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId("at-toast")).toBeNull();
   });
 });

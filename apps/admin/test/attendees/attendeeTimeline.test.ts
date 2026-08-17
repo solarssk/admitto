@@ -87,6 +87,7 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["mail_bounced", "Email bounced"],
     ["ticket_resent", "Ticket resent"],
     ["resend_ticket", "Ticket resent"],
+    ["ticket_link_retrieved", "Ticket link copied"],
     ["check_in", "Checked in"],
     ["admitted", "Checked in"],
     ["check_in_undo", "Check-in undone"],
@@ -129,6 +130,7 @@ describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => 
   it.each([
     ["note_updated", "pencil"],
     ["note_deleted", "trash"],
+    ["ticket_link_retrieved", "link"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineIcon(actionType)).toBe(expected);
   });
