@@ -4658,8 +4658,11 @@ output.mail-field-hint {
    plain status readout (error, since nothing was actually delivered). */
 .mail-preview {
   /* <output>'s UA default is display:inline — this box needs to behave like the
-     <div> it replaced (full-width, its children stacked as block boxes). */
-  display: block;
+     <div> it replaced (full-width, its children stacked vertically with a
+     consistent gap, same rhythm as .settings-card-stack). */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   margin-top: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -4686,7 +4689,6 @@ output.mail-field-hint {
   gap: var(--space-3);
   border-bottom: 1px solid var(--border);
   padding-bottom: var(--space-2);
-  margin-bottom: var(--space-3);
 }
 
 .mail-preview__head-main {
@@ -4824,10 +4826,6 @@ output.mail-field-hint {
 
 .test-mail-summary__full b {
   font-weight: 400;
-}
-
-.mail-preview__bounce-notice {
-  margin-top: var(--space-3);
 }
 
 /* mail-transport-footer — shared footer row for Security panel */
