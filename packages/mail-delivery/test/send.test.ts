@@ -339,7 +339,7 @@ describe("sendTicketEmails", () => {
     expect(exported[0]?.message.html).not.toContain("/m/evt-mail-send.png");
   });
 
-  it("dedups second initial send", async () => {
+  it("second initial send to an already-ticketed attendee resends instead of being skipped", async () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
@@ -348,8 +348,54 @@ describe("sendTicketEmails", () => {
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
     );
+    expect(result.sent).toBe(1);
+    expect(result.skipped).toHaveLength(0);
+    expect(exported).toHaveLength(1);
+
+    const rows = await prisma.emailDelivery.findMany({
+      where: { attendee_id: "att-mode-a" },
+      orderBy: { queued_at: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.purpose).toBe("initial");
+    expect(rows[1]?.purpose).toBe("resend");
+  });
+
+  it("skips an initial send while another initial delivery for that attendee is still queued", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-in-flight",
+        event_id: EVENT_ID,
+        email: "in-flight@example.com",
+        name: "In Flight",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-in-flight",
+        purpose: "initial",
+        batch_id: "in-flight-batch",
+        provider: "export_only",
+        status: "queued",
+        recipient_email: "in-flight@example.com",
+        rendered_subject: "Subject",
+        rendered_html: "<p>Hi</p>",
+        queued_at: new Date(),
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-in-flight"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
     expect(result.sent).toBe(0);
-    expect(result.skipped.some((s) => s.reason === "already_sent")).toBe(true);
+    expect(result.skipped).toEqual([{ attendeeId: "att-in-flight", reason: "in_flight" }]);
     expect(exported).toHaveLength(0);
   });
 
