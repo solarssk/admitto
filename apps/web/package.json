@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@testcontainers/redis": "^12.1.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.2.0",
     "@types/pdfkit": "^0.17.6",
     "jose": "^6.2.5",
     "tsx": "^4.23.12",
