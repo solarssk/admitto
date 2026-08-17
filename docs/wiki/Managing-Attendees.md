@@ -5,7 +5,7 @@
 | **Audience** | Event Managers |
 | **Required role** | Administrator |
 | **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+| **Last verified** | Admitto 0.5.2 |
 
 ## What this page helps you do
 
@@ -53,7 +53,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
 4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes.
 5. Delivery history supports **View sent message** (rendered mail with ticket link redacted) and **View delivery details**.
-6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds **Revoke items**, **Delete attendee** (typed confirmation for GDPR erasure), and, once the attendee has added a wallet pass, **Void wallet pass**, **Push updates**, and **Delete wallet pass**. **Restore pass** asks for confirmation before applying. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
+6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds **Resend ticket**, **Copy ticket link** (copies the attendee's existing ticket URL to the clipboard, without resending anything), **Revoke items**, **Delete attendee** (typed confirmation for GDPR erasure), and, once the attendee has added a wallet pass, **Void wallet pass**, **Push updates**, and **Delete wallet pass**. **Restore pass** asks for confirmation before applying. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
 
 Use [Importing Attendees](Importing-Attendees) for a prepared list rather than adding many records one by one.
 

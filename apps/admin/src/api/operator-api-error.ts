@@ -110,6 +110,7 @@ const CODE_MESSAGES: Record<string, string> = {
   template_not_found: "Template not found.",
   template_required: "Ticket template cannot be deleted.",
   template_validation_failed: "Fix template validation errors and try again.",
+  ticket_not_issued: "This attendee's ticket hasn't been sent yet. Send it first, then copy the link.",
   team_domain_required: "Enter the Cloudflare Access team URL before testing the connection.",
   toggle_race: "Provider state changed. Reload and try again.",
   token_conflict: "This token is already used by another asset in this event.",

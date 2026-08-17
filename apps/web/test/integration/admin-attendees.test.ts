@@ -4199,6 +4199,65 @@ describe("POST /api/admin/events/:eventId/attendees/:id/resend", () => {
   });
 });
 
+describe("POST /api/admin/events/:eventId/attendees/:id/ticket-link", () => {
+  it("returns the ticket URL and writes an audit log entry", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}/ticket-link`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { url: string };
+    expect(body.url).toMatch(/^https:\/\/tickets\.example\.com\/t\/.+/);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_A1, action_type: "ticket_link_copied" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+  });
+
+  it("rejects operator", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A1}/ticket-link`, {
+      method: "POST",
+      headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a cross-event attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_B1}/ticket-link`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 422 when the attendee has no issued ticket yet", async () => {
+    const unissued = await prisma.attendee.create({
+      data: {
+        id: "att-admin-ticket-link-unissued",
+        event_id: EVENT_A,
+        email: "unissued@example.com",
+        name: "Not Issued",
+      },
+    });
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${unissued.id}/ticket-link`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("ticket_not_issued");
+    } finally {
+      await prisma.attendee.delete({ where: { id: unissued.id } });
+    }
+  });
+});
+
 describe("POST /api/admin/events/:eventId/attendees/:id/resend with templateId", () => {
   // Dedicated attendee/template so these don't share ATT_A1's per-attendee resend rate-limit
   // bucket with the describe block above.

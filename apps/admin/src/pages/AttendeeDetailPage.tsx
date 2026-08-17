@@ -28,6 +28,7 @@ import {
   reissueWalletPass,
   deleteWalletPass,
   resendTicket,
+  fetchTicketLink,
   restoreWalletPass,
   revokeAttendeeCheckIn,
   updateAttendee,
@@ -108,6 +109,7 @@ type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | null;
 function MoreActionsMenu({
   event,
   onResend,
+  onCopyTicketLink,
   onDelete,
   mailConfigured,
   showEdit,
@@ -131,6 +133,7 @@ function MoreActionsMenu({
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
+  onCopyTicketLink: () => void;
   onDelete: () => void;
   mailConfigured: boolean | undefined;
   /** Mobile only (useIsDesktop() in the caller) - narrow viewports fold the standalone Edit
@@ -230,6 +233,21 @@ function MoreActionsMenu({
               </button>
             )}
           </ArchivedGuard>
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onCopyTicketLink();
+            }}
+          >
+            <i className="ti ti-link" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Copy ticket link</span>
+              <span className="more-actions-menu__item-hint">Copy this attendee&rsquo;s ticket URL</span>
+            </span>
+          </button>
           <hr className="more-actions-menu__divider" />
           <RevokeActionMenuItems
             event={event}
@@ -1733,6 +1751,17 @@ export function AttendeeDetailPage() {
     }
   }
 
+  async function handleCopyTicketLink() {
+    if (!eventId || !attendeeId) return;
+    try {
+      const { url } = await fetchTicketLink(eventId, attendeeId);
+      await navigator.clipboard.writeText(url);
+      addToast("Ticket link copied to clipboard", "success");
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Could not copy the ticket link."), "error");
+    }
+  }
+
   /** Revoke or restore wallet pass; preserves unsaved profile edits in the form. */
   async function handlePassStatusChange(
     nextStatus: "registered" | "revoked",
@@ -2094,6 +2123,7 @@ export function AttendeeDetailPage() {
               showEdit={!isDesktop}
               onEdit={() => setEditMode(true)}
               onResend={() => setResendOpen(true)}
+              onCopyTicketLink={() => void handleCopyTicketLink()}
               onDelete={() => {
                 setDeleteError(null);
                 setDeleteOpen(true);
