@@ -23,6 +23,8 @@ describe("wallet badge assets when files are missing", () => {
       "/assets/admitto-logo.svg",
       "/assets/apple-wallet-badge.svg",
       "/assets/google-wallet-badge.svg",
+      "/assets/apple-wallet-badge.png",
+      "/assets/google-wallet-badge.png",
     ]) {
       const res = await app.request(path);
       expect(res.status, path).toBe(404);
