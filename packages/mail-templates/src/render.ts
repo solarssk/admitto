@@ -101,6 +101,8 @@ export function stripEmptyUrlAttributes(html: string): string {
 const BUNDLED_TICKET_ASSET_PATHS = [
   "/assets/apple-wallet-badge.svg",
   "/assets/google-wallet-badge.svg",
+  "/assets/apple-wallet-badge.png",
+  "/assets/google-wallet-badge.png",
 ] as const;
 
 /** Rewrite known relative bundled ticket asset `src` values to absolute URLs using `baseUrl`. */

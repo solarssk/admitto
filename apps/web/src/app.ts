@@ -46,7 +46,14 @@ import {
   staticMapCacheControl,
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
-import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
+import {
+  handleGetAdmittoLogo,
+  handleGetAdmittoMark,
+  handleGetAppleWalletBadge,
+  handleGetAppleWalletBadgePng,
+  handleGetGoogleWalletBadge,
+  handleGetGoogleWalletBadgePng,
+} from "./wallet-badges.js";
 import { handlePassCreatorWebhook } from "./wallet-webhook.js";
 import {
   resolveCheckinToken,
@@ -992,6 +999,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/assets/admitto-logo.svg", handleGetAdmittoLogo);
   app.get("/assets/apple-wallet-badge.svg", handleGetAppleWalletBadge);
   app.get("/assets/google-wallet-badge.svg", handleGetGoogleWalletBadge);
+  app.get("/assets/apple-wallet-badge.png", handleGetAppleWalletBadgePng);
+  app.get("/assets/google-wallet-badge.png", handleGetGoogleWalletBadgePng);
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,

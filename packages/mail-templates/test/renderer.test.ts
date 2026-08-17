@@ -227,6 +227,17 @@ describe("renderTemplate", () => {
       absolutizeBundledTicketAssetUrls('<img src="/assets/apple-wallet-badge.svg" />'),
     ).toBe('<img src="/assets/apple-wallet-badge.svg" />');
 
+    // PNG variant: the format the wallet-button placeholder actually inserts into mail bodies
+    // (classic Outlook desktop doesn't render SVG <img> sources).
+    expect(
+      absolutizeBundledTicketAssetUrls(
+        '<img src="/assets/apple-wallet-badge.png" /><img src="/assets/google-wallet-badge.png" />',
+        "https://tickets.example.com/",
+      ),
+    ).toBe(
+      '<img src="https://tickets.example.com/assets/apple-wallet-badge.png" /><img src="https://tickets.example.com/assets/google-wallet-badge.png" />',
+    );
+
     const rendered = renderTemplate(
       {
         subject: "Ticket",

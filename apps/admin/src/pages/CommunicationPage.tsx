@@ -182,12 +182,13 @@ function imagePlaceholderMarkup(name: string, format: TemplateFormat): string {
     : `<img src="{{${name}}}" alt="${alt}" width="200" style="max-width:100%;" />`;
 }
 
-/** The real wallet badge SVGs (see PlaceholderChips' `samples`/apps/web/src/wallet-badges.ts),
+/** The real wallet badge PNGs (see PlaceholderChips' `samples`/apps/web/src/wallet-badges.ts),
  * used as the *image* half of the ready-made button below - the placeholder itself is only ever
- * the link half (`href`), never the image `src`. */
+ * the link half (`href`), never the image `src`. PNG, not SVG: classic Outlook desktop (Word
+ * rendering engine) does not display SVG `<img>` sources at all in mail bodies. */
 const WALLET_BADGE_ASSET: Record<string, { src: string; alt: string }> = {
-  apple_wallet_url: { src: "/assets/apple-wallet-badge.svg", alt: "Add to Apple Wallet" },
-  google_wallet_url: { src: "/assets/google-wallet-badge.svg", alt: "Add to Google Wallet" },
+  apple_wallet_url: { src: "/assets/apple-wallet-badge.png", alt: "Add to Apple Wallet" },
+  google_wallet_url: { src: "/assets/google-wallet-badge.png", alt: "Add to Google Wallet" },
 };
 
 /** Markup inserted for a wallet placeholder: a ready-to-use badge button (the real Apple/Google
