@@ -265,7 +265,12 @@ async function processAttendeeForSend({
   if (purpose === "initial") {
     const claim = await claimInitialDelivery(claimInput, prisma);
     if (claim.action === "skip") {
-      return { kind: "skip", attendeeId: attendee.id, reason: claim.reason };
+      if (claim.reason !== "already_sent") {
+        return { kind: "skip", attendeeId: attendee.id, reason: claim.reason };
+      }
+      // An explicit send action (checkbox selection) against an attendee who already has a
+      // successful ticket is an implicit resend, not a silent no-op.
+      return { kind: "pending", pending: await createResendPending(attendee.id, claimInput, links, prisma) };
     }
     return {
       kind: "pending",
@@ -282,18 +287,24 @@ async function processAttendeeForSend({
     };
   }
 
+  return { kind: "pending", pending: await createResendPending(attendee.id, claimInput, links, prisma) };
+}
+
+async function createResendPending(
+  attendeeId: string,
+  claimInput: ClaimInitialInput,
+  links: AttendeeMailLinks,
+  prisma: PrismaClient,
+): Promise<PendingSend> {
   const created = await createResendDelivery(claimInput, prisma);
   return {
-    kind: "pending",
-    pending: {
-      deliveryId: created.deliveryId,
-      attendeeId: attendee.id,
-      to: created.message.to,
-      frozenSubject: created.message.subject,
-      frozenHtml: created.message.html,
-      links,
-      idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
-    },
+    deliveryId: created.deliveryId,
+    attendeeId,
+    to: created.message.to,
+    frozenSubject: created.message.subject,
+    frozenHtml: created.message.html,
+    links,
+    idempotencyKey: `${attendeeId}:resend:${created.deliveryId}`,
   };
 }
 
@@ -369,7 +380,10 @@ export async function deliverPendingBatch(
 /**
  * Issue / claim ticket emails for an event (initial or resend).
  * By default only enqueues `EmailDelivery` rows (`queued`); the Admitto worker drains them.
- * Skips individual attendees on not_issuable, token/link build errors, or dedup — does not abort the batch.
+ * Skips individual attendees on not_issuable, token/link build errors, or an in-flight duplicate
+ * — does not abort the batch. purpose:"initial" against an attendee who already has a successful
+ * ticket falls back to a resend rather than skipping, since that only happens on an explicit send
+ * action (e.g. checkbox selection), not an automated sweep.
  */
 export async function sendTicketEmails(
   eventId: string,

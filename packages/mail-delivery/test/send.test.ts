@@ -339,7 +339,7 @@ describe("sendTicketEmails", () => {
     expect(exported[0]?.message.html).not.toContain("/m/evt-mail-send.png");
   });
 
-  it("dedups second initial send", async () => {
+  it("second initial send to an already-ticketed attendee resends instead of being skipped", async () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
@@ -348,9 +348,17 @@ describe("sendTicketEmails", () => {
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
     );
-    expect(result.sent).toBe(0);
-    expect(result.skipped.some((s) => s.reason === "already_sent")).toBe(true);
-    expect(exported).toHaveLength(0);
+    expect(result.sent).toBe(1);
+    expect(result.skipped).toHaveLength(0);
+    expect(exported).toHaveLength(1);
+
+    const rows = await prisma.emailDelivery.findMany({
+      where: { attendee_id: "att-mode-a" },
+      orderBy: { queued_at: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.purpose).toBe("initial");
+    expect(rows[1]?.purpose).toBe("resend");
   });
 
   it("race: parallel initial sends produce one delivery for one attendee", async () => {
