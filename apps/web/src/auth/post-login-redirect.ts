@@ -27,7 +27,7 @@ async function reachableAdminLanding(
   if (!isAdminStaffPath(landing)) return landing;
 
   const cfConfig = await getCfAccessConfigCached(db);
-  if (!cfConfig.enabled || !pathMatchesCfProtectedPrefix("/admin", cfConfig.protectedPrefixes)) {
+  if (!cfConfig.enabled || !pathMatchesCfProtectedPrefix(landing, cfConfig.protectedPrefixes)) {
     return landing;
   }
 

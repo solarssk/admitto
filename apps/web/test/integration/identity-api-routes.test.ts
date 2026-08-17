@@ -780,7 +780,7 @@ describe("cloudflare access API", () => {
         enabled: false,
         teamDomain: "",
         audience: [],
-        protectedPrefixes: ["/admin", "/api/admin"],
+        protectedPrefixes: ["/admin", "/api/admin", "/api/checkin"],
       });
     } finally {
       vi.unstubAllEnvs();

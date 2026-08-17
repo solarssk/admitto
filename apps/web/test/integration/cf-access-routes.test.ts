@@ -670,6 +670,11 @@ describe("CF Access admin collision point", () => {
   });
 
   it("a Cloudflare Access identity can reach the check-in API, not just /admin", async () => {
+    // The header is attached manually below, same as every other test in this file - it proves
+    // Admitto's own pre-auth accepts a valid CF Access identity here, not that Cloudflare will
+    // actually forward one for /api/checkin out of the box. That still requires the operator to
+    // add /api/checkin to the real Cloudflare Access application's own path match, separately
+    // from Admitto's Protected URL paths setting - see docs/wiki/Cloudflare-Access-Identity-Linking.md.
     const token = await signCfAccessJwt(mock, {
       sub: "cf-checkin-sub",
       email: SUPER_EMAIL,

@@ -125,4 +125,19 @@ describe("resolvePostLoginRedirectForUser — /admin unreachable via a session-o
 
     await expect(resolvePostLoginRedirectForUser(makeDb(), "u1")).resolves.toBe("/account");
   });
+
+  it("catches a deep /admin/... landing path protected by a narrower configured prefix", async () => {
+    resolveRedirect.mockReturnValue("/admin/events/123");
+    cfConfigCached.mockResolvedValue({
+      enabled: true,
+      teamDomain: "https://team.cloudflareaccess.com",
+      audience: ["aud"],
+      protectedPrefixes: ["/admin/events"],
+      sourceProviderId: "provider-1",
+      jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+    });
+    canCheckIn.mockResolvedValue(true);
+
+    await expect(resolvePostLoginRedirectForUser(makeDb(), "u1")).resolves.toBe("/operator");
+  });
 });
