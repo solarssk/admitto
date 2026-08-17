@@ -14,6 +14,17 @@ export const WALLET_STATUS_LABELS: Record<WalletPassStatus, string> = {
   expired: "Expired",
 };
 
+/** Activity-log transitions (wallet_pass_voided/restored metadata.previous_status) only ever
+ * record the bare WalletPassStatus enum value, never registration counts, so they can't tell
+ * whether the pass was actually installed at that point in time. Reusing WALLET_STATUS_LABELS'
+ * install-aware "Sent" wording here would misreport a pass that genuinely was confirmed installed
+ * when it got voided/restored - this neutral "Active" is for that historical/lifecycle context
+ * only, distinct from the live badge's "Sent"/"Added" split above. */
+export const WALLET_LIFECYCLE_STATUS_LABELS: Record<WalletPassStatus, string> = {
+  ...WALLET_STATUS_LABELS,
+  active: "Active",
+};
+
 export const WALLET_STATUS_VARIANTS: Record<WalletPassStatus, "neutral" | "ok" | "error" | "warn"> = {
   pending: "neutral",
   active: "ok",
