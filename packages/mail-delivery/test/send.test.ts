@@ -12,6 +12,7 @@ import {
   retryDelivery,
   sendTicketEmails,
 } from "../src/index.js";
+import { resolveTicketTypeLabel } from "../src/send.js";
 
 const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-mail-send";
@@ -74,6 +75,14 @@ afterAll(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("resolveTicketTypeLabel", () => {
+  it("falls open to the raw key when the catalog has no match", () => {
+    expect(resolveTicketTypeLabel("deleted_type", new Map([["vip", "VIP"]]))).toBe(
+      "deleted_type",
+    );
+  });
 });
 
 describe("sendTicketEmails name fields", () => {

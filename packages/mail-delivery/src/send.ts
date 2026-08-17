@@ -104,8 +104,11 @@ async function resolvePlaintextToken(
 
 /** Resolves an attendee's ticket_type catalog key to its display label - fails open to the raw
  * key if the catalog lookup doesn't have it (deleted/renamed type), "General" when unset. Same
- * fallback precedent as buildWalletPassInput's ticketTypeLabel. */
-function resolveTicketTypeLabel(
+ * fallback precedent as buildWalletPassInput's ticketTypeLabel. Exported (not re-exported from
+ * index.ts) so its raw-key fallback - unreachable through sendTicketEmails' normal DB-constrained
+ * flow, since Attendee.ticket_type is FK-restricted to an existing TicketType.key - can still be
+ * unit tested directly, same pattern as deliverPendingBatch. */
+export function resolveTicketTypeLabel(
   ticketType: string | null,
   ticketTypeLabels: ReadonlyMap<string, string>,
 ): string {
