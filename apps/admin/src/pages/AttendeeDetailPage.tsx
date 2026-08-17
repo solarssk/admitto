@@ -28,6 +28,7 @@ import {
   reissueWalletPass,
   deleteWalletPass,
   resendTicket,
+  fetchTicketLink,
   restoreWalletPass,
   revokeAttendeeCheckIn,
   updateAttendee,
@@ -59,7 +60,7 @@ import {
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
-import { WalletStatusBadge } from "../attendees/walletStatusBadge.js";
+import { WalletStatusBadge, isWalletPassInstalled } from "../attendees/walletStatusBadge.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
@@ -108,6 +109,7 @@ type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | null;
 function MoreActionsMenu({
   event,
   onResend,
+  onCopyTicketLink,
   onDelete,
   mailConfigured,
   showEdit,
@@ -131,6 +133,7 @@ function MoreActionsMenu({
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
+  onCopyTicketLink: () => void;
   onDelete: () => void;
   mailConfigured: boolean | undefined;
   /** Mobile only (useIsDesktop() in the caller) - narrow viewports fold the standalone Edit
@@ -230,6 +233,21 @@ function MoreActionsMenu({
               </button>
             )}
           </ArchivedGuard>
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onCopyTicketLink();
+            }}
+          >
+            <i className="ti ti-link" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Copy ticket link</span>
+              <span className="more-actions-menu__item-hint">Copy this attendee&rsquo;s ticket URL</span>
+            </span>
+          </button>
           <hr className="more-actions-menu__divider" />
           <RevokeActionMenuItems
             event={event}
@@ -1733,6 +1751,20 @@ export function AttendeeDetailPage() {
     }
   }
 
+  async function handleCopyTicketLink() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    try {
+      const { url } = await fetchTicketLink(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await navigator.clipboard.writeText(url);
+      addToast("Ticket link copied to clipboard", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      addToast(operatorApiErrorMessage(err, "Could not copy the ticket link."), "error");
+    }
+  }
+
   /** Revoke or restore wallet pass; preserves unsaved profile edits in the form. */
   async function handlePassStatusChange(
     nextStatus: "registered" | "revoked",
@@ -2094,6 +2126,7 @@ export function AttendeeDetailPage() {
               showEdit={!isDesktop}
               onEdit={() => setEditMode(true)}
               onResend={() => setResendOpen(true)}
+              onCopyTicketLink={() => void handleCopyTicketLink()}
               onDelete={() => {
                 setDeleteError(null);
                 setDeleteOpen(true);
@@ -2204,7 +2237,10 @@ export function AttendeeDetailPage() {
           </span>
           <div className="attendee-status-chip__body">
             <strong>Wallet</strong>
-            <WalletStatusBadge status={detail.wallet_pass?.status ?? null} />
+            <WalletStatusBadge
+              status={detail.wallet_pass?.status ?? null}
+              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass)}
+            />
           </div>
         </div>
       </div>
