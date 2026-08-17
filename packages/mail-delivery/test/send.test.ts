@@ -361,6 +361,44 @@ describe("sendTicketEmails", () => {
     expect(rows[1]?.purpose).toBe("resend");
   });
 
+  it("skips an initial send while another initial delivery for that attendee is still queued", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-in-flight",
+        event_id: EVENT_ID,
+        email: "in-flight@example.com",
+        name: "In Flight",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-in-flight",
+        purpose: "initial",
+        batch_id: "in-flight-batch",
+        provider: "export_only",
+        status: "queued",
+        recipient_email: "in-flight@example.com",
+        rendered_subject: "Subject",
+        rendered_html: "<p>Hi</p>",
+        queued_at: new Date(),
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-in-flight"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+    expect(result.sent).toBe(0);
+    expect(result.skipped).toEqual([{ attendeeId: "att-in-flight", reason: "in_flight" }]);
+    expect(exported).toHaveLength(0);
+  });
+
   it("race: parallel initial sends produce one delivery for one attendee", async () => {
     await prisma.emailDelivery.deleteMany({ where: { attendee_id: "att-race" } });
     await prisma.attendee.create({
