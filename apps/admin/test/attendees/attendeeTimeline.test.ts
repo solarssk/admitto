@@ -498,7 +498,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           metadata: { previous_status: "active" },
         }),
       ),
-    ).toBe("Added → Voided");
+    ).toBe("Active → Voided");
   });
 
   it("shows the wallet pass status transition for wallet_pass_restored", () => {
@@ -509,7 +509,7 @@ describe("getTimelineDetail — profile/pass/item diffs (#364)", () => {
           metadata: { previous_status: "voided" },
         }),
       ),
-    ).toBe("Voided → Added");
+    ).toBe("Voided → Active");
   });
 
   it("shows no transition detail for wallet_pass_voided when metadata has no previous_status", () => {
