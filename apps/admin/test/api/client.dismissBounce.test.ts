@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dismissBounce, resendTicket } from "../../src/api/client.js";
+import { dismissBounce, fetchTicketLink, resendTicket } from "../../src/api/client.js";
 
-describe("dismissBounce / resendTicket (client)", () => {
+describe("dismissBounce / resendTicket / fetchTicketLink (client)", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -39,5 +39,22 @@ describe("dismissBounce / resendTicket (client)", () => {
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(JSON.parse(String(init.body))).toEqual({ templateId: "tpl-reminder" });
+  });
+
+  it("POSTs ticket-link to the encoded attendee endpoint and returns the URL", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => ({
+      ok: true,
+      json: async () => ({ url: "https://tickets.example.com/t/abc123" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchTicketLink("evt with space", "att with space")).resolves.toEqual({
+      url: "https://tickets.example.com/t/abc123",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt%20with%20space/attendees/att%20with%20space/ticket-link",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
   });
 });
