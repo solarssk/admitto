@@ -59,7 +59,7 @@ import {
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
-import { WalletStatusBadge } from "../attendees/walletStatusBadge.js";
+import { WalletStatusBadge, isWalletPassInstalled } from "../attendees/walletStatusBadge.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
@@ -2204,7 +2204,10 @@ export function AttendeeDetailPage() {
           </span>
           <div className="attendee-status-chip__body">
             <strong>Wallet</strong>
-            <WalletStatusBadge status={detail.wallet_pass?.status ?? null} />
+            <WalletStatusBadge
+              status={detail.wallet_pass?.status ?? null}
+              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass)}
+            />
           </div>
         </div>
       </div>
