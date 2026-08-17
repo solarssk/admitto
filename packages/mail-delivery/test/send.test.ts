@@ -432,7 +432,7 @@ describe("sendTicketEmails", () => {
       where: { attendee_id: "att-race", purpose: "initial" },
     });
     expect(rows).toHaveLength(1);
-    expect(exported.length).toBeLessThanOrEqual(1);
+    expect(exported).toHaveLength(1);
   });
 
   it("skips agency attendee missing public_ref without aborting the batch", async () => {
