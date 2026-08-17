@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-18
+
 ### Added
 
 - Mail templates now support two more placeholders: `{{ticket_type}}` (the attendee's ticket type label) and `{{event_hours}}` (the event's start-end time, if set in Event settings). Both were already available on wallet passes but missing from the Communication tab's template editor.
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pressing and holding a searchable dropdown's own caption (e.g. Attendance, Ticket type, Event timezone) while it was open inside a modal no longer closes it the instant you press down, then reopens it the instant you release. Clicking near the caption briefly moved keyboard focus to the surrounding modal window itself, which every one of these dropdowns mistook for "focus moved to something else" and closed for.
 - The Apple Wallet and Google Wallet buttons inserted into email templates now show up correctly in Outlook. Classic Outlook desktop doesn't render SVG images at all in mail bodies, so the badge graphic was silently missing for anyone reading their ticket confirmation there; it's now a PNG in email while the public ticket page keeps the sharper SVG version.
 - The Send test email result in Event/Organisation Settings → Mail no longer shows the bounce-detection message pressed directly against the details above it, with no visible gap.
+- Sending an attendee's first ticket from two staff actions at the same time no longer sends two copies of the email. The delivery log already kept one ticket, but the second send could reach the mail provider before the duplicate was rejected.
 
 ## [0.5.2] - 2026-08-16
 
@@ -1017,7 +1020,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/solarssk/admitto/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/solarssk/admitto/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/solarssk/admitto/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/solarssk/admitto/compare/v0.4.14...v0.5.0
