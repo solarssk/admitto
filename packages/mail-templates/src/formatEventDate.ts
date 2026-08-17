@@ -36,3 +36,17 @@ export function resolvePreviewEventTimeZone(explicit?: string): string {
   if (trimmed) return safeTimeZone(trimmed);
   return safeTimeZone(DEFAULT_EVENT_TIME_ZONE);
 }
+
+/**
+ * "HH:MM-HH:MM" for template placeholders, or "" when either bound is unset (independently
+ * optional, same as Event.event_hours_start/end - see schema.prisma). Both bounds are already
+ * stored as display-only "HH:MM" strings, so no timezone conversion applies here - same
+ * fixed-format precedent as formatEventDate's "UTC" default.
+ */
+export function formatEventHours(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string {
+  if (!start || !end) return "";
+  return `${start}-${end}`;
+}

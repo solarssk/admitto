@@ -4,6 +4,7 @@ import { decryptFromString } from "@admitto/crypto";
 import {
   buildEventLocationTemplateVars,
   formatEventDate,
+  formatEventHours,
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
@@ -22,7 +23,7 @@ import {
   type MailMessage,
 } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
-import { issueTicket } from "@admitto/tickets";
+import { issueTicket, loadEventTicketTypes } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
 import {
@@ -101,6 +102,17 @@ async function resolvePlaintextToken(
   return undefined;
 }
 
+/** Resolves an attendee's ticket_type catalog key to its display label - fails open to the raw
+ * key if the catalog lookup doesn't have it (deleted/renamed type), "General" when unset. Same
+ * fallback precedent as buildWalletPassInput's ticketTypeLabel. */
+function resolveTicketTypeLabel(
+  ticketType: string | null,
+  ticketTypeLabels: ReadonlyMap<string, string>,
+): string {
+  if (!ticketType) return "General";
+  return ticketTypeLabels.get(ticketType) ?? ticketType;
+}
+
 function materializePendingMessage(item: PendingSend): MailMessage {
   const rendered = materializeStoredDeliveryMessage(
     { subject: item.frozenSubject, html: item.frozenHtml },
@@ -121,6 +133,7 @@ interface AttendeeForSend extends AttendeeLinkInput {
   last_name: string | null;
   email: string;
   token_enc: string | null;
+  ticket_type: string | null;
 }
 
 /** Event fields needed to process a single ticket-email send. */
@@ -128,6 +141,8 @@ interface EventForSend extends EventLinkInput {
   id: string;
   title: string;
   date: Date;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   location_details?: {
     venue_name: string | null;
     formatted_address: string | null;
@@ -153,6 +168,7 @@ interface ProcessAttendeeForSendInput {
   resolvedTemplate: ResolvedTemplate;
   branding: BrandingUrls;
   customAssets: EventImageAssetPlaceholders;
+  ticketTypeLabels: ReadonlyMap<string, string>;
   baseUrl: string;
   env: NodeJS.ProcessEnv;
   purpose: "initial" | "resend";
@@ -173,6 +189,7 @@ async function processAttendeeForSend({
   resolvedTemplate,
   branding,
   customAssets,
+  ticketTypeLabels,
   baseUrl,
   env,
   purpose,
@@ -234,6 +251,8 @@ async function processAttendeeForSend({
       email: attendee.email,
       event_name: event.title,
       event_date: formatEventDate(event.date, "UTC"),
+      event_hours: formatEventHours(event.event_hours_start, event.event_hours_end),
+      ticket_type: resolveTicketTypeLabel(attendee.ticket_type, ticketTypeLabels),
       ...locationVars,
       logo_url: branding.logo_url,
       header_image_url: branding.header_image_url,
@@ -401,6 +420,9 @@ export async function sendTicketEmails(
   }
   const branding = resolveBrandingFromEvent(event);
   const customAssets = await resolveEventImageAssetVars(eventId, prisma);
+  const ticketTypeLabels = new Map(
+    (await loadEventTicketTypes(prisma, eventId)).map((t) => [t.key, t.label]),
+  );
 
   const attendees = await prisma.attendee.findMany({
     where: {
@@ -423,6 +445,7 @@ export async function sendTicketEmails(
         resolvedTemplate,
         branding,
         customAssets,
+        ticketTypeLabels,
         baseUrl,
         env,
         purpose,

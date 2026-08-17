@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Mail templates now support two more placeholders: `{{ticket_type}}` (the attendee's ticket type label) and `{{event_hours}}` (the event's start-end time, if set in Event settings). Both were already available on wallet passes but missing from the Communication tab's template editor.
+
 ### Fixed
 
 - The admin panel's Check-in tab now works for staff who sign in only through Cloudflare Access, not just staff with a local Admitto password. Previously it showed a "sign in to Admitto" notice and blocked live scanning entirely for Cloudflare-only sign-ins.

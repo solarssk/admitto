@@ -104,6 +104,7 @@ const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[
     names: [
       "event_name",
       "event_date",
+      "event_hours",
       "event_location",
       "event_address",
       "event_map_url",
@@ -113,7 +114,10 @@ const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[
       "accessibility_text",
     ],
   },
-  { label: "Ticket & QR", names: ["ticket_url", "qr_image_url", "download_page_url"] },
+  {
+    label: "Ticket & QR",
+    names: ["ticket_type", "ticket_url", "qr_image_url", "download_page_url"],
+  },
   { label: "Wallet", names: ["apple_wallet_url", "google_wallet_url"] },
   { label: "Branding", names: ["logo_url"] },
 ];
@@ -133,6 +137,7 @@ function placeholderDescription(name: string, isImage: boolean): string {
     email: "Attendee's email address.",
     event_name: "This event's title.",
     event_date: "This event's date, formatted for the event's own timezone.",
+    event_hours: "This event's start-end time (HH:MM-HH:MM), if set in Event settings.",
     event_location: "Venue name.",
     event_address: "Venue's street address.",
     event_map_url: "Static map image of the venue.",
@@ -140,6 +145,7 @@ function placeholderDescription(name: string, isImage: boolean): string {
     apple_maps_url: "Link to open the venue in Apple Maps.",
     directions_text: "Getting-there directions, if set in Event settings.",
     accessibility_text: "Accessibility notes, if set in Event settings.",
+    ticket_type: "Attendee's ticket type (e.g. Standard, VIP).",
     ticket_url: "Link to the attendee's own ticket page.",
     qr_image_url: "The attendee's scannable QR code image.",
     download_page_url: "Link to the ticket download page.",
