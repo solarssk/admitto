@@ -425,7 +425,9 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("48")).toBeTruthy();
+      const attendeesKpi = within(statsRow()).getByText("Attendees").parentElement;
+      expect(attendeesKpi).not.toBeNull();
+      expect(within(attendeesKpi!).getByText("48")).toBeTruthy();
     });
   });
 
