@@ -10,6 +10,7 @@ import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { FiltersMenu } from "../../components/FiltersMenu.js";
+import { PaginationFooter, paginationHandlers } from "../../components/PaginationFooter.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../../components/Segmented.js";
 import { DeviceLabelEditModal } from "./DeviceLabelEditModal.js";
@@ -311,57 +312,15 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
               </div>
             )}
 
-            <div className="sessions-footer">
-              <div className="sessions-footer__summary">
-                <span className="sessions-footer__info">
-                  {`Showing ${(effectivePage - 1) * pageSize + 1}–${Math.min(effectivePage * pageSize, total)} of ${total}`}
-                </span>
-                <div className="sessions-pagesize">
-                  <label htmlFor="sessions-pagesize-select">Rows per page</label>
-                  <SearchableSelect
-                    id="sessions-pagesize-select"
-                    label="Rows per page"
-                    placeholder="Rows per page"
-                    searchPlaceholder="Search…"
-                    emptyLabel="No options found"
-                    showLabel={false}
-                    minWidth={72}
-                    value={String(pageSize)}
-                    options={PAGE_SIZE_OPTIONS.map((size) => ({
-                      id: String(size),
-                      label: String(size),
-                    }))}
-                    onChange={(id) => {
-                      setPageSize(Number(id));
-                      setPage(1);
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="sessions-footer__pager">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={effectivePage <= 1}
-                  onClick={() => setPage(Math.max(1, effectivePage - 1))}
-                >
-                  Previous
-                </Button>
-                <span>
-                  Page {effectivePage} of {totalPages}
-                </span>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={effectivePage >= totalPages}
-                  onClick={() => setPage(Math.min(totalPages, effectivePage + 1))}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
+            <PaginationFooter
+              idPrefix="sessions"
+              page={effectivePage}
+              pageSize={pageSize}
+              totalPages={totalPages}
+              totalRows={total}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              {...paginationHandlers(setPage, setPageSize, totalPages)}
+            />
           </>
         )}
       </Card>
