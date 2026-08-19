@@ -870,6 +870,7 @@ export function AttendeesPage() {
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
+  const [bulkCheckInConfirmOpen, setBulkCheckInConfirmOpen] = useState(false);
   const [bulkRevokeCheckInBusy, setBulkRevokeCheckInBusy] = useState(false);
   const [bulkRevokeCheckInConfirmOpen, setBulkRevokeCheckInConfirmOpen] = useState(false);
   const [bulkRevokeCheckInError, setBulkRevokeCheckInError] = useState<string | null>(null);
@@ -1169,11 +1170,15 @@ export function AttendeesPage() {
       },
     });
 
-  /** Manual bulk check-in for an explicit subset of selected attendees — no confirmation dialog
-   * (matches the design mockup and ADR-0010's "manual check-in is first-class, must be fast";
-   * it's a reversible internal state change, not an email send). Guards the completion effect
-   * against the operator navigating to a different event's Attendees list before the request
-   * resolves, same pattern as handleBulkDeleteSelected below. */
+  /** Manual bulk check-in for an explicit subset of selected attendees — behind a lightweight
+   * confirm dialog (PO review, superseding the earlier "no confirmation, ADR-0010" call: unlike
+   * the single-attendee scan/tap flow that ADR covers, a bulk selection here can affect many
+   * attendees from one click, and every sibling bulk action in this same toolbar already
+   * confirms). Fires immediately on confirm and relies on the toast for the outcome, same as
+   * handleBulkSendSelected, rather than keeping the dialog open for a result like
+   * handleBulkRevokeCheckInSelected does — check-in is fast/reversible, not destructive. Guards
+   * the completion effect against the operator navigating to a different event's Attendees list
+   * before the request resolves, same pattern as handleBulkDeleteSelected below. */
   const handleBulkCheckInSelected = () =>
     runBulkAction({
       eventId,
@@ -1654,7 +1659,7 @@ export function AttendeesPage() {
         onBulkSendTickets={() => setBulkSendConfirmOpen(true)}
         bulkSendBusy={bulkSendBusy}
         canBulkSend={mailConfigured !== false}
-        onBulkCheckIn={() => void handleBulkCheckInSelected()}
+        onBulkCheckIn={() => setBulkCheckInConfirmOpen(true)}
         bulkCheckInBusy={bulkCheckInBusy}
         onBulkRevokeCheckIn={() => {
           setBulkRevokeCheckInError(null);
@@ -1783,6 +1788,21 @@ export function AttendeesPage() {
         }}
         onCancel={() => {
           if (!bulkSendBusy) setBulkSendConfirmOpen(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkCheckInConfirmOpen}
+        title="Check in?"
+        message={`Check in ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"}? You can revoke a check-in again at any time.`}
+        confirmLabel="Check in"
+        loading={bulkCheckInBusy}
+        onConfirm={() => {
+          setBulkCheckInConfirmOpen(false);
+          void handleBulkCheckInSelected();
+        }}
+        onCancel={() => {
+          if (!bulkCheckInBusy) setBulkCheckInConfirmOpen(false);
         }}
       />
 
