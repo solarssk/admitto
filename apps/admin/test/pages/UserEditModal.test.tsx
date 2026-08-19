@@ -79,6 +79,7 @@ const user: UserListItemDto = {
   active_sessions_count: 0,
   has_mfa: false,
   has_sso: false,
+  external_identities: [],
   roles: [],
 };
 
@@ -799,12 +800,29 @@ describe("UserEditModal role & access - exclusive roles", () => {
 
 describe("UserEditModal sign-in security", () => {
   it("shows SSO and MFA-enrolled status together with the active session count", async () => {
-    renderModal({ has_sso: true, has_mfa: true, active_sessions_count: 3 });
+    renderModal({
+      has_sso: true,
+      has_mfa: true,
+      active_sessions_count: 3,
+      external_identities: [{ id: "ei-1", provider_display_name: "Authentik" }],
+    });
 
-    await screen.findByText("Identity provider");
+    await screen.findByText("Authentik");
     expect(screen.getByText("Authenticator app enrolled")).toBeTruthy();
     expect(screen.getByText("Active sessions")).toBeTruthy();
     expect(screen.getByText("3 sessions")).toBeTruthy();
+  });
+
+  it("joins multiple linked identity providers in the Sign-in method tile (e.g. also Cloudflare Access)", async () => {
+    renderModal({
+      has_sso: true,
+      external_identities: [
+        { id: "ei-1", provider_display_name: "Authentik" },
+        { id: "ei-2", provider_display_name: "Cloudflare Access" },
+      ],
+    });
+
+    await screen.findByText("Authentik + Cloudflare Access");
   });
 
   it("disables Unlink SSO for a local-only account", async () => {

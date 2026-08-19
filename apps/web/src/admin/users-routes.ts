@@ -204,7 +204,7 @@ type UserWithRoles = Prisma.UserGetPayload<{
   include: {
     role_assignments: { include: { oidc_role_grants: { select: { id: true } } } };
     mfa_methods: { select: { id: true; confirmed_at: true } };
-    external_identities: { select: { id: true }; take: 1 };
+    external_identities: { select: { id: true; provider: { select: { display_name: true } } } };
   };
 }>;
 
@@ -267,6 +267,10 @@ function serializeUserRow(user: UserWithRoles, sessionStats: SessionStats) {
     active_sessions_count: sessionStats.active_sessions_count,
     has_mfa: user.mfa_methods.some((m) => m.confirmed_at != null),
     has_sso: user.external_identities.length > 0,
+    external_identities: user.external_identities.map((ei) => ({
+      id: ei.id,
+      provider_display_name: ei.provider.display_name,
+    })),
     roles: user.role_assignments.map((a) => ({
       id: a.id,
       role: a.role,
@@ -286,7 +290,10 @@ async function serializeUser(db: PrismaClient, user: UserWithRoles) {
 const userInclude = {
   role_assignments: { include: { oidc_role_grants: { select: { id: true } } } },
   mfa_methods: { select: { id: true, confirmed_at: true } },
-  external_identities: { select: { id: true }, take: 1 },
+  // No take:1 cap (dropped) - the admin user list/detail need each linked identity's provider
+  // name to show, not just whether any exist (PO report: "Identity provider" gave no hint which
+  // one, and a Cloudflare Access link was invisible entirely - it's just another row here).
+  external_identities: { select: { id: true, provider: { select: { display_name: true } } } },
 } as const;
 
 async function loadUser(db: PrismaClient, id: string): Promise<UserWithRoles | null> {

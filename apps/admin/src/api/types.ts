@@ -1287,6 +1287,11 @@ export interface RoleAssignmentDto {
   is_oidc: boolean;
 }
 
+export interface UserIdentityDto {
+  id: string;
+  provider_display_name: string;
+}
+
 export interface UserListItemDto {
   id: string;
   email: string;
@@ -1300,6 +1305,10 @@ export interface UserListItemDto {
   active_sessions_count: number;
   has_mfa: boolean;
   has_sso: boolean;
+  /** Every identity provider this user is linked to (SSO/OIDC and Cloudflare Access alike —
+   * both are ExternalIdentity rows, distinguished only by their provider's own type). Empty
+   * when has_sso is false. */
+  external_identities: UserIdentityDto[];
   roles: RoleAssignmentDto[];
 }
 
