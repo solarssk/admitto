@@ -597,8 +597,10 @@ async function walletStatusByAttendee(
   );
 }
 
-/** Shown in activity log when a human actor has no display_name (email is never exposed). */
-const ACTION_LOG_ACTOR_FALLBACK = "Admin";
+/** Shown in activity log when a human actor has no display_name (email is never exposed).
+ * Not role-specific — any staff member who hasn't set a display name hits this, not just
+ * admins — so it must not read as a specific role or authority. */
+const ACTION_LOG_ACTOR_FALLBACK = "Staff member";
 
 /** Page size for the detail page's notes list. The check-in card remains deliberately smaller
  * (CARD_NOTES_LIMIT = 5) for the operator scan flow; this endpoint exposes the full history
