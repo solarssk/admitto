@@ -551,15 +551,17 @@ describe("IdentityProviderEditor — coverage", () => {
 });
 
 describe("IdentityProviderEditor — Redirect URI", () => {
-  it("shows a create-mode hint that the Redirect URI appears after the first save", async () => {
+  it("shows a disabled Redirect URI placeholder (no Copy) in create mode, same layout as edit", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
+    const field = (await screen.findByLabelText("Redirect URI")) as HTMLInputElement;
+    expect(field.disabled).toBe(true);
+    expect(field.value).toMatch(/api\/auth\/oidc/);
     expect(
-      await screen.findByText(/After the first save, reopen the provider and copy the Redirect URI/, {
+      screen.getByText(/Available to copy once you save this provider for the first time/, {
         exact: false,
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/api\/auth\/oidc/, { exact: false })).toBeTruthy();
-    expect(screen.queryByLabelText("Redirect URI")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Copy/i })).toBeNull();
   });
 
   it("shows the Redirect URI with Copy in edit mode from the provider API", async () => {
