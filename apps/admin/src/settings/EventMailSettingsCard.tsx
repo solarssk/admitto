@@ -552,7 +552,11 @@ export const EventMailSettingsCard = forwardRef<
         }
       >
         <div className="settings-card-stack">
-          <p className="settings-card-intro">{EVENT_MAIL_TRANSPORT_INTRO}</p>
+          {/* Hidden when about to revert to Organization: the warning paragraph right below
+           * already carries full context, and the generic intro read oddly stacked above it. */}
+          {(mode !== "org" || orgSummaryTrustworthy) && (
+            <p className="settings-card-intro">{EVENT_MAIL_TRANSPORT_INTRO}</p>
+          )}
           {mode === "org" &&
             (orgSummaryTrustworthy ? (
               <OrgMailSummary
