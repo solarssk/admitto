@@ -1008,6 +1008,16 @@
   color: var(--status-error);
 }
 
+/* .at-btn--ghost:hover:not(:disabled) (packages/ui) is the same specificity as a bare
+ * .checkin-card__aux-btn--danger:hover:not(:disabled) (3 class-level selectors each), so which
+ * one wins came down to CSS source order - unreliable across bundles. The .checkin-card
+ * qualifier below adds a 4th selector so this always wins regardless of order, matching the
+ * same danger-hover treatment as .users-page__icon-danger. */
+.checkin-card .checkin-card__aux-btn--danger:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
 .checkin-card__notes {
   padding: 10px 16px;
   border-top: 1px solid var(--at-gray-100, var(--border));
