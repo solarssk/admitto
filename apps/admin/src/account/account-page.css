@@ -40,9 +40,13 @@
   min-width: 0;
 }
 
-/* Role and account type are concise, read-only account facts. Keeping them together lets the
-   two display preferences each use a full column, including on tablet widths. */
+/* Role and account type are concise, read-only account facts. Spans the full width of the
+ * parent 2-column grid (grid-column: 1 / -1) instead of sharing a row with Phone number - that
+ * halved its own width again on top of the 2-column split below, squeezing Account type's text
+ * for a user managed by multiple providers (PO report). Keeping them together lets the two
+ * display preferences each use a full column, including on tablet widths. */
 .account-access-preferences {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3, 0.75rem);
