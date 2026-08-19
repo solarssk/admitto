@@ -365,6 +365,10 @@
   font-size: var(--fs-sm);
 }
 
+.reports-log-footer {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 .reports-log-truncated {
   margin: 0;
   padding: var(--space-3) var(--space-4);
