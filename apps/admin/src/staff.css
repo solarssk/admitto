@@ -954,6 +954,12 @@
   font-size: var(--fs-xs);
 }
 
+/* Placeholder for an item with no configured description — keeps the row's height consistent
+ * with items that have one, instead of silently shrinking (PO report). */
+.checkin-card__item-description--empty {
+  font-style: italic;
+}
+
 /* Slightly larger than the old 16px/18px — noticeably its own element next
    to a two-line block, not so large it overpowers the item label (PO
    review: "delikatnie większa, ale nie za duża"). */
