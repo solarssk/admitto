@@ -178,33 +178,19 @@ describe("PassCreatorClient.describeTemplate", () => {
 });
 
 describe("PassCreatorClient.getWebhookPublicKey", () => {
-  it("GETs the public-key endpoint and returns raw PEM text as-is", async () => {
-    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
+  it("GETs the public-key endpoint and parses the confirmed live {publicKey} shape (2026-08-19)", async () => {
+    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----\n";
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(url).toBe("https://pc.test/api/hook/publickey");
       expect(init?.method).toBe("GET");
-      return new Response(pem, { status: 200, headers: { "Content-Type": "text/plain" } });
+      return jsonResponse(200, { publicKey: pem });
     });
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
-  });
-
-  it("also accepts the PEM wrapped in the standard {success, data} envelope", async () => {
-    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
-    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: pem }));
-    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
-  });
-
-  it("also accepts the PEM nested at data.publicKey", async () => {
-    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
-    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: { publicKey: pem } }));
-    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
+    await expect(client.getWebhookPublicKey()).resolves.toBe(pem.trim());
   });
 
   it("throws when the response doesn't contain a recognizable PEM key", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: {} }));
+    const fetchMock = vi.fn(async () => jsonResponse(200, { publicKey: "not a pem" }));
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     await expect(client.getWebhookPublicKey()).rejects.toBeInstanceOf(WalletProviderError);
   });
@@ -253,6 +239,41 @@ describe("PassCreatorClient.subscribeWebhook", () => {
     await expect(
       client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pass_voided"),
     ).rejects.toBeInstanceOf(WalletProviderError);
+  });
+});
+
+describe("PassCreatorClient.unsubscribeWebhook", () => {
+  it("POSTs to /api/hook/unsubscribe with just target_url, no templateId or event", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/hook/unsubscribe");
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(init?.body as string)).toEqual({
+        target_url: "https://admitto.example.com/api/wallet/webhook/passcreator/evt-1/voided",
+      });
+      return jsonResponse(200, { success: true });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(
+      client.unsubscribeWebhook("https://admitto.example.com/api/wallet/webhook/passcreator/evt-1/voided"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("throws on a non-2xx status", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(404, { success: false }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.unsubscribeWebhook("https://admitto.example.com/hook")).rejects.toBeInstanceOf(
+      WalletProviderError,
+    );
+  });
+
+  it("throws on a 2xx status whose body explicitly reports success: false", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) =>
+      jsonResponse(200, { success: false, errors: ["no such subscription"] }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.unsubscribeWebhook("https://admitto.example.com/hook")).rejects.toBeInstanceOf(
+      WalletProviderError,
+    );
   });
 });
 

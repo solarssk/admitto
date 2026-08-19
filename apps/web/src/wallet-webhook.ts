@@ -101,11 +101,20 @@ async function resolveEventWebhookProvider(
  * body, bad signature) returns a bare 4xx/404/502 with no detail - this is an unauthenticated
  * public endpoint, so the response must not help a caller distinguish "wrong event id" from
  * "right event id, wallet not configured" from "right event id, bad signature".
+ *
+ * `isVoidedRoute` distinguishes a `pass_voided` delivery from the three registration events -
+ * confirmed 2026-08-19 (developer.passcreator.com/en/webhooks/pass-hooks) that PassCreator's
+ * payload carries no field naming which event fired, and a `pass_voided` delivery specifically has
+ * no `voided` field at all (unlike what PassCreatorWebhookData's optional `voided` field used to
+ * assume). subscribeWalletWebhooksBestEffort (event-settings-routes.ts) points `pass_voided` at
+ * its own `/voided`-suffixed target URL for exactly this reason, so arriving on that route at all
+ * - not any field in the body - is the actual voided signal.
  */
 export async function handlePassCreatorWebhook(
   c: Context,
   db: PrismaClient,
   injectedProvider?: WalletPassProvider,
+  isVoidedRoute = false,
 ): Promise<Response> {
   const eventId = c.req.param("eventId");
   if (!eventId) return c.body(null, 404);
@@ -131,6 +140,7 @@ export async function handlePassCreatorWebhook(
 
   const data = parseWebhookData(envelope.signedData);
   if (!data) return c.body(null, 400);
+  if (isVoidedRoute) data.voided = true;
 
   if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
 

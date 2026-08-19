@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Wallet registration webhooks from PassCreator (device add/remove events) are no longer silently rejected. Two separate bugs each broke every delivery in a different way: Admitto was reading PassCreator's public-key response with the wrong field name (so the key could never be fetched at all), and signature verification was using the wrong hash algorithm (so a fetched key still couldn't validate a genuine delivery). No wallet registration status ever updated from a live device, and PassCreator kept retrying every delivery for over a day. Also fixed: some Android Wallet variants (`Android`, `AndroidWalletPasses`, `AndroidWalletUnion`, not just `AndroidGooglePay`) were silently ignored instead of updating Google registration counts. Wallet status now updates correctly when an attendee adds or removes their pass from Apple or Google Wallet.
+- Voiding a pass directly in PassCreator's own dashboard (bypassing Admitto) is now reflected on the attendee's Wallet status. This never worked before: PassCreator's void-notification webhook doesn't say which event fired or carry any voided flag in its payload, so it was structurally indistinguishable from every other wallet event and was always ignored. It now gets its own separate webhook subscription so Admitto can tell the two apart. PassCreator has no equivalent restore/un-void webhook event, so a pass restored directly in PassCreator's dashboard still isn't reflected automatically - Admitto's own restore action is unaffected.
+
 ## [0.5.3] - 2026-08-18
 
 ### Added

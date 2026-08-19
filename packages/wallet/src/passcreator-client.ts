@@ -51,6 +51,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Single-line, length-capped preview of a response body for diagnostic error messages - never
+ * the outgoing request (so never the API key), just what PassCreator sent back. */
+function previewBody(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > 300 ? `${collapsed.slice(0, 300)}…` : collapsed;
+}
+
 /** Narrows an `errors` field of unknown shape (from a body we deliberately parse without a fixed
  * schema - see subscribeWebhook/listWebhooks below) down to the string[] toProviderError expects,
  * rather than trusting it and letting a non-array value (e.g. a bare string) throw inside
@@ -165,31 +172,28 @@ export class PassCreatorClient implements WalletPassProvider {
   }
 
   /** PEM-formatted public key used to verify a signed webhook payload
-   * (developer.passcreator.com/en/signatures/verify-a-signature). Response shape is not confirmed
-   * by a concrete documented example - could be raw PEM text, or PEM wrapped in the usual
-   * {success, data, errors} envelope (as `data` directly or `data.publicKey`) like every other
-   * endpoint. Handles all three defensively rather than assuming one; needs live confirmation,
-   * see the wallet webhook task list. */
+   * (developer.passcreator.com/en/signatures/verify-a-signature).
+   *
+   * CONFIRMED LIVE (2026-08-19, via a direct probe from the running container - see
+   * wallet_webhook_public_key_fetch_failed in prod logs for the failures this fixes): `GET
+   * /api/hook/publickey` returns 200 with a bare top-level `{"publicKey": "-----BEGIN PUBLIC
+   * KEY-----\n...\n-----END PUBLIC KEY-----\n"}` - not the usual v3 `{success, data, errors}`
+   * envelope, and not `data.publicKey` either. Both of those were unconfirmed guesses (as was a
+   * raw-PEM-text response) that this endpoint never actually returns. */
   async getWebhookPublicKey(): Promise<string> {
     const res = await this.requestRaw("GET", "/api/hook/publickey");
     const text = await res.text();
-    if (!res.ok) throw this.toProviderError(res.status);
-    const trimmed = text.trim();
-    // JSON envelope first - a raw-PEM response never starts with "{", so this only matches the
-    // envelope case, not a JSON-encoded string that happens to contain a PEM block somewhere.
-    if (trimmed.startsWith("{")) {
-      try {
-        const parsed: unknown = JSON.parse(trimmed);
-        const data = (parsed as { data?: unknown }).data;
-        const pem = typeof data === "string" ? data : (data as { publicKey?: string } | undefined)?.publicKey;
-        if (typeof pem === "string" && pem.includes("-----BEGIN PUBLIC KEY-----")) return pem.trim();
-      } catch {
-        // Fall through to the error below.
-      }
-    } else if (trimmed.startsWith("-----BEGIN PUBLIC KEY-----")) {
-      return trimmed;
+    if (!res.ok) throw this.toProviderError(res.status, [previewBody(text)]);
+    let pem: unknown;
+    try {
+      pem = (JSON.parse(text) as { publicKey?: unknown }).publicKey;
+    } catch {
+      // Fall through to the error below.
     }
-    throw this.toProviderError(502, ["Public key missing or unrecognized shape in response"]);
+    if (typeof pem === "string" && pem.includes("-----BEGIN PUBLIC KEY-----")) return pem.trim();
+    throw this.toProviderError(502, [
+      `Public key missing or unrecognized shape in response: ${previewBody(text)}`,
+    ]);
   }
 
   /** Subscribes `targetUrl` to receive one webhook event type for this template
@@ -210,6 +214,24 @@ export class PassCreatorClient implements WalletPassProvider {
       `/api/hook/subscribe/${encodeURIComponent(this.templateId)}`,
       { target_url: targetUrl, event, signPayload: true, retryEnabled: true },
     );
+    if (!res.ok) {
+      throw this.toProviderError(res.status);
+    }
+    const body: unknown = await res.json().catch(() => null);
+    if (body && typeof body === "object" && (body as { success?: unknown }).success === false) {
+      throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
+    }
+  }
+
+  /** Removes every subscription (across all event types and templates) tied to `targetUrl`
+   * (developer.passcreator.com/en/webhooks/webhook-endpoints, confirmed 2026-08-19): `POST
+   * /api/hook/unsubscribe` with just `{target_url}` in the body - no templateId in the path (unlike
+   * subscribeWebhook) and no `event` field, because it isn't scoped to one event: it deletes the
+   * whole registration for that URL. There's no way to remove a single (targetUrl, event) pair
+   * without taking every other event on that same URL down with it - callers that share one
+   * targetUrl across several event types must account for that before calling this. */
+  async unsubscribeWebhook(targetUrl: string): Promise<void> {
+    const res = await this.requestRaw("POST", "/api/hook/unsubscribe", { target_url: targetUrl });
     if (!res.ok) {
       throw this.toProviderError(res.status);
     }
