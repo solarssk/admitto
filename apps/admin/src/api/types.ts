@@ -1314,6 +1314,9 @@ export interface UserListResponse {
 export interface UserStatsDto {
   total: number;
   active: number;
+  /** Non-SSO users with a confirmed MFA method — excludes `sso` users, whose two-factor
+   * coverage is the identity provider's responsibility. Compare against `total - sso`, not
+   * `total`, for the correct coverage percentage. */
   mfa: number;
   sso: number;
   active_sessions: number;

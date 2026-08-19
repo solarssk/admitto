@@ -199,7 +199,10 @@ export function UsersPage() {
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
 
-  const mfaPct = stats && stats.total > 0 ? Math.round((stats.mfa / stats.total) * 100) : 0;
+  // stats.mfa already excludes SSO users (their 2FA is the identity provider's job) — compare
+  // against the non-SSO total, not the instance total, so an all-SSO org doesn't read as 0%.
+  const nonSsoTotal = stats ? stats.total - stats.sso : 0;
+  const mfaPct = stats && nonSsoTotal > 0 ? Math.round((stats.mfa / nonSsoTotal) * 100) : 0;
 
   return (
     <div className="screen">
@@ -250,14 +253,14 @@ export function UsersPage() {
           <Card className="users-page__stat-card">
             <div className="users-page__stat">
               <div
-                className={`users-page__stat-icon users-page__stat-icon--${mfaPct === 100 ? "ok" : "warn"}`}
+                className={`users-page__stat-icon users-page__stat-icon--${mfaPct === 100 || nonSsoTotal === 0 ? "ok" : "warn"}`}
               >
                 <i className="ti ti-shield-check" aria-hidden="true" />
               </div>
               <div className="users-page__stat-body">
                 <span className="users-page__stat-value">{mfaPct}%</span>
                 <span className="users-page__stat-label">Two-factor coverage</span>
-                <span className="users-page__stat-sub">{stats.mfa} of {stats.total} enrolled</span>
+                <span className="users-page__stat-sub">{stats.mfa} of {nonSsoTotal} non-SSO enrolled</span>
               </div>
             </div>
           </Card>

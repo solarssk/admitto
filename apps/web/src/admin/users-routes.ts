@@ -427,7 +427,15 @@ export async function handleGetUserStats(c: Context, db: PrismaClient): Promise<
   const [total, active, mfaConfirmed, sso, activeSessionUsers] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { is_active: true } }),
-    db.user.count({ where: { mfa_methods: { some: { confirmed_at: { not: null } } } } }),
+    // Excludes SSO-linked users: their two-factor coverage is the identity provider's
+    // responsibility, not something this instance enrolls or tracks — counting them as
+    // "not onboarded" against local MFA misrepresented the KPI.
+    db.user.count({
+      where: {
+        mfa_methods: { some: { confirmed_at: { not: null } } },
+        external_identities: { none: {} },
+      },
+    }),
     db.user.count({ where: { external_identities: { some: {} } } }),
     db.session.groupBy({
       by: ["user_id"],
