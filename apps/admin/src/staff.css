@@ -3089,12 +3089,10 @@
   margin-top: var(--space-3);
 }
 
-.identity-editor__redirect-hint {
-  margin-top: var(--space-3);
-}
-
-.identity-editor__redirect-actions {
+.identity-editor__redirect-label-row {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
 }
 
