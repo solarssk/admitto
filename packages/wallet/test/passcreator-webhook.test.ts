@@ -17,14 +17,14 @@ function recordNotFoundError(): Prisma.PrismaClientKnownRequestError {
 }
 
 function signP256(data: string, privateKeyPem: string): string {
-  const signer = createSign("SHA256");
+  const signer = createSign("SHA1");
   signer.update(data, "utf8");
   signer.end();
   return signer.sign(privateKeyPem, "hex");
 }
 
 describe("verifyWebhookSignature", () => {
-  it("accepts a genuine ECDSA P-256/SHA-256 signature over the exact string bytes", () => {
+  it("accepts a genuine ECDSA P-256/SHA-1 signature over the exact string bytes", () => {
     const { publicKey, privateKey } = generateKeyPairSync("ec", {
       namedCurve: "P-256",
       publicKeyEncoding: { type: "spki", format: "pem" },
@@ -245,14 +245,17 @@ describe("applyWebhookUpdate", () => {
     expect(call.data).not.toHaveProperty("apple_inactive_registrations");
   });
 
-  it("leaves both apple_* and google_* columns untouched when operatingSystem is a bare 'Android' - PassCreator's real value is 'AndroidGooglePay'", async () => {
-    const db = makeDb();
-    db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, { identifier: "pc-1", operatingSystem: "Android", noOfActivePasses: 1 });
-    const call = db.walletPass.update.mock.calls[0]?.[0];
-    expect(call.data).not.toHaveProperty("apple_active_registrations");
-    expect(call.data).not.toHaveProperty("google_active_registrations");
-  });
+  it.each(["Android", "AndroidWalletPasses", "AndroidWalletUnion"])(
+    "maps operatingSystem: %s to the google_* columns (full enum confirmed 2026-08-19, developer.passcreator.com/en/webhooks/pass-hooks)",
+    async (operatingSystem) => {
+      const db = makeDb();
+      db.walletPass.update.mockResolvedValueOnce({});
+      await applyWebhookUpdate(db as never, { identifier: "pc-1", operatingSystem, noOfActivePasses: 1 });
+      const call = db.walletPass.update.mock.calls[0]?.[0];
+      expect(call.data).toMatchObject({ google_active_registrations: 1 });
+      expect(call.data).not.toHaveProperty("apple_active_registrations");
+    },
+  );
 
   it("leaves both apple_* and google_* columns untouched when operatingSystem is absent - can't tell which platform the counts belong to", async () => {
     const db = makeDb();

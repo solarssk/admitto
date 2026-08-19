@@ -530,7 +530,13 @@ async function subscribeWalletWebhooksBestEffort(
     templateId: updated.wallet_template_id,
     baseUrl: resolvePassCreatorBaseUrl(),
   });
-  const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+  const registrationUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+  // pass_voided gets its own target URL - see handlePassCreatorWebhook's doc comment
+  // (wallet-webhook.ts) for why: PassCreator's payload never names which event fired, and
+  // pass_voided's own payload has no `voided` field either, so the three registration events and
+  // pass_voided can't share one URL the way they used to.
+  const targetUrlFor = (event: PassCreatorWebhookEventType): string =>
+    event === "pass_voided" ? `${registrationUrl}/voided` : registrationUrl;
 
   // subscribeWebhook creates a fresh subscription entry every call, even for an identical
   // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
@@ -543,17 +549,19 @@ async function subscribeWalletWebhooksBestEffort(
     const existing = await client.listWebhooks();
     alreadySubscribed = new Set(
       existing
-        .filter((hook) => hook.passTemplate === updated.wallet_template_id && hook.targetUrl === targetUrl)
-        .map((hook) => hook.event),
+        .filter((hook) => hook.passTemplate === updated.wallet_template_id)
+        .map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`),
     );
   } catch (err) {
     console.error("wallet webhook subscribe: listWebhooks failed, subscribing unconditionally:", err);
     alreadySubscribed = new Set();
   }
-  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter((event) => !alreadySubscribed.has(event));
+  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter(
+    (event) => !alreadySubscribed.has(`${targetUrlFor(event)} ${event}`),
+  );
 
   const settled = await Promise.allSettled(
-    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrl, event)),
+    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrlFor(event), event)),
   );
   settled.forEach((outcome, index) => {
     if (outcome.status !== "rejected") return;

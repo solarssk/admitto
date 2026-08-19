@@ -1559,6 +1559,13 @@ describe("PATCH /api/admin/events/:eventId", () => {
             "pushnotification_unregistered",
           ].sort(),
         );
+        // pass_voided gets its own target URL (wallet-webhook.ts's doc comment explains why) -
+        // the other three registration events still share the plain target URL.
+        const baseUrl = await resolveInstanceBaseUrl(prisma);
+        const registrationUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+        const targetUrlByEvent = new Map(subscribeSpy.mock.calls.map((call) => [call[1], call[0]]));
+        expect(targetUrlByEvent.get("pass_voided")).toBe(`${registrationUrl}/voided`);
+        expect(targetUrlByEvent.get("pushnotification_registered")).toBe(registrationUrl);
       } finally {
         listSpy.mockRestore();
         subscribeSpy.mockRestore();
@@ -1569,7 +1576,8 @@ describe("PATCH /api/admin/events/:eventId", () => {
       const baseUrl = await resolveInstanceBaseUrl(prisma);
       const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
       const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
-        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        // pass_voided subscribes to its own /voided-suffixed target URL, not the shared one.
+        { targetUrl: `${targetUrl}/voided`, event: "pass_voided", passTemplate: "tmpl-sub" },
         // Different template - must not count as "already subscribed" for this event's template.
         { targetUrl, event: "pushnotification_registered", passTemplate: "some-other-template" },
       ]);

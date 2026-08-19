@@ -23,7 +23,7 @@ let prisma: PrismaClient;
 let keyPair: { publicKey: string; privateKey: string };
 
 function signP256(data: string, privateKeyPem: string): string {
-  const signer = createSign("SHA256");
+  const signer = createSign("SHA1");
   signer.update(data, "utf8");
   signer.end();
   return signer.sign(privateKeyPem, "hex");

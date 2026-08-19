@@ -2080,10 +2080,15 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   }
 
-  // PassCreator webhook deliveries (registration/void events) - one event's target URL per
-  // subscribeWebhook() call, never a browser navigation.
+  // PassCreator webhook deliveries (registration events: first_pushnotification_registered,
+  // pushnotification_registered, pushnotification_unregistered) - never a browser navigation.
   app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, (c) =>
     handlePassCreatorWebhook(c, db, options.walletPassProvider),
+  );
+  // pass_voided gets its own target URL (subscribeWalletWebhooksBestEffort) since PassCreator's
+  // payload never names which event fired - see handlePassCreatorWebhook's doc comment.
+  app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, (c) =>
+    handlePassCreatorWebhook(c, db, options.walletPassProvider, true),
   );
 
   // Mode B hosted QR — filename param is "{public_ref}.png"

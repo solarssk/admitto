@@ -57,7 +57,19 @@ stable `code` (`wallet_provider_unauthorized` / `_rate_limited` / `_duplicate` /
 | Search | `GET /api/v3/pass?query=<base64url query-language>` | Used for idempotency reconciliation and registration-status polling |
 | Describe template | `GET /api/v2/pass-template/{id}/describe` | v3 has no template-management endpoints; template read stays on v2 |
 | Webhook subscribe | `POST /api/hook/subscribe/{templateId}` | Not idempotent - caller must check `listWebhooks()` first |
-| Webhook public key | `GET /api/hook/publickey` | EC (P-256), hex-encoded signature |
+| Webhook unsubscribe | `POST /api/hook/unsubscribe` | Body is just `{target_url}` - no templateId, no event. Removes *every* event subscribed to that URL, not one |
+| Webhook public key | `GET /api/hook/publickey` | EC (P-256), hex-encoded signature, SHA-1 hash (PassCreator's own `openssl_verify()` doc example omits the algorithm argument, which defaults to SHA-1 in PHP - confirmed 2026-08-19). Response is `{"publicKey": "<PEM>"}` at the top level - confirmed live 2026-08-19, not the usual `{success, data}` envelope |
+
+**Webhook delivery has no event-type field or header** (confirmed 2026-08-19,
+developer.passcreator.com/en/webhooks/pass-hooks): the POST body never names which of the 4
+subscribed events fired, so the *target URL a delivery arrives on* is the only signal. The three
+registration events (`first_pushnotification_registered`, `pushnotification_registered`,
+`pushnotification_unregistered`) share one target URL because their handling doesn't depend on
+telling them apart - `applyWebhookUpdate` just trusts whatever counts the delivery reports.
+`pass_voided` gets its own `/voided`-suffixed target URL (`subscribeWalletWebhooksBestEffort` in
+`apps/web/src/admin/event-settings-routes.ts`) because its payload has no `voided` field at all -
+arriving on that URL is itself the only voided signal there is (`isVoidedRoute` in
+`apps/web/src/wallet-webhook.ts`).
 
 Auth: `Authorization: <api_key>` header, no `Bearer` prefix. Rate limit: 600 req/min, exponential
 backoff on 429 (see `PassCreatorClient`'s retry logic). Config (API key, template ID, field
