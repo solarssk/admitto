@@ -6259,7 +6259,8 @@ output.mail-field-hint {
 
 .archiving-table-wrap {
   overflow-x: auto;
-  margin-bottom: var(--space-2);
+  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
+  padding: 0 var(--pad-card);
 }
 
 .archiving-table-wrap th:last-child,
