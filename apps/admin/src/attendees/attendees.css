@@ -805,8 +805,16 @@
 
 .attendee-delivery__time {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   color: var(--text-muted);
   font-size: var(--fs-xs);
+  line-height: 1.3;
+}
+
+.attendee-delivery__time-date,
+.attendee-delivery__time-clock {
   white-space: nowrap;
 }
 

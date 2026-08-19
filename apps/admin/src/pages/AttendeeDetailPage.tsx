@@ -82,7 +82,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
-import { formatDeliveryHistoryTime, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
+import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
@@ -999,6 +999,11 @@ function AttendeeOverviewTab({
                 {detail.deliveries.map((delivery) => {
                   const statusMeta = resolveStatusMeta(delivery.status);
                   const iconTone = statusMeta.variant;
+                  const timeParts = formatDeliveryHistoryTimeParts(
+                    rowTimestamp(delivery),
+                    delivery.client_timezone,
+                    event.timezone,
+                  );
                   return (
                     <li className="attendee-delivery" key={delivery.id}>
                       <Tooltip content={statusMeta.label} className="attendee-delivery__icon-tip">
@@ -1023,10 +1028,13 @@ function AttendeeOverviewTab({
                         )}
                       </div>
                       <span className="attendee-delivery__time mono">
-                        {formatDeliveryHistoryTime(
-                          rowTimestamp(delivery),
-                          delivery.client_timezone,
-                          event.timezone,
+                        {timeParts ? (
+                          <>
+                            <span className="attendee-delivery__time-date">{timeParts.date}</span>
+                            <span className="attendee-delivery__time-clock">{timeParts.time}</span>
+                          </>
+                        ) : (
+                          "-"
                         )}
                       </span>
                       <DeliveryRowMenu

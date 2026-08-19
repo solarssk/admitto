@@ -1,4 +1,4 @@
-import { formatEventDateTime, formatUtcDateTime, formatZonedClockTime } from "../utils/event-dates.js";
+import { formatEventDate, formatEventDateTime, formatEventTime, formatUtcDateTime, formatZonedClockTime } from "../utils/event-dates.js";
 import type { DeliveryDto } from "../api/types.js";
 
 /** Format an ISO timestamp for the delivery log, or "-" when absent. */
@@ -17,6 +17,24 @@ export function formatDeliveryHistoryTime(
 ): string {
   if (!iso) return "-";
   return formatEventDateTime(iso, clientTimezone ?? eventTimezone);
+}
+
+export interface DeliveryHistoryTimeParts {
+  date: string;
+  time: string;
+}
+
+/** Two-line variant of {@link formatDeliveryHistoryTime} for Attendee Detail's Delivery history
+ * row, which stacks date above time so a long subject/recipient pair on the same line isn't
+ * squeezed by one wide combined string. */
+export function formatDeliveryHistoryTimeParts(
+  iso: string | null,
+  clientTimezone: string | null | undefined,
+  eventTimezone: string,
+): DeliveryHistoryTimeParts | null {
+  if (!iso) return null;
+  const timezone = clientTimezone ?? eventTimezone;
+  return { date: formatEventDate(iso, timezone), time: formatEventTime(iso, timezone) };
 }
 
 /** The row's client-local time ("HH:MM (IANA, UTC±offset)"), when the send/resend that produced
