@@ -651,27 +651,7 @@
   max-height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Same slim on-theme scrollbar as .overview-timeline / .timezone-select__list (staff.css). */
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.attendee-deliveries-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.attendee-deliveries-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.attendee-deliveries-scroll::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.attendee-deliveries-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look + gutter reservation: shared .at-scroll/.at-scroll--stable (packages/ui). */
 }
 
 .attendee-deliveries {

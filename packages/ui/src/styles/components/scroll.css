@@ -1,0 +1,31 @@
+/* Shared slim, on-theme scrollbar (Firefox + WebKit) for any panel that scrolls on overflow —
+ * previously copy-pasted identically across ~8 call sites in apps/admin. Visual only: whether a
+ * scrolling container also reserves space for the scrollbar track up front (so content doesn't
+ * shift when it appears/disappears) is a per-consumer choice, opt in with .at-scroll--stable —
+ * some panels deliberately don't (a fixed reservation would permanently narrow content that's
+ * rarely wide enough to overflow in the first place). */
+.at-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.at-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.at-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.at-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.at-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+.at-scroll--stable {
+  scrollbar-gutter: stable;
+}

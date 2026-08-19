@@ -1363,6 +1363,9 @@
   /* Mockup ci-history__list: history scrolls inside the card, not the page. */
   max-height: min(440px, 48vh);
   overflow-y: auto;
+  /* Scrollbar look + stable gutter: shared .at-scroll / .at-scroll--stable (packages/ui), applied
+   * via className — this panel previously had neither, so content shifted right when a scan
+   * pushed it past the max-height threshold. */
 }
 
 /* Mockup ci-row: dot | info (flexes, ellipsis) | right (status + time, right-aligned). */
@@ -5072,26 +5075,7 @@ output.mail-field-hint {
   max-height: 9.5rem;
   overflow-x: hidden;
   overflow-y: auto;
-  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 .event-bounce-ingest__recent-runs-list {
@@ -6951,34 +6935,10 @@ output.mail-field-hint {
   margin-right: -8px;
   /* (D1) The padding/margin gutter above keeps content off the scrollbar, but it's a fixed 8px —
    * the real native scrollbar can render wider, so item width still shifted when filtering
-   * toggled the list between overflowing and not. `scrollbar-gutter: stable` reserves the
-   * browser's actual scrollbar width up front, always, regardless of overflow state — no
-   * documented browser-support floor exists in this repo, and unsupported browsers just ignore
-   * the property (reverting to the pre-existing behavior), so it's a safe progressive addition. */
-  scrollbar-gutter: stable;
-  /* (D2) Slim, on-theme scrollbar instead of the default browser chrome — no existing scrollbar
-   * treatment to reuse elsewhere in the app (ScrollFadeTabs hides its scrollbar entirely instead,
-   * a different UX for a different case). Standards-based properties for Firefox... */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-/* ...plus the WebKit/Blink-specific pseudo-elements (Chrome, Safari, Edge). */
-.overview-timeline::-webkit-scrollbar {
-  width: 8px;
-}
-
-.overview-timeline::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.overview-timeline::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.overview-timeline::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+   * toggled the list between overflowing and not. Shared .at-scroll--stable's
+   * `scrollbar-gutter: stable` (added via className below) reserves the browser's actual
+   * scrollbar width up front instead, always, regardless of overflow state. Scrollbar look
+   * (D2, slim/on-theme instead of default browser chrome): shared .at-scroll. */
 }
 
 /* Zero-result state (#A2): center the single EmptyState block in the fixed-height container
@@ -7611,28 +7571,8 @@ output.mail-field-hint {
   overflow-y: auto;
   list-style: none;
   overscroll-behavior: contain;
-  /* Keep row width stable when filter results cross the max-height threshold
-     (scrollbar appearing/disappearing mid-type). Same idea as .overview-timeline. */
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.timezone-select__list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.timezone-select__list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.timezone-select__list::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.timezone-select__list::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Row width stable when filter results cross the max-height threshold, and scrollbar look:
+     shared .at-scroll / .at-scroll--stable (packages/ui), applied via className. */
 }
 
 .timezone-select__group {
