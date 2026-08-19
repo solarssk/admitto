@@ -1603,6 +1603,77 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
+    it("migrates a legacy pass_voided subscription off the shared URL: unsubscribes it and resubscribes all 4 events fresh", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+        // Stale: pass_voided still on the pre-2026-08-19 shared URL, alongside the three
+        // registration events that are still correctly subscribed there.
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
+      ]);
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockResolvedValue(undefined);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+        expect(unsubscribeSpy).toHaveBeenCalledExactlyOnceWith(targetUrl);
+        const targetUrlByEvent = new Map(subscribeSpy.mock.calls.map((call) => [call[1], call[0]]));
+        expect(targetUrlByEvent.get("pass_voided")).toBe(`${targetUrl}/voided`);
+        expect(targetUrlByEvent.get("pushnotification_registered")).toBe(targetUrl);
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("does not duplicate the registration-event subscriptions when the legacy-pass_voided unsubscribe itself fails", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
+      ]);
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockRejectedValue(new Error("down"));
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(unsubscribeSpy).toHaveBeenCalledExactlyOnceWith(targetUrl);
+        // Only the new /voided subscription for pass_voided is added - the three registration
+        // events, still untouched on the old URL, must not get a duplicate piled on top.
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledExactlyOnceWith(`${targetUrl}/voided`, "pass_voided");
+        });
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
     it("falls back to subscribing unconditionally when listWebhooks itself fails", async () => {
       const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("down"));
       const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);

@@ -544,20 +544,39 @@ async function subscribeWalletWebhooksBestEffort(
   // delivering its own redundant webhook call forever after. Listing is itself best-effort: if it
   // fails, fall back to the old blind-subscribe behavior rather than skipping subscription
   // entirely - a few duplicate subscriptions are a lesser problem than none at all.
-  let alreadySubscribed: Set<string>;
+  let ownTemplateHooks: { targetUrl: string | null; event: string; passTemplate: string | null }[] = [];
   try {
-    const existing = await client.listWebhooks();
-    alreadySubscribed = new Set(
-      existing
-        .filter((hook) => hook.passTemplate === updated.wallet_template_id)
-        .map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`),
+    ownTemplateHooks = (await client.listWebhooks()).filter(
+      (hook) => hook.passTemplate === updated.wallet_template_id,
     );
   } catch (err) {
     console.error("wallet webhook subscribe: listWebhooks failed, subscribing unconditionally:", err);
-    alreadySubscribed = new Set();
   }
+
+  // One-time migration: pass_voided used to share registrationUrl with the three registration
+  // events (before 2026-08-19) - a subscription there is stale now that it has its own URL, and
+  // would otherwise sit there forever, redelivering every void to a route that can't act on it.
+  // PassCreator's unsubscribe API removes every event on a target URL at once (not one event
+  // selectively - see PassCreatorClient.unsubscribeWebhook), so cleaning up that one stale entry
+  // means clearing registrationUrl entirely and resubscribing all four events fresh below.
+  const hasLegacyVoidedSubscription = ownTemplateHooks.some(
+    (hook) => hook.targetUrl === registrationUrl && hook.event === "pass_voided",
+  );
+  let alreadySubscribed = new Set(ownTemplateHooks.map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`));
+  if (hasLegacyVoidedSubscription) {
+    try {
+      await client.unsubscribeWebhook(registrationUrl);
+      alreadySubscribed = new Set(); // wiped clean - every event below gets a fresh subscription
+    } catch (err) {
+      // Unsubscribe failed: the stale entry is still there untouched, so fall back to the normal
+      // dedup (computed above) rather than piling a duplicate registration-event subscription on
+      // top of it.
+      console.error("wallet webhook subscribe: legacy pass_voided migration unsubscribe failed:", err);
+    }
+  }
+
   const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter(
-    (event) => !alreadySubscribed.has(`${targetUrlFor(event)} ${event}`),
+    (event) => !alreadySubscribed.has(`${targetUrlFor(event)} ${event}`),
   );
 
   const settled = await Promise.allSettled(
