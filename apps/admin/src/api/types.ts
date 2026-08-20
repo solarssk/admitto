@@ -1306,6 +1306,7 @@ export interface UserListItemDto {
   active_sessions_count: number;
   has_mfa: boolean;
   has_sso: boolean;
+  external_identities: UserIdentityDto[];
   roles: RoleAssignmentDto[];
 }
 
@@ -1534,7 +1535,6 @@ export interface AccountExternalIdentityDto {
   id: string;
   provider_id: string;
   provider_display_name: string;
-  provider_type: string;
   linked_at: string;
 }
 
@@ -1576,7 +1576,6 @@ export interface PatchAccountPasswordBody {
 }
 
 export interface DeleteAccountExternalIdentityBody {
-  provider_type: "oidc" | "cloudflare_access";
   new_password: string;
   current_password?: string;
   code?: string;
