@@ -7,11 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Users & roles: the staff user modal and My account's SSO menu now show the actual linked identity provider name(s) (e.g. "Authentik") instead of the generic "Identity provider" label, and list a Cloudflare Access link as its own row alongside any OIDC provider. Unlinking is now two separate actions - "Unlink identity provider" and "Unlink Cloudflare Access" - instead of one combined action that removed both at once; unlinking one leaves the other, and any role grants it manages, untouched.
+- Bulk check-in from the Attendees list now asks for confirmation before admitting everyone selected, matching the other bulk actions (revoke, delete, send tickets) on the same toolbar.
+
+### Changed
+
+- The "Confirm check-in" button on the Check-in screen always uses Admitto's own blue, regardless of the organisation's branding accent color - a branded accent in red or orange read as an error state on this specific button.
+- Attendee Overview's two-column layout is now a literal 50/50 split.
+- The Two-factor coverage stat on Users & roles no longer counts staff who sign in through an identity provider as "missing 2FA" - two-factor for those accounts is the identity provider's responsibility, not something Admitto enforces.
+
 ### Fixed
 
 - Unlinking SSO from My Account now also removes a linked Cloudflare Access identity, instead of leaving it behind without its underlying sign-in method. Previously this silently broke every later Cloudflare-authenticated request for that account.
 - Wallet registration webhooks from PassCreator (device add/remove events) are no longer silently rejected. Two separate bugs each broke every delivery in a different way: Admitto was reading PassCreator's public-key response with the wrong field name (so the key could never be fetched at all), and signature verification was using the wrong hash algorithm (so a fetched key still couldn't validate a genuine delivery). No wallet registration status ever updated from a live device, and PassCreator kept retrying every delivery for over a day. Also fixed: some Android Wallet variants (`Android`, `AndroidWalletPasses`, `AndroidWalletUnion`, not just `AndroidGooglePay`) were silently ignored instead of updating Google registration counts. Wallet status now updates correctly when an attendee adds or removes their pass from Apple or Google Wallet.
 - Voiding a pass directly in PassCreator's own dashboard (bypassing Admitto) is now reflected on the attendee's Wallet status. This never worked before: PassCreator's void-notification webhook doesn't say which event fired or carry any voided flag in its payload, so it was structurally indistinguishable from every other wallet event and was always ignored. It now gets its own separate webhook subscription so Admitto can tell the two apart. PassCreator has no equivalent restore/un-void webhook event, so a pass restored directly in PassCreator's dashboard still isn't reflected automatically - Admitto's own restore action is unaffected.
+- Organisation Settings → Archiving and My account → Active sessions: their tables now span the full width of their card, matching every other table in the app. A leftover negative-margin/padding pair silently canceled itself out, so the table never actually reached the card's edge.
+- The Audit log now keeps the deleted event's real name in "Deleted event …" entries instead of falling back to the generic label once the event itself no longer exists to look the name up from.
+- A staff account's display name, when unset, now shows their email address in the top-right account menu instead of just the part of the email before the @ sign.
+- Activity log and attendee Notes now show a staff member's email when they have no display name set, instead of a generic label ("Admin", which wrongly implied a specific role) or skipping straight past the email to that same generic fallback.
+- Note author badges (Attendee detail → Notes) now use the same role name and color as everywhere else in the app ("Superadmin"/"Administrator"/"Operator"), instead of an unrelated two-letter code ("SA"/"AD"/"OP").
+- Requirements' Add/Edit item and Add/Edit custom field modals no longer shift their form width when the scrollbar appears or disappears - their content almost always needs to scroll, so the space for it is now reserved up front instead of toggling in and out.
+- Check-in and note timestamps now show in the viewer's own browser timezone rather than the event's, and a note added on an earlier day now shows which day, not just a time.
+- Security logs' "2FA verified" rows now get the same "your local time" icon as "Login succeeded" rows when the browser reported a timezone, instead of always falling back to the generic device icon.
+- Several small layout fixes on Check-in, Users & roles, My account, Organisation settings → Identity/Mail, and Attendee delivery history: text no longer wraps awkwardly in status chips or company/department names, modal scrollbars behave consistently and no longer shift content when they appear, a Redirect URI field's copy control now sits inside the field, and a couple of redundant or misaligned hint lines were removed or straightened out.
 
 ## [0.5.3] - 2026-08-18
 
