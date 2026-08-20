@@ -156,10 +156,12 @@ describe("AttendeeCard — items section heading and description (review)", () =
     expect(screen.getByText("Hand out at the badge desk by the entrance")).toBeTruthy();
   });
 
-  it("renders no description paragraph for an item without one", () => {
+  it('shows a "No description" placeholder for an item without one, instead of shrinking the row', () => {
     render(<AttendeeCard card={cardWithDescribedItems} eventTimezone="UTC" canAct={true} />);
     const giftBagRow = screen.getByText("Gift bag").closest(".checkin-card__item") as HTMLElement;
-    expect(giftBagRow.querySelector(".checkin-card__item-description")).toBeNull();
+    const description = giftBagRow.querySelector(".checkin-card__item-description");
+    expect(description?.textContent).toBe("No description");
+    expect(description?.classList.contains("checkin-card__item-description--empty")).toBe(true);
   });
 
   it("omits the heading entirely when the card has no items", () => {

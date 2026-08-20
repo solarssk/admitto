@@ -136,7 +136,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           </div>
           <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
         </div>
-        <form id="custom-field-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+        <form id="custom-field-form" className="event-item-modal__body at-scroll at-scroll--stable" onSubmit={(e) => void handleSave(e)}>
           <div className="at-field">
             <div className="add-item-label-row">
               <label className="at-label" htmlFor="cf-label">
