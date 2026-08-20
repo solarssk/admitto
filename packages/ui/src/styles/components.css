@@ -159,6 +159,14 @@
   background: var(--surface-card, #fff);
   overflow: hidden;
 }
+/* This wrapper's own overflow:hidden clips a focused child's outward ring on 3 sides (codex
+   review) - same construction as TimeInput/DatePicker, same fix: a :focus-within ring on the
+   unclipped wrapper itself, matching .time-input__control:focus-within. Keeps the icon button's
+   own :focus-visible ring below too (harmless, same belt-and-suspenders TimeInput/DatePicker use). */
+.at-inputgroup:has(.at-inputgroup__icon--action):focus-within {
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
 .at-inputgroup:has(.at-inputgroup__icon--action) .at-input {
   flex: 1;
   min-width: 0;
