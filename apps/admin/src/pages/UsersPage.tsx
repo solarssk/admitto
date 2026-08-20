@@ -199,10 +199,13 @@ export function UsersPage() {
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
 
-  // stats.mfa already excludes SSO users (their 2FA is the identity provider's job) — compare
-  // against the non-SSO total, not the instance total, so an all-SSO org doesn't read as 0%.
-  const nonSsoTotal = stats ? stats.total - stats.sso : 0;
-  const mfaPct = stats && nonSsoTotal > 0 ? Math.round((stats.mfa / nonSsoTotal) * 100) : 0;
+  // stats.mfa is scoped to users with a local password (two-factor coverage is only meaningful
+  // for accounts that have a password login path) — compare against that same population, not
+  // the instance total, so an all-SSO-only org doesn't read as 0%. An org with zero password
+  // accounts has nothing left unprotected, so coverage is vacuously 100%, not 0% (codex review) -
+  // the icon already treated this case as "ok"; the displayed number now agrees with it.
+  const passwordUserTotal = stats ? stats.password_users : 0;
+  const mfaPct = !stats ? 0 : passwordUserTotal === 0 ? 100 : Math.round((stats.mfa / passwordUserTotal) * 100);
 
   return (
     <div className="screen">
@@ -253,14 +256,16 @@ export function UsersPage() {
           <Card className="users-page__stat-card">
             <div className="users-page__stat">
               <div
-                className={`users-page__stat-icon users-page__stat-icon--${mfaPct === 100 || nonSsoTotal === 0 ? "ok" : "warn"}`}
+                className={`users-page__stat-icon users-page__stat-icon--${mfaPct === 100 ? "ok" : "warn"}`}
               >
                 <i className="ti ti-shield-check" aria-hidden="true" />
               </div>
               <div className="users-page__stat-body">
                 <span className="users-page__stat-value">{mfaPct}%</span>
                 <span className="users-page__stat-label">Two-factor coverage</span>
-                <span className="users-page__stat-sub">{stats.mfa} of {nonSsoTotal} non-SSO enrolled</span>
+                <span className="users-page__stat-sub">
+                  {passwordUserTotal === 0 ? "No local password accounts" : `${stats.mfa} of ${passwordUserTotal} local accounts enrolled`}
+                </span>
               </div>
             </div>
           </Card>

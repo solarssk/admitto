@@ -424,18 +424,23 @@ export async function handleGetUserStats(c: Context, db: PrismaClient): Promise<
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
-  const [total, active, mfaConfirmed, sso, activeSessionUsers] = await Promise.all([
+  const [total, active, mfaConfirmed, passwordUsers, sso, activeSessionUsers] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { is_active: true } }),
-    // Excludes SSO-linked users: their two-factor coverage is the identity provider's
-    // responsibility, not something this instance enrolls or tracks — counting them as
-    // "not onboarded" against local MFA misrepresented the KPI.
+    // Scoped to users with a local password: a linked identity provider doesn't retire the
+    // password path (a hybrid account can still sign in with either), so excluding every
+    // SSO-linked user here - not just SSO-only ones - would hide a hybrid account's
+    // unprotected password login from this KPI (codex review).
     db.user.count({
       where: {
         mfa_methods: { some: { confirmed_at: { not: null } } },
-        external_identities: { none: {} },
+        password_hash: { not: null },
       },
     }),
+    // Denominator for the coverage KPI below - only users who actually have a password path
+    // that two-factor could protect. Deliberately not `total - sso`: `sso` (below) counts every
+    // identity-provider link, hybrid accounts included, which still have a password to protect.
+    db.user.count({ where: { password_hash: { not: null } } }),
     db.user.count({ where: { external_identities: { some: {} } } }),
     db.session.groupBy({
       by: ["user_id"],
@@ -449,6 +454,7 @@ export async function handleGetUserStats(c: Context, db: PrismaClient): Promise<
     total,
     active,
     mfa: mfaConfirmed,
+    password_users: passwordUsers,
     sso,
     active_sessions: activeSessions,
     active_sessions_users: activeSessionUsers.length,
