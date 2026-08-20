@@ -551,7 +551,7 @@ describe("IdentityProviderEditor — coverage", () => {
 });
 
 describe("IdentityProviderEditor — Redirect URI", () => {
-  it("shows a disabled Redirect URI placeholder (no Copy) in create mode, same layout as edit", async () => {
+  it("shows a disabled Redirect URI placeholder with a non-interactive Copy icon in create mode, same layout as edit", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
     const field = (await screen.findByLabelText("Redirect URI")) as HTMLInputElement;
     expect(field.disabled).toBe(true);
@@ -561,7 +561,11 @@ describe("IdentityProviderEditor — Redirect URI", () => {
         exact: false,
       }),
     ).toBeTruthy();
+    // Nothing to copy yet, so this renders as Input's plain decorative icon (no onIconClick),
+    // not a button - there's no click target to disable. Queried from the field itself (not
+    // container.querySelector) since the editor renders into a portal outside RTL's container.
     expect(screen.queryByRole("button", { name: /Copy/i })).toBeNull();
+    expect(field.closest(".at-inputgroup")?.querySelector(".ti-copy")).toBeTruthy();
   });
 
   it("shows the Redirect URI with Copy in edit mode from the provider API", async () => {
