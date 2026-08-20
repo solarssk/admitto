@@ -1290,6 +1290,7 @@ export interface RoleAssignmentDto {
 export interface UserIdentityDto {
   id: string;
   provider_display_name: string;
+  provider_type: string;
 }
 
 export interface UserListItemDto {
@@ -1363,6 +1364,10 @@ export interface ResetUserPasswordBody {
   /** Actor's own TOTP/recovery code - required by the server only when resetting another
    * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
   code?: string;
+}
+
+export interface UnlinkUserExternalIdentityBody {
+  new_password: string;
 }
 
 export interface RoleAssignmentListItemDto {
@@ -1538,6 +1543,7 @@ export interface AccountExternalIdentityDto {
   id: string;
   provider_id: string;
   provider_display_name: string;
+  provider_type: "oidc" | "cloudflare_access";
   linked_at: string;
 }
 

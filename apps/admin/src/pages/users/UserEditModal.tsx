@@ -709,7 +709,12 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // dialog to handle Escape alone (bot review finding; same pattern as EventItemDrawer's own
   // `!deleteConfirmOpen`).
   const anyConfirmDialogOpen =
-    deleteConfirm || disableConfirmOpen || resetMfaOpen || revokeSessionsOpen || unlinkSsoOpen || roleChangeConfirmOpen;
+    deleteConfirm ||
+    disableConfirmOpen ||
+    resetMfaOpen ||
+    revokeSessionsOpen ||
+    unlinkSsoOpen ||
+    roleChangeConfirmOpen;
   useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose);
   const moreActions = useDropdownMenu<HTMLButtonElement>({ align: "end" });
 
@@ -1157,10 +1162,17 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll--stable">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
-              <Avatar name={displayTitle} size="sm" />
+              {/* Default (md, 36px) to match .identity-row-icon's size - the standard other
+               * modal headers use for their leading icon (identity-editor__header-title). */}
+              <Avatar name={displayTitle} />
               <div className="users-modal__head-text">
                 <h2 id={titleId}>{displayTitle}</h2>
-                <span className="users-modal__head-email">{user.email}</span>
+                {/* displayTitle already falls back to user.email when there's no display_name -
+                 * showing this line too would repeat the exact same string right under itself
+                 * (PO report), on top of the Email address field further down the form. */}
+                {user.display_name?.trim() && (
+                  <span className="users-modal__head-email">{user.email}</span>
+                )}
               </div>
             </div>
             <div className="users-modal__head-actions">
