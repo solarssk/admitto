@@ -1229,20 +1229,12 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
   const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
 
+  const linked = await db.externalIdentity.findMany({ where: { user_id: id }, select: { id: true } });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
+
   // Checked only once there's actually something to unlink - a request for an already-local or
   // nonexistent user should still 404 without forcing the caller to supply a throwaway password.
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-  const providerType = body?.provider_type;
-  if (providerType !== "oidc" && providerType !== "cloudflare_access") {
-    return c.json({ error: "invalid_request" }, 400);
-  }
-
-  const linked = await db.externalIdentity.findMany({
-    where: { user_id: id, provider: { provider_type: providerType } },
-    select: { id: true },
-  });
-  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
-
   const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
   if (isPasswordTooCommon(newPassword)) {
@@ -1254,20 +1246,14 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
   const audit = adminAuditFromContext(c);
 
   await db.$transaction(async (tx) => {
-    await tx.externalIdentity.deleteMany({
-      where: { user_id: id, provider: { provider_type: providerType } },
-    });
+    await tx.externalIdentity.deleteMany({ where: { user_id: id } });
     // OidcRoleGrant has no FK to ExternalIdentity (it's keyed by provider_id/user_id), so it
     // survives the identity delete above on its own - deleting it here converts any IdP-managed
     // role assignments to manual ownership instead of leaving them silently orphaned: still
     // granted (RoleAssignment itself isn't touched), but no longer blocked from revoke/switch by
     // the managed_by_idp guard, and no longer reachable by a future OIDC sync since no provider
-    // is linked to this user anymore. Cloudflare Access never sources an OidcRoleGrant, so only
-    // an "oidc" unlink needs this cleanup - leaving it be for a "cloudflare_access" unlink keeps
-    // any still-linked OIDC provider's own managed grants exactly as they were.
-    if (providerType === "oidc") {
-      await tx.oidcRoleGrant.deleteMany({ where: { user_id: id } });
-    }
+    // is linked to this user anymore.
+    await tx.oidcRoleGrant.deleteMany({ where: { user_id: id } });
     await tx.user.update({
       where: { id },
       data: { password_hash: hash, must_change_password: true },
@@ -1284,7 +1270,7 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
       ip: audit.ip,
       timezone: audit.timezone,
       actionType: "user_sso_unlinked",
-      metadata: { userId: id, count: linked.length, providerType },
+      metadata: { userId: id, count: linked.length },
     });
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
@@ -1300,7 +1286,6 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
   emitSystemLog("security", "info", "user_sso_unlinked", {
     targetUserId: user.id,
     targetEmail: user.email,
-    providerType,
     actorUserId: actorId,
     actorEmail: await resolveActorEmailForLog(db, actorId),
   });

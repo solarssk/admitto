@@ -1367,7 +1367,6 @@ export interface ResetUserPasswordBody {
 }
 
 export interface UnlinkUserExternalIdentityBody {
-  provider_type: "oidc" | "cloudflare_access";
   new_password: string;
 }
 

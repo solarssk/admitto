@@ -855,7 +855,6 @@ describe("UserEditModal sign-in security", () => {
 
     await waitFor(() => {
       expect(mockUnlinkUserExternalIdentity).toHaveBeenCalledWith("usr-1", {
-        provider_type: "oidc",
         new_password: "long-enough-password",
       });
     });
