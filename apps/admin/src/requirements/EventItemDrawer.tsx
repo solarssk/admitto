@@ -164,7 +164,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
             </div>
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
-          <form id="item-edit-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+          <form id="item-edit-form" className="event-item-modal__body at-scroll at-scroll--stable" onSubmit={(e) => void handleSave(e)}>
             {isDefaultItem && (
               <Notice variant="info">
                 Badge is the default item used by "Issue badge at entry". It cannot be deleted, but you can turn it
