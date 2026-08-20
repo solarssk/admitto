@@ -1008,6 +1008,16 @@
   color: var(--status-error);
 }
 
+/* .at-btn--ghost:hover:not(:disabled) (packages/ui) is the same specificity as a bare
+ * .checkin-card__aux-btn--danger:hover:not(:disabled) (3 class-level selectors each), so which
+ * one wins came down to CSS source order - unreliable across bundles. The .checkin-card
+ * qualifier below adds a 4th selector so this always wins regardless of order, matching the
+ * same danger-hover treatment as .users-page__icon-danger. */
+.checkin-card .checkin-card__aux-btn--danger:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
 .checkin-card__notes {
   padding: 10px 16px;
   border-top: 1px solid var(--at-gray-100, var(--border));
@@ -4013,6 +4023,15 @@ output.mail-field-hint {
   gap: var(--space-4);
 }
 
+/* .mail-transport__desc/__env-note's own margin-bottom (above) stacked on top of this flex
+   container's gap when nested directly inside it - the two don't collapse in flexbox the way
+   block margins would, so the tile grid below sat further down than the equivalent content in
+   Organization mode, which has no such wrapper (PO report). */
+.mail-transport-form > .mail-transport__desc,
+.mail-transport-form > .mail-transport__env-note {
+  margin-bottom: 0;
+}
+
 /* Transport picker — clickable tile grid (Instance settings -> Mail card 1). A compact
  * icon + label chip, not a description card — the per-provider blurb moved to the tile's
  * tooltip instead of taking up space. auto-fit packs as many as actually fit per row (5
@@ -5240,8 +5259,21 @@ output.mail-field-hint {
 
 .sessions-table-wrap {
   overflow-x: auto;
+}
+
+/* Negative margin only, no matching padding - a margin/padding pair of the same size on the
+   same box cancels out (the padding re-insets exactly what the margin bled out), leaving the
+   table at the same width as an unbled child. Bleeding all the way to the card's own edge is
+   the actual goal here, matching .users-page__table-wrap's own (correct) version of this same
+   idiom - this copy quietly never achieved it (PO report: several tables using this class read
+   narrower than the card, indistinguishable from not having the trick at all).
+   Scoped to .at-card__body (a padded Card's own wrapper, packages/ui/src/components/Card.tsx)
+   - ReportsPage.tsx's Admission log reuses this same class on a padded={false} Card, which
+   never renders .at-card__body at all, so this bleed never applies there (codex review):
+   with no padding to offset, the same negative margin would push that table 24px past each
+   edge of its already-unpadded card instead of reaching it. */
+.at-card__body .sessions-table-wrap {
   margin: 0 calc(-1 * var(--pad-card));
-  padding: 0 var(--pad-card);
 }
 
 .table {
@@ -6257,9 +6289,13 @@ output.mail-field-hint {
   margin: var(--space-2) 0;
 }
 
+/* Negative margin only, no matching padding - see .sessions-table-wrap's own comment
+   (staff.css) for why a same-size padding here would silently cancel the bleed back to a
+   plain unbled child's width (PO report: this still read narrower than Staff users' table
+   after the first attempt at this fix). */
 .archiving-table-wrap {
   overflow-x: auto;
-  margin-bottom: var(--space-2);
+  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
 }
 
 .archiving-table-wrap th:last-child,
