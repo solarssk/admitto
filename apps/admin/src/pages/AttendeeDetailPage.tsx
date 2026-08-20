@@ -1239,7 +1239,11 @@ function AttendeeNotesTab({
         </div>
       </div>
       {notes.length === 0 ? (
-        <p className="at-notes-empty">No notes yet.</p>
+        <EmptyState
+          icon={<i className="ti ti-notes" aria-hidden="true" />}
+          title="No notes yet"
+          description="Notes added about this attendee will appear here."
+        />
       ) : (
         <ul className="at-notes-list">
           {notes.map((note) => {
