@@ -292,6 +292,7 @@ function OidcRedirectUriCallout({
   onCopySuccess,
   onCopyError,
 }: Readonly<OidcRedirectUriCalloutProps>) {
+  const fieldId = useId();
   if (redirectUri === null) {
     return (
       <Notice variant="warning" role="status">
@@ -313,20 +314,17 @@ function OidcRedirectUriCallout({
   }
 
   return (
-    <div className="identity-editor__redirect">
-      <Input
-        label="Redirect URI"
-        value={uri}
-        disabled
-        readOnly
-        hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
-      />
-      <div className="identity-editor__redirect-actions">
-        <Button type="button" variant="secondary" size="sm" onClick={() => void handleCopy()}>
-          <i className="ti ti-copy" aria-hidden="true" /> Copy
-        </Button>
-      </div>
-    </div>
+    <Input
+      id={fieldId}
+      label="Redirect URI"
+      value={uri}
+      disabled
+      readOnly
+      icon={<i className="ti ti-copy" aria-hidden="true" />}
+      onIconClick={() => void handleCopy()}
+      iconLabel="Copy Redirect URI"
+      hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
+    />
   );
 }
 
@@ -821,12 +819,15 @@ export function IdentityProviderEditor({
           />
         </div>
         {mode === "create" ? (
-          <p className="at-hint identity-editor__redirect-hint">
-            After the first save, reopen the provider and copy the Redirect URI from the edit form,
-            then register it at your identity provider. Pattern:{" "}
-            <code>https://&lt;Instance URL&gt;/api/auth/oidc/&lt;provider-id&gt;/callback</code>.
-            Set Instance URL under Organisation settings → General if it is missing.
-          </p>
+          <Input
+            id="idp-redirect-uri-placeholder"
+            label="Redirect URI"
+            value="https://<Instance URL>/api/auth/oidc/<provider-id>/callback"
+            disabled
+            readOnly
+            icon={<i className="ti ti-copy" aria-hidden="true" />}
+            hint="Available to copy once you save this provider for the first time and reopen it. Set Instance URL under Organisation settings → General if it is missing."
+          />
         ) : (
           <OidcRedirectUriCallout
             redirectUri={redirectUri}
@@ -1014,10 +1015,11 @@ export function IdentityProviderEditor({
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide identity-modal__panel--identity-editor">
-        <div ref={scrollRef} className="identity-modal__scroll">
+        <div ref={scrollRef} className="identity-modal__scroll at-scroll">
           <IdentityModalHeader
             titleId={titleId}
             title={title}
+            icon={<i className="ti ti-shield-lock" />}
             subtitle={view === "form" ? editorSubtitle(mode) : undefined}
             onClose={handleCancel}
             closeDisabled={isActionBusy(saving, testing, discovering)}

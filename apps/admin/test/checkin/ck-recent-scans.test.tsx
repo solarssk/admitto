@@ -2,17 +2,33 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CheckInHistoryEntry } from "../../src/api/types.js";
+import { setPreferredLocale } from "../../src/utils/locale-store.js";
+import { makeTicketType } from "../test-utils.js";
+
+/** Stable stub for the "formats in the viewer's timezone" assertion - Intl.resolvedOptions
+ * spies are flaky under CI TZ=UTC (same pattern as MailTransportPanel.test.tsx). */
+const { getBrowserTimeZoneMock } = vi.hoisted(() => ({
+  getBrowserTimeZoneMock: vi.fn((): string => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+}));
+
+vi.mock("../../src/utils/event-dates.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/utils/event-dates.js")>();
+  return { ...actual, getBrowserTimeZone: getBrowserTimeZoneMock };
+});
+
 import { CkRecentScans } from "../../src/checkin/CkRecentScans.js";
 import {
   CK_RECENT_SCANS_SIDEBAR_LIMIT,
   ScanHistoryList,
 } from "../../src/checkin/ScanHistoryList.js";
-import { setPreferredLocale } from "../../src/utils/locale-store.js";
-import { makeTicketType } from "../test-utils.js";
 
 afterEach(() => {
   cleanup();
   setPreferredLocale(null);
+  getBrowserTimeZoneMock.mockReset();
+  getBrowserTimeZoneMock.mockImplementation(
+    (): string => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  );
 });
 
 function makeEntry(
@@ -43,9 +59,7 @@ describe("CkRecentScans", () => {
       <ScanHistoryList
         admittedCount={0}
         totalCount={12}
-        history={history}
-        eventTimezone="UTC"
-      />,
+        history={history}      />,
     );
 
     expect(container.querySelectorAll(".ck-recent__row")).toHaveLength(CK_RECENT_SCANS_SIDEBAR_LIMIT);
@@ -55,9 +69,7 @@ describe("CkRecentScans", () => {
   it("renders revoked scans with a distinct grey dot class", () => {
     const { container } = render(
       <CkRecentScans
-        history={[makeEntry("1", "Revoked guest", "revoked")]}
-        eventTimezone="UTC"
-        limit={8}
+        history={[makeEntry("1", "Revoked guest", "revoked")]}        limit={8}
       />,
     );
 
@@ -72,9 +84,7 @@ describe("CkRecentScans", () => {
         history={[
           makeEntry("1", "Revoked by admin", "UNDO", "admin_revoke"),
           makeEntry("2", "Undone by operator", "UNDO", "undo"),
-        ]}
-        eventTimezone="UTC"
-        limit={8}
+        ]}        limit={8}
       />,
     );
 
@@ -86,15 +96,10 @@ describe("CkRecentScans", () => {
     expect(container.querySelectorAll(".rec-dot--undo")).toHaveLength(1);
   });
 
-  it("formats checked_in_at in event timezone", () => {
+  it("formats checked_in_at in the viewer's own browser timezone", () => {
     setPreferredLocale("en-GB");
-    render(
-      <CkRecentScans
-        history={[makeEntry("1", "Guest One")]}
-        eventTimezone="Europe/Warsaw"
-        limit={8}
-      />,
-    );
+    getBrowserTimeZoneMock.mockReturnValue("Europe/Warsaw");
+    render(<CkRecentScans history={[makeEntry("1", "Guest One")]} limit={8} />);
     expect(screen.getByText(/14:00/)).toBeTruthy();
   });
 
@@ -102,9 +107,7 @@ describe("CkRecentScans", () => {
     const onSelectAttendee = vi.fn();
     render(
       <CkRecentScans
-        history={[makeEntry("1", "Guest One")]}
-        eventTimezone="UTC"
-        limit={8}
+        history={[makeEntry("1", "Guest One")]}        limit={8}
         onSelectAttendee={onSelectAttendee}
       />,
     );
@@ -114,7 +117,7 @@ describe("CkRecentScans", () => {
 
   it("renders plain, non-interactive rows when no onSelectAttendee is given", () => {
     const { container } = render(
-      <CkRecentScans history={[makeEntry("1", "Guest One")]} eventTimezone="UTC" limit={8} />,
+      <CkRecentScans history={[makeEntry("1", "Guest One")]} limit={8} />,
     );
     expect(container.querySelector(".ck-recent__info-btn")).toBeNull();
     expect(container.querySelector("button")).toBeNull();
@@ -124,9 +127,7 @@ describe("CkRecentScans", () => {
   it("resolves a row's raw ticket_type key to the catalog's current label instead of the key (batch 04 / #351)", () => {
     render(
       <CkRecentScans
-        history={[makeEntry("1", "Guest One", "admitted", null, "vip")]}
-        eventTimezone="UTC"
-        limit={8}
+        history={[makeEntry("1", "Guest One", "admitted", null, "vip")]}        limit={8}
         ticketTypes={[makeTicketType("vip", "VIP Guest")]}
       />,
     );
@@ -137,9 +138,7 @@ describe("CkRecentScans", () => {
   it("falls back to a humanized status label for statuses without a dedicated mapping", () => {
     render(
       <CkRecentScans
-        history={[makeEntry("1", "Guest One", "no_match")]}
-        eventTimezone="UTC"
-        limit={8}
+        history={[makeEntry("1", "Guest One", "no_match")]}        limit={8}
       />,
     );
     expect(screen.getByText("no match")).toBeTruthy();
@@ -148,9 +147,7 @@ describe("CkRecentScans", () => {
   it("still shows an orphaned/unmatched ticket_type key rather than hiding it (fail-open)", () => {
     render(
       <CkRecentScans
-        history={[makeEntry("1", "Guest One", "admitted", null, "staff_2")]}
-        eventTimezone="UTC"
-        limit={8}
+        history={[makeEntry("1", "Guest One", "admitted", null, "staff_2")]}        limit={8}
         ticketTypes={[makeTicketType("vip", "VIP Guest")]}
       />,
     );

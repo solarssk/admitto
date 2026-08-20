@@ -194,6 +194,35 @@ describe("ActiveSessionsTab rendering", () => {
     expect(screen.getByText("Page 1 of 1")).toBeTruthy();
   });
 
+  it("steps from the clamped page, not a stale raw page, after a revoke shrinks the page count (codex review)", async () => {
+    const makeMany = (n: number) =>
+      Array.from({ length: n }, (_, i) => makeSession({ id: `s${i}`, userEmail: `user${i}@example.com` }));
+    // 51 sessions = 3 pages of 25/25/1. Revoking the sole session on page 3 leaves 50 = 2 pages,
+    // clamping the view to page 2 - Previous must then land on page 1, not stay on page 2.
+    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: makeMany(51) });
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
+    vi.mocked(revokeSessionById).mockResolvedValueOnce(undefined);
+    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: makeMany(50) });
+
+    renderWithToast(<ActiveSessionsTab />);
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Page 3 of 3")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_NAME })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+  });
+
   it("shows an operator-safe session error and retries", async () => {
     vi.mocked(fetchSessions)
       .mockRejectedValueOnce(new ApiError(500, "secret_internal"))

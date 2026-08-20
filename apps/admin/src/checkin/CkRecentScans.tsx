@@ -1,6 +1,6 @@
 import type { CheckInHistoryEntry, TicketTypeDto } from "../api/types.js";
 import { resolveTicketTypeLabel } from "../attendees/ticketTypeBadge.js";
-import { formatRelativeAdmissionDisplay } from "../utils/event-dates.js";
+import { formatRelativeAdmissionDisplay, getBrowserTimeZone } from "../utils/event-dates.js";
 
 // A CheckIn row with status UNDO is a reversal, not an admission — source
 // tells us whether the operator undid their own scan or an admin revoked the
@@ -28,7 +28,6 @@ function dotClass(status: string, source: string | null): string {
 
 type CkRecentScansProps = {
   history: CheckInHistoryEntry[];
-  eventTimezone: string;
   eventDate?: string | null;
   compact?: boolean;
   limit?: number;
@@ -43,7 +42,6 @@ type CkRecentScansProps = {
 
 export function CkRecentScans({
   history,
-  eventTimezone,
   eventDate = null,
   compact = false,
   limit,
@@ -66,7 +64,7 @@ export function CkRecentScans({
       {rows.length === 0 ? (
         <p className="ck-recent__empty">No scans yet</p>
       ) : (
-        <ul className="ck-recent__list">
+        <ul className="ck-recent__list at-scroll">
           {rows.map((row) => {
             const ticketTypeLabel = resolveTicketTypeLabel(row.attendee.ticket_type, ticketTypes);
             const info = (
@@ -106,7 +104,10 @@ export function CkRecentScans({
                 )}
                 <div className="ck-recent__right">
                   <span className="ck-recent__status">{statusLabel(row.status, row.source)}</span>
-                  <time>{formatRelativeAdmissionDisplay(row.checked_in_at, eventDate, eventTimezone)}</time>
+                  {/* Viewer's own browser timezone, not the event's — an operator watching this
+                   * feed reads "Today HH:MM" against their own clock, not the event's (PO report:
+                   * scanning from Europe/Warsaw still showed the event's +5:30). */}
+                  <time>{formatRelativeAdmissionDisplay(row.checked_in_at, eventDate, getBrowserTimeZone())}</time>
                 </div>
               </li>
             );
