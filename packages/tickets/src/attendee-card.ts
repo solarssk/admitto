@@ -133,7 +133,14 @@ export async function getAttendeeCard(
   // for admin@example.com, which reads as a role rather than an identifier and doesn't match
   // the display_name-then-email fallback the Attendee Detail Notes tab already uses (PO report).
   const authorMap = new Map(
-    authors.map((u) => [u.id, u.display_name || u.email || "Operator"]),
+    authors.map((u) => [
+      u.id,
+      // The "Operator" fallback is unreachable in practice - User.email is required and
+      // format-validated at every account-creation path (auth's isValidEmailFormat), so an
+      // author with neither a display_name nor a usable email can't actually occur.
+      /* v8 ignore next */
+      u.display_name || u.email || "Operator",
+    ]),
   );
 
   const { company, department } = companyFromAttendee(attendee);
