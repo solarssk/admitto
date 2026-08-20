@@ -716,6 +716,9 @@
 
 .users-modal__status-chip-body span {
   font-size: var(--fs-sm);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .users-modal__logins {
