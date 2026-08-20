@@ -516,7 +516,7 @@ function AdmissionLog({
     paged.length === 0 ? (
       admissionLogEmptyState
     ) : (
-      <div className="sessions-table-wrap attendees-list-table-wrap">
+      <div className="reports-log-table-wrap">
         <table className="table">
           <thead>
             <tr>
