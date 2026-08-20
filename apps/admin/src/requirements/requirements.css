@@ -485,29 +485,9 @@
   /* Extra 8px on the right so the slim thumb sits beside controls (Active switch, icon grid)
    * instead of painting over them - same lane as .overview-timeline. */
   padding-right: calc(var(--ring-width) + 8px);
-  /* Item/Badge bodies almost always overflow; reserve the track like .main-scroll /
-   * .overview-timeline / .attendee-deliveries-scroll. (Short add-attendee modals skip this on
-   * purpose - they rarely scroll and would keep a permanent dead gutter.) */
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.event-item-modal__body::-webkit-scrollbar {
-  width: 8px;
-}
-
-.event-item-modal__body::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.event-item-modal__body::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.event-item-modal__body::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Item/Badge bodies almost always overflow; reserve the track (shared .at-scroll--stable,
+   * packages/ui). (Short add-attendee modals skip this on purpose - they rarely scroll and would
+   * keep a permanent dead gutter.) Scrollbar look: shared .at-scroll. */
 }
 
 .event-item-modal__section-title {

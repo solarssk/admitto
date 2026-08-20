@@ -271,12 +271,15 @@ function entryEventId(entry: AuditLogEntryDto): string | undefined {
   return typeof id === "string" ? id : undefined;
 }
 
-/** "Instance" for instance-wide actions, the event's title when known, or a short fallback for
- * an event that's since been deleted (the audit row outlives the event it refers to). */
+/** "Instance" for instance-wide actions, the event's title when known, a snapshotted title
+ * carried in the row's own metadata for actions that delete the event in the same step
+ * (event_deleted, attendees_bulk_erased), or a short fallback for older rows with neither. */
 function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>): string {
   const eventId = entryEventId(entry);
   if (!eventId) return "Instance";
-  return eventTitleById.get(eventId) ?? "Deleted event";
+  const meta = entry.metadata;
+  const snapshotTitle = meta?.eventTitle ?? meta?.event_title;
+  return eventTitleById.get(eventId) ?? (typeof snapshotTitle === "string" ? snapshotTitle : undefined) ?? "Deleted event";
 }
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";

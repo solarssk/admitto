@@ -54,12 +54,16 @@ function makeUser(id: string, displayName: string): UserListItemDto {
     id,
     email: `${id}@example.com`,
     display_name: displayName,
+    phone_country_code: null,
+    phone_number: null,
     is_active: true,
     must_change_password: false,
     created_at: "2026-01-01T00:00:00.000Z",
     last_login_at: null,
     active_sessions_count: 0,
     has_mfa: false,
+    has_sso: false,
+    external_identities: [],
     roles: [],
   };
 }
@@ -121,6 +125,7 @@ describe("UsersPage header", () => {
       total: 4,
       active: 4,
       mfa: 4,
+      password_users: 4,
       sso: 0,
       active_sessions: 0,
       active_sessions_users: 0,
@@ -129,6 +134,48 @@ describe("UsersPage header", () => {
     renderAt("/admin/users");
 
     expect(await screen.findByText("100%")).toBeTruthy();
+    const icon = document.querySelector(".users-page__stat-icon--ok .ti-shield-check");
+    expect(icon).toBeTruthy();
+  });
+
+  it("counts a hybrid password+SSO account's local password toward two-factor coverage (codex review)", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+    vi.mocked(fetchUserStats).mockResolvedValue({
+      total: 4,
+      active: 4,
+      // 3 users have a local password (including one hybrid SSO+password account); only 2 of
+      // those have MFA confirmed - the hybrid account's own password path is left unprotected,
+      // so this must read 67%, not 100% (which excluding every SSO-linked user would produce).
+      mfa: 2,
+      password_users: 3,
+      sso: 2,
+      active_sessions: 0,
+      active_sessions_users: 0,
+    });
+
+    renderAt("/admin/users");
+
+    expect(await screen.findByText("67%")).toBeTruthy();
+    const icon = document.querySelector(".users-page__stat-icon--warn .ti-shield-check");
+    expect(icon).toBeTruthy();
+  });
+
+  it("shows vacuous 100% coverage, not 0%, when no user has a local password", async () => {
+    vi.mocked(fetchAdminUsers).mockResolvedValue({ users: [], total: 0, page: 1, pageSize: 25 });
+    vi.mocked(fetchUserStats).mockResolvedValue({
+      total: 3,
+      active: 3,
+      mfa: 0,
+      password_users: 0,
+      sso: 3,
+      active_sessions: 0,
+      active_sessions_users: 0,
+    });
+
+    renderAt("/admin/users");
+
+    expect(await screen.findByText("100%")).toBeTruthy();
+    expect(screen.getByText("No local password accounts")).toBeTruthy();
     const icon = document.querySelector(".users-page__stat-icon--ok .ti-shield-check");
     expect(icon).toBeTruthy();
   });
