@@ -5238,10 +5238,15 @@ output.mail-field-hint {
   padding: var(--space-4) 0;
 }
 
+/* Negative margin only, no matching padding - a margin/padding pair of the same size on the
+   same box cancels out (the padding re-insets exactly what the margin bled out), leaving the
+   table at the same width as an unbled child. Bleeding all the way to the card's own edge is
+   the actual goal here, matching .users-page__table-wrap's own (correct) version of this same
+   idiom - this copy quietly never achieved it (PO report: several tables using this class read
+   narrower than the card, indistinguishable from not having the trick at all). */
 .sessions-table-wrap {
   overflow-x: auto;
   margin: 0 calc(-1 * var(--pad-card));
-  padding: 0 var(--pad-card);
 }
 
 .table {
@@ -6257,10 +6262,13 @@ output.mail-field-hint {
   margin: var(--space-2) 0;
 }
 
+/* Negative margin only, no matching padding - see .sessions-table-wrap's own comment
+   (staff.css) for why a same-size padding here would silently cancel the bleed back to a
+   plain unbled child's width (PO report: this still read narrower than Staff users' table
+   after the first attempt at this fix). */
 .archiving-table-wrap {
   overflow-x: auto;
   margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
-  padding: 0 var(--pad-card);
 }
 
 .archiving-table-wrap th:last-child,
