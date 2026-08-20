@@ -397,7 +397,9 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Sign-in method</strong>
-            <span>{user.has_sso ? "Identity provider" : "Local password"}</span>
+            <span title={user.has_sso ? "Identity provider" : "Local password"}>
+              {user.has_sso ? "Identity provider" : "Local password"}
+            </span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -408,7 +410,9 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Two-factor</strong>
-            <span>{user.has_mfa ? "Authenticator app enrolled" : "Not set up"}</span>
+            <span title={user.has_mfa ? "Authenticator app enrolled" : "Not set up"}>
+              {user.has_mfa ? "Authenticator app enrolled" : "Not set up"}
+            </span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -422,7 +426,9 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Active sessions</strong>
-            <span>{activeSessionsLabel(user.active_sessions_count)}</span>
+            <span title={activeSessionsLabel(user.active_sessions_count)}>
+              {activeSessionsLabel(user.active_sessions_count)}
+            </span>
           </span>
         </div>
       </div>
