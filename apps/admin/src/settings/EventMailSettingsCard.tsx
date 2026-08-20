@@ -552,9 +552,12 @@ export const EventMailSettingsCard = forwardRef<
         }
       >
         <div className="settings-card-stack">
-          {/* Hidden when about to revert to Organization: the warning paragraph right below
-           * already carries full context, and the generic intro read oddly stacked above it. */}
-          {(mode !== "org" || orgSummaryTrustworthy) && (
+          {/* Shown only in the plain "using the organisation default" state, which has no
+           * description of its own below it. Dedicated mode has its own "Useful for a
+           * co-branded event..." paragraph, and reverting to Organization has the warning
+           * banner - stacking this generic line above either read as two redundant sentences
+           * (PO report). */}
+          {mode === "org" && orgSummaryTrustworthy && (
             <p className="settings-card-intro">{EVENT_MAIL_TRANSPORT_INTRO}</p>
           )}
           {mode === "org" &&
