@@ -91,10 +91,16 @@ function renderModal(userOverride: Partial<UserListItemDto> = {}) {
   const onClose = vi.fn();
   const onUpdated = vi.fn();
   const onDeleted = vi.fn();
+  // has_sso: true implies an oidc identity unless the caller passes its own
+  // external_identities - most tests only set has_sso as shorthand for "this account is SSO
+  // managed" and don't care which provider type backs it.
+  const external_identities =
+    userOverride.external_identities ??
+    (userOverride.has_sso ? [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }] : user.external_identities);
   const { unmount } = render(
     <UserEditModal
       open
-      user={{ ...user, ...userOverride }}
+      user={{ ...user, ...userOverride, external_identities }}
       onClose={onClose}
       onUpdated={onUpdated}
       onDeleted={onDeleted}
@@ -804,7 +810,7 @@ describe("UserEditModal sign-in security", () => {
       has_sso: true,
       has_mfa: true,
       active_sessions_count: 3,
-      external_identities: [{ id: "ei-1", provider_display_name: "Authentik" }],
+      external_identities: [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }],
     });
 
     await screen.findByText("Authentik");
@@ -853,7 +859,11 @@ describe("UserEditModal sign-in security", () => {
       });
     });
     expect(onUpdated).toHaveBeenCalledWith(
-      { ...user, has_sso: true },
+      {
+        ...user,
+        has_sso: true,
+        external_identities: [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }],
+      },
       "Identity provider unlinked. User must sign in with the new local password.",
     );
     expect(onClose).toHaveBeenCalled();
