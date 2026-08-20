@@ -1014,10 +1014,11 @@ export function IdentityProviderEditor({
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide identity-modal__panel--identity-editor">
-        <div ref={scrollRef} className="identity-modal__scroll">
+        <div ref={scrollRef} className="identity-modal__scroll at-scroll">
           <IdentityModalHeader
             titleId={titleId}
             title={title}
+            icon={<i className="ti ti-shield-lock" />}
             subtitle={view === "form" ? editorSubtitle(mode) : undefined}
             onClose={handleCancel}
             closeDisabled={isActionBusy(saving, testing, discovering)}
