@@ -144,6 +144,55 @@
 .at-inputgroup .at-inputgroup__icon { position: absolute; left: 0.65rem; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
 .at-inputgroup .at-input { padding-left: 2.1rem; }
 
+/* Input's onIconClick opt-in (e.g. the Redirect URI copy button). Two prior attempts kept the
+   icon absolutely-positioned *inside* the input's own bordered box (only the input carried a
+   border; the icon segment had a border-right and nothing else) - PO review: the icon's own box
+   never read as properly framed, no matter the color tuning, because it structurally isn't one.
+   This instead copies TimeInput/DatePicker's actual construction (PO: "copy that, don't
+   reinvent it") - one shared bordered/rounded wrapper with overflow:hidden, icon button and
+   input as plain flex siblings inside it, neither carrying its own separate border. Scoped to
+   :has(.at-inputgroup__icon--action) so the 15+ decorative-icon-only Input consumers (no
+   onIconClick) keep the original overlay treatment untouched. */
+.at-inputgroup:has(.at-inputgroup__icon--action) {
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-card, #fff);
+  overflow: hidden;
+}
+.at-inputgroup:has(.at-inputgroup__icon--action) .at-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  border: none;
+  background: transparent;
+  padding-left: var(--pad-control-x);
+}
+.at-inputgroup .at-inputgroup__icon--action {
+  pointer-events: auto;
+  position: static;
+  flex: none;
+  align-self: stretch;
+  width: var(--control-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-page, #f8fafc);
+  border: none;
+  border-right: var(--border-width) solid var(--border-strong);
+  cursor: pointer;
+}
+.at-inputgroup .at-inputgroup__icon--action:hover { color: var(--text-primary); background: var(--at-gray-200, var(--surface-page)); }
+.at-inputgroup .at-inputgroup__icon--action:focus-visible { outline: none; box-shadow: var(--ring); z-index: 1; }
+/* Optical nudge, not a layout bug: flex-centering the button places the icon's line-box
+   dead center (verified: <1px off), but the tabler-icons glyph itself sits slightly high
+   within that box, leaving a hair more empty space below than above (PO report) - nudge it
+   down to close that gap, same glyph-box-vs-ink quirk .at-notice__icon's margin-top already
+   compensates for elsewhere. Small and eyeballed on purpose, not computed - nudge again if a
+   different icon ever reuses this button and looks off. */
+.at-inputgroup .at-inputgroup__icon--action i {
+  transform: translateY(1px);
+}
+
 /* ---------------- Checkbox & Switch ---------------- */
 .at-check { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; font-size: var(--fs-body); color: var(--text-secondary); }
 .at-check input { position: absolute; opacity: 0; width: 0; height: 0; }

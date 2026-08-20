@@ -3082,18 +3082,14 @@
   gap: var(--space-3) var(--space-4);
 }
 
-.identity-editor__redirect {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+/* Redirect URI is a plain Input now (native label/icon/hint, same .at-field markup and spacing
+   as Client ID right above it - it used to be a hand-rolled label+field pair with its own,
+   slightly larger gap, which read as offset from the field compared to every other field on
+   this form (PO report)). It renders as .identity-editor__grid's sibling, not a grid cell, so it
+   needs its own top margin to separate from the grid above - scoped to only-when-adjacent so the
+   Endpoints/Claims cards' own (gap-less) grids aren't affected. */
+.identity-editor__grid + .at-field {
   margin-top: var(--space-3);
-}
-
-.identity-editor__redirect-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
 }
 
 /* Protocol picker (Add identity provider) — visual only today: OIDC is the only

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
-import { Button, Card, IconButton, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
+import { Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
   createIdentityProvider,
@@ -314,26 +314,17 @@ function OidcRedirectUriCallout({
   }
 
   return (
-    <div className="identity-editor__redirect">
-      <div className="identity-editor__redirect-label-row">
-        <label className="at-label" htmlFor={fieldId}>
-          Redirect URI
-        </label>
-        <IconButton
-          icon={<i className="ti ti-copy" aria-hidden="true" />}
-          label="Copy Redirect URI"
-          size="sm"
-          onClick={() => void handleCopy()}
-        />
-      </div>
-      <Input
-        id={fieldId}
-        value={uri}
-        disabled
-        readOnly
-        hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
-      />
-    </div>
+    <Input
+      id={fieldId}
+      label="Redirect URI"
+      value={uri}
+      disabled
+      readOnly
+      icon={<i className="ti ti-copy" aria-hidden="true" />}
+      onIconClick={() => void handleCopy()}
+      iconLabel="Copy Redirect URI"
+      hint="Register this exact URL at your identity provider (Entra App registration, Okta or Authentik Application)."
+    />
   );
 }
 
@@ -828,20 +819,15 @@ export function IdentityProviderEditor({
           />
         </div>
         {mode === "create" ? (
-          <div className="identity-editor__redirect">
-            <div className="identity-editor__redirect-label-row">
-              <label className="at-label" htmlFor="idp-redirect-uri-placeholder">
-                Redirect URI
-              </label>
-            </div>
-            <Input
-              id="idp-redirect-uri-placeholder"
-              value="https://<Instance URL>/api/auth/oidc/<provider-id>/callback"
-              disabled
-              readOnly
-              hint="Available to copy once you save this provider for the first time and reopen it. Set Instance URL under Organisation settings → General if it is missing."
-            />
-          </div>
+          <Input
+            id="idp-redirect-uri-placeholder"
+            label="Redirect URI"
+            value="https://<Instance URL>/api/auth/oidc/<provider-id>/callback"
+            disabled
+            readOnly
+            icon={<i className="ti ti-copy" aria-hidden="true" />}
+            hint="Available to copy once you save this provider for the first time and reopen it. Set Instance URL under Organisation settings → General if it is missing."
+          />
         ) : (
           <OidcRedirectUriCallout
             redirectUri={redirectUri}
