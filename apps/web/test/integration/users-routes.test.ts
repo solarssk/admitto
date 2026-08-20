@@ -296,6 +296,36 @@ describe("GET /api/admin/users security", () => {
     }
   });
 
+  it("includes each linked provider's display name in external_identities, not just has_sso", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-list-identity@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-list-identity-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request("/api/admin/users?q=sso-list-identity", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as {
+        users: Array<{
+          id: string;
+          has_sso: boolean;
+          external_identities: Array<{ id: string; provider_display_name: string }>;
+        }>;
+      };
+      expect(body.users).toHaveLength(1);
+      const user = body.users[0];
+      expect(user?.has_sso).toBe(true);
+      expect(user?.external_identities).toHaveLength(1);
+      expect(user?.external_identities[0]?.provider_display_name).toBe("IAM Users Test IdP");
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
   it("filters by role and status query params", async () => {
     const superOnly = await app.request("/api/admin/users?role=superadmin", {
       headers: { Cookie: superCookie },
