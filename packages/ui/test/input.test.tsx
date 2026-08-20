@@ -11,10 +11,12 @@ describe("Input", () => {
     expect(input.getAttribute("aria-describedby")).toBe(hint.id);
   });
 
-  it("shows an error instead of a hint", () => {
+  it("shows an error instead of a hint, announced as a live region", () => {
     render(<Input label="Instance URL" hint="Use the public HTTPS URL." error="A URL is required." />);
 
-    expect(screen.getByText("A URL is required.")).toBeTruthy();
+    const error = screen.getByText("A URL is required.");
+    expect(error).toBeTruthy();
+    expect(error.getAttribute("role")).toBe("alert");
     expect(screen.queryByText("Use the public HTTPS URL.")).toBeNull();
   });
 
