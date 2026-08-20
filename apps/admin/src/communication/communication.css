@@ -346,28 +346,7 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-sm);
   resize: vertical;
-  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll (staff.css /
-     attendees.css) - the body is long enough to scroll on most real templates, and the native
-     scrollbar reads as inconsistent with the rest of the app next to it. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.communication-textarea::-webkit-scrollbar {
-  width: 8px;
-}
-
-.communication-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.communication-textarea::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.communication-textarea::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look: shared .at-scroll (packages/ui) — applied via className, not here. */
 }
 
 .communication-errors {
