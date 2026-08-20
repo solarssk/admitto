@@ -1314,7 +1314,13 @@ export interface UserListResponse {
 export interface UserStatsDto {
   total: number;
   active: number;
+  /** Users with a local password and a confirmed MFA method — two-factor coverage is only
+   * meaningful for accounts that have a password login path to protect. Compare against
+   * `password_users`, not `total` or `total - sso` (a hybrid password+SSO account still has a
+   * password to protect, so it's included in both this and `password_users`, unlike `sso`). */
   mfa: number;
+  /** Users with a local password set - the denominator for the two-factor coverage KPI. */
+  password_users: number;
   sso: number;
   active_sessions: number;
   active_sessions_users: number;

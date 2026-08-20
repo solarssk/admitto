@@ -255,9 +255,12 @@
   margin: 0;
 }
 
-/* Same 1rem field gap as SSR auth pages (.auth-field { margin-bottom: 1rem }). */
+/* Matches this page's own Profile grid row-gap and .account-mfa-method's row padding
+ * (both var(--space-3)) - was previously var(--space-4) to echo the SSR auth pages'
+ * .auth-field gap, but that made the Password card read as spaced differently from its
+ * sibling cards on the same page (PO report). */
 .account-password-form .mail-field-row {
-  margin-bottom: var(--space-4, 1rem);
+  margin-bottom: var(--space-3, 0.75rem);
 }
 .account-password-form .mail-field-row:last-of-type {
   margin-bottom: 0;
@@ -472,6 +475,13 @@
 .account-mfa-method:last-child {
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+/* Without this, the row's own top padding stacks on top of the card body's padding, so the
+ * first row's text starts noticeably lower than the sibling Profile/Password cards' first
+ * field - all three should start flush with the card's own padding (PO report). */
+.account-mfa-method:first-child {
+  padding-top: 0;
 }
 
 .account-mfa-method--soon {
