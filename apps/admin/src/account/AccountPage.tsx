@@ -140,9 +140,11 @@ function AccountIdentityActionsMenu({
 }: Readonly<{
   account: AccountDto;
   moreActions: ReturnType<typeof useDropdownMenu<HTMLButtonElement>>;
-  onUnlinkClick: () => void;
+  onUnlinkClick: (providerType: "oidc" | "cloudflare_access") => void;
 }>) {
   const isManaged = account.external_identities.length > 0;
+  const hasOidc = account.external_identities.some((ei) => ei.provider_type === "oidc");
+  const hasCfAccess = account.external_identities.some((ei) => ei.provider_type === "cloudflare_access");
   // Connect re-authenticates through /account/oidc/:id/link, which hard-requires a real local
   // password to prove who's asking - an account with none (a JIT-provisioned SSO user who never
   // set one) can never finish that flow, so don't offer an action guaranteed to dead-end.
@@ -176,12 +178,20 @@ function AccountIdentityActionsMenu({
           ref={moreActions.panelRef}
           style={moreActions.panelStyle}
         >
-          {isManaged && (
+          {hasOidc && (
             <MoreActionsMenuItem
               icon="unlink"
               label="Unlink SSO"
               hint="Sign in with a password instead"
-              onClick={pick(onUnlinkClick)}
+              onClick={pick(() => onUnlinkClick("oidc"))}
+            />
+          )}
+          {hasCfAccess && (
+            <MoreActionsMenuItem
+              icon="unlink"
+              label="Unlink Cloudflare Access"
+              hint="Sign in with a password instead"
+              onClick={pick(() => onUnlinkClick("cloudflare_access"))}
             />
           )}
           {canConnect &&
@@ -331,7 +341,7 @@ export function AccountPage() {
   const [showUriManual, setShowUriManual] = useState(false);
   const [qrRenderFailed, setQrRenderFailed] = useState(false);
   const [backupCodesSaved, setBackupCodesSaved] = useState(false);
-  const [unlinkSsoOpen, setUnlinkSsoOpen] = useState(false);
+  const [unlinkSsoTarget, setUnlinkSsoTarget] = useState<"oidc" | "cloudflare_access" | null>(null);
   const [unlinkSsoBusy, setUnlinkSsoBusy] = useState(false);
   const [unlinkSsoPassword, setUnlinkSsoPassword] = useState("");
   const [unlinkSsoCurrentPassword, setUnlinkSsoCurrentPassword] = useState("");
@@ -481,17 +491,20 @@ export function AccountPage() {
   /** Shared by the confirm dialog's own submit and the step-up dialog's confirm — `code` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
   async function submitUnlinkSso(code?: string): Promise<void> {
+    if (!unlinkSsoTarget) return;
     await unlinkAccountExternalIdentity({
+      provider_type: unlinkSsoTarget,
       new_password: unlinkSsoPassword,
       current_password: account?.has_local_password ? unlinkSsoCurrentPassword : undefined,
       code,
     });
+    const label = unlinkSsoTarget === "cloudflare_access" ? "Cloudflare Access" : "SSO";
     setUnlinkSsoPassword("");
     setUnlinkSsoCurrentPassword("");
     setUnlinkCode("");
-    setUnlinkSsoOpen(false);
+    setUnlinkSsoTarget(null);
     setUnlinkStepUpOpen(false);
-    addToast("SSO unlinked. Sign in with your new password next time.", "success");
+    addToast(`${label} unlinked. Sign in with your new password next time.`, "success");
     await loadAccount();
     await loadSessions();
   }
@@ -952,7 +965,7 @@ export function AccountPage() {
           <AccountIdentityActionsMenu
             account={account}
             moreActions={identityActions}
-            onUnlinkClick={() => setUnlinkSsoOpen(true)}
+            onUnlinkClick={(providerType) => setUnlinkSsoTarget(providerType)}
           />
         }
         footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
@@ -1172,9 +1185,9 @@ export function AccountPage() {
       </ConfirmDialog>
 
       <ConfirmDialog
-        open={unlinkSsoOpen}
-        title="Unlink SSO"
-        message="Unlink SSO from your account? Set the new local password you'll sign in with below - your SSO sign-in stops working immediately."
+        open={unlinkSsoTarget !== null && !unlinkStepUpOpen}
+        title={unlinkSsoTarget === "cloudflare_access" ? "Unlink Cloudflare Access" : "Unlink SSO"}
+        message={`Unlink ${unlinkSsoTarget === "cloudflare_access" ? "Cloudflare Access" : "SSO"} from your account? Set the new local password you'll sign in with below - your ${unlinkSsoTarget === "cloudflare_access" ? "Cloudflare Access" : "SSO"} sign-in stops working immediately.`}
         errorMessage={unlinkSsoError ?? undefined}
         confirmLabel="Unlink"
         confirmVariant="danger"
@@ -1190,7 +1203,6 @@ export function AccountPage() {
             await submitUnlinkSso();
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
-              setUnlinkSsoOpen(false);
               setUnlinkCodeError(null);
               setUnlinkStepUpOpen(true);
             } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
@@ -1198,7 +1210,7 @@ export function AccountPage() {
             } else if (hasApiErrorCode(err, "wrong_password") || hasApiErrorCode(err, "current_password_required")) {
               setUnlinkSsoError("Current password is incorrect.");
             } else if (hasApiErrorCode(err, "provider_managed_roles_exist")) {
-              setUnlinkSsoOpen(false);
+              setUnlinkSsoTarget(null);
               setUnlinkSsoPassword("");
               setUnlinkSsoCurrentPassword("");
               addToast(
@@ -1206,7 +1218,7 @@ export function AccountPage() {
                 "error",
               );
             } else if (hasApiErrorCode(err, "insufficient_verification")) {
-              setUnlinkSsoOpen(false);
+              setUnlinkSsoTarget(null);
               setUnlinkSsoPassword("");
               setUnlinkSsoCurrentPassword("");
               addToast(
@@ -1222,7 +1234,7 @@ export function AccountPage() {
         }}
         onCancel={() => {
           if (unlinkSsoBusy) return;
-          setUnlinkSsoOpen(false);
+          setUnlinkSsoTarget(null);
           setUnlinkSsoPassword("");
           setUnlinkSsoCurrentPassword("");
           setUnlinkSsoError(null);
@@ -1272,6 +1284,7 @@ export function AccountPage() {
             if (hasApiErrorCode(err, "invalid_totp")) {
               setUnlinkCodeError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
             } else {
+              setUnlinkSsoTarget(null);
               setUnlinkStepUpOpen(false);
               setUnlinkCode("");
               addToast(operatorApiErrorMessage(err, "Failed to unlink SSO."), "error");
@@ -1282,6 +1295,7 @@ export function AccountPage() {
         }}
         onCancel={() => {
           if (!unlinkSsoBusy) {
+            setUnlinkSsoTarget(null);
             setUnlinkStepUpOpen(false);
             setUnlinkCode("");
             setUnlinkCodeError(null);

@@ -1230,7 +1230,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD, current_password: PASSWORD }),
     });
     expect(res.status).toBe(200);
 
@@ -1255,7 +1255,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("current_password_required");
@@ -1270,7 +1270,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: "definitely-wrong" }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD, current_password: "definitely-wrong" }),
     });
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
@@ -1295,7 +1295,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD, current_password: PASSWORD }),
     });
     expect(res.status).toBe(429);
     expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
@@ -1327,7 +1327,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD, current_password: PASSWORD }),
     });
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code: string }).code).toBe("provider_managed_roles_exist");
@@ -1361,7 +1361,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: "aaaaaaaaaaaa" }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: "aaaaaaaaaaaa" }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
@@ -1373,7 +1373,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(404);
   });
@@ -1387,7 +1387,7 @@ describe("DELETE /api/account/external-identity", () => {
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: `admitto_session=${oidcSession.rawToken}`, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("insufficient_verification");
@@ -1410,7 +1410,7 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("totp_required");
@@ -1426,7 +1426,7 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, code: "000000" }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD, code: "000000" }),
     });
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
@@ -1446,7 +1446,7 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, code: "000000" }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD, code: "000000" }),
     });
     expect(res.status).toBe(429);
     expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
@@ -1464,7 +1464,7 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, code: generateTotpCode(secret) }),
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD, code: generateTotpCode(secret) }),
     });
     expect(res.status).toBe(200);
     expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(0);

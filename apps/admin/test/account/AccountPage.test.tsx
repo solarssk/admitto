@@ -1667,7 +1667,9 @@ describe("AccountPage profile: account type", () => {
 const LINKED_ACCOUNT: AccountDto = {
   ...baseAccount,
   has_local_password: false,
-  external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
+  external_identities: [
+    { id: "ei1", provider_id: "p1", provider_display_name: "Okta", provider_type: "oidc", linked_at: "2026-01-01T00:00:00.000Z" },
+  ],
 };
 
 /** Opens the Profile card's "SSO" menu and clicks one item in it. */
@@ -1828,7 +1830,11 @@ describe("AccountPage profile: SSO unlink", () => {
     await waitFor(() => {
       expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
     });
-    expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({ new_password: "long-enough-password", code: undefined });
+    expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({
+      provider_type: "oidc",
+      new_password: "long-enough-password",
+      code: undefined,
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(screen.getByText("Local account")).toBeTruthy();
@@ -1927,7 +1933,11 @@ describe("AccountPage profile: SSO unlink", () => {
     await waitFor(() => {
       expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
     });
-    expect(mockUnlinkExternalIdentity).toHaveBeenLastCalledWith({ new_password: "long-enough-password", code: "123456" });
+    expect(mockUnlinkExternalIdentity).toHaveBeenLastCalledWith({
+      provider_type: "oidc",
+      new_password: "long-enough-password",
+      code: "123456",
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -1990,6 +2000,7 @@ describe("AccountPage profile: SSO unlink", () => {
 
     await waitFor(() => {
       expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({
+        provider_type: "oidc",
         new_password: "long-enough-password",
         current_password: "old-password",
         code: undefined,

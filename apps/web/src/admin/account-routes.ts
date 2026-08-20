@@ -292,7 +292,12 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     }),
     db.externalIdentity.findMany({
       where: { user_id: userId },
-      select: { id: true, provider_id: true, linked_at: true, provider: { select: { display_name: true } } },
+      select: {
+        id: true,
+        provider_id: true,
+        linked_at: true,
+        provider: { select: { display_name: true, provider_type: true } },
+      },
     }),
   ]);
 
@@ -352,6 +357,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       id: ei.id,
       provider_id: ei.provider_id,
       provider_display_name: ei.provider.display_name,
+      provider_type: ei.provider.provider_type,
       linked_at: ei.linked_at.toISOString(),
     })),
     available_identity_providers: availableProviders.map((p) => ({ id: p.id, display_name: p.display_name })),
@@ -439,6 +445,7 @@ export async function handlePatchAccountProfile(c: Context, db: PrismaClient): P
 
 const unlinkExternalIdentitySchema = z
   .object({
+    provider_type: z.enum(["oidc", "cloudflare_access"]),
     new_password: z.string(),
     current_password: z.string().optional(),
     code: z.string().optional(),
@@ -559,9 +566,6 @@ export async function handleDeleteAccountExternalIdentity(
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
 
-  const linked = await db.externalIdentity.findMany({ where: { user_id: userId }, select: { id: true } });
-  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
-
   let body: unknown;
   try {
     body = await c.req.json();
@@ -570,6 +574,13 @@ export async function handleDeleteAccountExternalIdentity(
   }
   const parsed = unlinkExternalIdentitySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  const providerType = parsed.data.provider_type;
+
+  const linked = await db.externalIdentity.findMany({
+    where: { user_id: userId, provider: { provider_type: providerType } },
+    select: { id: true },
+  });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
 
   const newPassword = parsed.data.new_password;
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
@@ -591,10 +602,14 @@ export async function handleDeleteAccountExternalIdentity(
 
   const result = await runInTransaction(db, async (tx) => {
     // Re-checked fresh inside the transaction (not from the read above) so a grant added by a
-    // concurrent group sync between the two can't race past this guard.
-    const managedGrants = await tx.oidcRoleGrant.count({ where: { user_id: userId } });
-    if (managedGrants > 0) {
-      return { ok: false as const, code: "provider_managed_roles_exist" as UnlinkDenialCode };
+    // concurrent group sync between the two can't race past this guard. Cloudflare Access never
+    // sources an OidcRoleGrant, so this only guards an "oidc" unlink - unlinking Cloudflare
+    // Access must not be blocked by grants a still-linked OIDC provider is managing.
+    if (providerType === "oidc") {
+      const managedGrants = await tx.oidcRoleGrant.count({ where: { user_id: userId } });
+      if (managedGrants > 0) {
+        return { ok: false as const, code: "provider_managed_roles_exist" as UnlinkDenialCode };
+      }
     }
 
     const user = await tx.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
@@ -607,7 +622,9 @@ export async function handleDeleteAccountExternalIdentity(
     if (!proof.ok) return proof;
 
     const password_hash = await hashPassword(newPassword);
-    await tx.externalIdentity.deleteMany({ where: { user_id: userId } });
+    await tx.externalIdentity.deleteMany({
+      where: { user_id: userId, provider: { provider_type: providerType } },
+    });
     await tx.user.update({
       where: { id: userId },
       data: { password_hash, must_change_password: false },
@@ -621,7 +638,7 @@ export async function handleDeleteAccountExternalIdentity(
       ip: audit.ip,
       timezone: audit.timezone,
       actionType: "account_sso_unlinked",
-      metadata: { count: linked.length, sessionsRevoked: revokedCount },
+      metadata: { count: linked.length, sessionsRevoked: revokedCount, providerType },
     });
     await writeAdminAuditLog(tx, {
       organizationId: orgId,
