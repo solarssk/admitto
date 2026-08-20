@@ -516,7 +516,7 @@ function AdmissionLog({
     paged.length === 0 ? (
       admissionLogEmptyState
     ) : (
-      <div className="sessions-table-wrap attendees-list-table-wrap">
+      <div className="reports-log-table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -664,22 +664,24 @@ function AdmissionLog({
           )}
         </div>
       )}
-      <PaginationFooter
-        idPrefix="reports-admission-log"
-        page={safePage}
-        pageSize={pageSize}
-        totalPages={totalPages}
-        totalRows={total}
-        pageSizeOptions={LOG_PAGE_SIZE_OPTIONS}
-        onPageSizeChange={(size) => {
-          setPageSize(size);
-          setPage(1);
-        }}
-        // Step from safePage, not raw `page`: after a live/filter shrink clamps the view,
-        // paginationHandlers' Previous would burn down a stale page counter before moving.
-        onPrevious={() => setPage(Math.max(1, safePage - 1))}
-        onNext={() => setPage(Math.min(totalPages, safePage + 1))}
-      />
+      <div className="reports-log-footer">
+        <PaginationFooter
+          idPrefix="reports-admission-log"
+          page={safePage}
+          pageSize={pageSize}
+          totalPages={totalPages}
+          totalRows={total}
+          pageSizeOptions={LOG_PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          // Step from safePage, not raw `page`: after a live/filter shrink clamps the view,
+          // paginationHandlers' Previous would burn down a stale page counter before moving.
+          onPrevious={() => setPage(Math.max(1, safePage - 1))}
+          onNext={() => setPage(Math.min(totalPages, safePage + 1))}
+        />
+      </div>
     </Card>
   );
 }
