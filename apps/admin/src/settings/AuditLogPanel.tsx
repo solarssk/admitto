@@ -283,10 +283,9 @@ function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>
 }
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";
-const TIME_HINT =
-  "UTC on top. Below (user icon): the user's local time when they did it. Missing for older rows or CLI.";
+const TIME_HINT = "UTC on top. Below: the user's local time when they did it. Missing for older rows or CLI.";
 const SECURITY_TIME_HINT =
-  "UTC on top. Below (user icon): the user's local time when they did it. Missing for older rows or non-browser clients - then your browser timezone (desktop icon).";
+  "UTC on top. Below: the user's local time when they did it, or your own browser's if theirs wasn't recorded.";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {
