@@ -258,12 +258,13 @@
 /* Matches this page's own Profile grid row-gap and .account-mfa-method's row padding
  * (both var(--space-3)) - was previously var(--space-4) to echo the SSR auth pages'
  * .auth-field gap, but that made the Password card read as spaced differently from its
- * sibling cards on the same page (PO report). */
-.account-password-form .mail-field-row {
+ * sibling cards on the same page (PO report). Targets the standard Input component's own
+ * .at-field directly now (each password field uses Input's own label/error, not a hand-rolled
+ * .mail-field-row wrapper - that wrapper duplicated the label/hint markup with its own,
+ * slightly different font size, color, and spacing instead of matching Profile's fields). */
+.account-password-form > .at-field,
+.account-password-form > .at-password-slot {
   margin-bottom: var(--space-3, 0.75rem);
-}
-.account-password-form .mail-field-row:last-of-type {
-  margin-bottom: 0;
 }
 
 /* Reset-2FA fields: not an actual <form>, so same 1rem gap via flex instead of
