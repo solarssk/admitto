@@ -40,9 +40,13 @@
   min-width: 0;
 }
 
-/* Role and account type are concise, read-only account facts. Keeping them together lets the
-   two display preferences each use a full column, including on tablet widths. */
+/* Role and account type are concise, read-only account facts. Spans the full width of the
+ * parent 2-column grid (grid-column: 1 / -1) instead of sharing a row with Phone number - that
+ * halved its own width again on top of the 2-column split below, squeezing Account type's text
+ * for a user managed by multiple providers (PO report). Keeping them together lets the two
+ * display preferences each use a full column, including on tablet widths. */
 .account-access-preferences {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3, 0.75rem);
@@ -251,9 +255,12 @@
   margin: 0;
 }
 
-/* Same 1rem field gap as SSR auth pages (.auth-field { margin-bottom: 1rem }). */
+/* Matches this page's own Profile grid row-gap and .account-mfa-method's row padding
+ * (both var(--space-3)) - was previously var(--space-4) to echo the SSR auth pages'
+ * .auth-field gap, but that made the Password card read as spaced differently from its
+ * sibling cards on the same page (PO report). */
 .account-password-form .mail-field-row {
-  margin-bottom: var(--space-4, 1rem);
+  margin-bottom: var(--space-3, 0.75rem);
 }
 .account-password-form .mail-field-row:last-of-type {
   margin-bottom: 0;
@@ -468,6 +475,13 @@
 .account-mfa-method:last-child {
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+/* Without this, the row's own top padding stacks on top of the card body's padding, so the
+ * first row's text starts noticeably lower than the sibling Profile/Password cards' first
+ * field - all three should start flush with the card's own padding (PO report). */
+.account-mfa-method:first-child {
+  padding-top: 0;
 }
 
 .account-mfa-method--soon {

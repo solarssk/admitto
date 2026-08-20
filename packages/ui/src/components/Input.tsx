@@ -8,6 +8,11 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   invalid?: boolean;
   /** Safari / password-manager hint (maps to HTML `passwordrules`). */
   passwordRules?: string;
+  /** Makes `icon` a real clickable button (e.g. copy-to-clipboard) instead of a decorative,
+   * pointer-events:none glyph - same position/size, just interactive. Requires `iconLabel`. */
+  onIconClick?: () => void;
+  /** Accessible name for the icon button; only used when `onIconClick` is set. */
+  iconLabel?: string;
 }
 
 /** Labeled text field with optional hint, error state, and icon; forwards ref to the native input. */
@@ -17,6 +22,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     hint,
     error,
     icon = null,
+    onIconClick,
+    iconLabel,
     id,
     invalid = false,
     className,
@@ -54,9 +61,20 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       )}
       {icon ? (
         <div className="at-inputgroup">
-          <span className="at-inputgroup__icon" aria-hidden="true">
-            {icon}
-          </span>
+          {onIconClick ? (
+            <button
+              type="button"
+              className="at-inputgroup__icon at-inputgroup__icon--action"
+              aria-label={iconLabel}
+              onClick={onIconClick}
+            >
+              {icon}
+            </button>
+          ) : (
+            <span className="at-inputgroup__icon" aria-hidden="true">
+              {icon}
+            </span>
+          )}
           {field}
         </div>
       ) : (
