@@ -296,6 +296,36 @@ describe("GET /api/admin/users security", () => {
     }
   });
 
+  it("includes each linked provider's display name in external_identities, not just has_sso", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-list-identity@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-list-identity-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request("/api/admin/users?q=sso-list-identity", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as {
+        users: Array<{
+          id: string;
+          has_sso: boolean;
+          external_identities: Array<{ id: string; provider_display_name: string }>;
+        }>;
+      };
+      expect(body.users).toHaveLength(1);
+      const user = body.users[0];
+      expect(user?.has_sso).toBe(true);
+      expect(user?.external_identities).toHaveLength(1);
+      expect(user?.external_identities[0]?.provider_display_name).toBe("IAM Users Test IdP");
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
   it("filters by role and status query params", async () => {
     const superOnly = await app.request("/api/admin/users?role=superadmin", {
       headers: { Cookie: superCookie },
@@ -341,6 +371,7 @@ describe("GET /api/admin/users/stats security", () => {
       total: number;
       active: number;
       mfa: number;
+      password_users: number;
       sso: number;
       active_sessions: number;
       active_sessions_users: number;
@@ -348,9 +379,44 @@ describe("GET /api/admin/users/stats security", () => {
     expect(body.total).toBeGreaterThanOrEqual(4);
     expect(body.active).toBeGreaterThanOrEqual(1);
     expect(body.mfa).toBeGreaterThanOrEqual(0);
+    expect(body.password_users).toBeGreaterThanOrEqual(0);
     expect(body.sso).toBeGreaterThanOrEqual(0);
     expect(body.active_sessions).toBeGreaterThanOrEqual(1);
     expect(body.active_sessions_users).toBeGreaterThanOrEqual(1);
+  });
+
+  it("counts a hybrid password+SSO user's unprotected password path, and excludes an SSO-only user entirely (codex review)", async () => {
+    const before = (await (
+      await app.request("/api/admin/users/stats", { headers: { Cookie: superCookie } })
+    ).json()) as { mfa: number; password_users: number; sso: number };
+
+    const hybridUser = await prisma.user.create({
+      data: { email: "stats-hybrid-no-mfa@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const ssoOnlyUser = await prisma.user.create({
+      data: { email: "stats-sso-only@example.com", password_hash: null },
+    });
+    await prisma.externalIdentity.createMany({
+      data: [
+        { provider_id: PROVIDER_ID, subject: "stats-hybrid-subject", user_id: hybridUser.id },
+        { provider_id: PROVIDER_ID, subject: "stats-sso-only-subject", user_id: ssoOnlyUser.id },
+      ],
+    });
+
+    try {
+      const res = await app.request("/api/admin/users/stats", { headers: { Cookie: superCookie } });
+      const body = (await res.json()) as { mfa: number; password_users: number; sso: number };
+
+      // Both new users are SSO-linked (sso +2), but only the hybrid one still has a password
+      // to protect (password_users +1) - and since it has no confirmed MFA, mfa must NOT
+      // increase, leaving that hybrid account's password path visibly uncovered.
+      expect(body.sso).toBe(before.sso + 2);
+      expect(body.password_users).toBe(before.password_users + 1);
+      expect(body.mfa).toBe(before.mfa);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: { in: [hybridUser.id, ssoOnlyUser.id] } } });
+      await prisma.user.deleteMany({ where: { id: { in: [hybridUser.id, ssoOnlyUser.id] } } });
+    }
   });
 });
 
@@ -1006,6 +1072,51 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
     }
   });
 
+  it("unlinks a Cloudflare Access identity together with its source OIDC identity, not just the OIDC one", async () => {
+    // Cloudflare Access identities are only ever auto-provisioned alongside a source OIDC
+    // identity (resolveCfAccessIdentityFromValidatedJwt requires one to already exist) and get
+    // silently recreated on the next Cloudflare-authenticated request as long as that source
+    // identity survives - so leaving it behind here would make this "unlink" a no-op for
+    // Cloudflare sign-in, and unlinking just the OIDC identity would orphan the Cloudflare one
+    // (every subsequent Cloudflare-protected request then fails with source_identity_not_linked).
+    const cfProviderId = "iam-users-test-cf-access-provider";
+    await prisma.identityProvider.create({
+      data: {
+        id: cfProviderId,
+        provider_type: "cloudflare_access",
+        issuer: "https://cf-access.example.com/",
+        client_id: "cf-test-client",
+        authorization_endpoint: "https://cf-access.example.com/a",
+        token_endpoint: "https://cf-access.example.com/t",
+        jwks_uri: "https://cf-access.example.com/j",
+        display_name: "CF Access Test",
+      },
+    });
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-hybrid@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-hybrid-oidc-subject", user_id: created.id },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: cfProviderId, subject: "sso-unlink-hybrid-cf-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+      expect(await prisma.externalIdentity.count({ where: { user_id: created.id } })).toBe(0);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+      await prisma.identityProvider.delete({ where: { id: cfProviderId } });
+    }
+  });
+
   it("returns 400 invalid_request when unlinking without a new password", async () => {
     const created = await prisma.user.create({
       data: { email: "sso-unlink-no-pass@example.com", password_hash: await hashPassword(PASSWORD) },
@@ -1042,7 +1153,8 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
   it("returns 404 for a user with no linked SSO identity", async () => {
     const res = await app.request(`/api/admin/users/${targetId}/external-identity`, {
       method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(404);
   });

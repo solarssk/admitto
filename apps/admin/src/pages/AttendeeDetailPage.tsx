@@ -82,7 +82,8 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
-import { formatDeliveryHistoryTime, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
+import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
+import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
@@ -994,11 +995,16 @@ function AttendeeOverviewTab({
               description="Ticket emails and resends will appear here once one is sent."
             />
           ) : (
-            <div className="attendee-deliveries-scroll">
+            <div className="attendee-deliveries-scroll at-scroll">
               <ul className="attendee-deliveries">
                 {detail.deliveries.map((delivery) => {
                   const statusMeta = resolveStatusMeta(delivery.status);
                   const iconTone = statusMeta.variant;
+                  const timeParts = formatDeliveryHistoryTimeParts(
+                    rowTimestamp(delivery),
+                    delivery.client_timezone,
+                    event.timezone,
+                  );
                   return (
                     <li className="attendee-delivery" key={delivery.id}>
                       <Tooltip content={statusMeta.label} className="attendee-delivery__icon-tip">
@@ -1023,10 +1029,13 @@ function AttendeeOverviewTab({
                         )}
                       </div>
                       <span className="attendee-delivery__time mono">
-                        {formatDeliveryHistoryTime(
-                          rowTimestamp(delivery),
-                          delivery.client_timezone,
-                          event.timezone,
+                        {timeParts ? (
+                          <>
+                            <span className="attendee-delivery__time-date">{timeParts.date}</span>
+                            <span className="attendee-delivery__time-clock">{timeParts.time}</span>
+                          </>
+                        ) : (
+                          "-"
                         )}
                       </span>
                       <DeliveryRowMenu
@@ -1122,24 +1131,15 @@ function AttendeeActivityTab({
 
 type AssignedNoteAuthorRole = Exclude<NoteAuthorRole, null>;
 
-const NOTE_ROLE_BADGE_VARIANTS: Record<AssignedNoteAuthorRole, BadgeProps["variant"]> = {
-  superadmin: "error",
-  admin: "warn",
-  operator: "info",
-};
-
-const NOTE_ROLE_SHORTS: Record<AssignedNoteAuthorRole, string> = {
-  superadmin: "SA",
-  admin: "AD",
-  operator: "OP",
-};
-
+// Same role → color/label mapping used everywhere else a role reads to a human (Staff users,
+// topbar user menu) - this used to keep its own two-letter-code copy ("SA"/"AD"/"OP"), which
+// read as a stale/legacy badge next to the canonical full-word one shown elsewhere (PO report).
 function noteRoleBadgeVariant(role: AssignedNoteAuthorRole): BadgeProps["variant"] {
-  return NOTE_ROLE_BADGE_VARIANTS[role];
+  return ROLE_BADGE_VARIANT[role];
 }
 
 function noteRoleShort(role: AssignedNoteAuthorRole): string {
-  return NOTE_ROLE_SHORTS[role];
+  return ROLE_LABELS[role];
 }
 
 /** Delete rule (PO): admins may delete their own note or one written by an operator, but not
@@ -1239,7 +1239,11 @@ function AttendeeNotesTab({
         </div>
       </div>
       {notes.length === 0 ? (
-        <p className="at-notes-empty">No notes yet.</p>
+        <EmptyState
+          icon={<i className="ti ti-notes" aria-hidden="true" />}
+          title="No notes yet"
+          description="Notes added about this attendee will appear here."
+        />
       ) : (
         <ul className="at-notes-list">
           {notes.map((note) => {
@@ -1258,8 +1262,13 @@ function AttendeeNotesTab({
                       </Badge>
                     )}
                   </div>
+                  {/* AttendeeNote has no per-note captured timezone (unlike Activity log entries),
+                   * so this always falls through to the fallback below — the viewer's own
+                   * browser zone, not the event's, matching the other viewer-facing timestamps
+                   * on this page (wallet pass dates above) and fixing a note added by/for someone
+                   * outside the event's own timezone reading as the wrong time (PO report). */}
                   <time className="at-notes-list__time" dateTime={note.created_at}>
-                    {formatActivityTimestamp(note.created_at, null, event.timezone)}
+                    {formatActivityTimestamp(note.created_at, null, getBrowserTimeZone())}
                   </time>
                 </div>
                 {isEditing ? (
