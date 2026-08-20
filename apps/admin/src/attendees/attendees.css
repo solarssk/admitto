@@ -716,21 +716,20 @@
 
 /* Explicit grid (not flex-wrap + order + margin) - that combination let the line-break point
  * depend on subject/email text length, so a long "to" address could keep everything on one flex
- * line and crush .attendee-delivery__body to near-zero width instead of wrapping. Named areas
- * always place each part on its own row regardless of content length. Unconditional, not gated
- * behind a viewport media query - this card only ever renders in the Attendee detail page's
- * narrow side column (~40% of the content width), which can be this squeezed on any viewport
- * width, wide included; a max-width media query keyed to the viewport never fired for a card
- * that's narrow because of its column, not the window (PO report: date wrapped to extra rows
- * on desktop as soon as this card was narrow, not just at genuinely mobile viewport widths). */
+ * line and crush .attendee-delivery__body to near-zero width instead of wrapping. A single row
+ * of 4 named areas, not a second row for time - the original squeeze wasn't about body needing
+ * its own line (.attendee-delivery__subject/__to already stack as 2 lines inside __body), it was
+ * .attendee-delivery__time's own single-line width ("13 Aug 2026, 00:59 UTC+2", flex:none) eating
+ * the row's horizontal space. Stacking date/clock into 2 shorter lines already fixes that on its
+ * own; pushing __time onto its own grid row below icon/body/menu instead left it visually
+ * floating, detached from the icon and menu it used to sit level with (PO report: "looks like
+ * garbage" - the date block reads as an unrelated stray element under the row, not part of it). */
 .attendee-delivery {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    "icon body menu"
-    ".    time .   ";
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "icon body time menu";
+  align-items: center;
   column-gap: 10px;
-  row-gap: 4px;
   padding: 9px 0;
   border-bottom: 1px solid var(--at-gray-100);
   font-size: var(--fs-sm);
