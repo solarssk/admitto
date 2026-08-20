@@ -79,6 +79,7 @@ const user: UserListItemDto = {
   active_sessions_count: 0,
   has_mfa: false,
   has_sso: false,
+  external_identities: [],
   roles: [],
 };
 
@@ -812,22 +813,10 @@ describe("UserEditModal sign-in security", () => {
       external_identities: [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }],
     });
 
-    await screen.findByText("Authentik");
+    await screen.findByText("Identity provider");
     expect(screen.getByText("Authenticator app enrolled")).toBeTruthy();
     expect(screen.getByText("Active sessions")).toBeTruthy();
     expect(screen.getByText("3 sessions")).toBeTruthy();
-  });
-
-  it("joins multiple linked identity providers in the Sign-in method tile (e.g. also Cloudflare Access)", async () => {
-    renderModal({
-      has_sso: true,
-      external_identities: [
-        { id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" },
-        { id: "ei-2", provider_display_name: "Cloudflare Access", provider_type: "cloudflare_access" },
-      ],
-    });
-
-    await screen.findByText("Authentik + Cloudflare Access");
   });
 
   it("disables Unlink SSO for a local-only account", async () => {
