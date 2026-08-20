@@ -54,12 +54,16 @@ function makeUser(id: string, displayName: string): UserListItemDto {
     id,
     email: `${id}@example.com`,
     display_name: displayName,
+    phone_country_code: null,
+    phone_number: null,
     is_active: true,
     must_change_password: false,
     created_at: "2026-01-01T00:00:00.000Z",
     last_login_at: null,
     active_sessions_count: 0,
     has_mfa: false,
+    has_sso: false,
+    external_identities: [],
     roles: [],
   };
 }
