@@ -82,6 +82,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
+import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
 import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
@@ -1130,24 +1131,15 @@ function AttendeeActivityTab({
 
 type AssignedNoteAuthorRole = Exclude<NoteAuthorRole, null>;
 
-const NOTE_ROLE_BADGE_VARIANTS: Record<AssignedNoteAuthorRole, BadgeProps["variant"]> = {
-  superadmin: "error",
-  admin: "warn",
-  operator: "info",
-};
-
-const NOTE_ROLE_SHORTS: Record<AssignedNoteAuthorRole, string> = {
-  superadmin: "SA",
-  admin: "AD",
-  operator: "OP",
-};
-
+// Same role → color/label mapping used everywhere else a role reads to a human (Staff users,
+// topbar user menu) - this used to keep its own two-letter-code copy ("SA"/"AD"/"OP"), which
+// read as a stale/legacy badge next to the canonical full-word one shown elsewhere (PO report).
 function noteRoleBadgeVariant(role: AssignedNoteAuthorRole): BadgeProps["variant"] {
-  return NOTE_ROLE_BADGE_VARIANTS[role];
+  return ROLE_BADGE_VARIANT[role];
 }
 
 function noteRoleShort(role: AssignedNoteAuthorRole): string {
-  return NOTE_ROLE_SHORTS[role];
+  return ROLE_LABELS[role];
 }
 
 /** Delete rule (PO): admins may delete their own note or one written by an operator, but not

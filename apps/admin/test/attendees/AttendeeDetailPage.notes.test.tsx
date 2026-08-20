@@ -628,7 +628,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     await openNotesTab();
 
     expect(screen.getByTitle("Ola Nowak")).toBeTruthy();
-    expect(screen.getByText("AD")).toBeTruthy();
+    expect(screen.getByText("Administrator")).toBeTruthy();
   });
 
   it("shows distinct role badges for superadmin, admin, and operator authors", async () => {
@@ -645,9 +645,9 @@ describe("AttendeeDetailPage — Notes tab", () => {
     await screen.findByRole("heading", { name: "Anna" });
     await openNotesTab();
 
-    expect(screen.getByText("SA")).toBeTruthy();
-    expect(screen.getByText("AD")).toBeTruthy();
-    expect(screen.getByText("OP")).toBeTruthy();
+    expect(screen.getByText("Superadmin")).toBeTruthy();
+    expect(screen.getByText("Administrator")).toBeTruthy();
+    expect(screen.getByText("Operator")).toBeTruthy();
   });
 
   describe("editing a note", () => {
