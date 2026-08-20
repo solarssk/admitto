@@ -1538,6 +1538,7 @@ export interface AccountExternalIdentityDto {
   id: string;
   provider_id: string;
   provider_display_name: string;
+  provider_type: "oidc" | "cloudflare_access";
   linked_at: string;
 }
 
