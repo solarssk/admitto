@@ -1802,6 +1802,12 @@ export function AttendeesPage() {
           void handleBulkCheckInSelected();
         }}
         onCancel={() => {
+          // Type-narrowing guard only - onConfirm sets bulkCheckInConfirmOpen(false) as its own
+          // first synchronous statement, before runBulkAction's setBusy(true) (also synchronous,
+          // pre-await) can ever run - both updates land in the same React commit, so the dialog
+          // (ConfirmDialog returns null while !open) has already unmounted by the time
+          // bulkCheckInBusy could become true. Cancel can never be clicked while busy.
+          /* v8 ignore if */
           if (!bulkCheckInBusy) setBulkCheckInConfirmOpen(false);
         }}
       />
