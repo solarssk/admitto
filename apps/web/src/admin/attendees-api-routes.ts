@@ -597,8 +597,12 @@ async function walletStatusByAttendee(
   );
 }
 
-/** Shown in activity log when a human actor has no display_name (email is never exposed). */
-const ACTION_LOG_ACTOR_FALLBACK = "Admin";
+/** Last-resort fallback for activity log when a human actor has neither a display_name nor an
+ * email on record - should be unreachable in practice (email is required to sign in), kept only
+ * as a defensive backstop. The actor's email is shown first when display_name is unset, same as
+ * the Notes tab and the topbar account menu (PO report: a generic role-shaped label like this
+ * was harder to identify the actual person from than their email would be). */
+const ACTION_LOG_ACTOR_FALLBACK = "Staff member";
 
 /** Page size for the detail page's notes list. The check-in card remains deliberately smaller
  * (CARD_NOTES_LIMIT = 5) for the operator scan flow; this endpoint exposes the full history
@@ -632,7 +636,7 @@ async function loadAttendeeActionLogEntries(
     actorIds.length > 0
       ? await db.user.findMany({
           where: { id: { in: actorIds } },
-          select: { id: true, display_name: true },
+          select: { id: true, display_name: true, email: true },
         })
       : [];
   const userById = new Map(users.map((user) => [user.id, user]));
@@ -643,7 +647,7 @@ async function loadAttendeeActionLogEntries(
       id: log.id,
       action_type: log.action_type,
       actor_display: log.actor_user_id
-        ? (actor?.display_name ?? ACTION_LOG_ACTOR_FALLBACK)
+        ? (actor?.display_name ?? actor?.email ?? ACTION_LOG_ACTOR_FALLBACK)
         : "System",
       metadata:
         log.metadata && typeof log.metadata === "object" && !Array.isArray(log.metadata)
@@ -728,7 +732,7 @@ async function loadAttendeeNotes(
   const authorIds = [...new Set(notes.map((note) => note.author_user_id))];
   const authorsPromise = db.user.findMany({
     where: { id: { in: authorIds } },
-    select: { id: true, display_name: true },
+    select: { id: true, display_name: true, email: true },
   });
   const rolesPromise = db.event
     .findUniqueOrThrow({ where: { id: eventId }, select: { organization_id: true } })
@@ -740,7 +744,10 @@ async function loadAttendeeNotes(
     items: notes.map((note) => ({
       id: note.id,
       body: note.body,
-      author_display: authorById.get(note.author_user_id)?.display_name ?? NOTE_AUTHOR_FALLBACK,
+      author_display:
+        authorById.get(note.author_user_id)?.display_name ??
+        authorById.get(note.author_user_id)?.email ??
+        NOTE_AUTHOR_FALLBACK,
       author_user_id: note.author_user_id,
       author_role: rolesByAuthor.get(note.author_user_id) ?? null,
       created_at: note.created_at.toISOString(),
