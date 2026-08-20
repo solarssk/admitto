@@ -822,7 +822,7 @@ describe("UserEditModal sign-in security", () => {
       ],
     });
 
-    await screen.findByText("Authentik + Cloudflare Access");
+    expect(await screen.findByText("Authentik + Cloudflare Access")).toBeTruthy();
   });
 
   it("disables Unlink SSO for a local-only account", async () => {
