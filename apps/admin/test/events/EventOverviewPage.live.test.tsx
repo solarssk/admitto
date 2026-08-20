@@ -418,7 +418,12 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.getAllByText("…").length).toBeGreaterThan(0);
     });
-    expect(screen.queryByText("50")).toBeNull();
+    // Scoped to the Attendees tile specifically, not a page-wide text search - the Event
+    // countdown tile's own value is a real, unrelated day count (computed from the current
+    // date vs. the fixture's fixed 2026-07-01 event date) that can coincidentally match "50"
+    // on any date this suite happens to run, which isn't the leak this test guards against.
+    const attendeesKpiWhileLoading = within(statsRow()).getByText("Attendees").parentElement;
+    expect(within(attendeesKpiWhileLoading!).queryByText("50")).toBeNull();
 
     await act(async () => {
       resolveOverview(overviewFixture(5, { attendee_count: 48 }));
