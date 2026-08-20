@@ -417,10 +417,33 @@
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
-  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header, body, and footer all scroll together as one region - this used to be the one modal
+ * shell in the app with a static header/footer and only the middle scrolling, unlike every
+ * other modal (identity provider/Cloudflare Access editors, the staff user edit modal), which
+ * scroll their whole content as a single region (PO report: this was the odd one out). Padding
+ * lives here now, not on header/body/footer individually, so it's the same --space-5 inset on
+ * every side for all three - previously the scrolling middle had its own separate padding
+ * calculation from the static header/footer's, which drifted a few pixels out of alignment with
+ * them depending on whether a scrollbar was actually rendered. */
+.event-item-modal__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* Room for .at-input's focus box-shadow ring (--ring, spreads var(--ring-width) beyond the
+     input's own border): overflow-x: hidden clips it flush against a focused input's edges
+     without this. Bleed out by the ring width and pad back in by the same amount (on top of the
+     real --space-5 inset) so field content still lines up with everything else. */
+  margin: 0 calc(-1 * var(--ring-width));
+  padding: var(--space-5) calc(var(--space-5) + var(--ring-width));
+  /* Scrollbar look: shared .at-scroll (packages/ui). */
 }
 
 .event-item-modal__header {
@@ -428,8 +451,6 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
-  /* No divider under the subtitle — same as add-attendee / FontFamily modals. */
-  padding-bottom: 0;
 }
 
 .event-item-modal__title {
@@ -455,7 +476,9 @@
 }
 
 .event-item-modal__subtitle {
-  margin: var(--space-1) 0 0;
+  /* A bit more breathing room from the icon+title row above than --space-1 gave (PO report:
+     read as too close to the icon). */
+  margin: var(--space-2) 0 0;
   font-size: var(--fs-sm);
   color: var(--text-muted);
   line-height: var(--lh-normal);
@@ -469,45 +492,9 @@
 }
 
 .event-item-modal__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  /* Room for .at-input's focus box-shadow ring (--ring, spreads var(--ring-width) beyond the
-     input's own border): this element has no horizontal padding of its own, so the ring was
-     clipped flush against a focused input's edges. Bleed out by the ring width and pad back
-     in by the same amount so field content still lines up with the header/footer above/below. */
-  margin: 0 calc(-1 * var(--ring-width));
-  padding-left: var(--ring-width);
-  /* Extra 8px on the right so the slim thumb sits beside controls (Active switch, icon grid)
-   * instead of painting over them - same lane as .overview-timeline. */
-  padding-right: calc(var(--ring-width) + 8px);
-  /* Item/Badge bodies almost always overflow; reserve the track like .main-scroll /
-   * .overview-timeline / .attendee-deliveries-scroll. (Short add-attendee modals skip this on
-   * purpose - they rarely scroll and would keep a permanent dead gutter.) */
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.event-item-modal__body::-webkit-scrollbar {
-  width: 8px;
-}
-
-.event-item-modal__body::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.event-item-modal__body::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.event-item-modal__body::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
 }
 
 .event-item-modal__section-title {
@@ -520,7 +507,6 @@
 }
 
 .event-item-modal__footer {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;

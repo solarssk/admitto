@@ -290,6 +290,7 @@ function AddItemModal({
         onClick={onClose}
       />
       <div ref={addPanelRef} className="event-item-modal__panel">
+        <div className="event-item-modal__scroll at-scroll">
         <div className="event-item-modal__header">
           <div>
             <h2 className="event-item-modal__title">
@@ -355,6 +356,7 @@ function AddItemModal({
           >
             {adding ? "Creating…" : "Create"}
           </Button>
+        </div>
         </div>
       </div>
     </dialog>
