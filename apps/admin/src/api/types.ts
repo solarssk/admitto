@@ -1565,7 +1565,6 @@ export interface PatchAccountPasswordBody {
 }
 
 export interface DeleteAccountExternalIdentityBody {
-  provider_type: "oidc" | "cloudflare_access";
   new_password: string;
   current_password?: string;
   code?: string;

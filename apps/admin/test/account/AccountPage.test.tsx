@@ -1831,7 +1831,6 @@ describe("AccountPage profile: SSO unlink", () => {
       expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
     });
     expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({
-      provider_type: "oidc",
       new_password: "long-enough-password",
       code: undefined,
     });
@@ -1934,7 +1933,6 @@ describe("AccountPage profile: SSO unlink", () => {
       expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
     });
     expect(mockUnlinkExternalIdentity).toHaveBeenLastCalledWith({
-      provider_type: "oidc",
       new_password: "long-enough-password",
       code: "123456",
     });
@@ -2000,7 +1998,6 @@ describe("AccountPage profile: SSO unlink", () => {
 
     await waitFor(() => {
       expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({
-        provider_type: "oidc",
         new_password: "long-enough-password",
         current_password: "old-password",
         code: undefined,
