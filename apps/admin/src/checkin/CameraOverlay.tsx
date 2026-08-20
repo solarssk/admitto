@@ -251,7 +251,6 @@ export function CameraOverlay({
         <aside className="ck-overlay__aside">
           <CkRecentScans
             history={history}
-            eventTimezone={eventTimezone}
             eventDate={eventDate}
             compact
             limit={6}

@@ -1270,8 +1270,13 @@ function AttendeeNotesTab({
                       </Badge>
                     )}
                   </div>
+                  {/* AttendeeNote has no per-note captured timezone (unlike Activity log entries),
+                   * so this always falls through to the fallback below — the viewer's own
+                   * browser zone, not the event's, matching the other viewer-facing timestamps
+                   * on this page (wallet pass dates above) and fixing a note added by/for someone
+                   * outside the event's own timezone reading as the wrong time (PO report). */}
                   <time className="at-notes-list__time" dateTime={note.created_at}>
-                    {formatActivityTimestamp(note.created_at, null, event.timezone)}
+                    {formatActivityTimestamp(note.created_at, null, getBrowserTimeZone())}
                   </time>
                 </div>
                 {isEditing ? (
