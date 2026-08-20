@@ -877,14 +877,11 @@
   font-size: var(--fs-xs);
 }
 
-/* Right-aligned status badge, vertically centered against the name+meta
-   pair as a unit — .checkin-card__head keeps align-items: flex-start for
-   the icon, so this overrides it per-child, same centering trick as the
-   item icon/action button below (PO/Jadzia review, round 4). Replaces the
-   old dotted inline-only badge plus a separate full-width colored bar that
-   duplicated it for every other status. */
+/* Right-aligned status badge, aligned to the top of the name+meta pair so it sits level with
+   the name row specifically, not centered against the whole two-line block (PO report, round
+   5 - supersedes the round-4 centered treatment). .checkin-card__head's own flex-start already
+   gives this the right position, so no per-child override is needed here anymore. */
 .checkin-card__status-badge {
-  align-self: center;
   flex: none;
   white-space: nowrap;
 }
@@ -898,27 +895,51 @@
   padding: 12px 16px;
 }
 
+/* Pinned to the base Admitto blue regardless of the organisation's branding accent - a red/
+   orange brand color on this specific button reads as an error/danger state, not a primary
+   action (PO report). Every other primary button keeps taking the branding color as designed;
+   only this one is exempted. */
+.checkin-card__primary-actions .at-btn--primary {
+  background: var(--at-blue);
+}
+
+.checkin-card__primary-actions .at-btn--primary:hover:not(:disabled) {
+  background: var(--at-blue-600);
+}
+
+.checkin-card__primary-actions .at-btn--primary:active:not(:disabled) {
+  background: var(--at-blue-700);
+}
+
 /* Block 3 — requirements: compact rows, icon + label (flex) + right state.
-   gap ≥ 16px prevents 44px action-button touch areas (±8px margin) from
-   overlapping between adjacent rows when two rows both have inline actions. */
+   No container-level gap here on purpose - see .checkin-card__item + .checkin-card__item
+   below for why title-to-first-item and item-to-item spacing need different values. */
 .checkin-card__items {
   display: flex;
   flex-direction: column;
-  gap: 16px;
   padding: 10px 16px;
   border-top: 1px solid var(--at-gray-100, var(--border));
 }
 
-/* Matches .checkin-card__notes-title's small-caps label style — without a
-   heading this list read as inert status text, not "hand these out"
-   (Jadzia review). */
+/* Matches .checkin-card__notes-title's small-caps label style *and* its own dedicated
+   margin-bottom (6px) — that's the "natural" title-to-content gap PO pointed to as the
+   reference. The previous version had no margin of its own and relied on the parent's flex
+   gap (16px, sized for item-to-item touch-target clearance below) to also separate the title
+   from the first item, which read as too far apart compared to Notes right below it. */
 .checkin-card__items-title {
-  margin: 0;
+  margin: 0 0 6px;
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
+}
+
+/* 16px only *between* item rows (not title-to-first-item, now handled by the title's own
+   margin above) — gap ≥ 16px prevents 44px action-button touch areas (±8px margin) from
+   overlapping between adjacent rows when two rows both have inline actions. */
+.checkin-card__item + .checkin-card__item {
+  margin-top: 16px;
 }
 
 /* Icon is a sibling of the label+description column (not nested inside the
@@ -930,6 +951,9 @@
   gap: 10px;
 }
 
+/* var(--space-1) (4px) still read as a touch too much once the row's own phantom padding
+   below was fixed (PO report, round 2) - 2px is deliberate here, not the same unexplained
+   hardcoded value an earlier pass used before that phantom padding was diagnosed. */
 .checkin-card__item-content {
   flex: 1;
   min-width: 0;
@@ -938,11 +962,16 @@
   gap: 2px;
 }
 
+/* min-height matches --fs-sm's own line height (13px * 1.5 line-height), not an arbitrary
+ * larger box - align-items:center was centering the text inside 28px, adding ~8px of invisible
+ * padding on top of item-content's gap below, so the label-to-description gap looked roughly
+ * double the actual gap token (PO report: still too far apart even after that gap was
+ * corrected). */
 .checkin-card__item-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  min-height: 20px;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
@@ -1006,6 +1035,12 @@
 
 .checkin-card__aux-btn--danger {
   color: var(--status-error);
+}
+
+/* Close stays visually separate from Revoke/Add note - pushed to the row's far right instead of
+   grouping with them left-to-right (PO report). */
+.checkin-card__aux-btn--close {
+  margin-left: auto;
 }
 
 .checkin-card__notes {
