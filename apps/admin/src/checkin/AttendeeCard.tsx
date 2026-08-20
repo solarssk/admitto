@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Badge, Button, Card } from "@admitto/ui";
 import type { BadgeVariant } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus, TicketTypeDto } from "../api/types.js";
-import { formatEventTime, getBrowserTimeZone } from "../utils/event-dates.js";
+import { formatRelativeAdmissionDisplay, getBrowserTimeZone } from "../utils/event-dates.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
@@ -327,9 +327,16 @@ export function AttendeeCard({
                 <li key={`${n.created_at}-${i}`}>
                   {/* Viewer's own browser timezone, not the event's — matches Attendee Detail's
                    * Notes tab and fixes a note timestamp reading as wrong for anyone outside the
-                   * event's own timezone (PO report). */}
+                   * event's own timezone (PO report). Today/Yesterday/date + time — the same
+                   * relative pattern Recent scans already uses (CkRecentScans), reused rather
+                   * than duplicated — a note added a different day than it's read on must show
+                   * which day (PO report); a bare time-only string can't tell the two apart.
+                   * No event-day anchor applies to a note the way it does to a check-in
+                   * admission, so eventDateIso is always null here — that just skips straight to
+                   * the plain date + time fallback for anything not today/yesterday. */}
                   <span className="checkin-card__note-meta">
-                    {n.author_display} · {formatEventTime(n.created_at, getBrowserTimeZone())}
+                    {n.author_display} ·{" "}
+                    {formatRelativeAdmissionDisplay(n.created_at, null, getBrowserTimeZone())}
                   </span>
                   <p>{n.body}</p>
                 </li>
