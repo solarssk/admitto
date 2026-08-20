@@ -188,7 +188,8 @@ describe("AttendeeDetailPage — Notes tab", () => {
     expect(screen.getByRole("tab", { name: "Notes" })).toBeTruthy();
     await openNotesTab();
 
-    expect(screen.getByText("No notes yet.")).toBeTruthy();
+    expect(screen.getByText("No notes yet")).toBeTruthy();
+    expect(screen.getByText("Notes added about this attendee will appear here.")).toBeTruthy();
     const hint = screen.getByText(
       /Internal notes are visible to staff only and are never shown to the attendee\./,
     );
@@ -216,7 +217,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
 
     expect(screen.getByText("Called about dietary needs.")).toBeTruthy();
     expect(screen.getByText("Admin")).toBeTruthy();
-    expect(screen.queryByText("No notes yet.")).toBeNull();
+    expect(screen.queryByText("No notes yet")).toBeNull();
   });
 
   it("shows the total note count and loads another notes page", async () => {
@@ -370,7 +371,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     await screen.findByRole("heading", { name: "Anna" });
     await openNotesTab();
 
-    expect(screen.getByText("No notes yet.")).toBeTruthy();
+    expect(screen.getByText("No notes yet")).toBeTruthy();
   });
 
   it("disables Add until the draft has non-whitespace text", async () => {

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Badge, Button, Card } from "@admitto/ui";
 import type { BadgeVariant } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInStatus, TicketTypeDto } from "../api/types.js";
-import { formatEventTime } from "../utils/event-dates.js";
+import { formatRelativeAdmissionDisplay, getBrowserTimeZone } from "../utils/event-dates.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
@@ -13,7 +13,6 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 type Props = {
   card: AttendeeCardDto;
   ticketTypes?: TicketTypeDto[];
-  eventTimezone: string;
   scanStatus?: CheckInStatus;
   confirmed?: boolean;
   pending?: boolean;
@@ -123,7 +122,6 @@ function isBlockedStatus(status: CheckInStatus): boolean {
 export function AttendeeCard({
   card,
   ticketTypes = [],
-  eventTimezone,
   scanStatus,
   confirmed,
   pending,
@@ -212,9 +210,13 @@ export function AttendeeCard({
               {card.ticket_type && (
                 <TicketTypeBadge ticketType={card.ticket_type} catalog={ticketTypes} />
               )}
-              {(card.company || card.department) && (
-                <span>{[card.company, card.department].filter(Boolean).join(" · ")}</span>
+              {card.company && (
+                <span>
+                  {card.company}
+                  {card.department && <span aria-hidden="true"> ·</span>}
+                </span>
               )}
+              {card.department && <span>{card.department}</span>}
               {pending && <span className="checkin-card__status-note">Pending, not confirmed</span>}
               {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
                 <span className="checkin-card__status-note">Awaiting server confirmation</span>
@@ -268,9 +270,11 @@ export function AttendeeCard({
                       {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
                     </span>
                   </div>
-                  {item.description && (
-                    <p className="checkin-card__item-description">{item.description}</p>
-                  )}
+                  <p
+                    className={`checkin-card__item-description${item.description ? "" : " checkin-card__item-description--empty"}`}
+                  >
+                    {item.description || "No description"}
+                  </p>
                 </div>
                 {item.actions.length > 0
                   ? item.actions.map((action) => (
@@ -327,8 +331,18 @@ export function AttendeeCard({
             <ul>
               {card.notes.map((n, i) => (
                 <li key={`${n.created_at}-${i}`}>
+                  {/* Viewer's own browser timezone, not the event's — matches Attendee Detail's
+                   * Notes tab and fixes a note timestamp reading as wrong for anyone outside the
+                   * event's own timezone (PO report). Today/Yesterday/date + time — the same
+                   * relative pattern Recent scans already uses (CkRecentScans), reused rather
+                   * than duplicated — a note added a different day than it's read on must show
+                   * which day (PO report); a bare time-only string can't tell the two apart.
+                   * No event-day anchor applies to a note the way it does to a check-in
+                   * admission, so eventDateIso is always null here — that just skips straight to
+                   * the plain date + time fallback for anything not today/yesterday. */}
                   <span className="checkin-card__note-meta">
-                    {n.author_display} · {formatEventTime(n.created_at, eventTimezone)}
+                    {n.author_display} ·{" "}
+                    {formatRelativeAdmissionDisplay(n.created_at, null, getBrowserTimeZone())}
                   </span>
                   <p>{n.body}</p>
                 </li>
@@ -391,7 +405,7 @@ export function AttendeeCard({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="checkin-card__aux-btn"
+                className="checkin-card__aux-btn checkin-card__aux-btn--close"
                 disabled={pending}
                 onClick={() => onCancel()}
                 icon={<i className="ti ti-x" aria-hidden="true" />}

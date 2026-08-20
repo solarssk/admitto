@@ -4747,7 +4747,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
     expect(count).toBe(0);
   });
 
-  it("admin adds a note, logs note_added, and returns the refreshed detail with the note (PII-safe author)", async () => {
+  it("admin adds a note, logs note_added, and returns the refreshed detail with the note", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}/notes`, {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -4765,8 +4765,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
       }[];
     };
     expect(body.notes[0]?.body).toBe("Arrived early, seated at table 4.");
-    expect(body.notes[0]?.author_display).toBe("Staff member");
-    expect(body.notes[0]?.author_display).not.toBe(EMAIL_ADMIN);
+    expect(body.notes[0]?.author_display).toBe(EMAIL_ADMIN);
     expect(body.notes[0]?.author_user_id).toBe(adminId);
     expect(body.notes[0]?.author_role).toBe("admin");
 
@@ -4870,7 +4869,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
     expect(body.notes).toHaveLength(1);
   });
 
-  it("uses a role-neutral fallback when an author no longer has a display name", async () => {
+  it("falls back to the author's email when they no longer have a display name", async () => {
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: adminId },
       select: { display_name: true },
@@ -4886,7 +4885,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as { notes: { id: string; author_display: string }[] };
-      expect(body.notes.find((item) => item.id === note.id)?.author_display).toBe("Staff member");
+      expect(body.notes.find((item) => item.id === note.id)?.author_display).toBe(EMAIL_ADMIN);
     } finally {
       await prisma.user.update({ where: { id: adminId }, data: { display_name: user.display_name } });
       await prisma.attendeeNote.delete({ where: { id: note.id } });
@@ -5606,8 +5605,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(body.rsvp_status).toBe("confirmed");
 
     const rsvpEntry = body.action_log.find((e) => e.action_type === "rsvp_status_changed");
-    expect(rsvpEntry?.actor_display).toBe("Admin");
-    expect(rsvpEntry?.actor_display).not.toBe(EMAIL_ADMIN);
+    expect(rsvpEntry?.actor_display).toBe(EMAIL_ADMIN);
 
     const log = await prisma.attendeeActionLog.findFirst({
       where: { attendee_id: ATT_A2, action_type: "rsvp_status_changed" },
@@ -5621,6 +5619,54 @@ describe("Attendees v2 — RSVP and manual create", () => {
       where: { id: ATT_A2 },
       data: { rsvp_status: "none", rsvp_updated_at: null, rsvp_source: null },
     });
+  });
+
+  it("falls back through email to the generic label for a note/action-log actor whose user row is gone (codecov review)", async () => {
+    const ghostUser = await prisma.user.create({
+      data: { email: "ghost-actor@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-ghost-actor-fallback",
+        event_id: EVENT_A,
+        email: "ghost-actor-attendee@example.com",
+        name: "Ghost Actor Target",
+      },
+    });
+    await prisma.attendeeActionLog.create({
+      data: {
+        event_id: EVENT_A,
+        attendee_id: attendee.id,
+        action_type: "attendee_edited",
+        actor_user_id: ghostUser.id,
+      },
+    });
+    await prisma.attendeeNote.create({
+      data: { attendee_id: attendee.id, event_id: EVENT_A, author_user_id: ghostUser.id, body: "Ghost note." },
+    });
+    // Deletable: neither AttendeeActionLog.actor_user_id nor AttendeeNote.author_user_id is a
+    // real FK to User (schema.prisma) - this is exactly the "actor row no longer exists"
+    // scenario the ?? fallback chain exists for.
+    await prisma.user.delete({ where: { id: ghostUser.id } });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${attendee.id}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        action_log: { action_type: string; actor_display: string | null }[];
+        notes: { body: string; author_display: string }[];
+      };
+
+      const editEntry = body.action_log.find((e) => e.action_type === "attendee_edited");
+      expect(editEntry?.actor_display).toBe("Staff member");
+      expect(body.notes[0]?.author_display).toBe("Staff member");
+    } finally {
+      await prisma.attendeeNote.deleteMany({ where: { attendee_id: attendee.id } });
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: attendee.id } });
+      await prisma.attendee.delete({ where: { id: attendee.id } });
+    }
   });
 
   it("POST create attendee returns 201 with audit log", async () => {
