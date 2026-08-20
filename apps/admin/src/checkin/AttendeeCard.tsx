@@ -272,9 +272,11 @@ export function AttendeeCard({
                       {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
                     </span>
                   </div>
-                  {item.description && (
-                    <p className="checkin-card__item-description">{item.description}</p>
-                  )}
+                  <p
+                    className={`checkin-card__item-description${item.description ? "" : " checkin-card__item-description--empty"}`}
+                  >
+                    {item.description || "No description"}
+                  </p>
                 </div>
                 {item.actions.length > 0
                   ? item.actions.map((action) => (
