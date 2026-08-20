@@ -1879,6 +1879,29 @@ describe("AccountPage profile: SSO unlink", () => {
     expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
   });
 
+  it("closes the step-up dialog on Cancel, without reopening the unlink confirm dialog", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+    expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("shows an inline error in the step-up dialog for a wrong code and keeps it open", async () => {
     mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
