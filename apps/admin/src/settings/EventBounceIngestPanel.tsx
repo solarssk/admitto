@@ -116,7 +116,7 @@ function RecentChecksList({
   return (
     <div className="event-bounce-ingest__recent-runs">
       <h3 className="event-bounce-ingest__recent-runs-title">Recent checks</h3>
-      <div className="event-bounce-ingest__recent-runs-scroll">
+      <div className="event-bounce-ingest__recent-runs-scroll at-scroll">
         <ul className="event-bounce-ingest__recent-runs-list">
           {history.slice(0, 10).map((run) => (
             <li key={run.at}>
