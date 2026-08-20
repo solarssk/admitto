@@ -49,6 +49,11 @@ async function resolveSearchMatch(
       { actor_email: { contains: search, mode: "insensitive" } },
       { actor_display_name: { contains: search, mode: "insensitive" } },
       ...events.flatMap((e) => eventScopeMatch(e.id)),
+      // A deleted event has no live Event row for the query above to match - only its
+      // snapshotted title (event-deletion.ts's eventTitle, or the legacy event_title some
+      // rows still carry) survives, so search that directly too (codex review).
+      { metadata: { path: ["eventTitle"], string_contains: search, mode: "insensitive" } },
+      { metadata: { path: ["event_title"], string_contains: search, mode: "insensitive" } },
     ],
   };
 }
