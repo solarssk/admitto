@@ -994,7 +994,7 @@ function AttendeeOverviewTab({
               description="Ticket emails and resends will appear here once one is sent."
             />
           ) : (
-            <div className="attendee-deliveries-scroll at-scroll at-scroll--stable">
+            <div className="attendee-deliveries-scroll at-scroll">
               <ul className="attendee-deliveries">
                 {detail.deliveries.map((delivery) => {
                   const statusMeta = resolveStatusMeta(delivery.status);
