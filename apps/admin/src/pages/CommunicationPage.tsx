@@ -1141,7 +1141,7 @@ function TemplateEditorCard({
             <textarea
               id="communication-body"
               ref={bodyRef}
-              className="communication-textarea"
+              className="communication-textarea at-scroll"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onFocus={() => setActiveField("body")}

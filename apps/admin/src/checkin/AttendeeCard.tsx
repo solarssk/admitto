@@ -210,9 +210,13 @@ export function AttendeeCard({
               {card.ticket_type && (
                 <TicketTypeBadge ticketType={card.ticket_type} catalog={ticketTypes} />
               )}
-              {(card.company || card.department) && (
-                <span>{[card.company, card.department].filter(Boolean).join(" · ")}</span>
+              {card.company && (
+                <span>
+                  {card.company}
+                  {card.department && <span aria-hidden="true"> ·</span>}
+                </span>
               )}
+              {card.department && <span>{card.department}</span>}
               {pending && <span className="checkin-card__status-note">Pending, not confirmed</span>}
               {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
                 <span className="checkin-card__status-note">Awaiting server confirmation</span>
@@ -266,9 +270,11 @@ export function AttendeeCard({
                       {item.detail && <span className="checkin-card__item-detail">{item.detail}</span>}
                     </span>
                   </div>
-                  {item.description && (
-                    <p className="checkin-card__item-description">{item.description}</p>
-                  )}
+                  <p
+                    className={`checkin-card__item-description${item.description ? "" : " checkin-card__item-description--empty"}`}
+                  >
+                    {item.description || "No description"}
+                  </p>
                 </div>
                 {item.actions.length > 0
                   ? item.actions.map((action) => (
