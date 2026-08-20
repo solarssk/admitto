@@ -1,5 +1,6 @@
 import {
   authFormSubmitScript,
+  authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -75,6 +76,7 @@ export function renderMfaVerifyForm(scriptNonce: string, error?: string, next?: 
     ${err}
     <form method="post" action="/mfa/verify">
       ${nextField}
+      <input type="hidden" name="timezone" value="" autocomplete="off">
       ${renderAuthOtpCodeField({
         label: "Authentication code",
         labelId: "mfa-code-label",
@@ -89,7 +91,7 @@ export function renderMfaVerifyForm(scriptNonce: string, error?: string, next?: 
     step: "Two-factor authentication",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
+    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce)}`,
   });
 }
 
