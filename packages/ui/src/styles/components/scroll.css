@@ -27,3 +27,12 @@
 .at-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* Opt-in modifier (codex review: referenced by Requirements' item/custom-field modals but never
+ * defined here) - reserves the scrollbar track up front so content already known to overflow
+ * almost every time (item/badge bodies) doesn't shift when the scrollbar appears. Only for
+ * consumers where that's true; a panel that rarely scrolls should stay plain .at-scroll; see
+ * that class's own comment above for why. */
+.at-scroll--stable {
+  scrollbar-gutter: stable;
+}
