@@ -36,6 +36,26 @@ describe("UserMenu", () => {
     expect(screen.getByRole("menuitem", { name: /My account/ })).toBeTruthy();
   });
 
+  it("falls back to the full email when there's no display name (codecov review)", () => {
+    render(
+      <MemoryRouter>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <UserMenu
+                user={{ ...USER, display_name: null }}
+                assignments={[{ role: "operator", scope_type: "event", scope_id: "evt-1" }]}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("ola@example.com")).toBeTruthy();
+    expect(screen.queryByText("Ola Operator")).toBeNull();
+  });
+
   it("shows the Superadmin role badge for a superadmin", () => {
     renderMenu([{ role: "superadmin", scope_type: "instance", scope_id: null }]);
     fireEvent.click(screen.getByRole("button", { name: /Ola Operator/ }));

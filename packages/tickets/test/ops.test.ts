@@ -207,6 +207,42 @@ describe("getAttendeeCard — item detail from content_fields", () => {
   });
 });
 
+describe("getAttendeeCard — note author display (codecov review)", () => {
+  it("shows the author's full email when they have no display name set", async () => {
+    const author = await prisma.user.create({
+      data: { email: "no-name-author@example.com", display_name: null },
+    });
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: author.id, body: "No display name." },
+    });
+    try {
+      const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
+      const found = card!.notes.find((n) => n.body === "No display name.");
+      expect(found?.author_display).toBe("no-name-author@example.com");
+    } finally {
+      await prisma.attendeeNote.delete({ where: { id: note.id } });
+      await prisma.user.delete({ where: { id: author.id } });
+    }
+  });
+
+  it("prefers the author's display name over their email when both are set", async () => {
+    const author = await prisma.user.create({
+      data: { email: "named-author@example.com", display_name: "Named Author" },
+    });
+    const note = await prisma.attendeeNote.create({
+      data: { attendee_id: attendeeId, event_id: EVENT_ID, author_user_id: author.id, body: "Has display name." },
+    });
+    try {
+      const card = await getAttendeeCard(EVENT_ID, attendeeId, prisma);
+      const found = card!.notes.find((n) => n.body === "Has display name.");
+      expect(found?.author_display).toBe("Named Author");
+    } finally {
+      await prisma.attendeeNote.delete({ where: { id: note.id } });
+      await prisma.user.delete({ where: { id: author.id } });
+    }
+  });
+});
+
 describe("ensureAttendeeItemStates (Lock #2)", () => {
   it("is idempotent on repeated calls", async () => {
     const token = generateToken();
