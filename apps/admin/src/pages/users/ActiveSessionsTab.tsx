@@ -10,7 +10,7 @@ import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { EventDto, SessionListDto } from "../../api/types.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { FiltersMenu } from "../../components/FiltersMenu.js";
-import { PaginationFooter, paginationHandlers } from "../../components/PaginationFooter.js";
+import { PaginationFooter } from "../../components/PaginationFooter.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../../components/Segmented.js";
 import { DeviceLabelEditModal } from "./DeviceLabelEditModal.js";
@@ -319,7 +319,15 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
               totalPages={totalPages}
               totalRows={total}
               pageSizeOptions={PAGE_SIZE_OPTIONS}
-              {...paginationHandlers(setPage, setPageSize, totalPages)}
+              onPageSizeChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+              // Step from effectivePage, not raw `page`: after a revoke/reload shrinks
+              // totalPages and clamps the view, paginationHandlers' Previous would burn down a
+              // stale page counter before moving (codex review; same fix as ReportsPage.tsx).
+              onPrevious={() => setPage(Math.max(1, effectivePage - 1))}
+              onNext={() => setPage(Math.min(totalPages, effectivePage + 1))}
             />
           </>
         )}
