@@ -944,7 +944,7 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
       const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
         method: "DELETE",
         headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+        body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD }),
       });
       expect(res.status).toBe(200);
 
@@ -989,7 +989,7 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
       const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
         method: "DELETE",
         headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+        body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD }),
       });
       expect(res.status).toBe(200);
 
@@ -1003,6 +1003,70 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
       await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
       await prisma.session.deleteMany({ where: { user_id: created.id } });
       await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("unlinking Cloudflare Access leaves a still-linked OIDC identity and its role grants intact", async () => {
+    const cfProviderId = "iam-users-test-cf-access-provider";
+    await prisma.identityProvider.create({
+      data: {
+        id: cfProviderId,
+        provider_type: "cloudflare_access",
+        issuer: "https://cf-access.example.com/",
+        client_id: "cf-test-client",
+        authorization_endpoint: "https://cf-access.example.com/a",
+        token_endpoint: "https://cf-access.example.com/t",
+        jwks_uri: "https://cf-access.example.com/j",
+        display_name: "CF Access Test",
+      },
+    });
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-cf-only@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-cf-only-oidc-subject", user_id: created.id },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: cfProviderId, subject: "sso-unlink-cf-only-cf-subject", user_id: created.id },
+    });
+    const assignment = await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "operator", scope_type: "event", scope_id: eventId },
+    });
+    await prisma.oidcRoleGrant.create({
+      data: {
+        user_id: created.id,
+        provider_id: PROVIDER_ID,
+        role: "operator",
+        scope_type: "event",
+        scope_id: eventId,
+        role_assignment_id: assignment.id,
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ provider_type: "cloudflare_access", new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+
+      const remainingIdentities = await prisma.externalIdentity.findMany({
+        where: { user_id: created.id },
+        select: { provider_id: true },
+      });
+      expect(remainingIdentities).toEqual([{ provider_id: PROVIDER_ID }]);
+
+      // The still-linked OIDC provider's own managed grant must survive a Cloudflare-Access-only
+      // unlink - only removing the OIDC identity itself should ever clear it.
+      expect(await prisma.oidcRoleGrant.count({ where: { user_id: created.id } })).toBe(1);
+    } finally {
+      await prisma.oidcRoleGrant.deleteMany({ where: { user_id: created.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.session.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+      await prisma.identityProvider.delete({ where: { id: cfProviderId } });
     }
   });
 
@@ -1042,7 +1106,8 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
   it("returns 404 for a user with no linked SSO identity", async () => {
     const res = await app.request(`/api/admin/users/${targetId}/external-identity`, {
       method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ provider_type: "oidc", new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(404);
   });
@@ -1067,7 +1132,7 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
       const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
         method: "DELETE",
         headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ new_password: "aaaaaaaaaaaa" }),
+        body: JSON.stringify({ provider_type: "oidc", new_password: "aaaaaaaaaaaa" }),
       });
       expect(res.status).toBe(400);
       const body = (await res.json()) as { code: string };
