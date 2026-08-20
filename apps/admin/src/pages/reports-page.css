@@ -365,6 +365,22 @@
   font-size: var(--fs-sm);
 }
 
+.reports-log-footer {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+/* This Card is padded={false} (Admission log's filter toolbar sits in the header actions, not
+   inline). .reports-log-truncated/.reports-log-footer below are plain text/control rows with no
+   padding of their own, so they do need this wrapper's var(--space-4) - but the table itself
+   doesn't: .table th/td already carry their own cell padding (shell.css), exactly like the
+   Attendees list's standard table wrap (.attendees-table-wrap: overflow-x:auto, nothing else),
+   which sits in an equally padded={false} Card. Adding var(--space-4) here on top of that cell
+   padding double-inset the table so it read as narrower than the card, unlike every other table
+   in the app (PO report). */
+.reports-log-table-wrap {
+  overflow-x: auto;
+}
+
 .reports-log-truncated {
   margin: 0;
   padding: var(--space-3) var(--space-4);
