@@ -391,7 +391,7 @@ export function AttendeeCard({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="checkin-card__aux-btn"
+                className="checkin-card__aux-btn checkin-card__aux-btn--close"
                 disabled={pending}
                 onClick={() => onCancel()}
                 icon={<i className="ti ti-x" aria-hidden="true" />}
