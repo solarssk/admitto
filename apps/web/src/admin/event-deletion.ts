@@ -206,7 +206,9 @@ export async function deleteEvent(
         ip,
         timezone,
         actionType: "event_deleted",
-        metadata: { eventId },
+        // Snapshot the title here: once the delete above commits, the audit log's usual
+        // live-lookup-by-eventId has nothing left to resolve against.
+        metadata: { eventId, eventTitle: event.title },
       });
       return { kind: "ok", eventTitle: event.title, managedUploadUrls };
     });

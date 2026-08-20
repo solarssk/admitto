@@ -112,6 +112,14 @@ function activeSessionsLabel(count: number): string {
   return `${count} session${count === 1 ? "" : "s"}`;
 }
 
+/** Real provider name(s) for the Sign-in method tile - e.g. "Authentik", or
+ * "Authentik + Cloudflare Access" when also ZTNA-linked (both are just rows in the same
+ * external_identities relation). Same join style as AccountTypeField on My Account. */
+function signInMethodLabel(user: UserListItemDto): string {
+  if (!user.has_sso) return "Local password";
+  return user.external_identities.map((ei) => ei.provider_display_name).join(" + ");
+}
+
 /** The header's "More actions" kebab menu (Reset MFA / Reset password / Unlink SSO / Revoke
  * sessions / Disable-Enable / Delete account) - each item just closes the menu and opens its own
  * confirm dialog or inline form; the parent owns all of that state. */
@@ -407,9 +415,12 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Sign-in method</strong>
-            <span title={user.has_sso ? "Identity provider" : "Local password"}>
-              {user.has_sso ? "Identity provider" : "Local password"}
-            </span>
+            {/* Real provider name(s) (e.g. "Authentik", or "Authentik + Cloudflare Access" when
+             * also ZTNA-linked) instead of the generic "Identity provider" - both are just rows
+             * in the same external_identities relation, so a Cloudflare Access link shows up
+             * here automatically rather than being invisible (PO report). Same join style as
+             * AccountTypeField on My Account. */}
+            <span title={signInMethodLabel(user)}>{signInMethodLabel(user)}</span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -1156,14 +1167,13 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
          * panel, matching the Identity providers modal's own backdrop (identity-modal.css). */}
         <ModalBackdrop />
         <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--wide">
-        {/* Plain .at-scroll, same as every other modal sharing this class (PO report: the
-         * --stable gutter reservation used here made the panel visibly lopsided whenever the
-         * content was short enough not to need scrolling at all - permanently reserved space on
-         * the right with nothing matching it on the left. Reverted in favor of the same
-         * accepted trade-off every other modal already makes: a role change that grows the
-         * content past the fold mid-session can shift things slightly, same as it would
-         * anywhere else in the app. */}
-        <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
+        {/* at-scroll--stable (shared, packages/ui) reserves scrollbar-gutter here specifically —
+         * unlike this class's other 10 consumers, this modal's height can genuinely change at
+         * runtime (role chips, password-reset sub-form, delayed recent-logins fetch), so content
+         * visibly shifted when a scrollbar appeared/disappeared mid-session. The shared class's
+         * default intentionally skips this everywhere else (see its own doc comment) — scoped
+         * here via className, not by changing that default. */}
+        <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll--stable">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
               {/* Default (md, 36px) to match .identity-row-icon's size - the standard other

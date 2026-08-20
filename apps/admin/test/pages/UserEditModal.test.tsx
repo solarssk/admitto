@@ -813,10 +813,22 @@ describe("UserEditModal sign-in security", () => {
       external_identities: [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }],
     });
 
-    await screen.findByText("Identity provider");
+    await screen.findByText("Authentik");
     expect(screen.getByText("Authenticator app enrolled")).toBeTruthy();
     expect(screen.getByText("Active sessions")).toBeTruthy();
     expect(screen.getByText("3 sessions")).toBeTruthy();
+  });
+
+  it("joins multiple linked identity providers in the Sign-in method tile (e.g. also Cloudflare Access)", async () => {
+    renderModal({
+      has_sso: true,
+      external_identities: [
+        { id: "ei-1", provider_display_name: "Authentik" },
+        { id: "ei-2", provider_display_name: "Cloudflare Access" },
+      ],
+    });
+
+    expect(await screen.findByText("Authentik + Cloudflare Access")).toBeTruthy();
   });
 
   it("disables Unlink SSO for a local-only account", async () => {
