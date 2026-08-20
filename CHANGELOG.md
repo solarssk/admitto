@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Organisation Settings → Archiving and My account → Active sessions: their tables now span the full width of their card, matching every other table in the app. A leftover negative-margin/padding pair silently canceled itself out, so the table never actually reached the card's edge.
 - The Audit log now keeps the deleted event's real name in "Deleted event …" entries instead of falling back to the generic label once the event itself no longer exists to look the name up from.
 - A staff account's display name, when unset, now shows their email address in the top-right account menu instead of just the part of the email before the @ sign.
+- Activity log and attendee Notes now show a staff member's email when they have no display name set, instead of a generic label ("Admin", which wrongly implied a specific role) or skipping straight past the email to that same generic fallback.
 - Note author badges (Attendee detail → Notes) now use the same role name and color as everywhere else in the app ("Superadmin"/"Administrator"/"Operator"), instead of an unrelated two-letter code ("SA"/"AD"/"OP").
 - Check-in and note timestamps now show in the viewer's own browser timezone rather than the event's, and a note added on an earlier day now shows which day, not just a time.
 - Security logs' "2FA verified" rows now get the same "your local time" icon as "Login succeeded" rows when the browser reported a timezone, instead of always falling back to the generic device icon.
