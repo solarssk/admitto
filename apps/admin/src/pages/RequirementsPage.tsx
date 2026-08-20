@@ -303,7 +303,7 @@ function AddItemModal({
         </div>
         <form
           id="add-item-form"
-          className="event-item-modal__body"
+          className="event-item-modal__body at-scroll at-scroll--stable"
           onSubmit={onSubmit}
         >
           <div className="at-field">

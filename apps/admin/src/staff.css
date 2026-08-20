@@ -983,6 +983,12 @@
   font-size: var(--fs-xs);
 }
 
+/* Placeholder for an item with no configured description — keeps the row's height consistent
+ * with items that have one, instead of silently shrinking (PO report). */
+.checkin-card__item-description--empty {
+  font-style: italic;
+}
+
 /* Slightly larger than the old 16px/18px — noticeably its own element next
    to a two-line block, not so large it overpowers the item label (PO
    review: "delikatnie większa, ale nie za duża"). */
@@ -1043,6 +1049,16 @@
   margin-left: auto;
 }
 
+/* .at-btn--ghost:hover:not(:disabled) (packages/ui) is the same specificity as a bare
+ * .checkin-card__aux-btn--danger:hover:not(:disabled) (3 class-level selectors each), so which
+ * one wins came down to CSS source order - unreliable across bundles. The .checkin-card
+ * qualifier below adds a 4th selector so this always wins regardless of order, matching the
+ * same danger-hover treatment as .users-page__icon-danger. */
+.checkin-card .checkin-card__aux-btn--danger:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
 .checkin-card__notes {
   padding: 10px 16px;
   border-top: 1px solid var(--at-gray-100, var(--border));
@@ -1093,7 +1109,12 @@
 }
 
 /* Check-in v2 layout */
-.check-in__offline-banner {
+/* Notice's own base rule (components.css) resets `margin: 0` at the same specificity (one
+ * class) as this - which one wins was down to CSS bundle order, and lost here (PO report: the
+ * warning-styled stream banner had no bottom gap, while .ck-connection below - a plain div, not
+ * a Notice, so nothing to fight - correctly had its own). Combining both classes in the selector
+ * guarantees this wins regardless of bundle order. */
+.at-notice.check-in__offline-banner {
   margin-bottom: var(--space-3);
 }
 
@@ -1143,10 +1164,12 @@
   color: var(--status-error-fg);
 }
 
+/* "Connection error. Check network" (CONNECTION_COPY.degraded) - error-red, not warning-orange,
+ * to match its own message text (PO report: said "error" but was colored like a warning). */
 .ck-connection--degraded {
-  background: var(--status-warn-tint);
-  border: 1px solid var(--status-warn);
-  color: var(--status-warn-fg);
+  background: var(--status-error-tint);
+  border: 1px solid var(--status-error);
+  color: var(--status-error-fg);
 }
 
 .ck-connection--session_ended {
@@ -1398,6 +1421,7 @@
   /* Mockup ci-history__list: history scrolls inside the card, not the page. */
   max-height: min(440px, 48vh);
   overflow-y: auto;
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 /* Mockup ci-row: dot | info (flexes, ellipsis) | right (status + time, right-aligned). */
@@ -3117,20 +3141,14 @@
   gap: var(--space-3) var(--space-4);
 }
 
-.identity-editor__redirect {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+/* Redirect URI is a plain Input now (native label/icon/hint, same .at-field markup and spacing
+   as Client ID right above it - it used to be a hand-rolled label+field pair with its own,
+   slightly larger gap, which read as offset from the field compared to every other field on
+   this form (PO report)). It renders as .identity-editor__grid's sibling, not a grid cell, so it
+   needs its own top margin to separate from the grid above - scoped to only-when-adjacent so the
+   Endpoints/Claims cards' own (gap-less) grids aren't affected. */
+.identity-editor__grid + .at-field {
   margin-top: var(--space-3);
-}
-
-.identity-editor__redirect-hint {
-  margin-top: var(--space-3);
-}
-
-.identity-editor__redirect-actions {
-  display: flex;
-  gap: var(--space-2);
 }
 
 /* Protocol picker (Add identity provider) — visual only today: OIDC is the only
@@ -4046,6 +4064,15 @@ output.mail-field-hint {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/* .mail-transport__desc/__env-note's own margin-bottom (above) stacked on top of this flex
+   container's gap when nested directly inside it - the two don't collapse in flexbox the way
+   block margins would, so the tile grid below sat further down than the equivalent content in
+   Organization mode, which has no such wrapper (PO report). */
+.mail-transport-form > .mail-transport__desc,
+.mail-transport-form > .mail-transport__env-note {
+  margin-bottom: 0;
 }
 
 /* Transport picker — clickable tile grid (Instance settings -> Mail card 1). A compact
@@ -5107,26 +5134,7 @@ output.mail-field-hint {
   max-height: 9.5rem;
   overflow-x: hidden;
   overflow-y: auto;
-  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 .event-bounce-ingest__recent-runs-list {
@@ -5275,8 +5283,21 @@ output.mail-field-hint {
 
 .sessions-table-wrap {
   overflow-x: auto;
+}
+
+/* Negative margin only, no matching padding - a margin/padding pair of the same size on the
+   same box cancels out (the padding re-insets exactly what the margin bled out), leaving the
+   table at the same width as an unbled child. Bleeding all the way to the card's own edge is
+   the actual goal here, matching .users-page__table-wrap's own (correct) version of this same
+   idiom - this copy quietly never achieved it (PO report: several tables using this class read
+   narrower than the card, indistinguishable from not having the trick at all).
+   Scoped to .at-card__body (a padded Card's own wrapper, packages/ui/src/components/Card.tsx)
+   - ReportsPage.tsx's Admission log reuses this same class on a padded={false} Card, which
+   never renders .at-card__body at all, so this bleed never applies there (codex review):
+   with no padding to offset, the same negative margin would push that table 24px past each
+   edge of its already-unpadded card instead of reaching it. */
+.at-card__body .sessions-table-wrap {
   margin: 0 calc(-1 * var(--pad-card));
-  padding: 0 var(--pad-card);
 }
 
 .table {
@@ -5413,70 +5434,6 @@ output.mail-field-hint {
   flex: 1 1 auto;
   min-width: 16rem;
   max-width: 24rem;
-}
-
-/* Sessions pagination footer - same shape as the Logs table's own (.audit-log-footer*), kept as
-   a separate, sessions-scoped copy rather than a shared class since the two panels don't
-   otherwise share a component. */
-.sessions-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.sessions-footer__summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.sessions-footer__pager {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.sessions-pagesize {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--fs-sm);
-  color: var(--text-muted, var(--text-secondary));
-  white-space: nowrap;
-}
-
-.sessions-pagesize .searchable-select {
-  width: auto;
-}
-
-.sessions-pagesize .searchable-select__trigger {
-  height: var(--control-h-sm);
-  padding: 0 var(--space-2);
-  font-size: var(--fs-sm);
-}
-
-@media (max-width: 600px) {
-  .sessions-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-  }
-
-  .sessions-footer__summary {
-    flex-wrap: wrap;
-  }
-
-  .sessions-footer__pager {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
 }
 
 /* Audit log panel (Settings) */
@@ -6292,9 +6249,13 @@ output.mail-field-hint {
   margin: var(--space-2) 0;
 }
 
+/* Negative margin only, no matching padding - see .sessions-table-wrap's own comment
+   (staff.css) for why a same-size padding here would silently cancel the bleed back to a
+   plain unbled child's width (PO report: this still read narrower than Staff users' table
+   after the first attempt at this fix). */
 .archiving-table-wrap {
   overflow-x: auto;
-  margin-bottom: var(--space-2);
+  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
 }
 
 .archiving-table-wrap th:last-child,
@@ -6984,36 +6945,13 @@ output.mail-field-hint {
   overflow-y: auto;
   padding-right: 8px;
   margin-right: -8px;
-  /* (D1) The padding/margin gutter above keeps content off the scrollbar, but it's a fixed 8px —
-   * the real native scrollbar can render wider, so item width still shifted when filtering
-   * toggled the list between overflowing and not. `scrollbar-gutter: stable` reserves the
-   * browser's actual scrollbar width up front, always, regardless of overflow state — no
-   * documented browser-support floor exists in this repo, and unsupported browsers just ignore
-   * the property (reverting to the pre-existing behavior), so it's a safe progressive addition. */
-  scrollbar-gutter: stable;
-  /* (D2) Slim, on-theme scrollbar instead of the default browser chrome — no existing scrollbar
-   * treatment to reuse elsewhere in the app (ScrollFadeTabs hides its scrollbar entirely instead,
-   * a different UX for a different case). Standards-based properties for Firefox... */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-/* ...plus the WebKit/Blink-specific pseudo-elements (Chrome, Safari, Edge). */
-.overview-timeline::-webkit-scrollbar {
-  width: 8px;
-}
-
-.overview-timeline::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.overview-timeline::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.overview-timeline::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* (D1) The padding/margin gutter above keeps content off the scrollbar - a fixed 8px, so item
+   * width can still shift slightly when filtering toggles the list between overflowing and not.
+   * A `scrollbar-gutter: stable` variant of the shared .at-scroll class briefly replaced this
+   * with a reservation that tracked the browser's actual scrollbar width, but that traded this
+   * rare shift for a permanent, always-on asymmetric gutter on every short/non-overflowing list
+   * across the app - reverted (PO report). Scrollbar look (D2, slim/on-theme instead of default
+   * browser chrome): shared .at-scroll. */
 }
 
 /* Zero-result state (#A2): center the single EmptyState block in the fixed-height container
@@ -7646,28 +7584,7 @@ output.mail-field-hint {
   overflow-y: auto;
   list-style: none;
   overscroll-behavior: contain;
-  /* Keep row width stable when filter results cross the max-height threshold
-     (scrollbar appearing/disappearing mid-type). Same idea as .overview-timeline. */
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.timezone-select__list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.timezone-select__list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.timezone-select__list::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.timezone-select__list::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 .timezone-select__group {

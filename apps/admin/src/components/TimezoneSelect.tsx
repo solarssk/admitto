@@ -486,7 +486,7 @@ export function TimezoneSelect({
               id={listboxId}
               ref={listRef}
               role="listbox"
-              className="timezone-select__list"
+              className="timezone-select__list at-scroll"
               aria-label="Select timezone"
             >
               {optionCount === 0 ? (

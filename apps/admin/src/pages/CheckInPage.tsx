@@ -379,7 +379,6 @@ type CheckInAttendeeCardProps = Pick<
   | "scanResult"
   | "card"
   | "ticketTypes"
-  | "eventTimezone"
   | "pending"
   | "busy"
   | "canAct"
@@ -400,7 +399,6 @@ function CheckInAttendeeCard({
   scanResult,
   card,
   ticketTypes,
-  eventTimezone,
   pending,
   busy,
   canAct,
@@ -422,7 +420,6 @@ function CheckInAttendeeCard({
       key={card.id}
       card={card}
       ticketTypes={ticketTypes}
-      eventTimezone={eventTimezone}
       scanStatus={scanResult?.status}
       confirmed={scanResult?.confirmed}
       pending={pending}
@@ -480,7 +477,6 @@ function CheckInScanResultView({
       scanResult={scanResult}
       card={card}
       ticketTypes={ticketTypes}
-      eventTimezone={eventTimezone}
       pending={pending}
       busy={busy}
       canAct={canAct}
@@ -1743,7 +1739,6 @@ export function CheckInPage({
               admittedCount={admittedCount}
               totalCount={totalCount}
               history={history}
-              eventTimezone={eventTimezone}
               eventDate={eventDate}
               ticketTypes={ticketTypes}
               onSelectAttendee={openLookupResult}
