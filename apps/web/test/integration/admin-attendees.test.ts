@@ -5621,6 +5621,54 @@ describe("Attendees v2 — RSVP and manual create", () => {
     });
   });
 
+  it("falls back through email to the generic label for a note/action-log actor whose user row is gone (codecov review)", async () => {
+    const ghostUser = await prisma.user.create({
+      data: { email: "ghost-actor@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-ghost-actor-fallback",
+        event_id: EVENT_A,
+        email: "ghost-actor-attendee@example.com",
+        name: "Ghost Actor Target",
+      },
+    });
+    await prisma.attendeeActionLog.create({
+      data: {
+        event_id: EVENT_A,
+        attendee_id: attendee.id,
+        action_type: "attendee_edited",
+        actor_user_id: ghostUser.id,
+      },
+    });
+    await prisma.attendeeNote.create({
+      data: { attendee_id: attendee.id, event_id: EVENT_A, author_user_id: ghostUser.id, body: "Ghost note." },
+    });
+    // Deletable: neither AttendeeActionLog.actor_user_id nor AttendeeNote.author_user_id is a
+    // real FK to User (schema.prisma) - this is exactly the "actor row no longer exists"
+    // scenario the ?? fallback chain exists for.
+    await prisma.user.delete({ where: { id: ghostUser.id } });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${attendee.id}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        action_log: { action_type: string; actor_display: string | null }[];
+        notes: { body: string; author_display: string }[];
+      };
+
+      const editEntry = body.action_log.find((e) => e.action_type === "attendee_edited");
+      expect(editEntry?.actor_display).toBe("Staff member");
+      expect(body.notes[0]?.author_display).toBe("Staff member");
+    } finally {
+      await prisma.attendeeNote.deleteMany({ where: { attendee_id: attendee.id } });
+      await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: attendee.id } });
+      await prisma.attendee.delete({ where: { id: attendee.id } });
+    }
+  });
+
   it("POST create attendee returns 201 with audit log", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",
