@@ -90,10 +90,16 @@ function renderModal(userOverride: Partial<UserListItemDto> = {}) {
   const onClose = vi.fn();
   const onUpdated = vi.fn();
   const onDeleted = vi.fn();
+  // has_sso: true implies an oidc identity unless the caller passes its own
+  // external_identities - most tests only set has_sso as shorthand for "this account is SSO
+  // managed" and don't care which provider type backs it.
+  const external_identities =
+    userOverride.external_identities ??
+    (userOverride.has_sso ? [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }] : user.external_identities);
   const { unmount } = render(
     <UserEditModal
       open
-      user={{ ...user, ...userOverride }}
+      user={{ ...user, ...userOverride, external_identities }}
       onClose={onClose}
       onUpdated={onUpdated}
       onDeleted={onDeleted}
@@ -799,12 +805,29 @@ describe("UserEditModal role & access - exclusive roles", () => {
 
 describe("UserEditModal sign-in security", () => {
   it("shows SSO and MFA-enrolled status together with the active session count", async () => {
-    renderModal({ has_sso: true, has_mfa: true, active_sessions_count: 3 });
+    renderModal({
+      has_sso: true,
+      has_mfa: true,
+      active_sessions_count: 3,
+      external_identities: [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }],
+    });
 
-    await screen.findByText("Identity provider");
+    await screen.findByText("Authentik");
     expect(screen.getByText("Authenticator app enrolled")).toBeTruthy();
     expect(screen.getByText("Active sessions")).toBeTruthy();
     expect(screen.getByText("3 sessions")).toBeTruthy();
+  });
+
+  it("joins multiple linked identity providers in the Sign-in method tile (e.g. also Cloudflare Access)", async () => {
+    renderModal({
+      has_sso: true,
+      external_identities: [
+        { id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" },
+        { id: "ei-2", provider_display_name: "Cloudflare Access", provider_type: "cloudflare_access" },
+      ],
+    });
+
+    await screen.findByText("Authentik + Cloudflare Access");
   });
 
   it("disables Unlink SSO for a local-only account", async () => {
@@ -831,11 +854,16 @@ describe("UserEditModal sign-in security", () => {
 
     await waitFor(() => {
       expect(mockUnlinkUserExternalIdentity).toHaveBeenCalledWith("usr-1", {
+        provider_type: "oidc",
         new_password: "long-enough-password",
       });
     });
     expect(onUpdated).toHaveBeenCalledWith(
-      { ...user, has_sso: true },
+      {
+        ...user,
+        has_sso: true,
+        external_identities: [{ id: "ei-1", provider_display_name: "Authentik", provider_type: "oidc" }],
+      },
       "Identity provider unlinked. User must sign in with the new local password.",
     );
     expect(onClose).toHaveBeenCalled();
