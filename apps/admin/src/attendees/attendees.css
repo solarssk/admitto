@@ -1205,25 +1205,25 @@
   }
 }
 
-/* Same 5-column track (repeat(5, minmax(0, 1fr)), 12px gap) as .attendee-status-strip above
-   it, so the main/side split lines up exactly with the strip's chip boundaries at every width
-   instead of just at whatever one viewport width a fixed side-column px value happened to
-   match (PO review — "symmetry" with the Check-in chip's left edge). minmax(0, 1fr), not bare
-   1fr, for the same reason as the status strip - a Card's own content shouldn't be able to
-   stretch this grid wider than its container. */
+/* Plain 50/50 split (PO request), decoupled from .attendee-status-strip's 5-column track above
+   it — the previous 60/40 (grid-column 1/4 + 4/6) deliberately lined up with the strip's chip
+   boundaries at every width, but a literal half-and-half split doesn't divide evenly across 5
+   tracks, so that alignment is a known, accepted side effect of this change, not an oversight.
+   minmax(0, 1fr), not bare 1fr, so a Card's own content can't stretch this grid wider than its
+   container. */
 .attendee-detail-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
 }
 
 .attendee-detail-main {
-  grid-column: 1 / 4;
+  grid-column: 1;
 }
 
 .attendee-detail-side {
-  grid-column: 4 / 6;
+  grid-column: 2;
 }
 
 @media (max-width: 900px) {
