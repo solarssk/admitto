@@ -81,7 +81,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         field
       )}
       {error ? (
-        <span id={errorId} className="at-hint at-hint--error">
+        <span id={errorId} className="at-hint at-hint--error" role="alert">
           {error}
         </span>
       ) : (
