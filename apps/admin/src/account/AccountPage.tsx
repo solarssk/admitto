@@ -1020,6 +1020,23 @@ export function AccountPage() {
             <span className="at-hint">Choose 12-hour AM/PM or 24-hour time.</span>
           </div>
           <div className="at-field">
+            <label className="at-label" htmlFor="account-language">Language</label>
+            <SearchableSelect
+              id="account-language"
+              label="Language"
+              showLabel={false}
+              placeholder="English (US)"
+              searchPlaceholder=""
+              emptyLabel=""
+              value="en-US"
+              options={[{ id: "en-US", label: "English (US)" }]}
+              disabled
+              title="More languages are coming soon."
+              onChange={() => {}}
+            />
+            <span className="at-hint">Coming soon - Admitto is English-only for now.</span>
+          </div>
+          <div className="at-field">
             <label className="at-label" htmlFor="account-phone-number">Phone number</label>
             <div className="account-phone-row">
               <PhoneCountrySelect
