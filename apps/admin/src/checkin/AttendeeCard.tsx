@@ -213,6 +213,9 @@ export function AttendeeCard({
                 <TicketTypeBadge ticketType={card.ticket_type} catalog={ticketTypes} />
               )}
               {card.company && <span>{card.company}</span>}
+              {card.company && card.department && (
+                <span className="checkin-card__meta-sep" aria-hidden="true">·</span>
+              )}
               {card.department && <span>{card.department}</span>}
               {pending && <span className="checkin-card__status-note">Pending, not confirmed</span>}
               {confirmed === false && !pending && !isPreview && resolvedStatus !== "INVALID" && resolvedStatus !== "REVOKED" && (
