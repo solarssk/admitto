@@ -171,3 +171,40 @@ describe("AttendeeDetailPage Activity log tab (Codecov review — action_log ren
     expect(screen.getByText(/company/i)).toBeTruthy();
   });
 });
+
+describe("AttendeeDetailPage Delivery history (Codecov review — the no-timestamp fallback was never exercised)", () => {
+  it("shows '-' instead of a date/time stack when a delivery row has no timestamp at all", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-1",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "sent",
+            provider: "graph",
+            provider_message_id: null,
+            attempts: 1,
+            retryable: null,
+            recipient_email: "anna@example.com",
+            rendered_subject: "Your ticket",
+            template_id: null,
+            template_name: null,
+            queued_at: "",
+            accepted_at: null,
+            sent_at: null,
+            failed_at: null,
+            error_code: null,
+            error: null,
+            client_timezone: null,
+          },
+        ],
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Your ticket").closest(".attendee-delivery")?.textContent).toContain("-");
+  });
+});
