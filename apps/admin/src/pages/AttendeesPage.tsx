@@ -1794,7 +1794,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={bulkCheckInConfirmOpen}
         title="Check in?"
-        message={`Check in ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"}? You can revoke a check-in again at any time.`}
+        message={`Check in ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"}? You can normally revoke a check-in again afterward from the bulk actions menu.`}
         confirmLabel="Check in"
         loading={bulkCheckInBusy}
         onConfirm={() => {
