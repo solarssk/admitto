@@ -1,9 +1,11 @@
 /* Shared slim, on-theme scrollbar (Firefox + WebKit) for any panel that scrolls on overflow —
- * previously copy-pasted identically across ~8 call sites in apps/admin. Visual only: whether a
- * scrolling container also reserves space for the scrollbar track up front (so content doesn't
- * shift when it appears/disappears) is a per-consumer choice, opt in with .at-scroll--stable —
- * some panels deliberately don't (a fixed reservation would permanently narrow content that's
- * rarely wide enough to overflow in the first place). */
+ * previously copy-pasted identically across ~8 call sites in apps/admin. Always plain, no
+ * scrollbar-gutter reservation - a previous .at-scroll--stable opt-in reserved the track's width
+ * up front so content wouldn't shift when a scrollbar appeared/disappeared, but that reservation
+ * was itself the more visible bug: a panel short enough not to need scrolling at all sat
+ * permanently lopsided, with dead reserved space on the scroll edge and nothing matching it on
+ * the other side (PO report, several panels). Every consumer now takes the same small
+ * content-shift trade-off when it does overflow, rather than that asymmetry all the time. */
 .at-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
@@ -24,8 +26,4 @@
 
 .at-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
-}
-
-.at-scroll--stable {
-  scrollbar-gutter: stable;
 }

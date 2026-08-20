@@ -66,7 +66,7 @@ export function CkRecentScans({
       {rows.length === 0 ? (
         <p className="ck-recent__empty">No scans yet</p>
       ) : (
-        <ul className="ck-recent__list at-scroll at-scroll--stable">
+        <ul className="ck-recent__list at-scroll">
           {rows.map((row) => {
             const ticketTypeLabel = resolveTicketTypeLabel(row.attendee.ticket_type, ticketTypes);
             const info = (

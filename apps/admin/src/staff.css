@@ -1363,9 +1363,7 @@
   /* Mockup ci-history__list: history scrolls inside the card, not the page. */
   max-height: min(440px, 48vh);
   overflow-y: auto;
-  /* Scrollbar look + stable gutter: shared .at-scroll / .at-scroll--stable (packages/ui), applied
-   * via className — this panel previously had neither, so content shifted right when a scan
-   * pushed it past the max-height threshold. */
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 /* Mockup ci-row: dot | info (flexes, ellipsis) | right (status + time, right-aligned). */
@@ -6933,12 +6931,13 @@ output.mail-field-hint {
   overflow-y: auto;
   padding-right: 8px;
   margin-right: -8px;
-  /* (D1) The padding/margin gutter above keeps content off the scrollbar, but it's a fixed 8px —
-   * the real native scrollbar can render wider, so item width still shifted when filtering
-   * toggled the list between overflowing and not. Shared .at-scroll--stable's
-   * `scrollbar-gutter: stable` (added via className below) reserves the browser's actual
-   * scrollbar width up front instead, always, regardless of overflow state. Scrollbar look
-   * (D2, slim/on-theme instead of default browser chrome): shared .at-scroll. */
+  /* (D1) The padding/margin gutter above keeps content off the scrollbar - a fixed 8px, so item
+   * width can still shift slightly when filtering toggles the list between overflowing and not.
+   * A `scrollbar-gutter: stable` variant of the shared .at-scroll class briefly replaced this
+   * with a reservation that tracked the browser's actual scrollbar width, but that traded this
+   * rare shift for a permanent, always-on asymmetric gutter on every short/non-overflowing list
+   * across the app - reverted (PO report). Scrollbar look (D2, slim/on-theme instead of default
+   * browser chrome): shared .at-scroll. */
 }
 
 /* Zero-result state (#A2): center the single EmptyState block in the fixed-height container
@@ -7571,8 +7570,7 @@ output.mail-field-hint {
   overflow-y: auto;
   list-style: none;
   overscroll-behavior: contain;
-  /* Row width stable when filter results cross the max-height threshold, and scrollbar look:
-     shared .at-scroll / .at-scroll--stable (packages/ui), applied via className. */
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 .timezone-select__group {
