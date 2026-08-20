@@ -153,6 +153,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
         <ModalBackdrop onClose={onClose} />
         <div ref={panelRef} className="event-item-modal__panel">
           <div className="event-item-modal__scroll at-scroll">
+          <div className="event-item-modal__scroll-inner">
           <div className="event-item-modal__header">
             <div>
               <h2 id="item-modal-title" className="event-item-modal__title">
@@ -317,6 +318,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                 {saving ? "Saving…" : "Save"}
               </Button>
             </div>
+          </div>
           </div>
           </div>
         </div>

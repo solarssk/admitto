@@ -123,6 +123,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="event-item-modal__panel">
         <div className="event-item-modal__scroll at-scroll">
+        <div className="event-item-modal__scroll-inner">
         <div className="event-item-modal__header">
           <div>
             <h2 id="custom-field-modal-title" className="event-item-modal__title">
@@ -247,6 +248,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               {submitLabel}
             </Button>
           </div>
+        </div>
         </div>
         </div>
       </div>

@@ -434,16 +434,25 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: var(--space-5);
+  /* Stays flush with .event-item-modal__panel (no bleed here) so the native scrollbar this
+     element renders sits at the panel's own inner edge - a bled, wider box left its scrollbar
+     clipped by the panel's overflow: hidden (Codex report). Ring-bleed room for focused inputs
+     lives one level in, on .event-item-modal__scroll-inner, instead. */
+  /* Scrollbar look: shared .at-scroll (packages/ui). */
+}
+
+.event-item-modal__scroll-inner {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   /* Room for .at-input's focus box-shadow ring (--ring, spreads var(--ring-width) beyond the
-     input's own border): overflow-x: hidden clips it flush against a focused input's edges
-     without this. Bleed out by the ring width and pad back in by the same amount (on top of the
-     real --space-5 inset) so field content still lines up with everything else. */
+     input's own border): the parent's overflow-x: hidden would otherwise clip it flush against a
+     focused input's edges. Bleed out by the ring width and pad back in by the same amount so
+     field content still lines up with everything else - the bleed lands inside the parent's own
+     --space-5 padding, well short of its overflow-x: hidden clip boundary. */
   margin: 0 calc(-1 * var(--ring-width));
-  padding: var(--space-5) calc(var(--space-5) + var(--ring-width));
-  /* Scrollbar look: shared .at-scroll (packages/ui). */
+  padding: 0 var(--ring-width);
 }
 
 .event-item-modal__header {
