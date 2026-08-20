@@ -1660,12 +1660,6 @@
   gap: var(--space-2);
 }
 
-.at-notes-empty {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-  margin: 0;
-}
-
 .at-notes-list {
   list-style: none;
   padding: 0;
