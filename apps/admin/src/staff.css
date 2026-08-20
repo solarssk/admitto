@@ -1058,7 +1058,12 @@
 }
 
 /* Check-in v2 layout */
-.check-in__offline-banner {
+/* Notice's own base rule (components.css) resets `margin: 0` at the same specificity (one
+ * class) as this - which one wins was down to CSS bundle order, and lost here (PO report: the
+ * warning-styled stream banner had no bottom gap, while .ck-connection below - a plain div, not
+ * a Notice, so nothing to fight - correctly had its own). Combining both classes in the selector
+ * guarantees this wins regardless of bundle order. */
+.at-notice.check-in__offline-banner {
   margin-bottom: var(--space-3);
 }
 
@@ -1108,10 +1113,12 @@
   color: var(--status-error-fg);
 }
 
+/* "Connection error. Check network" (CONNECTION_COPY.degraded) - error-red, not warning-orange,
+ * to match its own message text (PO report: said "error" but was colored like a warning). */
 .ck-connection--degraded {
-  background: var(--status-warn-tint);
-  border: 1px solid var(--status-warn);
-  color: var(--status-warn-fg);
+  background: var(--status-error-tint);
+  border: 1px solid var(--status-error);
+  color: var(--status-error-fg);
 }
 
 .ck-connection--session_ended {
