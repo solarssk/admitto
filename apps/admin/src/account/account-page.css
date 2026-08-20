@@ -473,6 +473,13 @@
   padding-bottom: 0;
 }
 
+/* Without this, the row's own top padding stacks on top of the card body's padding, so the
+ * first row's text starts noticeably lower than the sibling Profile/Password cards' first
+ * field - all three should start flush with the card's own padding (PO report). */
+.account-mfa-method:first-child {
+  padding-top: 0;
+}
+
 .account-mfa-method--soon {
   opacity: 0.45;
   pointer-events: none;
