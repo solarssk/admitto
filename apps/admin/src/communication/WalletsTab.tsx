@@ -50,7 +50,7 @@ export function WalletsTab({ event, eventId }: Readonly<WalletsTabProps>) {
                 </label>
                 <textarea
                   id="wallets-message-text"
-                  className="communication-textarea"
+                  className="communication-textarea at-scroll"
                   rows={4}
                   value={text}
                   maxLength={WALLET_MESSAGE_TEXT_MAX_LENGTH}
