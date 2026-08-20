@@ -299,6 +299,47 @@ describe("GET /api/admin/audit-log", () => {
     expect(noMatchBody.total).toBe(0);
   });
 
+  it("filters by search, matching a deleted event's snapshotted title (eventTitle or legacy event_title)", async () => {
+    const rows = await prisma.adminAuditLog.createManyAndReturn({
+      data: [
+        {
+          organization_id: ORG_AUDIT,
+          actor_user_id: superId,
+          action_type: "event_deleted",
+          ip: "1.2.3.9",
+          metadata: { eventId: "evt-gone-1", eventTitle: "Vanished Summit" },
+          created_at: new Date("2026-07-04T09:00:00.000Z"),
+        },
+        {
+          organization_id: ORG_AUDIT,
+          actor_user_id: superId,
+          action_type: "attendees_bulk_erased",
+          ip: "1.2.3.10",
+          metadata: { event_id: "evt-gone-2", event_title: "Legacy Conclave" },
+          created_at: new Date("2026-07-04T10:00:00.000Z"),
+        },
+      ],
+      select: { id: true },
+    });
+    try {
+      const camelRes = await app.request("/api/admin/audit-log?search=Vanished", {
+        headers: { Cookie: superCookie },
+      });
+      const camelBody = (await camelRes.json()) as { entries: { action_type: string }[]; total: number };
+      expect(camelBody.total).toBe(1);
+      expect(camelBody.entries[0]?.action_type).toBe("event_deleted");
+
+      const legacyRes = await app.request("/api/admin/audit-log?search=conclave", {
+        headers: { Cookie: superCookie },
+      });
+      const legacyBody = (await legacyRes.json()) as { entries: { action_type: string }[]; total: number };
+      expect(legacyBody.total).toBe(1);
+      expect(legacyBody.entries[0]?.action_type).toBe("attendees_bulk_erased");
+    } finally {
+      await prisma.adminAuditLog.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+    }
+  });
+
   it("filters by action_type", async () => {
     const res = await app.request("/api/admin/audit-log?action_type=session_revoked", {
       headers: { Cookie: superCookie },

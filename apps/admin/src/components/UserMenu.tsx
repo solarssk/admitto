@@ -47,7 +47,7 @@ export function UserMenu({ user, assignments }: Readonly<{ user: AuthUser; assig
     gap: 8,
   });
   const tier = roleTier(assignments);
-  const displayName = user.display_name || user.email.split("@")[0] || "Staff";
+  const displayName = user.display_name || user.email;
 
   return (
     <div className="user-menu" ref={rootRef}>

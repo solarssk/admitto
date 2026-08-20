@@ -1189,7 +1189,7 @@ export function AccountPage() {
       </ConfirmDialog>
 
       <ConfirmDialog
-        open={unlinkSsoOpen}
+        open={unlinkSsoOpen && !unlinkStepUpOpen}
         title="Unlink SSO"
         message="Unlink SSO from your account? Set the new local password you'll sign in with below - your SSO sign-in stops working immediately."
         errorMessage={unlinkSsoError ?? undefined}
@@ -1207,7 +1207,6 @@ export function AccountPage() {
             await submitUnlinkSso();
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
-              setUnlinkSsoOpen(false);
               setUnlinkCodeError(null);
               setUnlinkStepUpOpen(true);
             } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
@@ -1289,6 +1288,7 @@ export function AccountPage() {
             if (hasApiErrorCode(err, "invalid_totp")) {
               setUnlinkCodeError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
             } else {
+              setUnlinkSsoOpen(false);
               setUnlinkStepUpOpen(false);
               setUnlinkCode("");
               addToast(operatorApiErrorMessage(err, "Failed to unlink SSO."), "error");
@@ -1299,6 +1299,7 @@ export function AccountPage() {
         }}
         onCancel={() => {
           if (!unlinkSsoBusy) {
+            setUnlinkSsoOpen(false);
             setUnlinkStepUpOpen(false);
             setUnlinkCode("");
             setUnlinkCodeError(null);

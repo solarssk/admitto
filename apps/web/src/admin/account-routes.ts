@@ -292,7 +292,12 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     }),
     db.externalIdentity.findMany({
       where: { user_id: userId },
-      select: { id: true, provider_id: true, linked_at: true, provider: { select: { display_name: true } } },
+      select: {
+        id: true,
+        provider_id: true,
+        linked_at: true,
+        provider: { select: { display_name: true, provider_type: true } },
+      },
     }),
   ]);
 
@@ -352,6 +357,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       id: ei.id,
       provider_id: ei.provider_id,
       provider_display_name: ei.provider.display_name,
+      provider_type: ei.provider.provider_type,
       linked_at: ei.linked_at.toISOString(),
     })),
     available_identity_providers: availableProviders.map((p) => ({ id: p.id, display_name: p.display_name })),
@@ -559,9 +565,6 @@ export async function handleDeleteAccountExternalIdentity(
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
 
-  const linked = await db.externalIdentity.findMany({ where: { user_id: userId }, select: { id: true } });
-  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
-
   let body: unknown;
   try {
     body = await c.req.json();
@@ -570,6 +573,12 @@ export async function handleDeleteAccountExternalIdentity(
   }
   const parsed = unlinkExternalIdentitySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const linked = await db.externalIdentity.findMany({
+    where: { user_id: userId },
+    select: { id: true },
+  });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
 
   const newPassword = parsed.data.new_password;
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
