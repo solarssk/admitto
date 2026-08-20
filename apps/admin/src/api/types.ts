@@ -1287,6 +1287,11 @@ export interface RoleAssignmentDto {
   is_oidc: boolean;
 }
 
+export interface UserIdentityDto {
+  id: string;
+  provider_display_name: string;
+}
+
 export interface UserListItemDto {
   id: string;
   email: string;
@@ -1300,6 +1305,10 @@ export interface UserListItemDto {
   active_sessions_count: number;
   has_mfa: boolean;
   has_sso: boolean;
+  /** Every identity provider this user is linked to (SSO/OIDC and Cloudflare Access alike —
+   * both are ExternalIdentity rows, distinguished only by their provider's own type). Empty
+   * when has_sso is false. */
+  external_identities: UserIdentityDto[];
   roles: RoleAssignmentDto[];
 }
 
@@ -1314,7 +1323,13 @@ export interface UserListResponse {
 export interface UserStatsDto {
   total: number;
   active: number;
+  /** Users with a local password and a confirmed MFA method — two-factor coverage is only
+   * meaningful for accounts that have a password login path to protect. Compare against
+   * `password_users`, not `total` or `total - sso` (a hybrid password+SSO account still has a
+   * password to protect, so it's included in both this and `password_users`, unlike `sso`). */
   mfa: number;
+  /** Users with a local password set - the denominator for the two-factor coverage KPI. */
+  password_users: number;
   sso: number;
   active_sessions: number;
   active_sessions_users: number;

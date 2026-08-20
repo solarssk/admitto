@@ -38,7 +38,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 1. Select one or more rows (or use the header checkbox for the page).
 2. From the bulk bar, choose only the action you need:
    - **Send tickets**
-   - **Check in** without scanning
+   - **Check in** without scanning (asks for confirmation first, same as the other bulk actions below; can normally be undone afterward with **Revoke check-in**)
    - **Revoke check-in**, **Revoke items**, or **Revoke pass**
    - **Void wallet pass**, **Push updates**, or **Delete wallet pass** (only enabled when the selection includes at least one attendee who added a pass)
    - **Change ticket type** (also pushes the new type to any already-issued wallet passes in the selection, in the background) or **Change attendance status**
