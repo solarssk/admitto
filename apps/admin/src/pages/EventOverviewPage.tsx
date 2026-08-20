@@ -633,7 +633,7 @@ function RecentActivityCard({
        * the 0/1-item case, so the card's footprint never shrinks when the All/Issues filter
        * narrows the result set. Zero matches get a real centered empty state (not a top-left
        * paragraph over dead space) via the shared EmptyState component (#A2). */}
-      <div className={`overview-timeline${filtered.length === 0 ? " overview-timeline--empty" : ""}`}>
+      <div className={`overview-timeline at-scroll${filtered.length === 0 ? " overview-timeline--empty" : ""}`}>
         {filtered.length === 0 ? (
           emptyState
         ) : (
