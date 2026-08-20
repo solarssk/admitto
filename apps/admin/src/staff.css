@@ -1008,6 +1008,16 @@
   color: var(--status-error);
 }
 
+/* .at-btn--ghost:hover:not(:disabled) (packages/ui) is the same specificity as a bare
+ * .checkin-card__aux-btn--danger:hover:not(:disabled) (3 class-level selectors each), so which
+ * one wins came down to CSS source order - unreliable across bundles. The .checkin-card
+ * qualifier below adds a 4th selector so this always wins regardless of order, matching the
+ * same danger-hover treatment as .users-page__icon-danger. */
+.checkin-card .checkin-card__aux-btn--danger:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
 .checkin-card__notes {
   padding: 10px 16px;
   border-top: 1px solid var(--at-gray-100, var(--border));
@@ -4011,6 +4021,15 @@ output.mail-field-hint {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/* .mail-transport__desc/__env-note's own margin-bottom (above) stacked on top of this flex
+   container's gap when nested directly inside it - the two don't collapse in flexbox the way
+   block margins would, so the tile grid below sat further down than the equivalent content in
+   Organization mode, which has no such wrapper (PO report). */
+.mail-transport-form > .mail-transport__desc,
+.mail-transport-form > .mail-transport__env-note {
+  margin-bottom: 0;
 }
 
 /* Transport picker — clickable tile grid (Instance settings -> Mail card 1). A compact
