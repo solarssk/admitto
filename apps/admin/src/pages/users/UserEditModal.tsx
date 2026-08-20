@@ -85,8 +85,8 @@ function roleSelectTitle(isSelf: boolean, hasPendingAdds: boolean): string | und
   return undefined;
 }
 
-function unlinkSsoTooltip(hasSso: boolean, isSelf: boolean): string | undefined {
-  if (!hasSso) return "This account doesn't use an identity provider.";
+function unlinkSsoTooltip(linked: boolean, isSelf: boolean, label: string): string | undefined {
+  if (!linked) return `This account isn't linked to ${label}.`;
   if (isSelf) return "You cannot unlink an identity provider from your own account.";
   return undefined;
 }
@@ -133,11 +133,13 @@ function UserMoreActionsMenu({
   isSelf: boolean;
   onResetMfa: () => void;
   onResetPassword: () => void;
-  onUnlinkSso: () => void;
+  onUnlinkSso: (providerType: "oidc" | "cloudflare_access") => void;
   onRevokeSessions: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
 }>) {
+  const hasOidc = user.external_identities.some((ei) => ei.provider_type === "oidc");
+  const hasCfAccess = user.external_identities.some((ei) => ei.provider_type === "cloudflare_access");
   const pick = (action: () => void) => () => {
     moreActions.setOpen(false);
     action();
@@ -182,10 +184,18 @@ function UserMoreActionsMenu({
           <MoreActionsMenuItem
             icon="unlink"
             label="Unlink identity provider"
-            hint="Require a local password to sign in"
-            disabled={!user.has_sso || isSelf}
-            tooltip={unlinkSsoTooltip(user.has_sso, isSelf)}
-            onClick={pick(onUnlinkSso)}
+            hint="Signs them out everywhere"
+            disabled={!hasOidc || isSelf}
+            tooltip={unlinkSsoTooltip(hasOidc, isSelf, "an identity provider")}
+            onClick={pick(() => onUnlinkSso("oidc"))}
+          />
+          <MoreActionsMenuItem
+            icon="unlink"
+            label="Unlink Cloudflare Access"
+            hint="Signs them out everywhere"
+            disabled={!hasCfAccess || isSelf}
+            tooltip={unlinkSsoTooltip(hasCfAccess, isSelf, "Cloudflare Access")}
+            onClick={pick(() => onUnlinkSso("cloudflare_access"))}
           />
           <MoreActionsMenuItem
             icon="logout"
@@ -552,7 +562,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const [resetPasswordBusy, setResetPasswordBusy] = useState(false);
   const [revokeSessionsOpen, setRevokeSessionsOpen] = useState(false);
   const [revokeSessionsBusy, setRevokeSessionsBusy] = useState(false);
-  const [unlinkSsoOpen, setUnlinkSsoOpen] = useState(false);
+  const [unlinkSsoTarget, setUnlinkSsoTarget] = useState<"oidc" | "cloudflare_access" | null>(null);
   const [unlinkSsoBusy, setUnlinkSsoBusy] = useState(false);
   const [unlinkSsoPassword, setUnlinkSsoPassword] = useState("");
   const [unlinkSsoError, setUnlinkSsoError] = useState<string | null>(null);
@@ -579,7 +589,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setResetPasswordOpen(false);
     setNewPassword("");
     setRevokeSessionsOpen(false);
-    setUnlinkSsoOpen(false);
+    setUnlinkSsoTarget(null);
     setUnlinkSsoPassword("");
     setUnlinkSsoError(null);
     setDisableConfirmOpen(false);
@@ -596,7 +606,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setResetPasswordOpen(false);
     setNewPassword("");
     setRevokeSessionsOpen(false);
-    setUnlinkSsoOpen(false);
+    setUnlinkSsoTarget(null);
     setUnlinkSsoPassword("");
     setUnlinkSsoError(null);
     setDisableConfirmOpen(false);
@@ -676,7 +686,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setResetPasswordOpen(false);
     setNewPassword("");
     setRevokeSessionsOpen(false);
-    setUnlinkSsoOpen(false);
+    setUnlinkSsoTarget(null);
     setUnlinkSsoPassword("");
     setUnlinkSsoError(null);
     setDisableConfirmOpen(false);
@@ -692,7 +702,12 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // dialog to handle Escape alone (bot review finding; same pattern as EventItemDrawer's own
   // `!deleteConfirmOpen`).
   const anyConfirmDialogOpen =
-    deleteConfirm || disableConfirmOpen || resetMfaOpen || revokeSessionsOpen || unlinkSsoOpen || roleChangeConfirmOpen;
+    deleteConfirm ||
+    disableConfirmOpen ||
+    resetMfaOpen ||
+    revokeSessionsOpen ||
+    unlinkSsoTarget !== null ||
+    roleChangeConfirmOpen;
   useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose);
   const moreActions = useDropdownMenu<HTMLButtonElement>({ align: "end" });
 
@@ -945,14 +960,18 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   };
 
   const handleUnlinkSso = async () => {
-    if (!user || unlinkSsoPassword.length < PASSWORD_MIN_LENGTH) return;
+    if (!user || !unlinkSsoTarget || unlinkSsoPassword.length < PASSWORD_MIN_LENGTH) return;
     setUnlinkSsoBusy(true);
     setUnlinkSsoError(null);
     try {
-      await unlinkUserExternalIdentity(user.id, { new_password: unlinkSsoPassword });
-      setUnlinkSsoOpen(false);
+      await unlinkUserExternalIdentity(user.id, {
+        provider_type: unlinkSsoTarget,
+        new_password: unlinkSsoPassword,
+      });
+      const label = unlinkSsoTarget === "cloudflare_access" ? "Cloudflare Access" : "Identity provider";
+      setUnlinkSsoTarget(null);
       setUnlinkSsoPassword("");
-      onUpdated(user, "Identity provider unlinked. User must sign in with the new local password.");
+      onUpdated(user, `${label} unlinked. User must sign in with the new local password.`);
       onClose();
     } catch (err) {
       if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
@@ -1131,13 +1150,27 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
          * panel, matching the Identity providers modal's own backdrop (identity-modal.css). */}
         <ModalBackdrop />
         <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--wide">
-        <div ref={scrollRef} className="add-attendee-modal__scroll">
+        {/* Plain .at-scroll, same as every other modal sharing this class (PO report: the
+         * --stable gutter reservation used here made the panel visibly lopsided whenever the
+         * content was short enough not to need scrolling at all - permanently reserved space on
+         * the right with nothing matching it on the left. Reverted in favor of the same
+         * accepted trade-off every other modal already makes: a role change that grows the
+         * content past the fold mid-session can shift things slightly, same as it would
+         * anywhere else in the app. */}
+        <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
-              <Avatar name={displayTitle} size="sm" />
+              {/* Default (md, 36px) to match .identity-row-icon's size - the standard other
+               * modal headers use for their leading icon (identity-editor__header-title). */}
+              <Avatar name={displayTitle} />
               <div className="users-modal__head-text">
                 <h2 id={titleId}>{displayTitle}</h2>
-                <span className="users-modal__head-email">{user.email}</span>
+                {/* displayTitle already falls back to user.email when there's no display_name -
+                 * showing this line too would repeat the exact same string right under itself
+                 * (PO report), on top of the Email address field further down the form. */}
+                {user.display_name?.trim() && (
+                  <span className="users-modal__head-email">{user.email}</span>
+                )}
               </div>
             </div>
             <div className="users-modal__head-actions">
@@ -1148,7 +1181,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
                 isSelf={isSelf}
                 onResetMfa={() => setResetMfaOpen(true)}
                 onResetPassword={() => setResetPasswordOpen(true)}
-                onUnlinkSso={() => setUnlinkSsoOpen(true)}
+                onUnlinkSso={(providerType) => setUnlinkSsoTarget(providerType)}
                 onRevokeSessions={() => setRevokeSessionsOpen(true)}
                 onToggleActive={handleToggleActiveClick}
                 onDelete={() => setDeleteConfirm(true)}
@@ -1361,9 +1394,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       />
 
       <ConfirmDialog
-        open={unlinkSsoOpen}
-        title="Unlink identity provider"
-        message={`Unlink the identity provider for ${displayTitle}? Set the new local password they'll sign in with below - their identity-provider sign-in stops working immediately.`}
+        open={unlinkSsoTarget !== null}
+        title={unlinkSsoTarget === "cloudflare_access" ? "Unlink Cloudflare Access" : "Unlink identity provider"}
+        message={`Unlink ${unlinkSsoTarget === "cloudflare_access" ? "Cloudflare Access" : "the identity provider"} for ${displayTitle}? Set the new local password they'll sign in with below - their ${unlinkSsoTarget === "cloudflare_access" ? "Cloudflare Access" : "identity-provider"} sign-in stops working immediately, and this also signs them out of every active session and trusted device.`}
         errorMessage={unlinkSsoError}
         confirmLabel="Unlink"
         confirmVariant="danger"
@@ -1372,7 +1405,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         onConfirm={() => void handleUnlinkSso()}
         onCancel={() => {
           if (unlinkSsoBusy) return;
-          setUnlinkSsoOpen(false);
+          setUnlinkSsoTarget(null);
           setUnlinkSsoPassword("");
           setUnlinkSsoError(null);
         }}

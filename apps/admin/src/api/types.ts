@@ -1287,6 +1287,12 @@ export interface RoleAssignmentDto {
   is_oidc: boolean;
 }
 
+export interface UserIdentityDto {
+  id: string;
+  provider_display_name: string;
+  provider_type: string;
+}
+
 export interface UserListItemDto {
   id: string;
   email: string;
@@ -1348,6 +1354,11 @@ export interface ResetUserPasswordBody {
   /** Actor's own TOTP/recovery code - required by the server only when resetting another
    * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
   code?: string;
+}
+
+export interface UnlinkUserExternalIdentityBody {
+  provider_type: "oidc" | "cloudflare_access";
+  new_password: string;
 }
 
 export interface RoleAssignmentListItemDto {
@@ -1523,6 +1534,7 @@ export interface AccountExternalIdentityDto {
   id: string;
   provider_id: string;
   provider_display_name: string;
+  provider_type: string;
   linked_at: string;
 }
 
@@ -1564,6 +1576,7 @@ export interface PatchAccountPasswordBody {
 }
 
 export interface DeleteAccountExternalIdentityBody {
+  provider_type: "oidc" | "cloudflare_access";
   new_password: string;
   current_password?: string;
   code?: string;

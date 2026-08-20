@@ -90,6 +90,7 @@ import type {
   PatchAdminUserBody,
   GrantUserRoleBody,
   ResetUserPasswordBody,
+  UnlinkUserExternalIdentityBody,
   UserListItemDto,
   RoleAssignmentsListResponse,
   SetupChecksResponse,
@@ -2273,7 +2274,7 @@ export async function resetUserMfa(id: string, code?: string): Promise<{ ok: boo
 
 export async function unlinkUserExternalIdentity(
   id: string,
-  body: ResetUserPasswordBody,
+  body: UnlinkUserExternalIdentityBody,
 ): Promise<{ ok: boolean }> {
   const res = await fetch(
     `/api/admin/users/${encodeURIComponent(id)}/external-identity`,
