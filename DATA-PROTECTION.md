@@ -64,9 +64,10 @@ first-class, access-controlled product feature, not an operational log line — 
 ## System logs (live tail)
 
 A superadmin-only screen (Settings → **Logs & audit** → **System**) shows a short live tail of
-recent activity: API requests, database queries, cache and rate-limit events, mail sends, and the
-admin actions mentioned above. It is a **diagnostic convenience view, not a durability or
-compliance record**:
+recent activity: API requests, database queries, cache and rate-limit events, mail sends, the
+admin actions mentioned above, background worker job activity, wallet (Apple/Google Wallet
+provider) operations, and outbound calls to external services (weather, maps/geocoding). It is a
+**diagnostic convenience view, not a durability or compliance record**:
 
 - It is **in-memory only**, holds at most the last 1000 entries per running server process, and is
   emptied whenever that process restarts.

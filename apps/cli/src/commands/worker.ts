@@ -26,6 +26,7 @@ import {
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
+import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-log-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
 import { runWalletRegistrationSync } from "./wallet-sync.js";
 import { drainWalletPushJobs } from "./wallet-push-jobs.js";
@@ -385,6 +386,8 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     throw new Error("DATABASE_URL is required");
   }
 
+  installSystemLogRelay();
+
   const tickSeconds = parseBounceIngestTickSeconds(process.env);
   const tickMs = tickSeconds * 1000;
   const locks = await openWorkerLockClient(databaseUrl);
@@ -427,6 +430,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     await locks.close();
     await notify?.close();
     await closeSsePublishClient();
+    uninstallSystemLogRelay();
     log("heartbeat", "stopped");
   }
 }

@@ -5,6 +5,7 @@ import {
   querySystemLogs,
   recordSystemLog,
   resetSystemLogBufferForTest,
+  setSystemLogPublisher,
 } from "../src/systemLog.js";
 
 beforeEach(() => {
@@ -119,5 +120,47 @@ describe("emitSystemLog", () => {
     expect(querySystemLogs()).toEqual([
       expect.objectContaining({ level, source: "api", message: `${level} message` }),
     ]);
+  });
+});
+
+describe("setSystemLogPublisher", () => {
+  it("forwards the recorded entry (with its assigned id/ts) to the publisher after a local emit", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const publisher = vi.fn();
+    setSystemLogPublisher(publisher);
+
+    emitSystemLog("worker", "info", "job ok", { job: "mail_delivery" });
+
+    expect(publisher).toHaveBeenCalledOnce();
+    const [entry] = publisher.mock.calls[0]!;
+    expect(entry).toMatchObject({ level: "info", source: "worker", message: "job ok", fields: { job: "mail_delivery" } });
+    expect(typeof entry.id).toBe("number");
+    expect(typeof entry.ts).toBe("string");
+  });
+
+  it("does not call the publisher when none is set", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    expect(() => emitSystemLog("api", "info", "no publisher set")).not.toThrow();
+  });
+
+  it("swallows a publisher that throws instead of letting it escape emitSystemLog", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    setSystemLogPublisher(() => {
+      throw new Error("relay unavailable");
+    });
+
+    expect(() => emitSystemLog("worker", "info", "still recorded locally")).not.toThrow();
+    expect(querySystemLogs()).toEqual([expect.objectContaining({ message: "still recorded locally" })]);
+  });
+
+  it("resetSystemLogBufferForTest also clears any registered publisher", () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const publisher = vi.fn();
+    setSystemLogPublisher(publisher);
+
+    resetSystemLogBufferForTest();
+    emitSystemLog("api", "info", "after reset");
+
+    expect(publisher).not.toHaveBeenCalled();
   });
 });
