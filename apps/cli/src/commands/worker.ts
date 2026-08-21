@@ -8,6 +8,7 @@
  */
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
+import { emitSystemLog, type SystemLogLevel } from "@admitto/shared/system-log";
 import {
   InstanceUrlRequiredError,
   purgeAuthRetention,
@@ -42,9 +43,27 @@ import {
   type RetentionSchedule,
 } from "./worker-retention-schedule.js";
 
+/** Every job runner in this file already calls this on every outcome (ok, idle, skipped, FAILED,
+ * a degraded fallback) - routing it through emitSystemLog too, rather than adding a second call
+ * at each of those ~25 call sites, is what makes the worker's job-lifecycle activity reach System
+ * logs at all (a separate OS process from apps/web - see apps/cli/src/lib/system-log-publish.ts).
+ * Level is inferred from the message text rather than threading a new parameter through every
+ * call site: the "FAILED " prefix convention (runJobSafely, the retention FAILED branch) maps to
+ * "error"; "failed:"/"unavailable" appearing anywhere (heartbeat refresh failures, a notify-client
+ * falling back to poll-only) maps to "warn" - both real degraded conditions, just not raised
+ * through the FAILED-prefix path. Matches "failed:" (colon), not bare "failed" - every routine
+ * "ok claimed=1 ... failed=0 ..." summary also contains the substring "failed", as a zero count,
+ * not a failure. Everything else (ok/idle/skipped/lifecycle banners) is "info". */
+export function logLevel(message: string): SystemLogLevel {
+  if (message.startsWith("FAILED")) return "error";
+  if (/failed:|unavailable/i.test(message)) return "warn";
+  return "info";
+}
+
 function log(job: string, message: string): void {
   const ts = new Date().toISOString();
   console.log(`[worker:${job}] ${ts} ${message}`);
+  emitSystemLog("worker", logLevel(message), message, { job });
 }
 
 function sleep(ms: number, signal: { stopped: boolean }): Promise<void> {
