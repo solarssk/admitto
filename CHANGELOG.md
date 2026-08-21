@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security logs' "2FA verified" rows now get the same "your local time" icon as "Login succeeded" rows when the browser reported a timezone, instead of always falling back to the generic device icon.
 - Several small layout fixes on Check-in, Users & roles, My account, Organisation settings → Identity/Mail, and Attendee delivery history: text no longer wraps awkwardly in status chips or company/department names, modal scrollbars behave consistently and no longer shift content when they appear, a Redirect URI field's copy control now sits inside the field, and a couple of redundant or misaligned hint lines were removed or straightened out.
 - Ticket page event hours now show the event's own timezone abbreviation next to the time (e.g. "10:00 am - 6:05 pm IST"), always use lowercase am/pm instead of varying between "AM" and "am" depending on the event's country, and join the start and end time with a spaced hyphen instead of a tight dash.
+- Initial setup and change-password screens: the password strength meter no longer sits almost on top of the "Confirm password" field once it appears. It now takes up real space below the password field, the same standard gap used between every other field on the form, instead of floating on an overlay a couple of pixels above the next label.
 
 ## [0.5.3] - 2026-08-18
 
