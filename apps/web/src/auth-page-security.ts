@@ -14,10 +14,12 @@ export function applyAuthPageSecurityHeaders(c: Context, headers: Readonly<Recor
   }
 }
 
-/** Security headers for auth pages that ship nonce-gated inline scripts. `trustedOrigins`
- *  (Settings → Security, `csp_trusted_origins`) extends `script-src` alongside the nonce and adds
- *  `connect-src`/`frame-src` for a login challenge widget (e.g. Cloudflare Turnstile); omitted
- *  entirely when empty, so an unconfigured instance gets today's exact header. */
+/** Security headers for auth pages that ship nonce-gated inline scripts. `connect-src 'self'`
+ *  is always present so same-origin requests (e.g. Cloudflare's own edge-injected
+ *  `/cdn-cgi/challenge-platform` bot-detection beacon) aren't blocked by the `default-src 'none'`
+ *  fallback on an unconfigured instance. `trustedOrigins` (Settings → Security,
+ *  `csp_trusted_origins`) extends `script-src` alongside the nonce and adds those origins to
+ *  `connect-src` and `frame-src` for a login challenge widget (e.g. Cloudflare Turnstile). */
 export function getAuthPageInlineScriptHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
@@ -29,7 +31,7 @@ export function getAuthPageInlineScriptHeaders(
       AUTH_PAGE_ICON_CSP,
       "style-src 'unsafe-inline'",
       `script-src ${["'nonce-" + scriptNonce + "'", ...trustedOrigins].join(" ")}`,
-      ...(trustedOrigins.length > 0 ? [`connect-src ${trustedOrigins.join(" ")}`] : []),
+      `connect-src ${["'self'", ...trustedOrigins].join(" ")}`,
       ...(trustedOrigins.length > 0 ? [`frame-src ${trustedOrigins.join(" ")}`] : []),
       "form-action 'self'",
       "frame-ancestors 'none'",
