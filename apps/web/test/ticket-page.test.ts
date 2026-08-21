@@ -271,9 +271,10 @@ describe("renderTicket", () => {
     expect(endOnly).toContain("until 22:00");
   });
 
-  it("omits the hours meta span when neither start nor end is set", () => {
+  it("omits the time stat (and its divider) when neither start nor end is set", () => {
     const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
-    expect(html).not.toContain("M12 7v5l3 3");
+    expect(html).not.toContain('class="ticket__stat-divider"');
+    expect(html).not.toContain(">Time<");
   });
 
   it("renders the event date in en-GB long-month text when the event has no country set", () => {
@@ -326,7 +327,7 @@ describe("renderTicket", () => {
       },
       "data:image/png;base64,abc",
     );
-    expect(html).toContain("10:00 am - 6:05 pm IST");
+    expect(html).toContain('10:00 am - 6:05 pm<span class="ticket__stat-tz"> IST</span>');
   });
 
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {

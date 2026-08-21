@@ -23,26 +23,24 @@ function esc(s: string): string {
 
 /** Event-hours range with the two times joined by a spaced hyphen, or an open-ended "from"/"until"
  * when only one side is set - each bound in the event's regional convention (see
- * @admitto/tickets' region-date-format.ts), followed by the event's own timezone abbreviation
- * (e.g. "IST", "CET"). The abbreviation is the zone's standard-time label, not DST-adjusted -
- * consistent with formatEventHour, which formats the raw HH:MM wall-clock value as-is rather than
- * converting an anchored instant. */
+ * @admitto/tickets' region-date-format.ts). The timezone abbreviation (e.g. "IST", "CET") is
+ * returned separately so the caller can style it as a de-emphasized suffix rather than baking it
+ * into the same string. It's the zone's standard-time label, not DST-adjusted - consistent with
+ * formatEventHour, which formats the raw HH:MM wall-clock value as-is rather than converting an
+ * anchored instant. */
 function formatEventHoursRange(
   start: string | null,
   end: string | null,
   country: string | null | undefined,
   timezone: string,
-): string | null {
-  const zoneSuffix = getTimeZone(timezone)?.abbreviation;
-  const suffix = zoneSuffix ? ` ${zoneSuffix}` : "";
-  if (start && end) return `${formatEventHour(start, country)} - ${formatEventHour(end, country)}${suffix}`;
-  if (start) return `from ${formatEventHour(start, country)}${suffix}`;
-  if (end) return `until ${formatEventHour(end, country)}${suffix}`;
+): { hours: string; tzAbbr: string | null } | null {
+  const tzAbbr = getTimeZone(timezone)?.abbreviation || null;
+  if (start && end) return { hours: `${formatEventHour(start, country)} - ${formatEventHour(end, country)}`, tzAbbr };
+  if (start) return { hours: `from ${formatEventHour(start, country)}`, tzAbbr };
+  if (end) return { hours: `until ${formatEventHour(end, country)}`, tzAbbr };
   return null;
 }
 
-const CALENDAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>`;
-const CLOCK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`;
 const PIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
 /** Signpost: clearer than a house glyph for "Directions". */
 const DIRECTIONS_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v18"/><path d="M10 6h7l2 2-2 2h-7"/><path d="M10 14H5l-2 2 2 2h5"/></svg>`;
@@ -296,7 +294,7 @@ function renderGettingThereSection(parts: {
 /** Shared brand header + event/attendee block (open `ticket__body`); caller closes the div. */
 function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
   const { attendee, event } = resolved;
-  const eventHoursText = formatEventHoursRange(
+  const eventHours = formatEventHoursRange(
     event.eventHoursStart,
     event.eventHoursEnd,
     event.addressComponents?.country,
@@ -314,11 +312,22 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
     </header>
     <div class="ticket__body">
       <h1 class="ticket__event-name">${esc(event.title)}</h1>
-      <div class="ticket__meta">
-        <span class="ticket__meta-row"><span class="ticket__meta-icon">${CALENDAR_ICON}</span><span class="ticket__meta-text">${esc(formatDate(event.date, event.addressComponents?.country))}</span></span>
-        ${eventHoursText ? `<span class="ticket__meta-row"><span class="ticket__meta-icon">${CLOCK_ICON}</span><span class="ticket__meta-text">${esc(eventHoursText)}</span></span>` : ""}
-        ${event.location ? `<span class="ticket__meta-row"><span class="ticket__meta-icon">${PIN_ICON}</span><span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
+      <div class="ticket__stats">
+        <div class="ticket__stat">
+          <div class="ticket__stat-label">Date</div>
+          <div class="ticket__stat-value">${esc(formatDate(event.date, event.addressComponents?.country))}</div>
+        </div>
+        ${
+          eventHours
+            ? `<div class="ticket__stat-divider"></div>
+        <div class="ticket__stat">
+          <div class="ticket__stat-label">Time</div>
+          <div class="ticket__stat-value">${esc(eventHours.hours)}${eventHours.tzAbbr ? `<span class="ticket__stat-tz"> ${esc(eventHours.tzAbbr)}</span>` : ""}</div>
+        </div>`
+            : ""
+        }
       </div>
+      ${event.location ? `<div class="ticket__location">${PIN_ICON}${esc(plainStaffText(event.location))}</div>` : ""}
       <div class="ticket__attendee">
         <p class="ticket__attendee-name">${esc(attendee.name)}</p>
         ${attendee.ticket_type ? `<span class="ticket__type">${esc(attendee.ticket_type)}</span>` : ""}

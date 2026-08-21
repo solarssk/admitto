@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The "Confirm check-in" button on the Check-in screen always uses Admitto's own blue, regardless of the organisation's branding accent color - a branded accent in red or orange read as an error state on this specific button.
 - Attendee Overview's two-column layout is now a literal 50/50 split.
 - The Two-factor coverage stat on Users & roles no longer counts staff who sign in through an identity provider as "missing 2FA" - two-factor for those accounts is the identity provider's responsibility, not something Admitto enforces.
+- The public ticket page's date, time, and venue now read as a proper stat layout - "Date" and "Time" as labeled columns side by side with a divider between them, and the venue address on its own line below with a pin icon - instead of three stacked icon-and-text rows. The previous layout also had a real bug: the pin icon could drift away from a venue address that wrapped onto a second line, growing worse the longer the venue name was. Date and time no longer need an icon at all, and the venue's pin icon now stays at a fixed, consistent gap from the address regardless of its length.
 
 ### Fixed
 
@@ -32,7 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check-in and note timestamps now show in the viewer's own browser timezone rather than the event's, and a note added on an earlier day now shows which day, not just a time.
 - Security logs' "2FA verified" rows now get the same "your local time" icon as "Login succeeded" rows when the browser reported a timezone, instead of always falling back to the generic device icon.
 - Several small layout fixes on Check-in, Users & roles, My account, Organisation settings → Identity/Mail, and Attendee delivery history: text no longer wraps awkwardly in status chips or company/department names, modal scrollbars behave consistently and no longer shift content when they appear, a Redirect URI field's copy control now sits inside the field, and a couple of redundant or misaligned hint lines were removed or straightened out.
-- The public ticket page's location pin icon no longer drifts away from a venue address that wraps onto a second line - it now sits right next to the address at the same small, consistent gap as the calendar and clock icons above it, regardless of how long the venue name is.
 - Ticket page event hours now show the event's own timezone abbreviation next to the time (e.g. "10:00 am - 6:05 pm IST"), always use lowercase am/pm instead of varying between "AM" and "am" depending on the event's country, and join the start and end time with a spaced hyphen instead of a tight dash.
 
 ## [0.5.3] - 2026-08-18

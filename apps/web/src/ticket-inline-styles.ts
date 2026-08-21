@@ -12,17 +12,20 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
 .ticket__brand-logo { max-height: 32px; max-width: 160px; object-fit: contain; display: block; }
 .ticket__body { padding: 22px 24px 18px; text-align: center; }
 .ticket__event-name { font-size: 1.25rem; font-weight: 700; margin: 0; }
-/* The icon is a normal inline element directly before the label's text (not separately
+.ticket__stats { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 14px; }
+.ticket__stat-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted, #64748b); }
+.ticket__stat-value { font-size: 1rem; font-weight: 700; color: var(--text-primary, #1d273b); margin-top: 3px; }
+.ticket__stat-tz { font-size: 0.75rem; font-weight: 500; color: var(--text-muted, #64748b); }
+.ticket__stat-divider { width: 1px; height: 26px; background: var(--border, #e6e7e9); }
+/* The pin icon is a normal inline element directly before the address text (not separately
  * positioned/sized), so the gap between them is the fixed margin-right below - always identical,
- * regardless of the label's length or how many lines it wraps to. text-align:center on the row
- * centers each line the label wraps to (same mechanism as the date/time rows above, so the label
- * lines up with them); the icon simply rides along with the label's first line, wherever centering
- * puts it. A fixed max-width box (tried earlier) can't do this for labels of arbitrary length: it
- * only avoids a gap for whichever exact width it was tuned to, and drifts for anything shorter or
+ * regardless of the address's length or how many lines it wraps to. text-align:center centers
+ * each line the address wraps to; the icon simply rides along with the first line, wherever
+ * centering puts it. A fixed max-width box can't do this for labels of arbitrary length: it only
+ * avoids a gap for whichever exact width it was tuned to, and drifts for anything shorter or
  * longer - this has no such tuning to go stale. */
-.ticket__meta { color: var(--text-secondary, #475569); font-size: 0.875rem; margin-top: 6px; }
-.ticket__meta-row { display: block; max-width: 100%; text-align: center; text-wrap: balance; line-height: 1.35; }
-.ticket__meta-icon svg { display: inline-block; width: 15px; height: 15px; vertical-align: -0.15em; margin-right: 6px; }
+.ticket__location { margin-top: 10px; max-width: 100%; text-align: center; text-wrap: balance; font-size: 0.8125rem; color: var(--text-secondary, #475569); line-height: 1.35; }
+.ticket__location svg { display: inline-block; width: 14px; height: 14px; vertical-align: -0.15em; margin-right: 5px; color: var(--text-muted, #64748b); }
 .ticket__attendee { margin: 16px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ticket__attendee-name { font-size: 1.125rem; font-weight: 600; margin: 0 0 8px; }
 .ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f1f5f9); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
@@ -132,7 +135,8 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
   .ticket__attendee-name {
     color: #000;
   }
-  .ticket__meta {
+  .ticket__stat-value,
+  .ticket__location {
     color: #555;
   }
   .ticket__foot a::after {
