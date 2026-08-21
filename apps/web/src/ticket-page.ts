@@ -302,6 +302,14 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
     event.timezone,
     event.date,
   );
+  const tzSuffixHtml = eventHours?.tzAbbr ? `<span class="ticket__stat-tz"> ${esc(eventHours.tzAbbr)}</span>` : "";
+  const timeStatHtml = eventHours
+    ? `<div class="ticket__stat-divider"></div>
+        <div class="ticket__stat">
+          <div class="ticket__stat-label">Time</div>
+          <div class="ticket__stat-value">${esc(eventHours.hours)}${tzSuffixHtml}</div>
+        </div>`
+    : "";
   return `<header class="ticket__top">
       <div class="ticket__brand">
         ${
@@ -319,15 +327,7 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
           <div class="ticket__stat-label">Date</div>
           <div class="ticket__stat-value">${esc(formatDate(event.date, event.addressComponents?.country))}</div>
         </div>
-        ${
-          eventHours
-            ? `<div class="ticket__stat-divider"></div>
-        <div class="ticket__stat">
-          <div class="ticket__stat-label">Time</div>
-          <div class="ticket__stat-value">${esc(eventHours.hours)}${eventHours.tzAbbr ? `<span class="ticket__stat-tz"> ${esc(eventHours.tzAbbr)}</span>` : ""}</div>
-        </div>`
-            : ""
-        }
+        ${timeStatHtml}
       </div>
       ${event.location ? `<div class="ticket__location">${PIN_ICON}${esc(plainStaffText(event.location))}</div>` : ""}
       <div class="ticket__attendee">
