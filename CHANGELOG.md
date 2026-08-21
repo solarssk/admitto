@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-08-21
+
 ### Added
 
-- Users & roles: the staff user modal and My account's SSO menu now show the actual linked identity provider name(s) (e.g. "Authentik") instead of the generic "Identity provider" label, and list a Cloudflare Access link as its own row alongside any OIDC provider. Unlinking is now two separate actions - "Unlink identity provider" and "Unlink Cloudflare Access" - instead of one combined action that removed both at once; unlinking one leaves the other, and any role grants it manages, untouched.
+- Users & roles: the staff user modal and My account's SSO menu now show the actual linked identity provider name(s) (e.g. "Authentik", or "Authentik + Cloudflare Access" when also linked through Cloudflare Access) instead of the generic "Identity provider" label.
 - Bulk check-in from the Attendees list now asks for confirmation before admitting everyone selected, matching the other bulk actions (revoke, delete, send tickets) on the same toolbar.
 - Event Settings → Wallet → Field mapping has a new `event_date_short` placeholder alongside the existing `event_date` - a shorter form with an abbreviated month (e.g. "24 Sep 2026" instead of "24 September 2026") for pass template fields too narrow for the long date. An event's wallet pass now also sets PassCreator's Lock Screen relevance date whenever Apple Wallet is enabled and the event has a start time, independent of the separate Apple Wallet semantic tags opt-in.
 
@@ -1052,7 +1054,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/solarssk/admitto/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/solarssk/admitto/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/solarssk/admitto/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/solarssk/admitto/compare/v0.5.0...v0.5.1
