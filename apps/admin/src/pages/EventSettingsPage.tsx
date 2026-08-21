@@ -233,36 +233,32 @@ const WALLET_ATTENDEE_SCOPED_HINTS: Partial<Record<(typeof WALLET_MAPPING_PLACEH
 
 const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.";
 
-/** The real value a field mapping row's hint icon shows on hover - what this specific event
- * would actually send for the selected placeholder right now (apps/web/src/app.ts's own
- * buildWalletPassInput), not a generic description of the field. `location` is `undefined` while
- * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
-function computeWalletPlaceholderPreview(
-  id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
-  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone">,
-  location: EventLocationDto | null | undefined,
+/** event_hours preview - country deliberately not threaded through (same as
+ * formatWalletDatePreview above), so this stays exact for events with no address, an
+ * unrecognized country, or a UK one; the real pass can differ in 12h/24h style for other
+ * countries. Uses the real formatter, so the open-ended "from"/"until" wording and the timezone
+ * abbreviation still match the actual pass exactly. */
+function computeWalletEventHoursPreview(
+  form: Pick<SettingsForm, "date" | "eventHoursStart" | "eventHoursEnd" | "timezone">,
 ): string {
-  const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
-  if (attendeeHint) return attendeeHint;
-  if (id === "event_name") return form.title;
-  if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
-  if (id === "event_date_short") return formatWalletDatePreviewShort(form.date) ?? WALLET_VALUE_NOT_SET;
-  if (id === "event_hours") {
-    // Country deliberately not threaded through (same as formatWalletDatePreview above) - this
-    // stays exact for events with no address, an unrecognized country, or a UK one; the real pass
-    // can differ in 12h/24h style for other countries. Real formatter, so the open-ended
-    // "from"/"until" wording and the timezone abbreviation still match the actual pass exactly.
-    const range = formatEventHoursRange(
-      form.eventHoursStart || null,
-      form.eventHoursEnd || null,
-      null,
-      form.timezone,
-      new Date(`${form.date}T12:00:00.000Z`),
-    );
-    if (!range) return WALLET_VALUE_NOT_SET;
-    return range.tzAbbr ? `${range.hours} ${range.tzAbbr}` : range.hours;
-  }
-  if (location === undefined) return "Loading…";
+  const range = formatEventHoursRange(
+    form.eventHoursStart || null,
+    form.eventHoursEnd || null,
+    null,
+    form.timezone,
+    new Date(`${form.date}T12:00:00.000Z`),
+  );
+  if (!range) return WALLET_VALUE_NOT_SET;
+  return range.tzAbbr ? `${range.hours} ${range.tzAbbr}` : range.hours;
+}
+
+/** Location-sourced placeholder previews - split out of computeWalletPlaceholderPreview to keep
+ * its own cognitive complexity down (SonarCloud S3776). Only reached once `location` has loaded
+ * (the caller handles the `undefined` "still loading" case first). */
+function computeWalletLocationPlaceholderPreview(
+  id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
+  location: EventLocationDto | null,
+): string {
   switch (id) {
     case "event_location":
       return location?.venue_name || WALLET_VALUE_NOT_SET;
@@ -288,6 +284,25 @@ function computeWalletPlaceholderPreview(
     default:
       return WALLET_VALUE_NOT_SET;
   }
+}
+
+/** The real value a field mapping row's hint icon shows on hover - what this specific event
+ * would actually send for the selected placeholder right now (apps/web/src/app.ts's own
+ * buildWalletPassInput), not a generic description of the field. `location` is `undefined` while
+ * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
+function computeWalletPlaceholderPreview(
+  id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
+  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone">,
+  location: EventLocationDto | null | undefined,
+): string {
+  const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
+  if (attendeeHint) return attendeeHint;
+  if (id === "event_name") return form.title;
+  if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
+  if (id === "event_date_short") return formatWalletDatePreviewShort(form.date) ?? WALLET_VALUE_NOT_SET;
+  if (id === "event_hours") return computeWalletEventHoursPreview(form);
+  if (location === undefined) return "Loading…";
+  return computeWalletLocationPlaceholderPreview(id, location);
 }
 
 /** Renders field mapping rows grouped by category (attendee, event, notes, maps, address,
