@@ -125,7 +125,7 @@ export { claimNextAdminJob } from "./claim-admin-job.js";
 export { drainExportJobs } from "./drain-export-jobs.js";
 export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
 export { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
-export { formatDate, formatEventHour } from "./region-date-format.js";
+export { formatDate, formatDateShort, formatEventHour, formatEventHoursRange } from "./region-date-format.js";
 export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
 export { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 export { drainWalletPushJobs, readWalletPushRequest } from "./drain-wallet-push-jobs.js";

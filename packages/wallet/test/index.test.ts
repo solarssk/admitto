@@ -14,6 +14,7 @@ describe("@admitto/wallet", () => {
     const created = await provider.createPass({
       attendeeName: "Jane Doe",
       eventDateLabel: "12 August 2026",
+      eventDateShortLabel: "12 Aug 2026",
       ticketTypeLabel: "General",
       userProvidedId: "admitto:event1:attendee1",
       barcodeValue: "https://tickets.example.com/t/tok-jane",

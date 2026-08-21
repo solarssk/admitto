@@ -1476,6 +1476,33 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("previews an open-ended event_hours range with the event's own zone abbreviation, matching the real pass", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      event_hours_start: "18:00",
+      event_hours_end: null,
+      wallet_field_mapping: { hours: "event_hours" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Event hours" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    // activeEvent's timezone is Europe/Warsaw, CEST in June - a one-sided range no longer claims
+    // the field "won't be sent" (that was a real bug: the wallet pass already sent an open-ended
+    // "from"/"until" range for this case), and the abbreviation matches what the real pass sends.
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe("from 18:00 GMT+2");
+    });
+  });
+
   it("shows the real Google/Apple Maps links in field mapping row tooltips", async () => {
     vi.mocked(fetchEventLocation).mockResolvedValueOnce({
       ...emptyLocation,

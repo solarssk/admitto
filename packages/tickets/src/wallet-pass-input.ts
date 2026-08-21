@@ -4,11 +4,11 @@ import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/
 import { zonedWallClockToUtcIso } from "@admitto/shared";
 import { loadEventTicketTypes } from "./ticket-types.js";
 import type { resolveTicket } from "./resolve.js";
-import { formatDate, formatEventHour } from "./region-date-format.js";
+import { formatDate, formatDateShort, formatEventHoursRange } from "./region-date-format.js";
 
 type ResolvedTicket = NonNullable<Awaited<ReturnType<typeof resolveTicket>>>;
 
-export { formatDate };
+export { formatDate, formatDateShort };
 
 /**
  * ticket_type stores the catalog key (e.g. "press_pass"), not the human label ("Press Pass") -
@@ -34,14 +34,17 @@ export async function resolveTicketPageDisplay(
   }
 }
 
-/** "HH:MM-HH:MM" for the pass (each bound in the event's regional convention, see
- * region-date-format.ts), or undefined when either bound is unset (independently optional). */
+/** Event-hours label for the pass, byte-identical in wording to the public ticket page (same
+ * {@link formatEventHoursRange}: spaced dash, open-ended "from"/"until" when only one bound is
+ * set, zone abbreviation suffix) - a wallet field is flat text with no separate de-emphasized
+ * span for the zone abbreviation, so it's appended directly onto the same string here. */
 function formatEventHours(
-  event: { eventHoursStart: string | null; eventHoursEnd: string | null },
+  event: { eventHoursStart: string | null; eventHoursEnd: string | null; timezone: string; date: Date },
   country: string | null | undefined,
 ): string | undefined {
-  if (!event.eventHoursStart || !event.eventHoursEnd) return undefined;
-  return `${formatEventHour(event.eventHoursStart, country)}-${formatEventHour(event.eventHoursEnd, country)}`;
+  const range = formatEventHoursRange(event.eventHoursStart, event.eventHoursEnd, country, event.timezone, event.date);
+  if (!range) return undefined;
+  return range.tzAbbr ? `${range.hours} ${range.tzAbbr}` : range.hours;
 }
 
 /** UTC offset suffix ("+02:00" / "-05:00" / "Z") for `timeZone` at `instant` - `instant` must be
@@ -115,6 +118,26 @@ function localWallClockReading(instant: Date, timeZone: string): string {
   return `${hour === "24" ? "00" : hour}:${minute}`;
 }
 
+/** PassCreator's top-level `relevantDate` ("Y-m-d H:i", no offset - the event's own local wall-clock
+ * digits, matching the plain instant PassCreator's own docs example uses): controls when the pass
+ * surfaces on the Lock Screen. Apple-only (same as `semantics` below) but a separate, always-on
+ * piece of wallet behavior, not part of the opt-in "semantic tags" feature - gated on
+ * `walletAppleEnabled` alone so a Google-only event never sends it, but NOT on
+ * `walletSemanticTagsEnabled`. Undefined when there's no start time to anchor it to, rather than
+ * guessing a time (same "no invented defaults" reasoning as buildSemantics). */
+function computeRelevantDate(event: {
+  date: Date;
+  eventHoursStart: string | null;
+  walletAppleEnabled: boolean;
+}): string | undefined {
+  if (!event.walletAppleEnabled || !event.eventHoursStart) return undefined;
+  const y = event.date.getUTCFullYear();
+  const m = event.date.getUTCMonth();
+  const d = event.date.getUTCDate();
+  const dayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return `${dayStr} ${event.eventHoursStart}`;
+}
+
 /** Builds Apple Wallet semantic tag values from the resolved event/attendee - only the fields
  * Admitto's domain model actually has data for (ADR 0009 data minimization); no invented
  * defaults beyond the fixed "PKEventTypeGeneric" eventType, which is valid for any event and
@@ -172,6 +195,7 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
     attendeeDepartmentLabel: attendee.department || undefined,
     eventNameLabel: event.title,
     eventDateLabel: formatDate(event.date, event.addressComponents?.country),
+    eventDateShortLabel: formatDateShort(event.date, event.addressComponents?.country),
     eventHoursLabel: formatEventHours(event, event.addressComponents?.country),
     eventLocationLabel: event.location || undefined,
     directionsTextLabel: event.directionsText || undefined,
@@ -191,6 +215,7 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
     ticketTypeLabel: attendee.ticket_type || "General",
     userProvidedId: `admitto:${event.id}:${attendee.id}`,
     barcodeValue,
+    relevantDate: computeRelevantDate(event),
     // Apple-only, opt-in (Event Settings -> Wallet -> Apple Wallet -> Semantic tags): gated on
     // walletAppleEnabled too so a Google-only event never sends Apple-specific data to
     // PassCreator, even though PassCreator itself would just ignore it for Google rendering.

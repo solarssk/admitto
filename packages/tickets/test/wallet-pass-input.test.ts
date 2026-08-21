@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
-import { buildWalletPassInput, formatDate, resolveTicketPageDisplay } from "../src/wallet-pass-input.js";
-import { formatEventHour } from "../src/region-date-format.js";
+import { buildWalletPassInput, formatDate, formatDateShort, resolveTicketPageDisplay } from "../src/wallet-pass-input.js";
+import { formatEventHour, formatEventHoursRange } from "../src/region-date-format.js";
 
 function makeResolved(ticketType: string | null) {
   return {
@@ -131,6 +131,22 @@ describe("formatDate", () => {
   });
 });
 
+describe("formatDateShort", () => {
+  it("abbreviates the month to a fixed 3 letters, day/month order following the region", () => {
+    expect(formatDateShort(new Date("2026-09-24T12:00:00.000Z"))).toBe("24 Sep 2026");
+    expect(formatDateShort(new Date("2026-09-24T12:00:00.000Z"), "United States")).toBe("Sep 24, 2026");
+  });
+
+  it("uses 'Sep', not CLDR en-GB's own 'Sept', for the default/fallback locale", () => {
+    expect(formatDateShort(new Date("2026-09-24T12:00:00.000Z"))).not.toContain("Sept");
+  });
+
+  it("falls back to en-GB for a null or unrecognized country", () => {
+    expect(formatDateShort(new Date("2026-01-01T12:00:00.000Z"), null)).toBe("1 Jan 2026");
+    expect(formatDateShort(new Date("2026-01-01T12:00:00.000Z"), "Not A Real Country")).toBe("1 Jan 2026");
+  });
+});
+
 describe("formatEventHour", () => {
   it("keeps the raw zero-padded 24h value for the default/fallback locale", () => {
     expect(formatEventHour("09:00")).toBe("09:00");
@@ -159,6 +175,40 @@ describe("formatEventHour", () => {
   });
 });
 
+describe("formatEventHoursRange", () => {
+  it("resolves the zone abbreviation at the configured start hour, not the noon-UTC date sentinel", () => {
+    // 2026-03-08 is the US spring-forward date: 00:30 America/New_York is still EST, even though
+    // noon UTC that same day is already EDT (bot review: resolving from the date sentinel instead
+    // of the configured hour showed "EDT" for a time that's actually still standard time).
+    const range = formatEventHoursRange(
+      "00:30",
+      "03:00",
+      null,
+      "America/New_York",
+      new Date("2026-03-08T12:00:00.000Z"),
+    );
+    expect(range?.tzAbbr).toBe("EST");
+  });
+
+  it("uses the end hour as the anchor when only an end bound is set", () => {
+    const range = formatEventHoursRange(null, "03:00", null, "America/New_York", new Date("2026-03-08T12:00:00.000Z"));
+    expect(range?.hours).toBe("until 03:00");
+    expect(range?.tzAbbr).toBe("EDT");
+  });
+
+  it("falls back to the date sentinel without throwing for a timezone Intl doesn't recognize", () => {
+    expect(() =>
+      formatEventHoursRange("09:00", "18:00", null, "Not/AZone", new Date("2026-09-24T12:00:00.000Z")),
+    ).not.toThrow();
+    const range = formatEventHoursRange("09:00", "18:00", null, "Not/AZone", new Date("2026-09-24T12:00:00.000Z"));
+    expect(range?.tzAbbr).toBeNull();
+  });
+
+  it("returns null when neither bound is set", () => {
+    expect(formatEventHoursRange(null, null, null, "UTC", new Date("2026-09-24T12:00:00.000Z"))).toBeNull();
+  });
+});
+
 describe("buildWalletPassInput", () => {
   it("maps every optional field through when all are present, including computed map links", () => {
     const input = buildWalletPassInput(fullResolved(), "barcode-123");
@@ -172,7 +222,8 @@ describe("buildWalletPassInput", () => {
       attendeeDepartmentLabel: "Engineering",
       eventNameLabel: "Admitto Conference",
       eventDateLabel: "24 September 2026",
-      eventHoursLabel: "09:00-18:00",
+      eventDateShortLabel: "24 Sep 2026",
+      eventHoursLabel: "09:00 - 18:00 GMT+1",
       eventLocationLabel: "Main Hall",
       directionsTextLabel: "Enter via the north gate",
       accessibilityTextLabel: "Step-free access",
@@ -187,6 +238,7 @@ describe("buildWalletPassInput", () => {
       ticketTypeLabel: "vip",
       userProvidedId: "admitto:evt-1:att-1",
       barcodeValue: "barcode-123",
+      relevantDate: "2026-09-24 09:00",
     });
   });
 
@@ -237,12 +289,12 @@ describe("buildWalletPassInput", () => {
     });
   });
 
-  it("omits event hours when only one bound is set - a half-set range isn't shown", () => {
+  it("shows an open-ended 'from'/'until' when only one bound is set, matching the ticket page", () => {
     const startOnly = buildWalletPassInput(fullResolved({ event: { eventHoursEnd: null } }), "b");
     const endOnly = buildWalletPassInput(fullResolved({ event: { eventHoursStart: null } }), "b");
 
-    expect(startOnly.eventHoursLabel).toBeUndefined();
-    expect(endOnly.eventHoursLabel).toBeUndefined();
+    expect(startOnly.eventHoursLabel).toBe("from 09:00 GMT+1");
+    expect(endOnly.eventHoursLabel).toBe("until 18:00 GMT+1");
   });
 
   it("prefers an explicit map URL override over the computed link", () => {
@@ -286,7 +338,33 @@ describe("buildWalletPassInput", () => {
     );
 
     expect(input.eventDateLabel).toBe("September 24, 2026");
-    expect(input.eventHoursLabel).toBe("9:00 am-6:00 pm");
+    expect(input.eventDateShortLabel).toBe("Sep 24, 2026");
+    expect(input.eventHoursLabel).toBe("9:00 am - 6:00 pm GMT+1");
+  });
+});
+
+describe("buildWalletPassInput — relevantDate (PassCreator Lock Screen surfacing)", () => {
+  it("sends the event's local wall-clock digits, independent of the semantic tags toggle", () => {
+    const input = buildWalletPassInput(fullResolved(), "b");
+    expect(input.relevantDate).toBe("2026-09-24 09:00");
+  });
+
+  it("is present even when walletSemanticTagsEnabled is off (not part of the semantic tags opt-in)", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { walletSemanticTagsEnabled: false } }),
+      "b",
+    );
+    expect(input.relevantDate).toBe("2026-09-24 09:00");
+  });
+
+  it("is omitted when walletAppleEnabled is off, same as semantics", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { walletAppleEnabled: false } }), "b");
+    expect(input.relevantDate).toBeUndefined();
+  });
+
+  it("is omitted when there's no start time to anchor it to", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { eventHoursStart: null } }), "b");
+    expect(input.relevantDate).toBeUndefined();
   });
 });
 

@@ -8,6 +8,7 @@ const CONFIG = { apiKey: "test-key", templateId: "tmpl-1", baseUrl: "https://pc.
 const INPUT: WalletPassInput = {
   attendeeName: "Jane Doe",
   eventDateLabel: "12 August 2026",
+  eventDateShortLabel: "12 Aug 2026",
   eventHoursLabel: "18:00-22:00",
   eventLocationLabel: "Test Venue",
   ticketTypeLabel: "General",

@@ -4,6 +4,7 @@ import {
   formatAdmissionDisplay,
   formatEventDate,
   formatWalletDatePreview,
+  formatWalletDatePreviewShort,
   formatEventDateTime,
   formatEventTime,
   formatRelativeTime,
@@ -62,6 +63,19 @@ describe("formatWalletDatePreview", () => {
 
   it("returns null for an empty date instead of the literal string 'Invalid Date'", () => {
     expect(formatWalletDatePreview("")).toBeNull();
+  });
+});
+
+describe("formatWalletDatePreviewShort", () => {
+  afterEach(() => setPreferredLocale(null));
+
+  it("abbreviates the month to a fixed 3 letters ('Sep', not CLDR en-GB's own 'Sept')", () => {
+    setPreferredLocale("de-DE");
+    expect(formatWalletDatePreviewShort("2026-09-24")).toBe("24 Sep 2026");
+  });
+
+  it("returns null for an empty date instead of the literal string 'Invalid Date'", () => {
+    expect(formatWalletDatePreviewShort("")).toBeNull();
   });
 });
 

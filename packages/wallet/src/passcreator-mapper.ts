@@ -21,6 +21,7 @@ export const WALLET_MAPPING_PLACEHOLDERS = [
   "department",
   "event_name",
   "event_date",
+  "event_date_short",
   "event_hours",
   "event_location",
   "directions_text",
@@ -47,6 +48,7 @@ function walletPlaceholderValues(input: WalletPassInput): Record<string, string 
     department: input.attendeeDepartmentLabel,
     event_name: input.eventNameLabel,
     event_date: input.eventDateLabel,
+    event_date_short: input.eventDateShortLabel,
     event_hours: input.eventHoursLabel,
     event_location: input.eventLocationLabel,
     directions_text: input.directionsTextLabel,
@@ -98,6 +100,10 @@ export function toPassCreatorData(
     // its own template-configured default (typically its own auto-generated pass UID), which
     // does not match any real Admitto ticket.
     barcodeValue: input.barcodeValue,
+    // Another top-level API field, not a fieldMapping placeholder: controls Lock Screen surfacing
+    // (PassCreator docs, POST /api/v3/pass). Omitted (not sent as an explicit null/empty string)
+    // when Admitto has no start time to anchor it to.
+    ...(input.relevantDate ? { relevantDate: input.relevantDate } : {}),
   };
   // Apple's `semantics` object (developer.passcreator.com/en/apple-wallet/semantic-tags) is a
   // fixed-vocabulary sibling of `data`'s other top-level fields, entirely separate from the
