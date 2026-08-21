@@ -54,7 +54,7 @@
     "test:unit": "vitest run --project auth-unit",
     "test:integration": "vitest run --project auth-integration",
     "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth",
-    "cli": "node --env-file-if-exists=../../.env --env-file-if-exists=../../packages/db/.env --env-file-if-exists=.env dist/cli.js"
+    "cli": "node --env-file-if-exists=.env --env-file-if-exists=../../packages/db/.env --env-file-if-exists=../../.env dist/cli.js"
   },
   "dependencies": {
     "@admitto/crypto": "*",
