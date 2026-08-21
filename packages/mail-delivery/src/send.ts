@@ -21,7 +21,7 @@ import {
   type MailMessage,
 } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
-import { formatDate, formatEventHoursRange } from "@admitto/shared/region-date-format";
+import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-date-format";
 import { issueTicket, loadEventTicketTypes, parseTicketAddressComponents } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
@@ -243,7 +243,7 @@ async function processAttendeeForSend({
   );
   const country =
     parseTicketAddressComponents(event.location_details?.address_components)?.country ?? null;
-  const hoursRange = formatEventHoursRange(
+  const eventHours = formatEventHoursRangeText(
     event.event_hours_start,
     event.event_hours_end,
     country,
@@ -263,7 +263,7 @@ async function processAttendeeForSend({
       email: attendee.email,
       event_name: event.title,
       event_date: formatDate(event.date, country),
-      event_hours: hoursRange ? hoursRange.hours + (hoursRange.tzAbbr ? ` ${hoursRange.tzAbbr}` : "") : "",
+      event_hours: eventHours,
       ticket_type: resolveTicketTypeLabel(attendee.ticket_type, ticketTypeLabels),
       ...locationVars,
       logo_url: branding.logo_url,

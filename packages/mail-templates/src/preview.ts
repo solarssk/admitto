@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import { parseStoredAddressComponents } from "@admitto/location";
-import { formatDate, formatEventHoursRange } from "@admitto/shared/region-date-format";
+import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-date-format";
 import { resolvePublicBaseUrl } from "./baseUrl.js";
 import { resolveBrandingFromEvent, resolveEventImageAssetVars } from "./branding.js";
 import { validateHttpUrl } from "./escape.js";
@@ -117,16 +117,15 @@ type EventForBaseTemplateVars = {
  * reading the confirmation email sees the identical date/time text as their ticket. */
 function buildDateTimeVars(event: EventForBaseTemplateVars): { event_date: string; event_hours: string } {
   const country = parseStoredAddressComponents(event.location_details?.address_components)?.country ?? null;
-  const range = formatEventHoursRange(
-    event.event_hours_start ?? null,
-    event.event_hours_end ?? null,
-    country,
-    event.timezone,
-    event.date,
-  );
   return {
     event_date: formatDate(event.date, country),
-    event_hours: range ? range.hours + (range.tzAbbr ? ` ${range.tzAbbr}` : "") : "",
+    event_hours: formatEventHoursRangeText(
+      event.event_hours_start ?? null,
+      event.event_hours_end ?? null,
+      country,
+      event.timezone,
+      event.date,
+    ),
   };
 }
 

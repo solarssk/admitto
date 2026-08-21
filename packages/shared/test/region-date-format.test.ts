@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatDateShort, formatEventHour, formatEventHoursRange } from "../src/region-date-format.js";
+import {
+  formatDate,
+  formatDateShort,
+  formatEventHour,
+  formatEventHoursRange,
+  formatEventHoursRangeText,
+} from "../src/region-date-format.js";
 
 describe("formatDate", () => {
   it("formats as en-GB long-month text when no country is given (default/fallback)", () => {
@@ -105,5 +111,33 @@ describe("formatEventHoursRange", () => {
 
   it("returns null when neither bound is set", () => {
     expect(formatEventHoursRange(null, null, null, "UTC", new Date("2026-09-24T12:00:00.000Z"))).toBeNull();
+  });
+});
+
+describe("formatEventHoursRangeText", () => {
+  it("folds the zone abbreviation into the same string", () => {
+    const text = formatEventHoursRangeText(
+      "09:00",
+      "17:00",
+      "United States",
+      "America/New_York",
+      new Date("2026-09-01T12:00:00.000Z"),
+    );
+    expect(text).toBe("9:00 am - 5:00 pm EDT");
+  });
+
+  it("omits the trailing space when the timezone has no resolvable abbreviation", () => {
+    const text = formatEventHoursRangeText(
+      "09:00",
+      "18:00",
+      null,
+      "Not/AZone",
+      new Date("2026-09-24T12:00:00.000Z"),
+    );
+    expect(text).toBe("09:00 - 18:00");
+  });
+
+  it("returns an empty string when neither bound is set", () => {
+    expect(formatEventHoursRangeText(null, null, null, "UTC", new Date("2026-09-24T12:00:00.000Z"))).toBe("");
   });
 });

@@ -231,3 +231,19 @@ export function formatEventHoursRange(
   if (end) return { hours: `until ${formatEventHour(end, country)}`, tzAbbr };
   return null;
 }
+
+/** Plain-text variant of {@link formatEventHoursRange} for callers with no separate styling for
+ * the timezone abbreviation (e.g. mail template placeholders) - folds `tzAbbr` into the same
+ * string instead of returning it separately, empty string when neither bound is set. */
+export function formatEventHoursRangeText(
+  start: string | null,
+  end: string | null,
+  country: string | null | undefined,
+  timezone: string,
+  eventDate: Date,
+): string {
+  const range = formatEventHoursRange(start, end, country, timezone, eventDate);
+  if (!range) return "";
+  if (!range.tzAbbr) return range.hours;
+  return `${range.hours} ${range.tzAbbr}`;
+}
