@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import {
   FORECAST_HORIZON_DAYS_METNO,
   FORECAST_HORIZON_DAYS_OPENMETEO,
@@ -298,6 +299,7 @@ describe("WeatherService.summarize", () => {
   });
 
   it("returns ok from Open-Meteo and caches", async () => {
+    resetSystemLogBufferForTest();
     const now = new Date("2026-08-05T12:00:00.000Z");
     let calls = 0;
     const fetchFn: typeof fetch = async () => {
@@ -338,6 +340,12 @@ describe("WeatherService.summarize", () => {
     });
     expect(second?.status).toBe("ok");
     expect(calls).toBe(1);
+
+    // Only the first (uncached) call reaches the provider and logs - the second is served from
+    // the cache checked before the try/catch this logging lives in.
+    expect(querySystemLogs({ source: "external" })).toEqual([
+      expect.objectContaining({ level: "info", message: "weather_fetch_ok", fields: expect.objectContaining({ provider: "openmeteo" }) }),
+    ]);
   });
 
   it("returns ok from MET Norway compact JSON", async () => {
@@ -384,6 +392,7 @@ describe("WeatherService.summarize", () => {
   });
 
   it("returns unavailable when provider fails", async () => {
+    resetSystemLogBufferForTest();
     const now = new Date("2026-08-05T12:00:00.000Z");
     const service = new WeatherService({
       config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
@@ -396,6 +405,8 @@ describe("WeatherService.summarize", () => {
       date: "2026-08-08T12:00:00.000Z",
     });
     expect(result?.status).toBe("unavailable");
+    const [entry] = querySystemLogs({ source: "external" });
+    expect(entry).toMatchObject({ level: "warn", message: "weather_fetch_failed", fields: { provider: "openmeteo" } });
   });
 
   it("returns unavailable for invalid event dates and far-past days", async () => {
@@ -447,6 +458,41 @@ describe("WeatherService.summarize", () => {
       ok: false,
       error: "support_contact_required",
     });
+  });
+
+  it("probeLive logs an external-source entry on success and on failure", async () => {
+    resetSystemLogBufferForTest();
+    const ok = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            daily: {
+              time: [new Date().toISOString().slice(0, 10)],
+              weather_code: [1],
+              temperature_2m_max: [20],
+              temperature_2m_min: [10],
+            },
+          }),
+          { status: 200 },
+        ),
+    });
+    await ok.probeLive();
+    expect(querySystemLogs({ source: "external" })).toEqual([
+      expect.objectContaining({ level: "info", message: "weather_probe_ok" }),
+    ]);
+
+    resetSystemLogBufferForTest();
+    const failing = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      fetchFn: async () => new Response("nope", { status: 502 }),
+    });
+    await failing.probeLive();
+    expect(querySystemLogs({ source: "external" })).toEqual([
+      expect.objectContaining({ level: "warn", message: "weather_probe_failed" }),
+    ]);
   });
 
   it("probeLive maps WeatherProviderError kinds", async () => {

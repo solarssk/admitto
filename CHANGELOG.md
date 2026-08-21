@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Logs & audit → System now has three additional log sources: Worker (background job activity - mail delivery, import/export, wallet push/message drains, bounce ingest, wallet sync, retention), Wallet (Apple/Google Wallet provider operations - issue, void, push, search), and External services (outbound weather and maps/geocoding calls). None of this activity reached the live tail before.
+
 ### Changed
 
 - Communication → Delivery log's "View sent message" preview now shows the recipient's real ticket link and QR code instead of a redacted placeholder. Event managers already have equivalent access to the same real ticket link one click away (attendee detail → More actions → Copy ticket link), so hiding it in the preview no longer served a purpose.

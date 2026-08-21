@@ -22,6 +22,7 @@ import {
   resolveSafeHostname,
   unbracketHostname,
 } from "@admitto/shared/ssrf-guard";
+import { emitSystemLog } from "@admitto/shared/system-log";
 
 /** Distinguishes a timed-out request (503, "try again shortly") from any other failure —
  * bad status, network error, malformed body — mapped to 502 by the route handler. */
@@ -350,6 +351,7 @@ export class NominatimProvider implements GeocodingProvider {
     return this.withProviderSlot(async () => {
       const fetchOverride = this.options.fetchFn;
       const signal = AbortSignal.timeout(this.resolveTimeoutMs());
+      const started = Date.now();
       try {
         const userAgent = await this.resolveUserAgent(signal);
 
@@ -368,8 +370,21 @@ export class NominatimProvider implements GeocodingProvider {
           if (parsed) results.push(parsed);
           if (results.length >= MAX_RESULTS) break;
         }
+        // Logs the query's length, not its text - free-text venue-search input an operator typed.
+        emitSystemLog("external", "info", "geocoding_search_ok", {
+          provider: this.name,
+          query_length: query.length,
+          results: results.length,
+          latency_ms: Date.now() - started,
+        });
         return results;
       } catch (err) {
+        emitSystemLog("external", "warn", "geocoding_search_failed", {
+          provider: this.name,
+          query_length: query.length,
+          latency_ms: Date.now() - started,
+          error: err instanceof Error ? err.message : String(err),
+        });
         mapProviderError(err);
       }
     });
@@ -379,6 +394,7 @@ export class NominatimProvider implements GeocodingProvider {
     return this.withProviderSlot(async () => {
       const fetchOverride = this.options.fetchFn;
       const signal = AbortSignal.timeout(this.resolveTimeoutMs());
+      const started = Date.now();
       try {
         const userAgent = await this.resolveUserAgent(signal);
 
@@ -394,13 +410,26 @@ export class NominatimProvider implements GeocodingProvider {
         for (const raw of featuresFromBody(data)) {
           const parsed = parseFeature(raw, this.name);
           if (parsed) {
+            emitSystemLog("external", "info", "geocoding_reverse_ok", {
+              provider: this.name,
+              latency_ms: Date.now() - started,
+            });
             // Prefer the clicked coordinates over the feature centroid — the pin is what the
             // admin placed; the OSM object's centroid can sit a block away in dense cities.
             return { ...parsed, latitude, longitude };
           }
         }
+        emitSystemLog("external", "info", "geocoding_reverse_no_match", {
+          provider: this.name,
+          latency_ms: Date.now() - started,
+        });
         return null;
       } catch (err) {
+        emitSystemLog("external", "warn", "geocoding_reverse_failed", {
+          provider: this.name,
+          latency_ms: Date.now() - started,
+          error: err instanceof Error ? err.message : String(err),
+        });
         mapProviderError(err);
       }
     });

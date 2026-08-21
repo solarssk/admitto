@@ -2,6 +2,7 @@
  * Resolve event-day weather summary for list cards and public tickets (ADR 0040).
  */
 
+import { emitSystemLog } from "@admitto/shared/system-log";
 import {
   attributionForProvider,
   forecastHorizonDays,
@@ -198,12 +199,17 @@ export class WeatherService {
       };
     }
 
+    const started = Date.now();
     try {
       const day =
         this.config.provider === "metno"
           ? await this.metNoClient().fetchDayForecast(lat, lon, eventYmd, tz)
           : await this.openMeteo.fetchDayForecast(lat, lon, eventYmd, tz);
       await this.cache.set(key, day, this.config.cacheTtlMs);
+      emitSystemLog("external", "info", "weather_fetch_ok", {
+        provider: this.config.provider,
+        latency_ms: Date.now() - started,
+      });
       return {
         status: "ok",
         temp_c: Math.round(day.temp_max_c),
@@ -211,7 +217,12 @@ export class WeatherService {
         weather_code: day.weather_code,
         ...this.attributionFields(),
       };
-    } catch {
+    } catch (err) {
+      emitSystemLog("external", "warn", "weather_fetch_failed", {
+        provider: this.config.provider,
+        latency_ms: Date.now() - started,
+        error: probeErrorMessage(err),
+      });
       return { status: "unavailable", ...this.attributionFields() };
     }
   }
@@ -231,9 +242,18 @@ export class WeatherService {
       } else {
         await this.openMeteo.probe();
       }
+      emitSystemLog("external", "info", "weather_probe_ok", {
+        provider: this.config.provider,
+        latency_ms: Date.now() - started,
+      });
       return { ok: true, latencyMs: Date.now() - started };
     } catch (err) {
       const message = probeErrorMessage(err);
+      emitSystemLog("external", "warn", "weather_probe_failed", {
+        provider: this.config.provider,
+        latency_ms: Date.now() - started,
+        error: message,
+      });
       return { ok: false, latencyMs: Date.now() - started, error: message };
     }
   }
