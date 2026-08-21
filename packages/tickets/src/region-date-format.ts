@@ -132,7 +132,7 @@ export function formatDate(d: Date, country?: string | null): string {
 }
 
 /** Single "HH:MM" wall-clock time in the event's own regional convention: zero-padded 24h
- * ("09:00") for 24h-style regions - byte-identical to the raw stored value - or "9:00 AM" for
+ * ("09:00") for 24h-style regions - byte-identical to the raw stored value - or "9:00 am" for
  * 12h-style ones. `hhmm` is validated input from a plain `<input type="time">` on the event
  * form; malformed input is returned unchanged rather than guessed. */
 export function formatEventHour(hhmm: string, country?: string | null): string {
@@ -144,10 +144,13 @@ export function formatEventHour(hhmm: string, country?: string | null): string {
     .hourCycle;
   const isH12 = hourCycle === "h11" || hourCycle === "h12";
   const probe = new Date(Date.UTC(2000, 0, 1, Number(hh), Number(mm)));
-  return new Intl.DateTimeFormat(locale, {
+  const formatted = new Intl.DateTimeFormat(locale, {
     hour: isH12 ? "numeric" : "2-digit",
     minute: "2-digit",
     timeZone: "UTC",
     hourCycle,
   }).format(probe);
+  // ICU's am/pm casing varies by locale (en-US: "AM", en-GB/en-IN: "am") - force lowercase so
+  // every region reads the same on the ticket regardless of the event's country.
+  return isH12 ? formatted.replace(/\s?(AM|PM)\b/i, (m) => m.toLowerCase()) : formatted;
 }
