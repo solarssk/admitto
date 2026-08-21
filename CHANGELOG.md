@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The login, MFA, change-password, and other server-rendered auth pages no longer block same-origin fetch/XHR requests such as Cloudflare's own edge-injected bot-detection beacon (`/cdn-cgi/challenge-platform/...`). Their Content-Security-Policy previously omitted `connect-src` entirely on an instance with no trusted origins configured, so it fell back to `default-src 'none'` and blocked even requests to Admitto's own origin.
+
 ## [0.5.4] - 2026-08-21
 
 ### Added
