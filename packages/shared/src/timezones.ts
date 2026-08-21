@@ -11,8 +11,13 @@ export type TimeZoneDefinition = {
   alternativeName: string;
   mainCities: readonly string[];
   /** Short display label, e.g. "IST", "CET" - the zone's standard-time abbreviation, not
-   * DST-adjusted (matches this codebase's existing wall-clock-only time display). */
+   * DST-adjusted. Fine for a zone picker (any one representative label); for a specific date use
+   * {@link getTimeZoneAbbreviationForDate} instead, which is correct even when that date falls in
+   * daylight saving time. */
   abbreviation: string;
+  /** The zone's standard (non-DST) UTC offset in minutes, or `null` when unknown (e.g. UTC has no
+   * tzdb entry to source this from). Used to detect whether a given date is in DST for this zone. */
+  standardOffsetMinutes: number | null;
 };
 
 const metadataByIana = new Map(
@@ -60,6 +65,7 @@ const TIME_ZONES: readonly TimeZoneDefinition[] = [...aliasesByPrimaryIana].map(
       alternativeName: metadata?.alternativeName ?? "",
       mainCities: metadata?.mainCities.filter(Boolean) ?? [],
       abbreviation: iana === "UTC" ? "UTC" : (metadata?.abbreviation ?? ""),
+      standardOffsetMinutes: iana === "UTC" ? 0 : (metadata?.rawOffsetInMinutes ?? null),
     };
   },
 );
@@ -84,4 +90,49 @@ export function normalizeTimeZone(timeZone: string): string | null {
 /** Return the one display definition for a current or legacy IANA identifier. */
 export function getTimeZone(timeZone: string): TimeZoneDefinition | null {
   return timeZoneByAlias.get(timeZone.trim()) ?? null;
+}
+
+const NICE_ABBREVIATION_RE = /^[A-Za-z]{2,5}$/;
+const GMT_OFFSET_RE = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/;
+
+function icuTimeZoneNamePart(iana: string, date: Date, style: "short" | "shortOffset"): string | undefined {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: iana, timeZoneName: style })
+      .formatToParts(date)
+      .find((part) => part.type === "timeZoneName")?.value;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Short timezone label correct for a specific date - e.g. "EDT" for a July `America/New_York`
+ * date vs "EST" in January - unlike the `abbreviation` field on {@link TimeZoneDefinition}, which
+ * is always the zone's standard-time label and would be wrong for roughly half the year in any
+ * zone that observes daylight saving.
+ *
+ * ICU's own `timeZoneName: "short"` is correct for both DST and standard time, but only renders as
+ * a real letter abbreviation for a handful of zones (mostly North America) - everywhere else (most
+ * of Europe, Asia, Australia) it falls back to a numeric "GMT+2". For those, this compares the
+ * date's actual UTC offset to the zone's known standard offset: if they match, the date isn't in
+ * DST and the static tzdb abbreviation (e.g. "CET", "IST") is safe to show; if they differ, the
+ * date IS in DST and that static label would be wrong, so this falls back to a plain numeric UTC
+ * offset instead - never a letter abbreviation for the wrong half of the year. */
+export function getTimeZoneAbbreviationForDate(timeZone: string, date: Date): string | null {
+  const zone = getTimeZone(timeZone);
+  if (!zone) return null;
+  if (zone.iana === "UTC") return "UTC";
+
+  const icuShort = icuTimeZoneNamePart(zone.iana, date, "short");
+  if (icuShort && NICE_ABBREVIATION_RE.test(icuShort)) return icuShort;
+
+  const offsetRaw = icuTimeZoneNamePart(zone.iana, date, "shortOffset");
+  const match = offsetRaw && GMT_OFFSET_RE.exec(offsetRaw);
+  const actualOffsetMinutes = match
+    ? (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] ?? 0))
+    : null;
+
+  if (actualOffsetMinutes != null && actualOffsetMinutes === zone.standardOffsetMinutes && zone.abbreviation) {
+    return zone.abbreviation;
+  }
+  return offsetRaw ?? icuShort ?? zone.abbreviation ?? null;
 }

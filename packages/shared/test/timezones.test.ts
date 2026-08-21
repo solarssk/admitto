@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getTimeZone, getTimeZones, normalizeTimeZone } from "../src/timezones.js";
+import { getTimeZone, getTimeZoneAbbreviationForDate, getTimeZones, normalizeTimeZone } from "../src/timezones.js";
 
 describe("timezones", () => {
   it("normalizes legacy IANA links to one preferred identifier", () => {
@@ -33,5 +33,40 @@ describe("timezones", () => {
     expect(getTimeZone("Asia/Kolkata")?.abbreviation).toBe("IST");
     expect(getTimeZone("Europe/Warsaw")?.abbreviation).toBe("CET");
     expect(getTimeZone("UTC")?.abbreviation).toBe("UTC");
+  });
+
+  describe("getTimeZoneAbbreviationForDate", () => {
+    it("switches between standard and daylight abbreviations for a zone ICU renders as letters", () => {
+      expect(getTimeZoneAbbreviationForDate("America/New_York", new Date("2026-01-15T12:00:00Z"))).toBe("EST");
+      expect(getTimeZoneAbbreviationForDate("America/New_York", new Date("2026-07-15T12:00:00Z"))).toBe("EDT");
+    });
+
+    it("uses the tzdb abbreviation only when the date is actually in standard time", () => {
+      // Europe/Warsaw: ICU has no letter form ("GMT+1"/"GMT+2"), so this falls back to tzdb's
+      // "CET" in January (correct - not DST) but must NOT show "CET" in July (DST, +2 not +1).
+      expect(getTimeZoneAbbreviationForDate("Europe/Warsaw", new Date("2026-01-15T12:00:00Z"))).toBe("CET");
+      expect(getTimeZoneAbbreviationForDate("Europe/Warsaw", new Date("2026-07-15T12:00:00Z"))).not.toBe("CET");
+      expect(getTimeZoneAbbreviationForDate("Europe/Warsaw", new Date("2026-07-15T12:00:00Z"))).toBe("GMT+2");
+    });
+
+    it("handles a southern-hemisphere zone where DST runs opposite the northern-hemisphere months", () => {
+      // Australia/Sydney is in daylight saving in January (southern summer), not July.
+      expect(getTimeZoneAbbreviationForDate("Australia/Sydney", new Date("2026-01-15T12:00:00Z"))).not.toBe("AEST");
+      expect(getTimeZoneAbbreviationForDate("Australia/Sydney", new Date("2026-07-15T12:00:00Z"))).toBe("AEST");
+    });
+
+    it("returns the same abbreviation year-round for a zone that never observes DST", () => {
+      expect(getTimeZoneAbbreviationForDate("Asia/Kolkata", new Date("2026-01-15T12:00:00Z"))).toBe("IST");
+      expect(getTimeZoneAbbreviationForDate("Asia/Kolkata", new Date("2026-07-15T12:00:00Z"))).toBe("IST");
+    });
+
+    it("resolves a legacy alias before looking up the abbreviation", () => {
+      expect(getTimeZoneAbbreviationForDate("Asia/Calcutta", new Date("2026-07-15T12:00:00Z"))).toBe("IST");
+    });
+
+    it("returns UTC as-is and null for an unrecognized zone", () => {
+      expect(getTimeZoneAbbreviationForDate("UTC", new Date("2026-07-15T12:00:00Z"))).toBe("UTC");
+      expect(getTimeZoneAbbreviationForDate("Legacy/Removed", new Date("2026-07-15T12:00:00Z"))).toBeNull();
+    });
   });
 });

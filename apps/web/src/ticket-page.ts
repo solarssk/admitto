@@ -1,7 +1,7 @@
 import type { ResolvedTicket } from "@admitto/tickets";
 import { formatDate, formatEventHour } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
-import { getTimeZone } from "@admitto/shared/timezones";
+import { getTimeZoneAbbreviationForDate } from "@admitto/shared/timezones";
 import {
   buildEventStaticMapPath,
   formatDirectionsAddressFromComponents,
@@ -23,18 +23,19 @@ function esc(s: string): string {
 
 /** Event-hours range with the two times joined by a spaced hyphen, or an open-ended "from"/"until"
  * when only one side is set - each bound in the event's regional convention (see
- * @admitto/tickets' region-date-format.ts). The timezone abbreviation (e.g. "IST", "CET") is
+ * @admitto/tickets' region-date-format.ts). The timezone abbreviation (e.g. "IST", "EDT") is
  * returned separately so the caller can style it as a de-emphasized suffix rather than baking it
- * into the same string. It's the zone's standard-time label, not DST-adjusted - consistent with
- * formatEventHour, which formats the raw HH:MM wall-clock value as-is rather than converting an
- * anchored instant. */
+ * into the same string - resolved for the event's own calendar date so a summer event in a
+ * DST-observing zone shows "EDT", not a stale "EST" (the zone's standard-time label would be
+ * wrong for roughly half the year there). */
 function formatEventHoursRange(
   start: string | null,
   end: string | null,
   country: string | null | undefined,
   timezone: string,
+  eventDate: Date,
 ): { hours: string; tzAbbr: string | null } | null {
-  const tzAbbr = getTimeZone(timezone)?.abbreviation || null;
+  const tzAbbr = getTimeZoneAbbreviationForDate(timezone, eventDate);
   if (start && end) return { hours: `${formatEventHour(start, country)} - ${formatEventHour(end, country)}`, tzAbbr };
   if (start) return { hours: `from ${formatEventHour(start, country)}`, tzAbbr };
   if (end) return { hours: `until ${formatEventHour(end, country)}`, tzAbbr };
@@ -299,6 +300,7 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
     event.eventHoursEnd,
     event.addressComponents?.country,
     event.timezone,
+    event.date,
   );
   return `<header class="ticket__top">
       <div class="ticket__brand">

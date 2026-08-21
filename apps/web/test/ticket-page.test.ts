@@ -330,6 +330,20 @@ describe("renderTicket", () => {
     expect(html).toContain('10:00 am - 6:05 pm<span class="ticket__stat-tz"> IST</span>');
   });
 
+  it("resolves the timezone abbreviation for the event's own date, not a stale standard-time label", () => {
+    // ticketFor(null)'s event.date is 2026-09-01, which is inside US daylight saving time -
+    // America/New_York must show "EDT" here, not the zone's standard-time "EST".
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: { ...ticketFor(null).event, eventHoursStart: "09:00", eventHoursEnd: "17:00", timezone: "America/New_York" },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain('<span class="ticket__stat-tz"> EDT</span>');
+    expect(html).not.toContain("EST");
+  });
+
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {
     const html = renderTicket(
       {
