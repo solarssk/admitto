@@ -259,7 +259,7 @@ async function renderDraftPreview(
   const customAssets = await resolveEventImageAssetVars(eventId, db);
 
   const vars = {
-    ...buildBaseTemplateVars(event, undefined, branding, baseUrl),
+    ...buildBaseTemplateVars(event, branding, baseUrl),
     ...customAssets.vars,
   };
 

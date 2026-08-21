@@ -34,6 +34,10 @@
     "./timezones": {
       "types": "./dist/timezones.d.ts",
       "default": "./dist/timezones.js"
+    },
+    "./region-date-format": {
+      "types": "./dist/region-date-format.d.ts",
+      "default": "./dist/region-date-format.js"
     }
   },
   "scripts": {

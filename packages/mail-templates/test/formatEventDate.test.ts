@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   formatEventDate,
-  formatEventHours,
   resolvePreviewEventTimeZone,
 } from "../src/formatEventDate.js";
 
@@ -27,18 +26,6 @@ describe("formatEventDate", () => {
   it("falls back to UTC for invalid timezone strings", () => {
     const instant = new Date("2026-09-01T12:00:00.000Z");
     expect(formatEventDate(instant, "Not/A_Timezone")).toBe("2026-09-01");
-  });
-});
-
-describe("formatEventHours", () => {
-  it("joins both bounds as HH:MM-HH:MM", () => {
-    expect(formatEventHours("10:00", "17:00")).toBe("10:00-17:00");
-  });
-
-  it("returns empty string when either bound is missing", () => {
-    expect(formatEventHours(null, "17:00")).toBe("");
-    expect(formatEventHours("10:00", null)).toBe("");
-    expect(formatEventHours(undefined, undefined)).toBe("");
   });
 });
 

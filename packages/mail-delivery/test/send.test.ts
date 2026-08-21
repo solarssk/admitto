@@ -566,7 +566,7 @@ describe("sendTicketEmails", () => {
     );
 
     expect(result.sent).toBe(1);
-    expect(exported[0]?.message.subject).toBe("VIP - 10:00-17:00");
+    expect(exported[0]?.message.subject).toBe("VIP - 10:00 - 17:00 UTC");
 
     await prisma.event.update({
       where: { id: EVENT_ID },

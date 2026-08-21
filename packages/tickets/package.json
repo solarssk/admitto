@@ -31,10 +31,6 @@
     "./attendees-export-xlsx": {
       "types": "./dist/attendees-export-xlsx.d.ts",
       "default": "./dist/attendees-export-xlsx.js"
-    },
-    "./region-date-format": {
-      "types": "./dist/region-date-format.d.ts",
-      "default": "./dist/region-date-format.js"
     }
   },
   "scripts": {

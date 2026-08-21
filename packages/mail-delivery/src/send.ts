@@ -3,8 +3,6 @@ import { EMAIL_DELIVERY_SUCCESS_STATUSES, type PrismaClient } from "@admitto/db"
 import { decryptFromString } from "@admitto/crypto";
 import {
   buildEventLocationTemplateVars,
-  formatEventDate,
-  formatEventHours,
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
@@ -23,7 +21,8 @@ import {
   type MailMessage,
 } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
-import { issueTicket, loadEventTicketTypes } from "@admitto/tickets";
+import { formatDate, formatEventHoursRange } from "@admitto/shared/region-date-format";
+import { issueTicket, loadEventTicketTypes, parseTicketAddressComponents } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
 import {
@@ -144,6 +143,7 @@ interface EventForSend extends EventLinkInput {
   id: string;
   title: string;
   date: Date;
+  timezone: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
   location_details?: {
@@ -241,6 +241,15 @@ async function processAttendeeForSend({
     baseUrl,
     env,
   );
+  const country =
+    parseTicketAddressComponents(event.location_details?.address_components)?.country ?? null;
+  const hoursRange = formatEventHoursRange(
+    event.event_hours_start,
+    event.event_hours_end,
+    country,
+    event.timezone,
+    event.date,
+  );
 
   const rendered = renderTemplateTrustedForStorage(
     {
@@ -253,8 +262,8 @@ async function processAttendeeForSend({
       full_name: attendee.name,
       email: attendee.email,
       event_name: event.title,
-      event_date: formatEventDate(event.date, "UTC"),
-      event_hours: formatEventHours(event.event_hours_start, event.event_hours_end),
+      event_date: formatDate(event.date, country),
+      event_hours: hoursRange ? hoursRange.hours + (hoursRange.tzAbbr ? ` ${hoursRange.tzAbbr}` : "") : "",
       ticket_type: resolveTicketTypeLabel(attendee.ticket_type, ticketTypeLabels),
       ...locationVars,
       logo_url: branding.logo_url,

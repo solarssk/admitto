@@ -18,8 +18,8 @@
  * self-hosted deployment with Location/geocoding disabled gets by default.
  */
 
-import { zonedWallClockToUtcIso } from "@admitto/shared";
-import { getTimeZoneAbbreviationForDate } from "@admitto/shared/timezones";
+import { zonedWallClockToUtcIso } from "./zonedWallClock.js";
+import { getTimeZoneAbbreviationForDate } from "./timezones.js";
 
 /** ISO 3166-1 alpha-2 codes currently assigned. Hardcoded because `Intl.supportedValuesOf` has
  * no "region" key (only calendar/collation/currency/numberingSystem/timeZone/unit are defined by
