@@ -163,7 +163,13 @@ describe("toPassCreatorData", () => {
     });
 
     it("sends relevantDate as a top-level sibling of base fields when present, regardless of fieldMapping", () => {
-      const data = toPassCreatorData({ ...baseInput, relevantDate: "2026-08-10 18:00" }, "tmpl-1", undefined, true);
+      const data = toPassCreatorData(
+        { ...baseInput, relevantDate: "2026-08-10 18:00" },
+        "tmpl-1",
+        { mappedDate: "event_date" },
+        true,
+      );
+      expect(data.mappedDate).toBe("10 August 2026");
       expect(data.relevantDate).toBe("2026-08-10 18:00");
       expect(data.templateId).toBe("tmpl-1");
     });

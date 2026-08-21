@@ -28,6 +28,7 @@ import {
   type WalletPushHistoryScope,
 } from "../api/client.js";
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
+import { formatEventHoursRange } from "@admitto/tickets/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, EventSettingsDto, LogoCropMeta } from "../api/types.js";
@@ -238,7 +239,7 @@ const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.
  * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
 function computeWalletPlaceholderPreview(
   id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
-  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd">,
+  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone">,
   location: EventLocationDto | null | undefined,
 ): string {
   const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
@@ -247,10 +248,19 @@ function computeWalletPlaceholderPreview(
   if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_date_short") return formatWalletDatePreviewShort(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_hours") {
-    if (form.eventHoursStart && form.eventHoursEnd) return `${form.eventHoursStart} - ${form.eventHoursEnd}`;
-    if (form.eventHoursStart) return `from ${form.eventHoursStart}`;
-    if (form.eventHoursEnd) return `until ${form.eventHoursEnd}`;
-    return WALLET_VALUE_NOT_SET;
+    // Country deliberately not threaded through (same as formatWalletDatePreview above) - this
+    // stays exact for events with no address, an unrecognized country, or a UK one; the real pass
+    // can differ in 12h/24h style for other countries. Real formatter, so the open-ended
+    // "from"/"until" wording and the timezone abbreviation still match the actual pass exactly.
+    const range = formatEventHoursRange(
+      form.eventHoursStart || null,
+      form.eventHoursEnd || null,
+      null,
+      form.timezone,
+      new Date(`${form.date}T12:00:00.000Z`),
+    );
+    if (!range) return WALLET_VALUE_NOT_SET;
+    return range.tzAbbr ? `${range.hours} ${range.tzAbbr}` : range.hours;
   }
   if (location === undefined) return "Loading…";
   switch (id) {
