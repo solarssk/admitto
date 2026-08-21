@@ -12,6 +12,9 @@ export interface WalletPassInput {
   attendeeDepartmentLabel?: string;
   eventNameLabel?: string;
   eventDateLabel: string;
+  /** Same calendar day as `eventDateLabel`, abbreviated month (e.g. "24 Sep 2026") - for template
+   * fields too narrow for the long form. A separate opt-in placeholder, not a replacement. */
+  eventDateShortLabel: string;
   eventHoursLabel?: string;
   eventLocationLabel?: string;
   directionsTextLabel?: string;
@@ -32,6 +35,11 @@ export interface WalletPassInput {
    * PassCreator's template default (its own auto-generated pass UID) ends up on the pass instead,
    * so scanning the wallet pass at check-in would not match the attendee's real ticket. */
   barcodeValue: string;
+  /** PassCreator's top-level `relevantDate` ("Y-m-d H:i", local wall-clock digits, no offset) -
+   * controls when the pass surfaces on the Lock Screen. Apple-only but always-on whenever the
+   * event has a start time and Apple Wallet is enabled - independent of the `semantics` opt-in
+   * below (ADR 0009 data minimization still applies: omitted when there's no start time). */
+  relevantDate?: string;
   /** Apple Wallet semantic tags (opt-in, event-level). Omitted entirely unless the event has
    * semantic tags enabled - never sent by default (ADR 0009 data minimization). */
   semantics?: WalletPassSemantics;

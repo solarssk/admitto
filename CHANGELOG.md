@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Users & roles: the staff user modal and My account's SSO menu now show the actual linked identity provider name(s) (e.g. "Authentik") instead of the generic "Identity provider" label, and list a Cloudflare Access link as its own row alongside any OIDC provider. Unlinking is now two separate actions - "Unlink identity provider" and "Unlink Cloudflare Access" - instead of one combined action that removed both at once; unlinking one leaves the other, and any role grants it manages, untouched.
 - Bulk check-in from the Attendees list now asks for confirmation before admitting everyone selected, matching the other bulk actions (revoke, delete, send tickets) on the same toolbar.
+- Event Settings → Wallet → Field mapping has a new `event_date_short` placeholder alongside the existing `event_date` - a shorter form with an abbreviated month (e.g. "24 Sep 2026" instead of "24 September 2026") for pass template fields too narrow for the long date. An event's wallet pass now also sets PassCreator's Lock Screen relevance date whenever Apple Wallet is enabled and the event has a start time, independent of the separate Apple Wallet semantic tags opt-in.
 
 ### Changed
 
@@ -18,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Attendee Overview's two-column layout is now a literal 50/50 split.
 - The Two-factor coverage stat on Users & roles no longer counts staff who sign in through an identity provider as "missing 2FA" - two-factor for those accounts is the identity provider's responsibility, not something Admitto enforces.
 - The public ticket page's date, time, and venue now read as a proper stat layout - "Date" and "Time" as labeled columns side by side with a divider between them, and the venue address on its own line below with a pin icon - instead of three stacked icon-and-text rows. The previous layout also had a real bug: the pin icon could drift away from a venue address that wrapped onto a second line, growing worse the longer the venue name was. Date and time no longer need an icon at all, and the venue's pin icon now stays at a fixed, consistent gap from the address regardless of its length.
+- Wallet pass's `event_hours` field mapping now reads exactly like the public ticket page: a spaced hyphen between start and end ("9:00 am - 6:00 pm" instead of "9:00am-6:00pm"), the event's timezone abbreviation appended, and an open-ended "from"/"until" instead of being omitted entirely when only one of start/end is set on the event.
 
 ### Fixed
 

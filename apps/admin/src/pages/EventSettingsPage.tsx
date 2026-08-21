@@ -56,6 +56,7 @@ import {
   formatEventDateTime,
   formatUtcDateTime,
   formatWalletDatePreview,
+  formatWalletDatePreviewShort,
   formatZonedClockTime,
 } from "../utils/event-dates.js";
 import {
@@ -164,6 +165,7 @@ const WALLET_PLACEHOLDER_LABELS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[num
   department: "Attendee department",
   event_name: "Event name",
   event_date: "Event date",
+  event_date_short: "Event date (short)",
   event_hours: "Event hours",
   event_location: "Event location",
   directions_text: "Directions",
@@ -192,6 +194,7 @@ const WALLET_PLACEHOLDER_ICONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[numb
   department: "user",
   event_name: "calendar-event",
   event_date: "calendar-event",
+  event_date_short: "calendar-event",
   event_hours: "calendar-event",
   event_location: "calendar-event",
   directions_text: "notes",
@@ -242,9 +245,10 @@ function computeWalletPlaceholderPreview(
   if (attendeeHint) return attendeeHint;
   if (id === "event_name") return form.title;
   if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
+  if (id === "event_date_short") return formatWalletDatePreviewShort(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_hours") {
     return form.eventHoursStart && form.eventHoursEnd
-      ? `${form.eventHoursStart}-${form.eventHoursEnd}`
+      ? `${form.eventHoursStart} - ${form.eventHoursEnd}`
       : WALLET_VALUE_NOT_SET;
   }
   if (location === undefined) return "Loading…";

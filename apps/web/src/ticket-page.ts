@@ -1,7 +1,6 @@
 import type { ResolvedTicket } from "@admitto/tickets";
-import { formatDate, formatEventHour } from "@admitto/tickets";
+import { formatDate, formatEventHoursRange } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
-import { getTimeZoneAbbreviationForDate } from "@admitto/shared/timezones";
 import {
   buildEventStaticMapPath,
   formatDirectionsAddressFromComponents,
@@ -19,27 +18,6 @@ import {
 
 function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-
-/** Event-hours range with the two times joined by a spaced hyphen, or an open-ended "from"/"until"
- * when only one side is set - each bound in the event's regional convention (see
- * @admitto/tickets' region-date-format.ts). The timezone abbreviation (e.g. "IST", "EDT") is
- * returned separately so the caller can style it as a de-emphasized suffix rather than baking it
- * into the same string - resolved for the event's own calendar date so a summer event in a
- * DST-observing zone shows "EDT", not a stale "EST" (the zone's standard-time label would be
- * wrong for roughly half the year there). */
-function formatEventHoursRange(
-  start: string | null,
-  end: string | null,
-  country: string | null | undefined,
-  timezone: string,
-  eventDate: Date,
-): { hours: string; tzAbbr: string | null } | null {
-  const tzAbbr = getTimeZoneAbbreviationForDate(timezone, eventDate);
-  if (start && end) return { hours: `${formatEventHour(start, country)} - ${formatEventHour(end, country)}`, tzAbbr };
-  if (start) return { hours: `from ${formatEventHour(start, country)}`, tzAbbr };
-  if (end) return { hours: `until ${formatEventHour(end, country)}`, tzAbbr };
-  return null;
 }
 
 const PIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;

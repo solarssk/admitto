@@ -56,6 +56,21 @@ export function formatWalletDatePreview(isoDate: string): string | null {
 }
 
 /**
+ * Preview of the {{event_date_short}} wallet placeholder - same fallback (en-GB, no country
+ * threaded through, see {@link formatWalletDatePreview}) but with the month abbreviated to a
+ * fixed 3 letters ("24 Sep 2026"), matching @admitto/tickets' `formatDateShort` (not CLDR's own
+ * en-GB "Sept").
+ */
+export function formatWalletDatePreviewShort(isoDate: string): string | null {
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+    parsed.getUTCMonth()
+  ];
+  return `${parsed.getUTCDate()} ${month} ${parsed.getUTCFullYear()}`;
+}
+
+/**
  * Numeric UTC offset for `timezone` at the instant `iso`, e.g. "UTC+2" or "UTC+5:30" ("UTC"
  * with no offset for the UTC zone itself, which has none). Resolved for the given instant
  * (not the zone's year-round standard offset) so DST is reflected correctly — a Warsaw event
