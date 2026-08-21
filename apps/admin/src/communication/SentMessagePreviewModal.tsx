@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { IconButton, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
+import { IconButton, ModalBackdrop, Skeleton } from "@admitto/ui";
 import { fetchRenderedDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, RenderedDeliveryDto } from "../api/types.js";
@@ -12,10 +12,10 @@ export interface SentMessagePreviewModalProps {
   onClose: () => void;
 }
 
-/** Read-only preview of a sent message's rendered content, fetched fresh from the redacted
- * `/rendered` endpoint (see communication-api-routes.ts handleGetRenderedEventDelivery), which
- * replaces `{{qr_image_url}}`/`{{ticket_url}}` tokens with a safe placeholder server-side - the
- * recipient's real QR code and working ticket link are never fetched or rendered here. */
+/** Read-only preview of a sent message's rendered content, fetched fresh from the `/rendered`
+ * endpoint (see communication-api-routes.ts handleGetRenderedEventDelivery), with the
+ * recipient's real ticket link and QR code materialized in - same admin/superadmin access as
+ * "Copy ticket link", which already exposes the same ticket_url. */
 export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<SentMessagePreviewModalProps>) {
   const [rendered, setRendered] = useState<RenderedDeliveryDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,10 +57,6 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
           <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
         </div>
         <div className="delivery-modal__body">
-          <Notice variant="highlight" icon="qrcode-off">
-            The QR code and ticket link are hidden here for privacy. The recipient&apos;s actual
-            copy includes the real ones.
-          </Notice>
           {loading && (
             <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
               <span className="sr-only">Loading message…</span>

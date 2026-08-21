@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Communication → Delivery log's "View sent message" preview now shows the recipient's real ticket link and QR code instead of a redacted placeholder. Event managers already have equivalent access to the same real ticket link one click away (attendee detail → More actions → Copy ticket link), so hiding it in the preview no longer served a purpose.
+
 ## [0.5.4] - 2026-08-21
 
 ### Added

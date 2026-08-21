@@ -266,9 +266,9 @@ export async function getDeliveryWithTimeline(
 export async function getRenderedDelivery(
   params: { eventId: string; id: string },
   prisma: PrismaClient,
-): Promise<{ rendered_subject: string | null; rendered_html: string | null } | null> {
+): Promise<{ attendee_id: string; rendered_subject: string | null; rendered_html: string | null } | null> {
   return prisma.emailDelivery.findFirst({
     where: { id: params.id, event_id: params.eventId },
-    select: { rendered_subject: true, rendered_html: true },
+    select: { attendee_id: true, rendered_subject: true, rendered_html: true },
   });
 }

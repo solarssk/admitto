@@ -20,7 +20,7 @@ import {
   setMailTemplate,
   updateMailTemplateMetadata,
   validateTemplate,
-  materializeStoredDeliveryMessageRedacted,
+  materializeStoredDeliveryMessage,
   UnknownPlaceholdersError,
   MjmlCompileError,
   friendlyMjmlErrorMessage,
@@ -35,6 +35,7 @@ import {
   listDeliveries,
   getDeliveryWithTimeline,
   getRenderedDelivery,
+  resolveAttendeeMailLinks,
   sendTestEmail,
   toDeliveryDto,
   toDeliveryDetailDto,
@@ -659,15 +660,17 @@ export async function handleGetEventDelivery(c: Context, db: PrismaClient): Prom
   return c.json(dto);
 }
 
-/** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered — redacted rendered message
- * for the "View sent message" preview. The recipient's real QR code / ticket link are never
- * returned, by construction — see materializeStoredDeliveryMessageRedacted. Either field can
- * independently be null: the delivery wasn't found at all (whole response is null/404), or the
- * retention window already nulled the stored snapshot (see retention.ts nullifyDeliverySnapshots)
- * — callers must render an explicit "message content no longer available" state for the latter. */
+/** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered — rendered message for the
+ * "View sent message" preview, with the recipient's real ticket link and QR code materialized in
+ * (same admin/superadmin gate as "Copy ticket link", which already exposes the same ticket_url).
+ * Either field can independently be null: the delivery wasn't found at all (whole response is
+ * null/404), or the retention window already nulled the stored snapshot (see retention.ts
+ * nullifyDeliverySnapshots) — callers must render an explicit "message content no longer
+ * available" state for the latter. */
 export async function handleGetRenderedEventDelivery(
   c: Context,
   db: PrismaClient,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -685,14 +688,23 @@ export async function handleGetRenderedEventDelivery(
     return c.json({ subject: null, html: null });
   }
 
-  const redacted = materializeStoredDeliveryMessageRedacted({
-    subject: rendered.rendered_subject ?? "",
-    html: rendered.rendered_html ?? "",
-  });
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+
+  let materialized;
+  try {
+    const links = await resolveAttendeeMailLinks(rendered.attendee_id, db, baseUrlOrRes);
+    materialized = materializeStoredDeliveryMessage(
+      { subject: rendered.rendered_subject ?? "", html: rendered.rendered_html ?? "" },
+      links,
+    );
+  } catch {
+    return c.json({ subject: null, html: null });
+  }
 
   return c.json({
-    subject: rendered.rendered_subject != null ? redacted.subject : null,
-    html: rendered.rendered_html != null ? redacted.html : null,
+    subject: rendered.rendered_subject != null ? materialized.subject : null,
+    html: rendered.rendered_html != null ? materialized.html : null,
   });
 }
 

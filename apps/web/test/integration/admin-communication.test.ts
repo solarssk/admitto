@@ -16,7 +16,8 @@ import {
   UnquotedAttributePlaceholderError,
 } from "@admitto/mail-templates";
 import type { ExportPayload } from "@admitto/mailer";
-import { EXPORT_ROW_CAP } from "@admitto/tickets";
+import { EXPORT_ROW_CAP, generateToken } from "@admitto/tickets";
+import { encryptToString } from "@admitto/crypto";
 import { createApp } from "../../src/app.js";
 import {
   handleExportEventDeliveries,
@@ -172,6 +173,7 @@ async function seed(client: PrismaClient) {
       event_id: EVENT_A,
       email: "bob@example.com",
       name: "Bob Beta",
+      token_enc: encryptToString(generateToken()),
     },
   });
   await client.attendee.create({
@@ -196,6 +198,7 @@ async function seed(client: PrismaClient) {
       event_id: EVENT_A,
       email: "eve@example.com",
       name: "Eve Epsilon",
+      token_enc: encryptToString(generateToken()),
     },
   });
   await client.attendee.create({
@@ -1042,7 +1045,7 @@ describe("GET /api/admin/events/:eventId/deliveries/:deliveryId", () => {
 });
 
 describe("GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered", () => {
-  it("redacts the ticket link and QR image placeholders, never exposing a real URL", async () => {
+  it("materializes the real ticket link and QR image, same as the recipient's actual email", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_A}/deliveries/${DLV_A2_TEMPLATED}/rendered`,
       { headers: { Cookie: adminCookie } },
@@ -1050,15 +1053,13 @@ describe("GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered", () =>
     expect(res.status).toBe(200);
     const body = (await res.json()) as { subject: string | null; html: string | null };
 
-    expect(body.subject).toBe("Ticket for {{first_name}}, link: #");
     expect(body.subject).not.toContain("{{ticket_url}}");
+    expect(body.subject).toContain("https://tickets.example.com/t/");
 
     expect(body.html).not.toContain("{{ticket_url}}");
     expect(body.html).not.toContain("{{qr_image_url}}");
-    expect(body.html).toContain('href="#"');
-    expect(body.html).toContain("data:image/svg+xml");
-    expect(body.html).not.toContain("http://");
-    expect(body.html).not.toContain("https://");
+    expect(body.html).toContain('href="https://tickets.example.com/t/');
+    expect(body.html).toContain('src="https://tickets.example.com/q/');
   });
 
   it("returns null subject/html once the retention window has nulled the stored snapshot", async () => {
