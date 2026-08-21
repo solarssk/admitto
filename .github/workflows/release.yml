@@ -3,6 +3,12 @@ name: Release
 # After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag,
 # GitHub Release (notes + required .title tagline), close the milestone, and trigger
 # publish-container.yml (GITHUB_TOKEN tag pushes do not start other workflows).
+#
+# The release commit isn't always HEAD: a "Create a merge commit" merge of the release
+# PR puts it one or more commits behind the merge commit that actually triggers this push
+# event (only a squash merge lands it at HEAD directly). Detection below searches recent
+# history for the release commit instead of assuming it's HEAD, so it fires the same way
+# regardless of which merge method was used to land the release PR.
 
 on:
   push:
@@ -23,36 +29,38 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 50
           persist-credentials: false
 
       - name: Detect product version bump
         id: bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          SUBJECT="$(git log -1 --format=%s)"
-          if ! printf '%s' "$SUBJECT" | grep -qiE '^release:[[:space:]]+v[0-9]+\.[0-9]+\.[0-9]+'; then
-            echo "Latest commit is not a release cut — skipping."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
           NEW="$(jq -r .version package.json)"
           if ! printf '%s' "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "Invalid package.json version: $NEW" >&2
             exit 1
           fi
+          TAG="v${NEW}"
+          TAG_RE="v${NEW//./\\.}"
 
-          OLD="$(git show HEAD~1:package.json 2>/dev/null | jq -r .version || echo 0.0.0)"
-          if [ "$NEW" = "$OLD" ]; then
-            echo "package.json version unchanged ($NEW) — skipping."
+          if ! git log -n 50 --format=%s | grep -qiE "^release:[[:space:]]+${TAG_RE}\$"; then
+            echo "No 'release: ${TAG}' commit in the last 50 — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists — skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          echo "Product version bump: $OLD → $NEW (commit: $SUBJECT)"
+          echo "Product version bump detected: ${TAG}"
 
       - name: Verify release artifacts
         if: steps.bump.outputs.skip != 'true'
