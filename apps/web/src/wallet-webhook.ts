@@ -42,7 +42,7 @@ async function resolveCachedPublicKey(
     publicKeyCache.set(eventId, publicKey);
     return publicKey;
   } catch (err) {
-    emitSystemLog("api", "error", "wallet_webhook_public_key_fetch_failed", {
+    emitSystemLog("wallet", "error", "wallet_webhook_public_key_fetch_failed", {
       eventId,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -150,7 +150,7 @@ export async function handlePassCreatorWebhook(
   // delivery arrived but was rejected before this point; neither this nor those appearing at all
   // means PassCreator isn't reaching this URL (subscription/network problem, not a signature one).
   const { matched } = await applyWebhookUpdate(db, data);
-  emitSystemLog("api", "info", matched ? "wallet_webhook_applied" : "wallet_webhook_unmatched", {
+  emitSystemLog("wallet", "info", matched ? "wallet_webhook_applied" : "wallet_webhook_unmatched", {
     eventId,
   });
   return c.body(null, 200);

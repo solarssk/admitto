@@ -7,6 +7,7 @@
  * concurrency to manage here.
  */
 import type { PrismaClient } from "@admitto/db";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { claimNextAdminJob } from "./claim-admin-job.js";
 import { reclaimStaleAdminJobsByType } from "./reclaim-stale-admin-jobs-by-type.js";
 import { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
@@ -69,7 +70,10 @@ function walletMessageJobErrorMessage(err: unknown): string {
 }
 
 async function markWalletMessageFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
-  console.error("wallet message job failed:", err);
+  emitSystemLog("wallet", "error", "wallet_message_job_failed", {
+    job_id: jobId,
+    error: err instanceof Error ? err.message : String(err),
+  });
   await db.adminJob.update({
     where: { id: jobId },
     data: {

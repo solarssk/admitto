@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PassCreatorClient, WalletProviderError } from "../src/index.js";
 import { PASSCREATOR_DEFAULT_BASE_URL } from "../src/passcreator-config.js";
 import type { WalletPassInput } from "../src/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const CONFIG = { apiKey: "test-key", templateId: "tmpl-1", baseUrl: "https://pc.test" };
 
@@ -680,5 +681,64 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.getRegistrationStatus("admitto:event1:attendee1");
     expect(result?.googleActiveRegistrations).toBe(1);
+  });
+});
+
+describe("PassCreatorClient wallet system-log coverage", () => {
+  afterEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
+  it("logs an info-level entry with the route (query string stripped) on a successful request", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: { identifier: "pass-1", iPhoneUri: "u", androidUri: "u" },
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await client.createPass(INPUT);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "info",
+      message: "passcreator_request_ok",
+      fields: { method: "POST", route: "/api/v3/pass", status: 200 },
+    });
+  });
+
+  it("logs a warn-level entry (no request body, no Authorization header) on a rejected request", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(401, { success: false, errors: ["Unauthorized"] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_rejected", fields: { status: 401 } });
+    expect(JSON.stringify(entry)).not.toContain("test-key");
+    expect(JSON.stringify(entry)).not.toContain(INPUT.attendeeName);
+  });
+
+  it("strips the query string from a search request's route (avoids leaking the encoded userProvidedId)", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: [] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await client.findByUserProvidedId("admitto:event1:attendee1");
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry?.fields?.["route"]).toBe("/api/v3/pass");
+    expect(JSON.stringify(entry)).not.toContain("attendee1");
+  });
+
+  it("logs a warn-level entry when the request itself throws (network failure)", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_failed" });
   });
 });

@@ -1,4 +1,5 @@
 import { NO_COMPRESSION_HEADERS } from "@admitto/shared";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { WalletProviderError } from "./types.js";
 import type { WalletPassInput, WalletPassRegistrationStatus, WalletPassResult } from "./types.js";
 import type { WalletPassProvider } from "./provider.js";
@@ -363,8 +364,14 @@ export class PassCreatorClient implements WalletPassProvider {
     return envelope.data;
   }
 
-  /** Issues one request with 429 exponential backoff; throws WalletProviderError on final failure. */
+  /** Issues one request with 429 exponential backoff; throws WalletProviderError on final failure.
+   * The single choke point every PassCreator operation (issue/void/push/search/webhook key fetch)
+   * goes through, so logging here - rather than at each of those call sites - gives full "wallet"
+   * source coverage in one place. Logs only the route (query string stripped: the search endpoint
+   * encodes an attendee's userProvidedId into it) and the outcome, never the request body or the
+   * Authorization header. */
   private async requestRaw(method: string, path: string, body?: unknown): Promise<Response> {
+    const route = path.split("?")[0];
     let lastRes: Response | undefined;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       let res: Response;
@@ -379,19 +386,32 @@ export class PassCreatorClient implements WalletPassProvider {
           body: body !== undefined ? JSON.stringify(body) : undefined,
         });
       } catch (err) {
+        emitSystemLog("wallet", "warn", "passcreator_request_failed", {
+          method,
+          route,
+          error: err instanceof Error ? err.message : String(err),
+        });
         throw new WalletProviderError(
           "wallet_provider_timeout",
           `PassCreator request failed: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
 
-      if (res.status !== 429) return res;
+      if (res.status !== 429) {
+        emitSystemLog("wallet", res.ok ? "info" : "warn", res.ok ? "passcreator_request_ok" : "passcreator_request_rejected", {
+          method,
+          route,
+          status: res.status,
+        });
+        return res;
+      }
 
       lastRes = res;
       if (attempt < MAX_RETRIES) {
         await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
       }
     }
+    emitSystemLog("wallet", "error", "passcreator_request_rate_limited", { method, route, attempts: MAX_RETRIES + 1 });
     throw this.toProviderError(lastRes?.status ?? 429, ["Rate limited"]);
   }
 
