@@ -28,4 +28,10 @@ describe("timezones", () => {
     expect(normalizeTimeZone("Legacy/Removed")).toBeNull();
     expect(getTimeZone("Legacy/Removed")).toBeNull();
   });
+
+  it("exposes the zone's standard-time abbreviation", () => {
+    expect(getTimeZone("Asia/Kolkata")?.abbreviation).toBe("IST");
+    expect(getTimeZone("Europe/Warsaw")?.abbreviation).toBe("CET");
+    expect(getTimeZone("UTC")?.abbreviation).toBe("UTC");
+  });
 });

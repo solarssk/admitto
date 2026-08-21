@@ -1,6 +1,7 @@
 import type { ResolvedTicket } from "@admitto/tickets";
 import { formatDate, formatEventHour } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
+import { getTimeZone } from "@admitto/shared/timezones";
 import {
   buildEventStaticMapPath,
   formatDirectionsAddressFromComponents,
@@ -20,17 +21,23 @@ function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-/** Event-hours range with the two times joined by an en dash, or an open-ended "from"/"until"
+/** Event-hours range with the two times joined by a spaced hyphen, or an open-ended "from"/"until"
  * when only one side is set - each bound in the event's regional convention (see
- * @admitto/tickets' region-date-format.ts). */
+ * @admitto/tickets' region-date-format.ts), followed by the event's own timezone abbreviation
+ * (e.g. "IST", "CET"). The abbreviation is the zone's standard-time label, not DST-adjusted -
+ * consistent with formatEventHour, which formats the raw HH:MM wall-clock value as-is rather than
+ * converting an anchored instant. */
 function formatEventHoursRange(
   start: string | null,
   end: string | null,
   country: string | null | undefined,
+  timezone: string,
 ): string | null {
-  if (start && end) return `${formatEventHour(start, country)}–${formatEventHour(end, country)}`;
-  if (start) return `from ${formatEventHour(start, country)}`;
-  if (end) return `until ${formatEventHour(end, country)}`;
+  const zoneSuffix = getTimeZone(timezone)?.abbreviation;
+  const suffix = zoneSuffix ? ` ${zoneSuffix}` : "";
+  if (start && end) return `${formatEventHour(start, country)} - ${formatEventHour(end, country)}${suffix}`;
+  if (start) return `from ${formatEventHour(start, country)}${suffix}`;
+  if (end) return `until ${formatEventHour(end, country)}${suffix}`;
   return null;
 }
 
@@ -293,6 +300,7 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
     event.eventHoursStart,
     event.eventHoursEnd,
     event.addressComponents?.country,
+    event.timezone,
   );
   return `<header class="ticket__top">
       <div class="ticket__brand">
@@ -307,9 +315,9 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
     <div class="ticket__body">
       <h1 class="ticket__event-name">${esc(event.title)}</h1>
       <div class="ticket__meta">
-        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date, event.addressComponents?.country))}</span></span>
-        ${eventHoursText ? `<span>${CLOCK_ICON}<span class="ticket__meta-text">${esc(eventHoursText)}</span></span>` : ""}
-        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
+        <span class="ticket__meta-row"><span class="ticket__meta-icon">${CALENDAR_ICON}</span><span class="ticket__meta-text">${esc(formatDate(event.date, event.addressComponents?.country))}</span></span>
+        ${eventHoursText ? `<span class="ticket__meta-row"><span class="ticket__meta-icon">${CLOCK_ICON}</span><span class="ticket__meta-text">${esc(eventHoursText)}</span></span>` : ""}
+        ${event.location ? `<span class="ticket__meta-row"><span class="ticket__meta-icon">${PIN_ICON}</span><span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
       </div>
       <div class="ticket__attendee">
         <p class="ticket__attendee-name">${esc(attendee.name)}</p>

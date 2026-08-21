@@ -10,6 +10,9 @@ export type TimeZoneDefinition = {
   continentName: string;
   alternativeName: string;
   mainCities: readonly string[];
+  /** Short display label, e.g. "IST", "CET" - the zone's standard-time abbreviation, not
+   * DST-adjusted (matches this codebase's existing wall-clock-only time display). */
+  abbreviation: string;
 };
 
 const metadataByIana = new Map(
@@ -56,6 +59,7 @@ const TIME_ZONES: readonly TimeZoneDefinition[] = [...aliasesByPrimaryIana].map(
       continentName: metadata?.continentName ?? "",
       alternativeName: metadata?.alternativeName ?? "",
       mainCities: metadata?.mainCities.filter(Boolean) ?? [],
+      abbreviation: iana === "UTC" ? "UTC" : (metadata?.abbreviation ?? ""),
     };
   },
 );

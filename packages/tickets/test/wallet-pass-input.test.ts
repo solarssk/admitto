@@ -143,10 +143,10 @@ describe("formatEventHour", () => {
     expect(formatEventHour("09:00", "Not A Real Country")).toBe("09:00");
   });
 
-  it("converts to 12h AM/PM for a US event", () => {
-    expect(formatEventHour("09:00", "United States")).toBe("9:00 AM");
-    expect(formatEventHour("18:00", "United States")).toBe("6:00 PM");
-    expect(formatEventHour("00:00", "United States")).toBe("12:00 AM");
+  it("converts to 12h am/pm for a US event, lowercased regardless of ICU's default casing", () => {
+    expect(formatEventHour("09:00", "United States")).toBe("9:00 am");
+    expect(formatEventHour("18:00", "United States")).toBe("6:00 pm");
+    expect(formatEventHour("00:00", "United States")).toBe("12:00 am");
   });
 
   it("returns malformed input unchanged rather than guessing", () => {
@@ -286,7 +286,7 @@ describe("buildWalletPassInput", () => {
     );
 
     expect(input.eventDateLabel).toBe("September 24, 2026");
-    expect(input.eventHoursLabel).toBe("9:00 AM-6:00 PM");
+    expect(input.eventHoursLabel).toBe("9:00 am-6:00 pm");
   });
 });
 

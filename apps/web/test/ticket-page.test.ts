@@ -254,7 +254,7 @@ describe("renderTicket", () => {
       },
       "data:image/png;base64,abc",
     );
-    expect(html).toContain("18:00–22:00");
+    expect(html).toContain("18:00 - 22:00");
   });
 
   it("renders an open-ended hours label when only one side of the range is set", () => {
@@ -302,7 +302,31 @@ describe("renderTicket", () => {
       "data:image/png;base64,abc",
     );
     expect(html).toContain("September 1, 2026");
-    expect(html).toContain("6:00 PM–10:00 PM");
+    expect(html).toContain("6:00 pm - 10:00 pm");
+  });
+
+  it("appends the event timezone's abbreviation to the hours range", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          eventHoursStart: "10:00",
+          eventHoursEnd: "18:05",
+          timezone: "Asia/Kolkata",
+          addressComponents: {
+            object_name: null,
+            street: null,
+            postcode: null,
+            city: null,
+            region: null,
+            country: "India",
+          },
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("10:00 am - 6:05 pm IST");
   });
 
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {

@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check-in and note timestamps now show in the viewer's own browser timezone rather than the event's, and a note added on an earlier day now shows which day, not just a time.
 - Security logs' "2FA verified" rows now get the same "your local time" icon as "Login succeeded" rows when the browser reported a timezone, instead of always falling back to the generic device icon.
 - Several small layout fixes on Check-in, Users & roles, My account, Organisation settings → Identity/Mail, and Attendee delivery history: text no longer wraps awkwardly in status chips or company/department names, modal scrollbars behave consistently and no longer shift content when they appear, a Redirect URI field's copy control now sits inside the field, and a couple of redundant or misaligned hint lines were removed or straightened out.
+- The public ticket page's location pin icon no longer drifts away from a venue address that wraps onto a second line - it now sits right next to the address at the same small, consistent gap as the calendar and clock icons above it, regardless of how long the venue name is.
+- Ticket page event hours now show the event's own timezone abbreviation next to the time (e.g. "10:00 am - 6:05 pm IST"), always use lowercase am/pm instead of varying between "AM" and "am" depending on the event's country, and join the start and end time with a spaced hyphen instead of a tight dash.
 
 ## [0.5.3] - 2026-08-18
 
