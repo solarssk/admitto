@@ -344,6 +344,18 @@ describe("renderTicket", () => {
     expect(html).not.toContain("EST");
   });
 
+  it("omits the timezone suffix (without breaking the hours) when the event's timezone is unrecognized", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: { ...ticketFor(null).event, eventHoursStart: "09:00", eventHoursEnd: "17:00", timezone: "Not/AZone" },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("09:00 - 17:00");
+    expect(html).not.toContain('class="ticket__stat-tz"');
+  });
+
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {
     const html = renderTicket(
       {
