@@ -247,9 +247,10 @@ function computeWalletPlaceholderPreview(
   if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_date_short") return formatWalletDatePreviewShort(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_hours") {
-    return form.eventHoursStart && form.eventHoursEnd
-      ? `${form.eventHoursStart} - ${form.eventHoursEnd}`
-      : WALLET_VALUE_NOT_SET;
+    if (form.eventHoursStart && form.eventHoursEnd) return `${form.eventHoursStart} - ${form.eventHoursEnd}`;
+    if (form.eventHoursStart) return `from ${form.eventHoursStart}`;
+    if (form.eventHoursEnd) return `until ${form.eventHoursEnd}`;
+    return WALLET_VALUE_NOT_SET;
   }
   if (location === undefined) return "Loading…";
   switch (id) {

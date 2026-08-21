@@ -18,6 +18,7 @@
  * self-hosted deployment with Location/geocoding disabled gets by default.
  */
 
+import { zonedWallClockToUtcIso } from "@admitto/shared";
 import { getTimeZoneAbbreviationForDate } from "@admitto/shared/timezones";
 
 /** ISO 3166-1 alpha-2 codes currently assigned. Hardcoded because `Intl.supportedValuesOf` has
@@ -178,14 +179,34 @@ export function formatEventHour(hhmm: string, country?: string | null): string {
   return isH12 ? formatted.replace(/\s?(AM|PM)\b/i, (m) => m.toLowerCase()) : formatted;
 }
 
+/** The real instant `hhmm` on `eventDate`'s calendar day resolves to in `timezone` - the correct,
+ * DST-aware instant (via {@link zonedWallClockToUtcIso}), not `eventDate` itself (a display-only
+ * sentinel anchored at noon UTC, see {@link formatDate}). Needed because a same-day DST
+ * transition can put noon UTC on the opposite side of the transition from the actually-configured
+ * hour - e.g. an America/New_York event at 00:30 on the US spring-forward date is still EST, even
+ * though noon UTC that same day is already EDT. */
+function resolveHourInstant(eventDate: Date, hhmm: string, timezone: string): Date {
+  const y = eventDate.getUTCFullYear();
+  const m = eventDate.getUTCMonth();
+  const d = eventDate.getUTCDate();
+  const dayStr = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  return new Date(zonedWallClockToUtcIso(dayStr, `${hhmm}:00.000`, timezone));
+}
+
 /** Event-hours range with the two times joined by a spaced hyphen, or an open-ended "from"/"until"
  * when only one side is set - each bound in the event's regional convention (see
  * {@link formatEventHour}). The timezone abbreviation (e.g. "IST", "EDT") is returned separately
  * so a caller with a styled layout (the ticket page) can de-emphasize it rather than baking it
- * into the same string - resolved for the event's own calendar date so a summer event in a
- * DST-observing zone shows "EDT", not a stale "EST" (the zone's standard-time label would be
- * wrong for roughly half the year there). Shared by the public ticket page and the wallet pass
- * (`event_hours` placeholder) so both show the identical range, spacing, and zone suffix. */
+ * into the same string - resolved at the actually-configured start (or end, if there's no start)
+ * hour via {@link resolveHourInstant}, not `eventDate`'s own noon-UTC sentinel, so a summer event
+ * in a DST-observing zone shows "EDT", not a stale "EST" (the zone's standard-time label would be
+ * wrong for roughly half the year there), and an hour near a same-day DST transition shows the
+ * abbreviation that actually applies to it rather than whatever noon UTC happens to resolve to
+ * that day (bot review: a 00:30 America/New_York event on the US spring-forward date is still
+ * EST, even though noon UTC that day is already EDT). Falls back to `eventDate` itself only for a
+ * malformed hour string, matching {@link formatEventHour}'s own "return unchanged rather than
+ * guessing" behavior. Shared by the public ticket page and the wallet pass (`event_hours`
+ * placeholder) so both show the identical range, spacing, and zone suffix. */
 export function formatEventHoursRange(
   start: string | null,
   end: string | null,
@@ -193,7 +214,18 @@ export function formatEventHoursRange(
   timezone: string,
   eventDate: Date,
 ): { hours: string; tzAbbr: string | null } | null {
-  const tzAbbr = getTimeZoneAbbreviationForDate(timezone, eventDate);
+  const anchor = start ?? end;
+  let anchorInstant = eventDate;
+  if (anchor && /^\d{2}:\d{2}$/.test(anchor)) {
+    try {
+      anchorInstant = resolveHourInstant(eventDate, anchor, timezone);
+    } catch {
+      // `timezone` isn't a real IANA zone `Intl` recognizes - getTimeZoneAbbreviationForDate
+      // below already validates against the app's own tzdb before touching `Intl` and returns
+      // null for exactly this case, so this just needs to not crash the caller.
+    }
+  }
+  const tzAbbr = getTimeZoneAbbreviationForDate(timezone, anchorInstant);
   if (start && end) return { hours: `${formatEventHour(start, country)} - ${formatEventHour(end, country)}`, tzAbbr };
   if (start) return { hours: `from ${formatEventHour(start, country)}`, tzAbbr };
   if (end) return { hours: `until ${formatEventHour(end, country)}`, tzAbbr };

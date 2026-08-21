@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { buildWalletPassInput, formatDate, formatDateShort, resolveTicketPageDisplay } from "../src/wallet-pass-input.js";
-import { formatEventHour } from "../src/region-date-format.js";
+import { formatEventHour, formatEventHoursRange } from "../src/region-date-format.js";
 
 function makeResolved(ticketType: string | null) {
   return {
@@ -172,6 +172,40 @@ describe("formatEventHour", () => {
   it("rejects out-of-range hour/minute values instead of letting Date.UTC normalize them", () => {
     expect(formatEventHour("24:00", "United States")).toBe("24:00");
     expect(formatEventHour("99:99", "United States")).toBe("99:99");
+  });
+});
+
+describe("formatEventHoursRange", () => {
+  it("resolves the zone abbreviation at the configured start hour, not the noon-UTC date sentinel", () => {
+    // 2026-03-08 is the US spring-forward date: 00:30 America/New_York is still EST, even though
+    // noon UTC that same day is already EDT (bot review: resolving from the date sentinel instead
+    // of the configured hour showed "EDT" for a time that's actually still standard time).
+    const range = formatEventHoursRange(
+      "00:30",
+      "03:00",
+      null,
+      "America/New_York",
+      new Date("2026-03-08T12:00:00.000Z"),
+    );
+    expect(range?.tzAbbr).toBe("EST");
+  });
+
+  it("uses the end hour as the anchor when only an end bound is set", () => {
+    const range = formatEventHoursRange(null, "03:00", null, "America/New_York", new Date("2026-03-08T12:00:00.000Z"));
+    expect(range?.hours).toBe("until 03:00");
+    expect(range?.tzAbbr).toBe("EDT");
+  });
+
+  it("falls back to the date sentinel without throwing for a timezone Intl doesn't recognize", () => {
+    expect(() =>
+      formatEventHoursRange("09:00", "18:00", null, "Not/AZone", new Date("2026-09-24T12:00:00.000Z")),
+    ).not.toThrow();
+    const range = formatEventHoursRange("09:00", "18:00", null, "Not/AZone", new Date("2026-09-24T12:00:00.000Z"));
+    expect(range?.tzAbbr).toBeNull();
+  });
+
+  it("returns null when neither bound is set", () => {
+    expect(formatEventHoursRange(null, null, null, "UTC", new Date("2026-09-24T12:00:00.000Z"))).toBeNull();
   });
 });
 
