@@ -36,6 +36,10 @@ describe("timezones", () => {
   });
 
   describe("getTimeZoneAbbreviationForDate", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it("switches between standard and daylight abbreviations for a zone ICU renders as letters", () => {
       expect(getTimeZoneAbbreviationForDate("America/New_York", new Date("2026-01-15T12:00:00Z"))).toBe("EST");
       expect(getTimeZoneAbbreviationForDate("America/New_York", new Date("2026-07-15T12:00:00Z"))).toBe("EDT");
@@ -74,10 +78,6 @@ describe("timezones", () => {
       // since 2019, so the offset always matches tzdb's standard -180min - exercises the "-"
       // sign branch of the offset parser, which every other case in this file is east of UTC.
       expect(getTimeZoneAbbreviationForDate("America/Sao_Paulo", new Date("2026-07-15T12:00:00Z"))).toBe("BRT");
-    });
-
-    afterEach(() => {
-      vi.restoreAllMocks();
     });
 
     it("falls back to the zone's static abbreviation if ICU throws for a zone in our own catalogue", () => {
