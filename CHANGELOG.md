@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-08-21
+
 ### Added
 
 - Users & roles: the staff user modal and My account's SSO menu now show the actual linked identity provider name(s) (e.g. "Authentik") instead of the generic "Identity provider" label, and list a Cloudflare Access link as its own row alongside any OIDC provider. Unlinking is now two separate actions - "Unlink identity provider" and "Unlink Cloudflare Access" - instead of one combined action that removed both at once; unlinking one leaves the other, and any role grants it manages, untouched.
@@ -1052,7 +1054,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.4...HEAD
+[0.5.4]: https://github.com/solarssk/admitto/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/solarssk/admitto/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/solarssk/admitto/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/solarssk/admitto/compare/v0.5.0...v0.5.1
