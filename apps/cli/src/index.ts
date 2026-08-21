@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { prisma } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { CliError as AuthCliError } from "@admitto/auth/cli-helpers";
 import { loadDotEnv } from "./loadDotEnv.js";
 import { CliError, hasFlag } from "./lib/args.js";
@@ -33,6 +33,7 @@ function resolveCommandHandler(
   namespace: string | undefined,
   command: string | undefined,
   argv: string[],
+  prisma: PrismaClient,
 ): (() => Promise<void>) | undefined {
   if (namespace === "worker" && (command === undefined || command === "run")) {
     return () => runWorker(prisma);
@@ -58,6 +59,8 @@ function resolveCommandHandler(
   return handlers[`${namespace}:${command}`];
 }
 
+let prisma: PrismaClient | undefined;
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
 
@@ -77,10 +80,20 @@ async function main(): Promise<void> {
     throw new CliError("DATABASE_URL is required");
   }
 
+  // Imported dynamically, only after loadDotEnv() has populated process.env.DATABASE_URL -
+  // @admitto/db creates its PrismaClient at module-evaluation time, reading DATABASE_URL
+  // synchronously (packages/db/src/index.ts's top-level `export const prisma = ...`). A static
+  // top-level import here would resolve before loadDotEnv() ever ran (import statements are
+  // always hoisted above other top-level code, regardless of source order), so running this CLI
+  // from a shell that hasn't already exported DATABASE_URL silently connected to the local
+  // default Postgres database instead of the one in .env (found live: `npm run worker`).
+  const db = await import("@admitto/db");
+  prisma = db.prisma;
+
   const namespace = argv[0];
   const command = argv[1];
 
-  const handler = resolveCommandHandler(namespace, command, argv);
+  const handler = resolveCommandHandler(namespace, command, argv, prisma);
   if (!handler) {
     printUsage();
     throw new CliError("Invalid usage");
@@ -101,7 +114,7 @@ try {
   }
 } finally {
   try {
-    await prisma.$disconnect();
+    await prisma?.$disconnect();
   } catch {
     // Preserve exit code from the catch above; disconnect failures must not override it.
   }
