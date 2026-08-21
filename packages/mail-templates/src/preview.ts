@@ -1,8 +1,9 @@
 import type { PrismaClient } from "@admitto/db";
+import { parseStoredAddressComponents } from "@admitto/location";
+import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-date-format";
 import { resolvePublicBaseUrl } from "./baseUrl.js";
 import { resolveBrandingFromEvent, resolveEventImageAssetVars } from "./branding.js";
 import { validateHttpUrl } from "./escape.js";
-import { formatEventDate, formatEventHours, resolvePreviewEventTimeZone } from "./formatEventDate.js";
 import {
   buildEventLocationTemplateVars,
   type EventLocationForTemplateVars,
@@ -12,8 +13,6 @@ import { renderTemplate } from "./render.js";
 import type { BrandingUrls, RenderedTemplate, TemplateVars } from "./types.js";
 
 export interface PreviewTemplateOptions {
-  /** IANA timezone for calendar `event_date` (e.g. Europe/Warsaw). Falls back to ADMITTO_DEFAULT_EVENT_TIMEZONE or UTC. */
-  timeZone?: string;
   /** Public instance URL - absolutizes `/uploads/…` branding assets in rendered HTML. */
   baseUrl?: string;
   /** Env for resolving `BASE_URL` when `baseUrl` is omitted (defaults to `process.env`). */
@@ -83,7 +82,7 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   full_name: "Alex Example",
   email: "alex@example.com",
   event_name: "Sample Event",
-  event_date: "2026-09-01",
+  event_date: "1 September 2026",
   event_location: "Warsaw",
   event_map_url: "",
   event_address: "",
@@ -99,17 +98,36 @@ export const DEFAULT_SAMPLE_VARS: TemplateVars = {
   google_wallet_url: SAMPLE_GOOGLE_WALLET_URL,
   download_page_url: "",
   ticket_type: "General",
-  event_hours: "10:00-17:00",
+  event_hours: "10:00 - 17:00",
 };
 
 type EventForBaseTemplateVars = {
   id: string;
   title: string;
   date: Date;
+  timezone: string;
   event_hours_start?: string | null;
   event_hours_end?: string | null;
   location_details?: EventLocationForTemplateVars;
 };
+
+/** Same region-aware convention the public ticket page uses (see @admitto/shared's
+ * region-date-format.ts): day/month order and 12h-vs-24h follow the event's own country, and the
+ * hours range carries the event's timezone abbreviation (e.g. "IST", "EDT") - so an attendee
+ * reading the confirmation email sees the identical date/time text as their ticket. */
+function buildDateTimeVars(event: EventForBaseTemplateVars): { event_date: string; event_hours: string } {
+  const country = parseStoredAddressComponents(event.location_details?.address_components)?.country ?? null;
+  return {
+    event_date: formatDate(event.date, country),
+    event_hours: formatEventHoursRangeText(
+      event.event_hours_start ?? null,
+      event.event_hours_end ?? null,
+      country,
+      event.timezone,
+      event.date,
+    ),
+  };
+}
 
 /**
  * Shared base vars for preview + test-send so event/branding fields cannot drift
@@ -117,7 +135,6 @@ type EventForBaseTemplateVars = {
  */
 export function buildBaseTemplateVars(
   event: EventForBaseTemplateVars,
-  timeZone: string | undefined,
   branding: BrandingUrls,
   baseUrl: string,
   env: Record<string, string | undefined> = process.env,
@@ -125,8 +142,7 @@ export function buildBaseTemplateVars(
   return {
     ...DEFAULT_SAMPLE_VARS,
     event_name: event.title,
-    event_date: formatEventDate(event.date, resolvePreviewEventTimeZone(timeZone)),
-    event_hours: formatEventHours(event.event_hours_start, event.event_hours_end),
+    ...buildDateTimeVars(event),
     ...buildEventLocationTemplateVars(event.id, event.location_details, baseUrl, env),
     logo_url: branding.logo_url,
     header_image_url: branding.header_image_url,
@@ -152,7 +168,7 @@ export async function previewTemplate(
   const customAssets = await resolveEventImageAssetVars(eventId, prisma);
 
   const vars: TemplateVars = {
-    ...buildBaseTemplateVars(event, options?.timeZone, branding, baseUrl, options?.env),
+    ...buildBaseTemplateVars(event, branding, baseUrl, options?.env),
     ...customAssets.vars,
     ...sampleVars,
   };

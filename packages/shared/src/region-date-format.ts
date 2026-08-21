@@ -18,8 +18,8 @@
  * self-hosted deployment with Location/geocoding disabled gets by default.
  */
 
-import { zonedWallClockToUtcIso } from "@admitto/shared";
-import { getTimeZoneAbbreviationForDate } from "@admitto/shared/timezones";
+import { zonedWallClockToUtcIso } from "./zonedWallClock.js";
+import { getTimeZoneAbbreviationForDate } from "./timezones.js";
 
 /** ISO 3166-1 alpha-2 codes currently assigned. Hardcoded because `Intl.supportedValuesOf` has
  * no "region" key (only calendar/collation/currency/numberingSystem/timeZone/unit are defined by
@@ -230,4 +230,20 @@ export function formatEventHoursRange(
   if (start) return { hours: `from ${formatEventHour(start, country)}`, tzAbbr };
   if (end) return { hours: `until ${formatEventHour(end, country)}`, tzAbbr };
   return null;
+}
+
+/** Plain-text variant of {@link formatEventHoursRange} for callers with no separate styling for
+ * the timezone abbreviation (e.g. mail template placeholders) - folds `tzAbbr` into the same
+ * string instead of returning it separately, empty string when neither bound is set. */
+export function formatEventHoursRangeText(
+  start: string | null,
+  end: string | null,
+  country: string | null | undefined,
+  timezone: string,
+  eventDate: Date,
+): string {
+  const range = formatEventHoursRange(start, end, country, timezone, eventDate);
+  if (!range) return "";
+  if (!range.tzAbbr) return range.hours;
+  return `${range.hours} ${range.tzAbbr}`;
 }

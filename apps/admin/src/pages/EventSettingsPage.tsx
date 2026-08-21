@@ -28,7 +28,7 @@ import {
   type WalletPushHistoryScope,
 } from "../api/client.js";
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
-import { formatEventHoursRange } from "@admitto/tickets/region-date-format";
+import { formatEventHoursRange } from "@admitto/shared/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, EventSettingsDto, LogoCropMeta } from "../api/types.js";

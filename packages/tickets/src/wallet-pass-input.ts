@@ -4,7 +4,7 @@ import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/
 import { zonedWallClockToUtcIso } from "@admitto/shared";
 import { loadEventTicketTypes } from "./ticket-types.js";
 import type { resolveTicket } from "./resolve.js";
-import { formatDate, formatDateShort, formatEventHoursRange } from "./region-date-format.js";
+import { formatDate, formatDateShort, formatEventHoursRange } from "@admitto/shared/region-date-format";
 
 type ResolvedTicket = NonNullable<Awaited<ReturnType<typeof resolveTicket>>>;
 
