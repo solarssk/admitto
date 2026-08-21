@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getTimeZone, getTimeZoneAbbreviationForDate, getTimeZones, normalizeTimeZone } from "../src/timezones.js";
 
 describe("timezones", () => {
@@ -67,6 +67,28 @@ describe("timezones", () => {
     it("returns UTC as-is and null for an unrecognized zone", () => {
       expect(getTimeZoneAbbreviationForDate("UTC", new Date("2026-07-15T12:00:00Z"))).toBe("UTC");
       expect(getTimeZoneAbbreviationForDate("Legacy/Removed", new Date("2026-07-15T12:00:00Z"))).toBeNull();
+    });
+
+    it("parses a negative UTC offset the same way as a positive one", () => {
+      // America/Sao_Paulo: ICU gives no letter form ("GMT-3") and Brazil hasn't observed DST
+      // since 2019, so the offset always matches tzdb's standard -180min - exercises the "-"
+      // sign branch of the offset parser, which every other case in this file is east of UTC.
+      expect(getTimeZoneAbbreviationForDate("America/Sao_Paulo", new Date("2026-07-15T12:00:00Z"))).toBe("BRT");
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("falls back to the zone's static abbreviation if ICU throws for a zone in our own catalogue", () => {
+      // Our IANA catalogue (tzdata) and the runtime's own ICU build can disagree on exactly which
+      // zone names exist - this simulates ICU rejecting a zone name we already resolved as valid.
+      vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => {
+        throw new RangeError("Invalid time zone specified");
+      });
+      expect(getTimeZoneAbbreviationForDate("Asia/Kolkata", new Date("2026-07-15T12:00:00Z"))).toBe("IST");
+      // Etc/GMT-5 has no tzdb abbreviation to fall back to either - the last resort is "".
+      expect(getTimeZoneAbbreviationForDate("Etc/GMT-5", new Date("2026-07-15T12:00:00Z"))).toBe("");
     });
   });
 });

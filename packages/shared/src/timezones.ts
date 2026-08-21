@@ -136,5 +136,6 @@ export function getTimeZoneAbbreviationForDate(timeZone: string, date: Date): st
   if (actualOffsetMinutes != null && actualOffsetMinutes === zone.standardOffsetMinutes && zone.abbreviation) {
     return zone.abbreviation;
   }
-  return offsetRaw ?? icuShort ?? zone.abbreviation ?? null;
+  // zone.abbreviation is always a string (never nullish), so it's a safe final fallback here.
+  return offsetRaw ?? icuShort ?? zone.abbreviation;
 }
