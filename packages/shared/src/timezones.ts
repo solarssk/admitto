@@ -127,9 +127,11 @@ export function getTimeZoneAbbreviationForDate(timeZone: string, date: Date): st
 
   const offsetRaw = icuTimeZoneNamePart(zone.iana, date, "shortOffset");
   const match = offsetRaw && GMT_OFFSET_RE.exec(offsetRaw);
-  const actualOffsetMinutes = match
-    ? (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3] ?? 0))
-    : null;
+  let actualOffsetMinutes: number | null = null;
+  if (match) {
+    const sign = match[1] === "-" ? -1 : 1;
+    actualOffsetMinutes = sign * (Number(match[2]) * 60 + Number(match[3] ?? 0));
+  }
 
   if (actualOffsetMinutes != null && actualOffsetMinutes === zone.standardOffsetMinutes && zone.abbreviation) {
     return zone.abbreviation;
