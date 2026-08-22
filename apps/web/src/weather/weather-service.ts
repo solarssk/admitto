@@ -200,23 +200,12 @@ export class WeatherService {
     }
 
     const started = Date.now();
+    let day;
     try {
-      const day =
+      day =
         this.config.provider === "metno"
           ? await this.metNoClient().fetchDayForecast(lat, lon, eventYmd, tz)
           : await this.openMeteo.fetchDayForecast(lat, lon, eventYmd, tz);
-      await this.cache.set(key, day, this.config.cacheTtlMs);
-      emitSystemLog("external", "info", "weather_fetch_ok", {
-        provider: this.config.provider,
-        latency_ms: Date.now() - started,
-      });
-      return {
-        status: "ok",
-        temp_c: Math.round(day.temp_max_c),
-        temp_min_c: Math.round(day.temp_min_c),
-        weather_code: day.weather_code,
-        ...this.attributionFields(),
-      };
     } catch (err) {
       emitSystemLog("external", "warn", "weather_fetch_failed", {
         provider: this.config.provider,
@@ -225,6 +214,29 @@ export class WeatherService {
       });
       return { status: "unavailable", ...this.attributionFields() };
     }
+    // Logged immediately after the provider call resolves, before the cache write below - a
+    // slow/unavailable cache would otherwise inflate latency_ms with time the provider itself
+    // never spent, and a cache implementation that rejects (the shared Redis-backed one fails
+    // open and never does, but WeatherService accepts any injected WeatherCache) would otherwise
+    // get misreported as weather_fetch_failed even though the provider call succeeded (bot
+    // review).
+    emitSystemLog("external", "info", "weather_fetch_ok", {
+      provider: this.config.provider,
+      latency_ms: Date.now() - started,
+    });
+    try {
+      await this.cache.set(key, day, this.config.cacheTtlMs);
+    } catch {
+      // Best-effort: a cache write failure must not turn an already-successful provider result
+      // into an "unavailable" response for the caller.
+    }
+    return {
+      status: "ok",
+      temp_c: Math.round(day.temp_max_c),
+      temp_min_c: Math.round(day.temp_min_c),
+      weather_code: day.weather_code,
+      ...this.attributionFields(),
+    };
   }
 
   async probeLive(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {

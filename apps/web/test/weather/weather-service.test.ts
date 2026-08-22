@@ -409,6 +409,40 @@ describe("WeatherService.summarize", () => {
     expect(entry).toMatchObject({ level: "warn", message: "weather_fetch_failed", fields: { provider: "openmeteo" } });
   });
 
+  it("still returns ok and logs weather_fetch_ok when the cache write itself rejects - a cache failure must not be misreported as a provider failure", async () => {
+    resetSystemLogBufferForTest();
+    const now = new Date("2026-08-05T12:00:00.000Z");
+    const throwingCache = {
+      get: async () => null,
+      set: async () => {
+        throw new Error("cache unavailable");
+      },
+    };
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: throwingCache,
+      now: () => now,
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            daily: {
+              time: ["2026-08-10"],
+              weather_code: [2],
+              temperature_2m_max: [22.4],
+              temperature_2m_min: [14.1],
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    });
+    const result = await service.summarize({ ...pin, date: "2026-08-10T12:00:00.000Z" });
+
+    expect(result).toMatchObject({ status: "ok", temp_c: 22 });
+    expect(querySystemLogs({ source: "external" })).toEqual([
+      expect.objectContaining({ level: "info", message: "weather_fetch_ok" }),
+    ]);
+  });
+
   it("returns unavailable for invalid event dates and far-past days", async () => {
     const now = new Date("2026-08-05T12:00:00.000Z");
     const service = new WeatherService({
