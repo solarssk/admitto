@@ -153,8 +153,11 @@ export class PassCreatorClient implements WalletPassProvider {
 
   /** Idempotent (ADR 0041 §3): a pass already gone (404) counts as deleted, not an error. */
   async deletePass(providerPassId: string): Promise<void> {
-    const res = await this.requestRaw("DELETE", `/api/v3/pass/${encodeURIComponent(providerPassId)}`);
-    if (!res.ok && res.status !== 404) {
+    const path = `/api/v3/pass/${encodeURIComponent(providerPassId)}`;
+    const res = await this.requestRaw("DELETE", path);
+    const ok = res.ok || res.status === 404;
+    this.logOutcome("DELETE", path, ok, res.status);
+    if (!ok) {
       throw this.toProviderError(res.status);
     }
   }
@@ -182,16 +185,24 @@ export class PassCreatorClient implements WalletPassProvider {
    * envelope, and not `data.publicKey` either. Both of those were unconfirmed guesses (as was a
    * raw-PEM-text response) that this endpoint never actually returns. */
   async getWebhookPublicKey(): Promise<string> {
-    const res = await this.requestRaw("GET", "/api/hook/publickey");
+    const path = "/api/hook/publickey";
+    const res = await this.requestRaw("GET", path);
     const text = await res.text();
-    if (!res.ok) throw this.toProviderError(res.status, [previewBody(text)]);
+    if (!res.ok) {
+      this.logOutcome("GET", path, false, res.status);
+      throw this.toProviderError(res.status, [previewBody(text)]);
+    }
     let pem: unknown;
     try {
       pem = (JSON.parse(text) as { publicKey?: unknown }).publicKey;
     } catch {
       // Fall through to the error below.
     }
-    if (typeof pem === "string" && pem.includes("-----BEGIN PUBLIC KEY-----")) return pem.trim();
+    if (typeof pem === "string" && pem.includes("-----BEGIN PUBLIC KEY-----")) {
+      this.logOutcome("GET", path, true, res.status);
+      return pem.trim();
+    }
+    this.logOutcome("GET", path, false, res.status);
     throw this.toProviderError(502, [
       `Public key missing or unrecognized shape in response: ${previewBody(text)}`,
     ]);
@@ -210,16 +221,20 @@ export class PassCreatorClient implements WalletPassProvider {
    * checks the body for an explicit `success: false` - a 2xx status alone doesn't rule out a
    * logical failure PassCreator reported in the body (CodeRabbit review). */
   async subscribeWebhook(targetUrl: string, event: PassCreatorWebhookEventType): Promise<void> {
+    const path = `/api/hook/subscribe/${encodeURIComponent(this.templateId)}`;
     const res = await this.requestRaw(
       "POST",
-      `/api/hook/subscribe/${encodeURIComponent(this.templateId)}`,
+      path,
       { target_url: targetUrl, event, signPayload: true, retryEnabled: true },
     );
     if (!res.ok) {
+      this.logOutcome("POST", path, false, res.status);
       throw this.toProviderError(res.status);
     }
     const body: unknown = await res.json().catch(() => null);
-    if (body && typeof body === "object" && (body as { success?: unknown }).success === false) {
+    const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
+    this.logOutcome("POST", path, !bodyFailed, res.status);
+    if (bodyFailed) {
       throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
     }
   }
@@ -232,12 +247,16 @@ export class PassCreatorClient implements WalletPassProvider {
    * without taking every other event on that same URL down with it - callers that share one
    * targetUrl across several event types must account for that before calling this. */
   async unsubscribeWebhook(targetUrl: string): Promise<void> {
-    const res = await this.requestRaw("POST", "/api/hook/unsubscribe", { target_url: targetUrl });
+    const path = "/api/hook/unsubscribe";
+    const res = await this.requestRaw("POST", path, { target_url: targetUrl });
     if (!res.ok) {
+      this.logOutcome("POST", path, false, res.status);
       throw this.toProviderError(res.status);
     }
     const body: unknown = await res.json().catch(() => null);
-    if (body && typeof body === "object" && (body as { success?: unknown }).success === false) {
+    const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
+    this.logOutcome("POST", path, !bodyFailed, res.status);
+    if (bodyFailed) {
       throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
     }
   }
@@ -258,12 +277,16 @@ export class PassCreatorClient implements WalletPassProvider {
   async listWebhooks(): Promise<
     { targetUrl: string | null; event: string; passTemplate: string | null }[]
   > {
-    const res = await this.requestRaw("GET", "/api/hook/list");
+    const path = "/api/hook/list";
+    const res = await this.requestRaw("GET", path);
     if (!res.ok) {
+      this.logOutcome("GET", path, false, res.status);
       throw this.toProviderError(res.status);
     }
     const body: unknown = await res.json().catch(() => null);
-    if (body && typeof body === "object" && (body as { success?: unknown }).success === false) {
+    const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
+    this.logOutcome("GET", path, !bodyFailed, res.status);
+    if (bodyFailed) {
       throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
     }
     const data =
@@ -342,7 +365,9 @@ export class PassCreatorClient implements WalletPassProvider {
 
   /** Void/restore uses a separate, non-v3 endpoint (ADR 0041 §3) and returns 204, no body. */
   private async setVoided(passUid: string, voided: boolean): Promise<void> {
-    const res = await this.requestRaw("PUT", `/api/pass/${encodeURIComponent(passUid)}`, { voided });
+    const path = `/api/pass/${encodeURIComponent(passUid)}`;
+    const res = await this.requestRaw("PUT", path, { voided });
+    this.logOutcome("PUT", path, res.ok, res.status);
     if (!res.ok) {
       throw this.toProviderError(res.status);
     }
@@ -356,20 +381,39 @@ export class PassCreatorClient implements WalletPassProvider {
     } catch {
       // Non-JSON body (e.g. an upstream proxy's HTML 502 page) - map by HTTP status instead of
       // letting the raw SyntaxError escape and break the documented WalletProviderError contract.
+      this.logOutcome(method, path, false, res.status);
       throw this.toProviderError(res.status);
     }
     if (!envelope.success || envelope.data === undefined) {
+      this.logOutcome(method, path, false, res.status);
       throw this.toProviderError(res.status, envelope.errors);
     }
+    this.logOutcome(method, path, true, res.status);
     return envelope.data;
+  }
+
+  /** Logs a PassCreator operation's fully-validated outcome - each call site reports its own
+   * true/false after checking the operation-specific response shape (a 2xx envelope can still
+   * carry `success: false`, and deletePass treats 404 as a successful idempotent delete), rather
+   * than requestRaw guessing purely from Response.ok, which misclassified both of those cases
+   * (bot review). Only failures are actually relayed: an event-wide wallet push can call this
+   * once per attendee (hundreds per job), and relaying every routine success risked bursting past
+   * the ops-ingest endpoint's 120/min-per-IP rate limit and dropping the failures alongside them
+   * (bot review) - the worker's own per-job "ok claimed=X succeeded=Y failed=Z" summary (see
+   * apps/cli/src/commands/worker.ts) already gives aggregate success visibility without the
+   * per-item volume. Logs only the route (query string stripped: the search endpoint encodes an
+   * attendee's userProvidedId into it), never the request/response body. */
+  private logOutcome(method: string, path: string, ok: boolean, status: number): void {
+    if (ok) return;
+    const route = path.split("?")[0];
+    emitSystemLog("wallet", "warn", "passcreator_request_rejected", { method, route, status });
   }
 
   /** Issues one request with 429 exponential backoff; throws WalletProviderError on final failure.
    * The single choke point every PassCreator operation (issue/void/push/search/webhook key fetch)
-   * goes through, so logging here - rather than at each of those call sites - gives full "wallet"
-   * source coverage in one place. Logs only the route (query string stripped: the search endpoint
-   * encodes an attendee's userProvidedId into it) and the outcome, never the request body or the
-   * Authorization header. */
+   * goes through, so the network-failure and rate-limit-exhausted logging here - unlike the
+   * per-operation outcome, see logOutcome above - covers every call site in one place; those two
+   * cases are failures regardless of what the caller would have done with a response. */
   private async requestRaw(method: string, path: string, body?: unknown): Promise<Response> {
     const route = path.split("?")[0];
     let lastRes: Response | undefined;
@@ -397,14 +441,7 @@ export class PassCreatorClient implements WalletPassProvider {
         );
       }
 
-      if (res.status !== 429) {
-        emitSystemLog("wallet", res.ok ? "info" : "warn", res.ok ? "passcreator_request_ok" : "passcreator_request_rejected", {
-          method,
-          route,
-          status: res.status,
-        });
-        return res;
-      }
+      if (res.status !== 429) return res;
 
       lastRes = res;
       if (attempt < MAX_RETRIES) {

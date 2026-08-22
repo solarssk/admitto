@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PassCreatorClient, WalletProviderError } from "../src/index.js";
 import { PASSCREATOR_DEFAULT_BASE_URL } from "../src/passcreator-config.js";
 import type { WalletPassInput } from "../src/index.js";
@@ -685,11 +685,15 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
 });
 
 describe("PassCreatorClient wallet system-log coverage", () => {
+  beforeEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
   afterEach(() => {
     resetSystemLogBufferForTest();
   });
 
-  it("logs an info-level entry with the route (query string stripped) on a successful request", async () => {
+  it("does not log a successful request - a bulk event-wide push can call this hundreds of times, which risked bursting the ops-ingest rate limit", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(200, {
         success: true,
@@ -699,12 +703,7 @@ describe("PassCreatorClient wallet system-log coverage", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     await client.createPass(INPUT);
 
-    const [entry] = querySystemLogs({ source: "wallet" });
-    expect(entry).toMatchObject({
-      level: "info",
-      message: "passcreator_request_ok",
-      fields: { method: "POST", route: "/api/v3/pass", status: 200 },
-    });
+    expect(querySystemLogs({ source: "wallet" })).toEqual([]);
   });
 
   it("logs a warn-level entry (no request body, no Authorization header) on a rejected request", async () => {
@@ -720,10 +719,10 @@ describe("PassCreatorClient wallet system-log coverage", () => {
   });
 
   it("strips the query string from a search request's route (avoids leaking the encoded userProvidedId)", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: [] }));
+    const fetchMock = vi.fn(async () => jsonResponse(500, { success: false, errors: ["boom"] }));
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
 
-    await client.findByUserProvidedId("admitto:event1:attendee1");
+    await expect(client.findByUserProvidedId("admitto:event1:attendee1")).rejects.toThrow(WalletProviderError);
 
     const [entry] = querySystemLogs({ source: "wallet" });
     expect(entry?.fields?.["route"]).toBe("/api/v3/pass");
@@ -740,5 +739,34 @@ describe("PassCreatorClient wallet system-log coverage", () => {
 
     const [entry] = querySystemLogs({ source: "wallet" });
     expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_failed" });
+  });
+
+  it("logs a warn-level rejected entry for an HTTP 200 that carries success: false in its envelope", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: false, errors: ["Duplicate userProvidedId"] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_rejected", fields: { status: 200 } });
+  });
+
+  it("does not log deletePass's idempotent 404-as-success case as a rejection", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await client.deletePass("already-gone");
+
+    expect(querySystemLogs({ source: "wallet" })).toEqual([]);
+  });
+
+  it("logs a rejected deletePass for a genuine failure (not 404)", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePass("pass-1")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_rejected", fields: { status: 401 } });
   });
 });
