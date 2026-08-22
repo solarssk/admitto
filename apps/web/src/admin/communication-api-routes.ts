@@ -660,12 +660,12 @@ export async function handleGetEventDelivery(c: Context, db: PrismaClient): Prom
   return c.json(dto);
 }
 
-/** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered — rendered message for the
+/** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered: rendered message for the
  * "View sent message" preview, with the recipient's real ticket link and QR code materialized in
  * (same admin/superadmin gate as "Copy ticket link", which already exposes the same ticket_url).
  * Either field can independently be null: the delivery wasn't found at all (whole response is
  * null/404), or the retention window already nulled the stored snapshot (see retention.ts
- * nullifyDeliverySnapshots) — callers must render an explicit "message content no longer
+ * nullifyDeliverySnapshots), so callers must render an explicit "message content no longer
  * available" state for the latter. */
 export async function handleGetRenderedEventDelivery(
   c: Context,
