@@ -386,14 +386,18 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     throw new Error("DATABASE_URL is required");
   }
 
-  installSystemLogRelay();
-
   const tickSeconds = parseBounceIngestTickSeconds(process.env);
   const tickMs = tickSeconds * 1000;
   const locks = await openWorkerLockClient(databaseUrl);
   let notify = await ensureNotifyClient(databaseUrl, null);
   const signal = { stopped: false };
   const retention: RetentionSchedule = createRetentionSchedule();
+
+  // Installed only once the resources the `finally` block below cleans up (locks, notify) have
+  // actually been acquired - installing any earlier would leave the process-wide relay dangling
+  // if openWorkerLockClient/ensureNotifyClient itself threw before the try block was reached
+  // (bot review).
+  installSystemLogRelay();
 
   const onStop = () => {
     if (signal.stopped) return;

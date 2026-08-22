@@ -63,6 +63,18 @@ describe("publishSystemLogEntry", () => {
     expect(body.message).toHaveLength(200);
   });
 
+  it("warns to stdout (not throw) on a non-ok response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    publishSystemLogEntry(entry(), {
+      env: { ADMITTO_INTERNAL_URL: "http://app:3000", OPS_HEALTH_TOKEN: "ops-token" },
+      fetchImpl,
+    });
+
+    await vi.waitFor(() => expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("POST 500")));
+    warnSpy.mockRestore();
+  });
+
   it("does not throw when the request rejects", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
     expect(() =>

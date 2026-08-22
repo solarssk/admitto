@@ -148,8 +148,9 @@ interface SystemLogsPanelProps {
  * API/DB/Cache/Mail/Admin/Worker/Wallet/External activity for diagnosing issues, not a durable
  * audit trail (that's the Audit log side of this same toggle). Everything shown here is also
  * written to its own process's stdout independent of this view (the worker's entries relay over
- * Redis - see system-log-subscribe.ts - but are still written to the worker's own stdout first),
- * so nothing is lost if the buffer resets or the UI is down.
+ * an authenticated HTTP POST to /api/ops/system-logs - see apps/cli/src/lib/system-log-publish.ts
+ * - but are still written to the worker's own stdout first), so nothing is lost if the buffer
+ * resets or the UI is down.
  */
 export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanelProps>(function SystemLogsPanel(
   { isDesktop, isVisible, liveButton, downloadButton, onLiveChange, onHasEntriesChange },
