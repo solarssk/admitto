@@ -6097,7 +6097,10 @@ output.mail-field-hint {
    which owns the border/background/color/icon. Only the bottom spacing to the console below
    survives here, since Notice itself is margin: 0 (its layout contract expects a flex/grid gap
    parent, which this plain block stack doesn't provide). */
-.system-log-panel__poll-warning {
+/* Compound selector - same reasoning as .at-notice.system-log-panel__retention-notice below:
+   a bare single-class selector ties with .at-notice's own `margin: 0` on specificity and loses
+   unpredictably depending on lazy-CSS-chunk load order. */
+.at-notice.system-log-panel__poll-warning {
   margin-bottom: var(--space-2);
 }
 
@@ -6236,8 +6239,12 @@ output.mail-field-hint {
   gap: var(--space-2);
 }
 
-.system-log-panel__retention-notice {
-  margin-top: var(--space-3);
+/* Compound selector (not just .system-log-panel__retention-notice) so this reliably beats
+   .at-notice's own `margin: 0` regardless of which lazy-loaded CSS chunk happens to land later
+   in the page's stylesheet order - equal-specificity single-class selectors were losing that
+   race unpredictably (PO review, confirmed live via document.styleSheets order). */
+.at-notice.system-log-panel__retention-notice {
+  margin-top: var(--space-5);
 }
 
 /* Event archiving panel */
