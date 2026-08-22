@@ -33,7 +33,7 @@ ENV GIT_COMMIT=$GIT_COMMIT
 RUN npm run build
 
 # docker-entrypoint.sh needs the Prisma CLI at container startup to run migrate status/deploy, so
-# packages/db/package.json declares "prisma" as a runtime dependency (not devDependency) — npm
+# packages/db/package.json declares "prisma" as a runtime dependency (not devDependency); npm
 # prune keeps it and its resolved transitive tree (prisma.config.ts -> @prisma/config ->
 # c12/jiti/etc.) automatically, same as any other production dependency.
 RUN npm prune --omit=dev
