@@ -47,6 +47,8 @@ const ATT_A2 = "att-admin-comm-a2";
 const ATT_A3 = "att-admin-comm-a3";
 const ATT_A4 = "att-admin-comm-a4";
 const ATT_A5 = "att-admin-comm-a5";
+const ATT_A6 = "att-admin-comm-a6";
+const ATT_A7 = "att-admin-comm-a7";
 const ATT_C1 = "att-admin-comm-c1";
 
 const DLV_A1_INITIAL = "dlv-admin-comm-a1-initial";
@@ -56,6 +58,8 @@ const DLV_A3_FAILED = "dlv-admin-comm-a3-failed";
 const DLV_A4_EXPIRED = "dlv-admin-comm-a4-expired";
 const DLV_A5_SUBJECT_ONLY = "dlv-admin-comm-a5-subject-only";
 const DLV_A6_HTML_ONLY = "dlv-admin-comm-a6-html-only";
+const DLV_A7_AGENCY_NO_REF = "dlv-admin-comm-a7-agency-no-ref";
+const DLV_A8_BAD_TOKEN = "dlv-admin-comm-a8-bad-token";
 
 const exported: ExportPayload[] = [];
 
@@ -199,6 +203,28 @@ async function seed(client: PrismaClient) {
       email: "eve@example.com",
       name: "Eve Epsilon",
       token_enc: encryptToString(generateToken()),
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: ATT_A6,
+      event_id: EVENT_A,
+      email: "frank@example.com",
+      name: "Frank Foxtrot",
+      // Agency attendee (external_uuid set) with no public_ref yet - the "not issued" branch of
+      // resolveAttendeeMailLinks for the agency path, distinct from the internal-token branch.
+      external_uuid: "agency-ext-uuid-a6",
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: ATT_A7,
+      event_id: EVENT_A,
+      email: "grace@example.com",
+      name: "Grace Golf",
+      // Corrupt ciphertext - decryptFromString throws a real error here, distinct from the
+      // "missing token_enc" not-issued case, to exercise the unexpected-error propagation path.
+      token_enc: "not-valid-encrypted-payload",
     },
   });
   await client.attendee.create({
@@ -361,6 +387,38 @@ async function seed(client: PrismaClient) {
       // find an entry for it - distinct from DLV_A1_RESEND's resolvable actor and DLV_A3_FAILED's
       // null actor, exercising the optional-chaining fallback in handleGetEventDelivery.
       actor_user_id: "user-admin-comm-deleted-orphan",
+    },
+  });
+
+  await client.emailDelivery.create({
+    data: {
+      id: DLV_A7_AGENCY_NO_REF,
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A6,
+      purpose: "initial",
+      provider: "export_only",
+      status: "sent",
+      recipient_email: "frank@example.com",
+      rendered_subject: "Your ticket",
+      rendered_html: "<p>secret ticket html</p>",
+      sent_at: new Date("2026-09-08T12:00:00Z"),
+    },
+  });
+
+  await client.emailDelivery.create({
+    data: {
+      id: DLV_A8_BAD_TOKEN,
+      organization_id: ORG_A,
+      event_id: EVENT_A,
+      attendee_id: ATT_A7,
+      purpose: "initial",
+      provider: "export_only",
+      status: "sent",
+      recipient_email: "grace@example.com",
+      rendered_subject: "Your ticket",
+      rendered_html: "<p>secret ticket html</p>",
+      sent_at: new Date("2026-09-09T12:00:00Z"),
     },
   });
 }
@@ -820,8 +878,8 @@ describe("GET /api/admin/events/:eventId/deliveries", () => {
       page: number;
       pageSize: number;
     };
-    expect(body.total).toBe(7);
-    expect(body.items).toHaveLength(7);
+    expect(body.total).toBe(9);
+    expect(body.items).toHaveLength(9);
     for (const row of body.items) {
       expect(row).not.toHaveProperty("rendered_html");
       expect(row).not.toHaveProperty("token");
@@ -1080,6 +1138,33 @@ describe("GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered", () =>
     expect(res.status).toBe(200);
     const body = (await res.json()) as { subject: string | null; html: string | null };
     expect(body).toEqual({ subject: null, html: null });
+  });
+
+  it("returns null subject/html rather than erroring for an agency attendee with no public_ref yet", async () => {
+    // ATT_A6 is an agency attendee (external_uuid set) with no public_ref - the agency-path
+    // branch of the same "nothing to build a link from yet" condition covered above.
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A7_AGENCY_NO_REF}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string | null; html: string | null };
+    expect(body).toEqual({ subject: null, html: null });
+  });
+
+  it("propagates an unexpected link-resolution error instead of swallowing it", async () => {
+    // ATT_A7's token_enc is corrupt ciphertext - decryptFromString throws a real error, distinct
+    // from the recognized "missing token_enc"/"missing public_ref" not-issued shape, so it must
+    // surface as a genuine server error rather than the same response used for expired retention.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A8_BAD_TOKEN}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("internal_error");
+    consoleError.mockRestore();
   });
 
   it("returns null subject/html once the retention window has nulled the stored snapshot", async () => {
