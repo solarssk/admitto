@@ -2026,6 +2026,40 @@ describe("SystemLogsPanel rendering", () => {
     expect(screen.getByText("Showing 1 line")).toBeTruthy();
   });
 
+  it("scrolls straight to the newest entry on initial load, like a live tail (PO review)", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    // A controllable promise, not mockResolvedValueOnce - the scrollHeight/clientHeight stubs
+    // below must land on the console element before entries actually populate, or the scroll
+    // effect could already have run (against jsdom's default 0/0 layout) by the time this test
+    // gets to apply them.
+    let resolveFetch!: (value: { entries: unknown[]; cursor: number }) => void;
+    vi.mocked(fetchSystemLogs).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    const console_ = await screen.findByRole("log");
+
+    // jsdom never computes real layout - scrollHeight/clientHeight both default to 0, so a
+    // meaningful assertion needs to stub a console taller than its viewport, the same shape a
+    // real buffer-full live tail would have.
+    Object.defineProperty(console_, "scrollHeight", { value: 4000, configurable: true });
+    Object.defineProperty(console_, "clientHeight", { value: 400, configurable: true });
+    console_.scrollTop = 0;
+
+    resolveFetch({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+    await screen.findByText("http_request");
+
+    expect(console_.scrollTop).toBe(4000);
+  });
+
   it("shows a Retry action on load failure and recovers once clicked", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockRejectedValueOnce(new Error("network error"));
