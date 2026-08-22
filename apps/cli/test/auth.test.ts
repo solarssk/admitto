@@ -33,10 +33,19 @@ vi.mock("@admitto/auth", () => ({
 
 const assertNoPasswordArgv = vi.fn();
 const readPasswordFromStdin = vi.fn();
+const fakeReadLine = vi.fn();
+const createLineReader = vi.fn(() => fakeReadLine);
 
 vi.mock("@admitto/auth/cli-helpers", () => ({
   assertNoPasswordArgv: (...args: unknown[]) => assertNoPasswordArgv(...args),
   readPasswordFromStdin: (...args: unknown[]) => readPasswordFromStdin(...args),
+  createLineReader: (...args: unknown[]) => createLineReader(...args),
+}));
+
+const confirmYes = vi.fn();
+
+vi.mock("../src/lib/confirm.js", () => ({
+  confirmYes: (...args: unknown[]) => confirmYes(...args),
 }));
 
 const { runAuthBootstrapSuperadmin } = await import("../src/commands/auth.js");
@@ -54,6 +63,9 @@ describe("runAuthBootstrapSuperadmin", () => {
     superadminInstanceExists.mockReset().mockResolvedValue(false);
     assertNoPasswordArgv.mockReset();
     readPasswordFromStdin.mockReset().mockResolvedValue("Sup3rSecret!23");
+    confirmYes.mockReset();
+    createLineReader.mockReset().mockReturnValue(fakeReadLine);
+    fakeReadLine.mockReset();
   });
 
   afterEach(() => {
@@ -133,5 +145,24 @@ describe("runAuthBootstrapSuperadmin", () => {
     expect(readPasswordFromStdin).not.toHaveBeenCalled();
     expect(bootstrapSuperadmin).not.toHaveBeenCalled();
     expect(logMfaBreakGlassCli).not.toHaveBeenCalled();
+  });
+
+  it("reuses one createLineReader() line reader for both the force-confirmation and password prompts", async () => {
+    // Regression: two separate readline interfaces (or two separate one-shot question() calls)
+    // chained on the same piped stdin can hang forever when both answers arrive in a single
+    // chunk - see createLineReader's own comment (@admitto/auth/cli-helpers). This asserts the
+    // wiring stays fixed: confirmYes and readPasswordFromStdin must receive the exact same line
+    // reader, not two independent ones.
+    process.argv = ["node", "admitto", "auth", "bootstrap-superadmin", "--email", "admin@example.com", "--force"];
+    superadminInstanceExists.mockResolvedValue(true);
+    confirmYes.mockImplementation(async () => true);
+    bootstrapSuperadmin.mockResolvedValue({ userId: "user-1" });
+    const db = fakeDb();
+
+    await runAuthBootstrapSuperadmin(db);
+
+    expect(createLineReader).toHaveBeenCalledTimes(1);
+    expect(confirmYes).toHaveBeenCalledWith(expect.any(String), fakeReadLine);
+    expect(readPasswordFromStdin).toHaveBeenCalledWith("Password: ", fakeReadLine);
   });
 });
