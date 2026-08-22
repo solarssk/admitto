@@ -37,7 +37,9 @@ async function assertBootstrapForceAllowed(db: PrismaClient, force: boolean): Pr
     );
   }
   if (hasFlag("yes")) return undefined;
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  // terminal: false - see createLineReader's own comment for why, without it, a piped password
+  // would get echoed back to the screen whenever stderr is still a real terminal.
+  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
   const readLine = createLineReader(rl, process.stderr);
   const confirmed = await confirmYes(
     "A superadmin@instance already exists. Type 'yes' to create another: ",
@@ -108,7 +110,7 @@ export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void
 
   const forceConfirm = await assertBootstrapForceAllowed(db, hasFlag("force"));
 
-  const password = await readPasswordFromStdin("Password: ", forceConfirm?.readLine);
+  const password = await readPasswordFromStdin("Password: ", forceConfirm?.readLine, forceConfirm?.rl);
   forceConfirm?.rl.close();
   const userId = await bootstrapSuperadminChecked(db, email, password);
   // bootstrapSuperadmin writes the auth.superadmin.bootstrap audit record itself, inside the

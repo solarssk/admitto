@@ -116,7 +116,9 @@ async function runBootstrapSuperadmin(): Promise<void> {
   let rl: Interface | undefined;
   let readLine: ((prompt: string) => Promise<string>) | undefined;
   if (exists && force) {
-    rl = createInterface({ input: process.stdin, output: process.stderr });
+    // terminal: false - see createLineReader's own comment for why, without it, a piped
+    // password would get echoed back to the screen whenever stderr is still a real terminal.
+    rl = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
     readLine = createLineReader(rl, process.stderr);
     const ok = await confirmForce(readLine);
     if (!ok) {
@@ -125,7 +127,7 @@ async function runBootstrapSuperadmin(): Promise<void> {
     }
   }
 
-  const password = await readPasswordFromStdin("Password: ", readLine);
+  const password = await readPasswordFromStdin("Password: ", readLine, rl);
   rl?.close();
   let userId: string;
   try {

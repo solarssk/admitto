@@ -140,4 +140,81 @@ describe("createLineReader + readPasswordFromStdin", () => {
 
     await expect(readPasswordFromStdin()).rejects.toThrow(CliError);
   });
+
+  it("never echoes a piped password back to output, even when output is a real terminal", async () => {
+    // Regression (CodeRabbit review on #1012): readline decides whether to echo every line it
+    // reads back to `output` by checking `output.isTTY`, not `input.isTTY` - a caller of this
+    // reader is piped stdin (`printf 'yes\n<password>\n' | admitto ...`) with a real terminal
+    // still attached to stderr, so without the interface being built with `terminal: false`
+    // (createLineReader's own doc comment), the piped password would print to the screen even
+    // though nothing was actually typed there.
+    const stdin = new PassThrough();
+    const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+    let written = "";
+    output.on("data", (chunk: Buffer) => {
+      written += chunk.toString();
+    });
+    const rl = createInterface({ input: stdin, output, terminal: false });
+    const readLine = createLineReader(rl, output);
+
+    stdin.write("yes\nSuperSecretPassword123!\n");
+    stdin.end();
+    expect(await readLine("confirm: ")).toBe("yes");
+    expect(await readLine("Password: ")).toBe("SuperSecretPassword123!");
+    rl.close();
+
+    expect(written).not.toContain("SuperSecretPassword123!");
+    // The two prompt labels are the only thing readLine ever writes to output itself.
+    expect(written).toBe("confirm: Password: ");
+  });
+
+  it("rejects a still-pending prompt instead of hanging when stdin closes before answering it", async () => {
+    // Regression (CodeRabbit review on #1012): if stdin ends (EOF) right after the first
+    // answer - e.g. a scripted caller piped only the confirmation and never a password -
+    // readline emits 'close' instead of another 'line' event, so a prompt already waiting on
+    // the next line would otherwise never resolve or reject.
+    const stdin = new PassThrough();
+    const rl = createInterface({ input: stdin, output: new PassThrough() });
+    const readLine = createLineReader(rl, new PassThrough());
+
+    stdin.write("yes\n");
+    expect(await readLine("confirm: ")).toBe("yes");
+
+    const pending = readLine("Password: ");
+    stdin.end();
+
+    await expect(pending).rejects.toThrow(CliError);
+  });
+
+  it("rejects a prompt asked for after stdin already closed", async () => {
+    const stdin = new PassThrough();
+    const rl = createInterface({ input: stdin, output: new PassThrough() });
+    const readLine = createLineReader(rl, new PassThrough());
+    stdin.end();
+    await new Promise((resolve) => rl.on("close", resolve));
+
+    await expect(readLine("Password: ")).rejects.toThrow(CliError);
+  });
+
+  it("closes a shared interface before falling back to raw TTY password entry", async () => {
+    // Regression (CodeRabbit review on #1012): a shared reader left open while this function's
+    // TTY branch (input.isTTY) puts stdin into raw mode would keep competing for stdin data,
+    // and its own line-based reading would print the password back to the screen as it's typed -
+    // exactly the no-echo guarantee raw mode exists to provide.
+    fakeStdin.isTTY = true;
+    fakeStdin.setRawMode = vi.fn().mockReturnThis();
+    const sharedRl = createInterface({ input: new PassThrough(), output: new PassThrough() });
+    const closeSpy = vi.spyOn(sharedRl, "close");
+
+    const pending = readPasswordFromStdin("Password: ", undefined, sharedRl);
+    // Real raw-mode entry requires TTY-only APIs this fake stdin doesn't fully implement; only
+    // the pre-raw-mode cleanup (closing the shared interface) is under test here.
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+
+    // Raw mode delivers one keystroke per 'data' event, not a whole line at once - emit each
+    // character separately, matching how a real TTY actually feeds this branch.
+    for (const ch of "x\n") fakeStdin.emit("data", ch);
+    await expect(pending).resolves.toBe("x");
+    fakeStdin.isTTY = undefined;
+  });
 });

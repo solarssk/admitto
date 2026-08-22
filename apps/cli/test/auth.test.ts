@@ -163,7 +163,33 @@ describe("runAuthBootstrapSuperadmin", () => {
 
     expect(createLineReader).toHaveBeenCalledTimes(1);
     expect(confirmYes).toHaveBeenCalledWith(expect.any(String), fakeReadLine);
-    expect(readPasswordFromStdin).toHaveBeenCalledWith("Password: ", fakeReadLine);
+    expect(readPasswordFromStdin).toHaveBeenCalledWith(
+      "Password: ",
+      fakeReadLine,
+      expect.objectContaining({ close: expect.any(Function) }),
+    );
+  });
+
+  it("builds the shared interface with terminal echo disabled", async () => {
+    // Regression (CodeRabbit review on #1012): without this, a piped password would get echoed
+    // back to the screen whenever stderr is still a real terminal - see createLineReader's own
+    // comment (@admitto/auth/cli-helpers) for the full mechanism.
+    process.argv = ["node", "admitto", "auth", "bootstrap-superadmin", "--email", "admin@example.com", "--force"];
+    superadminInstanceExists.mockResolvedValue(true);
+    confirmYes.mockImplementation(async () => true);
+    bootstrapSuperadmin.mockResolvedValue({ userId: "user-1" });
+    const db = fakeDb();
+
+    await runAuthBootstrapSuperadmin(db);
+
+    expect(createLineReader).toHaveBeenCalledWith(
+      expect.objectContaining({ close: expect.any(Function) }),
+      process.stderr,
+    );
+    const rlPassedIn = createLineReader.mock.calls[0]?.[0];
+    // node:readline isn't mocked in this file - the real Interface stores its own constructor
+    // options, so this checks the actual createInterface({ ..., terminal: false }) call site.
+    expect(rlPassedIn.terminal).toBe(false);
   });
 
   it("rejects when a superadmin already exists and --force wasn't passed", async () => {

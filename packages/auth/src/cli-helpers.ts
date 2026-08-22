@@ -28,20 +28,38 @@ export function assertNoPasswordArgv(argv: string[]): void {
  * chunk; every line past the first has no listener registered yet to catch it and is dropped,
  * so a second question() call afterward waits forever on data that was already read and lost.
  * This registers one persistent 'line' listener up front and queues anything it emits before
- * the next prompt asks for it, so nothing gets lost regardless of how the answers arrive. */
+ * the next prompt asks for it, so nothing gets lost regardless of how the answers arrive.
+ *
+ * `rl` must have been created with `terminal: false` - readline otherwise decides whether to
+ * echo every line it reads back to `output` by checking `output.isTTY`, not `input.isTTY`. A
+ * caller of this reader is piped stdin with a real terminal still attached to stderr (any
+ * interactive shell running `printf '...' | admitto ...`), so without `terminal: false` a piped
+ * password would get echoed to the screen even though nothing was actually typed there.
+ *
+ * A pending read rejects with CliError if stdin closes (EOF) before a line arrives for it -
+ * without this it would wait forever, since readline emits 'close' instead of another 'line'. */
 export function createLineReader(rl: Interface, output: NodeJS.WritableStream): (prompt: string) => Promise<string> {
   const queued: string[] = [];
-  const waiting: Array<(line: string) => void> = [];
+  const waiting: Array<{ resolve: (line: string) => void; reject: (err: Error) => void }> = [];
+  let closed = false;
   rl.on("line", (line) => {
     const waiter = waiting.shift();
-    if (waiter) waiter(line);
+    if (waiter) waiter.resolve(line);
     else queued.push(line);
+  });
+  rl.on("close", () => {
+    closed = true;
+    let waiter: (typeof waiting)[number] | undefined;
+    while ((waiter = waiting.shift())) {
+      waiter.reject(new CliError("Input closed before a response was given"));
+    }
   });
   return (prompt: string) => {
     output.write(prompt);
     const line = queued.shift();
     if (line !== undefined) return Promise.resolve(line);
-    return new Promise((resolve) => waiting.push(resolve));
+    if (closed) return Promise.reject(new CliError("Input closed before a response was given"));
+    return new Promise((resolve, reject) => waiting.push({ resolve, reject }));
   };
 }
 
@@ -50,19 +68,27 @@ export function createLineReader(rl: Interface, output: NodeJS.WritableStream): 
  * `reader` lets a caller that already prompted once on the same non-TTY stdin (e.g. a
  * force-confirmation before this) pass in its own createLineReader() instead of this function
  * creating and reading from a fresh readline.Interface - see createLineReader's own comment for
- * why chaining two separate Interface#question() calls on piped stdin can otherwise hang. */
+ * why chaining two separate Interface#question() calls on piped stdin can otherwise hang, and
+ * why that interface must have been built with `terminal: false`. `sharedRl` is that same
+ * interface, needed here only to close it before the TTY branch below (input.isTTY) starts
+ * reading raw keystrokes - left open, it would keep competing for stdin data, and (lacking the
+ * `terminal: false` guarantee this function's own fallback interface below has) its default
+ * terminal-mode line echo would print the password back to the screen as it's typed. */
 export async function readPasswordFromStdin(
   prompt = "Password: ",
   reader?: (prompt: string) => Promise<string>,
+  sharedRl?: Interface,
 ): Promise<string> {
   if (!input.isTTY) {
-    const ownRl = reader ? undefined : createInterface({ input, output: stderr });
+    const ownRl = reader ? undefined : createInterface({ input, output: stderr, terminal: false });
     const readLine = reader ?? createLineReader(ownRl!, stderr);
     const answer = await readLine(prompt);
     ownRl?.close();
     if (!answer) throw new CliError("Password required");
     return answer;
   }
+
+  sharedRl?.close();
 
   stderr.write(prompt);
   input.setRawMode(true);
