@@ -123,6 +123,7 @@ export class PassCreatorClient implements WalletPassProvider {
       "PATCH",
       `/api/v3/pass/${encodeURIComponent(providerPassId)}`,
       { data: toPassCreatorData(input, this.templateId, this.fieldMapping, false) },
+      "/api/v3/pass/{id}",
     );
     return toResult(envelope);
   }
@@ -158,9 +159,10 @@ export class PassCreatorClient implements WalletPassProvider {
   /** Idempotent (ADR 0041 §3): a pass already gone (404) counts as deleted, not an error. */
   async deletePass(providerPassId: string): Promise<void> {
     const path = `/api/v3/pass/${encodeURIComponent(providerPassId)}`;
-    const res = await this.requestRaw("DELETE", path);
+    const route = "/api/v3/pass/{id}";
+    const res = await this.requestRaw("DELETE", path, undefined, route);
     const ok = res.ok || res.status === 404;
-    this.logOutcome("DELETE", path, ok, res.status);
+    this.logOutcome("DELETE", route, ok, res.status);
     if (!ok) {
       throw this.toProviderError(res.status);
     }
@@ -226,12 +228,14 @@ export class PassCreatorClient implements WalletPassProvider {
    * logical failure PassCreator reported in the body (CodeRabbit review). */
   async subscribeWebhook(targetUrl: string, event: PassCreatorWebhookEventType): Promise<void> {
     const path = `/api/hook/subscribe/${encodeURIComponent(this.templateId)}`;
+    const route = "/api/hook/subscribe/{templateId}";
     const res = await this.requestRaw(
       "POST",
       path,
       { target_url: targetUrl, event, signPayload: true, retryEnabled: true },
+      route,
     );
-    await this.validateHookResponse("POST", path, res);
+    await this.validateHookResponse("POST", route, res);
   }
 
   /** Removes every subscription (across all event types and templates) tied to `targetUrl`
@@ -343,29 +347,35 @@ export class PassCreatorClient implements WalletPassProvider {
   /** Void/restore uses a separate, non-v3 endpoint (ADR 0041 §3) and returns 204, no body. */
   private async setVoided(passUid: string, voided: boolean): Promise<void> {
     const path = `/api/pass/${encodeURIComponent(passUid)}`;
-    const res = await this.requestRaw("PUT", path, { voided });
-    this.logOutcome("PUT", path, res.ok, res.status);
+    const route = "/api/pass/{id}";
+    const res = await this.requestRaw("PUT", path, { voided }, route);
+    this.logOutcome("PUT", route, res.ok, res.status);
     if (!res.ok) {
       throw this.toProviderError(res.status);
     }
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.requestRaw(method, path, body);
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    route: string = path.split("?")[0]!,
+  ): Promise<T> {
+    const res = await this.requestRaw(method, path, body, route);
     let envelope: PassCreatorEnvelope<T>;
     try {
       envelope = (await res.json()) as PassCreatorEnvelope<T>;
     } catch {
       // Non-JSON body (e.g. an upstream proxy's HTML 502 page) - map by HTTP status instead of
       // letting the raw SyntaxError escape and break the documented WalletProviderError contract.
-      this.logOutcome(method, path, false, res.status);
+      this.logOutcome(method, route, false, res.status);
       throw this.toProviderError(res.status);
     }
     if (!envelope.success || envelope.data === undefined) {
-      this.logOutcome(method, path, false, res.status);
+      this.logOutcome(method, route, false, res.status);
       throw this.toProviderError(res.status, envelope.errors);
     }
-    this.logOutcome(method, path, true, res.status);
+    this.logOutcome(method, route, true, res.status);
     return envelope.data;
   }
 
@@ -378,11 +388,13 @@ export class PassCreatorClient implements WalletPassProvider {
    * the ops-ingest endpoint's 120/min-per-IP rate limit and dropping the failures alongside them
    * (bot review) - the worker's own per-job "ok claimed=X succeeded=Y failed=Z" summary (see
    * apps/cli/src/commands/worker.ts) already gives aggregate success visibility without the
-   * per-item volume. Logs only the route (query string stripped: the search endpoint encodes an
-   * attendee's userProvidedId into it), never the request/response body. */
-  private logOutcome(method: string, path: string, ok: boolean, status: number): void {
+   * per-item volume. `route` must already be a static template (query string stripped, and any
+   * attendee-linked path segment like a providerPassId/passUid replaced with `{id}` by the
+   * caller - see setVoided/deletePass/updatePass/subscribeWebhook) - never the request/response
+   * body, and never a dynamic identifier that could link this entry back to one attendee's wallet
+   * pass (bot review). */
+  private logOutcome(method: string, route: string, ok: boolean, status: number): void {
     if (ok) return;
-    const route = path.split("?")[0];
     emitSystemLog("wallet", "warn", "passcreator_request_rejected", { method, route, status });
   }
 
@@ -391,16 +403,17 @@ export class PassCreatorClient implements WalletPassProvider {
    * confirmed-live response shapes don't match the strict v3 {success,data,errors} envelope), but
    * all three need the identical res.ok check + explicit success:false body check + outcome
    * logging before the caller can trust the response - extracted to avoid the near-duplicate
-   * block SonarCloud's duplication gate flagged across the three (bot review). Returns the parsed
-   * body on success (listWebhooks reads its own `data` field back out of it). */
-  private async validateHookResponse(method: string, path: string, res: Response): Promise<unknown> {
+   * block SonarCloud's duplication gate flagged across the three (bot review). `route` is already
+   * a static template, same requirement as logOutcome above. Returns the parsed body on success
+   * (listWebhooks reads its own `data` field back out of it). */
+  private async validateHookResponse(method: string, route: string, res: Response): Promise<unknown> {
     if (!res.ok) {
-      this.logOutcome(method, path, false, res.status);
+      this.logOutcome(method, route, false, res.status);
       throw this.toProviderError(res.status);
     }
     const body: unknown = await res.json().catch(() => null);
     const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
-    this.logOutcome(method, path, !bodyFailed, res.status);
+    this.logOutcome(method, route, !bodyFailed, res.status);
     if (bodyFailed) {
       throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
     }
@@ -426,9 +439,16 @@ export class PassCreatorClient implements WalletPassProvider {
    * The single choke point every PassCreator operation (issue/void/push/search/webhook key fetch)
    * goes through, so the network-failure and rate-limit-exhausted logging here - unlike the
    * per-operation outcome, see logOutcome above - covers every call site in one place; those two
-   * cases are failures regardless of what the caller would have done with a response. */
-  private async requestRaw(method: string, path: string, body?: unknown): Promise<Response> {
-    const route = path.split("?")[0];
+   * cases are failures regardless of what the caller would have done with a response. `route`
+   * defaults to the query-stripped path, but a caller whose path also embeds an attendee-linked
+   * identifier (a providerPassId/passUid path segment) must pass an explicit static template
+   * instead - same requirement as logOutcome (bot review). */
+  private async requestRaw(
+    method: string,
+    path: string,
+    body?: unknown,
+    route: string = path.split("?")[0]!,
+  ): Promise<Response> {
     let lastRes: Response | undefined;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       let res: Response;

@@ -244,6 +244,11 @@ export class WeatherService {
     try {
       if (this.config.provider === "metno") {
         if (!this.metNoReady()) {
+          emitSystemLog("external", "warn", "weather_probe_failed", {
+            provider: this.config.provider,
+            latency_ms: Date.now() - started,
+            error: "support_contact_required",
+          });
           return {
             ok: false,
             latencyMs: Date.now() - started,

@@ -462,6 +462,7 @@ describe("WeatherService.summarize", () => {
   });
 
   it("probeLive succeeds for Open-Meteo and requires Support contact for MET Norway", async () => {
+    resetSystemLogBufferForTest();
     const okFetch: typeof fetch = async () =>
       new Response(
         JSON.stringify({
@@ -491,6 +492,12 @@ describe("WeatherService.summarize", () => {
     await expect(metno.probeLive()).resolves.toMatchObject({
       ok: false,
       error: "support_contact_required",
+    });
+    const entries = querySystemLogs({ source: "external" });
+    expect(entries.at(-1)).toMatchObject({
+      level: "warn",
+      message: "weather_probe_failed",
+      fields: { provider: "metno", error: "support_contact_required" },
     });
   });
 
