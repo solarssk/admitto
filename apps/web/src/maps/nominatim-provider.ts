@@ -383,6 +383,10 @@ export class NominatimProvider implements GeocodingProvider {
           provider: this.name,
           query_length: query.length,
           latency_ms: Date.now() - started,
+          // fetchJson and resolveUserAgent above both already rewrap any failure into a
+          // GeocodingProviderError (extends Error) before it reaches here, so the non-Error
+          // branch can't fire in practice - kept only as defensive typing for `err: unknown`.
+          /* v8 ignore next */
           error: err instanceof Error ? err.message : String(err),
         });
         mapProviderError(err);
@@ -428,6 +432,8 @@ export class NominatimProvider implements GeocodingProvider {
         emitSystemLog("external", "warn", "geocoding_reverse_failed", {
           provider: this.name,
           latency_ms: Date.now() - started,
+          // Same reasoning as search()'s catch above - already-wrapped Error in practice.
+          /* v8 ignore next */
           error: err instanceof Error ? err.message : String(err),
         });
         mapProviderError(err);
