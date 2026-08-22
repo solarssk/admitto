@@ -1153,13 +1153,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
          * panel, matching the Identity providers modal's own backdrop (identity-modal.css). */}
         <ModalBackdrop />
         <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--wide">
-        {/* at-scroll--stable (shared, packages/ui) reserves scrollbar-gutter here specifically —
-         * unlike this class's other 10 consumers, this modal's height can genuinely change at
-         * runtime (role chips, password-reset sub-form, delayed recent-logins fetch), so content
-         * visibly shifted when a scrollbar appeared/disappeared mid-session. The shared class's
-         * default intentionally skips this everywhere else (see its own doc comment) — scoped
-         * here via className, not by changing that default. */}
-        <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll--stable">
+        <div ref={scrollRef} className="add-attendee-modal__scroll">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
               {/* Default (md, 36px) to match .identity-row-icon's size - the standard other

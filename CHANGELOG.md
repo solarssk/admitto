@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The login, MFA, change-password, and other server-rendered auth pages no longer block same-origin fetch/XHR requests such as Cloudflare's own edge-injected bot-detection beacon (`/cdn-cgi/challenge-platform/...`). Their Content-Security-Policy previously omitted `connect-src` entirely on an instance with no trusted origins configured, so it fell back to `default-src 'none'` and blocked even requests to Admitto's own origin.
 - Event Overview's Key contacts avatars are now centered against the full row height instead of anchored to the top, so they no longer sit noticeably above center once a contact has a role or note wrapping the row to two lines.
+- The staff user edit modal (Users & roles) no longer permanently reserves scrollbar-gutter space on its right edge, matching every other modal that shares its layout - a short profile (no recent logins, no role chips) sat with dead space on the right where a scrollbar was never going to appear.
 
 ## [0.5.4] - 2026-08-21
 
