@@ -300,10 +300,14 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   // operator has scrolled up to read older lines, don't yank them back down. A fresh snapshot
   // (initial load or a filter change) always jumps straight to the newest lines instead - this
   // is a live tail, so opening it should behave like `docker logs -f`/`tail -f`, not start
-  // scrolled to the oldest buffered entry (PO review).
+  // scrolled to the oldest buffered entry (PO review). Also reruns on isVisible: LogsPanelViews
+  // keeps this panel mounted under display:none while the operator is on Audit/Security, so a
+  // snapshot that resolves during that time hits a console with scrollHeight 0 - consuming the
+  // flag there would leave it never actually applied, since switching back to System only
+  // flips isVisible, not entries, so this effect wouldn't otherwise rerun (bot review).
   useEffect(() => {
     const el = consoleRef.current;
-    if (!el) return;
+    if (!el || !isVisible) return;
     if (forceScrollToBottomRef.current) {
       forceScrollToBottomRef.current = false;
       el.scrollTop = el.scrollHeight;
@@ -311,7 +315,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 80) el.scrollTop = el.scrollHeight;
-  }, [entries]);
+  }, [entries, isVisible]);
 
   const lines = useMemo(() => entries.map(formatLogLine), [entries]);
 
