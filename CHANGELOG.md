@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Communication → Delivery log's "View sent message" preview now shows the recipient's real ticket link and QR code instead of a redacted placeholder. Event managers already have equivalent access to the same real ticket link one click away (attendee detail → More actions → Copy ticket link), so hiding it in the preview no longer served a purpose.
+
 ### Fixed
 
 - The login, MFA, change-password, and other server-rendered auth pages no longer block same-origin fetch/XHR requests such as Cloudflare's own edge-injected bot-detection beacon (`/cdn-cgi/challenge-platform/...`). Their Content-Security-Policy previously omitted `connect-src` entirely on an instance with no trusted origins configured, so it fell back to `default-src 'none'` and blocked even requests to Admitto's own origin.

@@ -1549,7 +1549,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handleGetEventDelivery(c, db),
   );
   app.get("/api/admin/events/:eventId/deliveries/:deliveryId/rendered", staffAdminGate, (c) =>
-    handleGetRenderedEventDelivery(c, db),
+    handleGetRenderedEventDelivery(c, db, mailInjectedBaseUrl),
   );
   app.get("/api/admin/events/:eventId/import/template", staffAdminGate, (c) =>
     handleGetImportTemplate(c, db),
