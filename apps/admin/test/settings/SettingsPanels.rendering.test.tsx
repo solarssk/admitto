@@ -2026,6 +2026,33 @@ describe("SystemLogsPanel rendering", () => {
     expect(screen.getByText("Showing 1 line")).toBeTruthy();
   });
 
+  it("re-fetches with the selected source and replaces the displayed entries (PO report)", async () => {
+    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+      cursor: 1,
+    });
+
+    renderWithToast(<AuditLogPanel />);
+    await screen.findByText("No audit log entries yet");
+    openSystemLogsView();
+    await screen.findByText("http_request");
+
+    vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
+      entries: [{ id: 2, ts: "2026-01-01T12:05:00.000Z", level: "info", source: "wallet", message: "passcreator_request_ok" }],
+      cursor: 2,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Source, All sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Wallet" }));
+
+    expect(await screen.findByText("passcreator_request_ok")).toBeTruthy();
+    expect(screen.queryByText("http_request")).toBeNull();
+    expect(fetchSystemLogs).toHaveBeenLastCalledWith(
+      { level: undefined, source: "wallet", search: undefined },
+      expect.anything(),
+    );
+  });
+
   it("scrolls straight to the newest entry on initial load, like a live tail (PO review)", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     // A controllable promise, not mockResolvedValueOnce - the scrollHeight/clientHeight stubs
