@@ -375,6 +375,11 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       searchPlaceholder="Search levels…"
       emptyLabel="No levels found"
       showLabel={false}
+      // Only 4 short options (All levels/Info/Warn/Error) - the shared 260px floor (tuned for
+      // longer option sets) left a wide, empty dropdown panel hugging the toolbar's right edge
+      // for no reason (PO report). Same idea as .audit-log-pagesize's own minWidth={72} for its
+      // even-shorter page-size options.
+      minWidth={140}
       value={level || "all"}
       options={[
         { id: "all", label: "All levels" },
