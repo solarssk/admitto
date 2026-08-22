@@ -165,4 +165,30 @@ describe("runAuthBootstrapSuperadmin", () => {
     expect(confirmYes).toHaveBeenCalledWith(expect.any(String), fakeReadLine);
     expect(readPasswordFromStdin).toHaveBeenCalledWith("Password: ", fakeReadLine);
   });
+
+  it("rejects when a superadmin already exists and --force wasn't passed", async () => {
+    process.argv = ["node", "admitto", "auth", "bootstrap-superadmin", "--email", "admin@example.com"];
+    superadminInstanceExists.mockResolvedValue(true);
+    const db = fakeDb();
+
+    await expect(runAuthBootstrapSuperadmin(db)).rejects.toThrow(
+      "superadmin@instance already exists. Use --force to create another (with confirmation).",
+    );
+
+    expect(confirmYes).not.toHaveBeenCalled();
+    expect(readPasswordFromStdin).not.toHaveBeenCalled();
+    expect(bootstrapSuperadmin).not.toHaveBeenCalled();
+  });
+
+  it("aborts without prompting for a password when the force-confirmation is answered no", async () => {
+    process.argv = ["node", "admitto", "auth", "bootstrap-superadmin", "--email", "admin@example.com", "--force"];
+    superadminInstanceExists.mockResolvedValue(true);
+    confirmYes.mockImplementation(async () => false);
+    const db = fakeDb();
+
+    await expect(runAuthBootstrapSuperadmin(db)).rejects.toThrow("Aborted.");
+
+    expect(readPasswordFromStdin).not.toHaveBeenCalled();
+    expect(bootstrapSuperadmin).not.toHaveBeenCalled();
+  });
 });
