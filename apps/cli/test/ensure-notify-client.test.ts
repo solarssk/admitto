@@ -70,7 +70,7 @@ describe("ensureNotifyClient", () => {
     });
   });
 
-  it("records a successful reconnect as an info-level worker system-log entry", async () => {
+  it("does not record a successful reconnect as a worker system-log entry", async () => {
     const fresh = fakeClient();
     openWorkerNotifyClient.mockResolvedValue(fresh);
     await ensureNotifyClient("postgresql://example/db", null);
