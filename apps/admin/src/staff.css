@@ -7164,10 +7164,12 @@ output.mail-field-hint {
 
 /* No per-row border (B: "too many divider lines... looks like an Excel spreadsheet") — the
  * section-level divider above already separates Key contacts from its neighbors; rows lean on
- * padding for rhythm instead of a hard rule between every pair. */
+ * padding for rhythm instead of a hard rule between every pair. align-items: center (not
+ * flex-start) so the avatar stays centered against the row's full height regardless of whether
+ * the name wraps to one or two lines — same reasoning as .overview-resource below (#D4). */
 .overview-contact {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) 0;
 }
@@ -7180,7 +7182,6 @@ output.mail-field-hint {
   gap: 1px;
   /* Icons stay always-visible (not hover-reveal) so they're reachable on touch and discoverable
    * without a pointer — the name wraps to two lines instead of truncating hard (#345). */
-  padding-top: 3px;
 }
 .overview-contact__info strong {
   font-size: var(--fs-sm);
