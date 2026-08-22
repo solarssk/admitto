@@ -177,6 +177,12 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   const pollFailureCountRef = useRef(0);
   const filtersRef = useRef({ level, source, search });
   const consoleRef = useRef<HTMLDivElement>(null);
+  // Set right before every setEntries(fresh snapshot) call (initial load, a filter change, or
+  // the poll effect's own re-snapshot-on-buffer-reset branch) - consumed by the scroll effect
+  // below to jump straight to the newest lines instead of applying its normal "stay pinned only
+  // if already near the bottom" logic, which otherwise leaves a first-time viewer looking at the
+  // oldest lines in the buffer (PO review).
+  const forceScrollToBottomRef = useRef(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -208,6 +214,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     )
       .then((data) => {
         if (ac.signal.aborted) return;
+        forceScrollToBottomRef.current = true;
         setEntries(data.entries);
         cursorRef.current = data.cursor;
       })
@@ -258,6 +265,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           const snapshot = await fetchSystemLogs(filterParams, ac.signal);
           if (ac.signal.aborted) return;
           cursorRef.current = snapshot.cursor;
+          forceScrollToBottomRef.current = true;
           setEntries(snapshot.entries);
         } else {
           cursorRef.current = data.cursor;
@@ -289,13 +297,25 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   }, [live, isVisible]);
 
   // New lines arriving while scrolled to the bottom should keep the view pinned there; if the
-  // operator has scrolled up to read older lines, don't yank them back down.
+  // operator has scrolled up to read older lines, don't yank them back down. A fresh snapshot
+  // (initial load or a filter change) always jumps straight to the newest lines instead - this
+  // is a live tail, so opening it should behave like `docker logs -f`/`tail -f`, not start
+  // scrolled to the oldest buffered entry (PO review). Also reruns on isVisible: LogsPanelViews
+  // keeps this panel mounted under display:none while the operator is on Audit/Security, so a
+  // snapshot that resolves during that time hits a console with scrollHeight 0 - consuming the
+  // flag there would leave it never actually applied, since switching back to System only
+  // flips isVisible, not entries, so this effect wouldn't otherwise rerun (bot review).
   useEffect(() => {
     const el = consoleRef.current;
-    if (!el) return;
+    if (!el || !isVisible) return;
+    if (forceScrollToBottomRef.current) {
+      forceScrollToBottomRef.current = false;
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 80) el.scrollTop = el.scrollHeight;
-  }, [entries]);
+  }, [entries, isVisible]);
 
   const lines = useMemo(() => entries.map(formatLogLine), [entries]);
 
