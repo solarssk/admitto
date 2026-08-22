@@ -227,16 +227,7 @@ export class PassCreatorClient implements WalletPassProvider {
       path,
       { target_url: targetUrl, event, signPayload: true, retryEnabled: true },
     );
-    if (!res.ok) {
-      this.logOutcome("POST", path, false, res.status);
-      throw this.toProviderError(res.status);
-    }
-    const body: unknown = await res.json().catch(() => null);
-    const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
-    this.logOutcome("POST", path, !bodyFailed, res.status);
-    if (bodyFailed) {
-      throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
-    }
+    await this.validateHookResponse("POST", path, res);
   }
 
   /** Removes every subscription (across all event types and templates) tied to `targetUrl`
@@ -249,16 +240,7 @@ export class PassCreatorClient implements WalletPassProvider {
   async unsubscribeWebhook(targetUrl: string): Promise<void> {
     const path = "/api/hook/unsubscribe";
     const res = await this.requestRaw("POST", path, { target_url: targetUrl });
-    if (!res.ok) {
-      this.logOutcome("POST", path, false, res.status);
-      throw this.toProviderError(res.status);
-    }
-    const body: unknown = await res.json().catch(() => null);
-    const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
-    this.logOutcome("POST", path, !bodyFailed, res.status);
-    if (bodyFailed) {
-      throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
-    }
+    await this.validateHookResponse("POST", path, res);
   }
 
   /** Every currently active webhook subscription across the whole PassCreator account
@@ -279,16 +261,7 @@ export class PassCreatorClient implements WalletPassProvider {
   > {
     const path = "/api/hook/list";
     const res = await this.requestRaw("GET", path);
-    if (!res.ok) {
-      this.logOutcome("GET", path, false, res.status);
-      throw this.toProviderError(res.status);
-    }
-    const body: unknown = await res.json().catch(() => null);
-    const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
-    this.logOutcome("GET", path, !bodyFailed, res.status);
-    if (bodyFailed) {
-      throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
-    }
+    const body = await this.validateHookResponse("GET", path, res);
     const data =
       body && typeof body === "object" && "data" in body ? (body as { data: unknown }).data : body;
     const rows = Array.isArray(data) ? data : [];
@@ -407,6 +380,27 @@ export class PassCreatorClient implements WalletPassProvider {
     if (ok) return;
     const route = path.split("?")[0];
     emitSystemLog("wallet", "warn", "passcreator_request_rejected", { method, route, status });
+  }
+
+  /** Shared by subscribeWebhook/unsubscribeWebhook/listWebhooks - none of the three go through
+   * the shared request() envelope helper (each has its own doc comment explaining why: their
+   * confirmed-live response shapes don't match the strict v3 {success,data,errors} envelope), but
+   * all three need the identical res.ok check + explicit success:false body check + outcome
+   * logging before the caller can trust the response - extracted to avoid the near-duplicate
+   * block SonarCloud's duplication gate flagged across the three (bot review). Returns the parsed
+   * body on success (listWebhooks reads its own `data` field back out of it). */
+  private async validateHookResponse(method: string, path: string, res: Response): Promise<unknown> {
+    if (!res.ok) {
+      this.logOutcome(method, path, false, res.status);
+      throw this.toProviderError(res.status);
+    }
+    const body: unknown = await res.json().catch(() => null);
+    const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
+    this.logOutcome(method, path, !bodyFailed, res.status);
+    if (bodyFailed) {
+      throw this.toProviderError(res.status, extractErrorStrings((body as { errors?: unknown }).errors));
+    }
+    return body;
   }
 
   /** Issues one request with 429 exponential backoff; throws WalletProviderError on final failure.
