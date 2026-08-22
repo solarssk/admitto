@@ -9,12 +9,23 @@ import {
 import { positiveIntQuery, requireSuperadmin } from "./admin-helpers.js";
 
 const VALID_LEVELS = new Set<SystemLogLevel>(["info", "warn", "error"]);
-const VALID_SOURCES = new Set<SystemLogSource>(["api", "db", "cache", "mail", "admin", "security"]);
+const VALID_SOURCES = new Set<SystemLogSource>([
+  "api",
+  "db",
+  "cache",
+  "mail",
+  "admin",
+  "security",
+  "worker",
+  "wallet",
+  "external",
+]);
 
 /**
  * GET /api/admin/system-logs — live tail of the in-memory system-log buffer (see
  * @admitto/shared/system-log). Instance-wide (not org-scoped, unlike the audit log): this covers
- * process-level API/DB/cache/mail/admin activity, which has no per-org meaning. Superadmin only.
+ * process-level API/DB/cache/mail/admin/worker/wallet/external activity, which has no per-org
+ * meaning. Superadmin only.
  * Unrecognized level/source values are ignored (treated as "no filter"), matching audit-log's
  * own permissive filter style.
  */

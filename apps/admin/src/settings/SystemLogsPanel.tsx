@@ -27,6 +27,9 @@ const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   mail: "Mail",
   admin: "Admin",
   security: "Security",
+  worker: "Worker",
+  wallet: "Wallet",
+  external: "External services",
 };
 
 // No "Debug" option - nothing in this app ever logs at that level, so a filter option for it
@@ -80,7 +83,8 @@ function renderConsoleBody(
       <div className="system-log-panel__console-empty">
         <p className="system-log-panel__console-empty-title">No log activity yet</p>
         <p className="system-log-panel__console-empty-desc">
-          Activity across the API, database, cache, mail transport, and admin actions will appear here as it happens.
+          Activity across the API, database, cache, mail transport, admin actions, background
+          worker, wallet, and external services will appear here as it happens.
         </p>
       </div>
     );
@@ -141,9 +145,12 @@ interface SystemLogsPanelProps {
 
 /**
  * Live tail of the in-memory system-log buffer (see @admitto/shared/system-log) - raw
- * API/DB/Cache/Mail/Admin activity for diagnosing issues, not a durable audit trail (that's the
- * Audit log side of this same toggle). Everything shown here is also written to the container's
- * stdout independent of this view, so nothing is lost if the buffer resets or the UI is down.
+ * API/DB/Cache/Mail/Admin/Worker/Wallet/External activity for diagnosing issues, not a durable
+ * audit trail (that's the Audit log side of this same toggle). Everything shown here is also
+ * written to its own process's stdout independent of this view (the worker's entries relay over
+ * an authenticated HTTP POST to /api/ops/system-logs - see apps/cli/src/lib/system-log-publish.ts
+ * - but are still written to the worker's own stdout first), so nothing is lost if the buffer
+ * resets or the UI is down.
  */
 export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanelProps>(function SystemLogsPanel(
   { isDesktop, isVisible, liveButton, downloadButton, onLiveChange, onHasEntriesChange },

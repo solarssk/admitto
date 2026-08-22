@@ -1,6 +1,8 @@
 /**
- * Ops-only ingest so the Admitto worker (bounce job) can append to the app
- * process System Logs buffer via OPS_HEALTH_TOKEN.
+ * Ops-only ingest so the Admitto worker process can append to the app process System Logs buffer
+ * via OPS_HEALTH_TOKEN - originally built for the bounce job's own reportBounceIngestSystemLog,
+ * now also the target of the generic worker-wide relay (apps/cli/src/lib/system-log-publish.ts,
+ * installed via @admitto/shared/system-log's setSystemLogPublisher hook).
  */
 import type { Context } from "hono";
 import { z } from "zod";
@@ -13,7 +15,7 @@ import { isValidOpsToken } from "./readyz.js";
 
 const bodySchema = z
   .object({
-    source: z.enum(["api", "db", "cache", "mail", "admin", "security"]),
+    source: z.enum(["api", "db", "cache", "mail", "admin", "security", "worker", "wallet", "external"]),
     level: z.enum(["info", "warn", "error"]),
     message: z.string().trim().min(1).max(200),
     fields: z.record(z.string(), z.unknown()).optional(),

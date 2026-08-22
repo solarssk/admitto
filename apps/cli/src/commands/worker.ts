@@ -26,6 +26,7 @@ import {
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
+import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-log-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
 import { runWalletRegistrationSync } from "./wallet-sync.js";
 import { drainWalletPushJobs } from "./wallet-push-jobs.js";
@@ -392,6 +393,12 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   const signal = { stopped: false };
   const retention: RetentionSchedule = createRetentionSchedule();
 
+  // Installed only once the resources the `finally` block below cleans up (locks, notify) have
+  // actually been acquired - installing any earlier would leave the process-wide relay dangling
+  // if openWorkerLockClient/ensureNotifyClient itself threw before the try block was reached
+  // (bot review).
+  installSystemLogRelay();
+
   const onStop = () => {
     if (signal.stopped) return;
     signal.stopped = true;
@@ -427,6 +434,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     await locks.close();
     await notify?.close();
     await closeSsePublishClient();
+    uninstallSystemLogRelay();
     log("heartbeat", "stopped");
   }
 }
