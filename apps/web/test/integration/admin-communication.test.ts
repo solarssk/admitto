@@ -1051,6 +1051,7 @@ describe("GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered", () =>
       { headers: { Cookie: adminCookie } },
     );
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as { subject: string | null; html: string | null };
 
     expect(body.subject).not.toContain("{{ticket_url}}");
@@ -1060,6 +1061,25 @@ describe("GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered", () =>
     expect(body.html).not.toContain("{{qr_image_url}}");
     expect(body.html).toContain('href="https://tickets.example.com/t/');
     expect(body.html).toContain('src="https://tickets.example.com/q/');
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { attendee_id: ATT_A2, action_type: "ticket_link_retrieved" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+  });
+
+  it("returns null subject/html rather than erroring when the attendee has no ticket token yet", async () => {
+    // ATT_A1 has no token_enc set - resolveAttendeeMailLinks throws its expected "nothing to
+    // build a link from yet" error, which must be treated the same as expired retention, not as
+    // a server error.
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/${DLV_A1_INITIAL}/rendered`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string | null; html: string | null };
+    expect(body).toEqual({ subject: null, html: null });
   });
 
   it("returns null subject/html once the retention window has nulled the stored snapshot", async () => {

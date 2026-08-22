@@ -45,7 +45,7 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { isSendSuccess } from "@admitto/mailer";
-import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeBulkActionLog } from "@admitto/tickets";
+import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeActionLog, writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -698,10 +698,28 @@ export async function handleGetRenderedEventDelivery(
       { subject: rendered.rendered_subject ?? "", html: rendered.rendered_html ?? "" },
       links,
     );
-  } catch {
+  } catch (err) {
+    // Only the specific "nothing to build a link from yet" shape is a genuine "not available"
+    // response, same distinction handleGetAttendeeTicketLink makes - a decryption failure or a
+    // DB error hitting this same call is a real server error and must not be swallowed into the
+    // same response used for expired retention.
+    const notIssued =
+      err instanceof Error &&
+      (err.message.includes("missing token_enc") || err.message.includes("missing public_ref"));
+    if (!notIssued) throw err;
     return c.json({ subject: null, html: null });
   }
 
+  await db.$transaction(async (tx) => {
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: rendered.attendee_id,
+      action_type: "ticket_link_retrieved",
+      audit: adminAuditFromContext(c),
+    });
+  });
+
+  c.header("Cache-Control", "no-store");
   return c.json({
     subject: rendered.rendered_subject != null ? materialized.subject : null,
     html: rendered.rendered_html != null ? materialized.html : null,
