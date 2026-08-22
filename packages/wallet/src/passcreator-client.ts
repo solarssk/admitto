@@ -63,6 +63,10 @@ function previewBody(text: string): string {
  * schema - see subscribeWebhook/listWebhooks below) down to the string[] toProviderError expects,
  * rather than trusting it and letting a non-array value (e.g. a bare string) throw inside
  * `.join()` instead of surfacing the intended WalletProviderError. */
+function requestErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 function extractErrorStrings(errors: unknown): string[] | undefined {
   return Array.isArray(errors) ? errors.filter((error): error is string => typeof error === "string") : undefined;
 }
@@ -403,6 +407,21 @@ export class PassCreatorClient implements WalletPassProvider {
     return body;
   }
 
+  /** The actual fetch() call, isolated from requestRaw's retry/logging control flow below purely
+   * to keep that function's cognitive complexity under SonarCloud's threshold (bot review) - no
+   * behavior change. */
+  private performFetch(method: string, path: string, body: unknown): Promise<Response> {
+    return this.fetchFn(`${this.baseUrl}${path}`, {
+      method,
+      headers: {
+        Authorization: this.apiKey,
+        ...NO_COMPRESSION_HEADERS,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  }
+
   /** Issues one request with 429 exponential backoff; throws WalletProviderError on final failure.
    * The single choke point every PassCreator operation (issue/void/push/search/webhook key fetch)
    * goes through, so the network-failure and rate-limit-exhausted logging here - unlike the
@@ -414,25 +433,14 @@ export class PassCreatorClient implements WalletPassProvider {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       let res: Response;
       try {
-        res = await this.fetchFn(`${this.baseUrl}${path}`, {
-          method,
-          headers: {
-            Authorization: this.apiKey,
-            ...NO_COMPRESSION_HEADERS,
-            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-          },
-          body: body !== undefined ? JSON.stringify(body) : undefined,
-        });
+        res = await this.performFetch(method, path, body);
       } catch (err) {
         emitSystemLog("wallet", "warn", "passcreator_request_failed", {
           method,
           route,
-          error: err instanceof Error ? err.message : String(err),
+          error: requestErrorMessage(err),
         });
-        throw new WalletProviderError(
-          "wallet_provider_timeout",
-          `PassCreator request failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        throw new WalletProviderError("wallet_provider_timeout", `PassCreator request failed: ${requestErrorMessage(err)}`);
       }
 
       if (res.status !== 429) return res;
