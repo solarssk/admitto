@@ -2563,6 +2563,11 @@ export async function deleteAccountSession(sessionId: string): Promise<void> {
   await parseJson<unknown>(res);
 }
 
+export async function forgetAllTrustedDevices(): Promise<{ devices_revoked: number }> {
+  const res = await fetch("/api/account/mfa/trusted-devices", jsonDeleteInit());
+  return parseJson<{ devices_revoked: number }>(res);
+}
+
 export async function enrollMfaTotp(): Promise<MfaEnrollResponse> {
   const res = await fetch("/api/account/mfa/totp/enroll", jsonPostInit({}));
   return parseJson<MfaEnrollResponse>(res);

@@ -9,6 +9,7 @@ import {
   bootstrapSuperadmin,
   confirmTotpEnrollment,
   createSession,
+  createTrustedDevice,
   finishWebauthnRegistration,
   hashPassword,
   markBackupCodesAcknowledged,
@@ -134,6 +135,7 @@ beforeEach(() => rateLimitStore.reset());
 
 afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
+  await prisma.trustedDevice.deleteMany({ where: { user_id: userId } });
   await prisma.externalIdentity.deleteMany({ where: { user_id: userId } });
   await prisma.oidcRoleGrant.deleteMany({ where: { user_id: userId } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: userId, NOT: { scope_id: "evt-account" } } });
@@ -502,6 +504,65 @@ describe("DELETE /api/account/sessions/:id", () => {
       where: { organization_id: ORG_ACCOUNT, action_type: "account_session_revoked" },
     });
     expect(auditCountAfter).toBe(auditCountBefore);
+  });
+});
+
+describe("DELETE /api/account/mfa/trusted-devices", () => {
+  it("revokes every trusted device for the account and reports the count, leaving other accounts' devices untouched", async () => {
+    await createTrustedDevice(prisma, { userId });
+    await createTrustedDevice(prisma, { userId });
+    const otherDevice = await createTrustedDevice(prisma, { userId: otherUserId });
+
+    const res = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { devices_revoked: number }).toEqual({ devices_revoked: 2 });
+    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
+    expect(
+      (await prisma.trustedDevice.findUnique({ where: { id: otherDevice.trustedDevice.id } }))?.revoked_at,
+    ).toBeNull();
+    await prisma.trustedDevice.delete({ where: { id: otherDevice.trustedDevice.id } });
+  });
+
+  it("writes an audit entry only when a device was actually revoked", async () => {
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_trusted_devices_revoked" },
+    });
+    const noopRes = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(noopRes.status).toBe(200);
+    expect((await noopRes.json()) as { devices_revoked: number }).toEqual({ devices_revoked: 0 });
+    expect(
+      await prisma.adminAuditLog.count({
+        where: { organization_id: ORG_ACCOUNT, action_type: "account_trusted_devices_revoked" },
+      }),
+    ).toBe(auditCountBefore);
+
+    await createTrustedDevice(prisma, { userId });
+    const res = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { devices_revoked: number }).toEqual({ devices_revoked: 1 });
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_trusted_devices_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ devicesRevoked: 1 });
+  });
+
+  it("returns 401 without a session", async () => {
+    const res = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { ...sameOrigin },
+    });
+    expect(res.status).toBe(401);
   });
 });
 

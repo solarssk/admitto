@@ -14,6 +14,7 @@ import {
   fetchAccountSessions,
   fetchBackupCodesStatus,
   finishWebauthnRegistration,
+  forgetAllTrustedDevices,
   patchAccountPassword,
   patchAccountProfile,
   regenerateBackupCodes,
@@ -258,12 +259,18 @@ function AccountIdentityActionsMenu({
   );
 }
 
-/** Kebab menu in the "Two-factor authentication" card header - holds the single account-wide
- * "Reset everything" action (clears TOTP, every passkey/security key, and all backup codes
- * together), kept out of the per-method Manage popups above so it doesn't read as belonging to
- * any one method. Self-contained (calls useDropdownMenu itself, same as HealthCheckMoreActions)
- * since nothing else in the card needs its open state. */
-function TwoFactorMoreActions({ onReset }: Readonly<{ onReset: () => void }>) {
+/** Kebab menu in the "Two-factor authentication" card header - holds account-wide actions kept
+ * out of the per-method Manage popups above so they don't read as belonging to any one method:
+ * forgetting every device this account ever chose to remember (`showReset` is false), and,
+ * additionally, the account-wide "Reset everything" action (clears TOTP, every passkey/security
+ * key, and all backup codes together) once the account also has a local password to reset with.
+ * Self-contained (calls useDropdownMenu itself, same as HealthCheckMoreActions) since nothing
+ * else in the card needs its open state. */
+function TwoFactorMoreActions({
+  onReset,
+  onForgetDevices,
+  showReset,
+}: Readonly<{ onReset: () => void; onForgetDevices: () => void; showReset: boolean }>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
@@ -284,15 +291,26 @@ function TwoFactorMoreActions({ onReset }: Readonly<{ onReset: () => void }>) {
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           <MoreActionsMenuItem
-            icon="refresh"
-            label="Reset everything"
-            hint="Remove every 2FA method and end your other sessions"
-            variant="danger"
+            icon="devices-off"
+            label="Forget all trusted devices"
+            hint="You'll be asked to verify again on every device next time"
             onClick={() => {
               close();
-              onReset();
+              onForgetDevices();
             }}
           />
+          {showReset && (
+            <MoreActionsMenuItem
+              icon="refresh"
+              label="Reset everything"
+              hint="Remove every 2FA method and end your other sessions"
+              variant="danger"
+              onClick={() => {
+                close();
+                onReset();
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -423,6 +441,9 @@ export function AccountPage() {
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [revokeAllOpen, setRevokeAllOpen] = useState(false);
   const [revokeAllBusy, setRevokeAllBusy] = useState(false);
+  const [forgetDevicesOpen, setForgetDevicesOpen] = useState(false);
+  const [forgetDevicesBusy, setForgetDevicesBusy] = useState(false);
+  const [forgetDevicesError, setForgetDevicesError] = useState<string | null>(null);
   const [uriCopied, setUriCopied] = useState(false);
   const [showUriManual, setShowUriManual] = useState(false);
   const [qrRenderFailed, setQrRenderFailed] = useState(false);
@@ -883,6 +904,27 @@ export function AccountPage() {
 
   function handleRevokeAllCancel(): void {
     if (!revokeAllBusy) { setRevokeAllOpen(false); setRevokeError(null); }
+  }
+
+  async function handleForgetDevicesConfirm(): Promise<void> {
+    setForgetDevicesBusy(true); setForgetDevicesError(null);
+    try {
+      const { devices_revoked } = await forgetAllTrustedDevices();
+      setForgetDevicesOpen(false);
+      const plural = devices_revoked === 1 ? "" : "s";
+      addToast(
+        devices_revoked > 0
+          ? `${devices_revoked} device${plural} forgotten. You'll be asked to verify again next time you sign in on ${devices_revoked === 1 ? "it" : "them"}.`
+          : "No devices were remembered.",
+        "success",
+      );
+    } catch (err) {
+      setForgetDevicesError(operatorApiErrorMessage(err, "Failed to forget devices."));
+    } finally { setForgetDevicesBusy(false); }
+  }
+
+  function handleForgetDevicesCancel(): void {
+    if (!forgetDevicesBusy) { setForgetDevicesOpen(false); setForgetDevicesError(null); }
   }
 
   function handleRemoveTotpCancel(): void {
@@ -1667,11 +1709,20 @@ export function AccountPage() {
 
   function renderTwoFactorCard() {
     if (!account) return null;
-    const canResetEverything = account.has_local_password && (totpEnrolled || hasConfirmedWebauthnMethod(account));
+    const hasConfirmedMfa = totpEnrolled || hasConfirmedWebauthnMethod(account);
+    const canResetEverything = account.has_local_password && hasConfirmedMfa;
     return (
       <Card
         title="Two-factor authentication"
-        actions={canResetEverything ? <TwoFactorMoreActions onReset={() => setResetConfirmOpen(true)} /> : undefined}
+        actions={
+          hasConfirmedMfa ? (
+            <TwoFactorMoreActions
+              onReset={() => setResetConfirmOpen(true)}
+              onForgetDevices={() => setForgetDevicesOpen(true)}
+              showReset={canResetEverything}
+            />
+          ) : undefined
+        }
       >
           {/* Methods list, every action opens its own popup now (decision 6), so this stays
               visible at all times instead of being replaced by an inline form. */}
@@ -1924,6 +1975,8 @@ export function AccountPage() {
       <ConfirmDialog open={!!revokeTarget} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatRelativeTime(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeConfirm} onCancel={handleRevokeCancel} />
 
       <ConfirmDialog open={revokeAllOpen} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke" confirmVariant="danger" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeAllConfirm} onCancel={handleRevokeAllCancel} />
+
+      <ConfirmDialog open={forgetDevicesOpen} icon={<i className="ti ti-devices-off" aria-hidden="true" />} title="Forget all trusted devices" message="You'll be asked to verify with two-factor again the next time you sign in on any device you previously chose to remember." confirmLabel="Forget devices" loading={forgetDevicesBusy} errorMessage={forgetDevicesError ?? undefined} onConfirm={handleForgetDevicesConfirm} onCancel={handleForgetDevicesCancel} />
 
       <ConfirmDialog
         open={manageTotpOpen}

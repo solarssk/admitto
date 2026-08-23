@@ -354,6 +354,7 @@ import {
   handleDeleteAccountExternalIdentity,
   handleGetAccountSessions,
   handleDeleteAccountSession,
+  handleDeleteAccountTrustedDevices,
   handlePostMfaEnroll as handlePostAccountMfaEnroll,
   handleDeleteMfaEnroll as handleDeleteAccountMfaEnroll,
   handlePostMfaConfirm as handlePostAccountMfaConfirm,
@@ -1772,6 +1773,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountSession(c, db),
+  );
+  app.delete("/api/account/mfa/trusted-devices", jsonPostCsrf, requireSession, (c) =>
+    handleDeleteAccountTrustedDevices(c, db),
   );
   app.post(
     "/api/account/mfa/totp/enroll",

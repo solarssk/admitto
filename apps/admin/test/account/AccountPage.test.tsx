@@ -20,6 +20,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     confirmMfaTotp: vi.fn(),
     resetMfa: vi.fn(),
     deleteAccountSession: vi.fn(),
+    forgetAllTrustedDevices: vi.fn(),
     unlinkAccountExternalIdentity: vi.fn(),
     beginWebauthnRegistration: vi.fn(),
     finishWebauthnRegistration: vi.fn(),
@@ -68,6 +69,7 @@ import {
   confirmMfaTotp,
   resetMfa,
   deleteAccountSession,
+  forgetAllTrustedDevices,
   unlinkAccountExternalIdentity,
   beginWebauthnRegistration,
   finishWebauthnRegistration,
@@ -89,6 +91,7 @@ const mockEnrollMfaTotp = vi.mocked(enrollMfaTotp);
 const mockCancelMfaEnroll = vi.mocked(cancelMfaEnroll);
 const mockConfirmMfaTotp = vi.mocked(confirmMfaTotp);
 const mockResetMfa = vi.mocked(resetMfa);
+const mockForgetAllTrustedDevices = vi.mocked(forgetAllTrustedDevices);
 const mockUnlinkExternalIdentity = vi.mocked(unlinkAccountExternalIdentity);
 const mockBeginWebauthnRegistration = vi.mocked(beginWebauthnRegistration);
 const mockFinishWebauthnRegistration = vi.mocked(finishWebauthnRegistration);
@@ -1128,7 +1131,11 @@ describe("AccountPage toasts", () => {
       ).toBeTruthy();
     });
     expect(screen.getByText("Authenticator app (TOTP)")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Two-factor authentication options" })).toBeNull();
+    // "Reset everything" needs a local password to reset with, so it stays hidden here - but the
+    // menu itself still shows for "Forget all trusted devices", which doesn't need one.
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    expect(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /^Reset everything/ })).toBeNull();
   });
 
   it("copies the otpauth URI during enrollment", async () => {
@@ -3403,6 +3410,75 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     // The "Reset everything" path goes through the unmodified reset flow, not the new
     // TOTP-only removal endpoint.
     expect(mockDeleteAccountTotp).not.toHaveBeenCalled();
+  });
+
+  it("offers Forget all trusted devices even without a local password, but hides Reset everything there", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, has_local_password: false });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+
+    expect(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /^Reset everything/ })).toBeNull();
+  });
+
+  it("Forget all trusted devices revokes devices and toasts the count", async () => {
+    mockLoadedAccount(totpEnrolledAccount);
+    mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 3 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/^3 devices forgotten\./);
+    });
+    expect(mockForgetAllTrustedDevices).toHaveBeenCalledWith();
+    expect(screen.queryByRole("dialog", { name: "Forget all trusted devices" })).toBeNull();
+  });
+
+  it("Forget all trusted devices toasts a no-op message when nothing was remembered", async () => {
+    mockLoadedAccount(totpEnrolledAccount);
+    mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 0 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Forget devices" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/^No devices were remembered\./);
+    });
+  });
+
+  it("shows an error in the dialog and does not close it when forgetting devices fails", async () => {
+    mockLoadedAccount(totpEnrolledAccount);
+    mockForgetAllTrustedDevices.mockRejectedValueOnce(new Error("network down"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Failed to forget devices.")).toBeTruthy();
+    });
   });
 
   it("clicking outside the Reset dialog while resetting does not dismiss it", async () => {

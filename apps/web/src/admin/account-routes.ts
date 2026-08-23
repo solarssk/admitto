@@ -1029,6 +1029,32 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
   return c.json({}, 200);
 }
 
+/** DELETE /api/account/mfa/trusted-devices, forget every device this account has ever chosen to
+ * remember for two-factor. No step-up gate - unlike every other action on this menu, this only
+ * makes two-factor be asked for more often going forward, never less, so there is no weakened
+ * state here for a step-up proof to protect against. */
+export async function handleDeleteAccountTrustedDevices(c: Context, db: PrismaClient): Promise<Response> {
+  const userId = c.get("auth").userId;
+  const orgId = await resolveInstanceOrganizationId(db);
+  const audit = adminAuditFromContext(c);
+  const revoked = await runInTransaction(db, async (tx) => {
+    const count = await revokeAllTrustedDevicesForUser(tx, userId);
+    if (count > 0) {
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "account_trusted_devices_revoked",
+        metadata: { devicesRevoked: count },
+      });
+    }
+    return count;
+  });
+  return c.json({ devices_revoked: revoked }, 200);
+}
+
 /** POST /api/account/mfa/totp/enroll, start or resume TOTP enrollment (local-password accounts only). */
 export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
