@@ -10,5 +10,6 @@ import { createHash } from "node:crypto";
  * (`Session.token_hash`/`Attendee.token_hash`), which a salted algorithm cannot serve.
  */
 export function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex"); // codeql[js/insufficient-password-hash]: not a password, see doc comment above
+  // codeql[js/insufficient-password-hash]: not a password, see doc comment above
+  return createHash("sha256").update(token).digest("hex");
 }
