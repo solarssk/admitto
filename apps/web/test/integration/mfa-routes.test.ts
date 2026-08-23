@@ -415,6 +415,53 @@ describe("MFA enroll rate limit", () => {
   });
 });
 
+describe("HTML /mfa/verify — passkey button", () => {
+  it("shows the passkey button when the account has a confirmed WebAuthn credential", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyPage = await app.request("/mfa/verify", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(verifyPage.status).toBe(200);
+    const html = await verifyPage.text();
+    expect(html).toContain('id="mfa-webauthn-btn"');
+  });
+
+  it("hides the passkey button when the account has no confirmed WebAuthn credential", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyPage = await app.request("/mfa/verify", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(verifyPage.status).toBe(200);
+    expect(await verifyPage.text()).not.toContain('id="mfa-webauthn-btn"');
+  });
+});
+
 describe("HTML MFA enroll", () => {
   it("GET /mfa/enroll does not create pending enrollment", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -1038,6 +1085,238 @@ describe("POST /api/auth/mfa/webauthn — login-time WebAuthn", () => {
       });
       expect(beginRes.status).toBe(403);
       expect(((await beginRes.json()) as { code: string }).code).toBe("webauthn_disabled");
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+    }
+  });
+
+  it("lands on the backup-codes step when the freshly-confirmed credential's codes are unacknowledged", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const authenticator = createVirtualAuthenticator();
+    const begin = await beginWebauthnRegistration(prisma, admin!.id, "platform", WEBAUTHN_RP);
+    const response = authenticator.register({ challenge: begin!.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
+    // Deliberately skip markBackupCodesAcknowledged, unlike registerConfirmedWebauthnCredential -
+    // this is what promotes the completed session into BACKUP_CODES_REQUIRED instead of FULL.
+    await finishWebauthnRegistration(prisma, admin!.id, response, begin!.challenge, "platform", "Seeded key", WEBAUTHN_RP);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const beginRes = await app.request("/api/auth/mfa/webauthn/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    const { options } = (await beginRes.json()) as { options: { challenge: string } };
+    const assertion = authenticator.authenticate({ challenge: options.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
+
+    const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ response: assertion }),
+    });
+    expect(verifyRes.status).toBe(200);
+    expect(((await verifyRes.json()) as { next: string }).next).toBe("/mfa/enroll/backup-codes");
+  });
+
+  it("lands on change-password when the account must change its password", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const credential = await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    try {
+      await prisma.user.update({ where: { id: admin!.id }, data: { must_change_password: true } });
+
+      const beginRes = await app.request("/api/auth/mfa/webauthn/begin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+        body: "{}",
+      });
+      const { options } = (await beginRes.json()) as { options: { challenge: string } };
+      const response = credential.authenticator.authenticate({
+        challenge: options.challenge,
+        rpID: WEBAUTHN_RP.rpID,
+        origin: WEBAUTHN_RP.origin,
+      });
+
+      const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+        body: JSON.stringify({ response }),
+      });
+      expect(verifyRes.status).toBe(200);
+      expect(((await verifyRes.json()) as { next: string }).next).toBe("/change-password");
+    } finally {
+      await prisma.user.update({ where: { id: admin!.id }, data: { must_change_password: false } });
+    }
+  });
+
+  it("returns 429 too many requests when the WebAuthn step-up rate limit is exceeded", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(admin!.id);
+
+    const store = new InMemoryRateLimitStore();
+    const limitedApp = createApp({
+      prisma,
+      checkinToken: CHECKIN_TOKEN,
+      allowCheckinBearer: false,
+      baseUrl: "https://tickets.example.com",
+      rateLimitStore: store,
+      skipCheckinBootValidation: true,
+    });
+
+    const loginRes = await limitedApp.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    // The rate-limit check runs before the challenge is consumed, so repeating the same
+    // (already-stale after the first attempt) verify call still exercises the limiter.
+    let lastStatus = 0;
+    for (let i = 0; i < 12; i++) {
+      const res = await limitedApp.request("/api/auth/mfa/webauthn/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+        body: JSON.stringify({
+          response: {
+            id: "x",
+            rawId: "x",
+            type: "public-key",
+            clientExtensionResults: {},
+            response: { clientDataJSON: "x", authenticatorData: "x", signature: "x" },
+          },
+        }),
+      });
+      lastStatus = res.status;
+      if (lastStatus === 429) break;
+    }
+    expect(lastStatus).toBe(429);
+  });
+
+  it("returns 401 from begin and verify when the session is partial but not MFA_PENDING", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    // No MFA method registered - the admin role requires MFA, so login lands the session in
+    // ENROLLMENT_REQUIRED (allowed by the app-level requirePartialSession gate, which only
+    // rejects a FULL session), letting these handlers' own narrower MFA_PENDING check be reached.
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    expect((await loginRes.json()) as { next: string }).toEqual(
+      expect.objectContaining({ next: LOGIN_NEXT.ENROLLMENT_REQUIRED }),
+    );
+
+    const beginRes = await app.request("/api/auth/mfa/webauthn/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    expect(beginRes.status).toBe(401);
+
+    const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({
+        response: {
+          id: "x",
+          rawId: "x",
+          type: "public-key",
+          clientExtensionResults: {},
+          response: { clientDataJSON: "x", authenticatorData: "x", signature: "x" },
+        },
+      }),
+    });
+    expect(verifyRes.status).toBe(401);
+  });
+
+  it("returns 400 invalid JSON when verify's body cannot be parsed", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "not json",
+    });
+    expect(verifyRes.status).toBe(400);
+    expect(((await verifyRes.json()) as { error: string }).error).toBe("invalid JSON");
+  });
+
+  it("returns 400 invalid body when verify's response field fails schema validation", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ response: { not: "a valid assertion" } }),
+    });
+    expect(verifyRes.status).toBe(400);
+    expect(((await verifyRes.json()) as { error: string }).error).toBe("invalid body");
+  });
+
+  it("verify also rejects with 403 webauthn_disabled when the instance setting is off", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    try {
+      await prisma.systemSettings.upsert({
+        where: { key: SETTING_WEBAUTHN_ENABLED },
+        create: { key: SETTING_WEBAUTHN_ENABLED, value_json: "false" },
+        update: { value_json: "false" },
+      });
+
+      const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+        body: JSON.stringify({
+          response: {
+            id: "x",
+            rawId: "x",
+            type: "public-key",
+            clientExtensionResults: {},
+            response: { clientDataJSON: "x", authenticatorData: "x", signature: "x" },
+          },
+        }),
+      });
+      expect(verifyRes.status).toBe(403);
+      expect(((await verifyRes.json()) as { code: string }).code).toBe("webauthn_disabled");
     } finally {
       await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
     }
