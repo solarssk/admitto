@@ -1273,6 +1273,59 @@ describe("DELETE /api/account/mfa/totp — step-up for MFA-required roles", () =
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(0);
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "webauthn" } })).toBe(1);
   });
+
+  it("returns 400 challenge_expired for a webauthn proof with no matching assert/begin challenge", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        webauthn: {
+          response: {
+            id: "x",
+            rawId: "x",
+            type: "public-key",
+            clientExtensionResults: {},
+            response: { clientDataJSON: "x", authenticatorData: "x", signature: "x" },
+          },
+        },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("challenge_expired");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(1);
+  });
+
+  it("returns 401 invalid_webauthn via withStepUpGate's shared failure response when the assertion is wrong", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    await registerConfirmedWebauthnCredential(adminUserId);
+    const wrongAuthenticator = createVirtualAuthenticator();
+    const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const { options } = (await beginRes.json()) as { options: { challenge: string } };
+    const response = wrongAuthenticator.authenticate({
+      challenge: options.challenge,
+      rpID: WEBAUTHN_RP.rpID,
+      origin: WEBAUTHN_RP.origin,
+    });
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ webauthn: { response } }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(1);
+  });
 });
 
 describe("GET /api/account/mfa/backup-codes", () => {
@@ -1961,6 +2014,33 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     });
     expect(res.status).toBe(200);
     expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(0);
+  });
+
+  it("returns 400 challenge_expired for a webauthn proof with no matching assert/begin challenge", async () => {
+    await enrollConfirmedTotp();
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-webauthn-expired-subject", user_id: adminUserId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        new_password: NEW_PASSWORD,
+        webauthn: {
+          response: {
+            id: "x",
+            rawId: "x",
+            type: "public-key",
+            clientExtensionResults: {},
+            response: { clientDataJSON: "x", authenticatorData: "x", signature: "x" },
+          },
+        },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("challenge_expired");
+    expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
   });
 
   it("returns 401 invalid_webauthn for a WebAuthn-only account when the assertion is wrong", async () => {

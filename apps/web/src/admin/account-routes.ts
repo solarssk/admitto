@@ -235,6 +235,10 @@ async function checkStepUpInTransaction(
 ): Promise<{ ok: true } | { ok: false; reason: StepUpFailureReason }> {
   if (!forceRequired && !(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
   if (!currentSessionId) return { ok: false, reason: "unauthorized" };
+  // Only reachable via the exact role-change race stepUpPreflight's own docstring describes
+  // (MFA requirement flips from not-required to required between that pre-check and this
+  // in-transaction one) - not reproducible in a live request without pausing the transaction.
+  /* v8 ignore next */
   if (!proof) return { ok: false, reason: "totp_required" };
   if (proof.type === "webauthn") {
     const verified = await finishWebauthnAssertion(tx, userId, proof.response, proof.challenge, proof.rp);
@@ -251,6 +255,10 @@ function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Respons
   switch (reason) {
     case "unauthorized":
       return c.json({ error: "unauthorized" }, 401);
+    // Mirrors checkStepUpInTransaction's own `!proof` branch (only reachable via the same
+    // role-change race, see its docstring) - stepUpPreflight already turns the ordinary
+    // no-proof case into an earlier, identically-shaped 400 before a transaction ever opens.
+    /* v8 ignore next 2 */
     case "totp_required":
       return c.json({ code: "totp_required" }, 400);
     case "invalid_totp":
