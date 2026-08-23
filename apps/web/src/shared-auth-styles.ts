@@ -203,8 +203,10 @@ body {
    is shared with every other (left-aligned, single-line) field on these auth pages. */
 .auth-otp-wrap > .auth-label { text-align: center; }
 /* Space from Continue above, matching the gap Continue itself keeps from the field above it -
-   otherwise sits directly against it with no gap at all. */
-#mfa-webauthn-btn { margin-top: 0.75rem; }
+   otherwise sits directly against it with no gap at all. .at-notice's own margin is bottom-only
+   (spaces it from what follows, not what precedes it), so the wrapper needs its own top margin
+   for when the notice is visible between Continue and the button. */
+#mfa-webauthn-btn, .auth-webauthn-error { margin-top: 0.75rem; }
 .auth-otp-digits {
   display: flex;
   gap: 0.5rem;
