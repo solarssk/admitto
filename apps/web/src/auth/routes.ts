@@ -43,11 +43,12 @@ import {
 } from "./enrollment-backup-cache.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { stashWebauthnChallenge, consumeWebauthnChallenge } from "./webauthn-challenge-cache.js";
-import { resolveWebauthnRp } from "../admin/account-routes.js";
+import { resolveWebauthnRp, webauthnAuthenticationResponseSchema } from "../admin/account-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
+import { parseOptionalClientTimezone } from "../admin/timezone.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 
@@ -470,25 +471,12 @@ export async function handlePostMfaWebauthnBegin(
   return c.json({ options: begin.options });
 }
 
-const webauthnAuthenticationResponseSchema = z.object({
-  id: z.string().min(1),
-  rawId: z.string().min(1),
-  response: z.object({
-    clientDataJSON: z.string().min(1),
-    authenticatorData: z.string().min(1),
-    signature: z.string().min(1),
-    userHandle: z.string().optional(),
-  }),
-  authenticatorAttachment: z.string().optional(),
-  clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
-  type: z.literal("public-key"),
-});
-
 const mfaWebauthnVerifySchema = z
   .object({
     response: webauthnAuthenticationResponseSchema,
     remember_device: z.boolean().optional(),
     next: z.string().optional(),
+    timezone: z.string().optional(),
   })
   .strict();
 
@@ -542,6 +530,7 @@ export async function handlePostMfaWebauthnVerify(
       rememberDevice: parsed.data.remember_device === true,
       ip,
       userAgent: c.req.header("user-agent"),
+      timezone: parseOptionalClientTimezone(parsed.data.timezone),
     },
     { userId: partial.userId, sessionId: partial.sessionId, ip, userAgent: c.req.header("user-agent") },
   );

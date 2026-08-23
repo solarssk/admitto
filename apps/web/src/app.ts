@@ -1829,7 +1829,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
   );
-  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, requirePartialSession, (c) =>
+  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, (c) =>
     handlePostMfaWebauthnBegin(c, db, mailInjectedBaseUrl),
   );
   app.post("/api/auth/mfa/webauthn/verify", jsonPostCsrf, requirePartialSession, (c) =>

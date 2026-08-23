@@ -99,8 +99,9 @@ type StepUpFailureReason = "unauthorized" | "totp_required" | "invalid_totp" | "
 
 /** Lenient on purpose, mirrors `webauthnRegistrationResponseSchema` above it: this is the
  * browser's own `PublicKeyCredential` assertion passed straight through to
- * `@simplewebauthn/server`'s verifier, which is the actual security boundary. */
-const webauthnAuthenticationResponseSchema = z.object({
+ * `@simplewebauthn/server`'s verifier, which is the actual security boundary. Exported for reuse
+ * by the login-time `/api/auth/mfa/webauthn/verify` route, which validates the same shape. */
+export const webauthnAuthenticationResponseSchema = z.object({
   id: z.string().min(1),
   rawId: z.string().min(1),
   response: z.object({
