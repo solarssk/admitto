@@ -22,6 +22,8 @@ export const ALLOWED_PLACEHOLDERS = new Set([
   "apple_wallet_url",
   "google_wallet_url",
   "download_page_url",
+  "ticket_type",
+  "event_hours",
 ]);
 
 /** Placeholders validated as http(s) URLs at render time. */

@@ -189,7 +189,8 @@
   margin-top: var(--space-2);
 }
 
-.image-asset-library__copy-btn {
+.image-asset-library__copy-btn,
+.image-asset-library__edit-btn {
   flex: 1;
 }
 

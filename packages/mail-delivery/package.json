@@ -15,12 +15,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config",
+    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config",
     "precoverage": "npm run pretest",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config -w @admitto/mail-templates -w @admitto/mail-delivery",
-    "cli": "node dist/cli.js"
+    "cli": "node --env-file-if-exists=../../packages/db/.env --env-file-if-exists=../../.env dist/cli.js"
   },
   "dependencies": {
     "@admitto/crypto": "*",
@@ -32,7 +32,7 @@
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
     "iconv-lite": "^0.6.3",
-    "imapflow": "^1.6.5",
+    "imapflow": "^1.7.0",
     "libmime": "^5.4.1",
     "libqp": "^2.1.1"
   },

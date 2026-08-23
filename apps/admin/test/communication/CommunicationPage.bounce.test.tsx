@@ -159,7 +159,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Email/i })).toBeTruthy();
     });
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -198,7 +198,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Email/i })).toBeTruthy();
     });
     expect(screen.queryByText(/emails bounced/i)).toBeNull();
   });
@@ -211,7 +211,7 @@ describe("CommunicationPage bounce banner", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Email/i })).toBeTruthy();
     });
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
@@ -510,7 +510,7 @@ describe("CommunicationPage bounce banner", () => {
     fetchEventOverview.mockRejectedValue(new DOMException("Aborted", "AbortError"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Send/i })).toBeTruthy();
+      expect(screen.getByRole("tab", { name: /Email/i })).toBeTruthy();
     });
     expect(screen.queryByText(/emails bounced/i)).toBeNull();
     expect(reportApiError).not.toHaveBeenCalled();
@@ -613,7 +613,7 @@ describe("CommunicationPage bounce banner", () => {
       expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Send" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Email" }));
     fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
     await screen.findByText("Guest One");
 

@@ -1,9 +1,11 @@
 # Event Overview and Settings
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.14
+| Field | Value |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Administrator |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 
@@ -25,18 +27,18 @@ Open the correct organisation and event. If another manager may be editing the s
 
 ### Event settings tabs
 
-Event settings are organised into tabs. Each card that needs saving (Basic information, Location, Images, Mail transport) has its own **Save** / **Reset**. There is no single page-level Save.
+Event settings are organised into tabs. Each card that needs saving (Basic information, Location, Ticket types, Images, Mail transport) has its own **Save** / **Reset**. There is no single page-level Save.
 
 1. Open **Event settings**, then **General**.
 2. Review the title, event date, time zone, and capacity. Optionally set **Event hours (start/end)** between the date and time zone fields, using your account's selected 12-hour (AM/PM) or 24-hour format. Set either value independently, or set both for a time-of-day range shown on tickets separately from the calendar date. Leave both blank to omit event hours.
 3. Leave capacity empty for an unlimited event, or enter the maximum number of attendees that may be added.
 4. Save the General card.
 5. Open **Location** to set the venue's name and address. Start typing a venue name or an address into the single search field. Matching places appear as you type; pick one to also set the map pin, or keep typing free text if nothing matches. Drag the pin or double-click the map to adjust it by hand. Add directions or accessibility notes if attendees need them. If Copy Google/Apple Maps opens the wrong place while the pin looks correct, use **Pin wrong? Fix link** to paste the correct Maps URLs (the pin and static map stay as they are).
-6. Review **Ticket types** for the event's catalog (label + colour), not free-text guest types.
-7. Review **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. Logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add image**. Enter a normal image name; Admitto creates the `{{variable}}` for templates.
+6. Review **Ticket types** for the event's catalog (label + colour), not free-text guest types. Adding a type or editing an existing one's label/colour is staged until you select **Save**; **Reset** discards it. Removing a type takes effect immediately once confirmed and does not wait for Save.
+7. Review **Images** when the event needs them. On **Images**, drop or browse a logo to open the adjust popup, then drag the selection edges to trim margins and Apply. Use **Edit image** to reopen the adjust popup on the full upload, with the last crop and zoom restored, including after Save and page reload. Logos uploaded before crop persistence need one full-file upload the first time you re-crop; later crop and zoom edits restore from that saved original. External web-link logos cannot be re-cropped in Admitto. Extra named images for mail templates go through the same adjust step before **Add image**, and each one gets its own **Edit** button afterward in **Your images** to reopen the adjust popup on the original upload with the last crop restored, the same way **Edit image** works for the logo. Images added before this capability existed have no stored original, so **Edit** re-crops the already-cropped image instead. Enter a normal image name; Admitto creates the `{{variable}}` for templates.
 8. Return to **Overview** and confirm that the event now shows the intended state.
 
-Superadmins can set the PassCreator **API key** and **Template ID** on **Wallet**, both stored specific to this event. Use **Test connection** to check the key and template against PassCreator before saving. A header switch turns the whole feature on or off for the event; independent **Apple Wallet** and **Google Wallet** switches turn off either platform without clearing the API key or template - useful when only one platform is ready, or to pause one temporarily. **Field mapping** assigns each selected attendee/event value to the matching PassCreator template property key - there is no default mapping, so every value shown on the pass, including the attendee's name, must be mapped explicitly. A correctly entered API key and Template ID are not enough on their own - the PassCreator template itself needs matching fields set up first, see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup). PassCreator API keys inherit the permissions of the account that created them, not a fixed scope to one template - for real isolation between events, use a dedicated PassCreator service user whose own permissions are limited to that event's template.
+Superadmins can set the PassCreator **API key** and **Template ID** on **Wallet**, both stored specific to this event. Use **Test connection** to check the key and template against PassCreator before saving. A header switch turns the whole feature on or off for the event; independent **Apple Wallet** and **Google Wallet** switches turn off either platform without clearing the API key or template - useful when only one platform is ready, or to pause one temporarily. A separate **Semantic tags** switch next to Apple Wallet (off by default) adds Apple's own structured pass data - event name, time, venue, and attendee name - so the pass gets Siri Suggestions and Maps/Calendar smart surfacing; it needs no field mapping and has no effect on Google Wallet. See [Wallet Passes Overview](Wallet-Passes-Overview) for what this covers. **Field mapping** assigns each selected attendee/event value to the matching PassCreator template property key - there is no default mapping, so every value shown on the pass, including the attendee's name, must be mapped explicitly. A correctly entered API key and Template ID are not enough on their own - the PassCreator template itself needs matching fields set up first, see [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup). PassCreator API keys inherit the permissions of the account that created them, not a fixed scope to one template - for real isolation between events, use a dedicated PassCreator service user whose own permissions are limited to that event's template. Below the Wallet card, **Wallet push history** lists the event's automatic pushes, newest first and paginated - triggered by a bulk ticket type change, or by saving a wallet-relevant event settings or location field - each with when it ran (in UTC, with the triggering admin's own local time underneath when known - this is a server action, not tied to the event's own venue timezone), its **Scope** (the number of specific attendees pushed, or "Whole event" plus which kind of save triggered it), and how many passes updated, were skipped, or errored. Single-attendee edits push immediately and don't appear in this list.
 
 Tab inventory:
 
@@ -73,7 +75,7 @@ The overview reflects the current event lifecycle, and saved settings are used b
 
 ## What changes after this action
 
-Changes to the event title, date, event hours, time zone, capacity, or images become the current event configuration. A capacity change can affect future attendee additions and imports; it does not remove existing attendees. When provided, an event-hours start, end, or range appears on browser tickets next to the date. The **Location** tab's venue name and formatted address are attendee-facing on browser tickets. When the event has a map pin, the ticket also shows a map and links to Google Maps and Apple Maps (or any corrected links you pasted under **Pin wrong? Fix link**); directions and accessibility notes appear there when provided. Actions in the Danger zone can revoke recorded check-ins or issued items for the whole event.
+Changes to the event title, date, event hours, time zone, capacity, or images become the current event configuration. A capacity change can affect future attendee additions and imports; it does not remove existing attendees. When provided, an event-hours start, end, or range appears on browser tickets next to the date. The **Location** tab's venue name and formatted address are attendee-facing on browser tickets. When the event has a map pin, the ticket also shows a map and links to Google Maps and Apple Maps (or any corrected links you pasted under **Pin wrong? Fix link**); directions and accessibility notes appear there when provided. When the event has Wallet configured, saving a change to the title, date, event hours, time zone, venue, address, coordinates, directions, accessibility notes, or Maps links also refreshes every attendee's already-issued active wallet pass in the background, the same way a bulk ticket type change does. Actions in the Danger zone can revoke recorded check-ins or issued items for the whole event.
 
 ## Common problems
 

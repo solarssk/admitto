@@ -131,9 +131,13 @@ export const MAX_ATTENDEE_NOTE_LENGTH = 2000;
 export const EMAIL_DELIVERY_SUCCESS_STATUSES: readonly EmailDeliveryStatus[] = ['accepted', 'sent', 'delivered'];
 
 /** AdminJob.type values (ADR 0042). */
-export type AdminJobType = 'import_commit' | 'export';
+export type AdminJobType = 'import_commit' | 'export' | 'wallet_push';
 
-export const ADMIN_JOB_TYPE = ['import_commit', 'export'] as const satisfies AdminJobType[];
+export const ADMIN_JOB_TYPE = [
+  'import_commit',
+  'export',
+  'wallet_push',
+] as const satisfies AdminJobType[];
 
 /** AdminJob.status values. */
 export type AdminJobStatus = 'pending' | 'running' | 'succeeded' | 'failed';

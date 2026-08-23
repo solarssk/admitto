@@ -44,6 +44,7 @@ import type {
 import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
+import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -820,12 +821,16 @@ export function AttendeesPage() {
   /** Detached bulk-send status polls; abort on event change / unmount so toasts stay on-context. */
   const headerSendPollRef = useRef<AbortController | null>(null);
   const selectedSendPollRef = useRef<AbortController | null>(null);
+  /** Detached wallet_push job poll (bulk ticket-type change), same reasoning. */
+  const walletPushPollRef = useRef<AbortController | null>(null);
   useEffect(() => {
     return () => {
       headerSendPollRef.current?.abort();
       headerSendPollRef.current = null;
       selectedSendPollRef.current?.abort();
       selectedSendPollRef.current = null;
+      walletPushPollRef.current?.abort();
+      walletPushPollRef.current = null;
     };
   }, [eventId]);
 
@@ -865,6 +870,7 @@ export function AttendeesPage() {
   const [bulkSendBusy, setBulkSendBusy] = useState(false);
   const [bulkSendConfirmOpen, setBulkSendConfirmOpen] = useState(false);
   const [bulkCheckInBusy, setBulkCheckInBusy] = useState(false);
+  const [bulkCheckInConfirmOpen, setBulkCheckInConfirmOpen] = useState(false);
   const [bulkRevokeCheckInBusy, setBulkRevokeCheckInBusy] = useState(false);
   const [bulkRevokeCheckInConfirmOpen, setBulkRevokeCheckInConfirmOpen] = useState(false);
   const [bulkRevokeCheckInError, setBulkRevokeCheckInError] = useState<string | null>(null);
@@ -1164,11 +1170,15 @@ export function AttendeesPage() {
       },
     });
 
-  /** Manual bulk check-in for an explicit subset of selected attendees — no confirmation dialog
-   * (matches the design mockup and ADR-0010's "manual check-in is first-class, must be fast";
-   * it's a reversible internal state change, not an email send). Guards the completion effect
-   * against the operator navigating to a different event's Attendees list before the request
-   * resolves, same pattern as handleBulkDeleteSelected below. */
+  /** Manual bulk check-in for an explicit subset of selected attendees — behind a lightweight
+   * confirm dialog (PO review, superseding the earlier "no confirmation, ADR-0010" call: unlike
+   * the single-attendee scan/tap flow that ADR covers, a bulk selection here can affect many
+   * attendees from one click, and every sibling bulk action in this same toolbar already
+   * confirms). Fires immediately on confirm and relies on the toast for the outcome, same as
+   * handleBulkSendSelected, rather than keeping the dialog open for a result like
+   * handleBulkRevokeCheckInSelected does — check-in is fast/reversible, not destructive. Guards
+   * the completion effect against the operator navigating to a different event's Attendees list
+   * before the request resolves, same pattern as handleBulkDeleteSelected below. */
   const handleBulkCheckInSelected = () =>
     runBulkAction({
       eventId,
@@ -1274,6 +1284,21 @@ export function AttendeesPage() {
         setChangeTypeOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
+        // ticket_type is always wallet-content-relevant - a second, later toast reports the
+        // wallet-side effect once the background job finishes (never blocks this action; the
+        // job can genuinely take minutes for a large selection, rate-limited by PassCreator
+        // itself, not by anything Admitto controls).
+        if (eventId && result.walletPushJobId) {
+          walletPushPollRef.current?.abort();
+          const ac = new AbortController();
+          walletPushPollRef.current = ac;
+          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
+            signal: ac.signal,
+          }).catch(() => {
+            if (ac.signal.aborted) return;
+            addToast("Could not refresh wallet push status.", "info");
+          });
+        }
       },
     });
   };
@@ -1634,7 +1659,7 @@ export function AttendeesPage() {
         onBulkSendTickets={() => setBulkSendConfirmOpen(true)}
         bulkSendBusy={bulkSendBusy}
         canBulkSend={mailConfigured !== false}
-        onBulkCheckIn={() => void handleBulkCheckInSelected()}
+        onBulkCheckIn={() => setBulkCheckInConfirmOpen(true)}
         bulkCheckInBusy={bulkCheckInBusy}
         onBulkRevokeCheckIn={() => {
           setBulkRevokeCheckInError(null);
@@ -1763,6 +1788,27 @@ export function AttendeesPage() {
         }}
         onCancel={() => {
           if (!bulkSendBusy) setBulkSendConfirmOpen(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={bulkCheckInConfirmOpen}
+        title="Check in?"
+        message={`Check in ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"}? You can normally revoke a check-in again afterward from the bulk actions menu.`}
+        confirmLabel="Check in"
+        loading={bulkCheckInBusy}
+        onConfirm={() => {
+          setBulkCheckInConfirmOpen(false);
+          void handleBulkCheckInSelected();
+        }}
+        onCancel={() => {
+          // Type-narrowing guard only - onConfirm sets bulkCheckInConfirmOpen(false) as its own
+          // first synchronous statement, before runBulkAction's setBusy(true) (also synchronous,
+          // pre-await) can ever run - both updates land in the same React commit, so the dialog
+          // (ConfirmDialog returns null while !open) has already unmounted by the time
+          // bulkCheckInBusy could become true. Cancel can never be clicked while busy.
+          /* v8 ignore if */
+          if (!bulkCheckInBusy) setBulkCheckInConfirmOpen(false);
         }}
       />
 

@@ -367,16 +367,15 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     );
   });
 
-  it("clicking Save with no actual changes exits edit mode without calling the API", async () => {
+  it("disables Save with no actual changes and never calls the API", async () => {
     mockLoad(baseDetail());
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
-    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(updateAttendee).not.toHaveBeenCalled();
   });
 
@@ -490,10 +489,12 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     expect(screen.queryByText("Failed to save changes.")).toBeNull();
   });
 
-  it("clears a leftover save error when Save changes is clicked on a since-reverted (no-op) form (regression, bot review)", async () => {
-    // Distinct from the Cancel-button regression above: this goes through handleSave's own
-    // "nothing actually changed" early return, a separate code path that used to leave a
-    // stale error/emailConflict behind since it only called setEditMode(false).
+  it("clears a leftover save error when Cancel is clicked on a since-reverted (no-op) form (regression, bot review)", async () => {
+    // Distinct from the Cancel-button regression above: Save is disabled once the field is
+    // reverted back to its original value (nothing left to save), so dismissing the stale
+    // error/emailConflict now goes through handleCancelEdit's own not-dirty branch instead -
+    // that used to be reachable via a no-op Save click too, before Save started disabling
+    // itself with nothing to save.
     const { ApiError } = await import("../../src/api/client.js");
     mockLoad(baseDetail());
     updateAttendee.mockRejectedValueOnce(new ApiError(500, "boom"));
@@ -506,7 +507,8 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     expect(await screen.findByText("Failed to save changes.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Anna" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Email")).toBeNull());
     expect(screen.queryByText("Failed to save changes.")).toBeNull();

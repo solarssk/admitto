@@ -133,6 +133,27 @@
   margin-top: 0;
 }
 
+/* Wallet push history: unpadded Card so the table bleeds edge-to-edge on desktop (same framing
+   as Communication's Delivery log, communication.css's .communication-table-wrap), instead of
+   the padded-Card + negative-margin-bleed trick (.sessions-table-wrap) this card used before -
+   the intro text and pagination footer need their own compensating padding since the Card body
+   itself no longer provides any. */
+.wallet-push-history-card__intro {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+.wallet-push-history-card__body-note {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.wallet-push-history-table-wrap {
+  overflow-x: auto;
+}
+
+.wallet-push-history-card__footer {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
 /* Tab bar + panels ------------------------------------------------------ */
 /* Horizontal scroll + edge-fade behavior now lives in the shared
    ScrollFadeTabs component (apps/admin/src/components/ScrollFadeTabs.tsx),
@@ -240,18 +261,40 @@
   margin-top: var(--space-3);
 }
 
-/* Stays a single row (Value | Key | Hint | Remove) at every width, including phones - the Value
-   dropdown's own label truncates with an ellipsis (searchable-select.css) and minmax(0, 1fr)
-   lets both text columns shrink past their content's natural size, so there's no need to fall
-   back to stacking the fields into separate rows on narrow screens. The hint icon's column is
-   always rendered (even for a row with no value picked yet, see the Tooltip's own `content`
-   fallback) so the Remove button's column position never shifts between rows. */
+/* A single row (Value | Key | Hint | Remove) down to tablet width - the Value dropdown's own
+   label truncates with an ellipsis (searchable-select.css) and minmax(0, 1fr) lets both text
+   columns shrink past their content's natural size. Below 767px the four columns can no longer
+   fit legibly (the source field name and the PassCreator key both truncate to nothing), so
+   .wallet-field-mapping__row-detail groups Key + Hint + Remove onto their own line under Value
+   (see the @media block below) - `display: contents` here keeps its three children as direct
+   grid items at this width so the desktop layout is unaffected. */
 .wallet-field-mapping__row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
   align-items: start;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+.wallet-field-mapping__row-detail {
+  display: contents;
+}
+
+@media (max-width: 767px) {
+  .wallet-field-mapping__row {
+    grid-template-columns: 1fr;
+  }
+
+  .wallet-field-mapping__row-detail {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .wallet-field-mapping__row-detail .at-field {
+    flex: 1;
+    min-width: 0;
+  }
 }
 
 /* Hint icon renders with the same at-btn/at-btn--secondary classes as the Remove button beside
@@ -263,13 +306,18 @@
   cursor: help;
 }
 
-/* Apple/Google Wallet toggle rows: a colored circular icon badge spanning both the
-   label and description lines, matching the icon-badge pattern used in modal headers
-   (e.g. requirements.css .event-item-modal__title i) instead of a small inline glyph.
-   With 3 flex children (icon, text, switch), the inherited justify-content: space-between
-   would split the free space into two equal gaps - a huge icon-to-text gap as well as the
-   intended text-to-switch one. Let the text block grow instead, so the icon sits close to
-   its label and only the trailing gap (before the switch) absorbs the free space. */
+/* Wallet toggle rows (Apple/Google/Samsung, plus the iconless Semantic tags feature toggle):
+   a colored circular icon badge spanning both the label and description lines, matching the
+   icon-badge pattern used in modal headers (e.g. requirements.css .event-item-modal__title i)
+   instead of a small inline glyph. With 3 flex children (icon, text, switch), the inherited
+   justify-content: space-between would split the free space into two equal gaps - a huge
+   icon-to-text gap as well as the intended text-to-switch one. Let the text block grow instead,
+   so the icon sits close to its label and only the trailing gap (before the switch) absorbs the
+   free space. The parent .smtp-connection-tls-pair's 2-column grid pairs each platform row with
+   the feature toggle beside it (Apple + Semantic tags share row 1) - every row needs both grid
+   cells filled in DOM order, so a platform row with no feature pair (Google) is followed by an
+   empty spacer div, or the next row's item would auto-flow into that empty cell instead of
+   starting its own row (see the JSX comment above the spacer before Samsung Wallet). */
 .wallet-platform-row {
   gap: var(--space-3);
   justify-content: flex-start;

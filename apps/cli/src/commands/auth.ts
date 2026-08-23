@@ -1,3 +1,4 @@
+import { createInterface, type Interface } from "node:readline";
 import type { PrismaClient } from "@admitto/db";
 import {
   bootstrapSuperadmin,
@@ -14,27 +15,41 @@ import {
 } from "@admitto/auth";
 import {
   assertNoPasswordArgv,
+  createLineReader,
   readPasswordFromStdin,
 } from "@admitto/auth/cli-helpers";
 import { CliError, arg, hasFlag } from "../lib/args.js";
 import { confirmYes } from "../lib/confirm.js";
 
-async function confirmForce(): Promise<boolean> {
-  return confirmYes("A superadmin@instance already exists. Type 'yes' to create another: ");
-}
+type ForceConfirmResult = { rl: Interface; readLine: (prompt: string) => Promise<string> } | undefined;
 
-async function assertBootstrapForceAllowed(db: PrismaClient, force: boolean): Promise<void> {
+// Returns the readline.Interface (and its line reader) it prompted on, if any, so the caller
+// can reuse the same one for the password prompt right after this. See createLineReader's own
+// comment (@admitto/auth/cli-helpers) for why chaining two separate prompts on piped (non-TTY)
+// stdin needs this instead of a plain confirmYes() + readPasswordFromStdin() pair, each reading
+// from its own fresh interface.
+async function assertBootstrapForceAllowed(db: PrismaClient, force: boolean): Promise<ForceConfirmResult> {
   const exists = await superadminInstanceExists(db);
-  if (!exists) return;
+  if (!exists) return undefined;
   if (!force) {
     throw new CliError(
       "superadmin@instance already exists. Use --force to create another (with confirmation).",
     );
   }
-  if (hasFlag("yes")) return;
-  if (!(await confirmForce())) {
+  if (hasFlag("yes")) return undefined;
+  // terminal: false - see createLineReader's own comment for why, without it, a piped password
+  // would get echoed back to the screen whenever stderr is still a real terminal.
+  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
+  const readLine = createLineReader(rl, process.stderr);
+  const confirmed = await confirmYes(
+    "A superadmin@instance already exists. Type 'yes' to create another: ",
+    readLine,
+  );
+  if (!confirmed) {
+    rl.close();
     throw new CliError("Aborted.");
   }
+  return { rl, readLine };
 }
 
 async function bootstrapSuperadminChecked(
@@ -82,16 +97,24 @@ async function verifyTargetUserPassword(
 }
 
 export async function runAuthBootstrapSuperadmin(db: PrismaClient): Promise<void> {
+  // Checked before any DB lookup or interactive prompt below - assertBootstrapForceAllowed's
+  // confirmation prompt (on --force against an existing instance) is blocking, and would
+  // otherwise leave a --password=<value> argv sitting in the process list for the whole time
+  // the operator spends answering it.
+  assertNoPasswordArgv(process.argv);
+
   const email = arg("email");
   if (!email) {
     throw new CliError("Usage: admitto auth bootstrap-superadmin --email <email> [--force]");
   }
 
-  await assertBootstrapForceAllowed(db, hasFlag("force"));
+  const forceConfirm = await assertBootstrapForceAllowed(db, hasFlag("force"));
 
-  assertNoPasswordArgv(process.argv);
-  const password = await readPasswordFromStdin();
+  const password = await readPasswordFromStdin("Password: ", forceConfirm?.readLine, forceConfirm?.rl);
+  forceConfirm?.rl.close();
   const userId = await bootstrapSuperadminChecked(db, email, password);
+  // bootstrapSuperadmin writes the auth.superadmin.bootstrap audit record itself, inside the
+  // same transaction as the account creation - no separate call needed here.
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

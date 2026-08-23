@@ -5,6 +5,7 @@ import { Badge, Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast 
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
+import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -49,7 +50,9 @@ export function CfAccessEditor() {
     teamDomain: false,
     audience: false,
     protectedPrefixes: false,
+    sourceProviderId: false,
   });
+  const [sourceProviders, setSourceProviders] = useState<CfAccessSummaryDto["sourceProviders"]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errors, setErrors] = useState<CfAccessFieldErrors>({});
   const [saving, setSaving] = useState(false);
@@ -68,6 +71,7 @@ export function CfAccessEditor() {
       setDraft(next);
       setBaseline(next);
       setLocks(summary.locks);
+      setSourceProviders(summary.sourceProviders);
       setLoadState("ready");
     } catch (err) {
       if (signal.aborted) return;
@@ -88,6 +92,17 @@ export function CfAccessEditor() {
   const retryLoad = useCallback(() => setLoadTick((n) => n + 1), []);
 
   const dirty = isCfDraftDirty(draft, baseline);
+  // Keep a legacy, now-disabled provider visible as a recovery problem, but never offer it as
+  // a new selection. SearchableSelect intentionally has no per-option disabled state.
+  const enabledSourceProviders = sourceProviders.filter((provider) => provider.enabled);
+  const sourceProviderUnavailable =
+    Boolean(draft.sourceProviderId) &&
+    !enabledSourceProviders.some((provider) => provider.id === draft.sourceProviderId);
+  const sourceProviderError =
+    errors.sourceProviderId ??
+    (sourceProviderUnavailable
+      ? "The selected direct identity provider is unavailable. Select an enabled provider before enabling Cloudflare Access."
+      : undefined);
 
   // Router-level dirty guard — same shape as IdentityProviderEditor. The Identity
   // tabs / Settings sidebar / SPA back button are in-app navigations that
@@ -163,6 +178,7 @@ export function CfAccessEditor() {
         setDraft(next);
         setBaseline(next);
         setLocks(refreshed.locks);
+        setSourceProviders(refreshed.sourceProviders);
         setErrors({});
         addToast("Cloudflare Access settings saved.", "success");
         skipBlockRef.current = true;
@@ -300,6 +316,32 @@ export function CfAccessEditor() {
             {locks.audience && <Badge variant="neutral">Locked by env</Badge>}
 
             <div className="cf-editor__grid-full">
+              <SearchableSelect
+                id="cf-access-source-provider"
+                label="Direct identity provider"
+                value={draft.sourceProviderId}
+                options={enabledSourceProviders.map((provider) => ({
+                  id: provider.id,
+                  label: provider.displayName,
+                }))}
+                placeholder="Select the direct OIDC provider"
+                searchPlaceholder="Search identity providers"
+                emptyLabel="No OIDC identity providers are configured."
+                disabled={locks.sourceProviderId}
+                invalid={Boolean(sourceProviderError)}
+                describedBy={sourceProviderError ? "cf-access-source-provider-error" : undefined}
+                hint="Select the direct OIDC provider (usually Authentik) that already owns staff identities. Admitto uses its immutable subject forwarded by Cloudflare, never an e-mail address."
+                onChange={(sourceProviderId) => setDraft((d) => ({ ...d, sourceProviderId }))}
+              />
+              {sourceProviderError && (
+                <span id="cf-access-source-provider-error" className="at-error" role="alert">
+                  {sourceProviderError}
+                </span>
+              )}
+              {locks.sourceProviderId && <Badge variant="neutral">Locked by env</Badge>}
+            </div>
+
+            <div className="cf-editor__grid-full">
               <Input
                 label="Protected URL paths"
                 value={draft.protectedPrefixesRaw}
@@ -328,7 +370,7 @@ export function CfAccessEditor() {
           >
             {testing ? "Testing…" : "Test connection"}
           </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
+          <Button type="submit" variant="primary" disabled={saving || !dirty}>
             {saving ? "Saving…" : "Save"}
           </Button>
         </div>
@@ -340,10 +382,11 @@ export function CfAccessEditor() {
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <div ref={scrollRef} className="identity-modal__scroll">
+        <div ref={scrollRef} className="identity-modal__scroll at-scroll">
           <IdentityModalHeader
             titleId={titleId}
             title="Cloudflare Access"
+            icon={<i className="ti ti-brand-cloudflare" />}
             badge={
               loadState === "ready" && (
                 <>
@@ -360,7 +403,8 @@ export function CfAccessEditor() {
               loadState === "ready" && (
                 <>
                   Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
-                  your team URL, application audience tag, and protected prefixes.
+                  your team URL, application audience tag, direct identity provider, and protected
+                  prefixes.
                 </>
               )
             }

@@ -1,9 +1,11 @@
 # Check-in Connection Problems
 
-> **Audience:** Check-in Operators and Event Managers
-> **Required role:** Check-in Operator for the event
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | Check-in Operators and Event Managers |
+| **Required role** | Operator for the event |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 ## What this page helps you do
 

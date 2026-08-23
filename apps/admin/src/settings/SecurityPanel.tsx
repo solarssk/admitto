@@ -177,13 +177,7 @@ export function SecurityPanel() {
     }
     setSaving(true);
 
-    const { body, hasChanges } = buildSecurityPatchBody(settings, draft, fieldLocked);
-
-    if (!hasChanges) {
-      addToast("No changes to save.", "info");
-      setSaving(false);
-      return;
-    }
+    const { body } = buildSecurityPatchBody(settings, draft, fieldLocked);
 
     try {
       const updated = await patchSecuritySettings(body);

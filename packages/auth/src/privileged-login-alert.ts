@@ -1,5 +1,5 @@
 import type { PrismaClient, Prisma, User } from "@admitto/db";
-import { logRepeatedFailedLogins } from "./audit.js";
+import { logRepeatedFailedLogins, logRepeatedFailedMfaAttempts } from "./audit.js";
 import { PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD } from "./constants.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -86,5 +86,58 @@ export async function resetFailedLoginStreak(db: Db, userId: string): Promise<vo
   await db.user.updateMany({
     where: { id: userId, failed_login_streak: { gt: 0 } },
     data: { failed_login_streak: 0 },
+  });
+}
+
+/**
+ * Atomically increment the persisted MFA-failure streak and wrap to 0 once the threshold is
+ * reached — the MFA-step counterpart to `bumpPrivilegedLoginStreakAtomic`, tracked in its own
+ * column so it isn't cleared by `resetFailedLoginStreak` on password success (before MFA is
+ * even attempted).
+ */
+async function bumpPrivilegedMfaFailureStreakAtomic(
+  db: Db,
+  user: Pick<User, "id" | "email">,
+  ctx: { ip?: string },
+): Promise<void> {
+  const rows = await db.$queryRaw<StreakBumpRow[]>`
+    UPDATE "User"
+    SET "failed_mfa_streak" = ("failed_mfa_streak" + 1) % ${PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD}
+    WHERE "id" = ${user.id}
+    RETURNING ("failed_mfa_streak" = 0) AS "should_alert"
+  `;
+  if (rows[0]?.should_alert) {
+    await logRepeatedFailedMfaAttempts(db, {
+      userId: user.id,
+      email: user.email,
+      ip: ctx.ip,
+      streak: PRIVILEGED_LOGIN_FAILURE_ALERT_THRESHOLD,
+    });
+  }
+}
+
+/**
+ * Side effects after a failed MFA verification (wrong TOTP/recovery code) for an already
+ * password-authenticated user. Unlike `recordFailedLoginFailureSideEffects`, no timing-pad path
+ * is needed here: `userId` always names a real account (resolved from a validated partial
+ * session, not attacker-controlled input), so there is no unknown-account case to stay
+ * timing-aligned with.
+ */
+export async function recordFailedMfaFailureSideEffects(
+  db: Db,
+  userId: string,
+  ctx: { ip?: string },
+): Promise<void> {
+  if (!(await hasElevatedRole(db, userId))) return;
+  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+  if (!user) return;
+  await bumpPrivilegedMfaFailureStreakAtomic(db, user, ctx);
+}
+
+/** Reset the consecutive-MFA-failure streak after a successful MFA verification. */
+export async function resetFailedMfaFailureStreak(db: Db, userId: string): Promise<void> {
+  await db.user.updateMany({
+    where: { id: userId, failed_mfa_streak: { gt: 0 } },
+    data: { failed_mfa_streak: 0 },
   });
 }

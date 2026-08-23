@@ -20,6 +20,7 @@ import {
   verifyTotpOrRecoveryCode,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import { checkAccountPasswordRateLimit } from "../rate-limit/policies.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -34,6 +35,34 @@ import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
+}
+
+/** Verify the caller's own current password before a sensitive local-credential action (account
+ * password change, MFA reset via password) - rejects SSO-managed accounts (no local password to
+ * check against), rate-limits attempts via checkAccountPasswordRateLimit, and verifies the
+ * candidate against the stored hash. Returns the failure Response to short-circuit on, or null
+ * once verification passed. */
+async function verifyCurrentPasswordOrFail(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  userId: string,
+  candidatePassword: string,
+): Promise<Response | null> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { password_hash: true } });
+  if (!user) return c.json({ error: "unauthorized" }, 401);
+  if (!hasLocalPassword(user.password_hash)) {
+    return c.json({ code: "no_local_password" }, 400);
+  }
+
+  const passwordCheckIp = resolveMfaClientIp(c);
+  if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, passwordCheckIp))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
+
+  const passwordOk = await verifyPasswordOrDummy(candidatePassword, user.password_hash);
+  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  return null;
 }
 
 /** Revoke every other session for `userId`, or all of them if no current session to keep. */
@@ -66,12 +95,16 @@ async function stepUpPreflight(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  userId: string,
-  currentSessionId: string | undefined,
-  code: string | undefined,
-  rateLimitAction: string,
+  params: {
+    userId: string;
+    currentSessionId: string | undefined;
+    code: string | undefined;
+    rateLimitAction: string;
+    forceRequired?: boolean;
+  },
 ): Promise<Response | null> {
-  if (await userRequiresMfaStepUp(db, userId)) {
+  const { userId, currentSessionId, code, rateLimitAction, forceRequired } = params;
+  if (forceRequired || (await userRequiresMfaStepUp(db, userId))) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
     if (!code) return c.json({ code: "totp_required" }, 400);
   }
@@ -86,15 +119,22 @@ async function stepUpPreflight(
 
 /**
  * Authoritative step-up check, read via `tx` rather than the pre-check's `db`, so a role change
- * racing this request can't let a password-only call skip step-up entirely.
+ * racing this request can't let a password-only call skip step-up entirely. `forceRequired`
+ * bypasses `userRequiresMfaStepUp`'s own policy check (`userRequiresMfa && userHasConfirmedTotp`)
+ * entirely - needed by callers (users-routes.ts's superadmin-on-superadmin reset) for whom
+ * step-up must be unconditional: if the instance's configurable `mfa_required_roles` setting
+ * doesn't include "superadmin", `userRequiresMfa` alone would return false for the actor despite
+ * them having a confirmed TOTP method, and this whole check would silently no-op - exactly the
+ * bypass a compromised session could exploit regardless of that setting.
  */
 async function checkStepUpInTransaction(
   tx: Prisma.TransactionClient,
   userId: string,
   currentSessionId: string | undefined,
   code: string | undefined,
+  forceRequired = false,
 ): Promise<{ ok: true } | { ok: false; reason: StepUpFailureReason }> {
-  if (!(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
+  if (!forceRequired && !(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
   if (!currentSessionId) return { ok: false, reason: "unauthorized" };
   if (!code) return { ok: false, reason: "totp_required" };
   if (!(await verifyTotpOrRecoveryCode(tx, userId, code))) {
@@ -122,8 +162,13 @@ function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Respons
  * an active `tx` callback (which would need a second pooled connection and deadlock on a
  * single-connection deployment, e.g. `connection_limit=1`); only once the authoritative
  * in-transaction step-up check has passed does `body` run and do the actual sensitive write.
+ *
+ * Exported for reuse by users-routes.ts's admin-assisted MFA/password reset endpoints, which
+ * gate the ACTOR's own step-up (not the target's) when the reset target is another superadmin -
+ * always passing `forceRequired: true`, since that protection must hold regardless of the
+ * instance's configurable `mfa_required_roles` policy (see checkStepUpInTransaction's docstring).
  */
-async function withStepUpGate<T>(
+export async function withStepUpGate<T>(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
@@ -132,27 +177,26 @@ async function withStepUpGate<T>(
     currentSessionId: string | undefined;
     rawCode: string | undefined;
     rateLimitAction: string;
+    forceRequired?: boolean;
   },
   body: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const { userId, currentSessionId, rateLimitAction } = params;
+  const { userId, currentSessionId, rateLimitAction, forceRequired } = params;
   const code = params.rawCode?.trim();
-  const preflightDenied = await stepUpPreflight(
-    c,
-    db,
-    rateLimitStore,
+  const preflightDenied = await stepUpPreflight(c, db, rateLimitStore, {
     userId,
     currentSessionId,
     code,
     rateLimitAction,
-  );
+    forceRequired,
+  });
   if (preflightDenied) return { ok: false, response: preflightDenied };
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
   const result = await runInTransaction(db, async (tx) => {
-    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, code);
+    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, code, forceRequired);
     if (!step.ok) return step;
     return { ok: true as const, value: await body(tx, orgId, audit) };
   });
@@ -248,7 +292,12 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
     }),
     db.externalIdentity.findMany({
       where: { user_id: userId },
-      select: { id: true, provider_id: true, linked_at: true, provider: { select: { display_name: true } } },
+      select: {
+        id: true,
+        provider_id: true,
+        linked_at: true,
+        provider: { select: { display_name: true, provider_type: true } },
+      },
     }),
   ]);
 
@@ -308,6 +357,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       id: ei.id,
       provider_id: ei.provider_id,
       provider_display_name: ei.provider.display_name,
+      provider_type: ei.provider.provider_type,
       linked_at: ei.linked_at.toISOString(),
     })),
     available_identity_providers: availableProviders.map((p) => ({ id: p.id, display_name: p.display_name })),
@@ -477,6 +527,35 @@ async function verifySelfUnlinkProof(
  * consciously picking the local password this account will use going forward, whether or not one
  * already existed - not silently reusing whatever was there before.
  */
+/**
+ * Rate-limits the two proof paths self-unlink accepts, independently of each other and before
+ * either is actually verified by `verifySelfUnlinkProof`: a caller who supplied `current_password`
+ * must not be able to grind guesses just by omitting `code`, or vice versa.
+ */
+async function unlinkSsoPreflightRateLimit(
+  c: Context,
+  rateLimitStore: RateLimitStore,
+  userId: string,
+  currentSessionId: string | undefined,
+  code: string | undefined,
+  currentPassword: string | undefined,
+): Promise<Response | null> {
+  if (code) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  if (currentPassword) {
+    const ip = resolveMfaClientIp(c);
+    if (!(await checkAccountPasswordRateLimit(rateLimitStore, userId, ip))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
+  }
+  return null;
+}
+
 export async function handleDeleteAccountExternalIdentity(
   c: Context,
   db: PrismaClient,
@@ -485,9 +564,6 @@ export async function handleDeleteAccountExternalIdentity(
   const auth = c.get("auth");
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
-
-  const linked = await db.externalIdentity.findMany({ where: { user_id: userId }, select: { id: true } });
-  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
 
   let body: unknown;
   try {
@@ -498,18 +574,26 @@ export async function handleDeleteAccountExternalIdentity(
   const parsed = unlinkExternalIdentitySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
+  const linked = await db.externalIdentity.findMany({
+    where: { user_id: userId },
+    select: { id: true },
+  });
+  if (linked.length === 0) return c.json({ error: "not_found" }, 404);
+
   const newPassword = parsed.data.new_password;
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
   if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
 
   const code = parsed.data.code?.trim();
-  if (code) {
-    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
-    const ip = resolveMfaClientIp(c);
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
-      return c.json({ error: "too many requests" }, 429);
-    }
-  }
+  const rateLimited = await unlinkSsoPreflightRateLimit(
+    c,
+    rateLimitStore,
+    userId,
+    currentSessionId,
+    code,
+    parsed.data.current_password,
+  );
+  if (rateLimited) return rateLimited;
 
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -607,17 +691,8 @@ export async function handlePatchAccountPassword(
     return c.json({ error: "passwords do not match" }, 400);
   }
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { password_hash: true },
-  });
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  if (!hasLocalPassword(user.password_hash)) {
-    return c.json({ code: "no_local_password" }, 400);
-  }
-
-  const passwordOk = await verifyPasswordOrDummy(current_password, user.password_hash);
-  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, current_password);
+  if (passwordFailure) return passwordFailure;
 
   if (isPasswordTooCommon(new_password)) {
     return c.json(passwordTooCommonJsonBody(), 400);
@@ -835,17 +910,8 @@ export async function handlePostMfaReset(
   const parsed = resetSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { password_hash: true },
-  });
-  if (!user) return c.json({ error: "unauthorized" }, 401);
-  if (!hasLocalPassword(user.password_hash)) {
-    return c.json({ code: "no_local_password" }, 400);
-  }
-
-  const passwordOk = await verifyPasswordOrDummy(parsed.data.password, user.password_hash);
-  if (!passwordOk) return c.json({ code: "wrong_password" }, 401);
+  const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, parsed.data.password);
+  if (passwordFailure) return passwordFailure;
 
   // A recovery code is consumed as soon as it's checked, so if the reset work below fails for
   // any other reason, the whole transaction (including that consumption) rolls back rather than

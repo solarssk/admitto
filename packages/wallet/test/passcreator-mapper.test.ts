@@ -4,7 +4,8 @@ import type { WalletPassInput } from "../src/types.js";
 
 const baseInput: WalletPassInput = {
   attendeeName: "Alice Admin",
-  eventDateLabel: "2026-08-10",
+  eventDateLabel: "10 August 2026",
+  eventDateShortLabel: "10 Aug 2026",
   ticketTypeLabel: "VIP",
   userProvidedId: "admitto:evt-1:att-1",
   barcodeValue: "https://tickets.example.com/t/tok-1",
@@ -146,6 +147,68 @@ describe("toPassCreatorData", () => {
       city: "Warsaw",
       region: "Mazovia",
       country: "Poland",
+    });
+  });
+
+  it("maps event_date_short alongside the existing long event_date placeholder", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1", { dateLong: "event_date", dateShort: "event_date_short" }, true);
+    expect(data.dateLong).toBe("10 August 2026");
+    expect(data.dateShort).toBe("10 Aug 2026");
+  });
+
+  describe("relevantDate", () => {
+    it("omits the relevantDate key entirely when input.relevantDate is unset", () => {
+      const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
+      expect(data).not.toHaveProperty("relevantDate");
+    });
+
+    it("sends relevantDate as a top-level sibling of base fields when present, regardless of fieldMapping", () => {
+      const data = toPassCreatorData(
+        { ...baseInput, relevantDate: "2026-08-10 18:00" },
+        "tmpl-1",
+        { mappedDate: "event_date" },
+        true,
+      );
+      expect(data.mappedDate).toBe("10 August 2026");
+      expect(data.relevantDate).toBe("2026-08-10 18:00");
+      expect(data.templateId).toBe("tmpl-1");
+    });
+  });
+
+  describe("Apple Wallet semantics", () => {
+    const semantics = {
+      eventName: "Launch Event",
+      eventType: "PKEventTypeGeneric",
+      eventStartDate: "2026-08-10T18:00:00+02:00",
+      venueName: "Test Arena",
+    };
+
+    it("omits the semantics key entirely when input.semantics is unset", () => {
+      const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
+      expect(data).not.toHaveProperty("semantics");
+    });
+
+    it("omits the semantics key when input.semantics is an empty object", () => {
+      const data = toPassCreatorData({ ...baseInput, semantics: {} }, "tmpl-1", undefined, true);
+      expect(data).not.toHaveProperty("semantics");
+    });
+
+    it("sends semantics as a top-level sibling of base fields, verbatim", () => {
+      const data = toPassCreatorData({ ...baseInput, semantics }, "tmpl-1", undefined, true);
+      expect(data.semantics).toEqual(semantics);
+      expect(data.templateId).toBe("tmpl-1");
+      expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
+    });
+
+    it("keeps semantics alongside an admin's own fieldMapping custom properties", () => {
+      const data = toPassCreatorData(
+        { ...baseInput, semantics, eventNameLabel: "Launch Event" },
+        "tmpl-1",
+        { name: "event_name" },
+        true,
+      );
+      expect(data.semantics).toEqual(semantics);
+      expect(data.name).toBe("Launch Event");
     });
   });
 });

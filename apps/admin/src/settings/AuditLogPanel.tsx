@@ -147,9 +147,11 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.login.success": "Login succeeded",
   "auth.login.fail": "Login failed",
   "auth.login.repeated_failures": "Repeated login failures",
+  "auth.mfa.repeated_failures": "Repeated 2FA failures",
   "auth.mfa.success": "2FA verified",
   "auth.mfa.fail": "2FA failed",
   "auth.mfa.break_glass": "2FA break-glass override",
+  "auth.superadmin.bootstrap": "Superadmin created (bootstrap)",
   "auth.mfa.recovery_consumed": "2FA recovery code used",
   "auth.logout": "Logged out",
   "auth.oidc.success": "OIDC login succeeded",
@@ -173,8 +175,10 @@ const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
   "auth.access.denied": "error",
   "auth.oidc.superadmin_revoke_blocked": "error",
   "auth.mfa.break_glass": "warn",
+  "auth.superadmin.bootstrap": "warn",
   "auth.mfa.recovery_consumed": "warn",
   "auth.login.repeated_failures": "warn",
+  "auth.mfa.repeated_failures": "warn",
 };
 
 function securityEventTone(type: string): BadgeVariant {
@@ -267,19 +271,21 @@ function entryEventId(entry: AuditLogEntryDto): string | undefined {
   return typeof id === "string" ? id : undefined;
 }
 
-/** "Instance" for instance-wide actions, the event's title when known, or a short fallback for
- * an event that's since been deleted (the audit row outlives the event it refers to). */
+/** "Instance" for instance-wide actions, the event's title when known, a snapshotted title
+ * carried in the row's own metadata for actions that delete the event in the same step
+ * (event_deleted, attendees_bulk_erased), or a short fallback for older rows with neither. */
 function scopeLabel(entry: AuditLogEntryDto, eventTitleById: Map<string, string>): string {
   const eventId = entryEventId(entry);
   if (!eventId) return "Instance";
-  return eventTitleById.get(eventId) ?? "Deleted event";
+  const meta = entry.metadata;
+  const snapshotTitle = meta?.eventTitle ?? meta?.event_title;
+  return eventTitleById.get(eventId) ?? (typeof snapshotTitle === "string" ? snapshotTitle : undefined) ?? "Deleted event";
 }
 
 const SCOPE_HINT = "Which event this action affected, or “Instance” for account/organization-wide changes not tied to one event.";
-const TIME_HINT =
-  "UTC on top. Below (user icon): the user's local time when they did it. Missing for older rows or CLI.";
+const TIME_HINT = "UTC on top. Below: the user's local time when they did it. Missing for older rows or CLI.";
 const SECURITY_TIME_HINT =
-  "UTC on top. Below (user icon): the user's local time when they did it. Missing for older rows or non-browser clients - then your browser timezone (desktop icon).";
+  "UTC on top. Below: the user's local time when they did it, or your own browser's if theirs wasn't recorded.";
 
 /** camelCase or snake_case metadata key -> "Title case" label (e.g. "event_id"/"eventId" -> "Event id"). */
 function humanizeMetadataKey(key: string): string {

@@ -12,7 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "precli": "npm run build -w @admitto/shared && npm run build -w @admitto/crypto && npm run build -w @admitto/db && npm run build -w @admitto/wallet && npm run build -w @admitto/mail-templates && npm run build -w @admitto/tickets && npm run build -w @admitto/mailer && npm run build -w @admitto/mailer-config && npm run build -w @admitto/mail-delivery && npm run build -w @admitto/auth && npm run build -w @admitto/storage && npm run build -w @admitto/cli",
     "precoverage": "npm run precli",
-    "cli": "node dist/index.js",
+    "cli": "node --env-file-if-exists=../../deploy/.env --env-file-if-exists=../../packages/db/.env --env-file-if-exists=../../.env dist/index.js",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
   },
@@ -26,12 +26,12 @@
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
     "@admitto/wallet": "*",
-    "pg": "^8.16.0",
+    "pg": "^8.23.0",
     "redis": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/pg": "^8.15.0",
+    "@types/pg": "^8.21.0",
     "typescript": "^7.0.2",
     "vitest": "4.1.10"
   }

@@ -1,9 +1,11 @@
 # About Admitto
 
-> **Audience:** All staff
-> **Required role:** Any staff role
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | All staff |
+| **Required role** | Any staff role |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 Admitto is a self-hosted tool for internal events. It helps your team work from one attendee list from preparation through entry.
 
@@ -11,9 +13,9 @@ Admitto is a self-hosted tool for internal events. It helps your team work from 
 
 - Create an event and set its key details.
 - Add attendees one at a time or import a CSV or XLSX file.
-- Give attendees ticket types and QR tickets.
+- Assign attendees ticket types and send QR tickets.
 - Prepare, test, and send event email.
-- Scan tickets, look up attendees when allowed, and record issued items.
+- Scan tickets, look up attendees manually when the event allows it, and record issued items.
 - Review check-in results and export attendance data.
 
 ## Key terms

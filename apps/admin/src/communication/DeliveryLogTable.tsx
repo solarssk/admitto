@@ -13,6 +13,7 @@ import { deliveryLocalTime, formatDateTime, purposeLabel, rowTimestamp, template
 import { DeliveryDetailsModal } from "./DeliveryDetailsModal.js";
 import { DeliveryRowMenu } from "./DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "./SentMessagePreviewModal.js";
+import "./communication.css";
 
 export const DELIVERY_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 export const DELIVERY_PAGE_SIZE_DEFAULT = 25;
@@ -459,6 +460,7 @@ export function DeliveryLogTab({
   return (
     <Card
       padded={false}
+      className="communication-delivery-header"
       title={<HintLabel hint={DELIVERY_LOG_HINT}>Delivery log</HintLabel>}
       actions={
         <>

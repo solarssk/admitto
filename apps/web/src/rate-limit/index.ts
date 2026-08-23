@@ -16,3 +16,4 @@ export {
   type RatePolicyName,
 } from "./policies.js";
 export { skipBulkSendRateLimitForDryRun } from "./skip-bulk-send-dry-run.js";
+export { skipWalletMessageRateLimitForDryRun } from "./skip-wallet-message-rate-limit-for-dry-run.js";

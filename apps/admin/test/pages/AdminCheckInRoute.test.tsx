@@ -10,10 +10,6 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => useConnectionState(),
 }));
 
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ hasAdmittoSession: true }),
-}));
-
 vi.mock("../../src/pages/CheckInPage.js", () => ({
   CheckInPage: (props: { useCamera: boolean }) => (
     <div data-testid="checkin-page" data-camera={props.useCamera} />

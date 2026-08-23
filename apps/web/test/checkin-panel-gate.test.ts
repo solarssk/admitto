@@ -96,7 +96,7 @@ describe("createCheckInPanelCapabilityGuard", () => {
     const app = makeApp({ auth: { userId: "u1" } });
     const res = await app.request("/operator");
     expect(res.status).toBe(403);
-    expect(await res.text()).toBe("Forbidden");
+    expect(await res.text()).toContain("check-in panel");
   });
 
   it("returns 403 JSON for API when user has neither check-in nor admin access", async () => {

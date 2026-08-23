@@ -28,6 +28,7 @@ import {
   reissueWalletPass,
   deleteWalletPass,
   resendTicket,
+  fetchTicketLink,
   restoreWalletPass,
   revokeAttendeeCheckIn,
   updateAttendee,
@@ -59,7 +60,7 @@ import {
 import { MailStatusBadge } from "../attendees/mailStatusBadge.js";
 import { PassStatusBadge } from "../attendees/passStatusBadge.js";
 import { RSVP_STATUS_OPTIONS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
-import { WalletStatusBadge } from "../attendees/walletStatusBadge.js";
+import { WalletStatusBadge, isWalletPassInstalled } from "../attendees/walletStatusBadge.js";
 import { walletRegistrationLabel } from "../attendees/walletRegistrationLabel.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
@@ -81,7 +82,8 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
-import { formatDeliveryHistoryTime, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
+import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
+import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
@@ -108,6 +110,7 @@ type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | null;
 function MoreActionsMenu({
   event,
   onResend,
+  onCopyTicketLink,
   onDelete,
   mailConfigured,
   showEdit,
@@ -131,6 +134,7 @@ function MoreActionsMenu({
 }: Readonly<{
   event: ArchivedGuardEvent;
   onResend: () => void;
+  onCopyTicketLink: () => void;
   onDelete: () => void;
   mailConfigured: boolean | undefined;
   /** Mobile only (useIsDesktop() in the caller) - narrow viewports fold the standalone Edit
@@ -230,6 +234,21 @@ function MoreActionsMenu({
               </button>
             )}
           </ArchivedGuard>
+          <button
+            type="button"
+            role="menuitem"
+            className="more-actions-menu__item"
+            onClick={() => {
+              setOpen(false);
+              onCopyTicketLink();
+            }}
+          >
+            <i className="ti ti-link" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Copy ticket link</span>
+              <span className="more-actions-menu__item-hint">Copy this attendee&rsquo;s ticket URL</span>
+            </span>
+          </button>
           <hr className="more-actions-menu__divider" />
           <RevokeActionMenuItems
             event={event}
@@ -976,11 +995,16 @@ function AttendeeOverviewTab({
               description="Ticket emails and resends will appear here once one is sent."
             />
           ) : (
-            <div className="attendee-deliveries-scroll">
+            <div className="attendee-deliveries-scroll at-scroll">
               <ul className="attendee-deliveries">
                 {detail.deliveries.map((delivery) => {
                   const statusMeta = resolveStatusMeta(delivery.status);
                   const iconTone = statusMeta.variant;
+                  const timeParts = formatDeliveryHistoryTimeParts(
+                    rowTimestamp(delivery),
+                    delivery.client_timezone,
+                    event.timezone,
+                  );
                   return (
                     <li className="attendee-delivery" key={delivery.id}>
                       <Tooltip content={statusMeta.label} className="attendee-delivery__icon-tip">
@@ -1005,10 +1029,13 @@ function AttendeeOverviewTab({
                         )}
                       </div>
                       <span className="attendee-delivery__time mono">
-                        {formatDeliveryHistoryTime(
-                          rowTimestamp(delivery),
-                          delivery.client_timezone,
-                          event.timezone,
+                        {timeParts ? (
+                          <>
+                            <span className="attendee-delivery__time-date">{timeParts.date}</span>
+                            <span className="attendee-delivery__time-clock">{timeParts.time}</span>
+                          </>
+                        ) : (
+                          "-"
                         )}
                       </span>
                       <DeliveryRowMenu
@@ -1104,24 +1131,15 @@ function AttendeeActivityTab({
 
 type AssignedNoteAuthorRole = Exclude<NoteAuthorRole, null>;
 
-const NOTE_ROLE_BADGE_VARIANTS: Record<AssignedNoteAuthorRole, BadgeProps["variant"]> = {
-  superadmin: "error",
-  admin: "warn",
-  operator: "info",
-};
-
-const NOTE_ROLE_SHORTS: Record<AssignedNoteAuthorRole, string> = {
-  superadmin: "SA",
-  admin: "AD",
-  operator: "OP",
-};
-
+// Same role → color/label mapping used everywhere else a role reads to a human (Staff users,
+// topbar user menu) - this used to keep its own two-letter-code copy ("SA"/"AD"/"OP"), which
+// read as a stale/legacy badge next to the canonical full-word one shown elsewhere (PO report).
 function noteRoleBadgeVariant(role: AssignedNoteAuthorRole): BadgeProps["variant"] {
-  return NOTE_ROLE_BADGE_VARIANTS[role];
+  return ROLE_BADGE_VARIANT[role];
 }
 
 function noteRoleShort(role: AssignedNoteAuthorRole): string {
-  return NOTE_ROLE_SHORTS[role];
+  return ROLE_LABELS[role];
 }
 
 /** Delete rule (PO): admins may delete their own note or one written by an operator, but not
@@ -1221,7 +1239,11 @@ function AttendeeNotesTab({
         </div>
       </div>
       {notes.length === 0 ? (
-        <p className="at-notes-empty">No notes yet.</p>
+        <EmptyState
+          icon={<i className="ti ti-notes" aria-hidden="true" />}
+          title="No notes yet"
+          description="Notes added about this attendee will appear here."
+        />
       ) : (
         <ul className="at-notes-list">
           {notes.map((note) => {
@@ -1240,8 +1262,13 @@ function AttendeeNotesTab({
                       </Badge>
                     )}
                   </div>
+                  {/* AttendeeNote has no per-note captured timezone (unlike Activity log entries),
+                   * so this always falls through to the fallback below — the viewer's own
+                   * browser zone, not the event's, matching the other viewer-facing timestamps
+                   * on this page (wallet pass dates above) and fixing a note added by/for someone
+                   * outside the event's own timezone reading as the wrong time (PO report). */}
                   <time className="at-notes-list__time" dateTime={note.created_at}>
-                    {formatActivityTimestamp(note.created_at, null, event.timezone)}
+                    {formatActivityTimestamp(note.created_at, null, getBrowserTimeZone())}
                   </time>
                 </div>
                 {isEditing ? (
@@ -1269,7 +1296,11 @@ function AttendeeNotesTab({
                         type="button"
                         variant="secondary"
                         size="sm"
-                        disabled={!editState.draft.trim() || editState.submitting}
+                        disabled={
+                          !editState.draft.trim() ||
+                          editState.submitting ||
+                          editState.draft.trim() === note.body.trim()
+                        }
                         onClick={onSaveEdit}
                       >
                         {editState.submitting ? "Saving…" : "Save"}
@@ -1657,12 +1688,6 @@ export function AttendeeDetailPage() {
     if (!eventId || !attendeeId || !detail || !form) return;
 
     const patch = buildAttendeePatch(form, detail, attributeFields);
-    if (Object.keys(patch).length === 0) {
-      setEditMode(false);
-      setError(null);
-      setEmailConflict(false);
-      return;
-    }
 
     const customValidation = validateCustomFieldsForm(attributeFields, form.customFields);
     if (customValidation) {
@@ -1732,6 +1757,20 @@ export function AttendeeDetailPage() {
       setResendError(operatorApiErrorMessage(err, "Resend failed."));
     } finally {
       if (isStillSelected(target)) setResending(false);
+    }
+  }
+
+  async function handleCopyTicketLink() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    try {
+      const { url } = await fetchTicketLink(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await navigator.clipboard.writeText(url);
+      addToast("Ticket link copied to clipboard", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      addToast(operatorApiErrorMessage(err, "Could not copy the ticket link."), "error");
     }
   }
 
@@ -2096,6 +2135,7 @@ export function AttendeeDetailPage() {
               showEdit={!isDesktop}
               onEdit={() => setEditMode(true)}
               onResend={() => setResendOpen(true)}
+              onCopyTicketLink={() => void handleCopyTicketLink()}
               onDelete={() => {
                 setDeleteError(null);
                 setDeleteOpen(true);
@@ -2206,7 +2246,10 @@ export function AttendeeDetailPage() {
           </span>
           <div className="attendee-status-chip__body">
             <strong>Wallet</strong>
-            <WalletStatusBadge status={detail.wallet_pass?.status ?? null} />
+            <WalletStatusBadge
+              status={detail.wallet_pass?.status ?? null}
+              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass)}
+            />
           </div>
         </div>
       </div>
@@ -2419,7 +2462,7 @@ export function AttendeeDetailPage() {
               <ArchivedGuard
                 event={event}
                 reasonId="save-changes-reason"
-                disabled={saving || reloading || staleWrite}
+                disabled={saving || reloading || staleWrite || !isDirty}
               >
                 {(guard) => (
                   <Button type="submit" variant="primary" {...guard}>

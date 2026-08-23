@@ -99,13 +99,19 @@ export {
 } from "./attendees-export.js";
 export type { SanitizedExportRow, ExportAttendeesCsvResult } from "./attendees-export.js";
 export {
-  EXPORT_BASE_PDF_WIDTHS,
-  EXPORT_ATTRIBUTE_PDF_WIDTH,
-  PDF_PRINTABLE_WIDTH,
-  PDF_CELL_HEIGHT,
-  pdfCellTextOptions,
-  buildExportPdfColumnWidths,
+  PDF_A4_PRINTABLE_WIDTH,
+  PDF_A3_PRINTABLE_WIDTH,
+  PDF_MIN_COLUMN_WIDTH,
+  PDF_MIN_ROW_HEIGHT,
+  measurePdfColumnMetrics,
+  resolvePdfPageSize,
+  distributePdfColumnWidths,
   buildExportPdfBuffer,
+} from "./attendees-export-pdf.js";
+export type {
+  PdfColumnMetrics,
+  PdfColumnWidthPlan,
+  PdfPageSize,
 } from "./attendees-export-pdf.js";
 export { buildExportXlsxBuffer } from "./attendees-export-xlsx.js";
 export {
@@ -118,6 +124,16 @@ export type {
 export { claimNextAdminJob } from "./claim-admin-job.js";
 export { drainExportJobs } from "./drain-export-jobs.js";
 export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-jobs.js";
+export { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
+export { formatDate, formatDateShort, formatEventHour, formatEventHoursRange } from "@admitto/shared/region-date-format";
+export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
+export { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
+export { drainWalletPushJobs, readWalletPushRequest } from "./drain-wallet-push-jobs.js";
+export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";
+export { loadWalletMessageTargets } from "./send-wallet-message.js";
+export type { SendWalletMessageTarget } from "./send-wallet-message.js";
+export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
+export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";
 export {
   reclaimStaleExportJobs,
   parseExportJobStaleRunningMs,

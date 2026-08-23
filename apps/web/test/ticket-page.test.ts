@@ -18,6 +18,7 @@ const EMPTY_EVENT_LOCATION = {
   walletApiKeyEnc: null,
   walletAppleEnabled: true,
   walletGoogleEnabled: true,
+  walletSemanticTagsEnabled: false,
   walletFieldMapping: null,
   formattedAddress: null,
   addressComponents: null,
@@ -253,7 +254,7 @@ describe("renderTicket", () => {
       },
       "data:image/png;base64,abc",
     );
-    expect(html).toContain("18:00–22:00");
+    expect(html).toContain("18:00 - 22:00");
   });
 
   it("renders an open-ended hours label when only one side of the range is set", () => {
@@ -270,9 +271,89 @@ describe("renderTicket", () => {
     expect(endOnly).toContain("until 22:00");
   });
 
-  it("omits the hours meta span when neither start nor end is set", () => {
+  it("omits the time stat (and its divider) when neither start nor end is set", () => {
     const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
-    expect(html).not.toContain("M12 7v5l3 3");
+    expect(html).not.toContain('class="ticket__stat-divider"');
+    expect(html).not.toContain(">Time<");
+  });
+
+  it("renders the event date in en-GB long-month text when the event has no country set", () => {
+    const html = renderTicket(ticketFor(null), "data:image/png;base64,abc");
+    expect(html).toContain("1 September 2026");
+  });
+
+  it("renders the event date and hours in the event's own regional convention (US-style)", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          eventHoursStart: "18:00",
+          eventHoursEnd: "22:00",
+          addressComponents: {
+            object_name: null,
+            street: null,
+            postcode: null,
+            city: "New York",
+            region: "NY",
+            country: "United States",
+          },
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("September 1, 2026");
+    expect(html).toContain("6:00 pm - 10:00 pm");
+  });
+
+  it("appends the event timezone's abbreviation to the hours range", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: {
+          ...ticketFor(null).event,
+          eventHoursStart: "10:00",
+          eventHoursEnd: "18:05",
+          timezone: "Asia/Kolkata",
+          addressComponents: {
+            object_name: null,
+            street: null,
+            postcode: null,
+            city: null,
+            region: null,
+            country: "India",
+          },
+        },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain('10:00 am - 6:05 pm<span class="ticket__stat-tz"> IST</span>');
+  });
+
+  it("resolves the timezone abbreviation for the event's own date, not a stale standard-time label", () => {
+    // ticketFor(null)'s event.date is 2026-09-01, which is inside US daylight saving time -
+    // America/New_York must show "EDT" here, not the zone's standard-time "EST".
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: { ...ticketFor(null).event, eventHoursStart: "09:00", eventHoursEnd: "17:00", timezone: "America/New_York" },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain('<span class="ticket__stat-tz"> EDT</span>');
+    expect(html).not.toContain("EST");
+  });
+
+  it("omits the timezone suffix (without breaking the hours) when the event's timezone is unrecognized", () => {
+    const html = renderTicket(
+      {
+        ...ticketFor(null),
+        event: { ...ticketFor(null).event, eventHoursStart: "09:00", eventHoursEnd: "17:00", timezone: "Not/AZone" },
+      },
+      "data:image/png;base64,abc",
+    );
+    expect(html).toContain("09:00 - 17:00");
+    expect(html).not.toContain('class="ticket__stat-tz"');
   });
 
   it("renders Getting there with a static map and navigation links (attribution is burned into the PNG)", () => {

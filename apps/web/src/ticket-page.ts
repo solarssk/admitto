@@ -1,4 +1,5 @@
 import type { ResolvedTicket } from "@admitto/tickets";
+import { formatDate, formatEventHoursRange } from "@admitto/tickets";
 import type { BrandingTheme } from "@admitto/auth";
 import {
   buildEventStaticMapPath,
@@ -19,20 +20,6 @@ function esc(s: string): string {
   return s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
-export function formatDate(d: Date): string {
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-}
-
-/** "18:00–22:00" range, or an open-ended "from"/"until" when only one side is set. */
-function formatEventHoursRange(start: string | null, end: string | null): string | null {
-  if (start && end) return `${start}–${end}`;
-  if (start) return `from ${start}`;
-  if (end) return `until ${end}`;
-  return null;
-}
-
-const CALENDAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>`;
-const CLOCK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`;
 const PIN_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
 /** Signpost: clearer than a house glyph for "Directions". */
 const DIRECTIONS_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3v18"/><path d="M10 6h7l2 2-2 2h-7"/><path d="M10 14H5l-2 2 2 2h5"/></svg>`;
@@ -286,7 +273,21 @@ function renderGettingThereSection(parts: {
 /** Shared brand header + event/attendee block (open `ticket__body`); caller closes the div. */
 function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
   const { attendee, event } = resolved;
-  const eventHoursText = formatEventHoursRange(event.eventHoursStart, event.eventHoursEnd);
+  const eventHours = formatEventHoursRange(
+    event.eventHoursStart,
+    event.eventHoursEnd,
+    event.addressComponents?.country,
+    event.timezone,
+    event.date,
+  );
+  const tzSuffixHtml = eventHours?.tzAbbr ? `<span class="ticket__stat-tz"> ${esc(eventHours.tzAbbr)}</span>` : "";
+  const timeStatHtml = eventHours
+    ? `<div class="ticket__stat-divider"></div>
+        <div class="ticket__stat">
+          <div class="ticket__stat-label">Time</div>
+          <div class="ticket__stat-value">${esc(eventHours.hours)}${tzSuffixHtml}</div>
+        </div>`
+    : "";
   return `<header class="ticket__top">
       <div class="ticket__brand">
         ${
@@ -299,11 +300,14 @@ function renderTicketCardShellOpen(resolved: ResolvedTicket): string {
     </header>
     <div class="ticket__body">
       <h1 class="ticket__event-name">${esc(event.title)}</h1>
-      <div class="ticket__meta">
-        <span>${CALENDAR_ICON}<span class="ticket__meta-text">${esc(formatDate(event.date))}</span></span>
-        ${eventHoursText ? `<span>${CLOCK_ICON}<span class="ticket__meta-text">${esc(eventHoursText)}</span></span>` : ""}
-        ${event.location ? `<span>${PIN_ICON}<span class="ticket__meta-text">${esc(plainStaffText(event.location))}</span></span>` : ""}
+      <div class="ticket__stats">
+        <div class="ticket__stat">
+          <div class="ticket__stat-label">Date</div>
+          <div class="ticket__stat-value">${esc(formatDate(event.date, event.addressComponents?.country))}</div>
+        </div>
+        ${timeStatHtml}
       </div>
+      ${event.location ? `<div class="ticket__location">${PIN_ICON}${esc(plainStaffText(event.location))}</div>` : ""}
       <div class="ticket__attendee">
         <p class="ticket__attendee-name">${esc(attendee.name)}</p>
         ${attendee.ticket_type ? `<span class="ticket__type">${esc(attendee.ticket_type)}</span>` : ""}
@@ -434,17 +438,23 @@ export function renderTicket(
 }
 
 const PUBLIC_ERROR_404_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6 -6"/><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464"/><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463"/></svg>`;
+const PUBLIC_ERROR_403_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z"/><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0"/><path d="M8 11v-4a4 4 0 1 1 8 0v4"/></svg>`;
 const PUBLIC_ERROR_500_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/></svg>`;
+const PUBLIC_ERROR_ICONS = {
+  404: PUBLIC_ERROR_404_ICON,
+  403: PUBLIC_ERROR_403_ICON,
+  500: PUBLIC_ERROR_500_ICON,
+};
 
-/** Shared branded shell for public HTML errors (404 and 500 share the same layout). */
+/** Shared branded shell for public HTML errors (404, 403, and 500 share the same layout). */
 export function renderPublicErrorPage(options: {
-  statusCode: 404 | 500;
+  statusCode: 404 | 403 | 500;
   heading: string;
   message: string;
   theme?: BrandingTheme | null;
 }): string {
   const styles = buildTicketPageStyles(options.theme);
-  const icon = options.statusCode === 404 ? PUBLIC_ERROR_404_ICON : PUBLIC_ERROR_500_ICON;
+  const icon = PUBLIC_ERROR_ICONS[options.statusCode];
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -488,6 +498,17 @@ export function renderServerError(theme?: BrandingTheme | null): string {
     statusCode: 500,
     heading: "Something went wrong",
     message: "Unable to load this page right now. Please try again later.",
+    theme,
+  });
+}
+
+/** `message` varies by caller (invalid Cloudflare Access assertion, no role, CSRF, ...) - the
+ * detailed reason belongs in System logs, not on a page anyone hitting the URL can read. */
+export function renderForbidden(message: string, theme?: BrandingTheme | null): string {
+  return renderPublicErrorPage({
+    statusCode: 403,
+    heading: "Access denied",
+    message,
     theme,
   });
 }

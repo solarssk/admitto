@@ -303,7 +303,7 @@ function AddItemModal({
         </div>
         <form
           id="add-item-form"
-          className="event-item-modal__body"
+          className="event-item-modal__body at-scroll at-scroll--stable"
           onSubmit={onSubmit}
         >
           <div className="at-field">
@@ -569,6 +569,7 @@ export function RequirementsPage() {
   return (
     <>
       <PageHeader
+        className="requirements-pageheader"
         title="Requirements"
         subtitle="Configure what this event issues to attendees and operational behaviour."
         actions={

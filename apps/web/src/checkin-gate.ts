@@ -1,10 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Context, Next } from "hono";
 import type { PrismaClient } from "@admitto/db";
-import { getCookie } from "hono/cookie";
-import { SESSION_COOKIE_NAME, canPerformCheckIn, validateSession } from "@admitto/auth";
+import { canPerformCheckIn } from "@admitto/auth";
 import { assertEventNotArchived } from "./admin/event-archiving.js";
 import { rejectCrossSitePost } from "./auth/same-origin-post.js";
+import { resolveStaffAuthFromRequest } from "./auth/resolve-staff-auth.js";
 
 /** Returns true when Authorization Bearer matches operatorToken (constant-time). */
 export function isValidCheckinBearer(c: Context, operatorToken: string): boolean {
@@ -32,8 +32,11 @@ export interface CheckinSessionAuthDeps {
 }
 
 /**
- * Request-time pre-auth: valid emergency Bearer OR valid session cookie.
- * Does not parse body; does not check event scope.
+ * Request-time pre-auth: valid emergency Bearer, OR whatever the shared staff resolver accepts
+ * (session cookie or, when enabled, a Cloudflare Access JWT resolved to an already-linked
+ * account - same resolver /admin itself uses, so an operator who only ever signs in through
+ * Cloudflare Access is not silently unable to scan). Does not parse body; does not check event
+ * scope.
  */
 export function createCheckinPreAuth(deps: CheckinSessionAuthDeps) {
   return async (c: Context, next: Next): Promise<Response | void> => {
@@ -44,19 +47,16 @@ export function createCheckinPreAuth(deps: CheckinSessionAuthDeps) {
       return next();
     }
 
-    const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-    if (!rawToken) {
-      return c.json({ error: "unauthorized" }, 401);
-    }
-
-    const validated = await validateSession(deps.prisma, rawToken);
-    if (!validated) {
+    const result = await resolveStaffAuthFromRequest(c, deps.prisma);
+    if (result.status !== "authenticated") {
       return c.json({ error: "unauthorized" }, 401);
     }
 
     c.set("checkinAuth", "session");
-    c.set("operatorUserId", validated.userId);
-    c.set("checkinSessionId", validated.session.id);
+    c.set("operatorUserId", result.auth.userId);
+    if (result.auth.sessionId) {
+      c.set("checkinSessionId", result.auth.sessionId);
+    }
     await next();
   };
 }

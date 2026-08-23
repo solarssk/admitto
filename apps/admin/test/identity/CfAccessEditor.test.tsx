@@ -27,7 +27,13 @@ const mockFetch = vi.mocked(fetchCfAccessSummary);
 const mockUpdate = vi.mocked(updateCfAccess);
 const mockTest = vi.mocked(testCfAccess);
 
-const noLocks = { enabled: false, teamDomain: false, audience: false, protectedPrefixes: false };
+const noLocks = {
+  enabled: false,
+  teamDomain: false,
+  audience: false,
+  protectedPrefixes: false,
+  sourceProviderId: false,
+};
 
 function summary(over: Partial<Awaited<ReturnType<typeof fetchCfAccessSummary>>> = {}) {
   return {
@@ -35,6 +41,8 @@ function summary(over: Partial<Awaited<ReturnType<typeof fetchCfAccessSummary>>>
     teamDomain: "",
     audience: [],
     protectedPrefixes: [],
+    sourceProviderId: "authentik",
+    sourceProviders: [{ id: "authentik", displayName: "Authentik", enabled: true }],
     locks: noLocks,
     ...over,
   };
@@ -121,6 +129,26 @@ describe("CfAccessEditor (slice 4)", () => {
     expect(screen.getByDisplayValue("aud-1, aud-2")).toBeTruthy();
     expect(screen.getByDisplayValue("/admin, /api/admin")).toBeTruthy();
     expect(screen.getByText("Active")).toBeTruthy();
+  });
+
+  it("does not offer disabled direct providers and flags a legacy selection", async () => {
+    mockFetch.mockResolvedValueOnce(
+      summary({
+        sourceProviderId: "legacy-disabled",
+        sourceProviders: [
+          { id: "enabled-provider", displayName: "Enabled provider", enabled: true },
+          { id: "legacy-disabled", displayName: "Disabled provider", enabled: false },
+        ],
+      }),
+    );
+    renderEditorAt();
+
+    await screen.findByText(/selected direct identity provider is unavailable/i);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Direct identity provider, none selected" }),
+    );
+    expect(screen.getByRole("button", { name: "Enabled provider" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Disabled provider" })).toBeNull();
   });
 
   it("saves the edited config and shows a success toast", async () => {
@@ -276,6 +304,8 @@ describe("CfAccessEditor (slice 4)", () => {
     try {
       renderEditorAt();
       await screen.findByDisplayValue("https://t");
+      // Save is disabled on a clean load - dirty the field so it becomes clickable.
+      fireEvent.change(screen.getByLabelText("Cloudflare team URL"), { target: { value: "https://t2" } });
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next=")),
@@ -381,6 +411,8 @@ describe("CfAccessEditor (slice 4)", () => {
     mockUpdate.mockRejectedValueOnce(new ApiError(400, "Invalid configuration"));
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Cloudflare team URL"), { target: { value: "https://t2" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Invalid configuration")).toBeTruthy();
   });
@@ -422,6 +454,8 @@ describe("CfAccessEditor (slice 4)", () => {
     mockUpdate.mockRejectedValueOnce(new Error("network down"));
     renderEditorAt();
     await screen.findByDisplayValue("https://t");
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Cloudflare team URL"), { target: { value: "https://t2" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Failed to save settings.")).toBeTruthy();
   });

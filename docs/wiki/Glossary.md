@@ -1,9 +1,11 @@
 # Glossary
 
-> **Audience:** All staff
-> **Required role:** Any staff role
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | All staff |
+| **Required role** | Any staff role |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 | Term | Meaning |
 |---|---|
@@ -16,6 +18,7 @@
 | Attendee | A person invited to one event. |
 | Ticket type | A configured event category stored on an attendee. |
 | Pass | The attendee's right to use an event ticket; it can be active, revoked, or cancelled. |
+| Wallet pass | An Apple or Google Wallet version of an attendee's ticket, created through PassCreator when Wallet is turned on for the event. It mirrors the pass status automatically - revoking or restoring the attendee's pass does the same to the wallet pass. See [Wallet Passes Overview](Wallet-Passes-Overview). |
 | Ticket | The link and QR information sent to an attendee. |
 | Initial send | The first claimed ticket delivery for an attendee and event. |
 | Resend | A later explicit delivery or a custom-template bulk delivery. |

@@ -62,6 +62,7 @@ import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { CommunicationSendPanel } from "../communication/CommunicationSendPanel.js";
+import { WalletsTab } from "../communication/WalletsTab.js";
 import { CreateTemplateDialog } from "../communication/CreateTemplateDialog.js";
 import { EditTemplateModal } from "../communication/EditTemplateModal.js";
 import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
@@ -103,6 +104,7 @@ const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[
     names: [
       "event_name",
       "event_date",
+      "event_hours",
       "event_location",
       "event_address",
       "event_map_url",
@@ -112,7 +114,10 @@ const PLACEHOLDER_GROUPS: ReadonlyArray<{ label: string; names: readonly string[
       "accessibility_text",
     ],
   },
-  { label: "Ticket & QR", names: ["ticket_url", "qr_image_url", "download_page_url"] },
+  {
+    label: "Ticket & QR",
+    names: ["ticket_type", "ticket_url", "qr_image_url", "download_page_url"],
+  },
   { label: "Wallet", names: ["apple_wallet_url", "google_wallet_url"] },
   { label: "Branding", names: ["logo_url"] },
 ];
@@ -132,6 +137,7 @@ function placeholderDescription(name: string, isImage: boolean): string {
     email: "Attendee's email address.",
     event_name: "This event's title.",
     event_date: "This event's date, formatted for the event's own timezone.",
+    event_hours: "This event's start-end time (HH:MM-HH:MM), if set in Event settings.",
     event_location: "Venue name.",
     event_address: "Venue's street address.",
     event_map_url: "Static map image of the venue.",
@@ -139,6 +145,7 @@ function placeholderDescription(name: string, isImage: boolean): string {
     apple_maps_url: "Link to open the venue in Apple Maps.",
     directions_text: "Getting-there directions, if set in Event settings.",
     accessibility_text: "Accessibility notes, if set in Event settings.",
+    ticket_type: "Attendee's ticket type (e.g. Standard, VIP).",
     ticket_url: "Link to the attendee's own ticket page.",
     qr_image_url: "The attendee's scannable QR code image.",
     download_page_url: "Link to the ticket download page.",
@@ -181,12 +188,13 @@ function imagePlaceholderMarkup(name: string, format: TemplateFormat): string {
     : `<img src="{{${name}}}" alt="${alt}" width="200" style="max-width:100%;" />`;
 }
 
-/** The real wallet badge SVGs (see PlaceholderChips' `samples`/apps/web/src/wallet-badges.ts),
+/** The real wallet badge PNGs (see PlaceholderChips' `samples`/apps/web/src/wallet-badges.ts),
  * used as the *image* half of the ready-made button below - the placeholder itself is only ever
- * the link half (`href`), never the image `src`. */
+ * the link half (`href`), never the image `src`. PNG, not SVG: classic Outlook desktop (Word
+ * rendering engine) does not display SVG `<img>` sources at all in mail bodies. */
 const WALLET_BADGE_ASSET: Record<string, { src: string; alt: string }> = {
-  apple_wallet_url: { src: "/assets/apple-wallet-badge.svg", alt: "Add to Apple Wallet" },
-  google_wallet_url: { src: "/assets/google-wallet-badge.svg", alt: "Add to Google Wallet" },
+  apple_wallet_url: { src: "/assets/apple-wallet-badge.png", alt: "Add to Apple Wallet" },
+  google_wallet_url: { src: "/assets/google-wallet-badge.png", alt: "Add to Google Wallet" },
 };
 
 /** Markup inserted for a wallet placeholder: a ready-to-use badge button (the real Apple/Google
@@ -686,11 +694,6 @@ function SendTab({
   senderName,
   senderAddress,
   onPreview,
-  testEmail,
-  setTestEmail,
-  testSending,
-  onTestSend,
-  testStatus,
 }: Readonly<{
   event: EventDto;
   templates: MailTemplateListItem[];
@@ -713,11 +716,6 @@ function SendTab({
   senderName: string | null;
   senderAddress: string | null;
   onPreview: () => Promise<void>;
-  testEmail: string;
-  setTestEmail: Dispatch<SetStateAction<string>>;
-  testSending: boolean;
-  onTestSend: () => Promise<void>;
-  testStatus: TestSendStatus | null;
 }>) {
   // Preview the *saved* template when this tab is shown (or when that saved snapshot changes).
   // Skip while inactive so a Templates-tab draft preview is not overwritten in the background.
@@ -738,7 +736,7 @@ function SendTab({
         <Card
           title={
             <HintLabel hint="The template picked here is the same one shown on the Templates tab.">
-              Message
+              Email message
             </HintLabel>
           }
         >
@@ -786,18 +784,6 @@ function SendTab({
         snapshotMissing={editorSnapshotMissing}
         isDirty={isDirty}
       />
-
-      {isActive && (
-        <SendTestCard
-          event={event}
-          testEmail={testEmail}
-          setTestEmail={setTestEmail}
-          testSending={testSending}
-          editorSnapshotMissing={editorSnapshotMissing}
-          onTestSend={onTestSend}
-          testStatus={testStatus}
-        />
-      )}
     </div>
   );
 }
@@ -1155,7 +1141,7 @@ function TemplateEditorCard({
             <textarea
               id="communication-body"
               ref={bodyRef}
-              className="communication-textarea"
+              className="communication-textarea at-scroll"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onFocus={() => setActiveField("body")}
@@ -1527,7 +1513,7 @@ function TestSendResultPreview({ status }: Readonly<{ status: TestSendStatus }>)
   );
 }
 
-const TAB_IDS = ["send", "templates", "log"] as const;
+const TAB_IDS = ["send", "wallets", "templates", "log"] as const;
 
 /** Admin screen for event mail template editing, preview, test-send, and delivery log. */
 export function CommunicationPage() {
@@ -2409,7 +2395,8 @@ export function CommunicationPage() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "send", label: "Send" },
+          { id: "send", label: "Email" },
+          { id: "wallets", label: "Wallets" },
           {
             id: "templates",
             label: isDirty ? "Templates *" : "Templates",
@@ -2452,12 +2439,13 @@ export function CommunicationPage() {
           senderName={senderName}
           senderAddress={senderAddress}
           onPreview={handleSendPreview}
-          testEmail={testEmail}
-          setTestEmail={setTestEmail}
-          testSending={testSending}
-          onTestSend={handleTestSend}
-          testStatus={testStatus}
         />
+      </div>
+
+      {/* Same reasoning as the Send tab above: keep mounted so an in-flight wallet-message send
+          poll survives a brief detour to another tab. */}
+      <div hidden={tab !== "wallets"}>
+        <WalletsTab event={event} eventId={eventId} />
       </div>
 
       {tab === "templates" && (

@@ -1,14 +1,16 @@
+import { createRequire } from "node:module";
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import PDFDocument from "pdfkit";
 import {
-  EXPORT_BASE_PDF_WIDTHS,
-  EXPORT_ATTRIBUTE_PDF_WIDTH,
-  PDF_CELL_HEIGHT,
-  PDF_PRINTABLE_WIDTH,
+  PDF_A3_PRINTABLE_WIDTH,
+  PDF_A4_PRINTABLE_WIDTH,
+  PDF_MIN_COLUMN_WIDTH,
   buildExportPdfBuffer,
-  buildExportPdfColumnWidths,
-  pdfCellTextOptions,
+  distributePdfColumnWidths,
+  measurePdfColumnMetrics,
+  resolvePdfPageSize,
+  type PdfColumnMetrics,
 } from "@admitto/tickets";
 import type { SanitizedExportRow } from "@admitto/tickets/attendees-export";
 
@@ -36,11 +38,22 @@ function makeRow(overrides: Partial<SanitizedExportRow> = {}): SanitizedExportRo
     company: "Acme",
     department: "",
     ticket_type: "Standard",
-    check_in_status: "not_admitted",
+    check_in_status: "Not checked in",
     admitted_at: "",
     attribute_values: [],
     ...overrides,
   };
+}
+
+const require = createRequire(import.meta.url);
+
+/** Same font-registration mechanism as the production file, duplicated so this test doesn't
+ * depend on an exported measuring helper - it exercises the real DejaVuSans metrics. */
+function makeMeasuringDoc(): PDFKit.PDFDocument {
+  const doc = new PDFDocument({ autoFirstPage: false });
+  doc.registerFont("DejaVuSans", require.resolve("dejavu-fonts-ttf/ttf/DejaVuSans.ttf"));
+  doc.registerFont("DejaVuSans-Bold", require.resolve("dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf"));
+  return doc;
 }
 
 /** Inflate FlateDecode content streams so operators are searchable. */
@@ -67,7 +80,7 @@ function decodePdfHexText(content: string): string {
 }
 
 async function renderHelveticaProbe(
-  email: string,
+  text: string,
   opts: { width: number; height?: number; ellipsis?: boolean },
 ): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -78,87 +91,102 @@ async function renderHelveticaProbe(
     doc.on("error", reject);
   });
   doc.font("Helvetica").fontSize(8);
-  doc.text(email, 40, 60, opts);
+  doc.text(text, 40, 60, opts);
   doc.end();
   await done;
   return Buffer.concat(chunks);
 }
 
-describe("attendees-export-pdf column widths", () => {
-  it("base widths prefer Email and stay within printable width", () => {
-    const widths = buildExportPdfColumnWidths(0);
-    expect(widths).toEqual([...EXPORT_BASE_PDF_WIDTHS]);
-    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(PDF_PRINTABLE_WIDTH);
-    expect(widths[2]).toBeGreaterThanOrEqual(140);
-    expect(widths[1]).toBe(100);
-    expect(widths[7]).toBeGreaterThanOrEqual(75);
+describe("attendees-export-pdf column measurement and distribution", () => {
+  it("an unbreakable long email column gets minWidth equal to maxWidth", () => {
+    const doc = makeMeasuringDoc();
+    const metrics = measurePdfColumnMetrics(doc, [...BASE_HEADERS], [makeRow({ email: LONG_EMAIL })]);
+    const email = metrics[2]!;
+    expect(email.minWidth).toBeCloseTo(email.maxWidth, 5);
+    expect(email.maxWidth).toBeGreaterThan(100);
   });
 
-  it("two attribute columns still keep Email preference when room remains", () => {
-    const widths = buildExportPdfColumnWidths(2);
-    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(PDF_PRINTABLE_WIDTH);
-    expect(widths.slice(-2)).toEqual([EXPORT_ATTRIBUTE_PDF_WIDTH, EXPORT_ATTRIBUTE_PDF_WIDTH]);
-    expect(widths[2]).toBe(EXPORT_BASE_PDF_WIDTHS[2]);
+  it("a multi-word company name has a smaller minWidth than maxWidth", () => {
+    const doc = makeMeasuringDoc();
+    const metrics = measurePdfColumnMetrics(
+      doc,
+      [...BASE_HEADERS],
+      [makeRow({ company: "Very Long Company Name Ltd" })],
+    );
+    const company = metrics[3]!;
+    expect(company.minWidth).toBeLessThan(company.maxWidth);
   });
 
-  it("shrinks attribute columns when default 55pt attrs would overflow", () => {
-    const widths = buildExportPdfColumnWidths(4);
-    expect(widths).toHaveLength(EXPORT_BASE_PDF_WIDTHS.length + 4);
-    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(PDF_PRINTABLE_WIDTH);
-    const attrWidth = widths[EXPORT_BASE_PDF_WIDTHS.length]!;
-    expect(attrWidth).toBeLessThan(EXPORT_ATTRIBUTE_PDF_WIDTH);
-    expect(attrWidth).toBeGreaterThanOrEqual(28);
-    expect(widths.slice(-4).every((w) => w === attrWidth)).toBe(true);
-    // Base columns unchanged on this path.
-    expect(widths.slice(0, EXPORT_BASE_PDF_WIDTHS.length)).toEqual([...EXPORT_BASE_PDF_WIDTHS]);
+  it("resolves A4 for a typical export with no attribute columns", () => {
+    const doc = makeMeasuringDoc();
+    const metrics = measurePdfColumnMetrics(doc, [...BASE_HEADERS], [makeRow({ email: LONG_EMAIL })]);
+    const { pageSize, printableWidth } = resolvePdfPageSize(metrics.map((m) => m.minWidth));
+    expect(pageSize).toBe("A4");
+    expect(printableWidth).toBe(PDF_A4_PRINTABLE_WIDTH);
   });
 
-  it("scales base columns when many attributes force min attr width", () => {
-    const widths = buildExportPdfColumnWidths(7);
-    expect(widths).toHaveLength(EXPORT_BASE_PDF_WIDTHS.length + 7);
-    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(PDF_PRINTABLE_WIDTH);
-    expect(widths.slice(-7).every((w) => w === 28)).toBe(true);
-    // Email column is scaled down from the preferred base width.
-    expect(widths[2]!).toBeLessThan(EXPORT_BASE_PDF_WIDTHS[2]);
-    expect(widths[2]!).toBeGreaterThanOrEqual(20);
+  it("resolves A3 once many long-minWidth attribute columns exceed A4's printable width", () => {
+    const doc = makeMeasuringDoc();
+    const attributeCount = 20;
+    const columns = [
+      ...BASE_HEADERS,
+      ...Array.from({ length: attributeCount }, (_, i) => `Attribute ${i}`),
+    ];
+    const rows = [
+      makeRow({
+        attribute_values: Array.from(
+          { length: attributeCount },
+          () => "unbreakable-long-value-1234567890",
+        ),
+      }),
+    ];
+    const metrics = measurePdfColumnMetrics(doc, columns, rows);
+    const { pageSize } = resolvePdfPageSize(metrics.map((m) => m.minWidth));
+    expect(pageSize).toBe("A3");
   });
 
-  it("still produces a printable layout for a large attribute count", () => {
-    const widths = buildExportPdfColumnWidths(20);
-    expect(widths).toHaveLength(EXPORT_BASE_PDF_WIDTHS.length + 20);
-    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(PDF_PRINTABLE_WIDTH);
-    expect(widths.every((w) => w >= 20)).toBe(true);
+  it("gives a high-flex column more bonus space than a zero-flex column when content fits", () => {
+    const metrics: PdfColumnMetrics[] = [
+      { minWidth: 20, maxWidth: 20 },
+      { minWidth: 30, maxWidth: 100 },
+    ];
+    const plan = distributePdfColumnWidths(metrics, 300);
+    expect(plan.mode).toBe("wrap");
+    const zeroFlexBonus = plan.contentWidths[0]! - metrics[0]!.maxWidth;
+    const highFlexBonus = plan.contentWidths[1]! - metrics[1]!.maxWidth;
+    expect(highFlexBonus).toBeGreaterThan(zeroFlexBonus);
   });
 
-  it("keeps min column width when attrs exhaust the printable budget", () => {
-    // targetBaseTotal <= 0 when attrs * 28 >= printable width → unscaled base then clamp.
-    const widths = buildExportPdfColumnWidths(28);
-    expect(widths).toHaveLength(EXPORT_BASE_PDF_WIDTHS.length + 28);
-    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(PDF_PRINTABLE_WIDTH);
-    expect(widths.every((w) => w >= 20)).toBe(true);
+  it("keeps every column at or above its minWidth while in wrap mode", () => {
+    const metrics: PdfColumnMetrics[] = [
+      { minWidth: 20, maxWidth: 200 },
+      { minWidth: 50, maxWidth: 150 },
+      { minWidth: 30, maxWidth: 80 },
+    ];
+    const plan = distributePdfColumnWidths(metrics, 300);
+    expect(plan.mode).toBe("wrap");
+    for (let i = 0; i < metrics.length; i++) {
+      expect(plan.contentWidths[i]!).toBeGreaterThanOrEqual(metrics[i]!.minWidth);
+    }
+  });
+
+  it("falls back to clamped ellipsis widths when even minWidth totals exceed the printable width", () => {
+    const metrics: PdfColumnMetrics[] = Array.from({ length: 20 }, () => ({
+      minWidth: 200,
+      maxWidth: 200,
+    }));
+    const plan = distributePdfColumnWidths(metrics, PDF_A3_PRINTABLE_WIDTH);
+    expect(plan.mode).toBe("ellipsis-fallback");
+    expect(plan.contentWidths.every((w) => w >= PDF_MIN_COLUMN_WIDTH)).toBe(true);
+    const total = plan.slotWidths.reduce((a, b) => a + b, 0);
+    expect(total).toBeLessThanOrEqual(PDF_A3_PRINTABLE_WIDTH);
   });
 });
 
-describe("pdfkit cell ellipsis contract", () => {
-  it("truncates long emails when height is set (pdfCellTextOptions)", async () => {
-    const emailWidth = EXPORT_BASE_PDF_WIDTHS[2];
+describe("attendees-export-pdf wrap vs ellipsis-fallback text rendering", () => {
+  it("long unbreakable value force-wraps across multiple lines instead of truncating (default wrap mode)", async () => {
     const content = inflatePdfContent(
-      await renderHelveticaProbe(LONG_EMAIL, pdfCellTextOptions(emailWidth)),
-    );
-    const text = decodePdfHexText(content);
-    expect(content.match(/BT/g)?.length ?? 0).toBe(1);
-    expect(text).toContain("\x85");
-    expect(text).not.toContain("example.com");
-    expect(text).not.toContain(LONG_EMAIL);
-  });
-
-  it("wraps mid-token without height even if ellipsis:true (regression of old bug)", async () => {
-    const emailWidth = EXPORT_BASE_PDF_WIDTHS[2];
-    const content = inflatePdfContent(
-      await renderHelveticaProbe(LONG_EMAIL, {
-        width: emailWidth,
-        ellipsis: true,
-      }),
+      await renderHelveticaProbe(LONG_EMAIL, { width: 100, ellipsis: true }),
     );
     const text = decodePdfHexText(content);
     expect(content.match(/BT/g)?.length ?? 0).toBeGreaterThan(1);
@@ -166,34 +194,49 @@ describe("pdfkit cell ellipsis contract", () => {
     expect(text).not.toContain("\x85");
   });
 
-  it("fits a typical work email in the Email column width", async () => {
-    const emailWidth = EXPORT_BASE_PDF_WIDTHS[2];
-    const content = inflatePdfContent(
-      await renderHelveticaProbe(TYPICAL_WORK_EMAIL, pdfCellTextOptions(emailWidth)),
-    );
+  it("wraps a multi-word value across lines at a width that fits about two words per line", async () => {
+    const value = "Very Long Company Name Ltd";
+    const content = inflatePdfContent(await renderHelveticaProbe(value, { width: 60 }));
+    const text = decodePdfHexText(content);
+    expect(content.match(/BT/g)?.length ?? 0).toBeGreaterThan(1);
+    for (const word of value.split(" ")) {
+      expect(text).toContain(word);
+    }
+    expect(text).not.toContain("\x85");
+  });
+
+  it("fits a typical work email in a comfortably wide column without wrapping", async () => {
+    const doc = new PDFDocument({ autoFirstPage: false });
+    doc.font("Helvetica").fontSize(8);
+    const width = doc.widthOfString(TYPICAL_WORK_EMAIL) + 10;
+
+    const content = inflatePdfContent(await renderHelveticaProbe(TYPICAL_WORK_EMAIL, { width }));
     const text = decodePdfHexText(content);
     expect(content.match(/BT/g)?.length ?? 0).toBe(1);
     expect(text).toContain(TYPICAL_WORK_EMAIL);
     expect(text).not.toContain("\x85");
   });
 
-  it("fits admitted_at timestamps in the Admitted at column without ellipsis", async () => {
-    const admittedWidth = EXPORT_BASE_PDF_WIDTHS[7];
-    const content = inflatePdfContent(
-      await renderHelveticaProbe(ADMITTED_AT, pdfCellTextOptions(admittedWidth)),
-    );
+  it("fits admitted_at timestamps without wrapping", async () => {
+    const doc = new PDFDocument({ autoFirstPage: false });
+    doc.font("Helvetica").fontSize(8);
+    const width = doc.widthOfString(ADMITTED_AT) + 10;
+
+    const content = inflatePdfContent(await renderHelveticaProbe(ADMITTED_AT, { width }));
     const text = decodePdfHexText(content);
     expect(content.match(/BT/g)?.length ?? 0).toBe(1);
     expect(text).toContain(ADMITTED_AT);
     expect(text).not.toContain("\x85");
   });
 
-  it("pdfCellTextOptions always pairs height with ellipsis", () => {
-    expect(pdfCellTextOptions(100)).toEqual({
-      width: 100,
-      height: PDF_CELL_HEIGHT,
-      ellipsis: true,
-    });
+  it("still truncates with an ellipsis when width and a bounded height are both set (last-resort fallback mechanism)", async () => {
+    const content = inflatePdfContent(
+      await renderHelveticaProbe(LONG_EMAIL, { width: 100, height: 12, ellipsis: true }),
+    );
+    const text = decodePdfHexText(content);
+    expect(content.match(/BT/g)?.length ?? 0).toBe(1);
+    expect(text).toContain("\x85");
+    expect(text).not.toContain(LONG_EMAIL);
   });
 });
 
@@ -222,7 +265,7 @@ describe("buildExportPdfBuffer", () => {
       email: "alice@example.com",
       company: "",
       department: "",
-      check_in_status: "admitted",
+      check_in_status: "Checked in",
       admitted_at: ADMITTED_AT,
       attribute_values: [],
     });
@@ -249,5 +292,51 @@ describe("buildExportPdfBuffer", () => {
     const latin = Buffer.from(bytes).toString("latin1");
     // Two or more page objects ⇒ page break path ran.
     expect((latin.match(/\/Type \/Page\b/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps a real long corporate email fully intact with no ellipsis in the rendered PDF", async () => {
+    // The rendered PDF embeds DejaVuSans as a subsetted font, so its content stream uses
+    // glyph-index (CID) encoding, not literal character codes - decodePdfHexText only works for
+    // the base-14 Helvetica probes above. Assert the algorithm's actual decision for this exact
+    // real-world case instead: it must choose to wrap this email, not truncate it.
+    const email = "katarzyna.wisniewska@example.com";
+    const columns = [...BASE_HEADERS];
+    const rows = [makeRow({ name: "Katarzyna Wiśniewska", email })];
+
+    const doc = makeMeasuringDoc();
+    const metrics = measurePdfColumnMetrics(doc, columns, rows);
+    const { printableWidth } = resolvePdfPageSize(metrics.map((m) => m.minWidth));
+    const plan = distributePdfColumnWidths(metrics, printableWidth);
+    expect(plan.mode).toBe("wrap");
+    expect(plan.contentWidths[2]!).toBeGreaterThanOrEqual(metrics[2]!.maxWidth);
+
+    const bytes = await buildExportPdfBuffer(rows, columns, {
+      title: "Cybersecurity Awareness Month",
+      date: new Date("2026-09-24T00:00:00Z"),
+    });
+    expect(bytes.byteLength).toBeGreaterThan(500);
+  });
+
+  it("escalates to A3 landscape when many long attribute columns don't fit A4", async () => {
+    const attributeCount = 20;
+    const columns = [
+      ...BASE_HEADERS,
+      ...Array.from({ length: attributeCount }, (_, i) => `Attribute Field ${i}`),
+    ];
+    const row = makeRow({
+      attribute_values: Array.from(
+        { length: attributeCount },
+        (_, i) => `unbreakable-long-value-${i}-1234567890`,
+      ),
+    });
+    const bytes = await buildExportPdfBuffer([row], columns, {
+      title: "Attribute Heavy Event",
+      date: new Date("2026-09-24T00:00:00Z"),
+    });
+    const latin = Buffer.from(bytes).toString("latin1");
+    const match = latin.match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    expect(match).not.toBeNull();
+    // A3 landscape width ~1190.55, vs A4's ~841.89.
+    expect(Number(match![1])).toBeGreaterThan(1000);
   });
 });

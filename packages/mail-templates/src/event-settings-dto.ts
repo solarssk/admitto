@@ -22,6 +22,9 @@ export type EventSettingsDto = {
   wallet_api_key: { configured: boolean };
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  /** Apple Wallet semantic tags (Siri Suggestions/Maps/Calendar) - opt-in, Apple only, no
+   * NFC/poster-style. Off by default (ADR 0009 data minimization). */
+  wallet_semantic_tags_enabled: boolean;
   /** PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}). No default
    * mapping - null/empty means nothing beyond the QR code is sent to PassCreator. */
   wallet_field_mapping: Record<string, string> | null;

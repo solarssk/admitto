@@ -1,4 +1,9 @@
-export type { WalletPassInput, WalletPassResult, WalletProviderErrorCode } from "./types.js";
+export type {
+  WalletPassInput,
+  WalletPassResult,
+  WalletPassSemantics,
+  WalletProviderErrorCode,
+} from "./types.js";
 export { WalletProviderError } from "./types.js";
 export type { WalletPassProvider } from "./provider.js";
 export {

@@ -72,6 +72,10 @@ export function EditTemplateModal({
   if (!open || !template) return null;
 
   const canDelete = template.name !== "ticket";
+  const dirty =
+    label.trim() !== template.label ||
+    icon !== template.icon ||
+    (description.trim() || null) !== template.description;
 
   const submit = () => {
     if (busy || submittingRef.current) return;
@@ -148,7 +152,7 @@ export function EditTemplateModal({
               <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="button" variant="primary" disabled={busy} onClick={submit}>
+              <Button type="button" variant="primary" disabled={busy || !dirty} onClick={submit}>
                 {busy ? "Saving…" : "Save"}
               </Button>
             </div>

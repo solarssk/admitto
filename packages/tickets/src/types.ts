@@ -196,6 +196,9 @@ export type ResolvedTicket = {
     walletApiKeyEnc: string | null;
     walletAppleEnabled: boolean;
     walletGoogleEnabled: boolean;
+    /** Apple Wallet semantic tags opt-in (Siri Suggestions/Maps/Calendar); no NFC/poster-style,
+     * Apple only - buildWalletPassInput also gates this on walletAppleEnabled. */
+    walletSemanticTagsEnabled: boolean;
     /** PassCreator field key -> Admitto placeholder token; null/empty uses the default mapping. */
     walletFieldMapping: Record<string, string> | null;
     /** Short venue display name (`EventLocation.venue_name`). */

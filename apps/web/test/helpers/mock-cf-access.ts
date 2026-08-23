@@ -20,6 +20,7 @@ export interface SignCfAccessJwtInput {
   exp?: string;
   nbf?: string;
   common_name?: string;
+  custom?: Record<string, unknown>;
 }
 
 export async function startMockCfAccess(options?: {
@@ -90,6 +91,7 @@ export async function signCfAccessJwt(
   };
   if (input.email !== undefined) payload.email = input.email;
   if (input.common_name !== undefined) payload.common_name = input.common_name;
+  if (input.custom !== undefined) payload.custom = input.custom;
 
   const builder = new jose.SignJWT(payload)
     .setProtectedHeader({ alg: "RS256", kid: "cf-test-key" })

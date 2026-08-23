@@ -7,25 +7,40 @@ import "./attendee-picker.css";
 const SEARCH_DEBOUNCE_MS = 300;
 const MIN_QUERY_LENGTH = 2;
 
-export interface AttendeePickerProps {
+/** Minimal shape the picker itself ever reads - a narrower search endpoint (e.g. the wallet
+ * message picker's own attendees search, which only returns id/name/email) can satisfy this
+ * without matching AttendeeRowDto's full shape. */
+export type AttendeePickerRow = { id: string; name: string; email: string };
+
+export type AttendeePickerSearchFn<T extends AttendeePickerRow> = (
+  eventId: string,
+  params: { q: string; pageSize: number },
+) => Promise<{ items: T[] }>;
+
+export interface AttendeePickerProps<T extends AttendeePickerRow = AttendeeRowDto> {
   eventId: string;
-  selected: AttendeeRowDto[];
-  onChange: (selected: AttendeeRowDto[]) => void;
+  selected: T[];
+  onChange: (selected: T[]) => void;
   disabled?: boolean;
+  /** Defaults to the general attendee search (fetchEventAttendees) - pass a narrower search
+   * function (e.g. one scoped to wallet-pass holders) to reuse this same picker UI for a
+   * different recipient universe without duplicating the component. */
+  searchFn?: AttendeePickerSearchFn<T>;
 }
 
-/** Type-to-search attendee picker for the "Specific attendees" Send recipient option: search by
- * name or email, click a result to add them as a removable chip. Debounce + stale-response guard
- * mirror VenueAutocomplete.tsx; the chip list mirrors UserEditModal's pendingAdds pattern.
- * Results already in `selected` are filtered out of the dropdown so nothing can be added twice. */
-export function AttendeePicker({
+/** Type-to-search attendee picker for a "Specific attendees" recipient option: search by name or
+ * email, click a result to add them as a removable chip. Debounce + stale-response guard mirror
+ * VenueAutocomplete.tsx; the chip list mirrors UserEditModal's pendingAdds pattern. Results
+ * already in `selected` are filtered out of the dropdown so nothing can be added twice. */
+export function AttendeePicker<T extends AttendeePickerRow = AttendeeRowDto>({
   eventId,
   selected,
   onChange,
   disabled = false,
-}: Readonly<AttendeePickerProps>) {
+  searchFn = fetchEventAttendees as unknown as AttendeePickerSearchFn<T>,
+}: Readonly<AttendeePickerProps<T>>) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AttendeeRowDto[]>([]);
+  const [results, setResults] = useState<T[]>([]);
   const [visible, setVisible] = useState(false);
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef<number | null>(null);
@@ -58,7 +73,7 @@ export function AttendeePicker({
     const seq = ++seqRef.current;
     setSearching(true);
     try {
-      const res = await fetchEventAttendees(eventId, { q, pageSize: 10 });
+      const res = await searchFn(eventId, { q, pageSize: 10 });
       if (seq !== seqRef.current) return;
       setResults(res.items);
       setVisible(res.items.length > 0);
@@ -87,7 +102,7 @@ export function AttendeePicker({
     searchTimerRef.current = window.setTimeout(() => void runSearch(trimmed), SEARCH_DEBOUNCE_MS);
   };
 
-  const handleSelect = (attendee: AttendeeRowDto) => {
+  const handleSelect = (attendee: T) => {
     seqRef.current += 1;
     setResults([]);
     setVisible(false);
@@ -120,7 +135,11 @@ export function AttendeePicker({
     <div className="attendee-picker">
       <div className="attendee-picker__field">
         <Input
-          id="communication-attendee-picker"
+          // No explicit id: Input auto-generates a unique one (useId()) since `label` is set.
+          // A hardcoded literal here was safe while only one instance could ever exist on a
+          // page, but CommunicationPage now keeps the mail Send tab and the Wallets tab mounted
+          // simultaneously (hidden, not unmounted) - picking "Specific attendees" on both would
+          // otherwise put two elements with the same id in the DOM at once.
           label="Search attendees"
           value={query}
           placeholder="Search by name or email…"

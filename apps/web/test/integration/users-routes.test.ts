@@ -1,10 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { AUTH_METHOD, createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
+import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "@admitto/auth/testing";
 import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
@@ -44,6 +44,18 @@ let superAssignmentId = "";
 let targetAssignmentId = "";
 let eventId = "";
 let prevInstanceOrgId: string | undefined;
+let rateLimitStore: InMemoryRateLimitStore;
+
+/**
+ * One-shot hook for simulating a concurrent SSO link racing the admin-assisted reset endpoints'
+ * own `tx.externalIdentity.findFirst` mid-transaction (TOCTOU tests below). Query extensions run
+ * for queries issued inside `$transaction` callbacks too (same technique as
+ * admin-attendees.test.ts's `onAttendeeFindMany`), so this still intercepts the route handlers'
+ * in-transaction re-check - armed to fire *before* the hooked query runs (unlike
+ * onAttendeeFindMany, which fires after), so the concurrent link commits before the handler's
+ * own read, matching the "SSO link completed after the pre-check" scenario being tested.
+ */
+let onExternalIdentityFindFirst: (() => Promise<void>) | null = null;
 
 async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_USERS } });
@@ -158,13 +170,30 @@ beforeAll(async () => {
   prevInstanceOrgId = process.env.INSTANCE_ORG_ID;
   process.env.INSTANCE_ORG_ID = ORG_USERS;
 
-  prisma = createTestPrismaClient();
+  // `$on`/`$connect` aren't preserved on extended clients' types (Prisma's client-extensions
+  // docs: "client-level methods do not necessarily exist on extended clients") - this file never
+  // calls those on `prisma`, so the cast back to `PrismaClient` is safe.
+  prisma = createTestPrismaClient().$extends({
+    query: {
+      externalIdentity: {
+        async findFirst({ args, query }) {
+          if (onExternalIdentityFindFirst) {
+            const hook = onExternalIdentityFindFirst;
+            onExternalIdentityFindFirst = null;
+            await hook();
+          }
+          return query(args);
+        },
+      },
+    },
+  }) as PrismaClient;
   await seed(prisma);
 
+  rateLimitStore = new InMemoryRateLimitStore();
   app = createApp({
     prisma,
     baseUrl: "https://admitto.example.com",
-    rateLimitStore: new InMemoryRateLimitStore(),
+    rateLimitStore,
     skipCheckinBootValidation: true,
     adminDistRoot,
     mailDeliveryDeps: { exportSink: () => {} },
@@ -267,6 +296,36 @@ describe("GET /api/admin/users security", () => {
     }
   });
 
+  it("includes each linked provider's display name in external_identities, not just has_sso", async () => {
+    const created = await prisma.user.create({
+      data: { email: "sso-list-identity@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-list-identity-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request("/api/admin/users?q=sso-list-identity", {
+        headers: { Cookie: superCookie },
+      });
+      const body = (await res.json()) as {
+        users: Array<{
+          id: string;
+          has_sso: boolean;
+          external_identities: Array<{ id: string; provider_display_name: string }>;
+        }>;
+      };
+      expect(body.users).toHaveLength(1);
+      const user = body.users[0];
+      expect(user?.has_sso).toBe(true);
+      expect(user?.external_identities).toHaveLength(1);
+      expect(user?.external_identities[0]?.provider_display_name).toBe("IAM Users Test IdP");
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
   it("filters by role and status query params", async () => {
     const superOnly = await app.request("/api/admin/users?role=superadmin", {
       headers: { Cookie: superCookie },
@@ -312,6 +371,7 @@ describe("GET /api/admin/users/stats security", () => {
       total: number;
       active: number;
       mfa: number;
+      password_users: number;
       sso: number;
       active_sessions: number;
       active_sessions_users: number;
@@ -319,9 +379,44 @@ describe("GET /api/admin/users/stats security", () => {
     expect(body.total).toBeGreaterThanOrEqual(4);
     expect(body.active).toBeGreaterThanOrEqual(1);
     expect(body.mfa).toBeGreaterThanOrEqual(0);
+    expect(body.password_users).toBeGreaterThanOrEqual(0);
     expect(body.sso).toBeGreaterThanOrEqual(0);
     expect(body.active_sessions).toBeGreaterThanOrEqual(1);
     expect(body.active_sessions_users).toBeGreaterThanOrEqual(1);
+  });
+
+  it("counts a hybrid password+SSO user's unprotected password path, and excludes an SSO-only user entirely (codex review)", async () => {
+    const before = (await (
+      await app.request("/api/admin/users/stats", { headers: { Cookie: superCookie } })
+    ).json()) as { mfa: number; password_users: number; sso: number };
+
+    const hybridUser = await prisma.user.create({
+      data: { email: "stats-hybrid-no-mfa@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const ssoOnlyUser = await prisma.user.create({
+      data: { email: "stats-sso-only@example.com", password_hash: null },
+    });
+    await prisma.externalIdentity.createMany({
+      data: [
+        { provider_id: PROVIDER_ID, subject: "stats-hybrid-subject", user_id: hybridUser.id },
+        { provider_id: PROVIDER_ID, subject: "stats-sso-only-subject", user_id: ssoOnlyUser.id },
+      ],
+    });
+
+    try {
+      const res = await app.request("/api/admin/users/stats", { headers: { Cookie: superCookie } });
+      const body = (await res.json()) as { mfa: number; password_users: number; sso: number };
+
+      // Both new users are SSO-linked (sso +2), but only the hybrid one still has a password
+      // to protect (password_users +1) - and since it has no confirmed MFA, mfa must NOT
+      // increase, leaving that hybrid account's password path visibly uncovered.
+      expect(body.sso).toBe(before.sso + 2);
+      expect(body.password_users).toBe(before.password_users + 1);
+      expect(body.mfa).toBe(before.mfa);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: { in: [hybridUser.id, ssoOnlyUser.id] } } });
+      await prisma.user.deleteMany({ where: { id: { in: [hybridUser.id, ssoOnlyUser.id] } } });
+    }
   });
 });
 
@@ -977,6 +1072,51 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
     }
   });
 
+  it("unlinks a Cloudflare Access identity together with its source OIDC identity, not just the OIDC one", async () => {
+    // Cloudflare Access identities are only ever auto-provisioned alongside a source OIDC
+    // identity (resolveCfAccessIdentityFromValidatedJwt requires one to already exist) and get
+    // silently recreated on the next Cloudflare-authenticated request as long as that source
+    // identity survives - so leaving it behind here would make this "unlink" a no-op for
+    // Cloudflare sign-in, and unlinking just the OIDC identity would orphan the Cloudflare one
+    // (every subsequent Cloudflare-protected request then fails with source_identity_not_linked).
+    const cfProviderId = "iam-users-test-cf-access-provider";
+    await prisma.identityProvider.create({
+      data: {
+        id: cfProviderId,
+        provider_type: "cloudflare_access",
+        issuer: "https://cf-access.example.com/",
+        client_id: "cf-test-client",
+        authorization_endpoint: "https://cf-access.example.com/a",
+        token_endpoint: "https://cf-access.example.com/t",
+        jwks_uri: "https://cf-access.example.com/j",
+        display_name: "CF Access Test",
+      },
+    });
+    const created = await prisma.user.create({
+      data: { email: "sso-unlink-hybrid@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "sso-unlink-hybrid-oidc-subject", user_id: created.id },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: cfProviderId, subject: "sso-unlink-hybrid-cf-subject", user_id: created.id },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/external-identity`, {
+        method: "DELETE",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+      expect(await prisma.externalIdentity.count({ where: { user_id: created.id } })).toBe(0);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+      await prisma.identityProvider.delete({ where: { id: cfProviderId } });
+    }
+  });
+
   it("returns 400 invalid_request when unlinking without a new password", async () => {
     const created = await prisma.user.create({
       data: { email: "sso-unlink-no-pass@example.com", password_hash: await hashPassword(PASSWORD) },
@@ -1013,7 +1153,8 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
   it("returns 404 for a user with no linked SSO identity", async () => {
     const res = await app.request(`/api/admin/users/${targetId}/external-identity`, {
       method: "DELETE",
-      headers: { Cookie: superCookie, ...sameOrigin },
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
     });
     expect(res.status).toBe(404);
   });
@@ -1314,6 +1455,321 @@ describe("POST /api/admin/users/:id/reset-password", () => {
       const user = await prisma.user.findUnique({ where: { id: created.id } });
       expect(user?.password_hash).toBeNull();
       expect(user?.must_change_password).toBe(false);
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+});
+
+describe("POST /api/admin/users/:id/reset-2fa and reset-password — superadmin-on-superadmin step-up", () => {
+  const SUPER_TARGET_EMAIL = "users-super-target@example.com";
+  let superTargetId = "";
+  let actorSecret: string;
+
+  beforeEach(async () => {
+    rateLimitStore.reset();
+    // Replace superId's seeded (random, untracked-secret) confirmed TOTP with one whose secret
+    // this block controls, so it can generate a valid step-up code for the acting superadmin.
+    actorSecret = generateTotpSecret();
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    await prisma.userMfaMethod.create({
+      data: { user_id: superId, type: "totp", secret_enc: encryptTotpSecret(actorSecret), confirmed_at: new Date() },
+    });
+
+    const created = await prisma.user.create({
+      data: { email: SUPER_TARGET_EMAIL, password_hash: await hashPassword(PASSWORD) },
+    });
+    superTargetId = created.id;
+    await prisma.roleAssignment.create({
+      data: { user_id: superTargetId, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: superTargetId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+  });
+
+  afterEach(async () => {
+    await prisma.session.deleteMany({ where: { user_id: superTargetId } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: superTargetId } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superTargetId } });
+    await prisma.user.deleteMany({ where: { id: superTargetId } });
+    // Restore superId's MFA method to a fresh random-secret fixture, matching what the rest of
+    // this file (and its own top-level afterEach) assumes: superId always has *a* confirmed
+    // TOTP method, just not one whose secret is known outside this describe block.
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    await prisma.userMfaMethod.create({
+      data: { user_id: superId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+  });
+
+  it("reset-2fa: returns 400 totp_required without a step-up code and leaves the target's MFA untouched", async () => {
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("totp_required");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBeGreaterThan(0);
+  });
+
+  it("reset-2fa: returns 401 invalid_totp for a wrong step-up code and leaves the target's MFA untouched", async () => {
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "000000" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBeGreaterThan(0);
+  });
+
+  it("reset-2fa: succeeds with a correct step-up code and flags the audit log as a superadmin-target reset", async () => {
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: generateTotpCode(actorSecret) }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBe(0);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, action_type: "user_mfa_reset", actor_user_id: superId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).toMatchObject({ userId: superTargetId, superadminTarget: true });
+  });
+
+  it("reset-password: returns 400 totp_required without a step-up code and leaves the target's password untouched", async () => {
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-password`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("totp_required");
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+    expect(after.password_hash).toBe(before.password_hash);
+  });
+
+  it("reset-password: returns 401 invalid_totp for a wrong step-up code and leaves the target's password untouched", async () => {
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-password`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+    expect(after.password_hash).toBe(before.password_hash);
+  });
+
+  it("reset-password: succeeds with a correct step-up code and flags the audit log as a superadmin-target reset", async () => {
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-password`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, code: generateTotpCode(actorSecret) }),
+    });
+    expect(res.status).toBe(200);
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+    expect(await verifyPassword(NEW_PASSWORD, after.password_hash!)).toBe(true);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, action_type: "user_password_reset", actor_user_id: superId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).toMatchObject({ userId: superTargetId, superadminTarget: true });
+  });
+
+  it("reset-2fa: returns 403 actor_mfa_required (not a silent skip) when the actor has no confirmed local TOTP, and leaves the target's MFA untouched", async () => {
+    // Simulates a superadmin role granted purely through OIDC group mapping, who has never
+    // enrolled a local TOTP method. A LOCAL session for such a user would already be rejected
+    // by validateSession's assertFullSessionMfaPolicy (packages/auth/src/session.ts) - but an
+    // OIDC session is exempt from that check entirely (auth_method === AUTH_METHOD.OIDC always
+    // returns true there), so this actor reaches a fully-privileged SESSION_STAGE.FULL session
+    // with nothing to step up with, exactly the gap actorMustStepUpForReset must fail closed on.
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    const oidcActorSession = await createSession(prisma, {
+      userId: superId,
+      stage: SESSION_STAGE.FULL,
+      authMethod: AUTH_METHOD.OIDC,
+    });
+    const oidcActorCookie = `admitto_session=${oidcActorSession.rawToken}`;
+
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: oidcActorCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("actor_mfa_required");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBeGreaterThan(0);
+  });
+
+  it("reset-password: returns 403 actor_mfa_required (not a silent skip) when the actor has no confirmed local TOTP, and leaves the target's password untouched", async () => {
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    const oidcActorSession = await createSession(prisma, {
+      userId: superId,
+      stage: SESSION_STAGE.FULL,
+      authMethod: AUTH_METHOD.OIDC,
+    });
+    const oidcActorCookie = `admitto_session=${oidcActorSession.rawToken}`;
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-password`, {
+      method: "POST",
+      headers: { Cookie: oidcActorCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("actor_mfa_required");
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: superTargetId } });
+    expect(after.password_hash).toBe(before.password_hash);
+  });
+
+  it("reset-2fa: still demands and validates the actor's code even when the instance's mfa_required_roles setting excludes superadmin", async () => {
+    // withStepUpGate's own default behavior re-derives "is step-up needed" via
+    // userRequiresMfaStepUp (userRequiresMfa && userHasConfirmedTotp) - userRequiresMfa alone
+    // depends on this configurable policy, so without runAdminResetWithActorStepUp's
+    // forceRequired: true, an instance that scoped mfa_required_roles down to just "admin" would
+    // make this whole check silently no-op for a superadmin actor, even one with confirmed TOTP.
+    await prisma.systemSettings.upsert({
+      where: { key: "mfa_required_roles" },
+      create: { key: "mfa_required_roles", value_json: JSON.stringify(["admin"]) },
+      update: { value_json: JSON.stringify(["admin"]) },
+    });
+    try {
+      const noCode = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(noCode.status).toBe(400);
+      expect(((await noCode.json()) as { code: string }).code).toBe("totp_required");
+      expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBeGreaterThan(0);
+
+      const withCode = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ code: generateTotpCode(actorSecret) }),
+      });
+      expect(withCode.status).toBe(200);
+      expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBe(0);
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: "mfa_required_roles" } });
+    }
+  });
+
+  it("does not require step-up when a superadmin resets their OWN MFA via the admin endpoint", async () => {
+    // resetUserMfa revokes every session for the target, with no "except current" exemption
+    // (unlike the self-service /api/account/mfa/reset flow) - since actor === target here, that
+    // includes whichever session made this very request. Use a throwaway session so the
+    // file-wide superCookie/superSessionId fixture other describe blocks depend on isn't left
+    // pointing at a revoked session afterward.
+    const tempSession = await createSession(prisma, { userId: superId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/users/${superId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: `admitto_session=${tempSession.rawToken}`, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: superId } })).toBe(0);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, action_type: "user_mfa_reset", actor_user_id: superId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).not.toHaveProperty("superadminTarget");
+
+    // The reset above revoked superSessionId too (same user, no exemption) - replace the shared
+    // fixture so every test after this one keeps a working superadmin session.
+    const fresh = await createSession(prisma, { userId: superId, stage: SESSION_STAGE.FULL });
+    superCookie = `admitto_session=${fresh.rawToken}`;
+    superSessionId = fresh.session.id;
+  });
+
+  it("does not require step-up when resetting a non-superadmin target, even though the actor is a superadmin", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/admin/users/:id/reset-2fa and reset-password — SSO-link TOCTOU", () => {
+  afterEach(() => {
+    onExternalIdentityFindFirst = null;
+  });
+
+  it("reset-2fa: an SSO link created after the pre-check still blocks the in-transaction write", async () => {
+    const created = await prisma.user.create({
+      data: { email: "toctou-reset-mfa@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.userMfaMethod.create({
+      data: { user_id: created.id, type: "totp", secret_enc: "enc", confirmed_at: new Date() },
+    });
+
+    try {
+      let armed = true;
+      onExternalIdentityFindFirst = async () => {
+        armed = false;
+        await prisma.externalIdentity.create({
+          data: { provider_id: PROVIDER_ID, subject: "toctou-reset-mfa-subject", user_id: created.id },
+        });
+      };
+
+      const res = await app.request(`/api/admin/users/${created.id}/reset-2fa`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin },
+      });
+
+      expect(armed).toBe(false); // sanity check: the injected concurrent link actually ran
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("cannot_reset_mfa_sso_managed");
+      expect(await prisma.userMfaMethod.count({ where: { user_id: created.id } })).toBe(1);
+    } finally {
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: created.id } });
+      await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("reset-password: an SSO link created after the pre-check still blocks the in-transaction write", async () => {
+    const created = await prisma.user.create({
+      data: { email: "toctou-reset-password@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
+
+    try {
+      let armed = true;
+      onExternalIdentityFindFirst = async () => {
+        armed = false;
+        await prisma.externalIdentity.create({
+          data: { provider_id: PROVIDER_ID, subject: "toctou-reset-password-subject", user_id: created.id },
+        });
+      };
+
+      const res = await app.request(`/api/admin/users/${created.id}/reset-password`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: NEW_PASSWORD }),
+      });
+
+      expect(armed).toBe(false); // sanity check: the injected concurrent link actually ran
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("cannot_reset_password_sso_managed");
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: created.id } });
+      expect(after.password_hash).toBe(before.password_hash);
     } finally {
       await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
       await prisma.user.deleteMany({ where: { id: created.id } });

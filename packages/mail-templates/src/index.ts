@@ -36,7 +36,6 @@ export {
   renderTemplateTrusted,
   renderTemplateTrustedForStorage,
   materializeStoredDeliveryMessage,
-  materializeStoredDeliveryMessageRedacted,
   stripEmptyUrlAttributes,
   absolutizeBundledTicketAssetUrls,
   STORAGE_DEFERRED_LINK_PLACEHOLDERS,

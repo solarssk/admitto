@@ -33,6 +33,7 @@ declare module "hono" {
     checkinAuth: "bearer" | "session";
     operatorUserId: string;
     bulkSendDryRun: boolean;
+    walletMessageDryRun: boolean;
   }
 }
 
