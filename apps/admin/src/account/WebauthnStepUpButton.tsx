@@ -27,7 +27,7 @@ interface WebauthnStepUpButtonProps {
  * the same begin/prompt/submit/error-handling ceremony. Caller owns its own busy/error state
  * (already exists per dialog for the code field) and its own submit function; this component only
  * runs the ceremony and hands the resulting proof to `onSubmit`. */
-export function WebauthnStepUpButton({ busy, onBusyChange, onError, onSubmit }: WebauthnStepUpButtonProps) {
+export function WebauthnStepUpButton({ busy, onBusyChange, onError, onSubmit }: Readonly<WebauthnStepUpButtonProps>) {
   return (
     <Button
       type="button"
