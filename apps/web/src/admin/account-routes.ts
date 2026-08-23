@@ -1152,6 +1152,24 @@ export async function handleGetAccountWebauthnCredentials(
   });
 }
 
+/** Parses the optional `{code}` step-up body shared by `handleDeleteAccountWebauthnCredential`,
+ * `handleDeleteAccountTotp`, and `handlePostAccountRegenerateBackupCodes` — unlike
+ * `handleDeleteAccountSession`'s always-bodiless DELETE, a JSON body is optional here (most calls
+ * won't need step-up at all) rather than required, so an empty/unparsable body parses to `{}`
+ * rather than a 400; a code is never accepted via query string (would leak into access/proxy logs
+ * and browser history). Returns the parsed `code` field, or the 400 Response to return as-is. */
+async function parseOptionalStepUpCodeBody(c: Context): Promise<{ code?: string } | Response> {
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  return parsed.data;
+}
+
 /**
  * DELETE /api/account/mfa/webauthn/:credentialId — remove one passkey/security key.
  * Requires a TOTP/recovery-code step-up (mirroring `handlePostMfaReset`) whenever the user's
@@ -1169,24 +1187,14 @@ export async function handleDeleteAccountWebauthnCredential(
   const credentialId = c.req.param("credentialId") ?? "";
   if (!credentialId) return c.json({ error: "credential id required" }, 400);
 
-  // A step-up code, unlike `handleDeleteAccountSession`'s always-bodiless DELETE, so a JSON body
-  // is optional here (most calls won't need step-up at all) rather than required — an empty body
-  // parses to `{}`, never a 400, and a code is never accepted via query string (would leak into
-  // access/proxy logs and browser history).
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  const body = await parseOptionalStepUpCodeBody(c);
+  if (body instanceof Response) return body;
 
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-webauthn-remove" },
+    { userId, currentSessionId, rawCode: body.code, rateLimitAction: "account-webauthn-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeWebauthnCredential(tx, userId, credentialId);
       if (removed) {
@@ -1224,22 +1232,14 @@ export async function handleDeleteAccountTotp(
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
 
-  // Same optional-body convention as handleDeleteAccountWebauthnCredential: an empty/unparsable
-  // body defaults to `{}` rather than 400, since most calls won't need step-up at all.
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  const body = await parseOptionalStepUpCodeBody(c);
+  if (body instanceof Response) return body;
 
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-totp-remove" },
+    { userId, currentSessionId, rawCode: body.code, rateLimitAction: "account-totp-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeTotpMethod(tx, userId);
       if (removed) {
@@ -1287,16 +1287,8 @@ export async function handlePostAccountRegenerateBackupCodes(
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
 
-  // Same optional-body convention as handleDeleteAccountWebauthnCredential: this action has no
-  // other fields, only an optional step-up code.
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  const body = await parseOptionalStepUpCodeBody(c);
+  if (body instanceof Response) return body;
 
   const gated = await withStepUpGate(
     c,
@@ -1305,7 +1297,7 @@ export async function handlePostAccountRegenerateBackupCodes(
     {
       userId,
       currentSessionId,
-      rawCode: parsed.data.code,
+      rawCode: body.code,
       rateLimitAction: "account-backup-codes-regenerate",
     },
     async (tx, orgId, audit) => {
