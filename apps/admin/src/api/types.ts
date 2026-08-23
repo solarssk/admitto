@@ -1,6 +1,11 @@
 import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
-import type { PublicKeyCredentialCreationOptionsJSON, RegistrationResponseJSON } from "@simplewebauthn/browser";
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from "@simplewebauthn/browser";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
@@ -1567,17 +1572,22 @@ export interface PatchAccountProfileBody {
   phone_number?: string | null;
 }
 
-export interface PatchAccountPasswordBody {
+/** A step-up proof: a TOTP/recovery code, or a signed WebAuthn assertion - mirrors the backend's
+ * own `stepUpProofFields` (account-routes.ts). Callers set at most one of the two. */
+export interface StepUpProofBody {
+  code?: string;
+  webauthn?: { response: AuthenticationResponseJSON };
+}
+
+export interface PatchAccountPasswordBody extends StepUpProofBody {
   current_password: string;
   new_password: string;
   new_password_confirm: string;
-  code?: string;
 }
 
-export interface DeleteAccountExternalIdentityBody {
+export interface DeleteAccountExternalIdentityBody extends StepUpProofBody {
   new_password: string;
   current_password?: string;
-  code?: string;
 }
 
 export interface PatchAccountPasswordResponse {
@@ -1594,9 +1604,8 @@ export interface ConfirmMfaTotpBody {
   code: string;
 }
 
-export interface ResetMfaBody {
+export interface ResetMfaBody extends StepUpProofBody {
   password: string;
-  code?: string;
 }
 
 export interface ResetMfaResponse {
@@ -1637,6 +1646,10 @@ export interface WebauthnCredentialDto {
 
 export interface WebauthnCredentialsResponse {
   credentials: WebauthnCredentialDto[];
+}
+
+export interface WebauthnAssertBeginResponse {
+  options: PublicKeyCredentialRequestOptionsJSON;
 }
 
 /** GET /api/account/mfa/backup-codes response - status of the current backup-code batch. Codes

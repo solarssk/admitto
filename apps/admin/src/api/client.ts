@@ -119,6 +119,8 @@ import type {
   WebauthnRegisterFinishBody,
   WebauthnRegisterFinishResponse,
   WebauthnCredentialsResponse,
+  WebauthnAssertBeginResponse,
+  StepUpProofBody,
   BackupCodesStatusResponse,
   RegenerateBackupCodesResponse,
   IdentityProvidersListResponse,
@@ -2585,17 +2587,22 @@ export async function fetchWebauthnCredentials(signal?: AbortSignal): Promise<We
   return parseJson<WebauthnCredentialsResponse>(res);
 }
 
-export async function deleteWebauthnCredential(credentialId: string, code?: string): Promise<{ ok: true }> {
-  const res = await fetch(
-    `/api/account/mfa/webauthn/${encodeURIComponent(credentialId)}`,
-    jsonDeleteInit(code ? { code } : undefined),
-  );
+/** Starts a WebAuthn step-up ceremony against the caller's own registered credentials - the
+ * `options` are passed to `startAuthentication()`, and the resulting assertion becomes the
+ * `webauthn` field of the `proof` passed to whichever step-up-gated call below is being made. */
+export async function beginWebauthnAssertion(): Promise<WebauthnAssertBeginResponse> {
+  const res = await fetch("/api/account/mfa/webauthn/assert/begin", jsonPostInit({}));
+  return parseJson<WebauthnAssertBeginResponse>(res);
+}
+
+export async function deleteWebauthnCredential(credentialId: string, proof?: StepUpProofBody): Promise<{ ok: true }> {
+  const res = await fetch(`/api/account/mfa/webauthn/${encodeURIComponent(credentialId)}`, jsonDeleteInit(proof));
   return parseJson<{ ok: true }>(res);
 }
 
 /** Removes only the TOTP row(s) - WebAuthn credentials and backup codes are untouched. */
-export async function deleteAccountTotp(code?: string): Promise<{ ok: true }> {
-  const res = await fetch("/api/account/mfa/totp", jsonDeleteInit(code ? { code } : undefined));
+export async function deleteAccountTotp(proof?: StepUpProofBody): Promise<{ ok: true }> {
+  const res = await fetch("/api/account/mfa/totp", jsonDeleteInit(proof));
   return parseJson<{ ok: true }>(res);
 }
 
@@ -2605,8 +2612,8 @@ export async function fetchBackupCodesStatus(signal?: AbortSignal): Promise<Back
 }
 
 /** Invalidates the current backup-code batch and mints a fresh set, returned once as plaintext. */
-export async function regenerateBackupCodes(code?: string): Promise<RegenerateBackupCodesResponse> {
-  const res = await fetch("/api/account/mfa/backup-codes/regenerate", jsonPostInit(code ? { code } : {}));
+export async function regenerateBackupCodes(proof?: StepUpProofBody): Promise<RegenerateBackupCodesResponse> {
+  const res = await fetch("/api/account/mfa/backup-codes/regenerate", jsonPostInit(proof ?? {}));
   return parseJson<RegenerateBackupCodesResponse>(res);
 }
 

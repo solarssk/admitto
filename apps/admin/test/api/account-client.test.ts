@@ -142,7 +142,7 @@ describe("account API client", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     vi.stubGlobal("fetch", fetchMock);
 
-    await deleteWebauthnCredential("cred with space", "123456");
+    await deleteWebauthnCredential("cred with space", { code: "123456" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/account/mfa/webauthn/cred%20with%20space",
@@ -169,7 +169,7 @@ describe("account API client", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.body).toBeUndefined();
 
-    await deleteAccountTotp("123456");
+    await deleteAccountTotp({ code: "123456" });
     const init2 = fetchMock.mock.calls[1]![1] as RequestInit;
     expect(JSON.parse(String(init2.body))).toEqual({ code: "123456" });
   });
@@ -207,7 +207,7 @@ describe("account API client", () => {
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect(JSON.parse(String(init.body))).toEqual({});
 
-    await regenerateBackupCodes("123456");
+    await regenerateBackupCodes({ code: "123456" });
     const init2 = fetchMock.mock.calls[1]![1] as RequestInit;
     expect(JSON.parse(String(init2.body))).toEqual({ code: "123456" });
   });

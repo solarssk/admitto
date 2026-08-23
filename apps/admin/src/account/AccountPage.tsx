@@ -29,6 +29,7 @@ import type {
   BackupCodesStatusResponse,
   MfaEnrollResponse,
   SessionListDto,
+  StepUpProofBody,
   WebauthnAttachment,
 } from "../api/types.js";
 import { roleLabel } from "../auth/role-labels.js";
@@ -51,6 +52,7 @@ import {
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
+import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
 
 const PASSWORD_HINT = "Changing your password ends your other active sessions. Your current session stays signed in.";
 const TIME_FORMAT_OPTIONS = [
@@ -600,13 +602,13 @@ export function AccountPage() {
     });
   }
 
-  /** Shared by the form's own submit and the step-up dialog's confirm — `code` is only passed once the server has asked for one. */
-  async function submitPasswordChange(code?: string): Promise<void> {
+  /** Shared by the form's own submit and the step-up dialog's confirm — `proof` is only passed once the server has asked for one. */
+  async function submitPasswordChange(proof?: StepUpProofBody): Promise<void> {
     const { sessions_revoked } = await patchAccountPassword({
       current_password: currentPassword,
       new_password: newPassword,
       new_password_confirm: confirmPassword,
-      code,
+      ...proof,
     });
     setCurrentPassword("");
     setNewPassword("");
@@ -621,13 +623,56 @@ export function AccountPage() {
     await loadSessions();
   }
 
-  /** Shared by the confirm dialog's own submit and the step-up dialog's confirm — `code` is only
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. `target`
+   * is passed explicitly rather than read from `removeCredentialTarget` state, since the caller
+   * has already null-checked `.id` right before calling this. */
+  async function submitRemoveCredential(target: AccountMfaMethodDto, proof?: StepUpProofBody): Promise<void> {
+    await deleteWebauthnCredential(target.id!, proof);
+    const removedLabel = target.label ? `"${target.label}"` : "Credential";
+    setRemoveCredentialTarget(null);
+    setRemoveCredentialCode("");
+    setRemoveCredentialCodeRequired(false);
+    addToast(`${removedLabel} removed.`, "success");
+    await loadAccount();
+    // Same reasoning as the TOTP-removal handler above - a step-up code here can be a backup
+    // code too.
+    await loadBackupCodesStatus();
+  }
+
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
-  async function submitUnlinkSso(code?: string): Promise<void> {
+  async function submitRemoveTotp(proof?: StepUpProofBody): Promise<void> {
+    await deleteAccountTotp(proof);
+    setManageTotpOpen(false);
+    setRemoveTotpCode("");
+    setRemoveTotpCodeRequired(false);
+    addToast("Authenticator app removed.", "success");
+    await loadAccount();
+    // A step-up code (when required) is a backup code as well as a TOTP code - refresh
+    // the remaining count shown on the Backup codes row in case that's what was used.
+    await loadBackupCodesStatus();
+  }
+
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
+  async function submitResetMfa(proof?: StepUpProofBody): Promise<void> {
+    const { sessions_revoked } = await resetMfa({ password: resetPassword, ...proof });
+    setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
+    const mfaSessionsRevokedPlural = sessions_revoked === 1 ? "" : "s";
+    const mfaSessionsRevokedSuffix =
+      sessions_revoked > 0 ? ` ${sessions_revoked} other session${mfaSessionsRevokedPlural} ended.` : "";
+    addToast(`Two-factor authentication reset.${mfaSessionsRevokedSuffix}`, "success");
+    await loadAccount(); await loadSessions();
+  }
+
+  /** Shared by the confirm dialog's own submit and the step-up dialog's confirm — `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
+  async function submitUnlinkSso(proof?: StepUpProofBody): Promise<void> {
     await unlinkAccountExternalIdentity({
       new_password: unlinkSsoPassword,
       current_password: account?.has_local_password ? unlinkSsoCurrentPassword : undefined,
-      code,
+      ...proof,
     });
     setUnlinkSsoPassword("");
     setUnlinkSsoCurrentPassword("");
@@ -924,6 +969,15 @@ export function AccountPage() {
    * has been minted yet in this dialog session; once regeneration succeeds, the body is replaced
    * by the new plaintext codes (renderBackupCodesSection, same markup as first-time enrollment)
    * and Regenerate stays disabled so a second click can't invalidate the batch just shown. */
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
+  async function submitRegenerateBackupCodes(proof?: StepUpProofBody): Promise<void> {
+    const { codes } = await regenerateBackupCodes(proof);
+    setRegeneratedBackupCodes(codes);
+    setBackupCodesStatus({ total: codes.length, remaining: codes.length });
+    addToast("Backup codes regenerated.", "success");
+  }
+
   function renderManageBackupCodesDialog() {
     /* v8 ignore if */
     if (!account) return null;
@@ -951,10 +1005,7 @@ export function AccountPage() {
           setRegeneratingBackupCodes(true);
           setRegenerateBackupCodesError(null);
           try {
-            const { codes } = await regenerateBackupCodes(regenerateBackupCodesCode || undefined);
-            setRegeneratedBackupCodes(codes);
-            setBackupCodesStatus({ total: codes.length, remaining: codes.length });
-            addToast("Backup codes regenerated.", "success");
+            await submitRegenerateBackupCodes(regenerateBackupCodesCode ? { code: regenerateBackupCodesCode } : undefined);
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
               setRegenerateBackupCodesCodeRequired(true);
@@ -978,20 +1029,30 @@ export function AccountPage() {
         {regeneratedBackupCodes
           ? renderBackupCodesSection(regeneratedBackupCodes, false)
           : regenerateBackupCodesCodeRequired && (
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-regenerate-backup-codes-code">Authenticator or backup code</label>
-              <Input
-                id="account-regenerate-backup-codes-code"
-                name="regenerate-backup-codes-code"
-                type="text"
-                autoComplete="one-time-code"
-                autoCapitalize="off"
-                spellCheck={false}
-                value={regenerateBackupCodesCode}
-                onChange={(e) => setRegenerateBackupCodesCode(e.target.value)}
-                {...stepUpCodeFieldAttrs}
-              />
-            </div>
+            <>
+              <div className="mail-field-row">
+                <label className="mail-field-label" htmlFor="account-regenerate-backup-codes-code">Authenticator or backup code</label>
+                <Input
+                  id="account-regenerate-backup-codes-code"
+                  name="regenerate-backup-codes-code"
+                  type="text"
+                  autoComplete="one-time-code"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  value={regenerateBackupCodesCode}
+                  onChange={(e) => setRegenerateBackupCodesCode(e.target.value)}
+                  {...stepUpCodeFieldAttrs}
+                />
+              </div>
+              {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+                <WebauthnStepUpButton
+                  busy={regeneratingBackupCodes}
+                  onBusyChange={setRegeneratingBackupCodes}
+                  onError={setRegenerateBackupCodesError}
+                  onSubmit={submitRegenerateBackupCodes}
+                />
+              )}
+            </>
           )}
       </ConfirmDialog>
     );
@@ -1399,15 +1460,7 @@ export function AccountPage() {
           setRemovingTotp(true);
           setRemoveTotpError(null);
           try {
-            await deleteAccountTotp(removeTotpCode || undefined);
-            setManageTotpOpen(false);
-            setRemoveTotpCode("");
-            setRemoveTotpCodeRequired(false);
-            addToast("Authenticator app removed.", "success");
-            await loadAccount();
-            // A step-up code (when required) is a backup code as well as a TOTP code - refresh
-            // the remaining count shown on the Backup codes row in case that's what was used.
-            await loadBackupCodesStatus();
+            await submitRemoveTotp(removeTotpCode ? { code: removeTotpCode } : undefined);
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
               setRemoveTotpCodeRequired(true);
@@ -1433,20 +1486,30 @@ export function AccountPage() {
           </Notice>
         )}
         {removeTotpCodeRequired && (
-          <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="account-remove-totp-code">Authenticator or backup code</label>
-            <Input
-              id="account-remove-totp-code"
-              name="remove-totp-code"
-              type="text"
-              autoComplete="one-time-code"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={removeTotpCode}
-              onChange={(e) => setRemoveTotpCode(e.target.value)}
-              {...stepUpCodeFieldAttrs}
-            />
-          </div>
+          <>
+            <div className="mail-field-row">
+              <label className="mail-field-label" htmlFor="account-remove-totp-code">Authenticator or backup code</label>
+              <Input
+                id="account-remove-totp-code"
+                name="remove-totp-code"
+                type="text"
+                autoComplete="one-time-code"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={removeTotpCode}
+                onChange={(e) => setRemoveTotpCode(e.target.value)}
+                {...stepUpCodeFieldAttrs}
+              />
+            </div>
+            {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+              <WebauthnStepUpButton
+                busy={removingTotp}
+                onBusyChange={setRemovingTotp}
+                onError={setRemoveTotpError}
+                onSubmit={submitRemoveTotp}
+              />
+            )}
+          </>
         )}
       </ConfirmDialog>
 
@@ -1463,13 +1526,7 @@ export function AccountPage() {
         onConfirm={async () => {
           setResetting(true); setResetError(null);
           try {
-            const { sessions_revoked } = await resetMfa({ password: resetPassword, code: resetCode || undefined });
-            setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
-            const mfaSessionsRevokedPlural = sessions_revoked === 1 ? "" : "s";
-            const mfaSessionsRevokedSuffix =
-              sessions_revoked > 0 ? ` ${sessions_revoked} other session${mfaSessionsRevokedPlural} ended.` : "";
-            addToast(`Two-factor authentication reset.${mfaSessionsRevokedSuffix}`, "success");
-            await loadAccount(); await loadSessions();
+            await submitResetMfa(resetCode ? { code: resetCode } : undefined);
           }
           catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
@@ -1509,20 +1566,30 @@ export function AccountPage() {
             />
           </div>
           {resetCodeRequired && (
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
-              <Input
-                id="account-reset-code"
-                name="reset-code"
-                type="text"
-                autoComplete="one-time-code"
-                autoCapitalize="off"
-                spellCheck={false}
-                value={resetCode}
-                onChange={(e) => setResetCode(e.target.value)}
-                {...stepUpCodeFieldAttrs}
-              />
-            </div>
+            <>
+              <div className="mail-field-row">
+                <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
+                <Input
+                  id="account-reset-code"
+                  name="reset-code"
+                  type="text"
+                  autoComplete="one-time-code"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  value={resetCode}
+                  onChange={(e) => setResetCode(e.target.value)}
+                  {...stepUpCodeFieldAttrs}
+                />
+              </div>
+              {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+                <WebauthnStepUpButton
+                  busy={resetting}
+                  onBusyChange={setResetting}
+                  onError={setResetError}
+                  onSubmit={submitResetMfa}
+                />
+              )}
+            </>
           )}
         </div>
       </ConfirmDialog>
@@ -1541,7 +1608,7 @@ export function AccountPage() {
           setPasswordSaving(true);
           setPasswordCodeError(null);
           try {
-            await submitPasswordChange(passwordCode);
+            await submitPasswordChange({ code: passwordCode });
           } catch (err) {
             if (hasApiErrorCode(err, "invalid_totp")) {
               setPasswordCodeError(operatorApiErrorMessage(err, "Failed to change password."));
@@ -1576,6 +1643,14 @@ export function AccountPage() {
             {...stepUpCodeFieldAttrs}
           />
         </div>
+        {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+          <WebauthnStepUpButton
+            busy={passwordSaving}
+            onBusyChange={setPasswordSaving}
+            onError={setPasswordCodeError}
+            onSubmit={submitPasswordChange}
+          />
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -1676,7 +1751,7 @@ export function AccountPage() {
           setUnlinkSsoBusy(true);
           setUnlinkCodeError(null);
           try {
-            await submitUnlinkSso(unlinkCode);
+            await submitUnlinkSso({ code: unlinkCode });
           } catch (err) {
             if (hasApiErrorCode(err, "invalid_totp")) {
               setUnlinkCodeError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
@@ -1711,6 +1786,14 @@ export function AccountPage() {
             {...stepUpCodeFieldAttrs}
           />
         </div>
+        {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+          <WebauthnStepUpButton
+            busy={unlinkSsoBusy}
+            onBusyChange={setUnlinkSsoBusy}
+            onError={setUnlinkCodeError}
+            onSubmit={submitUnlinkSso}
+          />
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -1920,16 +2003,7 @@ export function AccountPage() {
           setRemovingCredential(true);
           setRemoveCredentialError(null);
           try {
-            await deleteWebauthnCredential(removeCredentialTarget.id, removeCredentialCode || undefined);
-            const removedLabel = removeCredentialTarget.label ? `"${removeCredentialTarget.label}"` : "Credential";
-            setRemoveCredentialTarget(null);
-            setRemoveCredentialCode("");
-            setRemoveCredentialCodeRequired(false);
-            addToast(`${removedLabel} removed.`, "success");
-            await loadAccount();
-            // Same reasoning as the TOTP-removal handler above - a step-up code here can be a
-            // backup code too.
-            await loadBackupCodesStatus();
+            await submitRemoveCredential(removeCredentialTarget, removeCredentialCode ? { code: removeCredentialCode } : undefined);
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
               setRemoveCredentialCodeRequired(true);
@@ -1955,20 +2029,30 @@ export function AccountPage() {
           </Notice>
         )}
         {removeCredentialCodeRequired && (
-          <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="account-remove-credential-code">Authenticator or backup code</label>
-            <Input
-              id="account-remove-credential-code"
-              name="remove-credential-code"
-              type="text"
-              autoComplete="one-time-code"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={removeCredentialCode}
-              onChange={(e) => setRemoveCredentialCode(e.target.value)}
-              {...stepUpCodeFieldAttrs}
-            />
-          </div>
+          <>
+            <div className="mail-field-row">
+              <label className="mail-field-label" htmlFor="account-remove-credential-code">Authenticator or backup code</label>
+              <Input
+                id="account-remove-credential-code"
+                name="remove-credential-code"
+                type="text"
+                autoComplete="one-time-code"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={removeCredentialCode}
+                onChange={(e) => setRemoveCredentialCode(e.target.value)}
+                {...stepUpCodeFieldAttrs}
+              />
+            </div>
+            {removeCredentialTarget && account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+              <WebauthnStepUpButton
+                busy={removingCredential}
+                onBusyChange={setRemovingCredential}
+                onError={setRemoveCredentialError}
+                onSubmit={(proof) => submitRemoveCredential(removeCredentialTarget, proof)}
+              />
+            )}
+          </>
         )}
       </ConfirmDialog>
     </>

@@ -2901,7 +2901,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", "123456");
+    expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", { code: "123456" });
   });
 
   it("refreshes the backup codes status after removing a credential with a step-up code", async () => {
@@ -3243,7 +3243,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    expect(mockDeleteAccountTotp).toHaveBeenLastCalledWith("123456");
+    expect(mockDeleteAccountTotp).toHaveBeenLastCalledWith({ code: "123456" });
   });
 
   it("refreshes the backup codes status after removing TOTP with a step-up code", async () => {
@@ -3552,7 +3552,7 @@ describe("AccountPage: Backup codes", () => {
     await waitFor(() => {
       expect(within(dialog).getByText(`Backup codes: save all ${newCodes.length}, shown once`)).toBeTruthy();
     });
-    expect(mockRegenerateBackupCodes).toHaveBeenLastCalledWith("123456");
+    expect(mockRegenerateBackupCodes).toHaveBeenLastCalledWith({ code: "123456" });
   });
 
   it("Close dismisses the manage dialog without regenerating", async () => {
