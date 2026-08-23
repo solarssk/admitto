@@ -1354,6 +1354,44 @@ describe("POST /api/auth/mfa/webauthn — login-time WebAuthn", () => {
     expect(me.status).toBe(200);
   });
 
+  it("carries the client-supplied timezone into the auth.mfa.success audit row", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const credential = await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const beginRes = await app.request("/api/auth/mfa/webauthn/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    const { options } = (await beginRes.json()) as { options: { challenge: string } };
+
+    const response = credential.authenticator.authenticate({
+      challenge: options.challenge,
+      rpID: WEBAUTHN_RP.rpID,
+      origin: WEBAUTHN_RP.origin,
+    });
+
+    const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ response, timezone: "Europe/Warsaw" }),
+    });
+    expect(verifyRes.status).toBe(200);
+
+    const audit = await prisma.securityAuditLog.findFirst({
+      where: { user_id: admin!.id, event_type: "auth.mfa.success" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_timezone).toBe("Europe/Warsaw");
+  });
+
   it("returns 401 invalid_webauthn for a forged assertion and does not grant a session", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
     await resetAdminAuthLabState(admin!.id);
