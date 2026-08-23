@@ -66,6 +66,7 @@ export {
   getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
   getMfaRequiredRoles,
+  getWebauthnEnabled,
 } from "./settings/resolver.js";
 export {
   SETTING_SESSION_TTL,
@@ -81,6 +82,7 @@ export {
   SETTING_CF_ACCESS_SOURCE_PROVIDER_ID,
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
+  SETTING_WEBAUTHN_ENABLED,
   SETTING_CSP_TRUSTED_ORIGINS,
 } from "./settings/keys.js";
 export { getInstanceUrl } from "./settings/instance-url.js";

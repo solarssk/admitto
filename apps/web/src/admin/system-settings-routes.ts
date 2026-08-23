@@ -13,6 +13,7 @@ import {
   getMfaRequiredRoles,
   getInstanceUrl,
   getCspTrustedOrigins,
+  getWebauthnEnabled,
   validateCspTrustedOrigins,
   CspTrustedOriginsError,
   MAX_CSP_TRUSTED_ORIGINS,
@@ -24,6 +25,7 @@ import {
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_INSTANCE_URL,
   SETTING_CSP_TRUSTED_ORIGINS,
+  SETTING_WEBAUTHN_ENABLED,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -56,6 +58,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     mfaRoles,
     instanceUrl,
     cspTrustedOrigins,
+    webauthnEnabled,
     adminTtlSrc,
     opTtlSrc,
     adminIdleSrc,
@@ -64,6 +67,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     mfaRolesSrc,
     instanceUrlSrc,
     cspTrustedOriginsSrc,
+    webauthnEnabledSrc,
   ] = await Promise.all([
     getSessionTtlAdminMs(db),
     getSessionTtlOperatorMs(db),
@@ -73,6 +77,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getMfaRequiredRoles(db),
     getInstanceUrl(db),
     getCspTrustedOrigins(db),
+    getWebauthnEnabled(db),
     getSettingSource(db, SETTING_SESSION_TTL),
     getSettingSource(db, SETTING_OPERATOR_SESSION_TTL),
     getSettingSource(db, SETTING_SESSION_IDLE_TIMEOUT),
@@ -81,6 +86,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getSettingSource(db, SETTING_MFA_REQUIRED_ROLES),
     getSettingSource(db, SETTING_INSTANCE_URL),
     getSettingSource(db, SETTING_CSP_TRUSTED_ORIGINS),
+    getSettingSource(db, SETTING_WEBAUTHN_ENABLED),
   ]);
 
   return {
@@ -92,6 +98,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     mfa_required_roles: { value: mfaRoles, source: mfaRolesSrc },
     instance_url: { value: instanceUrl, source: instanceUrlSrc },
     csp_trusted_origins: { value: cspTrustedOrigins, source: cspTrustedOriginsSrc },
+    webauthn_enabled: { value: webauthnEnabled, source: webauthnEnabledSrc },
   };
 }
 
@@ -158,6 +165,7 @@ const patchSchema = z
       .optional(),
     instance_url: instanceUrlSchema.nullable().optional(),
     csp_trusted_origins: cspTrustedOriginsSchema.nullable().optional(),
+    webauthn_enabled: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -170,6 +178,7 @@ const KEY_MAP = {
   mfa_required_roles: SETTING_MFA_REQUIRED_ROLES,
   instance_url: SETTING_INSTANCE_URL,
   csp_trusted_origins: SETTING_CSP_TRUSTED_ORIGINS,
+  webauthn_enabled: SETTING_WEBAUTHN_ENABLED,
 } as const satisfies Record<string, string>;
 
 /** Idle-timeout field paired with the absolute-lifetime field it must not exceed. */
