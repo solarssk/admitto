@@ -344,6 +344,76 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     expect(replay.status).toBe(400);
     expect(((await replay.json()) as { code: string }).code).toBe("challenge_expired");
   });
+
+  it("returns 403 webauthn_disabled and clears the challenge, if the instance setting is turned off after begin", async () => {
+    const authenticator = createVirtualAuthenticator();
+    const { body: begin } = await beginRegistration(userCookie, "platform");
+    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
+
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_WEBAUTHN_ENABLED },
+      create: { key: SETTING_WEBAUTHN_ENABLED, value_json: "false" },
+      update: { value_json: "false" },
+    });
+    try {
+      const res = await app.request("/api/account/mfa/webauthn/register/finish", {
+        method: "POST",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attachment: "platform", response }),
+      });
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe("webauthn_disabled");
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+    }
+
+    // The disabled check clears the stashed challenge - re-enabling and retrying the same
+    // response afterwards must not be able to complete registration on a stale challenge.
+    const retry = await app.request("/api/account/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: "platform", response }),
+    });
+    expect(retry.status).toBe(400);
+    expect(((await retry.json()) as { code: string }).code).toBe("challenge_expired");
+  });
+});
+
+describe("WebAuthn RP origin, an Instance URL with a path", () => {
+  it("registers successfully against the plain scheme+host+port origin, not the configured base URL's full path", async () => {
+    // A reverse-proxied instance can have a path-carrying Instance URL (e.g. an app served under
+    // /admitto) - normalizePersistedInstanceUrl/normalizeRuntimeBaseUrl both allow this, but
+    // WebAuthn's expectedOrigin must still be the bare origin: the browser's own clientDataJSON
+    // origin never includes a path, no matter what path the page was served from.
+    const pathedBaseUrl = `${BASE_URL}/admitto`;
+    const pathedApp = createApp({
+      prisma,
+      baseUrl: pathedBaseUrl,
+      rateLimitStore,
+      skipCheckinBootValidation: true,
+      adminDistRoot,
+      mailDeliveryDeps: { exportSink: () => {} },
+    });
+
+    const authenticator = createVirtualAuthenticator();
+    const beginRes = await pathedApp.request("/api/account/mfa/webauthn/register/begin", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: "platform" }),
+    });
+    const begin = (await beginRes.json()) as BeginResponseBody;
+    // rpID (hostname only) was already correct before this fix - only origin carried the path.
+    expect(begin.options.rp.id).toBe(RP_ID);
+
+    const response = authenticator.register({ challenge: begin.options.challenge, rpID: RP_ID, origin: BASE_URL });
+    const finishRes = await pathedApp.request("/api/account/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: "platform", response }),
+    });
+    expect(finishRes.status).toBe(200);
+    expect(((await finishRes.json()) as { ok: boolean }).ok).toBe(true);
+  });
 });
 
 describe("GET /api/account/mfa/webauthn", () => {

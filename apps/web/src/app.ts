@@ -1780,7 +1780,6 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post(
     "/api/account/mfa/webauthn/register/begin",
     jsonPostCsrf,
-    loginRateLimitJson,
     requireSession,
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
     (c) => handlePostAccountWebauthnRegisterBegin(c, db, mailInjectedBaseUrl),
@@ -1788,12 +1787,11 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post(
     "/api/account/mfa/webauthn/register/finish",
     jsonPostCsrf,
-    loginRateLimitJson,
     requireSession,
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
     (c) => handlePostAccountWebauthnRegisterFinish(c, db, mailInjectedBaseUrl),
   );
-  app.delete("/api/account/mfa/webauthn/:credentialId", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+  app.delete("/api/account/mfa/webauthn/:credentialId", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountWebauthnCredential(c, db, rateLimitStore),
   );
 
