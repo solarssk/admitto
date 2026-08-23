@@ -186,7 +186,7 @@ async function resolveVerifiedStepUpProof(
   userId: string,
   proof: StepUpProof | undefined,
 ): Promise<VerifiedStepUpProof | undefined> {
-  if (!proof || proof.type !== "webauthn") return proof;
+  if (proof?.type !== "webauthn") return proof;
   const verified = await finishWebauthnAssertion(db, userId, proof.response, proof.challenge, proof.rp);
   return { type: "webauthn", verified: verified !== null };
 }
@@ -329,8 +329,9 @@ async function auditStepUpFailure(
   userAgent: string | undefined,
   reason: StepUpFailureReason | UnlinkDenialCode,
 ): Promise<void> {
+  const failureReasonForNonTotp: MfaFailureReason | null = reason === "invalid_webauthn" ? "invalid_webauthn" : null;
   const failureReason: MfaFailureReason | null =
-    reason === "invalid_totp" ? "invalid_code" : reason === "invalid_webauthn" ? "invalid_webauthn" : null;
+    reason === "invalid_totp" ? "invalid_code" : failureReasonForNonTotp;
   if (!failureReason) return;
   await logMfaFailure(
     db,

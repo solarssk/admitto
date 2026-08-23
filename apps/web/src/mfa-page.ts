@@ -116,8 +116,9 @@ export function renderMfaVerifyForm(
         message: `Could not verify with your passkey or security key. Try again, ${fallbackHint}.`,
       })}</div>`
     : "";
+  const webauthnAutoStartAttr = autoStartWebauthn ? ' data-auto-start="true"' : "";
   const webauthnButton = hasWebauthnCredentials
-    ? `<button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden${autoStartWebauthn ? ' data-auto-start="true"' : ""}>Use a passkey or security key</button>`
+    ? `<button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden${webauthnAutoStartAttr}>Use a passkey or security key</button>`
     : "";
   // Auto-start verifies before the user has any real chance to check "Remember this device" -
   // offered as a one-tap follow-up instead, once verification already succeeded (script-shown
@@ -129,15 +130,15 @@ export function renderMfaVerifyForm(
       <button class="auth-btn-secondary" type="button" id="mfa-remember-no">Not now</button>
     </div>`
     : "";
+  const webauthnOnlySubtitle = autoStartWebauthn
+    ? "Continue with your passkey or security key, or enter a backup recovery code below."
+    : "Enter one of your backup recovery codes.";
+  const subtitleText = hasTotp
+    ? "Enter the 6-digit code from your authenticator app."
+    : webauthnOnlySubtitle;
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Two-factor authentication</h2>
-    <p class="subtitle">${
-      hasTotp
-        ? "Enter the 6-digit code from your authenticator app."
-        : autoStartWebauthn
-          ? "Continue with your passkey or security key, or enter a backup recovery code below."
-          : "Enter one of your backup recovery codes."
-    }</p>
+    <p class="subtitle">${subtitleText}</p>
     ${err}
     ${webauthnErrorBox}
     <form method="post" action="/mfa/verify">

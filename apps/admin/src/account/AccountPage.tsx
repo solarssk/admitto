@@ -920,9 +920,10 @@ export function AccountPage() {
       const { devices_revoked } = await forgetAllTrustedDevices();
       setForgetDevicesOpen(false);
       const plural = devices_revoked === 1 ? "" : "s";
+      const pronoun = devices_revoked === 1 ? "it" : "them";
       addToast(
         devices_revoked > 0
-          ? `${devices_revoked} device${plural} forgotten. You'll be asked to verify again next time you sign in on ${devices_revoked === 1 ? "it" : "them"}.`
+          ? `${devices_revoked} device${plural} forgotten. You'll be asked to verify again next time you sign in on ${pronoun}.`
           : "No devices were remembered.",
         "success",
       );
