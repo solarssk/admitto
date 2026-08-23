@@ -121,6 +121,24 @@ export const stepUpProofFields = {
   webauthn: z.object({ response: webauthnAuthenticationResponseSchema }).optional(),
 };
 
+const stepUpProofOnlyBodySchema = z.object(stepUpProofFields).strict();
+
+/** Parses a request body that carries only the shared step-up proof fields (no action-specific
+ * fields of its own) — shared by `handleDeleteAccountWebauthnCredential`, `handleDeleteAccountTotp`,
+ * and `handlePostAccountRegenerateBackupCodes`. An empty/unparsable body defaults to `{}` rather
+ * than a 400, since most calls won't need step-up at all. */
+async function parseStepUpProofOnlyBody(c: Context): Promise<z.infer<typeof stepUpProofOnlyBodySchema> | Response> {
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = stepUpProofOnlyBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  return parsed.data;
+}
+
 /** A step-up proof, resolved from a request body by `resolveStepUpProof`. The WebAuthn variant
  * carries its own `challenge`/`rp` (server-resolved, never client-supplied) so
  * `checkStepUpInTransaction` can verify it without any extra context. */
@@ -1316,23 +1334,16 @@ export async function handleDeleteAccountWebauthnCredential(
   if (!credentialId) return c.json({ error: "credential id required" }, 400);
 
   // A step-up code, unlike `handleDeleteAccountSession`'s always-bodiless DELETE, so a JSON body
-  // is optional here (most calls won't need step-up at all) rather than required — an empty body
-  // parses to `{}`, never a 400, and a code is never accepted via query string (would leak into
-  // access/proxy logs and browser history).
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const parsed = z.object(stepUpProofFields).strict().safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  // is optional here (most calls won't need step-up at all) rather than required, and a code is
+  // never accepted via query string (would leak into access/proxy logs and browser history).
+  const body = await parseStepUpProofOnlyBody(c);
+  if (body instanceof Response) return body;
 
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "account-webauthn-remove" },
+    { userId, currentSessionId, stepUpBody: body, injectedBaseUrl, rateLimitAction: "account-webauthn-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeWebauthnCredential(tx, userId, credentialId);
       if (removed) {
@@ -1371,22 +1382,14 @@ export async function handleDeleteAccountTotp(
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
 
-  // Same optional-body convention as handleDeleteAccountWebauthnCredential: an empty/unparsable
-  // body defaults to `{}` rather than 400, since most calls won't need step-up at all.
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const parsed = z.object(stepUpProofFields).strict().safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  const body = await parseStepUpProofOnlyBody(c);
+  if (body instanceof Response) return body;
 
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "account-totp-remove" },
+    { userId, currentSessionId, stepUpBody: body, injectedBaseUrl, rateLimitAction: "account-totp-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeTotpMethod(tx, userId);
       if (removed) {
@@ -1435,16 +1438,8 @@ export async function handlePostAccountRegenerateBackupCodes(
   const userId = auth.userId;
   const currentSessionId = auth.sessionId;
 
-  // Same optional-body convention as handleDeleteAccountWebauthnCredential: this action has no
-  // other fields, only an optional step-up code.
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const parsed = z.object(stepUpProofFields).strict().safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  const body = await parseStepUpProofOnlyBody(c);
+  if (body instanceof Response) return body;
 
   const gated = await withStepUpGate(
     c,
@@ -1453,7 +1448,7 @@ export async function handlePostAccountRegenerateBackupCodes(
     {
       userId,
       currentSessionId,
-      stepUpBody: parsed.data,
+      stepUpBody: body,
       injectedBaseUrl,
       rateLimitAction: "account-backup-codes-regenerate",
     },
