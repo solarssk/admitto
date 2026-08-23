@@ -65,7 +65,7 @@ export function DeviceLabelEditModal({ open, session, onClose, onSaved }: Readon
   return (
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
-      <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 420px)" }}>
+      <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--w420">
       <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-pencil" aria-hidden="true" /> Edit device label

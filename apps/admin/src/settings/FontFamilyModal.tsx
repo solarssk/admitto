@@ -443,7 +443,7 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   return (
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
-      <div ref={panelRef} className="add-attendee-modal__panel" style={{ width: "min(94vw, 640px)" }}>
+      <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--w640">
       <div ref={scrollRef} className="add-attendee-modal__scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-typography" aria-hidden="true" />
