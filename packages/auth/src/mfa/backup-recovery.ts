@@ -80,6 +80,33 @@ export async function regenerateBackupRecoveryCodes(
   });
 }
 
+export interface BackupRecoveryCodesStatus {
+  /** Rows in the current batch (normally `BACKUP_RECOVERY_CODE_COUNT`, excludes emergency). */
+  total: number;
+  /** Rows in the current batch not yet consumed. */
+  remaining: number;
+}
+
+/** Read-only count of the user's current backup recovery code batch — never exposes the
+ * plaintext codes themselves (only an argon2id hash is ever stored, same as passwords). */
+export async function getBackupRecoveryCodesStatus(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<BackupRecoveryCodesStatus> {
+  const rows = await prisma.userMfaMethod.findMany({
+    where: {
+      user_id: userId,
+      type: "recovery",
+      OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
+    },
+    select: { last_used_at: true },
+  });
+  return {
+    total: rows.length,
+    remaining: rows.filter((r) => r.last_used_at === null).length,
+  };
+}
+
 /** Verify and consume a backup recovery code (not emergency). */
 export async function verifyBackupRecoveryCode(
   prisma: PrismaClient | Prisma.TransactionClient,

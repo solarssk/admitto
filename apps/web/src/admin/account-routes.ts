@@ -24,6 +24,9 @@ import {
   finishWebauthnRegistration,
   listWebauthnCredentials,
   removeWebauthnCredential,
+  removeTotpMethod,
+  getBackupRecoveryCodesStatus,
+  regenerateBackupRecoveryCodes,
 } from "@admitto/auth";
 import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import {
@@ -1165,6 +1168,24 @@ export async function handleGetAccountWebauthnCredentials(
   });
 }
 
+/** Parses the optional `{code}` step-up body shared by `handleDeleteAccountWebauthnCredential`,
+ * `handleDeleteAccountTotp`, and `handlePostAccountRegenerateBackupCodes`. Unlike
+ * `handleDeleteAccountSession`'s always-bodiless DELETE, a JSON body is optional here (most calls
+ * won't need step-up at all) rather than required, so an empty/unparsable body parses to `{}`
+ * rather than a 400; a code is never accepted via query string (would leak into access/proxy logs
+ * and browser history). Returns the parsed `code` field, or the 400 Response to return as-is. */
+async function parseOptionalStepUpCodeBody(c: Context): Promise<{ code?: string } | Response> {
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    body = {};
+  }
+  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  return parsed.data;
+}
+
 /**
  * DELETE /api/account/mfa/webauthn/:credentialId — remove one passkey/security key.
  * Requires a TOTP/recovery-code step-up (mirroring `handlePostMfaReset`) whenever the user's
@@ -1182,24 +1203,14 @@ export async function handleDeleteAccountWebauthnCredential(
   const credentialId = c.req.param("credentialId") ?? "";
   if (!credentialId) return c.json({ error: "credential id required" }, 400);
 
-  // A step-up code, unlike `handleDeleteAccountSession`'s always-bodiless DELETE, so a JSON body
-  // is optional here (most calls won't need step-up at all) rather than required — an empty body
-  // parses to `{}`, never a 400, and a code is never accepted via query string (would leak into
-  // access/proxy logs and browser history).
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    body = {};
-  }
-  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+  const body = await parseOptionalStepUpCodeBody(c);
+  if (body instanceof Response) return body;
 
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-webauthn-remove" },
+    { userId, currentSessionId, rawCode: body.code, rateLimitAction: "account-webauthn-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeWebauthnCredential(tx, userId, credentialId);
       if (removed) {
@@ -1220,4 +1231,107 @@ export async function handleDeleteAccountWebauthnCredential(
   if (!gated.ok) return gated.response;
   if (!gated.value) return c.json({ error: "not found" }, 404);
   return c.json({ ok: true });
+}
+
+/**
+ * DELETE /api/account/mfa/totp: remove TOTP only, leaving WebAuthn credentials and backup
+ * recovery codes untouched. Requires the same TOTP/recovery-code step-up as removing a WebAuthn
+ * credential (`handleDeleteAccountWebauthnCredential`). Password alone must not be able to strip
+ * a confirmed method from an MFA-required account.
+ */
+export async function handleDeleteAccountTotp(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
+
+  const body = await parseOptionalStepUpCodeBody(c);
+  if (body instanceof Response) return body;
+
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    { userId, currentSessionId, rawCode: body.code, rateLimitAction: "account-totp-remove" },
+    async (tx, orgId, audit) => {
+      const removed = await removeTotpMethod(tx, userId);
+      if (removed) {
+        await writeAdminAuditLog(tx, {
+          organizationId: orgId,
+          actorUserId: audit.operator ?? userId,
+          sessionId: audit.sessionId,
+          ip: audit.ip,
+          timezone: audit.timezone,
+          actionType: "account_mfa_totp_removed",
+        });
+      }
+      return removed;
+    },
+  );
+
+  if (!gated.ok) return gated.response;
+  if (!gated.value) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
+}
+
+/** GET /api/account/mfa/backup-codes: how many codes remain in the current batch. Read-only,
+ * same tier as `handleGetAccountWebauthnCredentials` (no step-up). */
+export async function handleGetAccountBackupCodesStatus(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const userId = c.get("auth").userId;
+  const status = await getBackupRecoveryCodesStatus(db, userId);
+  return c.json({ total: status.total, remaining: status.remaining });
+}
+
+/**
+ * POST /api/account/mfa/backup-codes/regenerate: invalidate the current batch and mint a fresh
+ * one, returned once as plaintext. Requires the same TOTP/recovery-code step-up as the other
+ * sensitive MFA actions in this file: it invalidates the user's existing saved codes, a real
+ * consequence.
+ */
+export async function handlePostAccountRegenerateBackupCodes(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const currentSessionId = auth.sessionId;
+
+  const body = await parseOptionalStepUpCodeBody(c);
+  if (body instanceof Response) return body;
+
+  const gated = await withStepUpGate(
+    c,
+    db,
+    rateLimitStore,
+    {
+      userId,
+      currentSessionId,
+      rawCode: body.code,
+      rateLimitAction: "account-backup-codes-regenerate",
+    },
+    async (tx, orgId, audit) => {
+      const { codes } = await regenerateBackupRecoveryCodes(tx, userId);
+      // Always audited, unlike credential removal: this call always has an effect (a fresh
+      // batch replaces the old one) even when the old batch was already fully consumed.
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId: audit.operator ?? userId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "account_mfa_backup_codes_regenerated",
+      });
+      return codes;
+    },
+  );
+
+  if (!gated.ok) return gated.response;
+  return c.json({ ok: true, codes: gated.value });
 }
