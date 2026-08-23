@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Requirements' item and custom-field editors (Badge, Gift bag, Add item) now scroll their header and footer together with the rest of the form, matching every other popup in the app, instead of pinning them in place - the scrollbar also now sits flush against the popup's edge instead of inset behind a permanently reserved gap. This reverses the permanent scrollbar-gutter reservation added in 0.5.4 for these two modals specifically: a short form (e.g. a text-type custom field) is evenly centered again instead of always leaving dead space on the right, at the cost of a small width shift on the rare form tall enough to actually need the scrollbar - the same trade-off every other popup in the app already makes.
 - Delivery details and Sent message preview (Communication log) now scroll their header and footer together with the rest of the content, matching every other popup in the app, instead of pinning them in place.
 - The staff user edit modal's Sign-in security row no longer forces a permanent horizontal scrollbar.
+- All remaining popups (Add attendee, Create event, Invite user, Create/Edit template, CSP trusted origins, Fix Maps link, Font family, device label edit, and the Attendees page bulk dialogs) now use the app's slim on-theme scrollbar instead of the browser's default one, matching every other popup.
 
 ## [0.5.5] - 2026-08-23
 
