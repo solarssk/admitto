@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
 import { updateSessionDeviceLabel } from "../../api/client.js";
 import { operatorApiErrorMessage } from "../../api/operator-api-error.js";
 import type { SessionListDto } from "../../api/types.js";
@@ -71,9 +71,9 @@ export function DeviceLabelEditModal({ open, session, onClose, onSaved }: Readon
           <i className="ti ti-pencil" aria-hidden="true" /> Edit device label
         </h2>
         {error && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {error}
-          </p>
+          </Notice>
         )}
         <p className="add-attendee-modal__hint">
           Correct the device label for {session.userEmail}
