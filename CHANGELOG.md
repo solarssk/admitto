@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Delivery details and Sent message preview (Communication log) now scroll their header and footer together with the rest of the content, matching every other popup in the app, instead of pinning them in place.
 - The staff user edit modal's Sign-in security row no longer forces a permanent horizontal scrollbar.
 - All remaining popups (Add attendee, Create event, Invite user, Create/Edit template, CSP trusted origins, Fix Maps link, Font family, device label edit, and the Attendees page bulk dialogs) now use the app's slim on-theme scrollbar instead of the browser's default one, matching every other popup.
+- The header "Send tickets" dialog now puts Cancel before "Send tickets", matching every other popup's button order. The device label edit modal's save error now renders as a Notice banner instead of plain text.
 
 ## [0.5.5] - 2026-08-23
 

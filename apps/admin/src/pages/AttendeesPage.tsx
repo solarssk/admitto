@@ -440,11 +440,11 @@ function SendTicketsDialog({
           </label>
         </div>
         <div className="add-attendee-modal__actions">
-          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
-            {busy ? "Sending…" : "Send tickets"}
-          </Button>
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
+          </Button>
+          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
+            {busy ? "Sending…" : "Send tickets"}
           </Button>
         </div>
       </div>
