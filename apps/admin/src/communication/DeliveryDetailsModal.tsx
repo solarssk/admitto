@@ -192,175 +192,177 @@ export function DeliveryDetailsModal({
     <dialog open className="delivery-modal" aria-modal="true" aria-labelledby="delivery-details-modal-title">
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="delivery-modal__panel delivery-modal__panel--wide">
-        <div className="delivery-modal__header">
-          <div>
-            <h2 id="delivery-details-modal-title" className="delivery-modal__title">
-              Delivery details
-            </h2>
-            <p className="delivery-modal__subtitle">
-              {row.attendee_name} · {row.recipient_email ?? "no email on file"}
-            </p>
-          </div>
-          <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
-        </div>
-        <div className="delivery-modal__body">
-          {loading && (
-            // Roughly mirrors the loaded Overview/Raw fields sections below, so the
-            // swap from loading to loaded doesn't visibly jump in height.
-            <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
-              <span className="sr-only">Loading delivery details…</span>
-              <div className="delivery-modal-skeleton-section">
-                <Skeleton variant="text" width="30%" />
-                <Skeleton variant="rect" height={220} />
-              </div>
-              <div className="delivery-modal-skeleton-section">
-                <Skeleton variant="text" width="30%" />
-                <Skeleton variant="rect" height={140} />
-              </div>
+        <div className="delivery-modal__scroll">
+          <div className="delivery-modal__header">
+            <div>
+              <h2 id="delivery-details-modal-title" className="delivery-modal__title">
+                Delivery details
+              </h2>
+              <p className="delivery-modal__subtitle">
+                {row.attendee_name} · {row.recipient_email ?? "no email on file"}
+              </p>
             </div>
-          )}
-          {!loading && error && <div className="delivery-modal__error">{error}</div>}
-          {!loading && !error && detail && (
-            <>
-              <div>
-                <h3 className="delivery-modal__section-title">Overview</h3>
-                <dl className="delivery-modal-kv">
-                  <div>
-                    <dt>Template</dt>
-                    <dd>{templateLabel(detail)}</dd>
-                  </div>
-                  <div>
-                    <dt>Purpose</dt>
-                    <dd>{purposeLabel(detail.purpose)}</dd>
-                  </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd>
-                      <StatusBadge status={detail.status} />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Attempts</dt>
-                    <dd>{detail.attempts}</dd>
-                  </div>
-                  <div>
-                    <dt>Provider</dt>
-                    <dd>{detail.provider}</dd>
-                  </div>
-                  <div>
-                    <dt>Provider message ID</dt>
-                    <dd className="mono">{detail.provider_message_id ?? "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>Queued at</dt>
-                    <dd>{deliveryDetailTime(detail.queued_at, detail.client_timezone, eventTimezone)}</dd>
-                  </div>
-                  <div>
-                    <dt>Accepted at</dt>
-                    <dd>{deliveryDetailTime(detail.accepted_at, detail.client_timezone, eventTimezone)}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <HintLabel hint={SENT_AT_HINT}>Sent at</HintLabel>
-                    </dt>
-                    <dd>{deliveryDetailTime(detail.sent_at, detail.client_timezone, eventTimezone)}</dd>
-                  </div>
-                  <div>
-                    <dt>Failed at</dt>
-                    <dd>{deliveryDetailTime(detail.failed_at, detail.client_timezone, eventTimezone)}</dd>
-                  </div>
-                  <div>
-                    <dt>Sent by</dt>
-                    <dd>{detail.actor_display ?? "System"}</dd>
-                  </div>
-                  <div>
-                    <dt>Retryable</dt>
-                    <dd>{retryableLabel(detail.retryable)}</dd>
-                  </div>
-                </dl>
-                {errorNotice && (
-                  <Notice variant="error" role="alert" className="delivery-modal-status-notice">
-                    {errorNotice}
-                  </Notice>
-                )}
-                {successNotice && (
-                  <Notice variant="success" role="status" className="delivery-modal-status-notice">
-                    {successNotice}
-                  </Notice>
-                )}
+            <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
+          </div>
+          <div className="delivery-modal__body">
+            {loading && (
+              // Roughly mirrors the loaded Overview/Raw fields sections below, so the
+              // swap from loading to loaded doesn't visibly jump in height.
+              <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
+                <span className="sr-only">Loading delivery details…</span>
+                <div className="delivery-modal-skeleton-section">
+                  <Skeleton variant="text" width="30%" />
+                  <Skeleton variant="rect" height={220} />
+                </div>
+                <div className="delivery-modal-skeleton-section">
+                  <Skeleton variant="text" width="30%" />
+                  <Skeleton variant="rect" height={140} />
+                </div>
               </div>
+            )}
+            {!loading && error && <div className="delivery-modal__error">{error}</div>}
+            {!loading && !error && detail && (
+              <>
+                <div>
+                  <h3 className="delivery-modal__section-title">Overview</h3>
+                  <dl className="delivery-modal-kv">
+                    <div>
+                      <dt>Template</dt>
+                      <dd>{templateLabel(detail)}</dd>
+                    </div>
+                    <div>
+                      <dt>Purpose</dt>
+                      <dd>{purposeLabel(detail.purpose)}</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>
+                        <StatusBadge status={detail.status} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Attempts</dt>
+                      <dd>{detail.attempts}</dd>
+                    </div>
+                    <div>
+                      <dt>Provider</dt>
+                      <dd>{detail.provider}</dd>
+                    </div>
+                    <div>
+                      <dt>Provider message ID</dt>
+                      <dd className="mono">{detail.provider_message_id ?? "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>Queued at</dt>
+                      <dd>{deliveryDetailTime(detail.queued_at, detail.client_timezone, eventTimezone)}</dd>
+                    </div>
+                    <div>
+                      <dt>Accepted at</dt>
+                      <dd>{deliveryDetailTime(detail.accepted_at, detail.client_timezone, eventTimezone)}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <HintLabel hint={SENT_AT_HINT}>Sent at</HintLabel>
+                      </dt>
+                      <dd>{deliveryDetailTime(detail.sent_at, detail.client_timezone, eventTimezone)}</dd>
+                    </div>
+                    <div>
+                      <dt>Failed at</dt>
+                      <dd>{deliveryDetailTime(detail.failed_at, detail.client_timezone, eventTimezone)}</dd>
+                    </div>
+                    <div>
+                      <dt>Sent by</dt>
+                      <dd>{detail.actor_display ?? "System"}</dd>
+                    </div>
+                    <div>
+                      <dt>Retryable</dt>
+                      <dd>{retryableLabel(detail.retryable)}</dd>
+                    </div>
+                  </dl>
+                  {errorNotice && (
+                    <Notice variant="error" role="alert" className="delivery-modal-status-notice">
+                      {errorNotice}
+                    </Notice>
+                  )}
+                  {successNotice && (
+                    <Notice variant="success" role="status" className="delivery-modal-status-notice">
+                      {successNotice}
+                    </Notice>
+                  )}
+                </div>
 
-              <div>
-                <h3 className="delivery-modal__section-title">Raw fields</h3>
-                <dl className="delivery-modal-kv">
-                  <div>
-                    <dt>Delivery ID</dt>
-                    <dd className="mono">{detail.id}</dd>
-                  </div>
-                  <div>
-                    <dt>Attendee ID</dt>
-                    <dd className="mono">{detail.attendee_id}</dd>
-                  </div>
-                  <div>
-                    <dt>Error code</dt>
-                    <dd className="mono">{detail.error_code ?? "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <HintLabel hint={BATCH_ID_HINT}>Batch ID</HintLabel>
-                    </dt>
-                    <dd className="mono">{detail.batch_id ?? "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <HintLabel hint={SESSION_ID_HINT}>Session ID</HintLabel>
-                    </dt>
-                    <dd className="mono">{detail.session_id ?? "-"}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <HintLabel hint={CLIENT_TIMEZONE_HINT}>Client timezone</HintLabel>
-                    </dt>
-                    <dd>{detail.client_timezone ?? "-"}</dd>
-                  </div>
-                </dl>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="delivery-modal__footer">
-          {detail && (
+                <div>
+                  <h3 className="delivery-modal__section-title">Raw fields</h3>
+                  <dl className="delivery-modal-kv">
+                    <div>
+                      <dt>Delivery ID</dt>
+                      <dd className="mono">{detail.id}</dd>
+                    </div>
+                    <div>
+                      <dt>Attendee ID</dt>
+                      <dd className="mono">{detail.attendee_id}</dd>
+                    </div>
+                    <div>
+                      <dt>Error code</dt>
+                      <dd className="mono">{detail.error_code ?? "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <HintLabel hint={BATCH_ID_HINT}>Batch ID</HintLabel>
+                      </dt>
+                      <dd className="mono">{detail.batch_id ?? "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <HintLabel hint={SESSION_ID_HINT}>Session ID</HintLabel>
+                      </dt>
+                      <dd className="mono">{detail.session_id ?? "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>
+                        <HintLabel hint={CLIENT_TIMEZONE_HINT}>Client timezone</HintLabel>
+                      </dt>
+                      <dd>{detail.client_timezone ?? "-"}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="delivery-modal__footer">
+            {detail && (
+              <Button
+                type="button"
+                variant="secondary"
+                icon={<i className="ti ti-download" aria-hidden="true" />}
+                onClick={() =>
+                  downloadTextFile(`delivery-${detail.id}.txt`, buildExportText(detail, eventTimezone))
+                }
+              >
+                Export as .txt
+              </Button>
+            )}
             <Button
               type="button"
               variant="secondary"
-              icon={<i className="ti ti-download" aria-hidden="true" />}
-              onClick={() =>
-                downloadTextFile(`delivery-${detail.id}.txt`, buildExportText(detail, eventTimezone))
-              }
+              icon={<i className="ti ti-mail" aria-hidden="true" />}
+              onClick={() => onViewSentMessage(row)}
             >
-              Export as .txt
+              View sent message
             </Button>
-          )}
-          <Button
-            type="button"
-            variant="secondary"
-            icon={<i className="ti ti-mail" aria-hidden="true" />}
-            onClick={() => onViewSentMessage(row)}
-          >
-            View sent message
-          </Button>
-          {showOpenAttendee && (
-            <Link
-              className="at-btn at-btn--secondary"
-              to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
-              onClick={onClose}
-            >
-              <span className="at-btn__icon" aria-hidden="true">
-                <i className="ti ti-user" aria-hidden="true" />
-              </span>
-              <span>Open attendee</span>
-            </Link>
-          )}
+            {showOpenAttendee && (
+              <Link
+                className="at-btn at-btn--secondary"
+                to={`/admin/events/${eventId}/attendees/${row.attendee_id}`}
+                onClick={onClose}
+              >
+                <span className="at-btn__icon" aria-hidden="true">
+                  <i className="ti ti-user" aria-hidden="true" />
+                </span>
+                <span>Open attendee</span>
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     </dialog>

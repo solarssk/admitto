@@ -46,45 +46,47 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
     <dialog open className="delivery-modal" aria-modal="true" aria-labelledby="sent-message-modal-title">
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="delivery-modal__panel delivery-modal__panel--wide">
-        <div className="delivery-modal__header">
-          <div>
-            <h2 id="sent-message-modal-title" className="delivery-modal__title">
-              Sent message preview
-            </h2>
-            <p className="delivery-modal__subtitle">
-              {row.attendee_name} · {row.recipient_email ?? "no email on file"}
-            </p>
+        <div className="delivery-modal__scroll">
+          <div className="delivery-modal__header">
+            <div>
+              <h2 id="sent-message-modal-title" className="delivery-modal__title">
+                Sent message preview
+              </h2>
+              <p className="delivery-modal__subtitle">
+                {row.attendee_name} · {row.recipient_email ?? "no email on file"}
+              </p>
+            </div>
+            <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
           </div>
-          <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" aria-hidden="true" />} />
-        </div>
-        <div className="delivery-modal__body">
-          {loading && (
-            <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
-              <span className="sr-only">Loading message…</span>
-              <Skeleton variant="text" lines={2} width="50%" />
-              <Skeleton variant="rect" height={320} className="delivery-modal-skeleton-frame" />
-            </div>
-          )}
-          {!loading && error && <div className="delivery-modal__error">{error}</div>}
-          {!loading && !error && !rendered?.html && (
-            <div className="delivery-modal__loading">
-              This message&apos;s stored content is no longer available.
-            </div>
-          )}
-          {!loading && !error && rendered?.html && (
-            <>
-              <div className="delivery-modal-preview-subject">
-                <strong>Subject</strong>
-                <span>{rendered.subject}</span>
+          <div className="delivery-modal__body">
+            {loading && (
+              <div className="delivery-modal-skeleton-group" aria-live="polite" aria-busy="true">
+                <span className="sr-only">Loading message…</span>
+                <Skeleton variant="text" lines={2} width="50%" />
+                <Skeleton variant="rect" height={320} className="delivery-modal-skeleton-frame" />
               </div>
-              <iframe
-                className="delivery-modal-preview-frame"
-                title="Sent message preview"
-                sandbox=""
-                srcDoc={makeEmailPreviewInert(rendered.html)}
-              />
-            </>
-          )}
+            )}
+            {!loading && error && <div className="delivery-modal__error">{error}</div>}
+            {!loading && !error && !rendered?.html && (
+              <div className="delivery-modal__loading">
+                This message&apos;s stored content is no longer available.
+              </div>
+            )}
+            {!loading && !error && rendered?.html && (
+              <>
+                <div className="delivery-modal-preview-subject">
+                  <strong>Subject</strong>
+                  <span>{rendered.subject}</span>
+                </div>
+                <iframe
+                  className="delivery-modal-preview-frame"
+                  title="Sent message preview"
+                  sandbox=""
+                  srcDoc={makeEmailPreviewInert(rendered.html)}
+                />
+              </>
+            )}
+          </div>
         </div>
       </div>
     </dialog>
