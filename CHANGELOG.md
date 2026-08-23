@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The two-factor sign-in step's "Could not verify with your passkey or security key" message no longer sits flush against Continue with no gap above it.
 - My Account's "Manage backup codes" dialog no longer permanently disables Regenerate the moment a fresh batch is shown. It now unlocks again once "I've saved my backup codes" is checked, so a second regeneration can be started without closing and reopening the dialog, and correctly asks for its own fresh step-up code instead of reusing the first one.
 - First-time two-factor setup's authenticator app QR step and passkey/security key step now each offer a "Choose a different method" link back to the method choice, for an account that picked the wrong one by mistake. Previously the only way back was abandoning setup and starting over.
+- First-time two-factor setup's "Begin setup" button is centered and no longer underlined on an instance offering passkeys and security keys as a choice.
+- The three method choices in first-time two-factor setup now show an icon for each method, and "Security key" is labelled "Security key (YubiKey)", matching how My account already names a registered one.
+- On the two-factor sign-in step, the "Could not verify with your passkey or security key" message no longer appears between Continue and the "Use a passkey or security key" button. It now shows near the top of the page, in the same place as every other error on this step.
+- Signing in with a passkey or security key when it is your only confirmed second factor (the ceremony starts automatically, before there is any real chance to check "Remember this device" first) now offers "Remember this device?" as a one-tap follow-up right after verification succeeds, instead of silently never remembering the device on that path.
 
 ### Security
 

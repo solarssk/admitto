@@ -103,7 +103,7 @@ import {
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinStreamConcurrencyLimit } from "./checkin-stream-limit.js";
-import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handlePostMfaWebauthnEnrollBegin, handlePostMfaWebauthnEnrollFinish, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
+import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handlePostMfaRememberDevice, handlePostMfaWebauthnEnrollBegin, handlePostMfaWebauthnEnrollFinish, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
   handleGetMfaEnrollBackupCodes,
@@ -1852,6 +1852,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/auth/mfa/webauthn/verify", jsonPostCsrf, webauthnBodyLimit, requirePartialSession, (c) =>
     handlePostMfaWebauthnVerify(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.post("/api/auth/mfa/remember-device", jsonPostCsrf, requireSession, (c) =>
+    handlePostMfaRememberDevice(c, db),
   );
   app.post(
     "/api/auth/mfa/webauthn/register/begin",

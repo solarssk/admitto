@@ -34,6 +34,7 @@ import {
   beginWebauthnAssertion,
   beginWebauthnRegistration,
   finishWebauthnRegistration,
+  createTrustedDevice,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
@@ -565,6 +566,26 @@ export async function handlePostMfaWebauthnVerify(
     parsed.data.next,
   );
   return c.json({ ok: true, next }, 200);
+}
+
+/** POST /api/auth/mfa/remember-device, marks the current device as trusted for future logins.
+ * Full session only - remembering only ever follows an already-completed MFA step, it never
+ * gates one. Exists for the auto-starting WebAuthn ceremony on `/mfa/verify` (mfaWebauthnScript):
+ * that ceremony fires immediately on page load, before the user has any real chance to check
+ * "Remember this device" ahead of time, so the page instead offers it as a one-tap follow-up once
+ * verification already succeeded. */
+export async function handlePostMfaRememberDevice(c: Context, db: PrismaClient): Promise<Response> {
+  const auth = c.get("auth");
+  const days = await getTrustedDeviceDays(db);
+  if (days > 0) {
+    const { rawToken } = await createTrustedDevice(db, {
+      userId: auth.userId,
+      ip: resolveClientIp(c),
+      userAgent: c.req.header("user-agent"),
+    });
+    await setTrustedDeviceCookie(c, db, rawToken);
+  }
+  return c.json({ ok: true });
 }
 
 const mfaWebauthnEnrollBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();

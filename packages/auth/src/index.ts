@@ -259,7 +259,12 @@ export {
   type BeginWebauthnAssertionResult,
   type FinishWebauthnAssertionResult,
 } from "./mfa/webauthn.js";
-export { validateTrustedDevice, revokeTrustedDeviceByToken, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
+export {
+  createTrustedDevice,
+  validateTrustedDevice,
+  revokeTrustedDeviceByToken,
+  revokeAllTrustedDevicesForUser,
+} from "./mfa/trusted-device.js";
 export { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "./retention.js";
 
 export {

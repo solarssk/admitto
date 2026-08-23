@@ -11,6 +11,7 @@ import {
   finishWebauthnRegistration,
   markBackupCodesAcknowledged,
   SETTING_WEBAUTHN_ENABLED,
+  SETTING_TRUSTED_DEVICE_DAYS,
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret, generateTotpCode } from "@admitto/auth/testing";
 import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
@@ -1689,6 +1690,104 @@ describe("POST /api/auth/mfa/webauthn — login-time WebAuthn", () => {
       expect(((await verifyRes.json()) as { code: string }).code).toBe("webauthn_disabled");
     } finally {
       await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+    }
+  });
+});
+
+describe("POST /api/auth/mfa/remember-device", () => {
+  async function loginToFullSession(): Promise<Response> {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const credential = await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    const beginRes = await app.request("/api/auth/mfa/webauthn/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    const { options } = (await beginRes.json()) as { options: { challenge: string } };
+    const response = credential.authenticator.authenticate({
+      challenge: options.challenge,
+      rpID: WEBAUTHN_RP.rpID,
+      origin: WEBAUTHN_RP.origin,
+    });
+    await app.request("/api/auth/mfa/webauthn/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ response, remember_device: false }),
+    });
+    return loginRes;
+  }
+
+  it("sets the trusted-device cookie for an already fully authenticated session", async () => {
+    const loginRes = await loginToFullSession();
+
+    const res = await app.request("/api/auth/mfa/remember-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+    const trustedCookie = res.headers.getSetCookie?.().find((c) =>
+      c.startsWith(`${TRUSTED_DEVICE_COOKIE_NAME}=`),
+    );
+    expect(trustedCookie).toBeTruthy();
+    expect(trustedCookie).toMatch(/Max-Age=\d+/i);
+  });
+
+  it("returns 401 without a full session (no cookie at all)", async () => {
+    const res = await app.request("/api/auth/mfa/remember-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: "{}",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 for a partial (MFA_PENDING) session - remembering only follows a completed login", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(admin!.id);
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const res = await app.request("/api/auth/mfa/remember-device", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{}",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("does not set a cookie when the instance's trusted-device days is 0", async () => {
+    const loginRes = await loginToFullSession();
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_TRUSTED_DEVICE_DAYS },
+      create: { key: SETTING_TRUSTED_DEVICE_DAYS, value_json: "0" },
+      update: { value_json: "0" },
+    });
+    try {
+      const res = await app.request("/api/auth/mfa/remember-device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+        body: "{}",
+      });
+      expect(res.status).toBe(200);
+      const trustedCookie = res.headers.getSetCookie?.().find((c) =>
+        c.startsWith(`${TRUSTED_DEVICE_COOKIE_NAME}=`),
+      );
+      expect(trustedCookie).toBeUndefined();
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_TRUSTED_DEVICE_DAYS } });
     }
   });
 });

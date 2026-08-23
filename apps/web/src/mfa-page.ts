@@ -102,13 +102,28 @@ export function renderMfaVerifyForm(
   // confirmed TOTP method, the code field stays the primary, unprompted path (mfaWebauthnScript
   // still wires up the button either way, for a manual retry or a first attempt).
   const autoStartWebauthn = hasWebauthnCredentials && !hasTotp;
-  const webauthnSection = hasWebauthnCredentials
+  // Sits right after the subtitle (same slot ${err} uses), not sandwiched between Continue and
+  // the passkey button below - it reads as a page-level error either way, not something owned by
+  // one specific button.
+  const webauthnErrorBox = hasWebauthnCredentials
     ? `<div class="auth-webauthn-error" id="mfa-webauthn-error" hidden>${renderNoticeHtml({
         variant: "error",
         role: "alert",
         message: `Could not verify with your passkey or security key. Try again, ${fallbackHint}.`,
-      })}</div>
-      <button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden${autoStartWebauthn ? ' data-auto-start="true"' : ""}>Use a passkey or security key</button>`
+      })}</div>`
+    : "";
+  const webauthnButton = hasWebauthnCredentials
+    ? `<button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden${autoStartWebauthn ? ' data-auto-start="true"' : ""}>Use a passkey or security key</button>`
+    : "";
+  // Auto-start verifies before the user has any real chance to check "Remember this device" -
+  // offered as a one-tap follow-up instead, once verification already succeeded (script-shown
+  // only for that path; unused - and harmless - otherwise).
+  const rememberPrompt = hasWebauthnCredentials
+    ? `<div class="auth-remember-prompt" id="mfa-remember-prompt" hidden>
+      <p class="subtitle">Verified. Remember this device so you don't need to verify again next time?</p>
+      <button class="auth-btn-primary" type="button" id="mfa-remember-yes">Remember this device</button>
+      <button class="auth-btn-secondary" type="button" id="mfa-remember-no">Not now</button>
+    </div>`
     : "";
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Two-factor authentication</h2>
@@ -120,6 +135,7 @@ export function renderMfaVerifyForm(
           : "Enter one of your backup recovery codes."
     }</p>
     ${err}
+    ${webauthnErrorBox}
     <form method="post" action="/mfa/verify">
       ${nextField}
       <input type="hidden" name="timezone" value="" autocomplete="off">
@@ -133,8 +149,9 @@ export function renderMfaVerifyForm(
         <input type="checkbox" name="remember_device" value="1"> Remember this device
       </label>
       <button class="auth-btn-primary" type="submit">Continue</button>
-      ${webauthnSection}
-    </form>`;
+      ${webauthnButton}
+    </form>
+    ${rememberPrompt}`;
   return renderAuthDocument({
     step: "Two-factor authentication",
     body: renderAuthPage(card),
@@ -312,8 +329,18 @@ export function renderMfaEnrollStartPage(scriptNonce: string, next?: string, web
   });
 }
 
+// Tabler outline icons (matching AUTH_SSO_BUTTON_ICON_SVG's format/size), one per method choice.
+const AUTH_METHOD_ICON_AUTHENTICATOR_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 5a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2v-14" /><path d="M11 4h2" /><path d="M12 17v.01" /></svg>`;
+const AUTH_METHOD_ICON_PASSKEY_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3" /><path d="M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6" /><path d="M12 11v2a14 14 0 0 0 2.5 8" /><path d="M8 15a18 18 0 0 0 1.8 6" /><path d="M4.9 19a22 22 0 0 1 -.9 -7v-1a8 8 0 0 1 12 -6.95" /></svg>`;
+const AUTH_METHOD_ICON_SECURITY_KEY_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 8h10v8a5 5 0 0 1 -10 0l0 -8" /><path d="M9 8v-5h6v5" /></svg>`;
+
 /** Choice of second-factor method - only reachable when the instance has WebAuthn enabled
- * (renderMfaEnrollStartPage only links here in that case; the route handler re-checks too). */
+ * (renderMfaEnrollStartPage only links here in that case; the route handler re-checks too).
+ * "Passkey"/"Security key" (not the plural "Passkeys"/"Security keys") match My Account's own
+ * wording for a single credential (AccountPage.tsx) - plural is reserved there for a settings
+ * section that can hold several. "(YubiKey)" on Security key mirrors that same file's existing
+ * "Security key (YubiKey)" label, the concrete hint that a security key means a small USB/NFC
+ * device like it, not another on-screen abstraction. */
 export function renderMfaEnrollMethodPage(scriptNonce: string, next?: string): string {
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const nextQuery = next ? `&next=${encodeURIComponent(next)}` : "";
@@ -324,10 +351,10 @@ export function renderMfaEnrollMethodPage(scriptNonce: string, next?: string): s
     <div class="auth-enroll-method-list">
       <form method="post" action="/mfa/enroll/start">
         ${nextField}
-        <button class="auth-btn-primary" type="submit">Authenticator app</button>
+        <button class="auth-btn-primary" type="submit">${AUTH_METHOD_ICON_AUTHENTICATOR_SVG}Authenticator app</button>
       </form>
-      <a class="auth-btn-secondary" href="/mfa/enroll/webauthn?attachment=platform${nextQuery}">Passkey</a>
-      <a class="auth-btn-secondary" href="/mfa/enroll/webauthn?attachment=cross-platform${nextQuery}">Security key</a>
+      <a class="auth-btn-secondary" href="/mfa/enroll/webauthn?attachment=platform${nextQuery}">${AUTH_METHOD_ICON_PASSKEY_SVG}Passkey</a>
+      <a class="auth-btn-secondary" href="/mfa/enroll/webauthn?attachment=cross-platform${nextQuery}">${AUTH_METHOD_ICON_SECURITY_KEY_SVG}Security key (YubiKey)</a>
     </div>`;
   return renderAuthDocument({
     step: "Set up two-factor authentication",
@@ -346,7 +373,7 @@ export function renderMfaEnrollWebauthnPage(
   next?: string,
 ): string {
   const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
-  const methodLabel = attachment === "platform" ? "passkey" : "security key";
+  const methodLabel = attachment === "platform" ? "passkey" : "security key (YubiKey)";
   const card = `${renderAuthBrand()}
     ${renderAuthStepIndicator(3, 4, attachment === "platform" ? "Add a passkey" : "Add a security key")}
     <h2 class="auth-page-action">Set up two-factor authentication</h2>
@@ -502,9 +529,47 @@ function mfaWebauthnScript(scriptNonce: string): string {
     if (errorBox) errorBox.hidden = false;
   }
 
+  // Auto-start verifies before the user has any real chance to check "Remember this device" -
+  // the native passkey/security-key prompt takes over within a network round-trip of page load,
+  // long before a person could read the page and act. Offer it as a one-tap follow-up instead,
+  // right here on success, rather than silently never remembering the device on that path.
+  function showRememberPrompt(next) {
+    var prompt = document.getElementById("mfa-remember-prompt");
+    var form = btn.closest("form");
+    if (!prompt) {
+      window.location.href = next;
+      return;
+    }
+    if (form) form.hidden = true;
+    prompt.hidden = false;
+    var yesBtn = document.getElementById("mfa-remember-yes");
+    var noBtn = document.getElementById("mfa-remember-no");
+    function goNext() {
+      window.location.href = next;
+    }
+    if (yesBtn) {
+      yesBtn.addEventListener("click", function () {
+        yesBtn.disabled = true;
+        if (noBtn) noBtn.disabled = true;
+        fetch("/api/auth/mfa/remember-device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+          .catch(function () {
+            // Best-effort - the account is already fully signed in either way, so a failure here
+            // should never block navigation.
+          })
+          .then(goNext);
+      });
+    }
+    if (noBtn) noBtn.addEventListener("click", goNext);
+  }
+
   function runCeremony() {
     btn.disabled = true;
     if (errorBox) errorBox.hidden = true;
+    var remembered = false;
 
     fetch("/api/auth/mfa/webauthn/begin", {
       method: "POST",
@@ -526,6 +591,7 @@ function mfaWebauthnScript(scriptNonce: string): string {
         var nextInput = form ? form.querySelector('input[name="next"]') : null;
         var rememberInput = form ? form.querySelector('input[name="remember_device"]') : null;
         var timezoneInput = form ? form.querySelector('input[name="timezone"]') : null;
+        remembered = !!(rememberInput && rememberInput.checked);
         return fetch("/api/auth/mfa/webauthn/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -542,7 +608,7 @@ function mfaWebauthnScript(scriptNonce: string): string {
                 userHandle: assertion.response.userHandle ? bufferToB64url(assertion.response.userHandle) : undefined,
               },
             },
-            remember_device: !!(rememberInput && rememberInput.checked),
+            remember_device: remembered,
             next: nextInput ? nextInput.value : undefined,
             timezone: timezoneInput ? timezoneInput.value : undefined,
           }),
@@ -551,6 +617,10 @@ function mfaWebauthnScript(scriptNonce: string): string {
       .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
       .then(function (verify) {
         if (verify.res.ok && verify.data.ok) {
+          if (btn.dataset.autoStart === "true" && !remembered) {
+            showRememberPrompt(verify.data.next);
+            return;
+          }
           window.location.href = verify.data.next;
           return;
         }

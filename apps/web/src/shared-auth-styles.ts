@@ -203,10 +203,17 @@ body {
    is shared with every other (left-aligned, single-line) field on these auth pages. */
 .auth-otp-wrap > .auth-label { text-align: center; }
 /* Space from Continue above, matching the gap Continue itself keeps from the field above it -
-   otherwise sits directly against it with no gap at all. .at-notice's own margin is bottom-only
-   (spaces it from what follows, not what precedes it), so the wrapper needs its own top margin
-   for when the notice is visible between Continue and the button. */
-#mfa-webauthn-btn, .auth-webauthn-error { margin-top: 0.75rem; }
+   otherwise sits directly against it with no gap at all. */
+#mfa-webauthn-btn { margin-top: 0.75rem; }
+/* .auth-webauthn-error sits right after .subtitle (not between the two action buttons - a
+   mid-page error box there read as belonging to neither one), so .subtitle's own bottom margin
+   already spaces it; no separate top margin needed here. */
+.auth-remember-prompt {
+  margin-top: 1.25rem;
+}
+#mfa-remember-no {
+  margin-top: 0.75rem;
+}
 .auth-otp-digits {
   display: flex;
   gap: 0.5rem;
@@ -278,6 +285,8 @@ body {
   border-radius: 6px;
   font-size: 0.875rem;
   font-weight: 500;
+  text-align: center;
+  text-decoration: none;
   cursor: pointer;
   margin-top: 1.25rem;
   transition: background 0.15s;
@@ -397,6 +406,10 @@ body {
 }
 .auth-enroll-method-list .auth-btn-primary {
   margin-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
 }
 .auth-enroll-method-list .auth-btn-secondary {
   text-decoration: none;
