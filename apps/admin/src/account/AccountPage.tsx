@@ -261,16 +261,22 @@ function AccountIdentityActionsMenu({
 
 /** Kebab menu in the "Two-factor authentication" card header - holds account-wide actions kept
  * out of the per-method Manage popups above so they don't read as belonging to any one method:
- * forgetting every device this account ever chose to remember (`showReset` is false), and,
- * additionally, the account-wide "Reset everything" action (clears TOTP, every passkey/security
- * key, and all backup codes together) once the account also has a local password to reset with.
- * Self-contained (calls useDropdownMenu itself, same as HealthCheckMoreActions) since nothing
- * else in the card needs its open state. */
+ * forgetting every device this account ever chose to remember (disabled once there are none
+ * left to forget), and, additionally, the account-wide "Reset everything" action (clears TOTP,
+ * every passkey/security key, and all backup codes together) once the account also has a local
+ * password to reset with. Self-contained (calls useDropdownMenu itself, same as
+ * HealthCheckMoreActions) since nothing else in the card needs its open state. */
 function TwoFactorMoreActions({
   onReset,
   onForgetDevices,
   showReset,
-}: Readonly<{ onReset: () => void; onForgetDevices: () => void; showReset: boolean }>) {
+  trustedDevicesCount,
+}: Readonly<{
+  onReset: () => void;
+  onForgetDevices: () => void;
+  showReset: boolean;
+  trustedDevicesCount: number;
+}>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
@@ -294,6 +300,8 @@ function TwoFactorMoreActions({
             icon="devices-off"
             label="Forget all trusted devices"
             hint="You'll be asked to verify again on every device next time"
+            disabled={trustedDevicesCount === 0}
+            tooltip={trustedDevicesCount === 0 ? "No devices are currently remembered." : undefined}
             onClick={() => {
               close();
               onForgetDevices();
@@ -918,6 +926,7 @@ export function AccountPage() {
           : "No devices were remembered.",
         "success",
       );
+      await loadAccount();
     } catch (err) {
       setForgetDevicesError(operatorApiErrorMessage(err, "Failed to forget devices."));
     } finally { setForgetDevicesBusy(false); }
@@ -1720,6 +1729,7 @@ export function AccountPage() {
               onReset={() => setResetConfirmOpen(true)}
               onForgetDevices={() => setForgetDevicesOpen(true)}
               showReset={canResetEverything}
+              trustedDevicesCount={account.trusted_devices_count}
             />
           ) : undefined
         }

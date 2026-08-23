@@ -467,7 +467,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
   });
   if (!user) return c.json({ error: "unauthorized" }, 401);
 
-  const [assignments, oidcGrants, mfaMethods, externalIdentities] = await Promise.all([
+  const [assignments, oidcGrants, mfaMethods, externalIdentities, trustedDevicesCount] = await Promise.all([
     db.roleAssignment.findMany({
       where: { user_id: userId },
       select: { id: true, role: true, scope_type: true, scope_id: true },
@@ -495,6 +495,11 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
         linked_at: true,
         provider: { select: { display_name: true, provider_type: true } },
       },
+    }),
+    // "Forget all trusted devices" is only ever meaningful (and only enabled in the UI) once
+    // there is at least one - same live/not-expired condition validateTrustedDevice checks.
+    db.trustedDevice.count({
+      where: { user_id: userId, revoked_at: null, expires_at: { gt: new Date() } },
     }),
   ]);
 
@@ -558,6 +563,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
         : {}),
     })),
     webauthn_enabled: await getWebauthnEnabled(db),
+    trusted_devices_count: trustedDevicesCount,
     external_identities: externalIdentities.map((ei) => ({
       id: ei.id,
       provider_id: ei.provider_id,

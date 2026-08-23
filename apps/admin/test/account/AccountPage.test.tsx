@@ -121,6 +121,7 @@ const baseAccount: AccountDto = {
   external_identities: [],
   available_identity_providers: [],
   webauthn_enabled: true,
+  trusted_devices_count: 0,
 };
 
 const totpEnrolledAccount: AccountDto = {
@@ -3425,8 +3426,26 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     expect(screen.queryByRole("menuitem", { name: /^Reset everything/ })).toBeNull();
   });
 
-  it("Forget all trusted devices revokes devices and toasts the count", async () => {
-    mockLoadedAccount(totpEnrolledAccount);
+  it("disables Forget all trusted devices when no device is currently remembered", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 0 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+
+    const item = await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ });
+    expect(item.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(item);
+    expect(screen.queryByRole("dialog", { name: "Forget all trusted devices" })).toBeNull();
+  });
+
+  it("Forget all trusted devices revokes devices, toasts the count, and reloads the account", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 3 })
+      .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 0 });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 3 });
 
     renderWithToast(<AccountPage />);
@@ -3444,10 +3463,18 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     });
     expect(mockForgetAllTrustedDevices).toHaveBeenCalledWith();
     expect(screen.queryByRole("dialog", { name: "Forget all trusted devices" })).toBeNull();
+    // Reloaded so a now-empty count disables the menu item again without a page refresh.
+    await waitFor(() => {
+      expect(mockFetchAccount).toHaveBeenCalledTimes(2);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    expect((await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ })).hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 
-  it("Forget all trusted devices toasts a no-op message when nothing was remembered", async () => {
-    mockLoadedAccount(totpEnrolledAccount);
+  it("Forget all trusted devices toasts a no-op message when the server finds nothing left to revoke", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 1 });
     mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 0 });
 
     renderWithToast(<AccountPage />);
@@ -3464,7 +3491,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
   });
 
   it("shows an error in the dialog and does not close it when forgetting devices fails", async () => {
-    mockLoadedAccount(totpEnrolledAccount);
+    mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 1 });
     mockForgetAllTrustedDevices.mockRejectedValueOnce(new Error("network down"));
 
     renderWithToast(<AccountPage />);

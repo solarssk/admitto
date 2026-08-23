@@ -1583,6 +1583,7 @@ export interface AccountDto {
   external_identities: AccountExternalIdentityDto[];
   available_identity_providers: AccountAvailableIdentityProviderDto[];
   webauthn_enabled: boolean;
+  trusted_devices_count: number;
 }
 
 export interface PatchAccountProfileBody {

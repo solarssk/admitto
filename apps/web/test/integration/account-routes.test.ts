@@ -166,6 +166,19 @@ describe("GET /api/account", () => {
     expect(body).not.toHaveProperty("password_hash");
   });
 
+  it("returns trusted_devices_count, live devices only", async () => {
+    await createTrustedDevice(prisma, { userId });
+    const expired = await createTrustedDevice(prisma, { userId });
+    await prisma.trustedDevice.update({ where: { id: expired.trustedDevice.id }, data: { expires_at: new Date(Date.now() - 1000) } });
+    const revoked = await createTrustedDevice(prisma, { userId });
+    await prisma.trustedDevice.update({ where: { id: revoked.trustedDevice.id }, data: { revoked_at: new Date() } });
+
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trusted_devices_count: number };
+    expect(body.trusted_devices_count).toBe(1);
+  });
+
   it("returns has_local_password: false for an SSO-linked account with no local password", async () => {
     await prisma.externalIdentity.create({
       data: { provider_id: PROVIDER_ID, subject: "account-get-no-password-subject", user_id: oidcUserId },
