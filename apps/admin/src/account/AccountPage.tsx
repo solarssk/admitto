@@ -684,6 +684,169 @@ export function AccountPage() {
     await loadSessions();
   }
 
+  async function handleUnlinkSsoConfirm(): Promise<void> {
+    setUnlinkSsoBusy(true);
+    setUnlinkSsoError(null);
+    try {
+      await submitUnlinkSso();
+    } catch (err) {
+      if (hasApiErrorCode(err, "totp_required")) {
+        setUnlinkCodeError(null);
+        setUnlinkStepUpOpen(true);
+      } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
+        setUnlinkSsoError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
+      } else if (hasApiErrorCode(err, "wrong_password") || hasApiErrorCode(err, "current_password_required")) {
+        setUnlinkSsoError("Current password is incorrect.");
+      } else if (hasApiErrorCode(err, "provider_managed_roles_exist")) {
+        setUnlinkSsoOpen(false);
+        setUnlinkSsoPassword("");
+        setUnlinkSsoCurrentPassword("");
+        addToast(
+          "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
+          "error",
+        );
+      } else if (hasApiErrorCode(err, "insufficient_verification")) {
+        setUnlinkSsoOpen(false);
+        setUnlinkSsoPassword("");
+        setUnlinkSsoCurrentPassword("");
+        addToast(
+          "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
+          "error",
+        );
+      } else {
+        setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
+      }
+    } finally {
+      setUnlinkSsoBusy(false);
+    }
+  }
+
+  async function handleRemoveTotpConfirm(): Promise<void> {
+    setRemovingTotp(true);
+    setRemoveTotpError(null);
+    try {
+      await submitRemoveTotp(removeTotpCode ? { code: removeTotpCode } : undefined);
+    } catch (err) {
+      if (hasApiErrorCode(err, "totp_required")) {
+        setRemoveTotpCodeRequired(true);
+      } else {
+        setRemoveTotpError(operatorApiErrorMessage(err, "Failed to remove authenticator app."));
+      }
+    } finally {
+      setRemovingTotp(false);
+    }
+  }
+
+  async function handleResetMfaConfirm(): Promise<void> {
+    setResetting(true); setResetError(null);
+    try {
+      await submitResetMfa(resetCode ? { code: resetCode } : undefined);
+    }
+    catch (err) {
+      if (hasApiErrorCode(err, "totp_required")) {
+        // Stays open — progressive disclosure reveals the code field right here in the
+        // same dialog (same pattern as the remove-credential dialog below), so there's
+        // no separate step-up dialog to hand off to like password change/unlink SSO have.
+        setResetCodeRequired(true);
+        addToast(operatorApiErrorMessage(err, "Failed to reset 2FA."), "info");
+      } else {
+        setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
+      }
+    }
+    finally { setResetting(false); }
+  }
+
+  async function handleAddPasskeyConfirm(): Promise<void> {
+    setAddingPasskey(true);
+    setAddPasskeyError(null);
+    try {
+      const { options } = await beginWebauthnRegistration({ attachment: "platform" });
+      const response = await startRegistration({ optionsJSON: options });
+      const { backupCodes } = await finishWebauthnRegistration({
+        attachment: "platform",
+        label: addPasskeyLabel.trim(),
+        response,
+      });
+      addToast("Passkey added.", "success");
+      await loadAccount();
+      // See the matching comment on the TOTP confirm handler above - a first-ever
+      // confirmed MFA method mints backup codes as a side effect.
+      await loadBackupCodesStatus();
+      if (backupCodes.length > 0) {
+        // The only plaintext copy ever shown - keep the dialog open until the user
+        // confirms they've saved them, same pattern as regenerateBackupCodes below.
+        setBackupCodesSaved(false);
+        setAddPasskeyBackupCodes(backupCodes);
+      } else {
+        setAddPasskeyOpen(false);
+        setAddPasskeyLabel("");
+      }
+    } catch (err) {
+      setAddPasskeyError(
+        err instanceof ApiError
+          ? operatorApiErrorMessage(err, "Could not add passkey.")
+          : webauthnCeremonyErrorMessage(err),
+      );
+    } finally {
+      setAddingPasskey(false);
+    }
+  }
+
+  async function handleAddSecurityKeyConfirm(): Promise<void> {
+    setAddingSecurityKey(true);
+    setAddSecurityKeyError(null);
+    try {
+      const { options } = await beginWebauthnRegistration({ attachment: "cross-platform" });
+      const response = await startRegistration({ optionsJSON: options });
+      const { backupCodes } = await finishWebauthnRegistration({
+        attachment: "cross-platform",
+        label: addSecurityKeyLabel.trim(),
+        response,
+      });
+      addToast("Security key added.", "success");
+      await loadAccount();
+      // See the matching comment on the TOTP confirm handler above - a first-ever
+      // confirmed MFA method mints backup codes as a side effect.
+      await loadBackupCodesStatus();
+      if (backupCodes.length > 0) {
+        setBackupCodesSaved(false);
+        setAddSecurityKeyBackupCodes(backupCodes);
+      } else {
+        setAddSecurityKeyOpen(false);
+        setAddSecurityKeyLabel("");
+      }
+    } catch (err) {
+      setAddSecurityKeyError(
+        err instanceof ApiError
+          ? operatorApiErrorMessage(err, "Could not add security key.")
+          : webauthnCeremonyErrorMessage(err),
+      );
+    } finally {
+      setAddingSecurityKey(false);
+    }
+  }
+
+  async function handleRemoveCredentialConfirm(): Promise<void> {
+    // Reachable only via the trash button on a webauthn row, whose id is always set
+    // (only totp/recovery rows lack one) - satisfies AccountMfaMethodDto's shared
+    // optional `id` field, not a reachable runtime case.
+    /* v8 ignore if */
+    if (!removeCredentialTarget?.id) return;
+    setRemovingCredential(true);
+    setRemoveCredentialError(null);
+    try {
+      await submitRemoveCredential(removeCredentialTarget, removeCredentialCode ? { code: removeCredentialCode } : undefined);
+    } catch (err) {
+      if (hasApiErrorCode(err, "totp_required")) {
+        setRemoveCredentialCodeRequired(true);
+      } else {
+        setRemoveCredentialError(operatorApiErrorMessage(err, "Failed to remove credential."));
+      }
+    } finally {
+      setRemovingCredential(false);
+    }
+  }
+
   /** Shared by first-time enrollment (renderMfaEnrollment) and the backup-codes regenerate
    * dialog (renderManageBackupCodesDialog) - both show a freshly minted plaintext batch the same
    * way, since neither can ever be shown again after this render. `alreadyShown` only applies to
@@ -961,11 +1124,12 @@ export function AccountPage() {
   function renderManageBackupCodesDialog() {
     /* v8 ignore if */
     if (!account) return null;
-    const statusMessage = backupCodesStatus
-      ? backupCodesStatus.total === 0
-        ? `You don't have any backup codes yet. Regenerating creates a new set of ${BACKUP_RECOVERY_CODE_COUNT}.`
-        : `${backupCodesStatus.remaining} of ${backupCodesStatus.total} backup codes remaining. Regenerating replaces them with a new set of ${BACKUP_RECOVERY_CODE_COUNT} and invalidates any you haven't used.`
-      : "";
+    let statusMessage = "";
+    if (backupCodesStatus?.total === 0) {
+      statusMessage = `You don't have any backup codes yet. Regenerating creates a new set of ${BACKUP_RECOVERY_CODE_COUNT}.`;
+    } else if (backupCodesStatus) {
+      statusMessage = `${backupCodesStatus.remaining} of ${backupCodesStatus.total} backup codes remaining. Regenerating replaces them with a new set of ${BACKUP_RECOVERY_CODE_COUNT} and invalidates any you haven't used.`;
+    }
     return (
       <ConfirmDialog
         open={manageBackupCodesOpen}
@@ -1093,6 +1257,12 @@ export function AccountPage() {
     if (!account) return null;
     if (!totpEnrolled && !hasConfirmedWebauthnMethod(account)) return null;
     const hasCodes = !!backupCodesStatus && backupCodesStatus.total > 0;
+    let codesStatusLabel = "Loading…";
+    if (backupCodesStatus?.total === 0) {
+      codesStatusLabel = "None generated yet";
+    } else if (backupCodesStatus) {
+      codesStatusLabel = `${backupCodesStatus.remaining} of ${backupCodesStatus.total} remaining`;
+    }
     return (
       <div className="account-mfa-method">
         <span className={`account-mfa-method__icon${hasCodes ? " account-mfa-method__icon--ok" : ""}`}>
@@ -1101,11 +1271,7 @@ export function AccountPage() {
         <div className="account-mfa-method__body">
           <span className="account-mfa-method__name">Backup codes</span>
           <span className={`account-mfa-method__status${hasCodes ? " account-mfa-method__status--ok" : ""}`}>
-            {backupCodesStatus
-              ? backupCodesStatus.total === 0
-                ? "None generated yet"
-                : `${backupCodesStatus.remaining} of ${backupCodesStatus.total} remaining`
-              : "Loading…"}
+            {codesStatusLabel}
           </span>
         </div>
         {account.has_local_password && (
@@ -1453,21 +1619,7 @@ export function AccountPage() {
         loading={removingTotp}
         errorMessage={removeTotpError ?? undefined}
         disableConfirm={removeTotpCodeRequired && !removeTotpCode}
-        onConfirm={async () => {
-          setRemovingTotp(true);
-          setRemoveTotpError(null);
-          try {
-            await submitRemoveTotp(removeTotpCode ? { code: removeTotpCode } : undefined);
-          } catch (err) {
-            if (hasApiErrorCode(err, "totp_required")) {
-              setRemoveTotpCodeRequired(true);
-            } else {
-              setRemoveTotpError(operatorApiErrorMessage(err, "Failed to remove authenticator app."));
-            }
-          } finally {
-            setRemovingTotp(false);
-          }
-        }}
+        onConfirm={handleRemoveTotpConfirm}
         onCancel={() => {
           if (!removingTotp) {
             setManageTotpOpen(false);
@@ -1520,24 +1672,7 @@ export function AccountPage() {
         loading={resetting}
         errorMessage={resetError ?? undefined}
         disableConfirm={!resetPassword || (resetCodeRequired && !resetCode)}
-        onConfirm={async () => {
-          setResetting(true); setResetError(null);
-          try {
-            await submitResetMfa(resetCode ? { code: resetCode } : undefined);
-          }
-          catch (err) {
-            if (hasApiErrorCode(err, "totp_required")) {
-              // Stays open — progressive disclosure reveals the code field right here in the
-              // same dialog (same pattern as the remove-credential dialog below), so there's
-              // no separate step-up dialog to hand off to like password change/unlink SSO have.
-              setResetCodeRequired(true);
-              addToast(operatorApiErrorMessage(err, "Failed to reset 2FA."), "info");
-            } else {
-              setResetError(operatorApiErrorMessage(err, "Failed to reset 2FA."));
-            }
-          }
-          finally { setResetting(false); }
-        }}
+        onConfirm={handleResetMfaConfirm}
         onCancel={() => {
           if (!resetting) {
             setResetConfirmOpen(false);
@@ -1663,42 +1798,7 @@ export function AccountPage() {
           unlinkSsoPassword.length < PASSWORD_MIN_LENGTH ||
           (!!account?.has_local_password && unlinkSsoCurrentPassword.length === 0)
         }
-        onConfirm={async () => {
-          setUnlinkSsoBusy(true);
-          setUnlinkSsoError(null);
-          try {
-            await submitUnlinkSso();
-          } catch (err) {
-            if (hasApiErrorCode(err, "totp_required")) {
-              setUnlinkCodeError(null);
-              setUnlinkStepUpOpen(true);
-            } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
-              setUnlinkSsoError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
-            } else if (hasApiErrorCode(err, "wrong_password") || hasApiErrorCode(err, "current_password_required")) {
-              setUnlinkSsoError("Current password is incorrect.");
-            } else if (hasApiErrorCode(err, "provider_managed_roles_exist")) {
-              setUnlinkSsoOpen(false);
-              setUnlinkSsoPassword("");
-              setUnlinkSsoCurrentPassword("");
-              addToast(
-                "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
-                "error",
-              );
-            } else if (hasApiErrorCode(err, "insufficient_verification")) {
-              setUnlinkSsoOpen(false);
-              setUnlinkSsoPassword("");
-              setUnlinkSsoCurrentPassword("");
-              addToast(
-                "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
-                "error",
-              );
-            } else {
-              setUnlinkSsoError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
-            }
-          } finally {
-            setUnlinkSsoBusy(false);
-          }
-        }}
+        onConfirm={handleUnlinkSsoConfirm}
         onCancel={() => {
           if (unlinkSsoBusy) return;
           setUnlinkSsoOpen(false);
@@ -1849,41 +1949,7 @@ export function AccountPage() {
         loading={addingPasskey}
         errorMessage={addPasskeyError ?? undefined}
         disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim()}
-        onConfirm={async () => {
-          setAddingPasskey(true);
-          setAddPasskeyError(null);
-          try {
-            const { options } = await beginWebauthnRegistration({ attachment: "platform" });
-            const response = await startRegistration({ optionsJSON: options });
-            const { backupCodes } = await finishWebauthnRegistration({
-              attachment: "platform",
-              label: addPasskeyLabel.trim(),
-              response,
-            });
-            addToast("Passkey added.", "success");
-            await loadAccount();
-            // See the matching comment on the TOTP confirm handler above - a first-ever
-            // confirmed MFA method mints backup codes as a side effect.
-            await loadBackupCodesStatus();
-            if (backupCodes.length > 0) {
-              // The only plaintext copy ever shown - keep the dialog open until the user
-              // confirms they've saved them, same pattern as regenerateBackupCodes below.
-              setBackupCodesSaved(false);
-              setAddPasskeyBackupCodes(backupCodes);
-            } else {
-              setAddPasskeyOpen(false);
-              setAddPasskeyLabel("");
-            }
-          } catch (err) {
-            setAddPasskeyError(
-              err instanceof ApiError
-                ? operatorApiErrorMessage(err, "Could not add passkey.")
-                : webauthnCeremonyErrorMessage(err),
-            );
-          } finally {
-            setAddingPasskey(false);
-          }
-        }}
+        onConfirm={handleAddPasskeyConfirm}
         onCancel={() => {
           if (addingPasskey) return;
           if (addPasskeyBackupCodes && !backupCodesSaved) return;
@@ -1924,39 +1990,7 @@ export function AccountPage() {
         loading={addingSecurityKey}
         errorMessage={addSecurityKeyError ?? undefined}
         disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim()}
-        onConfirm={async () => {
-          setAddingSecurityKey(true);
-          setAddSecurityKeyError(null);
-          try {
-            const { options } = await beginWebauthnRegistration({ attachment: "cross-platform" });
-            const response = await startRegistration({ optionsJSON: options });
-            const { backupCodes } = await finishWebauthnRegistration({
-              attachment: "cross-platform",
-              label: addSecurityKeyLabel.trim(),
-              response,
-            });
-            addToast("Security key added.", "success");
-            await loadAccount();
-            // See the matching comment on the TOTP confirm handler above - a first-ever
-            // confirmed MFA method mints backup codes as a side effect.
-            await loadBackupCodesStatus();
-            if (backupCodes.length > 0) {
-              setBackupCodesSaved(false);
-              setAddSecurityKeyBackupCodes(backupCodes);
-            } else {
-              setAddSecurityKeyOpen(false);
-              setAddSecurityKeyLabel("");
-            }
-          } catch (err) {
-            setAddSecurityKeyError(
-              err instanceof ApiError
-                ? operatorApiErrorMessage(err, "Could not add security key.")
-                : webauthnCeremonyErrorMessage(err),
-            );
-          } finally {
-            setAddingSecurityKey(false);
-          }
-        }}
+        onConfirm={handleAddSecurityKeyConfirm}
         onCancel={() => {
           if (addingSecurityKey) return;
           if (addSecurityKeyBackupCodes && !backupCodesSaved) return;
@@ -1992,26 +2026,7 @@ export function AccountPage() {
         loading={removingCredential}
         errorMessage={removeCredentialError ?? undefined}
         disableConfirm={removeCredentialCodeRequired && !removeCredentialCode}
-        onConfirm={async () => {
-          // Reachable only via the trash button on a webauthn row, whose id is always set
-          // (only totp/recovery rows lack one) - satisfies AccountMfaMethodDto's shared
-          // optional `id` field, not a reachable runtime case.
-          /* v8 ignore if */
-          if (!removeCredentialTarget?.id) return;
-          setRemovingCredential(true);
-          setRemoveCredentialError(null);
-          try {
-            await submitRemoveCredential(removeCredentialTarget, removeCredentialCode ? { code: removeCredentialCode } : undefined);
-          } catch (err) {
-            if (hasApiErrorCode(err, "totp_required")) {
-              setRemoveCredentialCodeRequired(true);
-            } else {
-              setRemoveCredentialError(operatorApiErrorMessage(err, "Failed to remove credential."));
-            }
-          } finally {
-            setRemovingCredential(false);
-          }
-        }}
+        onConfirm={handleRemoveCredentialConfirm}
         onCancel={() => {
           if (!removingCredential) {
             setRemoveCredentialTarget(null);

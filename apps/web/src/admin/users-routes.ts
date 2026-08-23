@@ -30,7 +30,8 @@ import {
   positiveIntQuery,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
-import { withStepUpGate } from "./account-routes.js";
+import { z } from "zod";
+import { withStepUpGate, stepUpProofFields } from "./account-routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { runSerializableTransaction } from "./event-items-api-routes.js";
@@ -1196,11 +1197,10 @@ export async function handlePostResetUserMfa(
   // on it for that local path. Resetting it here would silently drop that account's local sign-in
   // from password+TOTP to password-only, the same unmonitored weakening the reset-password guard
   // below exists to prevent. See handleAdminAssistedReset for the shared SSO-managed check.
-  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-  const stepUpBody = {
-    code: typeof body?.code === "string" ? body.code : undefined,
-    webauthn: body?.webauthn as { response: unknown } | undefined,
-  };
+  const body = (await c.req.json().catch(() => null)) as unknown;
+  const parsedStepUpBody = z.object(stepUpProofFields).strict().safeParse(body ?? {});
+  if (!parsedStepUpBody.success) return c.json({ error: "invalid body" }, 400);
+  const stepUpBody = parsedStepUpBody.data;
 
   return handleAdminAssistedReset(
     c,
@@ -1376,10 +1376,9 @@ export async function handlePostResetUserPassword(
   // one here would silently open a second, unmonitored sign-in path alongside SSO. Unlink the
   // identity provider first (DELETE .../external-identity) if the account needs to go local.
   // See handleAdminAssistedReset for the shared SSO-managed check.
-  const stepUpBody = {
-    code: typeof body?.code === "string" ? body.code : undefined,
-    webauthn: body?.webauthn as { response: unknown } | undefined,
-  };
+  const parsedStepUpBody = z.object(stepUpProofFields).safeParse(body ?? {});
+  if (!parsedStepUpBody.success) return c.json({ error: "invalid body" }, 400);
+  const stepUpBody = parsedStepUpBody.data;
 
   return handleAdminAssistedReset(
     c,
