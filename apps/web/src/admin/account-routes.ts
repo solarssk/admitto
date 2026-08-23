@@ -1392,9 +1392,9 @@ export async function handleDeleteAccountWebauthnCredential(
 }
 
 /**
- * DELETE /api/account/mfa/totp — remove TOTP only, leaving WebAuthn credentials and backup
+ * DELETE /api/account/mfa/totp: remove TOTP only, leaving WebAuthn credentials and backup
  * recovery codes untouched. Requires the same TOTP/recovery-code step-up as removing a WebAuthn
- * credential (`handleDeleteAccountWebauthnCredential`) — password alone must not be able to strip
+ * credential (`handleDeleteAccountWebauthnCredential`). Password alone must not be able to strip
  * a confirmed method from an MFA-required account.
  */
 export async function handleDeleteAccountTotp(
@@ -1436,7 +1436,7 @@ export async function handleDeleteAccountTotp(
   return c.json({ ok: true });
 }
 
-/** GET /api/account/mfa/backup-codes — how many codes remain in the current batch. Read-only,
+/** GET /api/account/mfa/backup-codes: how many codes remain in the current batch. Read-only,
  * same tier as `handleGetAccountWebauthnCredentials` (no step-up). */
 export async function handleGetAccountBackupCodesStatus(
   c: Context,
@@ -1448,9 +1448,9 @@ export async function handleGetAccountBackupCodesStatus(
 }
 
 /**
- * POST /api/account/mfa/backup-codes/regenerate — invalidate the current batch and mint a fresh
+ * POST /api/account/mfa/backup-codes/regenerate: invalidate the current batch and mint a fresh
  * one, returned once as plaintext. Requires the same TOTP/recovery-code step-up as the other
- * sensitive MFA actions in this file — it invalidates the user's existing saved codes, a real
+ * sensitive MFA actions in this file: it invalidates the user's existing saved codes, a real
  * consequence.
  */
 export async function handlePostAccountRegenerateBackupCodes(
@@ -1479,7 +1479,7 @@ export async function handlePostAccountRegenerateBackupCodes(
     },
     async (tx, orgId, audit) => {
       const { codes } = await regenerateBackupRecoveryCodes(tx, userId);
-      // Always audited, unlike credential removal — this call always has an effect (a fresh
+      // Always audited, unlike credential removal: this call always has an effect (a fresh
       // batch replaces the old one) even when the old batch was already fully consumed.
       await writeAdminAuditLog(tx, {
         organizationId: orgId,
