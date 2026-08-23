@@ -1211,8 +1211,8 @@ function TemplateEditorCard({
  * and rendered without a real attendee - but a live https:// URL to a domain nothing actually
  * hosts renders as a broken image and a dead-end link, reading as broken rather than deliberate.
  * Swapped here for a same-origin-safe, always-rendering placeholder before the admin ever sees
- * it. Links stay inert regardless (see makeEmailPreviewInert), so this is purely cosmetic, not a
- * security boundary. */
+ * it. Links are stripped of their `href` regardless (see makeEmailPreviewInert), so this
+ * substitution is purely cosmetic - a nicer-looking dead link/image, not what makes it inert. */
 const SAMPLE_TICKET_URL = "https://tickets.example.com/t/sample-token";
 const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
 /** Matches `DEFAULT_SAMPLE_VARS.email` (packages/mail-templates/src/preview.ts) - the "to"
