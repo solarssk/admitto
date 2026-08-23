@@ -9,7 +9,7 @@ import { formatEventDateTime } from "../utils/event-dates.js";
 import type { CustomDataFieldDef } from "./customData.js";
 import { RSVP_LABELS } from "./rsvpStatusBadge.js";
 import { PASS_STATUS_LABELS } from "./passStatusBadge.js";
-import { WALLET_STATUS_LABELS } from "./walletStatusBadge.js";
+import { WALLET_LIFECYCLE_STATUS_LABELS } from "./walletStatusBadge.js";
 
 /** Activity row timestamp, in the timezone the acting admin was actually in when they made this
  * change (PO review, round 2 - the prior "always event timezone" version was itself wrong):
@@ -41,8 +41,8 @@ function formatPassStatus(value: unknown): string {
 
 function formatWalletPassStatus(value: unknown): string {
   const key = String(value);
-  if (Object.hasOwn(WALLET_STATUS_LABELS, key)) {
-    return WALLET_STATUS_LABELS[key as WalletPassStatus];
+  if (Object.hasOwn(WALLET_LIFECYCLE_STATUS_LABELS, key)) {
+    return WALLET_LIFECYCLE_STATUS_LABELS[key as WalletPassStatus];
   }
   return key;
 }
@@ -147,6 +147,7 @@ export function getTimelineIcon(actionType: string): string {
     ticket_sent: "send",
     ticket_resent: "refresh",
     resend_ticket: "refresh",
+    ticket_link_retrieved: "link",
     mail_delivered: "mail-check",
     mail_bounced: "mail-x",
     check_in: "circle-check",
@@ -196,6 +197,8 @@ export function getTimelineLabel(entry: AttendeeActionLogEntryDto): string {
     case "ticket_resent":
     case "resend_ticket":
       return "Ticket resent";
+    case "ticket_link_retrieved":
+      return "Ticket link copied";
     case "check_in":
     case "admitted":
       return "Checked in";

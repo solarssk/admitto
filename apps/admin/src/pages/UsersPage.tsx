@@ -47,6 +47,17 @@ function usersTabFromSearch(params: URLSearchParams, superadmin: boolean): Users
   return superadmin ? "staff" : "roles";
 }
 
+/** stats.mfa is scoped to users with a local password (two-factor coverage is only meaningful
+ * for accounts that have a password login path) — compare against that same population, not
+ * the instance total, so an all-SSO-only org doesn't read as 0%. An org with zero password
+ * accounts has nothing left unprotected, so coverage is vacuously 100%, not 0% - the icon
+ * already treats this case as "ok"; the displayed number agrees with it. */
+function mfaCoveragePercent(stats: UserStatsDto | null, passwordUserTotal: number): number {
+  if (!stats) return 0;
+  if (passwordUserTotal === 0) return 100;
+  return Math.round((stats.mfa / passwordUserTotal) * 100);
+}
+
 function StaffUsersSkeleton() {
   return (
     <>
@@ -199,7 +210,8 @@ export function UsersPage() {
     ...(superadmin ? [{ id: "sessions" as const, label: "Active sessions", count: sessionsCount }] : []),
   ];
 
-  const mfaPct = stats && stats.total > 0 ? Math.round((stats.mfa / stats.total) * 100) : 0;
+  const passwordUserTotal = stats ? stats.password_users : 0;
+  const mfaPct = mfaCoveragePercent(stats, passwordUserTotal);
 
   return (
     <div className="screen">
@@ -257,7 +269,9 @@ export function UsersPage() {
               <div className="users-page__stat-body">
                 <span className="users-page__stat-value">{mfaPct}%</span>
                 <span className="users-page__stat-label">Two-factor coverage</span>
-                <span className="users-page__stat-sub">{stats.mfa} of {stats.total} enrolled</span>
+                <span className="users-page__stat-sub">
+                  {passwordUserTotal === 0 ? "No local password accounts" : `${stats.mfa} of ${passwordUserTotal} local accounts enrolled`}
+                </span>
               </div>
             </div>
           </Card>

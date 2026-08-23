@@ -457,7 +457,7 @@ describe("CommunicationPage placeholder chip list", () => {
     // The placeholder token is the link (href) - the badge graphic is a real, fixed asset
     // (WALLET_BADGE_ASSET), never something {{apple_wallet_url}} itself resolves to as `src`.
     expect(bodyTextarea.value).toContain(
-      '<mj-image href="{{apple_wallet_url}}" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet" width="200px" />',
+      '<mj-image href="{{apple_wallet_url}}" src="/assets/apple-wallet-badge.png" alt="Add to Apple Wallet" width="200px" />',
     );
   });
 
@@ -476,7 +476,7 @@ describe("CommunicationPage placeholder chip list", () => {
     fireEvent.click(screen.getByRole("button", { name: "{{google_wallet_url}}" }));
 
     expect(bodyTextarea.value).toContain(
-      '<mj-image href="{{google_wallet_url}}" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet" width="200px" />',
+      '<mj-image href="{{google_wallet_url}}" src="/assets/google-wallet-badge.png" alt="Add to Google Wallet" width="200px" />',
     );
   });
 
@@ -496,12 +496,12 @@ describe("CommunicationPage placeholder chip list", () => {
     focusAtEnd(bodyTextarea);
     fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
     expect(bodyTextarea.value).toContain(
-      '<a href="{{apple_wallet_url}}"><img src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet" width="200" style="max-width:100%;" /></a>',
+      '<a href="{{apple_wallet_url}}"><img src="/assets/apple-wallet-badge.png" alt="Add to Apple Wallet" width="200" style="max-width:100%;" /></a>',
     );
 
     fireEvent.click(screen.getByRole("button", { name: "{{google_wallet_url}}" }));
     expect(bodyTextarea.value).toContain(
-      '<a href="{{google_wallet_url}}"><img src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet" width="200" style="max-width:100%;" /></a>',
+      '<a href="{{google_wallet_url}}"><img src="/assets/google-wallet-badge.png" alt="Add to Google Wallet" width="200" style="max-width:100%;" /></a>',
     );
   });
 

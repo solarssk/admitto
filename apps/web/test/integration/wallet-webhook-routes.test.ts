@@ -23,7 +23,7 @@ let prisma: PrismaClient;
 let keyPair: { publicKey: string; privateKey: string };
 
 function signP256(data: string, privateKeyPem: string): string {
-  const signer = createSign("SHA256");
+  const signer = createSign("SHA1");
   signer.update(data, "utf8");
   signer.end();
   return signer.sign(privateKeyPem, "hex");
@@ -393,5 +393,49 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     });
 
     expect(res.status).toBe(502);
+  });
+});
+
+describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
+  it("applies a voided status transition even though the real pass_voided payload has no `voided` field", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    // No `voided` key at all - matches the confirmed live shape of a pass_voided delivery
+    // (developer.passcreator.com/en/webhooks/pass-hooks, 2026-08-19): arriving on this route is
+    // the only voided signal there is.
+    const body = signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("voided");
+    expect(row?.voided_at).not.toBeNull();
+    expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(1);
+  });
+
+  it("still 401s a delivery with a bad signature - the /voided route isn't a verification shortcut", async () => {
+    const otherPair = generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const body = signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID }, otherPair.privateKey);
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(401);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("active");
   });
 });

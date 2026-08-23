@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 vi.mock("../src/claim-admin-job.js", () => ({
   claimNextAdminJob: vi.fn(),
@@ -64,6 +65,7 @@ describe("drainWalletMessageJobs", () => {
         return { sent: targets.length, errored: 0, erroredAttendeeIds: [] };
       });
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
+    resetSystemLogBufferForTest();
 
     db = {
       adminJob: {
@@ -224,6 +226,8 @@ describe("drainWalletMessageJobs", () => {
       where: { id: "job-wm-1" },
       data: { status: "failed", finished_at: expect.any(Date), error: WALLET_MESSAGE_JOB_NOT_CONFIGURED_ERROR },
     });
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "error", message: "wallet_message_job_failed", fields: { job_id: "job-wm-1" } });
   });
 
   it("marks the job failed when the event referenced by the request no longer exists", async () => {

@@ -164,6 +164,8 @@ export interface CompleteMfaInput {
   ip?: string;
   userAgent?: string;
   deviceLabel?: string;
+  /** Browser IANA timezone when captured; omit when unknown. */
+  timezone?: string | null;
 }
 
 /** Result of MFA verification; includes trusted-device token when remember-device is set. */
@@ -256,6 +258,7 @@ async function emitMfaAudit(
     sessionId: input.sessionId,
     ip: input.ip,
     userAgent: input.userAgent,
+    timezone: input.timezone,
   };
   if (!result.ok) {
     await logMfaFailure(db, auditCtx, result.reason, result.reason === "session_not_promoted" ? result.method : undefined);

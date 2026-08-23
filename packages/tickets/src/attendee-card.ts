@@ -129,8 +129,18 @@ export async function getAttendeeCard(
           select: { id: true, display_name: true, email: true },
         })
       : [];
+  // Full email, not the "@"-local-part - splitting it produced misleading labels like "admin"
+  // for admin@example.com, which reads as a role rather than an identifier and doesn't match
+  // the display_name-then-email fallback the Attendee Detail Notes tab already uses (PO report).
   const authorMap = new Map(
-    authors.map((u) => [u.id, u.display_name || u.email.split("@")[0] || "Operator"]),
+    authors.map((u) => {
+      // The "Operator" fallback is unreachable in practice - User.email is required and
+      // format-validated at every account-creation path (auth's isValidEmailFormat), so an
+      // author with neither a display_name nor a usable email can't actually occur.
+      /* v8 ignore next */
+      const label = u.display_name || u.email || "Operator";
+      return [u.id, label];
+    }),
   );
 
   const { company, department } = companyFromAttendee(attendee);

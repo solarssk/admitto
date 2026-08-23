@@ -13,19 +13,15 @@ export const AUTH_PASSWORD_STRENGTH_CSS = `
 .auth-password-slot {
   position: relative;
 }
-/* Single-row meter sits in the standard .auth-field margin (1rem) below the
-   input — no extra field spacing, no layout shift when it appears/disappears. */
+/* Meter sits in normal flow below the input, same rhythm as .auth-field-hint,
+   so the card grows and the next field keeps the standard 1rem field gap. */
 .auth-password-strength {
-  position: absolute;
-  top: calc(100% + 0.375rem);
-  left: 0;
-  right: 0;
+  margin-top: 0.375rem;
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.75rem;
   height: 0.5rem;
-  pointer-events: none;
 }
 .auth-password-strength--empty {
   display: none;

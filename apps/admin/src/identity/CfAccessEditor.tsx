@@ -382,10 +382,11 @@ export function CfAccessEditor() {
     <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
       <div className="identity-modal__backdrop" aria-hidden="true" />
       <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <div ref={scrollRef} className="identity-modal__scroll">
+        <div ref={scrollRef} className="identity-modal__scroll at-scroll">
           <IdentityModalHeader
             titleId={titleId}
             title="Cloudflare Access"
+            icon={<i className="ti ti-brand-cloudflare" />}
             badge={
               loadState === "ready" && (
                 <>

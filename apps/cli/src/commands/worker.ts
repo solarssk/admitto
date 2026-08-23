@@ -8,6 +8,7 @@
  */
 import { hostname as osHostname } from "node:os";
 import type { PrismaClient } from "@admitto/db";
+import { emitSystemLog, type SystemLogLevel } from "@admitto/shared/system-log";
 import {
   InstanceUrlRequiredError,
   purgeAuthRetention,
@@ -26,6 +27,7 @@ import {
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage } from "@admitto/storage";
 import { closeSsePublishClient, publishActivityChanged } from "../lib/sse-publish.js";
+import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-log-publish.js";
 import { drainExportJobs } from "./export-jobs.js";
 import { runWalletRegistrationSync } from "./wallet-sync.js";
 import { drainWalletPushJobs } from "./wallet-push-jobs.js";
@@ -41,9 +43,44 @@ import {
   type RetentionSchedule,
 } from "./worker-retention-schedule.js";
 
+/** Every job runner in this file already calls this on every outcome (ok, idle, skipped, FAILED,
+ * a degraded fallback) - routing it through emitSystemLog too, rather than adding a second call
+ * at each of those ~25 call sites, is what makes the worker's job-lifecycle activity reach System
+ * logs at all (a separate OS process from apps/web - see apps/cli/src/lib/system-log-publish.ts).
+ * Level is inferred from the message text rather than threading a new parameter through every
+ * call site: the "FAILED " prefix convention (runJobSafely, the retention FAILED branch) maps to
+ * "error"; "failed:"/"unavailable" appearing anywhere (heartbeat refresh failures, a notify-client
+ * falling back to poll-only) maps to "warn" - both real degraded conditions, just not raised
+ * through the FAILED-prefix path. A nonzero `failed=`/`errors=` counter in an otherwise-"ok"
+ * summary (e.g. "ok claimed=5 sent=4 failed=1") also maps to "warn" - a drain that caught
+ * per-item failures and returned normally must not read as fully successful (bot review).
+ * Matches "failed:" (colon) and the counter form separately from bare "failed" - every routine
+ * "ok claimed=1 ... failed=0 ..." summary also contains the substring "failed", as a zero count,
+ * not a failure. Everything else (ok/idle/skipped/lifecycle banners) is "info". */
+export function logLevel(message: string): SystemLogLevel {
+  if (message.startsWith("FAILED ")) return "error";
+  if (/failed:|unavailable/i.test(message)) return "warn";
+  const counter = /\b(?:failed|errors)=(\d+)/.exec(message);
+  if (counter && Number(counter[1]) > 0) return "warn";
+  return "info";
+}
+
+/** Messages that mean "this tick did nothing for this job type" - the overwhelming majority of
+ * log() calls in a healthy, mostly-idle worker. Not relayed to System logs (still written to
+ * stdout via console.log below): a large backlog can make runWorkerTick loop back-to-back with
+ * no sleep between ticks (see the `mightHaveMore` continue in runWorker), and each tick already
+ * calls log() up to ~9 times - relaying every idle result too risks bursting past the ops-ingest
+ * endpoint's 120/min-per-IP rate limit exactly when a real backlog (the case operators most want
+ * visibility into) is being drained (bot review). */
+export function isRoutineNoop(message: string): boolean {
+  return message === "idle" || message === "skipped (lock held)";
+}
+
 function log(job: string, message: string): void {
   const ts = new Date().toISOString();
   console.log(`[worker:${job}] ${ts} ${message}`);
+  if (isRoutineNoop(message)) return;
+  emitSystemLog("worker", logLevel(message), message, { job });
 }
 
 function sleep(ms: number, signal: { stopped: boolean }): Promise<void> {
@@ -392,6 +429,12 @@ export async function runWorker(db: PrismaClient): Promise<void> {
   const signal = { stopped: false };
   const retention: RetentionSchedule = createRetentionSchedule();
 
+  // Installed only once the resources the `finally` block below cleans up (locks, notify) have
+  // actually been acquired - installing any earlier would leave the process-wide relay dangling
+  // if openWorkerLockClient/ensureNotifyClient itself threw before the try block was reached
+  // (bot review).
+  installSystemLogRelay();
+
   const onStop = () => {
     if (signal.stopped) return;
     signal.stopped = true;
@@ -427,6 +470,10 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     await locks.close();
     await notify?.close();
     await closeSsePublishClient();
+    // Log "stopped" while the relay is still installed, or the final lifecycle entry never
+    // leaves this process - System logs would show the shutdown signal arriving but never
+    // confirm the worker actually finished stopping (bot review).
     log("heartbeat", "stopped");
+    uninstallSystemLogRelay();
   }
 }

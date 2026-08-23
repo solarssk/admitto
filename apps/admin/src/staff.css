@@ -877,14 +877,11 @@
   font-size: var(--fs-xs);
 }
 
-/* Right-aligned status badge, vertically centered against the name+meta
-   pair as a unit — .checkin-card__head keeps align-items: flex-start for
-   the icon, so this overrides it per-child, same centering trick as the
-   item icon/action button below (PO/Jadzia review, round 4). Replaces the
-   old dotted inline-only badge plus a separate full-width colored bar that
-   duplicated it for every other status. */
+/* Right-aligned status badge, aligned to the top of the name+meta pair so it sits level with
+   the name row specifically, not centered against the whole two-line block (PO report, round
+   5 - supersedes the round-4 centered treatment). .checkin-card__head's own flex-start already
+   gives this the right position, so no per-child override is needed here anymore. */
 .checkin-card__status-badge {
-  align-self: center;
   flex: none;
   white-space: nowrap;
 }
@@ -898,27 +895,51 @@
   padding: 12px 16px;
 }
 
+/* Pinned to the base Admitto blue regardless of the organisation's branding accent - a red/
+   orange brand color on this specific button reads as an error/danger state, not a primary
+   action (PO report). Every other primary button keeps taking the branding color as designed;
+   only this one is exempted. */
+.checkin-card__primary-actions .at-btn--primary {
+  background: var(--at-blue);
+}
+
+.checkin-card__primary-actions .at-btn--primary:hover:not(:disabled) {
+  background: var(--at-blue-600);
+}
+
+.checkin-card__primary-actions .at-btn--primary:active:not(:disabled) {
+  background: var(--at-blue-700);
+}
+
 /* Block 3 — requirements: compact rows, icon + label (flex) + right state.
-   gap ≥ 16px prevents 44px action-button touch areas (±8px margin) from
-   overlapping between adjacent rows when two rows both have inline actions. */
+   No container-level gap here on purpose - see .checkin-card__item + .checkin-card__item
+   below for why title-to-first-item and item-to-item spacing need different values. */
 .checkin-card__items {
   display: flex;
   flex-direction: column;
-  gap: 16px;
   padding: 10px 16px;
   border-top: 1px solid var(--at-gray-100, var(--border));
 }
 
-/* Matches .checkin-card__notes-title's small-caps label style — without a
-   heading this list read as inert status text, not "hand these out"
-   (Jadzia review). */
+/* Matches .checkin-card__notes-title's small-caps label style *and* its own dedicated
+   margin-bottom (6px) — that's the "natural" title-to-content gap PO pointed to as the
+   reference. The previous version had no margin of its own and relied on the parent's flex
+   gap (16px, sized for item-to-item touch-target clearance below) to also separate the title
+   from the first item, which read as too far apart compared to Notes right below it. */
 .checkin-card__items-title {
-  margin: 0;
+  margin: 0 0 6px;
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
+}
+
+/* 16px only *between* item rows (not title-to-first-item, now handled by the title's own
+   margin above) — gap ≥ 16px prevents 44px action-button touch areas (±8px margin) from
+   overlapping between adjacent rows when two rows both have inline actions. */
+.checkin-card__item + .checkin-card__item {
+  margin-top: 16px;
 }
 
 /* Icon is a sibling of the label+description column (not nested inside the
@@ -930,6 +951,9 @@
   gap: 10px;
 }
 
+/* var(--space-1) (4px) still read as a touch too much once the row's own phantom padding
+   below was fixed (PO report, round 2) - 2px is deliberate here, not the same unexplained
+   hardcoded value an earlier pass used before that phantom padding was diagnosed. */
 .checkin-card__item-content {
   flex: 1;
   min-width: 0;
@@ -938,11 +962,16 @@
   gap: 2px;
 }
 
+/* min-height matches --fs-sm's own line height (13px * 1.5 line-height), not an arbitrary
+ * larger box - align-items:center was centering the text inside 28px, adding ~8px of invisible
+ * padding on top of item-content's gap below, so the label-to-description gap looked roughly
+ * double the actual gap token (PO report: still too far apart even after that gap was
+ * corrected). */
 .checkin-card__item-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  min-height: 20px;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
@@ -952,6 +981,12 @@
   margin: 0;
   color: var(--text-muted);
   font-size: var(--fs-xs);
+}
+
+/* Placeholder for an item with no configured description — keeps the row's height consistent
+ * with items that have one, instead of silently shrinking (PO report). */
+.checkin-card__item-description--empty {
+  font-style: italic;
 }
 
 /* Slightly larger than the old 16px/18px — noticeably its own element next
@@ -1008,6 +1043,22 @@
   color: var(--status-error);
 }
 
+/* Close stays visually separate from Revoke/Add note - pushed to the row's far right instead of
+   grouping with them left-to-right (PO report). */
+.checkin-card__aux-btn--close {
+  margin-left: auto;
+}
+
+/* .at-btn--ghost:hover:not(:disabled) (packages/ui) is the same specificity as a bare
+ * .checkin-card__aux-btn--danger:hover:not(:disabled) (3 class-level selectors each), so which
+ * one wins came down to CSS source order - unreliable across bundles. The .checkin-card
+ * qualifier below adds a 4th selector so this always wins regardless of order, matching the
+ * same danger-hover treatment as .users-page__icon-danger. */
+.checkin-card .checkin-card__aux-btn--danger:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
 .checkin-card__notes {
   padding: 10px 16px;
   border-top: 1px solid var(--at-gray-100, var(--border));
@@ -1058,7 +1109,12 @@
 }
 
 /* Check-in v2 layout */
-.check-in__offline-banner {
+/* Notice's own base rule (components.css) resets `margin: 0` at the same specificity (one
+ * class) as this - which one wins was down to CSS bundle order, and lost here (PO report: the
+ * warning-styled stream banner had no bottom gap, while .ck-connection below - a plain div, not
+ * a Notice, so nothing to fight - correctly had its own). Combining both classes in the selector
+ * guarantees this wins regardless of bundle order. */
+.at-notice.check-in__offline-banner {
   margin-bottom: var(--space-3);
 }
 
@@ -1108,10 +1164,12 @@
   color: var(--status-error-fg);
 }
 
+/* "Connection error. Check network" (CONNECTION_COPY.degraded) - error-red, not warning-orange,
+ * to match its own message text (PO report: said "error" but was colored like a warning). */
 .ck-connection--degraded {
-  background: var(--status-warn-tint);
-  border: 1px solid var(--status-warn);
-  color: var(--status-warn-fg);
+  background: var(--status-error-tint);
+  border: 1px solid var(--status-error);
+  color: var(--status-error-fg);
 }
 
 .ck-connection--session_ended {
@@ -1363,6 +1421,7 @@
   /* Mockup ci-history__list: history scrolls inside the card, not the page. */
   max-height: min(440px, 48vh);
   overflow-y: auto;
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 /* Mockup ci-row: dot | info (flexes, ellipsis) | right (status + time, right-aligned). */
@@ -3082,20 +3141,14 @@
   gap: var(--space-3) var(--space-4);
 }
 
-.identity-editor__redirect {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+/* Redirect URI is a plain Input now (native label/icon/hint, same .at-field markup and spacing
+   as Client ID right above it - it used to be a hand-rolled label+field pair with its own,
+   slightly larger gap, which read as offset from the field compared to every other field on
+   this form (PO report)). It renders as .identity-editor__grid's sibling, not a grid cell, so it
+   needs its own top margin to separate from the grid above - scoped to only-when-adjacent so the
+   Endpoints/Claims cards' own (gap-less) grids aren't affected. */
+.identity-editor__grid + .at-field {
   margin-top: var(--space-3);
-}
-
-.identity-editor__redirect-hint {
-  margin-top: var(--space-3);
-}
-
-.identity-editor__redirect-actions {
-  display: flex;
-  gap: var(--space-2);
 }
 
 /* Protocol picker (Add identity provider) — visual only today: OIDC is the only
@@ -4013,6 +4066,15 @@ output.mail-field-hint {
   gap: var(--space-4);
 }
 
+/* .mail-transport__desc/__env-note's own margin-bottom (above) stacked on top of this flex
+   container's gap when nested directly inside it - the two don't collapse in flexbox the way
+   block margins would, so the tile grid below sat further down than the equivalent content in
+   Organization mode, which has no such wrapper (PO report). */
+.mail-transport-form > .mail-transport__desc,
+.mail-transport-form > .mail-transport__env-note {
+  margin-bottom: 0;
+}
+
 /* Transport picker — clickable tile grid (Instance settings -> Mail card 1). A compact
  * icon + label chip, not a description card — the per-provider blurb moved to the tile's
  * tooltip instead of taking up space. auto-fit packs as many as actually fit per row (5
@@ -4658,8 +4720,11 @@ output.mail-field-hint {
    plain status readout (error, since nothing was actually delivered). */
 .mail-preview {
   /* <output>'s UA default is display:inline — this box needs to behave like the
-     <div> it replaced (full-width, its children stacked as block boxes). */
-  display: block;
+     <div> it replaced (full-width, its children stacked vertically with a
+     consistent gap, same rhythm as .settings-card-stack). */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   margin-top: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -4686,7 +4751,6 @@ output.mail-field-hint {
   gap: var(--space-3);
   border-bottom: 1px solid var(--border);
   padding-bottom: var(--space-2);
-  margin-bottom: var(--space-3);
 }
 
 .mail-preview__head-main {
@@ -4824,10 +4888,6 @@ output.mail-field-hint {
 
 .test-mail-summary__full b {
   font-weight: 400;
-}
-
-.mail-preview__bounce-notice {
-  margin-top: var(--space-3);
 }
 
 /* mail-transport-footer — shared footer row for Security panel */
@@ -5074,26 +5134,7 @@ output.mail-field-hint {
   max-height: 9.5rem;
   overflow-x: hidden;
   overflow-y: auto;
-  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.event-bounce-ingest__recent-runs-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 .event-bounce-ingest__recent-runs-list {
@@ -5242,8 +5283,21 @@ output.mail-field-hint {
 
 .sessions-table-wrap {
   overflow-x: auto;
+}
+
+/* Negative margin only, no matching padding - a margin/padding pair of the same size on the
+   same box cancels out (the padding re-insets exactly what the margin bled out), leaving the
+   table at the same width as an unbled child. Bleeding all the way to the card's own edge is
+   the actual goal here, matching .users-page__table-wrap's own (correct) version of this same
+   idiom - this copy quietly never achieved it (PO report: several tables using this class read
+   narrower than the card, indistinguishable from not having the trick at all).
+   Scoped to .at-card__body (a padded Card's own wrapper, packages/ui/src/components/Card.tsx)
+   - ReportsPage.tsx's Admission log reuses this same class on a padded={false} Card, which
+   never renders .at-card__body at all, so this bleed never applies there (codex review):
+   with no padding to offset, the same negative margin would push that table 24px past each
+   edge of its already-unpadded card instead of reaching it. */
+.at-card__body .sessions-table-wrap {
   margin: 0 calc(-1 * var(--pad-card));
-  padding: 0 var(--pad-card);
 }
 
 .table {
@@ -5380,70 +5434,6 @@ output.mail-field-hint {
   flex: 1 1 auto;
   min-width: 16rem;
   max-width: 24rem;
-}
-
-/* Sessions pagination footer - same shape as the Logs table's own (.audit-log-footer*), kept as
-   a separate, sessions-scoped copy rather than a shared class since the two panels don't
-   otherwise share a component. */
-.sessions-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.sessions-footer__summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.sessions-footer__pager {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.sessions-pagesize {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--fs-sm);
-  color: var(--text-muted, var(--text-secondary));
-  white-space: nowrap;
-}
-
-.sessions-pagesize .searchable-select {
-  width: auto;
-}
-
-.sessions-pagesize .searchable-select__trigger {
-  height: var(--control-h-sm);
-  padding: 0 var(--space-2);
-  font-size: var(--fs-sm);
-}
-
-@media (max-width: 600px) {
-  .sessions-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-  }
-
-  .sessions-footer__summary {
-    flex-wrap: wrap;
-  }
-
-  .sessions-footer__pager {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
 }
 
 /* Audit log panel (Settings) */
@@ -6107,7 +6097,10 @@ output.mail-field-hint {
    which owns the border/background/color/icon. Only the bottom spacing to the console below
    survives here, since Notice itself is margin: 0 (its layout contract expects a flex/grid gap
    parent, which this plain block stack doesn't provide). */
-.system-log-panel__poll-warning {
+/* Compound selector - same reasoning as .at-notice.system-log-panel__retention-notice below:
+   a bare single-class selector ties with .at-notice's own `margin: 0` on specificity and loses
+   unpredictably depending on lazy-CSS-chunk load order. */
+.at-notice.system-log-panel__poll-warning {
   margin-bottom: var(--space-2);
 }
 
@@ -6246,8 +6239,12 @@ output.mail-field-hint {
   gap: var(--space-2);
 }
 
-.system-log-panel__retention-notice {
-  margin-top: var(--space-3);
+/* Compound selector (not just .system-log-panel__retention-notice) so this reliably beats
+   .at-notice's own `margin: 0` regardless of which lazy-loaded CSS chunk happens to land later
+   in the page's stylesheet order - equal-specificity single-class selectors were losing that
+   race unpredictably (PO review, confirmed live via document.styleSheets order). */
+.at-notice.system-log-panel__retention-notice {
+  margin-top: var(--space-5);
 }
 
 /* Event archiving panel */
@@ -6259,9 +6256,13 @@ output.mail-field-hint {
   margin: var(--space-2) 0;
 }
 
+/* Negative margin only, no matching padding - see .sessions-table-wrap's own comment
+   (staff.css) for why a same-size padding here would silently cancel the bleed back to a
+   plain unbled child's width (PO report: this still read narrower than Staff users' table
+   after the first attempt at this fix). */
 .archiving-table-wrap {
   overflow-x: auto;
-  margin-bottom: var(--space-2);
+  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
 }
 
 .archiving-table-wrap th:last-child,
@@ -6951,36 +6952,13 @@ output.mail-field-hint {
   overflow-y: auto;
   padding-right: 8px;
   margin-right: -8px;
-  /* (D1) The padding/margin gutter above keeps content off the scrollbar, but it's a fixed 8px —
-   * the real native scrollbar can render wider, so item width still shifted when filtering
-   * toggled the list between overflowing and not. `scrollbar-gutter: stable` reserves the
-   * browser's actual scrollbar width up front, always, regardless of overflow state — no
-   * documented browser-support floor exists in this repo, and unsupported browsers just ignore
-   * the property (reverting to the pre-existing behavior), so it's a safe progressive addition. */
-  scrollbar-gutter: stable;
-  /* (D2) Slim, on-theme scrollbar instead of the default browser chrome — no existing scrollbar
-   * treatment to reuse elsewhere in the app (ScrollFadeTabs hides its scrollbar entirely instead,
-   * a different UX for a different case). Standards-based properties for Firefox... */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-/* ...plus the WebKit/Blink-specific pseudo-elements (Chrome, Safari, Edge). */
-.overview-timeline::-webkit-scrollbar {
-  width: 8px;
-}
-
-.overview-timeline::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.overview-timeline::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.overview-timeline::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* (D1) The padding/margin gutter above keeps content off the scrollbar - a fixed 8px, so item
+   * width can still shift slightly when filtering toggles the list between overflowing and not.
+   * A `scrollbar-gutter: stable` variant of the shared .at-scroll class briefly replaced this
+   * with a reservation that tracked the browser's actual scrollbar width, but that traded this
+   * rare shift for a permanent, always-on asymmetric gutter on every short/non-overflowing list
+   * across the app - reverted (PO report). Scrollbar look (D2, slim/on-theme instead of default
+   * browser chrome): shared .at-scroll. */
 }
 
 /* Zero-result state (#A2): center the single EmptyState block in the fixed-height container
@@ -7193,10 +7171,12 @@ output.mail-field-hint {
 
 /* No per-row border (B: "too many divider lines... looks like an Excel spreadsheet") — the
  * section-level divider above already separates Key contacts from its neighbors; rows lean on
- * padding for rhythm instead of a hard rule between every pair. */
+ * padding for rhythm instead of a hard rule between every pair. align-items: center (not
+ * flex-start) so the avatar stays centered against the row's full height regardless of whether
+ * the name wraps to one or two lines — same reasoning as .overview-resource below (#D4). */
 .overview-contact {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) 0;
 }
@@ -7209,7 +7189,6 @@ output.mail-field-hint {
   gap: 1px;
   /* Icons stay always-visible (not hover-reveal) so they're reachable on touch and discoverable
    * without a pointer — the name wraps to two lines instead of truncating hard (#345). */
-  padding-top: 3px;
 }
 .overview-contact__info strong {
   font-size: var(--fs-sm);
@@ -7613,28 +7592,7 @@ output.mail-field-hint {
   overflow-y: auto;
   list-style: none;
   overscroll-behavior: contain;
-  /* Keep row width stable when filter results cross the max-height threshold
-     (scrollbar appearing/disappearing mid-type). Same idea as .overview-timeline. */
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.timezone-select__list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.timezone-select__list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.timezone-select__list::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.timezone-select__list::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look: shared .at-scroll (packages/ui), applied via className. */
 }
 
 .timezone-select__group {

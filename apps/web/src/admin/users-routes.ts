@@ -209,7 +209,9 @@ type UserWithRoles = Prisma.UserGetPayload<{
   include: {
     role_assignments: { include: { oidc_role_grants: { select: { id: true } } } };
     mfa_methods: { select: { id: true; confirmed_at: true } };
-    external_identities: { select: { id: true }; take: 1 };
+    external_identities: {
+      select: { id: true; provider: { select: { display_name: true; provider_type: true } } };
+    };
   };
 }>;
 
@@ -272,6 +274,11 @@ function serializeUserRow(user: UserWithRoles, sessionStats: SessionStats) {
     active_sessions_count: sessionStats.active_sessions_count,
     has_mfa: user.mfa_methods.some((m) => m.confirmed_at != null),
     has_sso: user.external_identities.length > 0,
+    external_identities: user.external_identities.map((ei) => ({
+      id: ei.id,
+      provider_display_name: ei.provider.display_name,
+      provider_type: ei.provider.provider_type,
+    })),
     roles: user.role_assignments.map((a) => ({
       id: a.id,
       role: a.role,
@@ -291,7 +298,12 @@ async function serializeUser(db: PrismaClient, user: UserWithRoles) {
 const userInclude = {
   role_assignments: { include: { oidc_role_grants: { select: { id: true } } } },
   mfa_methods: { select: { id: true, confirmed_at: true } },
-  external_identities: { select: { id: true }, take: 1 },
+  // No take:1 cap (dropped) - the admin user list/detail need each linked identity's provider
+  // name to show, not just whether any exist (PO report: "Identity provider" gave no hint which
+  // one, and a Cloudflare Access link was invisible entirely - it's just another row here).
+  external_identities: {
+    select: { id: true, provider: { select: { display_name: true, provider_type: true } } },
+  },
 } as const;
 
 async function loadUser(db: PrismaClient, id: string): Promise<UserWithRoles | null> {
@@ -429,10 +441,23 @@ export async function handleGetUserStats(c: Context, db: PrismaClient): Promise<
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
-  const [total, active, mfaConfirmed, sso, activeSessionUsers] = await Promise.all([
+  const [total, active, mfaConfirmed, passwordUsers, sso, activeSessionUsers] = await Promise.all([
     db.user.count(),
     db.user.count({ where: { is_active: true } }),
-    db.user.count({ where: { mfa_methods: { some: { confirmed_at: { not: null } } } } }),
+    // Scoped to users with a local password: a linked identity provider doesn't retire the
+    // password path (a hybrid account can still sign in with either), so excluding every
+    // SSO-linked user here - not just SSO-only ones - would hide a hybrid account's
+    // unprotected password login from this KPI (codex review).
+    db.user.count({
+      where: {
+        mfa_methods: { some: { confirmed_at: { not: null } } },
+        password_hash: { not: null },
+      },
+    }),
+    // Denominator for the coverage KPI below - only users who actually have a password path
+    // that two-factor could protect. Deliberately not `total - sso`: `sso` (below) counts every
+    // identity-provider link, hybrid accounts included, which still have a password to protect.
+    db.user.count({ where: { password_hash: { not: null } } }),
     db.user.count({ where: { external_identities: { some: {} } } }),
     db.session.groupBy({
       by: ["user_id"],
@@ -446,6 +471,7 @@ export async function handleGetUserStats(c: Context, db: PrismaClient): Promise<
     total,
     active,
     mfa: mfaConfirmed,
+    password_users: passwordUsers,
     sso,
     active_sessions: activeSessions,
     active_sessions_users: activeSessionUsers.length,
