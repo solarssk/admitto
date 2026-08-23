@@ -237,6 +237,7 @@ describe("mfa-html-routes", () => {
       ok: true,
       stage: SESSION_STAGE.BACKUP_CODES_REQUIRED,
       trustedDeviceRawToken: "td-tok",
+      sessionRawToken: "rotated-token",
     } as never);
     const { app } = makeApp({
       userId: "u1",
@@ -258,6 +259,7 @@ describe("mfa-html-routes", () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
       stage: SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
+      sessionRawToken: "rotated-token",
     } as never);
     const { app } = makeApp({
       userId: "u1",
@@ -277,6 +279,7 @@ describe("mfa-html-routes", () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
       stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
     } as never);
     const { app } = makeApp({
       userId: "u1",
@@ -297,6 +300,7 @@ describe("mfa-html-routes", () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
       stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
     } as never);
     mockLanding.mockRejectedValue(new Error("no roles"));
     const { app } = makeApp({
@@ -314,8 +318,11 @@ describe("mfa-html-routes", () => {
     expect(mockRevoke).toHaveBeenCalled();
     // clearSessionCookie now runs inside resolvePostMfaLandingPath (routes.ts), a same-module
     // call ESM mocking can't intercept - assert its observable effect (an expired Set-Cookie for
-    // the session cookie) instead of the mock being called.
-    const clearedCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    // the session cookie) instead of the mock being called. The rotated session cookie is set
+    // first (unconditionally, before the landing path can fail), so the clearing Set-Cookie is
+    // the last "admitto_session=" header - browsers apply same-name Set-Cookie headers in order,
+    // so the last one determines the final state.
+    const clearedCookie = res.headers.getSetCookie().filter((c) => c.startsWith("admitto_session=")).pop();
     expect(clearedCookie).toMatch(/Max-Age=0/i);
     err.mockRestore();
   });

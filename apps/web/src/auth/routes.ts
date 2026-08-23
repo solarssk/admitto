@@ -552,6 +552,10 @@ export async function handlePostMfaWebauthnVerify(
   if (result.trustedDeviceRawToken) {
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
+  // Session token rotates on every promotion (see promoteSessionToFull) - the pre-MFA
+  // cookie must stop working the instant a higher stage is reached. Always set on the
+  // `ok: true` path - completeMfaWithWebauthn() only omits it on the `ok: false` branch above.
+  setSessionCookie(c, result.sessionRawToken!);
 
   const next = await resolvePostMfaLandingPath(
     c,

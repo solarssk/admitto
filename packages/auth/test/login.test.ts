@@ -317,7 +317,7 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
 
   it("emits auth.trusted_device.created when remember-device is enabled", async () => {
     mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
-    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.promoteSessionToFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
     mocks.getTrustedDeviceDays.mockResolvedValue(30);
     mocks.createTrustedDevice.mockResolvedValue({ rawToken: "trusted-raw" });
 
@@ -332,7 +332,12 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
       userAgent: "test-agent",
     });
 
-    expect(result).toEqual({ ok: true, trustedDeviceRawToken: "trusted-raw", stage: SESSION_STAGE.FULL });
+    expect(result).toEqual({
+      ok: true,
+      trustedDeviceRawToken: "trusted-raw",
+      stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
+    });
     expect(mocks.logTrustedDeviceCreated).toHaveBeenCalledWith(prisma, {
       userId: "user-1",
       sessionId: "sess-1",
@@ -345,7 +350,7 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
 
   it("carries the captured timezone into the audit context, same as completeMfa's own TOTP path", async () => {
     mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
-    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.promoteSessionToFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
 
     await completeMfaWithWebauthn(prisma, {
       userId: "user-1",
@@ -366,7 +371,7 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
 
   it("skips trusted-device creation and getTrustedDeviceDays entirely when remember-device is not requested", async () => {
     mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
-    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.promoteSessionToFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
 
     const result = await completeMfaWithWebauthn(prisma, {
       userId: "user-1",
@@ -376,7 +381,12 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
       rp: testWebauthnRp,
     });
 
-    expect(result).toEqual({ ok: true, trustedDeviceRawToken: undefined, stage: SESSION_STAGE.FULL });
+    expect(result).toEqual({
+      ok: true,
+      trustedDeviceRawToken: undefined,
+      stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
+    });
     expect(mocks.getTrustedDeviceDays).not.toHaveBeenCalled();
     expect(mocks.createTrustedDevice).not.toHaveBeenCalled();
     expect(mocks.logTrustedDeviceCreated).not.toHaveBeenCalled();
@@ -384,7 +394,7 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
 
   it("skips trusted-device creation when the instance's trusted-device window is disabled (0 days)", async () => {
     mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
-    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.promoteSessionToFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
     mocks.getTrustedDeviceDays.mockResolvedValue(0);
 
     const result = await completeMfaWithWebauthn(prisma, {
@@ -396,7 +406,12 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
       rememberDevice: true,
     });
 
-    expect(result).toEqual({ ok: true, trustedDeviceRawToken: undefined, stage: SESSION_STAGE.FULL });
+    expect(result).toEqual({
+      ok: true,
+      trustedDeviceRawToken: undefined,
+      stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
+    });
     expect(mocks.createTrustedDevice).not.toHaveBeenCalled();
     expect(mocks.logTrustedDeviceCreated).not.toHaveBeenCalled();
   });

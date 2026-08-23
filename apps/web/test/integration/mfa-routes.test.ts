@@ -966,8 +966,9 @@ describe("POST /api/auth/mfa/webauthn — login-time WebAuthn", () => {
     expect(trustedCookie).toBeTruthy();
     expect(trustedCookie).toMatch(/Max-Age=\d+/i);
 
+    // Session token rotates on this promotion (mfa_pending -> full).
     const me = await app.request("/api/auth/me", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { ...sameOrigin, ...cookieHeader(verifyRes) },
     });
     expect(me.status).toBe(200);
   });
