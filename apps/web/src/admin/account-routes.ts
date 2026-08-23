@@ -263,13 +263,16 @@ export async function withStepUpGate<T>(
   params: {
     userId: string;
     currentSessionId: string | undefined;
-    proof: StepUpProof | undefined;
+    stepUpBody: { code?: string; webauthn?: { response: unknown } };
     rateLimitAction: string;
     forceRequired?: boolean;
+    injectedBaseUrl?: string;
   },
   body: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const { userId, currentSessionId, proof, rateLimitAction, forceRequired } = params;
+  const { userId, currentSessionId, stepUpBody, rateLimitAction, forceRequired, injectedBaseUrl } = params;
+  const proof = await resolveStepUpProof(c, db, currentSessionId, stepUpBody, injectedBaseUrl);
+  if (proof instanceof Response) return { ok: false, response: proof };
   const preflightDenied = await stepUpPreflight(c, db, rateLimitStore, {
     userId,
     currentSessionId,
@@ -823,16 +826,13 @@ export async function handlePatchAccountPassword(
     return c.json(passwordTooCommonJsonBody(), 400);
   }
 
-  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
-  if (proof instanceof Response) return proof;
-
   // The new password is only hashed once step-up has passed (or wasn't required), so a
   // totp_required/invalid_totp/rate-limited request never pays for the hash.
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, proof, rateLimitAction: "account-password" },
+    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "account-password" },
     async (tx, orgId, audit) => {
       const password_hash = await hashPassword(new_password);
       await tx.user.update({
@@ -1042,9 +1042,6 @@ export async function handlePostMfaReset(
   const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, parsed.data.password);
   if (passwordFailure) return passwordFailure;
 
-  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
-  if (proof instanceof Response) return proof;
-
   // A recovery code is consumed as soon as it's checked, so if the reset work below fails for
   // any other reason, the whole transaction (including that consumption) rolls back rather than
   // burning a one-time code for a reset that never actually happened.
@@ -1052,7 +1049,7 @@ export async function handlePostMfaReset(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, proof, rateLimitAction: "mfa-reset" },
+    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "mfa-reset" },
     async (tx, orgId, audit) => {
       const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
       const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
@@ -1322,14 +1319,11 @@ export async function handleDeleteAccountWebauthnCredential(
   const parsed = z.object(stepUpProofFields).strict().safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
-  if (proof instanceof Response) return proof;
-
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, proof, rateLimitAction: "account-webauthn-remove" },
+    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "account-webauthn-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeWebauthnCredential(tx, userId, credentialId);
       if (removed) {
@@ -1379,14 +1373,11 @@ export async function handleDeleteAccountTotp(
   const parsed = z.object(stepUpProofFields).strict().safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
-  if (proof instanceof Response) return proof;
-
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, proof, rateLimitAction: "account-totp-remove" },
+    { userId, currentSessionId, stepUpBody: parsed.data, injectedBaseUrl, rateLimitAction: "account-totp-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeTotpMethod(tx, userId);
       if (removed) {
@@ -1446,9 +1437,6 @@ export async function handlePostAccountRegenerateBackupCodes(
   const parsed = z.object(stepUpProofFields).strict().safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
 
-  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
-  if (proof instanceof Response) return proof;
-
   const gated = await withStepUpGate(
     c,
     db,
@@ -1456,7 +1444,8 @@ export async function handlePostAccountRegenerateBackupCodes(
     {
       userId,
       currentSessionId,
-      proof,
+      stepUpBody: parsed.data,
+      injectedBaseUrl,
       rateLimitAction: "account-backup-codes-regenerate",
     },
     async (tx, orgId, audit) => {
