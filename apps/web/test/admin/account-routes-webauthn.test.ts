@@ -4,6 +4,8 @@ import type { PrismaClient } from "@admitto/db";
 import {
   handlePostAccountWebauthnRegisterBegin,
   handlePostAccountWebauthnRegisterFinish,
+  handlePostAccountWebauthnAssertBegin,
+  resolveStepUpProof,
 } from "../../src/admin/account-routes.js";
 import { stashWebauthnChallenge, clearWebauthnChallengeCacheForTests } from "../../src/auth/webauthn-challenge-cache.js";
 
@@ -124,5 +126,122 @@ describe("handlePostAccountWebauthnRegisterFinish - defensive branch unreachable
     const ctx = mockContext({ userId: "user-1" });
     const res = await handlePostAccountWebauthnRegisterFinish(ctx, {} as PrismaClient);
     expect(res.status).toBe(401);
+  });
+});
+
+describe("resolveStepUpProof - webauthn proof branches", () => {
+  afterEach(() => clearWebauthnChallengeCacheForTests());
+
+  it("returns 401 unauthorized when a webauthn proof is submitted with no session (cloudflare-access principal)", async () => {
+    const ctx = mockContext({ userId: "user-1" });
+    const db = { systemSettings: { findUnique: async () => null } } as unknown as PrismaClient;
+
+    const result = await resolveStepUpProof(ctx, db, undefined, {
+      webauthn: { response: { id: "x" } },
+    });
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(401);
+  });
+
+  it("returns 403 webauthn_disabled when a webauthn proof is submitted while the instance setting is off", async () => {
+    const ctx = mockContext({ userId: "user-1", sessionId: "sess-1" });
+    const db = {
+      systemSettings: { findUnique: async () => ({ value_json: "false" }) },
+    } as unknown as PrismaClient;
+
+    const result = await resolveStepUpProof(ctx, db, "sess-1", {
+      webauthn: { response: { id: "x" } },
+    });
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(403);
+    expect(((await (result as Response).json()) as { code: string }).code).toBe("webauthn_disabled");
+  });
+
+  it("returns 400 challenge_expired when no matching assert/begin challenge was stashed for this session", async () => {
+    const ctx = mockContext({ userId: "user-1", sessionId: "sess-1" });
+    const db = { systemSettings: { findUnique: async () => null } } as unknown as PrismaClient;
+
+    const result = await resolveStepUpProof(ctx, db, "sess-1", {
+      webauthn: { response: { id: "x" } },
+    });
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(400);
+    expect(((await (result as Response).json()) as { code: string }).code).toBe("challenge_expired");
+  });
+
+  it("propagates a 422 instance_url_required when no instance URL is configured", async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevBaseUrl = process.env.BASE_URL;
+    process.env.NODE_ENV = "production";
+    delete process.env.BASE_URL;
+    try {
+      stashWebauthnChallenge("assert", "sess-1", "some-challenge");
+      const ctx = mockContext({ userId: "user-1", sessionId: "sess-1" });
+      const db = { systemSettings: { findUnique: async () => null } } as unknown as PrismaClient;
+
+      const result = await resolveStepUpProof(ctx, db, "sess-1", {
+        webauthn: { response: { id: "x" } },
+      });
+      expect(result).toBeInstanceOf(Response);
+      expect((result as Response).status).toBe(422);
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+      if (prevBaseUrl === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBaseUrl;
+    }
+  });
+});
+
+describe("handlePostAccountWebauthnAssertBegin - defensive branches unreachable via HTTP", () => {
+  afterEach(() => clearWebauthnChallengeCacheForTests());
+
+  it("returns 401 for a cloudflare-access principal (no sessionId)", async () => {
+    const ctx = mockContext({ userId: "user-1" });
+    const res = await handlePostAccountWebauthnAssertBegin(ctx, {} as PrismaClient);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 webauthn_disabled when the instance setting is off", async () => {
+    const db = {
+      systemSettings: { findUnique: async () => ({ value_json: "false" }) },
+    } as unknown as PrismaClient;
+    const ctx = mockContext({ userId: "user-1", sessionId: "sess-1" });
+
+    const res = await handlePostAccountWebauthnAssertBegin(ctx, db, "https://admitto.example.com");
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("webauthn_disabled");
+  });
+
+  it("returns 400 no_credentials when the user has none registered", async () => {
+    const db = {
+      systemSettings: { findUnique: async () => null },
+      userMfaMethod: { findMany: async () => [] },
+    } as unknown as PrismaClient;
+    const ctx = mockContext({ userId: "user-1", sessionId: "sess-1" });
+
+    const res = await handlePostAccountWebauthnAssertBegin(ctx, db, "https://admitto.example.com");
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("no_credentials");
+  });
+
+  it("propagates a 422 instance_url_required when no instance URL is configured", async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevBaseUrl = process.env.BASE_URL;
+    process.env.NODE_ENV = "production";
+    delete process.env.BASE_URL;
+    try {
+      const db = { systemSettings: { findUnique: async () => null } } as unknown as PrismaClient;
+      const ctx = mockContext({ userId: "user-1", sessionId: "sess-1" });
+
+      const res = await handlePostAccountWebauthnAssertBegin(ctx, db);
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as { error: string }).error).toBe("instance_url_required");
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+      if (prevBaseUrl === undefined) delete process.env.BASE_URL;
+      else process.env.BASE_URL = prevBaseUrl;
+    }
   });
 });
