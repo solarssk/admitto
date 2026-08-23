@@ -22,7 +22,7 @@ interface WebauthnStepUpButtonProps {
 }
 
 /** "Use a passkey or security key" button for a step-up dialog that already collects a TOTP/
- * recovery code — reused across My Account's step-up-gated actions (password change, MFA reset,
+ * recovery code, reused across My Account's step-up-gated actions (password change, MFA reset,
  * removing a credential, regenerating backup codes, unlinking SSO) instead of each duplicating
  * the same begin/prompt/submit/error-handling ceremony. Caller owns its own busy/error state
  * (already exists per dialog for the code field) and its own submit function; this component only

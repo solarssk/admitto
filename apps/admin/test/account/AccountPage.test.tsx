@@ -1685,7 +1685,7 @@ describe("AccountPage profile: account type", () => {
     await waitFor(() => {
       expect(screen.getByText("Managed by Okta")).toBeTruthy();
     });
-    expect(screen.getByText(/password and two-factor authentication are managed there/)).toBeTruthy();
+    expect(screen.getByText(/password and two-factor authentication are managed there/i)).toBeTruthy();
   });
 
   it("prioritizes the linked provider and mentions the fallback password when the account has both", async () => {
@@ -3572,7 +3572,7 @@ describe("AccountPage: Backup codes", () => {
     expect(within(dialog).getByText(/3 of 10 backup codes remaining/)).toBeTruthy();
   });
 
-  it("regenerates and shows the new plaintext codes with a download button, disabling further regeneration", async () => {
+  it("regenerates and shows the new plaintext codes with a download button, disabling further regeneration until saved is confirmed", async () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
@@ -3592,7 +3592,57 @@ describe("AccountPage: Backup codes", () => {
     });
     expect(within(dialog).getByRole("button", { name: "Download" })).toBeTruthy();
     expect(mockRegenerateBackupCodes).toHaveBeenCalledWith(undefined);
-    // A second click in the same dialog session can't invalidate the batch just shown.
+    // Can't invalidate the batch just shown before confirming it's saved.
+    expect(within(dialog).getByRole("button", { name: "Regenerate" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(within(dialog).getByLabelText("I've saved my backup codes"));
+    // Confirming the save unlocks a fresh regenerate cycle.
+    expect(within(dialog).getByRole("button", { name: "Regenerate" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("lets a second regenerate cycle run after the first batch is confirmed saved, requiring its own fresh step-up code", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
+    const firstCodes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `FIRST-${i}`);
+    const secondCodes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `SECOND-${i}`);
+    mockRegenerateBackupCodes
+      .mockResolvedValueOnce({ ok: true, codes: firstCodes })
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true, codes: secondCodes });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
+    });
+    fireEvent.click(within(backupCodesRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage backup codes" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(`Backup codes: save all ${firstCodes.length}, shown once`)).toBeTruthy();
+    });
+    fireEvent.click(within(dialog).getByLabelText("I've saved my backup codes"));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    // Falls back to the code-entry flow instead of leaving the first batch on screen, and the
+    // second attempt needs its own step-up proof rather than reusing the first one.
+    await waitFor(() => {
+      expect(within(dialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    });
+    expect(within(dialog).queryByText(`Backup codes: save all ${firstCodes.length}, shown once`)).toBeNull();
+    expect(mockRegenerateBackupCodes).toHaveBeenNthCalledWith(2, undefined);
+
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "654321" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText(`Backup codes: save all ${secondCodes.length}, shown once`)).toBeTruthy();
+    });
+    expect(mockRegenerateBackupCodes).toHaveBeenNthCalledWith(3, { code: "654321" });
+    // Newly disabled again until this second batch is confirmed saved too.
     expect(within(dialog).getByRole("button", { name: "Regenerate" }).hasAttribute("disabled")).toBe(true);
   });
 

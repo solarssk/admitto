@@ -147,7 +147,7 @@ function accountTypeHint(account: AccountDto, isManaged: boolean): string {
   if (account.has_local_password) {
     return "Signed in through your organization's identity provider, with a local password available as a fallback. Manage it in the Password section below.";
   }
-  return "Signed in through your organization's identity provider — password and two-factor authentication are managed there.";
+  return "Signed in through your organization's identity provider. Password and two-factor authentication are managed there.";
 }
 
 /** How this account exists, not how the current browser session happens to be signed in - "Local
@@ -532,7 +532,7 @@ export function AccountPage() {
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would
   // otherwise flash the spinner on and off faster than it can register as
-  // "loading" — show it only once the fetch has genuinely taken a moment.
+  // "loading", show it only once the fetch has genuinely taken a moment.
   const showAccountSpinner = useDelayedLoading(loading);
   // Gated on `!loading` too, not just `sessionsLoading` on its own - the sessions card
   // only becomes visible once the account section's own loading gate above clears, so its
@@ -602,7 +602,7 @@ export function AccountPage() {
     });
   }
 
-  /** Shared by the form's own submit and the step-up dialog's confirm — `proof` is only passed once the server has asked for one. */
+  /** Shared by the form's own submit and the step-up dialog's confirm, `proof` is only passed once the server has asked for one. */
   async function submitPasswordChange(proof?: StepUpProofBody): Promise<void> {
     const { sessions_revoked } = await patchAccountPassword({
       current_password: currentPassword,
@@ -623,7 +623,7 @@ export function AccountPage() {
     await loadSessions();
   }
 
-  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. `target`
    * is passed explicitly rather than read from `removeCredentialTarget` state, since the caller
    * has already null-checked `.id` right before calling this. */
@@ -640,7 +640,7 @@ export function AccountPage() {
     await loadBackupCodesStatus();
   }
 
-  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
   async function submitRemoveTotp(proof?: StepUpProofBody): Promise<void> {
     await deleteAccountTotp(proof);
@@ -654,7 +654,7 @@ export function AccountPage() {
     await loadBackupCodesStatus();
   }
 
-  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
   async function submitResetMfa(proof?: StepUpProofBody): Promise<void> {
     const { sessions_revoked } = await resetMfa({ password: resetPassword, ...proof });
@@ -666,7 +666,7 @@ export function AccountPage() {
     await loadAccount(); await loadSessions();
   }
 
-  /** Shared by the confirm dialog's own submit and the step-up dialog's confirm — `proof` is only
+  /** Shared by the confirm dialog's own submit and the step-up dialog's confirm, `proof` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
   async function submitUnlinkSso(proof?: StepUpProofBody): Promise<void> {
     await unlinkAccountExternalIdentity({
@@ -744,7 +744,7 @@ export function AccountPage() {
     }
     catch (err) {
       if (hasApiErrorCode(err, "totp_required")) {
-        // Stays open — progressive disclosure reveals the code field right here in the
+        // Stays open, progressive disclosure reveals the code field right here in the
         // same dialog (same pattern as the remove-credential dialog below), so there's
         // no separate step-up dialog to hand off to like password change/unlink SSO have.
         setResetCodeRequired(true);
@@ -1099,7 +1099,7 @@ export function AccountPage() {
                 await submitPasswordChange();
               } catch (err) {
                 if (hasApiErrorCode(err, "totp_required")) {
-                  // This account's role requires MFA — collect the step-up code in a
+                  // This account's role requires MFA, collect the step-up code in a
                   // dialog instead of growing this form, so the Password/2FA cards (which
                   // stretch to match each other's height) don't jump when it appears.
                   setPasswordCodeError(null);
@@ -1292,12 +1292,18 @@ export function AccountPage() {
    * has been minted yet in this dialog session; once regeneration succeeds, the body is replaced
    * by the new plaintext codes (renderBackupCodesSection, same markup as first-time enrollment)
    * and Regenerate stays disabled so a second click can't invalidate the batch just shown. */
-  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it — `proof` is only
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
   async function submitRegenerateBackupCodes(proof?: StepUpProofBody): Promise<void> {
     const { codes } = await regenerateBackupCodes(proof);
     setRegeneratedBackupCodes(codes);
     setBackupCodesStatus({ total: codes.length, remaining: codes.length });
+    // Reset for a possible next cycle: once this batch is confirmed saved, Regenerate unlocks
+    // again (see disableConfirm below), and that next attempt needs its own fresh step-up proof
+    // rather than resubmitting this one (a TOTP code can't be replayed within its own time step).
+    setBackupCodesSaved(false);
+    setRegenerateBackupCodesCode("");
+    setRegenerateBackupCodesCodeRequired(false);
     addToast("Backup codes regenerated.", "success");
   }
 
@@ -1317,17 +1323,22 @@ export function AccountPage() {
         title="Manage backup codes"
         message={
           regeneratedBackupCodes
-            ? "Backup codes regenerated. Save these new codes — your previous codes no longer work."
+            ? "Backup codes regenerated. Save these new codes. Your previous codes no longer work."
             : statusMessage
         }
         confirmLabel="Regenerate"
         cancelLabel="Close"
         loading={regeneratingBackupCodes}
         errorMessage={regenerateBackupCodesError ?? undefined}
-        disableConfirm={!!regeneratedBackupCodes || (regenerateBackupCodesCodeRequired && !regenerateBackupCodesCode)}
+        disableConfirm={
+          (!!regeneratedBackupCodes && !backupCodesSaved) || (regenerateBackupCodesCodeRequired && !regenerateBackupCodesCode)
+        }
         onConfirm={async () => {
           setRegeneratingBackupCodes(true);
           setRegenerateBackupCodesError(null);
+          // Starting a fresh regenerate cycle after already confirming the current batch is
+          // saved - fall back to the code-entry flow instead of leaving the old batch on screen.
+          if (regeneratedBackupCodes) setRegeneratedBackupCodes(null);
           try {
             await submitRegenerateBackupCodes(regenerateBackupCodesCode ? { code: regenerateBackupCodesCode } : undefined);
           } catch (err) {
@@ -1411,7 +1422,7 @@ export function AccountPage() {
         title="Add passkey"
         message={
           addPasskeyBackupCodes
-            ? "Passkey added. Save these backup codes — you'll need one if you ever lose access to this passkey."
+            ? "Passkey added. Save these backup codes: you'll need one if you ever lose access to this passkey."
             : "Give this passkey a name so you can recognize it later."
         }
         confirmLabel="Add"
@@ -1449,7 +1460,7 @@ export function AccountPage() {
         title="Add security key"
         message={
           addSecurityKeyBackupCodes
-            ? "Security key added. Save these backup codes — you'll need one if you ever lose access to this security key."
+            ? "Security key added. Save these backup codes: you'll need one if you ever lose access to this security key."
             : "Give this security key a name so you can recognize it later."
         }
         confirmLabel="Add"
@@ -1550,7 +1561,7 @@ export function AccountPage() {
                 <Button type="button" variant="primary" disabled={mfaEnrolling} onClick={async () => {
                   setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setQrRenderFailed(false); setBackupCodesSaved(false);
                   try {
-                    await cancelMfaEnroll().catch(() => { /* ignore — no pending enrollment */ });
+                    await cancelMfaEnroll().catch(() => { /* ignore, no pending enrollment */ });
                     setEnrollData(await enrollMfaTotp());
                   }
                   catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
@@ -1666,7 +1677,7 @@ export function AccountPage() {
         title="Two-factor authentication"
         actions={canResetEverything ? <TwoFactorMoreActions onReset={() => setResetConfirmOpen(true)} /> : undefined}
       >
-          {/* Methods list — every action opens its own popup now (decision 6), so this stays
+          {/* Methods list, every action opens its own popup now (decision 6), so this stays
               visible at all times instead of being replaced by an inline form. */}
           {renderMfaMethodsList()}
 

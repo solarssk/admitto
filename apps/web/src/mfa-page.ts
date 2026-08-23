@@ -267,7 +267,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
   });
 }
 
-/** Step 1: enrollment landing — start setup via CSRF-protected POST only. */
+/** Step 1: enrollment landing, start setup via CSRF-protected POST only. */
 export function renderMfaEnrollStartPage(scriptNonce: string, next?: string): string {
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const card = `${renderAuthBrand()}
@@ -390,7 +390,7 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
 }
 
 /** Login-time "Use a passkey or security key" button: fetch a challenge, run
- * `navigator.credentials.get()`, submit the assertion — a hand-rolled base64url + WebAuthn call
+ * `navigator.credentials.get()`, submit the assertion, a hand-rolled base64url + WebAuthn call
  * (no `@simplewebauthn/browser`; this page ships no bundler, unlike the admin SPA's registration
  * flow). Any failure (cancelled, wrong key, network) falls back silently to the still-usable code
  * form instead of blocking the page. */

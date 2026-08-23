@@ -124,7 +124,7 @@
   margin: var(--space-3, 0.75rem) 0;
 }
 
-/* Header row: title left, Download button right — inline so the 2FA card
+/* Header row: title left, Download button right, inline so the 2FA card
    height stays in lockstep with the Password card (see PR #324). */
 .account-auth-backup__head {
   display: flex;
@@ -143,7 +143,7 @@
 }
 
 /* 10 backup codes in a 2-column grid inside the right enrollment column.
-   At ~300px right column, each column ≈ 145px — comfortably fits
+   At ~300px right column, each column ≈ 145px, comfortably fits
    XXXX-XXXX-XXXX-XXXX at 0.65rem without wrapping. */
 .account-auth-backup ul {
   margin: var(--space-2, 0.5rem) 0 0;
@@ -303,7 +303,7 @@
   font-weight: 400;
 }
 
-/* Password and 2FA are two independent Cards, side by side — stretch keeps
+/* Password and 2FA are two independent Cards, side by side, stretch keeps
    both cards the same height (Password is the taller reference). */
 .account-security-grid {
   display: grid;
@@ -367,7 +367,7 @@
   gap: var(--space-2, 0.5rem);
 }
 
-/* Compact scrollable URI in the fixed-width QR column — does not grow the 2FA card */
+/* Compact scrollable URI in the fixed-width QR column, does not grow the 2FA card */
 .account-2fa-enroll__qr .account-uri-code--enroll {
   margin: 0;
   max-height: 4.5rem;
@@ -377,7 +377,7 @@
   padding: 6px 8px;
 }
 
-/* Right column: hint, backup codes, digit input — must shrink inside the 2FA card */
+/* Right column: hint, backup codes, digit input, must shrink inside the 2FA card */
 .account-2fa-enroll__info {
   display: flex;
   flex-direction: column;
@@ -397,7 +397,7 @@
   font-size: var(--fs-xs, 0.75rem);
 }
 
-/* Two columns — 5 rows beside the QR, not 10 rows stacked downward */
+/* Two columns, 5 rows beside the QR, not 10 rows stacked downward */
 .account-2fa-enroll__info .account-auth-backup ul {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 2px var(--space-2, 0.5rem);
@@ -452,8 +452,8 @@
   color: var(--text-muted);
 }
 
-/* TOTP code is 6 digits — keep the input compact. Input renders <input class="at-input">
-   directly (no .at-field wrapper — that's only used by Select), so target .at-input. */
+/* TOTP code is 6 digits, keep the input compact. Input renders <input class="at-input">
+   directly (no .at-field wrapper, that's only used by Select), so target .at-input. */
 .mail-field-row--totp .at-input {
   max-width: 16rem;
 }

@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Signing in no longer offers a 6-digit authenticator-app code field, or a way to switch to one, to an account whose only confirmed two-factor methods are backup codes and/or a passkey or security key (for example, after removing the authenticator app). For an account with a confirmed passkey or security key and no authenticator app, the two-factor step now tries it automatically instead of waiting for a click, with the backup-code field ready as a fallback if that's cancelled or fails.
 - On the two-factor sign-in step, the "Use a passkey or security key" button no longer sits flush against Continue with no gap between them, and now matches its height. The "Authentication code" label is now centered above the code boxes it labels instead of sitting at the card's left edge.
 - The "Download" button in My Account's passkey, security key, and backup codes dialogs now sits below the codes as its own clearly visible button, instead of a small text link next to the header.
+- The two-factor sign-in step's "Could not verify with your passkey or security key" message no longer sits flush against Continue with no gap above it.
+- My Account's "Manage backup codes" dialog no longer permanently disables Regenerate the moment a fresh batch is shown. It now unlocks again once "I've saved my backup codes" is checked, so a second regeneration can be started without closing and reopening the dialog, and correctly asks for its own fresh step-up code instead of reusing the first one.
 
 ### Security
 

@@ -142,7 +142,7 @@ export const stepUpProofFields = {
 const stepUpProofOnlyBodySchema = z.object(stepUpProofFields).strict();
 
 /** Parses a request body that carries only the shared step-up proof fields (no action-specific
- * fields of its own) — shared by `handleDeleteAccountWebauthnCredential`, `handleDeleteAccountTotp`,
+ * fields of its own), shared by `handleDeleteAccountWebauthnCredential`, `handleDeleteAccountTotp`,
  * and `handlePostAccountRegenerateBackupCodes`. An empty/unparsable body defaults to `{}` rather
  * than a 400, since most calls won't need step-up at all. */
 async function parseStepUpProofOnlyBody(c: Context): Promise<z.infer<typeof stepUpProofOnlyBodySchema> | Response> {
@@ -224,7 +224,7 @@ export async function resolveStepUpProof(
 /**
  * Advisory pre-check + rate-limit for a step-up-gated self-service action (password change,
  * MFA reset): lets the common case fail fast (400/429) without opening a transaction, and keeps
- * the rate limiter's Redis round-trip out of a held Postgres connection. NOT the security gate —
+ * the rate limiter's Redis round-trip out of a held Postgres connection. NOT the security gate:
  * callers must still re-check via `checkStepUpInTransaction` inside their own transaction,
  * immediately before the sensitive write, so this pre-check can only make a request fail earlier
  * or the same way, never skip the authoritative check.
@@ -446,7 +446,7 @@ function serializeAccountSession(
   };
 }
 
-/** GET /api/account — own profile, roles (read-only), MFA methods. No secrets. */
+/** GET /api/account, own profile, roles (read-only), MFA methods. No secrets. */
 export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -596,7 +596,7 @@ const profileSchema = z
     { message: "Nothing to update" },
   );
 
-/** PATCH /api/account/profile — update display name, date/time display preferences, and/or phone (no re-auth). */
+/** PATCH /api/account/profile, update display name, date/time display preferences, and/or phone (no re-auth). */
 export async function handlePatchAccountProfile(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -714,7 +714,7 @@ async function verifySelfUnlinkProof(
 }
 
 /**
- * DELETE /api/account/external-identity — self-service SSO unlink.
+ * DELETE /api/account/external-identity, self-service SSO unlink.
  *
  * Adapted from the admin-only `handleDeleteUserExternalIdentity` (users-routes.ts), not by
  * dropping its actorId guard - that guard exists to stop an admin unlinking *their own* SSO
@@ -898,9 +898,9 @@ const passwordSchema = z
   .strict();
 
 /**
- * PATCH /api/account/password — re-auth required; revokes other sessions.
+ * PATCH /api/account/password, re-auth required; revokes other sessions.
  * Requires a TOTP/recovery-code step-up (mirroring `handlePostMfaReset`) whenever the user's
- * role requires MFA and TOTP is confirmed — password alone must not be enough to change the
+ * role requires MFA and TOTP is confirmed, password alone must not be enough to change the
  * password (and lock the legitimate owner out) on an MFA-required account.
  */
 export async function handlePatchAccountPassword(
@@ -966,7 +966,7 @@ export async function handlePatchAccountPassword(
   return c.json({ sessions_revoked: gated.value });
 }
 
-/** GET /api/account/sessions — own active sessions only. */
+/** GET /api/account/sessions, own active sessions only. */
 export async function handleGetAccountSessions(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const rows = await db.session.findMany({
@@ -989,7 +989,7 @@ export async function handleGetAccountSessions(c: Context, db: PrismaClient): Pr
   return c.json({ sessions: rows.map((s) => serializeAccountSession(s, auth.sessionId)) });
 }
 
-/** DELETE /api/account/sessions/:sessionId — revoke own session (not current). */
+/** DELETE /api/account/sessions/:sessionId, revoke own session (not current). */
 export async function handleDeleteAccountSession(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const sessionId = c.req.param("sessionId") ?? "";
@@ -1029,7 +1029,7 @@ export async function handleDeleteAccountSession(c: Context, db: PrismaClient): 
   return c.json({}, 200);
 }
 
-/** POST /api/account/mfa/totp/enroll — start or resume TOTP enrollment (local-password accounts only). */
+/** POST /api/account/mfa/totp/enroll, start or resume TOTP enrollment (local-password accounts only). */
 export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
 
@@ -1056,7 +1056,7 @@ export async function handlePostMfaEnroll(c: Context, db: PrismaClient): Promise
   });
 }
 
-/** DELETE /api/account/mfa/totp/enroll — cancel (abort) pending TOTP enrollment. */
+/** DELETE /api/account/mfa/totp/enroll, cancel (abort) pending TOTP enrollment. */
 export async function handleDeleteMfaEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
   await cancelPendingTotpEnrollment(db, userId);
@@ -1065,7 +1065,7 @@ export async function handleDeleteMfaEnroll(c: Context, db: PrismaClient): Promi
 
 const confirmSchema = z.object({ code: z.string().min(1) }).strict();
 
-/** POST /api/account/mfa/totp/confirm — confirm pending TOTP enrollment. */
+/** POST /api/account/mfa/totp/confirm, confirm pending TOTP enrollment. */
 export async function handlePostMfaConfirm(
   c: Context,
   db: PrismaClient,
@@ -1101,7 +1101,7 @@ export async function handlePostMfaConfirm(
     if (!confirmed) return false;
 
     // Self-service enroll already returned backup codes to the client (unlike the
-    // login-time flow's separate acknowledgment step) — mark them acknowledged now so
+    // login-time flow's separate acknowledgment step), mark them acknowledged now so
     // this already-`full` session isn't rejected by the backup-codes gate (IAM-002) on
     // its very next request.
     await markBackupCodesAcknowledged(tx, userId);
@@ -1123,9 +1123,9 @@ export async function handlePostMfaConfirm(
 const resetSchema = z.object({ password: z.string(), ...stepUpProofFields }).strict();
 
 /**
- * POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current).
+ * POST /api/account/mfa/reset, re-auth, remove MFA, revoke other sessions (keeps current).
  * Requires a TOTP/recovery-code step-up (mirroring `verifyOidcLinkStepUp`) whenever the user's
- * role requires MFA and TOTP is confirmed — password alone must not be able to strip MFA from an
+ * role requires MFA and TOTP is confirmed, password alone must not be able to strip MFA from an
  * MFA-required account.
  */
 export async function handlePostMfaReset(
@@ -1167,7 +1167,7 @@ export async function handlePostMfaReset(
       // no-MFA-enrolled account calling this still revokes trusted devices and other
       // sessions, which is itself security-relevant and must stay audited. This still
       // suppresses the duplicate audit on a true no-op (two concurrent resets, or a retry
-      // after the state is already fully cleared) — that case has all three counts at 0.
+      // after the state is already fully cleared), that case has all three counts at 0.
       if (mfaDeleted.count > 0 || devicesRevoked > 0 || revokedCount > 0) {
         await writeAdminAuditLog(tx, {
           organizationId: orgId,
@@ -1188,7 +1188,7 @@ export async function handlePostMfaReset(
 }
 
 /** Resolve {rpName, rpID, origin} for WebAuthn ceremonies from the instance's own effective base
- * URL (env `BASE_URL` → DB `instance_url` → dev localhost) — single-instance app, no per-tenant
+ * URL (env `BASE_URL` → DB `instance_url` → dev localhost), single-instance app, no per-tenant
  * RP ID. Returns a 422 Response the same way `resolveMailInstanceBaseUrl`'s other callers do when
  * no instance URL is configured yet in production. */
 export async function resolveWebauthnRp(
@@ -1206,8 +1206,8 @@ const webauthnAttachmentSchema = z.enum(["platform", "cross-platform"]);
 const webauthnRegisterBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();
 
 /**
- * POST /api/account/mfa/webauthn/register/begin — start a passkey/security-key registration
- * ceremony (local-password accounts only, same gate as TOTP — this app never treats WebAuthn as
+ * POST /api/account/mfa/webauthn/register/begin, start a passkey/security-key registration
+ * ceremony (local-password accounts only, same gate as TOTP, this app never treats WebAuthn as
  * a passwordless primary login method, only a second factor alongside a local password).
  */
 export async function handlePostAccountWebauthnRegisterBegin(
@@ -1254,7 +1254,7 @@ export async function handlePostAccountWebauthnRegisterBegin(
 
 /** Lenient on purpose: this is the browser's own `PublicKeyCredential` response passed straight
  * through to `@simplewebauthn/server`'s verifier, which is the actual security boundary here
- * (rejects any malformed/tampered payload on its own) — this schema only guards against a
+ * (rejects any malformed/tampered payload on its own), this schema only guards against a
  * grossly malformed request reaching that far. */
 const webauthnRegistrationResponseSchema = z.object({
   id: z.string().min(1).max(1024),
@@ -1281,7 +1281,7 @@ const webauthnRegisterFinishSchema = z
   .strict();
 
 /**
- * POST /api/account/mfa/webauthn/register/finish — verify the browser ceremony and store the new
+ * POST /api/account/mfa/webauthn/register/finish, verify the browser ceremony and store the new
  * credential. No step-up code required, unlike password change/MFA reset: the ceremony itself
  * already proves possession of a real, previously-unregistered authenticator, which is a
  * stronger proof than a 6-digit code (mirrors TOTP confirm, which is also step-up-free).
@@ -1350,7 +1350,7 @@ export async function handlePostAccountWebauthnRegisterFinish(
 }
 
 /**
- * POST /api/account/mfa/webauthn/assert/begin — start a WebAuthn step-up ceremony against the
+ * POST /api/account/mfa/webauthn/assert/begin, start a WebAuthn step-up ceremony against the
  * caller's own registered credentials. The response's `options` are passed to the browser's
  * `navigator.credentials.get()`; the resulting assertion is submitted as the `webauthn` proof on
  * whichever step-up-gated action the caller is actually completing (password change, MFA reset,
@@ -1381,7 +1381,7 @@ export async function handlePostAccountWebauthnAssertBegin(
   return c.json({ options: begin.options });
 }
 
-/** GET /api/account/mfa/webauthn — list the user's registered passkeys/security keys. */
+/** GET /api/account/mfa/webauthn, list the user's registered passkeys/security keys. */
 export async function handleGetAccountWebauthnCredentials(
   c: Context,
   db: PrismaClient,
@@ -1400,9 +1400,9 @@ export async function handleGetAccountWebauthnCredentials(
 }
 
 /**
- * DELETE /api/account/mfa/webauthn/:credentialId — remove one passkey/security key.
+ * DELETE /api/account/mfa/webauthn/:credentialId, remove one passkey/security key.
  * Requires a TOTP/recovery-code step-up (mirroring `handlePostMfaReset`) whenever the user's
- * role requires MFA and they have a confirmed method — password alone must not be able to strip
+ * role requires MFA and they have a confirmed method, password alone must not be able to strip
  * a registered credential from an MFA-required account.
  */
 export async function handleDeleteAccountWebauthnCredential(
@@ -1451,9 +1451,9 @@ export async function handleDeleteAccountWebauthnCredential(
 }
 
 /**
- * DELETE /api/account/mfa/totp — remove TOTP only, leaving WebAuthn credentials and backup
+ * DELETE /api/account/mfa/totp, remove TOTP only, leaving WebAuthn credentials and backup
  * recovery codes untouched. Requires the same TOTP/recovery-code step-up as removing a WebAuthn
- * credential (`handleDeleteAccountWebauthnCredential`) — password alone must not be able to strip
+ * credential (`handleDeleteAccountWebauthnCredential`), password alone must not be able to strip
  * a confirmed method from an MFA-required account.
  */
 export async function handleDeleteAccountTotp(
@@ -1495,7 +1495,7 @@ export async function handleDeleteAccountTotp(
   return c.json({ ok: true });
 }
 
-/** GET /api/account/mfa/backup-codes — how many codes remain in the current batch. Read-only,
+/** GET /api/account/mfa/backup-codes, how many codes remain in the current batch. Read-only,
  * same tier as `handleGetAccountWebauthnCredentials` (no step-up). */
 export async function handleGetAccountBackupCodesStatus(
   c: Context,
@@ -1507,9 +1507,9 @@ export async function handleGetAccountBackupCodesStatus(
 }
 
 /**
- * POST /api/account/mfa/backup-codes/regenerate — invalidate the current batch and mint a fresh
+ * POST /api/account/mfa/backup-codes/regenerate, invalidate the current batch and mint a fresh
  * one, returned once as plaintext. Requires the same TOTP/recovery-code step-up as the other
- * sensitive MFA actions in this file — it invalidates the user's existing saved codes, a real
+ * sensitive MFA actions in this file, it invalidates the user's existing saved codes, a real
  * consequence.
  */
 export async function handlePostAccountRegenerateBackupCodes(
@@ -1538,7 +1538,7 @@ export async function handlePostAccountRegenerateBackupCodes(
     },
     async (tx, orgId, audit) => {
       const { codes } = await regenerateBackupRecoveryCodes(tx, userId);
-      // Always audited, unlike credential removal — this call always has an effect (a fresh
+      // Always audited, unlike credential removal, this call always has an effect (a fresh
       // batch replaces the old one) even when the old batch was already fully consumed.
       await writeAdminAuditLog(tx, {
         organizationId: orgId,

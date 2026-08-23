@@ -27,7 +27,7 @@ export function isTotpMfaAttempt(code: string): boolean {
 
 /**
  * Rate-limit MFA verification per session and IP.
- * Dual-key check stays inline — bucket choice depends on submitted code shape.
+ * Dual-key check stays inline, bucket choice depends on submitted code shape.
  *
  * `action` namespaces the bucket per call site (e.g. "oidc-link", "mfa-confirm",
  * "mfa-reset") so unrelated self-service actions sharing a session don't throttle each
@@ -153,7 +153,7 @@ function enrollDenied(c: Context, format: "json" | "text"): Response {
 
 /**
  * Rate-limit TOTP enrollment start per full session and IP (account self-service).
- * Dual-key + format option — stays outside generic rateLimit() wrapper.
+ * Dual-key + format option, stays outside generic rateLimit() wrapper.
  */
 export function createAccountMfaEnrollRateLimitMiddleware(
   store: RateLimitStore,
