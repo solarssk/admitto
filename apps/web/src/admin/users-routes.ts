@@ -30,7 +30,7 @@ import {
   positiveIntQuery,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
-import { resolveStepUpProof, withStepUpGate, type StepUpProof } from "./account-routes.js";
+import { withStepUpGate } from "./account-routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { runSerializableTransaction } from "./event-items-api-routes.js";
@@ -87,12 +87,13 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
     requiresStepUp: boolean;
     actorUserId: string;
     currentSessionId: string | undefined;
-    proof: StepUpProof | undefined;
+    stepUpBody: { code?: string; webauthn?: { response: unknown } };
     rateLimitAction: string;
+    injectedBaseUrl?: string;
   },
   perform: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const { requiresStepUp, actorUserId, currentSessionId, proof, rateLimitAction } = params;
+  const { requiresStepUp, actorUserId, currentSessionId, stepUpBody, rateLimitAction, injectedBaseUrl } = params;
 
   if (!requiresStepUp) {
     const orgId = await resolveInstanceOrganizationId(db);
@@ -113,7 +114,7 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
     c,
     db,
     rateLimitStore,
-    { userId: actorUserId, currentSessionId, proof, rateLimitAction, forceRequired: true },
+    { userId: actorUserId, currentSessionId, stepUpBody, injectedBaseUrl, rateLimitAction, forceRequired: true },
     perform,
   );
 }
@@ -127,8 +128,9 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
  * re-checks the same condition fresh inside its own transaction (TOCTOU) - computes whether the
  * ACTOR must step up (actorMustStepUpForReset) and runs `perform` accordingly
  * (runAdminResetWithActorStepUp - see its own docstring for the actor step-up/fail-closed
- * semantics), then emits the security system log. `stepUpBody` is resolved by the caller and
- * simply unused here when step-up isn't required.
+ * semantics), then emits the security system log. `stepUpBody` is only actually resolved (and
+ * can fail on an expired/missing WebAuthn challenge) inside withStepUpGate, reached via
+ * runAdminResetWithActorStepUp - simply unused when step-up isn't required.
  */
 async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; code: string }>(
   c: Context,
@@ -163,14 +165,11 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
   const actorUserId = auth.userId;
   const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
 
-  const proof = await resolveStepUpProof(c, db, auth.sessionId, stepUpBody, injectedBaseUrl);
-  if (proof instanceof Response) return proof;
-
   const gated = await runAdminResetWithActorStepUp(
     c,
     db,
     rateLimitStore,
-    { requiresStepUp, actorUserId, currentSessionId: auth.sessionId, proof, rateLimitAction },
+    { requiresStepUp, actorUserId, currentSessionId: auth.sessionId, stepUpBody, injectedBaseUrl, rateLimitAction },
     (tx, orgId, audit) => perform(tx, orgId, audit, requiresStepUp, actorUserId),
   );
   if (!gated.ok) return gated.response;
