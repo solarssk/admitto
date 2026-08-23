@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Passkeys and security keys registered under My account → Two-factor authentication can now be used to confirm sensitive account actions - password change, resetting two-factor, removing a passkey or security key, regenerating backup codes, unlinking single sign-on - the same as a code from your authenticator app. Every one of those popups now offers a "Use a passkey or security key" button once you have one confirmed, alongside the code field. Previously a registered passkey only counted toward "has a confirmed second factor" and could not itself be used for anything.
 - Signing in can now be completed with a registered passkey or security key at the two-factor step after your password - a "Use a passkey or security key" option appears once you have one confirmed, alongside the usual authenticator-code field.
 
+### Fixed
+
+- My Account no longer briefly shows "Too many requests" and fails to load right after a burst of two-factor management actions (enrolling or removing an authenticator app, registering a passkey or security key, viewing or regenerating backup codes) - the per-IP rate limit shared by all of My Account's requests was too tight for ordinary back-to-back use of the newly added WebAuthn management actions.
+- Signing in no longer offers a 6-digit authenticator-app code field to an account whose only confirmed two-factor methods are backup codes and/or a passkey or security key (for example, after removing the authenticator app) - the two-factor step now leads with the backup-code field instead, matching what the account actually has.
+- On the two-factor sign-in step, the "Use a passkey or security key" button no longer sits flush against Continue with no gap between them, and now matches its height. The "Authentication code" label is now centered above the code boxes it labels instead of sitting at the card's left edge.
+- The "Download" button in My Account's passkey, security key, and backup codes dialogs now sits below the codes as its own clearly visible button, instead of a small text link next to the header.
+
 ### Security
 
 - An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.

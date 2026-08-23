@@ -231,15 +231,18 @@ export const RATE_POLICIES = {
    * caller's session even being established), so without their own bucket a handful of
    * cheap, credential-free requests here would drain the same IP's budget for the public
    * login route (or vice versa) - a shared office/VPN egress address then locks every
-   * legitimate user behind it out of login. Same 10/60s shape as auth:login-ip: this is
-   * the same class of pre-auth-reachable endpoint, just reached via /api/account/* instead
-   * of /api/auth/login. */
+   * legitimate user behind it out of login. Higher than auth:login-ip's 10/60s: this bucket
+   * covers every /api/account/* request from one IP, not just one sensitive action - a single
+   * My Account page load alone fires 3 GETs (account, sessions, backup-codes status), and the
+   * WebAuthn stack added several more legitimate sub-requests per MFA action (register/begin,
+   * register/finish, assert/begin, credential list), so 10/min was tripping on ordinary
+   * back-to-back account/MFA management, not just abuse. */
   "auth:account-ip": {
     checks: [
       {
         keyOf: (c) => `auth:account:ip:${resolveClientIp(c)}`,
         windowMs: 60_000,
-        max: 10,
+        max: 30,
         logOnExceeded: { scope: "account_ip" },
       },
     ],

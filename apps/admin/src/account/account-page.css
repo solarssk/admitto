@@ -133,6 +133,15 @@
   gap: var(--space-2, 0.5rem);
 }
 
+/* Stacked layout only (regenerate/add-passkey/add-security-key dialogs): Download as a real,
+   centered button below the codes and the "saved" checkbox, instead of a small link in the
+   header - these dialogs have no card-height constraint to preserve. */
+.account-auth-backup__download-row {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-2, 0.5rem);
+}
+
 /* 10 backup codes in a 2-column grid inside the right enrollment column.
    At ~300px right column, each column ≈ 145px — comfortably fits
    XXXX-XXXX-XXXX-XXXX at 0.65rem without wrapping. */

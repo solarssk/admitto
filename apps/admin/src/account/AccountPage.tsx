@@ -1007,24 +1007,37 @@ export function AccountPage() {
     setAddSecurityKeyBackupCodes(null);
   }
 
-  /** Shared by first-time enrollment (renderMfaEnrollment) and the backup-codes regenerate
-   * dialog (renderManageBackupCodesDialog) - both show a freshly minted plaintext batch the same
-   * way, since neither can ever be shown again after this render. `alreadyShown` only applies to
-   * the enrollment case (an account that already had codes from an earlier method). */
-  function renderBackupCodesSection(codes: string[], alreadyShown: boolean): ReactNode {
+  /** Shared by first-time enrollment (renderMfaEnrollment) and the backup-codes regenerate,
+   * add-passkey, and add-security-key dialogs - all show a freshly minted plaintext batch the
+   * same way, since none can ever be shown again after this render. `alreadyShown` only applies
+   * to the enrollment case (an account that already had codes from an earlier method).
+   *
+   * `layout: "inline"` (the default, enrollment's own two-column layout) keeps Download in the
+   * header next to the title, so the 2FA card height stays in lockstep with the Password card
+   * (see PR #324). `layout: "stacked"` (the three dialogs above, each a narrow single-column
+   * ConfirmDialog with no such height constraint) moves Download to its own centered row below
+   * the codes instead, as a full button rather than a small text link, so it's not easy to miss
+   * next to the tiny header text. */
+  function renderBackupCodesSection(
+    codes: string[],
+    alreadyShown: boolean,
+    layout: "inline" | "stacked" = "inline",
+  ): ReactNode {
     if (codes.length > 0) {
       return (
         <div className="account-auth-backup">
           <div className="account-auth-backup__head">
             <strong>Backup codes: save all {codes.length}, shown once</strong>
-            <button
-              type="button"
-              className="account-uri-copy-btn"
-              onClick={() => downloadBackupCodes(codes)}
-            >
-              <i className="ti ti-download" aria-hidden="true" />{" "}
-              Download
-            </button>
+            {layout === "inline" && (
+              <button
+                type="button"
+                className="account-uri-copy-btn"
+                onClick={() => downloadBackupCodes(codes)}
+              >
+                <i className="ti ti-download" aria-hidden="true" />{" "}
+                Download
+              </button>
+            )}
           </div>
           <ul>{codes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
           <div className="account-checkbox-row">
@@ -1035,6 +1048,13 @@ export function AccountPage() {
               onChange={(e) => setBackupCodesSaved(e.target.checked)}
             />
           </div>
+          {layout === "stacked" && (
+            <div className="account-auth-backup__download-row">
+              <Button type="button" variant="secondary" onClick={() => downloadBackupCodes(codes)}>
+                <i className="ti ti-download" aria-hidden="true" /> Download
+              </Button>
+            </div>
+          )}
         </div>
       );
     }
@@ -1331,7 +1351,7 @@ export function AccountPage() {
         }}
       >
         {regeneratedBackupCodes
-          ? renderBackupCodesSection(regeneratedBackupCodes, false)
+          ? renderBackupCodesSection(regeneratedBackupCodes, false, "stacked")
           : regenerateBackupCodesCodeRequired && (
             <>
               <div className="mail-field-row">
@@ -1404,7 +1424,7 @@ export function AccountPage() {
         onCancel={handleAddPasskeyCancel}
       >
         {addPasskeyBackupCodes ? (
-          renderBackupCodesSection(addPasskeyBackupCodes, false)
+          renderBackupCodesSection(addPasskeyBackupCodes, false, "stacked")
         ) : (
           <Input
             id="account-add-passkey-label"
@@ -1442,7 +1462,7 @@ export function AccountPage() {
         onCancel={handleAddSecurityKeyCancel}
       >
         {addSecurityKeyBackupCodes ? (
-          renderBackupCodesSection(addSecurityKeyBackupCodes, false)
+          renderBackupCodesSection(addSecurityKeyBackupCodes, false, "stacked")
         ) : (
           <Input
             id="account-add-security-key-label"

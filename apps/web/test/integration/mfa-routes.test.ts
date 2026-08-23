@@ -460,6 +460,53 @@ describe("HTML /mfa/verify — passkey button", () => {
     expect(verifyPage.status).toBe(200);
     expect(await verifyPage.text()).not.toContain('id="mfa-webauthn-btn"');
   });
+
+  it("leads with the authenticator-code field when the account has a confirmed TOTP method", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(generateTotpSecret()),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyPage = await app.request("/mfa/verify", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(verifyPage.status).toBe(200);
+    const html = await verifyPage.text();
+    expect(html).toContain("Enter the 6-digit code from your authenticator app.");
+    expect(html).not.toContain('data-start-backup="true"');
+  });
+
+  it("leads with the backup-code field when the account has no confirmed TOTP method (only a passkey)", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    await registerConfirmedWebauthnCredential(admin!.id);
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyPage = await app.request("/mfa/verify", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(verifyPage.status).toBe(200);
+    const html = await verifyPage.text();
+    expect(html).toContain("Enter one of your backup recovery codes.");
+    expect(html).toContain('data-start-backup="true"');
+  });
 });
 
 describe("HTML MFA enroll", () => {

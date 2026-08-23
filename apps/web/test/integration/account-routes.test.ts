@@ -319,7 +319,7 @@ describe("PATCH /api/account/password", () => {
     rateLimitStore.reset();
     // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
     // looping HTTP requests: /api/account/password also sits behind the auth:account-ip per-IP
-    // bucket (applied group-wide in app.ts to the whole /api/account/* route group, max 10/min),
+    // bucket (applied group-wide in app.ts to the whole /api/account/* route group, max 30/min),
     // which would trip at the same threshold on repeated real requests and mask whether this
     // handler's own password-check rate limit is actually the thing returning 429.
     const bucketKey = `account:password-check:user:${userId}`;
@@ -585,7 +585,7 @@ describe("POST /api/account/mfa/totp/*", () => {
     });
     // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
     // looping HTTP requests: /api/account/mfa/reset also sits behind the group-wide
-    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 10/min),
+    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 30/min),
     // which would trip at the same threshold on repeated real requests and mask whether this
     // handler's own password-check rate limit is actually the thing returning 429.
     const bucketKey = `account:password-check:user:${userId}`;
@@ -799,7 +799,7 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     await enrollConfirmedTotp();
     // Pre-fill only this endpoint's own session bucket directly, instead of looping HTTP
     // requests: /api/account/mfa/reset also sits behind the group-wide auth:account-ip per-IP
-    // bucket (applied to all of /api/account/* in app.ts, max 10/min), which would trip first
+    // bucket (applied to all of /api/account/* in app.ts, max 30/min), which would trip first
     // on repeated real requests and mask whether this handler's own step-up rate limit is
     // actually the thing returning 429.
     const bucketKey = `mfa:totp:session:mfa-reset:${adminSessionId}`;
@@ -961,7 +961,7 @@ describe("PATCH /api/account/password — step-up for MFA-required roles", () =>
     await enrollConfirmedTotp();
     // Pre-fill only this endpoint's own session bucket directly, instead of looping HTTP
     // requests: /api/account/password also sits behind the group-wide auth:account-ip per-IP
-    // bucket (applied to all of /api/account/* in app.ts, max 10/min), which would trip first
+    // bucket (applied to all of /api/account/* in app.ts, max 30/min), which would trip first
     // on repeated real requests and mask whether this handler's own step-up rate limit is
     // actually the thing returning 429.
     const bucketKey = `mfa:totp:session:account-password:${adminSessionId}`;
@@ -1842,7 +1842,7 @@ describe("DELETE /api/account/external-identity", () => {
     });
     // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
     // looping HTTP requests: /api/account/external-identity also sits behind the group-wide
-    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 10/min),
+    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 30/min),
     // which would trip at the same threshold on repeated real requests and mask whether this
     // handler's own password-check rate limit is actually the thing returning 429.
     const bucketKey = `account:password-check:user:${userId}`;

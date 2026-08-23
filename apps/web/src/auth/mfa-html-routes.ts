@@ -17,6 +17,7 @@ import {
   parseTotpSecretFromOtpauthUri,
   getWebauthnEnabled,
   listWebauthnCredentials,
+  userHasConfirmedTotp,
 } from "@admitto/auth";
 import {
   getMfaEnrollPageSecurityHeaders,
@@ -165,9 +166,10 @@ export async function handleGetMfaVerify(c: Context, db: PrismaClient): Promise<
   const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   const scriptNonce = createAuthPageScriptNonce();
   const hasWebauthn = await hasUsableWebauthnCredentials(db, partial.userId);
+  const hasTotp = await userHasConfirmedTotp(db, partial.userId);
   return htmlResponse(
     c,
-    renderMfaVerifyForm(scriptNonce, undefined, next, hasWebauthn),
+    renderMfaVerifyForm(scriptNonce, undefined, next, hasWebauthn, hasTotp),
     scriptNonce,
     200,
     trustedOrigins,
@@ -194,7 +196,8 @@ export async function handlePostMfaVerify(
   if (!code) {
     const scriptNonce = createAuthPageScriptNonce();
     const hasWebauthn = await hasUsableWebauthnCredentials(db, partial.userId);
-    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next, hasWebauthn), scriptNonce, 401, trustedOrigins);
+    const hasTotp = await userHasConfirmedTotp(db, partial.userId);
+    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next, hasWebauthn, hasTotp), scriptNonce, 401, trustedOrigins);
   }
 
   const ip = resolveMfaClientIp(c);
@@ -225,7 +228,8 @@ export async function handlePostMfaVerify(
   if (!result.ok) {
     const scriptNonce = createAuthPageScriptNonce();
     const hasWebauthn = await hasUsableWebauthnCredentials(db, partial.userId);
-    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next, hasWebauthn), scriptNonce, 401, trustedOrigins);
+    const hasTotp = await userHasConfirmedTotp(db, partial.userId);
+    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next, hasWebauthn, hasTotp), scriptNonce, 401, trustedOrigins);
   }
 
   if (result.trustedDeviceRawToken) {

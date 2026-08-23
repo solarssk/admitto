@@ -33,6 +33,9 @@ interface AuthOtpCodeFieldOptions {
   allowBackupCode?: boolean;
   /** Focus first digit on load (disable on QR enrollment step). */
   autofocusOtp?: boolean;
+  /** Start with the backup-code panel open and the digit boxes hidden, for a user with no
+   * confirmed authenticator app to enter a code from (only meaningful with allowBackupCode). */
+  startInBackupMode?: boolean;
 }
 
 /** Visible enrollment progress for multi-step MFA setup. */
@@ -48,18 +51,19 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
       `<input class="auth-otp-digit" type="text" inputmode="numeric" autocomplete="${i === 0 ? "one-time-code" : "off"}" maxlength="1" aria-label="Digit ${i + 1} of 6" data-otp-index="${i}">`,
   ).join("");
 
+  const startInBackupMode = options.allowBackupCode === true && options.startInBackupMode === true;
   const backupSection = options.allowBackupCode
-    ? `<button type="button" class="auth-otp-backup-toggle">Use a backup recovery code</button>
-    <div class="auth-otp-backup-panel" hidden>
+    ? `<button type="button" class="auth-otp-backup-toggle">${startInBackupMode ? "Use authenticator code" : "Use a backup recovery code"}</button>
+    <div class="auth-otp-backup-panel"${startInBackupMode ? "" : " hidden"}>
       <label class="auth-label" for="backup-code-input">Backup recovery code</label>
       <input class="auth-input" id="backup-code-input" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX">
     </div>`
     : "";
 
   // Span + aria-labelledby on the digit group (not a bare <label> without `for`).
-  return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? " data-backup-fallback" : ""}${options.autofocusOtp === false ? ' data-autofocus-otp="false"' : ""}>
-    <span class="auth-label" id="${escapeHtml(options.labelId)}">${escapeHtml(options.label)}</span>
-    <div class="auth-otp-digits" role="group" aria-labelledby="${escapeHtml(options.labelId)}">${digits}</div>
+  return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? " data-backup-fallback" : ""}${options.autofocusOtp === false ? ' data-autofocus-otp="false"' : ""}${startInBackupMode ? ' data-start-backup="true"' : ""}>
+    <span class="auth-label" id="${escapeHtml(options.labelId)}"${startInBackupMode ? " hidden" : ""}>${escapeHtml(options.label)}</span>
+    <div class="auth-otp-digits"${startInBackupMode ? " hidden" : ""} role="group" aria-labelledby="${escapeHtml(options.labelId)}">${digits}</div>
     <input type="hidden" name="code" id="code" required>
     ${backupSection}
   </div>`;
@@ -67,28 +71,38 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
 
 /** Render MFA verification form HTML (`/mfa/verify`). `hasWebauthnCredentials` shows the
  * "Use a passkey or security key" button only for a user who actually has one registered - the
- * button also self-hides via script when the browser lacks WebAuthn support. */
+ * button also self-hides via script when the browser lacks WebAuthn support. `hasTotp` controls
+ * whether the form leads with the 6-digit authenticator-app field (the common case) or, for a
+ * user whose only confirmed methods are backup codes and/or a passkey/security key (no
+ * authenticator app - e.g. after removing it from My Account), starts with the backup-code field
+ * open instead, so the page doesn't ask for a code they have no app to generate. */
 export function renderMfaVerifyForm(
   scriptNonce: string,
   error?: string,
   next?: string,
   hasWebauthnCredentials = false,
+  hasTotp = true,
 ): string {
   const err = error
     ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
     : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
+  const fallbackHint = hasTotp ? "or use your authenticator code" : "or enter a backup recovery code";
   const webauthnSection = hasWebauthnCredentials
     ? `<div class="auth-webauthn-error" id="mfa-webauthn-error" hidden>${renderNoticeHtml({
         variant: "error",
         role: "alert",
-        message: "Could not verify with your passkey or security key. Try again, or use your authenticator code.",
+        message: `Could not verify with your passkey or security key. Try again, ${fallbackHint}.`,
       })}</div>
       <button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden>Use a passkey or security key</button>`
     : "";
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Two-factor authentication</h2>
-    <p class="subtitle">Enter the 6-digit code from your authenticator app.</p>
+    <p class="subtitle">${
+      hasTotp
+        ? "Enter the 6-digit code from your authenticator app."
+        : "Enter one of your backup recovery codes."
+    }</p>
     ${err}
     <form method="post" action="/mfa/verify">
       ${nextField}
@@ -97,6 +111,7 @@ export function renderMfaVerifyForm(
         label: "Authentication code",
         labelId: "mfa-code-label",
         allowBackupCode: true,
+        startInBackupMode: !hasTotp,
       })}
       <label class="auth-check-label">
         <input type="checkbox" name="remember_device" value="1"> Remember this device
@@ -266,7 +281,7 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
     var backupToggle = wrap.querySelector(".auth-otp-backup-toggle");
     var backupPanel = wrap.querySelector(".auth-otp-backup-panel");
     var backupInput = backupPanel && backupPanel.querySelector("input");
-    var usingBackup = false;
+    var usingBackup = wrap.dataset.startBackup === "true";
     if (!hidden || digits.length === 0) return;
 
     function syncHidden() {
@@ -350,7 +365,12 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
       });
     }
 
-    if (wrap.dataset.autofocusOtp !== "false") focusDigit(0);
+    if (usingBackup) {
+      syncHidden();
+      if (backupInput) backupInput.focus();
+    } else if (wrap.dataset.autofocusOtp !== "false") {
+      focusDigit(0);
+    }
   });
 })();
 </script>`;

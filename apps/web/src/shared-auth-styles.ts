@@ -199,6 +199,12 @@ body {
   color: var(--at-gray-500);
 }
 .auth-otp-wrap { margin-bottom: 1rem; }
+/* Matches the already-centered digit boxes below it - left-aligned otherwise, since .auth-label
+   is shared with every other (left-aligned, single-line) field on these auth pages. */
+.auth-otp-wrap > .auth-label { text-align: center; }
+/* Space from Continue above, matching the gap Continue itself keeps from the field above it -
+   otherwise sits directly against it with no gap at all. */
+#mfa-webauthn-btn { margin-top: 0.75rem; }
 .auth-otp-digits {
   display: flex;
   gap: 0.5rem;
@@ -262,6 +268,7 @@ body {
 .auth-btn-primary {
   display: block;
   width: 100%;
+  min-height: 42px;
   padding: 0.625rem 1rem;
   background: var(--at-blue);
   color: #fff;
