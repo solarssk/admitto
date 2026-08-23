@@ -51,6 +51,7 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "mfa:verify-totp": { windowMs: 900_000, max: 10 },
     "mfa:verify-recovery": { windowMs: 900_000, max: 30 },
     "mfa:verify-webauthn": { windowMs: 900_000, max: 10 },
+    "mfa:step-up-total": { windowMs: 900_000, max: 20 },
     "mfa:enroll": { windowMs: 900_000, max: 10 },
     "account:password-check": { windowMs: 60_000, max: 10 },
   };

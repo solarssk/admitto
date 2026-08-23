@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit } from "../src/auth/mfa-rate-limit.js";
+import {
+  checkMfaVerifyRateLimit,
+  checkWebauthnStepUpRateLimit,
+  checkStepUpTotalRateLimit,
+} from "../src/auth/mfa-rate-limit.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/in-memory.js";
 
 const SESSION = "sess-1";
@@ -100,5 +104,70 @@ describe("checkWebauthnStepUpRateLimit", () => {
     }
     expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP)).toBe(false);
     expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, "login-mfa-webauthn")).toBe(true);
+  });
+});
+
+describe("checkStepUpTotalRateLimit", () => {
+  const TOTAL_MAX = 20;
+
+  it("blocks after exhausting the shared session bucket", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < TOTAL_MAX; i++) {
+      expect(await checkStepUpTotalRateLimit(store, SESSION, IP)).toBe(true);
+    }
+    expect(await checkStepUpTotalRateLimit(store, SESSION, IP)).toBe(false);
+  });
+
+  it("is action-agnostic — closes the gap where per-action buckets let a session multiply its real attempt budget by hopping across actions", async () => {
+    const store = new InMemoryRateLimitStore();
+    // Each of these calls uses a DIFFERENT rateLimitAction, so checkWebauthnStepUpRateLimit's own
+    // per-action bucket alone would never block them (see the "namespaces buckets by action" test
+    // above) - this shared bucket is what actually caps the total across all of them.
+    const actions = [
+      "account-password",
+      "mfa-reset",
+      "account-webauthn-remove",
+      "account-totp-remove",
+      "account-backup-codes-regenerate",
+      "account-external-identity",
+      "admin-reset-2fa-superadmin",
+      "admin-reset-password-superadmin",
+    ];
+    const PER_ACTION_MAX = 10;
+    let blocked = false;
+    let attempts = 0;
+    for (const action of actions) {
+      for (let i = 0; i < PER_ACTION_MAX; i++) {
+        attempts++;
+        const totalAllowed = await checkStepUpTotalRateLimit(store, SESSION, IP);
+        if (!totalAllowed) {
+          blocked = true;
+          break;
+        }
+        expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, action)).toBe(true);
+      }
+      if (blocked) break;
+    }
+    expect(blocked).toBe(true);
+    // Blocked well before the naive per-action-only ceiling (8 actions * 10/action = 80) would
+    // have allowed, and at exactly the shared cap.
+    expect(attempts).toBe(TOTAL_MAX + 1);
+  });
+
+  it("still rate-limits by IP - a fresh session from an exhausted IP is blocked", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < TOTAL_MAX; i++) {
+      expect(await checkStepUpTotalRateLimit(store, "sess-a", IP)).toBe(true);
+    }
+    expect(await checkStepUpTotalRateLimit(store, "sess-b", IP)).toBe(false);
+  });
+
+  it("keeps separate sessions on separate budgets when IPs differ too", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < TOTAL_MAX; i++) {
+      expect(await checkStepUpTotalRateLimit(store, "sess-a", "10.0.0.1")).toBe(true);
+    }
+    expect(await checkStepUpTotalRateLimit(store, "sess-a", "10.0.0.1")).toBe(false);
+    expect(await checkStepUpTotalRateLimit(store, "sess-b", "10.0.0.2")).toBe(true);
   });
 });

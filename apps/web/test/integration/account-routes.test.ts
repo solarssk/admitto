@@ -20,6 +20,7 @@ import {
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "@admitto/auth/testing";
 import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
+import { MAX_WEBAUTHN_BODY_BYTES } from "../../src/admin/account-routes.js";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
@@ -776,7 +777,7 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
   });
 
-  it("returns 401 invalid_totp for a wrong code", async () => {
+  it("returns 401 invalid_totp for a wrong code, and audits the failed attempt", async () => {
     await enrollConfirmedTotp();
     const res = await app.request("/api/account/mfa/reset", {
       method: "POST",
@@ -786,6 +787,12 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.mfa.fail", user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    expect((auditRow?.metadata as { reason?: string } | null)?.reason).toBe("invalid_code");
   });
 
   it("returns 429 after exceeding the step-up code rate limit", async () => {
@@ -855,7 +862,7 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBe(0);
   });
 
-  it("returns 401 invalid_webauthn for an assertion signed by the wrong authenticator", async () => {
+  it("returns 401 invalid_webauthn for an assertion signed by the wrong authenticator, and audits the failed attempt", async () => {
     await registerConfirmedWebauthnCredential(adminUserId);
     const wrongAuthenticator = createVirtualAuthenticator();
     const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
@@ -878,6 +885,12 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "webauthn" } })).toBe(1);
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.mfa.fail", user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    expect((auditRow?.metadata as { reason?: string } | null)?.reason).toBe("invalid_webauthn");
   });
 
   it("does not require a code for the non-MFA-required operator fixture", async () => {
@@ -890,6 +903,21 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
       body: JSON.stringify({ password: PASSWORD }),
     });
     expect(res.status).toBe(200);
+  });
+
+  it("rejects an oversized WebAuthn proof body before it's ever parsed", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        password: ADMIN_PASSWORD,
+        webauthn: { response: { signature: "x".repeat(MAX_WEBAUTHN_BODY_BYTES) } },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("request too large");
   });
 });
 
@@ -1947,7 +1975,7 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
   });
 
-  it("returns 401 invalid_totp for a wrong code", async () => {
+  it("returns 401 invalid_totp for a wrong code, and audits the failed attempt", async () => {
     await enrollConfirmedTotp();
     await prisma.externalIdentity.create({
       data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-wrong-subject", user_id: adminUserId },
@@ -1961,6 +1989,12 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
     expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.mfa.fail", user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    expect((auditRow?.metadata as { reason?: string } | null)?.reason).toBe("invalid_code");
   });
 
   it("returns 429 after exceeding the step-up code rate limit", async () => {

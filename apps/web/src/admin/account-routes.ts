@@ -30,9 +30,16 @@ import {
   removeTotpMethod,
   getBackupRecoveryCodesStatus,
   regenerateBackupRecoveryCodes,
+  logMfaFailure,
   type WebauthnRpConfig,
+  type MfaFailureReason,
 } from "@admitto/auth";
-import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import {
+  checkMfaVerifyRateLimit,
+  checkWebauthnStepUpRateLimit,
+  checkStepUpTotalRateLimit,
+  resolveMfaClientIp,
+} from "../auth/mfa-rate-limit.js";
 import { stashWebauthnChallenge, consumeWebauthnChallenge } from "../auth/webauthn-challenge-cache.js";
 import { checkAccountPasswordRateLimit } from "../rate-limit/policies.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
@@ -97,20 +104,30 @@ async function revokeSessionsExcludingCurrent(
 
 type StepUpFailureReason = "unauthorized" | "totp_required" | "invalid_totp" | "invalid_webauthn";
 
+/** Body-size cap for every WebAuthn register/assert route (account-context and login-time alike -
+ * `webauthnAuthenticationResponseSchema` is reused by the login route). Real ceremony responses
+ * are a few hundred bytes to a handful of KB even with a certificate-chain attestation; this stays
+ * generous while keeping the decode/CBOR-parse/crypto-verify work `@simplewebauthn/server` does on
+ * the body bounded, and is enforced by `bodyLimit` middleware in app.ts (rejects an oversized
+ * request before it's ever buffered/parsed), not just by the `.max()` calls below. */
+export const MAX_WEBAUTHN_BODY_BYTES = 32_768;
+
 /** Lenient on purpose, mirrors `webauthnRegistrationResponseSchema` above it: this is the
  * browser's own `PublicKeyCredential` assertion passed straight through to
  * `@simplewebauthn/server`'s verifier, which is the actual security boundary. Exported for reuse
- * by the login-time `/api/auth/mfa/webauthn/verify` route, which validates the same shape. */
+ * by the login-time `/api/auth/mfa/webauthn/verify` route, which validates the same shape. The
+ * `.max()` calls are a second line of defense alongside the `bodyLimit` middleware wired in
+ * app.ts - see `MAX_WEBAUTHN_BODY_BYTES`. */
 export const webauthnAuthenticationResponseSchema = z.object({
-  id: z.string().min(1),
-  rawId: z.string().min(1),
+  id: z.string().min(1).max(1024),
+  rawId: z.string().min(1).max(1024),
   response: z.object({
-    clientDataJSON: z.string().min(1),
-    authenticatorData: z.string().min(1),
-    signature: z.string().min(1),
-    userHandle: z.string().optional(),
+    clientDataJSON: z.string().min(1).max(2048),
+    authenticatorData: z.string().min(1).max(4096),
+    signature: z.string().min(1).max(2048),
+    userHandle: z.string().max(1024).optional(),
   }),
-  authenticatorAttachment: z.string().optional(),
+  authenticatorAttachment: z.string().max(64).optional(),
   clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
   type: z.literal("public-key"),
 });
@@ -142,10 +159,33 @@ async function parseStepUpProofOnlyBody(c: Context): Promise<z.infer<typeof step
 
 /** A step-up proof, resolved from a request body by `resolveStepUpProof`. The WebAuthn variant
  * carries its own `challenge`/`rp` (server-resolved, never client-supplied) so
- * `checkStepUpInTransaction` can verify it without any extra context. */
+ * `resolveVerifiedStepUpProof` can verify it without any extra context. */
 export type StepUpProof =
   | { type: "code"; value: string }
   | { type: "webauthn"; response: AuthenticationResponseJSON; challenge: string; rp: WebauthnRpConfig };
+
+/** A `StepUpProof` after its WebAuthn variant, if any, has already been cryptographically
+ * verified by `resolveVerifiedStepUpProof` - the only shape `checkStepUpInTransaction` and
+ * `verifySelfUnlinkProof` ever see, so neither runs `finishWebauthnAssertion` itself. */
+export type VerifiedStepUpProof = { type: "code"; value: string } | { type: "webauthn"; verified: boolean };
+
+/**
+ * Verify a resolved WebAuthn step-up proof (credential-row read + crypto-verify + sign-counter
+ * bump) using the plain `db` client, never a transaction - that bounded-but-real decode/verify
+ * work must not run while a broader transaction is held open for the actual step-up-gated write
+ * (password change, credential removal, MFA reset, ...). Called only after `stepUpPreflight`'s
+ * rate limit has already passed, so a rate-limited caller can never force this work to run.
+ * A `{type:"code"}` proof (or none at all) passes through unchanged - only WebAuthn needs this.
+ */
+async function resolveVerifiedStepUpProof(
+  db: PrismaClient,
+  userId: string,
+  proof: StepUpProof | undefined,
+): Promise<VerifiedStepUpProof | undefined> {
+  if (!proof || proof.type !== "webauthn") return proof;
+  const verified = await finishWebauthnAssertion(db, userId, proof.response, proof.challenge, proof.rp);
+  return { type: "webauthn", verified: verified !== null };
+}
 
 /**
  * Resolve the caller-supplied step-up proof from a parsed request body (`stepUpProofFields`) into
@@ -208,6 +248,9 @@ async function stepUpPreflight(
   }
   if (proof && currentSessionId) {
     const ip = resolveMfaClientIp(c);
+    if (!(await checkStepUpTotalRateLimit(rateLimitStore, currentSessionId, ip))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
     const allowed =
       proof.type === "code"
         ? await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, proof.value, rateLimitAction)
@@ -231,7 +274,7 @@ async function checkStepUpInTransaction(
   tx: Prisma.TransactionClient,
   userId: string,
   currentSessionId: string | undefined,
-  proof: StepUpProof | undefined,
+  proof: VerifiedStepUpProof | undefined,
   forceRequired = false,
 ): Promise<{ ok: true } | { ok: false; reason: StepUpFailureReason }> {
   if (!forceRequired && !(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
@@ -242,9 +285,7 @@ async function checkStepUpInTransaction(
   /* v8 ignore next */
   if (!proof) return { ok: false, reason: "totp_required" };
   if (proof.type === "webauthn") {
-    const verified = await finishWebauthnAssertion(tx, userId, proof.response, proof.challenge, proof.rp);
-    if (!verified) return { ok: false, reason: "invalid_webauthn" };
-    return { ok: true };
+    return proof.verified ? { ok: true } : { ok: false, reason: "invalid_webauthn" };
   }
   if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.value))) {
     return { ok: false, reason: "invalid_totp" };
@@ -267,6 +308,31 @@ function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Respons
     case "invalid_webauthn":
       return c.json({ code: "invalid_webauthn" }, 401);
   }
+}
+
+/**
+ * Audit a rejected step-up proof on an account-security action (password change, MFA reset,
+ * passkey removal, backup-code regeneration, self-service SSO unlink) - a stolen session alone
+ * must not be able to probe these indefinitely without leaving a trace, the same way a failed
+ * login-time MFA attempt already does (`emitMfaAudit`/`emitMfaWebauthnAudit`,
+ * packages/auth/src/login.ts). No-ops for `unauthorized`/`totp_required`: neither is an actual
+ * wrong-proof attempt (no proof was supplied at all).
+ */
+async function auditStepUpFailure(
+  db: PrismaClient,
+  audit: OpsAuditContext,
+  userId: string,
+  userAgent: string | undefined,
+  reason: StepUpFailureReason | UnlinkDenialCode,
+): Promise<void> {
+  const failureReason: MfaFailureReason | null =
+    reason === "invalid_totp" ? "invalid_code" : reason === "invalid_webauthn" ? "invalid_webauthn" : null;
+  if (!failureReason) return;
+  await logMfaFailure(
+    db,
+    { userId, sessionId: audit.sessionId, ip: audit.ip, userAgent, timezone: audit.timezone },
+    failureReason,
+  );
 }
 
 /**
@@ -309,16 +375,23 @@ export async function withStepUpGate<T>(
   });
   if (preflightDenied) return { ok: false, response: preflightDenied };
 
+  // Verified here, after the rate limit above already passed and before any transaction opens -
+  // see resolveVerifiedStepUpProof's own docstring.
+  const verifiedProof = await resolveVerifiedStepUpProof(db, userId, proof);
+
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
   const result = await runInTransaction(db, async (tx) => {
-    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, proof, forceRequired);
+    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, verifiedProof, forceRequired);
     if (!step.ok) return step;
     return { ok: true as const, value: await body(tx, orgId, audit) };
   });
 
-  if (!result.ok) return { ok: false, response: stepUpFailureResponse(c, result.reason) };
+  if (!result.ok) {
+    await auditStepUpFailure(db, audit, userId, c.req.header("user-agent"), result.reason);
+    return { ok: false, response: stepUpFailureResponse(c, result.reason) };
+  }
   return { ok: true, value: result.value };
 }
 
@@ -618,20 +691,12 @@ async function verifySelfUnlinkProof(
   tx: Prisma.TransactionClient,
   userId: string,
   passwordHash: string | null,
-  proof: { current_password: string | undefined; mfaProof: StepUpProof | undefined },
+  proof: { current_password: string | undefined; mfaProof: VerifiedStepUpProof | undefined },
 ): Promise<{ ok: true } | { ok: false; code: UnlinkDenialCode }> {
   if (await userHasAnyConfirmedMfaMethod(tx, userId)) {
     if (!proof.mfaProof) return { ok: false, code: "totp_required" };
     if (proof.mfaProof.type === "webauthn") {
-      const verified = await finishWebauthnAssertion(
-        tx,
-        userId,
-        proof.mfaProof.response,
-        proof.mfaProof.challenge,
-        proof.mfaProof.rp,
-      );
-      if (!verified) return { ok: false, code: "invalid_webauthn" };
-      return { ok: true };
+      return proof.mfaProof.verified ? { ok: true } : { ok: false, code: "invalid_webauthn" };
     }
     if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.mfaProof.value))) {
       return { ok: false, code: "invalid_totp" };
@@ -689,6 +754,9 @@ async function unlinkSsoPreflightRateLimit(
   if (mfaProof) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
     const ip = resolveMfaClientIp(c);
+    if (!(await checkStepUpTotalRateLimit(rateLimitStore, currentSessionId, ip))) {
+      return c.json({ error: "too many requests" }, 429);
+    }
     const allowed =
       mfaProof.type === "code"
         ? await checkMfaVerifyRateLimit(
@@ -758,6 +826,10 @@ export async function handleDeleteAccountExternalIdentity(
   );
   if (rateLimited) return rateLimited;
 
+  // Verified here, after the rate limit above already passed and before any transaction opens -
+  // see resolveVerifiedStepUpProof's own docstring.
+  const verifiedMfaProof = await resolveVerifiedStepUpProof(db, userId, mfaProof);
+
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
@@ -774,7 +846,7 @@ export async function handleDeleteAccountExternalIdentity(
 
     const proof = await verifySelfUnlinkProof(tx, userId, user.password_hash, {
       current_password: parsed.data.current_password,
-      mfaProof,
+      mfaProof: verifiedMfaProof,
     });
     if (!proof.ok) return proof;
 
@@ -808,6 +880,7 @@ export async function handleDeleteAccountExternalIdentity(
   });
 
   if (!result.ok) {
+    await auditStepUpFailure(db, audit, userId, c.req.header("user-agent"), result.code);
     const status = UNLINK_DENIAL_STATUS[result.code];
     if (result.code === "unauthorized") return c.json({ error: "unauthorized" }, status);
     return c.json({ code: result.code }, status);
@@ -1184,17 +1257,17 @@ export async function handlePostAccountWebauthnRegisterBegin(
  * (rejects any malformed/tampered payload on its own) — this schema only guards against a
  * grossly malformed request reaching that far. */
 const webauthnRegistrationResponseSchema = z.object({
-  id: z.string().min(1),
-  rawId: z.string().min(1),
+  id: z.string().min(1).max(1024),
+  rawId: z.string().min(1).max(1024),
   response: z.object({
-    clientDataJSON: z.string().min(1),
-    attestationObject: z.string().min(1),
-    authenticatorData: z.string().optional(),
-    transports: z.array(z.string()).optional(),
+    clientDataJSON: z.string().min(1).max(2048),
+    attestationObject: z.string().min(1).max(16384),
+    authenticatorData: z.string().max(4096).optional(),
+    transports: z.array(z.string().max(32)).max(16).optional(),
     publicKeyAlgorithm: z.number().optional(),
-    publicKey: z.string().optional(),
+    publicKey: z.string().max(2048).optional(),
   }),
-  authenticatorAttachment: z.string().optional(),
+  authenticatorAttachment: z.string().max(64).optional(),
   clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
   type: z.literal("public-key"),
 });
@@ -1238,21 +1311,25 @@ export async function handlePostAccountWebauthnRegisterFinish(
   const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
   if (rp instanceof Response) return rp;
 
+  // Verified (and, on success, persisted) using the plain client, before any wrapping
+  // transaction opens - finishWebauthnRegistration already does its own crypto-verify first and
+  // only opens a short internal transaction for the dup-check/create, so passing `db` here (not
+  // a caller-held `tx`) keeps that bounded work from running inside a longer-lived transaction.
+  const created = await finishWebauthnRegistration(
+    db,
+    userId,
+    parsed.data.response as RegistrationResponseJSON,
+    challenge,
+    parsed.data.attachment,
+    parsed.data.label?.trim() || null,
+    rp,
+  );
+  if (!created) return c.json({ code: "verification_failed" }, 400);
+
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
 
-  const result = await runInTransaction(db, async (tx) => {
-    const created = await finishWebauthnRegistration(
-      tx,
-      userId,
-      parsed.data.response as RegistrationResponseJSON,
-      challenge,
-      parsed.data.attachment,
-      parsed.data.label?.trim() || null,
-      rp,
-    );
-    if (!created) return null;
-
+  await runInTransaction(db, async (tx) => {
     // Self-service registration returns backup codes to the client directly (unlike the
     // login-time flow's separate acknowledgment step): mark them acknowledged now so this
     // already-`full` session isn't rejected by the backup-codes gate (IAM-002) on its very next
@@ -1267,11 +1344,9 @@ export async function handlePostAccountWebauthnRegisterFinish(
       actionType: "account_mfa_enrolled",
       metadata: { method: "webauthn", attachment: parsed.data.attachment },
     });
-    return created;
   });
 
-  if (!result) return c.json({ code: "verification_failed" }, 400);
-  return c.json({ ok: true, id: result.credentialRowId, backupCodes: result.backupCodes });
+  return c.json({ ok: true, id: created.credentialRowId, backupCodes: created.backupCodes });
 }
 
 /**

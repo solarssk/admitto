@@ -67,6 +67,7 @@ export const INLINE_RATE_LIMITS = {
   "mfa:verify-totp": { windowMs: 15 * 60_000, max: 10 },
   "mfa:verify-recovery": { windowMs: 15 * 60_000, max: 30 },
   "mfa:verify-webauthn": { windowMs: 15 * 60_000, max: 10 },
+  "mfa:step-up-total": { windowMs: 15 * 60_000, max: 20 },
   "mfa:enroll": { windowMs: 15 * 60_000, max: 10 },
   "account:password-check": { windowMs: 60_000, max: 10 },
 } as const satisfies Record<string, InlineRateLimit>;

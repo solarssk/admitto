@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.
+- Every request that can carry a WebAuthn/passkey ceremony response, sign-in verification, passkey registration, and every step-up-gated account action (password change, two-factor reset, passkey removal, backup-code regeneration, single sign-on unlink), is now capped in body size and rejected before it is ever parsed, closing a resource-exhaustion path an oversized request could otherwise reach.
+- Step-up proof attempts (a code or a WebAuthn assertion) across all of an account's step-up-gated actions now share one overall rate limit per session, on top of each action's own limit, so a stolen session can no longer multiply its effective guessing budget by switching between actions.
+- A rejected step-up proof, a wrong code or a failed WebAuthn assertion, on any account-security action is now written to the security audit log, the same way a failed sign-in two-factor attempt already was. Previously only successful step-ups left a trace.
+- Signing in with a passkey or security key now records the browser's timezone in its security audit log entries, matching the authenticator-app sign-in path.
+- WebAuthn credential verification for sign-in, step-up, and passkey removal no longer runs while a database transaction is held open, reducing how long a connection stays tied up per request.
 
 ## [0.5.5] - 2026-08-23
 

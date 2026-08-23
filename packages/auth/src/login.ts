@@ -358,10 +358,7 @@ async function completeMfaWithWebauthnInTransaction(
   tx: Prisma.TransactionClient,
   input: CompleteMfaWithWebauthnInput,
 ): Promise<CompleteMfaWithWebauthnTxResult> {
-  const { userId, sessionId, response, challenge, rp } = input;
-
-  const verified = await finishWebauthnAssertion(tx, userId, response, challenge, rp);
-  if (!verified) return { ok: false, reason: "invalid_webauthn" };
+  const { sessionId, userId } = input;
 
   const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
   if (!promotedStage) throw new WebauthnSessionPromotionFailedAfterVerifiedError();
@@ -423,6 +420,19 @@ export async function completeMfaWithWebauthn(
   input: CompleteMfaWithWebauthnInput,
   audit?: MfaAuditContext,
 ): Promise<CompleteMfaResult> {
+  // Verified before any transaction opens: the decode/CBOR-parse/crypto-verify work
+  // `finishWebauthnAssertion` does (and its own bounded credential-row read + sign-counter
+  // write) must never run while a broader transaction is held open for session promotion /
+  // trusted-device creation - see the confirmed "unbounded verification inside an open
+  // transaction" finding this fixes. Nothing here needs rolling back if promotion later fails:
+  // unlike a recovery code, an assertion isn't a one-time resource that can be "burned for
+  // nothing" (see WebauthnSessionPromotionFailedAfterVerifiedError's own docstring).
+  const verified = await finishWebauthnAssertion(prisma, input.userId, input.response, input.challenge, input.rp);
+  if (!verified) {
+    await emitMfaWebauthnAudit(prisma, audit, input, { ok: false, reason: "invalid_webauthn" });
+    return { ok: false };
+  }
+
   let txResult: CompleteMfaWithWebauthnTxResult;
   if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
     try {

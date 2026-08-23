@@ -191,6 +191,7 @@ export {
   logAuthSettingsChanged,
   type LoginAuditContext,
   type MfaAuditContext,
+  type MfaFailureReason,
   type MfaMethod,
   type RateLimitScope,
   type AuthSettingsResource,

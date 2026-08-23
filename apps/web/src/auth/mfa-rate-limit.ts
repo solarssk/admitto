@@ -105,6 +105,39 @@ export async function checkWebauthnStepUpRateLimit(
   return true;
 }
 
+/**
+ * Cross-action ceiling on account-context step-up proof attempts (TOTP/recovery/WebAuthn alike),
+ * checked ALONGSIDE each call's own per-action bucket (`checkMfaVerifyRateLimit`/
+ * `checkWebauthnStepUpRateLimit`), never instead of it. Those per-action buckets are
+ * intentionally namespaced so failing one self-service action (e.g. password change) doesn't
+ * throttle trying an unrelated one (e.g. MFA reset) in the same session - but without a shared
+ * ceiling too, that design lets a session round-robin across every step-up-gated action, each
+ * with its own fresh 10-or-30-per-15-minutes budget, to multiply its real total proof-attempt
+ * budget by the number of such actions (currently ~8). This bucket is proof-type- and action-
+ * agnostic on purpose: the property it protects - "how many times has this session tried to
+ * prove step-up, full stop" - doesn't depend on which action or proof type was attempted. Not
+ * used by the login-time WebAuthn verify route, which has only one caller and isn't subject to
+ * this multiplication.
+ */
+export async function checkStepUpTotalRateLimit(
+  store: RateLimitStore,
+  sessionId: string,
+  ip: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["mfa:step-up-total"];
+  const sessionResult = await store.hit(`mfa:stepup-total:session:${sessionId}`, windowMs, max);
+  if (!sessionResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "session_stepup_total" });
+    return false;
+  }
+  const ipResult = await store.hit(`mfa:stepup-total:ip:${ip}`, windowMs, max);
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "ip_stepup_total" });
+    return false;
+  }
+  return true;
+}
+
 /** Client IP for MFA rate limiting (honours TRUST_PROXY). */
 export function resolveMfaClientIp(c: Context): string {
   return resolveClientIp(c);

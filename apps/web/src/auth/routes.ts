@@ -532,7 +532,13 @@ export async function handlePostMfaWebauthnVerify(
       userAgent: c.req.header("user-agent"),
       timezone: parseOptionalClientTimezone(parsed.data.timezone),
     },
-    { userId: partial.userId, sessionId: partial.sessionId, ip, userAgent: c.req.header("user-agent") },
+    {
+      userId: partial.userId,
+      sessionId: partial.sessionId,
+      ip,
+      userAgent: c.req.header("user-agent"),
+      timezone: parseOptionalClientTimezone(parsed.data.timezone),
+    },
   );
 
   if (!result.ok) {
