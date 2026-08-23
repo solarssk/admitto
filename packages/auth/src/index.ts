@@ -199,10 +199,13 @@ export {
   login,
   logout,
   completeMfa,
+  completeMfaWithWebauthn,
   loginNextAfterFullSession,
   type LoginInput,
   type LoginResult,
   type CompleteMfaInput,
+  type CompleteMfaResult,
+  type CompleteMfaWithWebauthnInput,
 } from "./login.js";
 export {
   bootstrapSuperadmin,

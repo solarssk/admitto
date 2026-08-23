@@ -103,7 +103,7 @@ import {
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinStreamConcurrencyLimit } from "./checkin-stream-limit.js";
-import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
+import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
   handleGetMfaEnrollBackupCodes,
@@ -1825,6 +1825,12 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
+  );
+  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, (c) =>
+    handlePostMfaWebauthnBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.post("/api/auth/mfa/webauthn/verify", jsonPostCsrf, requirePartialSession, (c) =>
+    handlePostMfaWebauthnVerify(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, (c) =>
     handleTotpEnroll(c, db),

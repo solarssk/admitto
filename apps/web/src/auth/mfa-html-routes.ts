@@ -10,12 +10,13 @@ import {
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
   completeMfa,
-  revokeSession,
   BACKUP_RECOVERY_CODE_COUNT,
   verifyBackupRecoveryCodesSet,
   regenerateBackupRecoveryCodes,
   markBackupCodesAcknowledged,
   parseTotpSecretFromOtpauthUri,
+  getWebauthnEnabled,
+  listWebauthnCredentials,
 } from "@admitto/auth";
 import {
   getMfaEnrollPageSecurityHeaders,
@@ -37,8 +38,7 @@ import {
 } from "./enrollment-backup-cache.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
-import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
-import { setSessionCookie, setTrustedDeviceCookie, clearSessionCookie } from "./routes.js";
+import { setSessionCookie, setTrustedDeviceCookie, resolvePostMfaLandingPath } from "./routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
@@ -150,33 +150,28 @@ function renderBackupCodesPageForSession(
   });
 }
 
-async function redirectAfterFullEnrollment(
-  c: Context,
-  db: PrismaClient,
-  userId: string,
-  sessionId: string,
-  nextRaw?: string,
-): Promise<Response> {
-  clearEnrollmentBackupCodes(sessionId);
 
-  let landing: string;
-  try {
-    landing = await resolvePostLoginRedirectForUser(db, userId, nextRaw);
-  } catch (err) {
-    await revokeSession(db, sessionId);
-    clearSessionCookie(c);
-    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
-    return c.redirect("/login", 302);
-  }
-  return c.redirect(landing, 302);
+/** Show the login-time WebAuthn button only when the instance allows it AND the user actually
+ * has a confirmed credential to use it with. */
+async function hasUsableWebauthnCredentials(db: PrismaClient, userId: string): Promise<boolean> {
+  if (!(await getWebauthnEnabled(db))) return false;
+  return (await listWebauthnCredentials(db, userId)).length > 0;
 }
 
 /** GET /mfa/verify */
 export async function handleGetMfaVerify(c: Context, db: PrismaClient): Promise<Response> {
+  const partial = c.get("partialAuth");
   const next = resolveOptionalSafeRedirectPath(c.req.query("next"));
   const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   const scriptNonce = createAuthPageScriptNonce();
-  return htmlResponse(c, renderMfaVerifyForm(scriptNonce, undefined, next), scriptNonce, 200, trustedOrigins);
+  const hasWebauthn = await hasUsableWebauthnCredentials(db, partial.userId);
+  return htmlResponse(
+    c,
+    renderMfaVerifyForm(scriptNonce, undefined, next, hasWebauthn),
+    scriptNonce,
+    200,
+    trustedOrigins,
+  );
 }
 
 /** POST /mfa/verify */
@@ -198,7 +193,8 @@ export async function handlePostMfaVerify(
 
   if (!code) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next), scriptNonce, 401, trustedOrigins);
+    const hasWebauthn = await hasUsableWebauthnCredentials(db, partial.userId);
+    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next, hasWebauthn), scriptNonce, 401, trustedOrigins);
   }
 
   const ip = resolveMfaClientIp(c);
@@ -228,7 +224,8 @@ export async function handlePostMfaVerify(
 
   if (!result.ok) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next), scriptNonce, 401, trustedOrigins);
+    const hasWebauthn = await hasUsableWebauthnCredentials(db, partial.userId);
+    return htmlResponse(c, renderMfaVerifyForm(scriptNonce, MFA_ERROR, next, hasWebauthn), scriptNonce, 401, trustedOrigins);
   }
 
   if (result.trustedDeviceRawToken) {
@@ -239,19 +236,15 @@ export async function handlePostMfaVerify(
   // `ok: true` path - completeMfa() only omits it on the `ok: false` branch handled above.
   setSessionCookie(c, result.sessionRawToken!);
 
-  // User still owes backup-code acknowledgment — route to the backup-codes step
-  // instead of granting full access (IAM-002).
-  if (result.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
-    await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
-    const next = resolveOptionalSafeRedirectPath(form["next"] ?? c.req.query("next"));
-    const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
-    return c.redirect(`/mfa/enroll/backup-codes${nextQuery}`, 302);
-  }
-  if (result.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
-    return c.redirect("/change-password", 302);
-  }
-
-  return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);
+  const landing = await resolvePostMfaLandingPath(
+    c,
+    db,
+    partial.userId,
+    partial.sessionId,
+    result.stage ?? SESSION_STAGE.FULL,
+    form["next"] ?? c.req.query("next"),
+  );
+  return c.redirect(landing, 302);
 }
 
 /** GET /mfa/enroll — read-only; does not create enrollment (CSRF-safe). */
@@ -479,7 +472,8 @@ export async function handlePostMfaEnrollBackupCodes(
     return c.redirect("/change-password", 302);
   }
 
-  return redirectAfterFullEnrollment(c, db, partial.userId, partial.sessionId, form["next"]);
+  const landing = await resolvePostMfaLandingPath(c, db, partial.userId, partial.sessionId, promoted.stage, form["next"]);
+  return c.redirect(landing, 302);
 }
 
 /** POST /mfa/enroll/download-codes — download backup codes as plain text (no inline JS). */

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Passkeys and security keys registered under My account → Two-factor authentication can now be used to confirm sensitive account actions - password change, resetting two-factor, removing a passkey or security key, regenerating backup codes, unlinking single sign-on - the same as a code from your authenticator app. Previously a registered passkey only counted toward "has a confirmed second factor" and could not itself be used for anything.
+- Signing in can now be completed with a registered passkey or security key at the two-factor step after your password - a "Use a passkey or security key" option appears once you have one confirmed, alongside the usual authenticator-code field.
 
 ### Fixed
 
