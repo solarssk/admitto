@@ -290,71 +290,73 @@ function AddItemModal({
         onClick={onClose}
       />
       <div ref={addPanelRef} className="event-item-modal__panel">
-        <div className="event-item-modal__header">
-          <div>
-            <h2 className="event-item-modal__title">
-              <i className="ti ti-package" aria-hidden="true" /> Add item
-            </h2>
-            <p className="event-item-modal__subtitle">
-              A physical item or resource issued or tracked at check-in, for example a gift
-              bag, badge, or headset. You can configure rules after creating it.
-            </p>
+        <div className="event-item-modal__scroll at-scroll">
+          <div className="event-item-modal__header">
+            <div>
+              <h2 className="event-item-modal__title">
+                <i className="ti ti-package" aria-hidden="true" /> Add item
+              </h2>
+              <p className="event-item-modal__subtitle">
+                A physical item or resource issued or tracked at check-in, for example a gift
+                bag, badge, or headset. You can configure rules after creating it.
+              </p>
+            </div>
           </div>
-        </div>
-        <form
-          id="add-item-form"
-          className="event-item-modal__body at-scroll at-scroll--stable"
-          onSubmit={onSubmit}
-        >
-          <div className="at-field">
-            <div className="add-item-label-row">
-              <label className="at-label" htmlFor="add-item-input">
-                Item name
-              </label>
-              {addLabel.trim() && (
-                <span className="at-hint">
-                  ID: <code>{addKeyPreview || slugifyItemKey(addLabel) || "-"}</code>
-                  {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
-                    <> (unique suffix added)</>
-                  )}
-                </span>
+          <form
+            id="add-item-form"
+            className="event-item-modal__body"
+            onSubmit={onSubmit}
+          >
+            <div className="at-field">
+              <div className="add-item-label-row">
+                <label className="at-label" htmlFor="add-item-input">
+                  Item name
+                </label>
+                {addLabel.trim() && (
+                  <span className="at-hint">
+                    ID: <code>{addKeyPreview || slugifyItemKey(addLabel) || "-"}</code>
+                    {addKeyPreview && addKeyPreview !== slugifyItemKey(addLabel) && (
+                      <> (unique suffix added)</>
+                    )}
+                  </span>
+                )}
+              </div>
+              <input
+                id="add-item-input"
+                className="at-input"
+                type="text"
+                value={addLabel}
+                onChange={(e) => onLabelChange(e.target.value)}
+                placeholder="Gift bag"
+                required
+                autoFocus
+                aria-invalid={addNameError ? true : undefined}
+                aria-describedby={addNameError ? "add-item-name-error" : undefined}
+              />
+              <span className="at-hint">
+                The name shown to staff during check-in. Keep it short and clear, e.g. "Gift
+                bag", "Name badge", "T-shirt".
+              </span>
+              {addNameError && (
+                <p id="add-item-name-error" className="text-error" role="alert">
+                  {addNameError}
+                </p>
               )}
             </div>
-            <input
-              id="add-item-input"
-              className="at-input"
-              type="text"
-              value={addLabel}
-              onChange={(e) => onLabelChange(e.target.value)}
-              placeholder="Gift bag"
-              required
-              autoFocus
-              aria-invalid={addNameError ? true : undefined}
-              aria-describedby={addNameError ? "add-item-name-error" : undefined}
-            />
-            <span className="at-hint">
-              The name shown to staff during check-in. Keep it short and clear, e.g. "Gift
-              bag", "Name badge", "T-shirt".
-            </span>
-            {addNameError && (
-              <p id="add-item-name-error" className="text-error" role="alert">
-                {addNameError}
-              </p>
-            )}
+          </form>
+          <div className="event-item-modal__footer">
+            <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="add-item-form"
+              variant="primary"
+              disabled={adding || !addLabel.trim()}
+            >
+              {adding ? "Creating…" : "Create"}
+            </Button>
           </div>
-        </form>
-        <div className="event-item-modal__footer">
-          <Button type="button" variant="ghost" disabled={adding} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="add-item-form"
-            variant="primary"
-            disabled={adding || !addLabel.trim()}
-          >
-            {adding ? "Creating…" : "Create"}
-          </Button>
         </div>
       </div>
     </dialog>

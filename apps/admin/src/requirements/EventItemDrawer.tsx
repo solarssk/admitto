@@ -152,169 +152,171 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
       >
         <ModalBackdrop onClose={onClose} />
         <div ref={panelRef} className="event-item-modal__panel">
-          <div className="event-item-modal__header">
-            <div>
-              <h2 id="item-modal-title" className="event-item-modal__title">
-                <i className={`ti ti-${headerIcon}`} aria-hidden="true" />
-                {item.label}
-              </h2>
-              <p className="event-item-modal__id">
-                Internal ID: <code>{item.key}</code>
-              </p>
-            </div>
-            <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
-          </div>
-          <form id="item-edit-form" className="event-item-modal__body at-scroll at-scroll--stable" onSubmit={(e) => void handleSave(e)}>
-            {isDefaultItem && (
-              <Notice variant="info">
-                Badge is the default item used by "Issue badge at entry". It cannot be deleted, but you can turn it
-                off when automatic badge issuing is not needed.
-              </Notice>
-            )}
-            <div>
-              <h3 className="event-item-modal__section-title">Details</h3>
-              <div className="requirements-field-stack">
-                <Input
-                  label="Display name"
-                  value={form.label}
-                  onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-                  required
-                />
-                <Input
-                  label="Description (shown to operators)"
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  placeholder="Physical package distributed at the door."
-                />
-                <div className="requirements-toggle-row">
-                  <div className="requirements-toggle-row__text">
-                    <strong>Active</strong>
-                    <p>Inactive items are hidden from check-in operators.</p>
-                  </div>
-                  <Switch
-                    label={form.enabled ? "On" : "Off"}
-                    checked={form.enabled}
-                    onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-                    aria-label="Item active"
-                  />
-                </div>
+          <div className="event-item-modal__scroll at-scroll">
+            <div className="event-item-modal__header">
+              <div>
+                <h2 id="item-modal-title" className="event-item-modal__title">
+                  <i className={`ti ti-${headerIcon}`} aria-hidden="true" />
+                  {item.label}
+                </h2>
+                <p className="event-item-modal__id">
+                  Internal ID: <code>{item.key}</code>
+                </p>
               </div>
+              <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
             </div>
-
-            <div>
-              <h3 className="event-item-modal__section-title">Icon</h3>
-              <p className="requirements-section-hint">Shown on the check-in card for operators.</p>
-              <IconPicker
-                key={item.id}
-                value={form.icon}
-                onChange={(icon) => setForm((f) => ({ ...f, icon }))}
-              />
-            </div>
-
-            <div>
-              <h3 className="event-item-modal__section-title">Attendee data field</h3>
-              <p className="requirements-section-hint">
-                Show one or more custom attendee fields next to this item at check-in. Useful when
-                the item varies per person (e.g. shirt size on a gift bag). Manage the fields
-                themselves in the "Custom attendee fields" card above.
-              </p>
-              {customFields.length === 0 ? (
+            <form id="item-edit-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+              {isDefaultItem && (
                 <Notice variant="info">
-                  No custom fields defined for this event yet. Add fields in Custom attendee fields
-                  above, then link them here.
+                  Badge is the default item used by "Issue badge at entry". It cannot be deleted, but you can turn it
+                  off when automatic badge issuing is not needed.
                 </Notice>
-              ) : (
-                <div className="requirements-field-stack">
-                  {customFields.map((field) => (
-                    <label
-                      key={field.id}
-                      className="requirements-item-cell requirements-field-picker-row"
-                    >
-                      <input
-                        type="checkbox"
-                        aria-label={field.label}
-                        checked={form.content_fields.includes(field.source_field)}
-                        onChange={(e) => toggleContentField(field.source_field, e.target.checked)}
-                      />
-                      <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
-                      <div className="requirements-item-info">
-                        <div className="requirements-item-name">{field.label}</div>
-                        <div className="requirements-item-id">
-                          <code>{field.source_field}</code>
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
               )}
-            </div>
-
-            <div>
-              <h3 className="event-item-modal__section-title">Item behaviour</h3>
-              <div className="requirements-field-stack">
-                <div className="requirements-toggle-row">
-                  <div className="requirements-toggle-row__text">
-                    <strong>Requires return</strong>
-                    <p>Track when this item must be returned (e.g. headset).</p>
-                  </div>
-                  <Switch
-                    label={form.requires_return ? "On" : "Off"}
-                    checked={form.requires_return}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, requires_return: e.target.checked }))
-                    }
-                    aria-label="Requires return"
+              <div>
+                <h3 className="event-item-modal__section-title">Details</h3>
+                <div className="requirements-field-stack">
+                  <Input
+                    label="Display name"
+                    value={form.label}
+                    onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+                    required
                   />
-                </div>
-                {item.key === "badge" && (
+                  <Input
+                    label="Description (shown to operators)"
+                    value={form.description}
+                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                    placeholder="Physical package distributed at the door."
+                  />
                   <div className="requirements-toggle-row">
                     <div className="requirements-toggle-row__text">
-                      <strong>Issue on check-in</strong>
-                      <p>Automatically mark badge as issued when attendee is admitted.</p>
+                      <strong>Active</strong>
+                      <p>Inactive items are hidden from check-in operators.</p>
                     </div>
                     <Switch
-                      label={form.issue_on_checkin ? "On" : "Off"}
-                      checked={form.issue_on_checkin}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
-                      }
-                      aria-label="Issue on check-in"
+                      label={form.enabled ? "On" : "Off"}
+                      checked={form.enabled}
+                      onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+                      aria-label="Item active"
                     />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="event-item-modal__section-title">Icon</h3>
+                <p className="requirements-section-hint">Shown on the check-in card for operators.</p>
+                <IconPicker
+                  key={item.id}
+                  value={form.icon}
+                  onChange={(icon) => setForm((f) => ({ ...f, icon }))}
+                />
+              </div>
+
+              <div>
+                <h3 className="event-item-modal__section-title">Attendee data field</h3>
+                <p className="requirements-section-hint">
+                  Show one or more custom attendee fields next to this item at check-in. Useful when
+                  the item varies per person (e.g. shirt size on a gift bag). Manage the fields
+                  themselves in the "Custom attendee fields" card above.
+                </p>
+                {customFields.length === 0 ? (
+                  <Notice variant="info">
+                    No custom fields defined for this event yet. Add fields in Custom attendee fields
+                    above, then link them here.
+                  </Notice>
+                ) : (
+                  <div className="requirements-field-stack">
+                    {customFields.map((field) => (
+                      <label
+                        key={field.id}
+                        className="requirements-item-cell requirements-field-picker-row"
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={field.label}
+                          checked={form.content_fields.includes(field.source_field)}
+                          onChange={(e) => toggleContentField(field.source_field, e.target.checked)}
+                        />
+                        <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+                        <div className="requirements-item-info">
+                          <div className="requirements-item-name">{field.label}</div>
+                          <div className="requirements-item-id">
+                            <code>{field.source_field}</code>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
-          </form>
-          <div className="event-item-modal__footer">
-            <Tooltip
-              content={
-                isDefaultItem
-                  ? "Default item required for “Issue badge at entry”. Turn off Active instead."
-                  : undefined
-              }
-            >
-              {isDefaultItem && (
-                <span id="delete-item-reason" className="sr-only">
-                  Default item required for "Issue badge at entry". Turn off Active instead.
-                </span>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={deleting || isDefaultItem}
-                onClick={() => setDeleteConfirmOpen(true)}
-                aria-describedby={isDefaultItem ? "delete-item-reason" : undefined}
+
+              <div>
+                <h3 className="event-item-modal__section-title">Item behaviour</h3>
+                <div className="requirements-field-stack">
+                  <div className="requirements-toggle-row">
+                    <div className="requirements-toggle-row__text">
+                      <strong>Requires return</strong>
+                      <p>Track when this item must be returned (e.g. headset).</p>
+                    </div>
+                    <Switch
+                      label={form.requires_return ? "On" : "Off"}
+                      checked={form.requires_return}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, requires_return: e.target.checked }))
+                      }
+                      aria-label="Requires return"
+                    />
+                  </div>
+                  {item.key === "badge" && (
+                    <div className="requirements-toggle-row">
+                      <div className="requirements-toggle-row__text">
+                        <strong>Issue on check-in</strong>
+                        <p>Automatically mark badge as issued when attendee is admitted.</p>
+                      </div>
+                      <Switch
+                        label={form.issue_on_checkin ? "On" : "Off"}
+                        checked={form.issue_on_checkin}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, issue_on_checkin: e.target.checked }))
+                        }
+                        aria-label="Issue on check-in"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </form>
+            <div className="event-item-modal__footer">
+              <Tooltip
+                content={
+                  isDefaultItem
+                    ? "Default item required for “Issue badge at entry”. Turn off Active instead."
+                    : undefined
+                }
               >
-                Delete item
-              </Button>
-            </Tooltip>
-            <div className="event-item-modal__footer-end">
-              <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting || !dirty}>
-                {saving ? "Saving…" : "Save"}
-              </Button>
+                {isDefaultItem && (
+                  <span id="delete-item-reason" className="sr-only">
+                    Default item required for "Issue badge at entry". Turn off Active instead.
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={deleting || isDefaultItem}
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  aria-describedby={isDefaultItem ? "delete-item-reason" : undefined}
+                >
+                  Delete item
+                </Button>
+              </Tooltip>
+              <div className="event-item-modal__footer-end">
+                <Button type="button" variant="ghost" disabled={saving || deleting} onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button type="submit" form="item-edit-form" variant="primary" disabled={saving || deleting || !dirty}>
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
