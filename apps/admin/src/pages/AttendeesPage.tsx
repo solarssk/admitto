@@ -395,7 +395,7 @@ function SendTicketsDialog({
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
-      <div className="add-attendee-modal__scroll" ref={scrollRef}>
+      <div className="add-attendee-modal__scroll at-scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           Send tickets
         </h2>
@@ -440,11 +440,11 @@ function SendTicketsDialog({
           </label>
         </div>
         <div className="add-attendee-modal__actions">
-          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
-            {busy ? "Sending…" : "Send tickets"}
-          </Button>
           <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
             Cancel
+          </Button>
+          <Button type="button" variant="primary" disabled={busy} onClick={onConfirm}>
+            {busy ? "Sending…" : "Send tickets"}
           </Button>
         </div>
       </div>
@@ -531,7 +531,7 @@ function CardPickerDialog<T>({
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={onClose} />
       <div className="add-attendee-modal__panel" ref={panelRef}>
-      <div className="add-attendee-modal__scroll" ref={scrollRef}>
+      <div className="add-attendee-modal__scroll at-scroll" ref={scrollRef}>
         <h2 className="add-attendee-modal__title" id={titleId}>
           {title}
         </h2>

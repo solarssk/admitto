@@ -228,7 +228,7 @@ describe("WebAuthn registration", () => {
     const begin = await beginWebauthnRegistration(prisma, userId, "cross-platform", RP);
     const response = authenticator.register({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
     // The virtual authenticator doesn't report transports by default (matches many real
-    // authenticators) — set them here the way a browser's getTransports() would, to exercise the
+    // authenticators), set them here the way a browser's getTransports() would, to exercise the
     // "real transports reported" side of the `credential.transports ?? []` fallback.
     response.response.transports = ["usb", "nfc"];
 
@@ -257,6 +257,21 @@ describe("WebAuthn registration", () => {
 
   it("returns null starting a registration for an unknown user", async () => {
     expect(await beginWebauthnRegistration(prisma, "user-does-not-exist", "platform", RP)).toBeNull();
+  });
+
+  it("uses the same WebAuthn user handle across separate registration ceremonies for one account, distinct from another account's", async () => {
+    const userA = "user-wa-handle-a";
+    const userB = "user-wa-handle-b";
+    await createAdmin(userA, "wa-handle-a@example.com");
+    await createAdmin(userB, "wa-handle-b@example.com");
+
+    const first = await beginWebauthnRegistration(prisma, userA, "platform", RP);
+    const second = await beginWebauthnRegistration(prisma, userA, "cross-platform", RP);
+    const other = await beginWebauthnRegistration(prisma, userB, "platform", RP);
+
+    expect(first?.options.user.id).toBeTruthy();
+    expect(second?.options.user.id).toBe(first?.options.user.id);
+    expect(other?.options.user.id).not.toBe(first?.options.user.id);
   });
 });
 
@@ -332,7 +347,7 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
 
     const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
     // Impostor signs with its own key but claims the real credential ID is unknown to it, so
-    // its own (different) id won't match any stored row — finishWebauthnAssertion looks up by
+    // its own (different) id won't match any stored row, finishWebauthnAssertion looks up by
     // response.id, which naturally rejects an authenticator that was never registered.
     const response = impostor.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
     expect(await finishWebauthnAssertion(prisma, userId, response, begin!.challenge, RP)).toBeNull();
@@ -344,13 +359,13 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
     const { response: registration, result } = await registerCredential(userId, "platform", "Real key");
     const impostor = createVirtualAuthenticator();
     // Warm up the impostor's own sign counter past the real (stored) credential's counter (1)
-    // first — otherwise @simplewebauthn/server's counter-regression guard throws before it ever
+    // first, otherwise @simplewebauthn/server's counter-regression guard throws before it ever
     // reaches signature verification, which would only prove the counter check works, not that a
     // bad signature against the real public key is independently rejected.
     impostor.authenticate({ challenge: "warm-up", rpID: RP.rpID, origin: RP.origin });
 
     const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
-    // Unlike the "wrong key" case above (a stranger's own, unregistered credential ID — rejected
+    // Unlike the "wrong key" case above (a stranger's own, unregistered credential ID, rejected
     // by the row lookup before any crypto happens), this forges the *real* credential's id/rawId
     // (captured at registration) onto a response actually signed by the impostor's key: the row
     // lookup succeeds and the stored (real) public key is used to verify a signature that was
@@ -362,11 +377,51 @@ describe("WebAuthn assertion (login/step-up verification)", () => {
 
     expect(await finishWebauthnAssertion(prisma, userId, forged, begin!.challenge, RP)).toBeNull();
     const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
-    expect(row?.webauthn_sign_count).toBe(1); // unchanged — a rejected assertion never advances it
+    expect(row?.webauthn_sign_count).toBe(1); // unchanged, a rejected assertion never advances it
+  });
+
+  // A real Promise.all race against a live connection doesn't reliably interleave two
+  // findFirst() calls before either updateMany() commits (Postgres serializes fast local
+  // queries too predictably to depend on for a test) - the same reason
+  // packages/tickets/test/checkin-toctou.test.ts stubs the stale read instead of racing real
+  // requests. Same technique here: a response is verified against a snapshot of the row as it
+  // stood *before* another authentication's write already landed, proving the compare-and-swap
+  // rejects a write based on that now-stale baseline, deterministically instead of by timing luck.
+  it("rejects a write based on a stale counter snapshot, once another authentication has already advanced it (clone-detection CAS)", async () => {
+    const userId = "user-wa-counter-cas";
+    await createAdmin(userId, "wa-counter-cas@example.com");
+    const { authenticator, result } = await registerCredential(userId, "platform", "CAS key");
+
+    const begin = await beginWebauthnAssertion(prisma, userId, RP.rpID);
+    const response = authenticator.authenticate({ challenge: begin!.challenge, rpID: RP.rpID, origin: RP.origin });
+
+    const staleRow = await prisma.userMfaMethod.findUniqueOrThrow({ where: { id: result!.credentialRowId } });
+    // Simulate a second, already-committed authentication (e.g. a cloned credential answering a
+    // different challenge) advancing the real stored counter past what `staleRow` still reflects.
+    await prisma.userMfaMethod.update({
+      where: { id: result!.credentialRowId },
+      data: { webauthn_sign_count: staleRow.webauthn_sign_count! + 10 },
+    });
+
+    // findFirst returns the pre-race snapshot; updateMany still hits the real table, so the
+    // compare-and-swap's `where` clause is checked against the real, already-advanced row.
+    const staleReadPrisma = {
+      userMfaMethod: {
+        findFirst: async () => staleRow,
+        updateMany: (args: Parameters<PrismaClient["userMfaMethod"]["updateMany"]>[0]) =>
+          prisma.userMfaMethod.updateMany(args),
+      },
+    } as unknown as PrismaClient;
+
+    expect(await finishWebauthnAssertion(staleReadPrisma, userId, response, begin!.challenge, RP)).toBeNull();
+
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result!.credentialRowId } });
+    // Unchanged by the rejected write - still the other authentication's counter, not this one's.
+    expect(row?.webauthn_sign_count).toBe(staleRow.webauthn_sign_count! + 10);
   });
 });
 
-describe("WebAuthn-only user — login and session policy", () => {
+describe("WebAuthn-only user, login and session policy", () => {
   it("login flow reaches mfa_pending (not enrollment_required) once a passkey is confirmed", async () => {
     const userId = "user-wa-login";
     const email = "wa-login@example.com";

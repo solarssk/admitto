@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
+import { makeEmailPreviewInert } from "../../src/communication/inertEmailPreview.js";
 import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 const fetchEventTemplates = vi.fn();
@@ -1011,7 +1012,9 @@ describe("CommunicationPage templates", () => {
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
 
     expect(await screen.findByText("Preview subject", {}, { timeout: 2000 })).toBeTruthy();
-    expect(screen.getByTitle("Email preview").getAttribute("srcdoc")).toBe("<p>Rendered preview</p>");
+    expect(screen.getByTitle("Email preview").getAttribute("srcdoc")).toBe(
+      makeEmailPreviewInert("<p>Rendered preview</p>"),
+    );
   });
 
   it("keeps the format unchanged when the switch-format confirmation is cancelled", async () => {
