@@ -17,11 +17,17 @@ export function applyAuthPageSecurityHeaders(c: Context, headers: Readonly<Recor
 /** Security headers for auth pages that ship nonce-gated inline scripts. `trustedOrigins`
  *  (Settings → Security, `csp_trusted_origins`) extends `script-src` alongside the nonce and adds
  *  `connect-src`/`frame-src` for a login challenge widget (e.g. Cloudflare Turnstile); omitted
- *  entirely when empty, so an unconfigured instance gets today's exact header. */
+ *  entirely when empty, so an unconfigured instance gets today's exact header.
+ *  `options.allowSelfConnect` adds `'self'` to `connect-src` for a page whose own inline script
+ *  calls same-origin JSON endpoints via `fetch()` (currently only the MFA-verify page's WebAuthn
+ *  button) - every other auth page ships no `fetch()` calls, so this stays opt-in rather than the
+ *  default. */
 export function getAuthPageInlineScriptHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
+  options: { allowSelfConnect?: boolean } = {},
 ): Record<string, string> {
+  const connectSrc = [...(options.allowSelfConnect ? ["'self'"] : []), ...trustedOrigins];
   return {
     "Cache-Control": "private, no-store, max-age=0",
     "Content-Security-Policy": [
@@ -29,7 +35,7 @@ export function getAuthPageInlineScriptHeaders(
       AUTH_PAGE_ICON_CSP,
       "style-src 'unsafe-inline'",
       `script-src ${["'nonce-" + scriptNonce + "'", ...trustedOrigins].join(" ")}`,
-      ...(trustedOrigins.length > 0 ? [`connect-src ${trustedOrigins.join(" ")}`] : []),
+      ...(connectSrc.length > 0 ? [`connect-src ${connectSrc.join(" ")}`] : []),
       ...(trustedOrigins.length > 0 ? [`frame-src ${trustedOrigins.join(" ")}`] : []),
       "form-action 'self'",
       "frame-ancestors 'none'",

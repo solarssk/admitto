@@ -1,5 +1,4 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
-import type { MfaMethod } from "../audit.js";
 import { verifyUserTotpCode } from "./enrollment.js";
 import { findBackupRecoveryRowId } from "./backup-recovery.js";
 import { findEmergencyRecoveryRowId } from "./emergency-recovery.js";
@@ -9,9 +8,11 @@ import { consumeRecoveryRow } from "./recovery-consume.js";
  * Result of a step-up code check: which method matched, or why it didn't.
  * `no_match` is a code that never matched any method; `consume_conflict` is a
  * recovery code that matched but lost a race to consume the row (already used).
+ * `method` is narrower than the full `MfaMethod` union (from `../audit.js`) - a code check can
+ * only ever match "totp", "backup", or "emergency", never "webauthn".
  */
 export type StepUpCodeResult =
-  | { ok: true; method: MfaMethod }
+  | { ok: true; method: "totp" | "backup" | "emergency" }
   | { ok: false; reason: "no_match" | "consume_conflict" };
 
 /** Verify a TOTP code, or consume a backup/emergency recovery code, for step-up re-auth. */

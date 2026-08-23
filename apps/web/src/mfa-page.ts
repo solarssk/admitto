@@ -8,12 +8,13 @@ import {
 import { renderNoticeHtml } from "./auth-notice.js";
 import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 
-/** Security headers for MFA verify (nonce-gated inline script for OTP digit widget). */
+/** Security headers for MFA verify (nonce-gated inline script for the OTP digit widget and the
+ *  WebAuthn button, which needs `connect-src 'self'` to `fetch()` its own JSON endpoints). */
 export function getMfaPageSecurityHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
 ): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins, { allowSelfConnect: true });
 }
 
 /** MFA enroll allows nonce-gated inline script for clipboard copy and OTP widget. */
@@ -63,12 +64,27 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
   </div>`;
 }
 
-/** Render MFA verification form HTML (`/mfa/verify`). */
-export function renderMfaVerifyForm(scriptNonce: string, error?: string, next?: string): string {
+/** Render MFA verification form HTML (`/mfa/verify`). `hasWebauthnCredentials` shows the
+ * "Use a passkey or security key" button only for a user who actually has one registered - the
+ * button also self-hides via script when the browser lacks WebAuthn support. */
+export function renderMfaVerifyForm(
+  scriptNonce: string,
+  error?: string,
+  next?: string,
+  hasWebauthnCredentials = false,
+): string {
   const err = error
     ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
     : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
+  const webauthnSection = hasWebauthnCredentials
+    ? `<div class="auth-webauthn-error" id="mfa-webauthn-error" hidden>${renderNoticeHtml({
+        variant: "error",
+        role: "alert",
+        message: "Could not verify with your passkey or security key. Try again, or use your authenticator code.",
+      })}</div>
+      <button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden>Use a passkey or security key</button>`
+    : "";
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Two-factor authentication</h2>
     <p class="subtitle">Enter the 6-digit code from your authenticator app.</p>
@@ -84,12 +100,15 @@ export function renderMfaVerifyForm(scriptNonce: string, error?: string, next?: 
         <input type="checkbox" name="remember_device" value="1"> Remember this device
       </label>
       <button class="auth-btn-primary" type="submit">Continue</button>
+      ${webauthnSection}
     </form>`;
   return renderAuthDocument({
     step: "Two-factor authentication",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}`,
+    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}${
+      hasWebauthnCredentials ? `\n${mfaWebauthnScript(scriptNonce)}` : ""
+    }`,
   });
 }
 
@@ -330,6 +349,102 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
     }
 
     if (wrap.dataset.autofocusOtp !== "false") focusDigit(0);
+  });
+})();
+</script>`;
+}
+
+/** Login-time "Use a passkey or security key" button: fetch a challenge, run
+ * `navigator.credentials.get()`, submit the assertion — a hand-rolled base64url + WebAuthn call
+ * (no `@simplewebauthn/browser`; this page ships no bundler, unlike the admin SPA's registration
+ * flow). Any failure (cancelled, wrong key, network) falls back silently to the still-usable code
+ * form instead of blocking the page. */
+function mfaWebauthnScript(scriptNonce: string): string {
+  return String.raw`<script nonce="${scriptNonce}">
+(function () {
+  var btn = document.getElementById("mfa-webauthn-btn");
+  var errorBox = document.getElementById("mfa-webauthn-error");
+  if (!btn || !window.PublicKeyCredential) return;
+  btn.hidden = false;
+
+  function b64urlToBuffer(b64url) {
+    var b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    var pad = b64.length % 4 === 0 ? "" : new Array(5 - (b64.length % 4)).join("=");
+    var bin = atob(b64 + pad);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function bufferToB64url(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function showError() {
+    btn.disabled = false;
+    if (errorBox) errorBox.hidden = false;
+  }
+
+  btn.addEventListener("click", function () {
+    btn.disabled = true;
+    if (errorBox) errorBox.hidden = true;
+
+    fetch("/api/auth/mfa/webauthn/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
+      .then(function (begin) {
+        if (!begin.res.ok || !begin.data.options) throw new Error("begin_failed");
+        var publicKey = begin.data.options;
+        publicKey.challenge = b64urlToBuffer(publicKey.challenge);
+        publicKey.allowCredentials = (publicKey.allowCredentials || []).map(function (cred) {
+          return { id: b64urlToBuffer(cred.id), type: cred.type, transports: cred.transports };
+        });
+        return navigator.credentials.get({ publicKey: publicKey });
+      })
+      .then(function (assertion) {
+        var form = btn.closest("form");
+        var nextInput = form ? form.querySelector('input[name="next"]') : null;
+        var rememberInput = form ? form.querySelector('input[name="remember_device"]') : null;
+        return fetch("/api/auth/mfa/webauthn/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            response: {
+              id: assertion.id,
+              rawId: bufferToB64url(assertion.rawId),
+              type: assertion.type,
+              clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {},
+              response: {
+                clientDataJSON: bufferToB64url(assertion.response.clientDataJSON),
+                authenticatorData: bufferToB64url(assertion.response.authenticatorData),
+                signature: bufferToB64url(assertion.response.signature),
+                userHandle: assertion.response.userHandle ? bufferToB64url(assertion.response.userHandle) : undefined,
+              },
+            },
+            remember_device: !!(rememberInput && rememberInput.checked),
+            next: nextInput ? nextInput.value : undefined,
+          }),
+        });
+      })
+      .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
+      .then(function (verify) {
+        if (verify.res.ok && verify.data.ok) {
+          window.location.href = verify.data.next;
+          return;
+        }
+        showError();
+      })
+      .catch(function () {
+        // Includes NotAllowedError (user cancelled/timed out) - stay on the page, code form
+        // remains usable.
+        showError();
+      });
   });
 })();
 </script>`;
