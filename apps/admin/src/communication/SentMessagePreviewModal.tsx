@@ -4,6 +4,7 @@ import { fetchRenderedDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, RenderedDeliveryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { makeEmailPreviewInert } from "./inertEmailPreview.js";
 import "./delivery-modals.css";
 
@@ -22,9 +23,11 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   // Subject/iframe don't exist in the DOM until the fetch resolves - retry initial focus once
   // `loading` flips to false (IdentityProviderEditor's loadState convention).
   useModalFocusTrap(panelRef, true, onClose, loading);
+  useOverscrollBounceGuard(scrollRef);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -46,7 +49,7 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
     <dialog open className="delivery-modal" aria-modal="true" aria-labelledby="sent-message-modal-title">
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="delivery-modal__panel delivery-modal__panel--wide">
-        <div className="delivery-modal__scroll">
+        <div ref={scrollRef} className="delivery-modal__scroll">
           <div className="delivery-modal__header">
             <div>
               <h2 id="sent-message-modal-title" className="delivery-modal__title">

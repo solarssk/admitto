@@ -5,6 +5,7 @@ import { fetchEventDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { describeSmtpBounceCode } from "../utils/smtpBounceCodes.js";
 import { formatDeliveryHistoryTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
 import "./delivery-modals.css";
@@ -164,9 +165,11 @@ export function DeliveryDetailsModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   // The overview/raw-fields sections don't exist in the DOM until the fetch resolves - retry
   // initial focus once `loading` flips to false.
   useModalFocusTrap(panelRef, true, onClose, loading);
+  useOverscrollBounceGuard(scrollRef);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -192,7 +195,7 @@ export function DeliveryDetailsModal({
     <dialog open className="delivery-modal" aria-modal="true" aria-labelledby="delivery-details-modal-title">
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="delivery-modal__panel delivery-modal__panel--wide">
-        <div className="delivery-modal__scroll">
+        <div ref={scrollRef} className="delivery-modal__scroll">
           <div className="delivery-modal__header">
             <div>
               <h2 id="delivery-details-modal-title" className="delivery-modal__title">
