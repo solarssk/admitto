@@ -413,7 +413,12 @@ function mfaWebauthnScript(scriptNonce: string): string {
         var form = btn.closest("form");
         var nextInput = form ? form.querySelector('input[name="next"]') : null;
         var rememberInput = form ? form.querySelector('input[name="remember_device"]') : null;
-        var timezoneInput = form ? form.querySelector('input[name="timezone"]') : null;
+        var timezone;
+        try {
+          timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+        } catch (e) {
+          timezone = undefined;
+        }
         return fetch("/api/auth/mfa/webauthn/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -432,7 +437,7 @@ function mfaWebauthnScript(scriptNonce: string): string {
             },
             remember_device: !!(rememberInput && rememberInput.checked),
             next: nextInput ? nextInput.value : undefined,
-            timezone: timezoneInput ? timezoneInput.value : undefined,
+            timezone: timezone,
           }),
         });
       })
