@@ -1412,6 +1412,16 @@ describe("POST /api/admin/users/:id/reset-2fa", () => {
       await prisma.user.deleteMany({ where: { id: created.id } });
     }
   });
+
+  it("returns 400 invalid body for a malformed webauthn step-up field", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ webauthn: "not-an-object" }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("invalid body");
+  });
 });
 
 describe("POST /api/admin/users/:id/reset-password", () => {
@@ -1443,6 +1453,16 @@ describe("POST /api/admin/users/:id/reset-password", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("password_too_common");
+  });
+
+  it("returns 400 invalid body for a malformed webauthn step-up field", async () => {
+    const res = await app.request(`/api/admin/users/${targetId}/reset-password`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, webauthn: "not-an-object" }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("invalid body");
   });
 
   it("returns 409 cannot_reset_password_sso_managed and leaves the hash untouched for an SSO-managed account", async () => {
