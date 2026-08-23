@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkMfaVerifyRateLimit } from "../src/auth/mfa-rate-limit.js";
+import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit } from "../src/auth/mfa-rate-limit.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/in-memory.js";
 
 const SESSION = "sess-1";
@@ -62,5 +62,43 @@ describe("checkMfaVerifyRateLimit", () => {
     expect(await checkMfaVerifyRateLimit(store, SESSION, IP, TOTP_CODE, "mfa-reset")).toBe(false);
     // Same session/IP/action, but a recovery-shaped code — separate bucket, separate budget.
     expect(await checkMfaVerifyRateLimit(store, SESSION, IP, RECOVERY_CODE, "mfa-reset")).toBe(true);
+  });
+});
+
+describe("checkWebauthnStepUpRateLimit", () => {
+  const WEBAUTHN_MAX = 10;
+
+  it("blocks after exhausting the session bucket", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < WEBAUTHN_MAX; i++) {
+      expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, "login-mfa-webauthn")).toBe(true);
+    }
+    expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, "login-mfa-webauthn")).toBe(false);
+  });
+
+  it("still rate-limits by IP within the same action — a fresh session from an exhausted IP is blocked", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < WEBAUTHN_MAX; i++) {
+      expect(await checkWebauthnStepUpRateLimit(store, "sess-a", IP, "account-webauthn-remove")).toBe(true);
+    }
+    expect(await checkWebauthnStepUpRateLimit(store, "sess-b", IP, "account-webauthn-remove")).toBe(false);
+  });
+
+  it("namespaces buckets by action — exhausting one action's limit does not block a different action", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < WEBAUTHN_MAX; i++) {
+      expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, "login-mfa-webauthn")).toBe(true);
+    }
+    expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, "login-mfa-webauthn")).toBe(false);
+    expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, "account-webauthn-remove")).toBe(true);
+  });
+
+  it("keeps the un-namespaced bucket separate from any action-tagged bucket", async () => {
+    const store = new InMemoryRateLimitStore();
+    for (let i = 0; i < WEBAUTHN_MAX; i++) {
+      expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP)).toBe(true);
+    }
+    expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP)).toBe(false);
+    expect(await checkWebauthnStepUpRateLimit(store, SESSION, IP, "login-mfa-webauthn")).toBe(true);
   });
 });
