@@ -386,6 +386,28 @@ body {
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+/* Enrollment method choice: a form (Authenticator app) alongside two plain links (Passkey,
+   Security key) styled as buttons - one gap value for the whole stack instead of relying on
+   each child's own margin, which would double up with flex gap. */
+.auth-enroll-method-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.auth-enroll-method-list .auth-btn-primary {
+  margin-top: 0;
+}
+.auth-enroll-method-list .auth-btn-secondary {
+  text-decoration: none;
+}
+/* "Choose a different method" link on the WebAuthn enrollment page - same glued-to-the-button-
+   above-it gap .auth-btn-secondary already needed fixing for elsewhere on this page family
+   (#mfa-webauthn-btn), checked for every new sibling pair this time instead of one at a time.
+   The error notice above the button is already spaced by .auth-btn-primary's own margin-top. */
+#mfa-enroll-webauthn-btn + .auth-btn-secondary {
+  margin-top: 0.75rem;
+}
 .auth-mfa-actions .auth-btn-secondary { flex: 1 1 12rem; margin-top: 0; }
 .auth-btn-link {
   text-decoration: none;

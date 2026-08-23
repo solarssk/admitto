@@ -152,11 +152,15 @@ export interface MfaEnrollQrPageOptions {
   qrDataUri: string;
   error?: string;
   next?: string;
+  /** 4 when the instance also offers WebAuthn as a choice (an extra step ahead of this one),
+   * 3 on an instance where TOTP is the only option and this is reached directly. */
+  totalSteps?: 3 | 4;
 }
 
-/** Step 2: QR + setup key + TOTP confirmation (no backup codes yet). */
+/** QR + setup key + TOTP confirmation (no backup codes yet) - step 2 of 3 (TOTP the only
+ * option) or 3 of 4 (chosen from the method step). */
 export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
-  const { scriptNonce, otpauthUri, setupKey, qrDataUri, error, next } = options;
+  const { scriptNonce, otpauthUri, setupKey, qrDataUri, error, next, totalSteps = 3 } = options;
   const err = error
     ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
     : "";
@@ -188,7 +192,7 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
       : "";
 
   const card = `${renderAuthBrand()}
-    ${renderAuthStepIndicator(2, 3, "Scan and confirm")}
+    ${renderAuthStepIndicator(totalSteps === 4 ? 3 : 2, totalSteps, "Scan and confirm")}
     <h2 class="auth-page-action">Set up two-factor authentication</h2>
     <p class="subtitle">Scan the QR code in your authenticator app, then confirm with a code.</p>
     ${setupSection}
@@ -217,11 +221,14 @@ export interface MfaEnrollBackupCodesPageOptions {
   codesUnavailable?: boolean;
   error?: string;
   next?: string;
+  /** See MfaEnrollQrPageOptions.totalSteps - same instance-wide reasoning. */
+  totalSteps?: 3 | 4;
 }
 
-/** Step 3: one-time backup recovery codes before app access. */
+/** One-time backup recovery codes before app access - final step regardless of which method
+ * (TOTP or WebAuthn) was just confirmed. */
 export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPageOptions): string {
-  const { scriptNonce, backupCodes, codesUnavailable, error, next } = options;
+  const { scriptNonce, backupCodes, codesUnavailable, error, next, totalSteps = 3 } = options;
   const err = error
     ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
     : "";
@@ -248,7 +255,7 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
   </div>`;
 
   const card = `${renderAuthBrand()}
-    ${renderAuthStepIndicator(3, 3, "Save backup codes")}
+    ${renderAuthStepIndicator(totalSteps, totalSteps, "Save backup codes")}
     <h2 class="auth-page-action">Save your backup codes</h2>
     <p class="subtitle">Store these recovery codes somewhere safe. You will need them if you lose access to your authenticator.</p>
     ${codesUnavailable ? `<p class="auth-muted">This server session no longer has your codes in memory. If you did not save them, contact an administrator for MFA reset.</p>` : ""}
@@ -267,23 +274,87 @@ export function renderMfaEnrollBackupCodesPage(options: MfaEnrollBackupCodesPage
   });
 }
 
-/** Step 1: enrollment landing, start setup via CSRF-protected POST only. */
-export function renderMfaEnrollStartPage(scriptNonce: string, next?: string): string {
+/** Enrollment landing. On an instance with WebAuthn enabled, "Begin setup" leads to the method
+ * choice step instead of starting TOTP directly (4-step flow); otherwise unchanged, straight to
+ * TOTP (3-step flow, no point offering a "choice" of one). */
+export function renderMfaEnrollStartPage(scriptNonce: string, next?: string, webauthnEnabled = false): string {
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
-  const card = `${renderAuthBrand()}
-    ${renderAuthStepIndicator(1, 3, "Get started")}
-    <h2 class="auth-page-action">Set up two-factor authentication</h2>
-    <p class="subtitle">Two-factor authentication is required for your account.</p>
-    <p class="auth-muted">You will scan a QR code in your authenticator app, then save one-time backup codes before continuing.</p>
-    <form method="post" action="/mfa/enroll/start">
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+  const beginAction = webauthnEnabled
+    ? `<a class="auth-btn-primary" href="/mfa/enroll/method${nextQuery}">Begin setup</a>`
+    : `<form method="post" action="/mfa/enroll/start">
       ${nextField}
       <button class="auth-btn-primary" type="submit">Begin setup</button>
     </form>`;
+  const card = `${renderAuthBrand()}
+    ${renderAuthStepIndicator(1, webauthnEnabled ? 4 : 3, "Get started")}
+    <h2 class="auth-page-action">Set up two-factor authentication</h2>
+    <p class="subtitle">Two-factor authentication is required for your account.</p>
+    <p class="auth-muted">${
+      webauthnEnabled
+        ? "You will choose an authenticator app or a passkey/security key, then save one-time backup codes before continuing."
+        : "You will scan a QR code in your authenticator app, then save one-time backup codes before continuing."
+    }</p>
+    ${beginAction}`;
   return renderAuthDocument({
     step: "Set up two-factor authentication",
     body: renderAuthPage(card, true),
     css: AUTH_PAGE_CSS,
     scripts: authFormSubmitScript(scriptNonce),
+  });
+}
+
+/** Choice of second-factor method - only reachable when the instance has WebAuthn enabled
+ * (renderMfaEnrollStartPage only links here in that case; the route handler re-checks too). */
+export function renderMfaEnrollMethodPage(scriptNonce: string, next?: string): string {
+  const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
+  const nextQuery = next ? `&next=${encodeURIComponent(next)}` : "";
+  const card = `${renderAuthBrand()}
+    ${renderAuthStepIndicator(2, 4, "Choose your method")}
+    <h2 class="auth-page-action">Set up two-factor authentication</h2>
+    <p class="subtitle">Choose how you will confirm it is you when you sign in. You can add other methods later from My Account.</p>
+    <div class="auth-enroll-method-list">
+      <form method="post" action="/mfa/enroll/start">
+        ${nextField}
+        <button class="auth-btn-primary" type="submit">Authenticator app</button>
+      </form>
+      <a class="auth-btn-secondary" href="/mfa/enroll/webauthn?attachment=platform${nextQuery}">Passkey</a>
+      <a class="auth-btn-secondary" href="/mfa/enroll/webauthn?attachment=cross-platform${nextQuery}">Security key</a>
+    </div>`;
+  return renderAuthDocument({
+    step: "Set up two-factor authentication",
+    body: renderAuthPage(card, true),
+    css: AUTH_PAGE_CSS,
+    scripts: authFormSubmitScript(scriptNonce),
+  });
+}
+
+/** Passkey/security-key registration during first-time enrollment - runs the ceremony
+ * automatically on load (this is a fresh setup, not a fallback, so there is no reason to make
+ * the user click first), with a manual retry available if it is cancelled or fails. */
+export function renderMfaEnrollWebauthnPage(
+  scriptNonce: string,
+  attachment: "platform" | "cross-platform",
+  next?: string,
+): string {
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+  const methodLabel = attachment === "platform" ? "passkey" : "security key";
+  const card = `${renderAuthBrand()}
+    ${renderAuthStepIndicator(3, 4, attachment === "platform" ? "Add a passkey" : "Add a security key")}
+    <h2 class="auth-page-action">Set up two-factor authentication</h2>
+    <p class="subtitle">Continue with your ${methodLabel}.</p>
+    <div class="auth-webauthn-error" id="mfa-enroll-webauthn-error" hidden>${renderNoticeHtml({
+      variant: "error",
+      role: "alert",
+      message: `Could not register your ${methodLabel}. Try again, or choose a different method.`,
+    })}</div>
+    <button class="auth-btn-primary" type="button" id="mfa-enroll-webauthn-btn" data-attachment="${attachment}">Continue with ${methodLabel}</button>
+    <a class="auth-btn-secondary" href="/mfa/enroll/method${nextQuery}">Choose a different method</a>`;
+  return renderAuthDocument({
+    step: "Set up two-factor authentication",
+    body: renderAuthPage(card, true),
+    css: AUTH_PAGE_CSS,
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${mfaEnrollWebauthnScript(scriptNonce)}`,
   });
 }
 
@@ -489,6 +560,111 @@ function mfaWebauthnScript(scriptNonce: string): string {
   // authenticator app) - runs the ceremony immediately instead of waiting for a click, with the
   // backup-code field already visible and usable if it's cancelled or fails.
   if (btn.dataset.autoStart === "true") runCeremony();
+})();
+</script>`;
+}
+
+/** First-time enrollment via a passkey/security key: registration counterpart of
+ * mfaWebauthnScript's login-time assertion - `navigator.credentials.create()`, submit the new
+ * credential, redirect to the backup-codes step. Same hand-rolled base64url + WebAuthn call
+ * (no bundler on this page family), auto-run on load since this page is reached only after the
+ * user already chose this method on the previous step. */
+function mfaEnrollWebauthnScript(scriptNonce: string): string {
+  return String.raw`<script nonce="${scriptNonce}">
+(function () {
+  var btn = document.getElementById("mfa-enroll-webauthn-btn");
+  var errorBox = document.getElementById("mfa-enroll-webauthn-error");
+  if (!btn) return;
+
+  function b64urlToBuffer(b64url) {
+    var b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    var pad = b64.length % 4 === 0 ? "" : new Array(5 - (b64.length % 4)).join("=");
+    var bin = atob(b64 + pad);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function bufferToB64url(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function showError() {
+    btn.disabled = false;
+    if (errorBox) errorBox.hidden = false;
+  }
+
+  if (!window.PublicKeyCredential) {
+    showError();
+    return;
+  }
+
+  function runCeremony() {
+    btn.disabled = true;
+    if (errorBox) errorBox.hidden = true;
+    var attachment = btn.dataset.attachment;
+
+    fetch("/api/auth/mfa/webauthn/register/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attachment: attachment }),
+    })
+      .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
+      .then(function (begin) {
+        if (!begin.res.ok || !begin.data.options) throw new Error("begin_failed");
+        var publicKey = begin.data.options;
+        publicKey.challenge = b64urlToBuffer(publicKey.challenge);
+        publicKey.user.id = b64urlToBuffer(publicKey.user.id);
+        publicKey.excludeCredentials = (publicKey.excludeCredentials || []).map(function (cred) {
+          return { id: b64urlToBuffer(cred.id), type: cred.type, transports: cred.transports };
+        });
+        return navigator.credentials.create({ publicKey: publicKey });
+      })
+      .then(function (credential) {
+        var response = credential.response;
+        return fetch("/api/auth/mfa/webauthn/register/finish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attachment: attachment,
+            response: {
+              id: credential.id,
+              rawId: bufferToB64url(credential.rawId),
+              type: credential.type,
+              authenticatorAttachment: credential.authenticatorAttachment || undefined,
+              clientExtensionResults: credential.getClientExtensionResults ? credential.getClientExtensionResults() : {},
+              response: {
+                clientDataJSON: bufferToB64url(response.clientDataJSON),
+                attestationObject: bufferToB64url(response.attestationObject),
+                transports: response.getTransports ? response.getTransports() : undefined,
+                authenticatorData: response.getAuthenticatorData ? bufferToB64url(response.getAuthenticatorData()) : undefined,
+                publicKeyAlgorithm: response.getPublicKeyAlgorithm ? response.getPublicKeyAlgorithm() : undefined,
+                publicKey: response.getPublicKey && response.getPublicKey() ? bufferToB64url(response.getPublicKey()) : undefined,
+              },
+            },
+          }),
+        });
+      })
+      .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
+      .then(function (finish) {
+        if (finish.res.ok && finish.data.ok) {
+          window.location.href = finish.data.next;
+          return;
+        }
+        showError();
+      })
+      .catch(function () {
+        // Includes NotAllowedError (user cancelled/timed out) - the "Choose a different method"
+        // link stays usable either way.
+        showError();
+      });
+  }
+
+  btn.addEventListener("click", runCeremony);
+  runCeremony();
 })();
 </script>`;
 }

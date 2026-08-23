@@ -103,10 +103,12 @@ import {
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinStreamConcurrencyLimit } from "./checkin-stream-limit.js";
-import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
+import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handlePostMfaWebauthnEnrollBegin, handlePostMfaWebauthnEnrollFinish, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
   handleGetMfaEnrollBackupCodes,
+  handleGetMfaEnrollMethod,
+  handleGetMfaEnrollWebauthn,
   handleGetMfaVerify,
   handlePostMfaEnroll,
   handlePostMfaEnrollBackupCodes,
@@ -1851,6 +1853,21 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/auth/mfa/webauthn/verify", jsonPostCsrf, webauthnBodyLimit, requirePartialSession, (c) =>
     handlePostMfaWebauthnVerify(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
+  app.post(
+    "/api/auth/mfa/webauthn/register/begin",
+    jsonPostCsrf,
+    requirePartialSession,
+    mfaEnrollRateLimitJson,
+    (c) => handlePostMfaWebauthnEnrollBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/auth/mfa/webauthn/register/finish",
+    jsonPostCsrf,
+    webauthnBodyLimit,
+    requirePartialSession,
+    mfaEnrollRateLimitJson,
+    (c) => handlePostMfaWebauthnEnrollFinish(c, db, mailInjectedBaseUrl),
+  );
   app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, (c) =>
     handleTotpEnroll(c, db),
   );
@@ -1950,6 +1967,8 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaVerify(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
+  app.get("/mfa/enroll/method", requirePartialSessionHtml, (c) => handleGetMfaEnrollMethod(c, db));
+  app.get("/mfa/enroll/webauthn", requirePartialSessionHtml, (c) => handleGetMfaEnrollWebauthn(c, db));
   app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, mfaEnrollRateLimitHtml, (c) =>
     handlePostMfaEnrollStart(c, db),
   );

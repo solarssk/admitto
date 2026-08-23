@@ -1201,7 +1201,7 @@ export async function resolveWebauthnRp(
   return { rpName: "Admitto", rpID: new URL(baseUrl).hostname, origin: baseUrl };
 }
 
-const webauthnAttachmentSchema = z.enum(["platform", "cross-platform"]);
+export const webauthnAttachmentSchema = z.enum(["platform", "cross-platform"]);
 
 const webauthnRegisterBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();
 
@@ -1256,7 +1256,7 @@ export async function handlePostAccountWebauthnRegisterBegin(
  * through to `@simplewebauthn/server`'s verifier, which is the actual security boundary here
  * (rejects any malformed/tampered payload on its own), this schema only guards against a
  * grossly malformed request reaching that far. */
-const webauthnRegistrationResponseSchema = z.object({
+export const webauthnRegistrationResponseSchema = z.object({
   id: z.string().min(1).max(1024),
   rawId: z.string().min(1).max(1024),
   response: z.object({

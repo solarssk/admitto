@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { z } from "zod";
-import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@admitto/db";
 import { describeMailConfigForOrg } from "@admitto/mailer-config";
@@ -32,6 +32,8 @@ import {
   resolveSetupComplete,
   getWebauthnEnabled,
   beginWebauthnAssertion,
+  beginWebauthnRegistration,
+  finishWebauthnRegistration,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
@@ -43,7 +45,12 @@ import {
 } from "./enrollment-backup-cache.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { stashWebauthnChallenge, consumeWebauthnChallenge } from "./webauthn-challenge-cache.js";
-import { resolveWebauthnRp, webauthnAuthenticationResponseSchema } from "../admin/account-routes.js";
+import {
+  resolveWebauthnRp,
+  webauthnAuthenticationResponseSchema,
+  webauthnRegistrationResponseSchema,
+  webauthnAttachmentSchema,
+} from "../admin/account-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
@@ -558,6 +565,105 @@ export async function handlePostMfaWebauthnVerify(
     parsed.data.next,
   );
   return c.json({ ok: true, next }, 200);
+}
+
+const mfaWebauthnEnrollBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();
+
+/** POST /api/auth/mfa/webauthn/register/begin, start a passkey/security-key registration
+ * ceremony during first-time enrollment (partial session, enrollment_required only) - no
+ * step-up gate, the account has no confirmed method yet (mirrors My Account's own registration
+ * begin, see account-routes.ts's handlePostAccountWebauthnRegisterBegin). */
+export async function handlePostMfaWebauthnEnrollBegin(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  if (!(await getWebauthnEnabled(db))) {
+    return c.json({ code: "webauthn_disabled" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = mfaWebauthnEnrollBeginSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const begin = await beginWebauthnRegistration(db, partial.userId, parsed.data.attachment, rp);
+  if (!begin) return c.json({ error: "unauthorized" }, 401);
+
+  stashWebauthnChallenge("register", partial.sessionId, begin.challenge);
+  return c.json({ options: begin.options });
+}
+
+const mfaWebauthnEnrollFinishSchema = z
+  .object({
+    attachment: webauthnAttachmentSchema,
+    response: webauthnRegistrationResponseSchema,
+  })
+  .strict();
+
+/** POST /api/auth/mfa/webauthn/register/finish, verify the browser ceremony and complete
+ * first-time enrollment with a passkey/security key instead of an authenticator app. No
+ * step-up code required, same rationale as My Account's own registration finish - the ceremony
+ * itself already proves possession of a real, previously-unregistered authenticator. This is
+ * necessarily the account's first confirmed MFA method, so finishWebauthnRegistration always
+ * returns a fresh backup-codes batch, mirroring confirmTotpEnrollment's own path to the
+ * backup-codes step. */
+export async function handlePostMfaWebauthnEnrollFinish(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = mfaWebauthnEnrollFinishSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const challenge = consumeWebauthnChallenge("register", partial.sessionId);
+  if (!challenge) return c.json({ code: "challenge_expired" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const created = await finishWebauthnRegistration(
+    db,
+    partial.userId,
+    parsed.data.response as RegistrationResponseJSON,
+    challenge,
+    parsed.data.attachment,
+    null,
+    rp,
+  );
+  if (!created) return c.json({ code: "verification_failed" }, 400);
+
+  if (created.backupCodes.length > 0) {
+    stashEnrollmentBackupCodes(partial.sessionId, created.backupCodes);
+  }
+
+  const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
+  if (!promoted) return c.json({ code: "verification_failed" }, 400);
+
+  return c.json({ ok: true, next: "/mfa/enroll/backup-codes" });
 }
 
 /** POST /api/auth/mfa/totp/enroll, start enrollment (enrollment_required only). */
