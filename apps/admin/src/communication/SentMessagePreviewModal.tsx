@@ -4,6 +4,7 @@ import { fetchRenderedDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, RenderedDeliveryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { makeEmailPreviewInert } from "./inertEmailPreview.js";
 import "./delivery-modals.css";
 
 export interface SentMessagePreviewModalProps {
@@ -80,7 +81,7 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
                 className="delivery-modal-preview-frame"
                 title="Sent message preview"
                 sandbox=""
-                srcDoc={rendered.html}
+                srcDoc={makeEmailPreviewInert(rendered.html)}
               />
             </>
           )}
