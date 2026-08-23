@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Passkeys and security keys registered under My account → Two-factor authentication can now be used to confirm sensitive account actions - password change, resetting two-factor, removing a passkey or security key, regenerating backup codes, unlinking single sign-on - the same as a code from your authenticator app. Previously a registered passkey only counted toward "has a confirmed second factor" and could not itself be used for anything.
+
+### Security
+
+- An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.
+
 ### Fixed
 
 - The admin panel's Check-in tab now works for staff who sign in only through Cloudflare Access, not just staff with a local Admitto password. Previously it showed a "sign in to Admitto" notice and blocked live scanning entirely for Cloudflare-only sign-ins.

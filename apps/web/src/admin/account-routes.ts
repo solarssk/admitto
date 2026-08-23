@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import type { RegistrationResponseJSON } from "@simplewebauthn/server";
+import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simplewebauthn/server";
 import {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
@@ -16,19 +16,23 @@ import {
   revokeOtherSessions,
   revokeSession,
   runInTransaction,
+  userHasAnyConfirmedMfaMethod,
   userHasConfirmedTotp,
   userRequiresMfaStepUp,
   verifyPasswordOrDummy,
   verifyTotpOrRecoveryCode,
+  beginWebauthnAssertion,
   beginWebauthnRegistration,
+  finishWebauthnAssertion,
   finishWebauthnRegistration,
   listWebauthnCredentials,
   removeWebauthnCredential,
   removeTotpMethod,
   getBackupRecoveryCodesStatus,
   regenerateBackupRecoveryCodes,
+  type WebauthnRpConfig,
 } from "@admitto/auth";
-import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
+import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "../auth/mfa-rate-limit.js";
 import { stashWebauthnChallenge, consumeWebauthnChallenge } from "../auth/webauthn-challenge-cache.js";
 import { checkAccountPasswordRateLimit } from "../rate-limit/policies.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
@@ -91,7 +95,72 @@ async function revokeSessionsExcludingCurrent(
   return revoked.count;
 }
 
-type StepUpFailureReason = "unauthorized" | "totp_required" | "invalid_totp";
+type StepUpFailureReason = "unauthorized" | "totp_required" | "invalid_totp" | "invalid_webauthn";
+
+/** Lenient on purpose, mirrors `webauthnRegistrationResponseSchema` above it: this is the
+ * browser's own `PublicKeyCredential` assertion passed straight through to
+ * `@simplewebauthn/server`'s verifier, which is the actual security boundary. */
+const webauthnAuthenticationResponseSchema = z.object({
+  id: z.string().min(1),
+  rawId: z.string().min(1),
+  response: z.object({
+    clientDataJSON: z.string().min(1),
+    authenticatorData: z.string().min(1),
+    signature: z.string().min(1),
+    userHandle: z.string().optional(),
+  }),
+  authenticatorAttachment: z.string().optional(),
+  clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
+  type: z.literal("public-key"),
+});
+
+/** Fields every step-up-gated request body accepts alongside its own — a TOTP/recovery code, or a
+ * WebAuthn assertion response. Spread into a `.strict()` schema next to that action's own fields. */
+const stepUpProofFields = {
+  code: z.string().optional(),
+  webauthn: z.object({ response: webauthnAuthenticationResponseSchema }).optional(),
+};
+
+/** A step-up proof, resolved from a request body by `resolveStepUpProof`. The WebAuthn variant
+ * carries its own `challenge`/`rp` (server-resolved, never client-supplied) so
+ * `checkStepUpInTransaction` can verify it without any extra context. */
+export type StepUpProof =
+  | { type: "code"; value: string }
+  | { type: "webauthn"; response: AuthenticationResponseJSON; challenge: string; rp: WebauthnRpConfig };
+
+/**
+ * Resolve the caller-supplied step-up proof from a parsed request body (`stepUpProofFields`) into
+ * the form `checkStepUpInTransaction` understands. A WebAuthn proof consumes the challenge the
+ * matching `POST /api/account/mfa/webauthn/assert/begin` call stashed server-side — never a
+ * client-supplied challenge — and resolves the instance's own RP config, so this can return a
+ * Response to short-circuit on (no session, expired challenge, disabled instance setting,
+ * misconfigured instance URL) the same way the registration routes already do.
+ */
+export async function resolveStepUpProof(
+  c: Context,
+  db: PrismaClient,
+  currentSessionId: string | undefined,
+  body: { code?: string; webauthn?: { response: unknown } },
+  injectedBaseUrl?: string,
+): Promise<StepUpProof | undefined | Response> {
+  if (body.webauthn) {
+    if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
+    if (!(await getWebauthnEnabled(db))) return c.json({ code: "webauthn_disabled" }, 403);
+    const challenge = consumeWebauthnChallenge("assert", currentSessionId);
+    if (!challenge) return c.json({ code: "challenge_expired" }, 400);
+    const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+    if (rp instanceof Response) return rp;
+    return {
+      type: "webauthn",
+      response: body.webauthn.response as AuthenticationResponseJSON,
+      challenge,
+      rp,
+    };
+  }
+  const trimmedCode = body.code?.trim();
+  if (trimmedCode) return { type: "code", value: trimmedCode };
+  return undefined;
+}
 
 /**
  * Advisory pre-check + rate-limit for a step-up-gated self-service action (password change,
@@ -108,21 +177,23 @@ async function stepUpPreflight(
   params: {
     userId: string;
     currentSessionId: string | undefined;
-    code: string | undefined;
+    proof: StepUpProof | undefined;
     rateLimitAction: string;
     forceRequired?: boolean;
   },
 ): Promise<Response | null> {
-  const { userId, currentSessionId, code, rateLimitAction, forceRequired } = params;
+  const { userId, currentSessionId, proof, rateLimitAction, forceRequired } = params;
   if (forceRequired || (await userRequiresMfaStepUp(db, userId))) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
-    if (!code) return c.json({ code: "totp_required" }, 400);
+    if (!proof) return c.json({ code: "totp_required" }, 400);
   }
-  if (code && currentSessionId) {
+  if (proof && currentSessionId) {
     const ip = resolveMfaClientIp(c);
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, rateLimitAction))) {
-      return c.json({ error: "too many requests" }, 429);
-    }
+    const allowed =
+      proof.type === "code"
+        ? await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, proof.value, rateLimitAction)
+        : await checkWebauthnStepUpRateLimit(rateLimitStore, currentSessionId, ip, rateLimitAction);
+    if (!allowed) return c.json({ error: "too many requests" }, 429);
   }
   return null;
 }
@@ -130,24 +201,29 @@ async function stepUpPreflight(
 /**
  * Authoritative step-up check, read via `tx` rather than the pre-check's `db`, so a role change
  * racing this request can't let a password-only call skip step-up entirely. `forceRequired`
- * bypasses `userRequiresMfaStepUp`'s own policy check (`userRequiresMfa && userHasConfirmedTotp`)
+ * bypasses `userRequiresMfaStepUp`'s own policy check (`userRequiresMfa && userHasAnyConfirmedMfaMethod`)
  * entirely - needed by callers (users-routes.ts's superadmin-on-superadmin reset) for whom
  * step-up must be unconditional: if the instance's configurable `mfa_required_roles` setting
  * doesn't include "superadmin", `userRequiresMfa` alone would return false for the actor despite
- * them having a confirmed TOTP method, and this whole check would silently no-op - exactly the
+ * them having a confirmed MFA method, and this whole check would silently no-op - exactly the
  * bypass a compromised session could exploit regardless of that setting.
  */
 async function checkStepUpInTransaction(
   tx: Prisma.TransactionClient,
   userId: string,
   currentSessionId: string | undefined,
-  code: string | undefined,
+  proof: StepUpProof | undefined,
   forceRequired = false,
 ): Promise<{ ok: true } | { ok: false; reason: StepUpFailureReason }> {
   if (!forceRequired && !(await userRequiresMfaStepUp(tx, userId))) return { ok: true };
   if (!currentSessionId) return { ok: false, reason: "unauthorized" };
-  if (!code) return { ok: false, reason: "totp_required" };
-  if (!(await verifyTotpOrRecoveryCode(tx, userId, code))) {
+  if (!proof) return { ok: false, reason: "totp_required" };
+  if (proof.type === "webauthn") {
+    const verified = await finishWebauthnAssertion(tx, userId, proof.response, proof.challenge, proof.rp);
+    if (!verified) return { ok: false, reason: "invalid_webauthn" };
+    return { ok: true };
+  }
+  if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.value))) {
     return { ok: false, reason: "invalid_totp" };
   }
   return { ok: true };
@@ -161,14 +237,16 @@ function stepUpFailureResponse(c: Context, reason: StepUpFailureReason): Respons
       return c.json({ code: "totp_required" }, 400);
     case "invalid_totp":
       return c.json({ code: "invalid_totp" }, 401);
+    case "invalid_webauthn":
+      return c.json({ code: "invalid_webauthn" }, 401);
   }
 }
 
 /**
  * Runs `body` inside a step-up-gated transaction, shared by every self-service action that
- * requires a TOTP/recovery-code step-up (password change, MFA reset): `stepUpPreflight` fails
- * the common case fast (400/429), outside any transaction; `orgId`/`audit` are then resolved via
- * the root `db` client, also before the transaction opens, so that query never runs from inside
+ * requires a TOTP/recovery-code/WebAuthn step-up (password change, MFA reset): `stepUpPreflight`
+ * fails the common case fast (400/429), outside any transaction; `orgId`/`audit` are then resolved
+ * via the root `db` client, also before the transaction opens, so that query never runs from inside
  * an active `tx` callback (which would need a second pooled connection and deadlock on a
  * single-connection deployment, e.g. `connection_limit=1`); only once the authoritative
  * in-transaction step-up check has passed does `body` run and do the actual sensitive write.
@@ -185,18 +263,17 @@ export async function withStepUpGate<T>(
   params: {
     userId: string;
     currentSessionId: string | undefined;
-    rawCode: string | undefined;
+    proof: StepUpProof | undefined;
     rateLimitAction: string;
     forceRequired?: boolean;
   },
   body: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const { userId, currentSessionId, rateLimitAction, forceRequired } = params;
-  const code = params.rawCode?.trim();
+  const { userId, currentSessionId, proof, rateLimitAction, forceRequired } = params;
   const preflightDenied = await stepUpPreflight(c, db, rateLimitStore, {
     userId,
     currentSessionId,
-    code,
+    proof,
     rateLimitAction,
     forceRequired,
   });
@@ -206,7 +283,7 @@ export async function withStepUpGate<T>(
   const audit = adminAuditFromContext(c);
 
   const result = await runInTransaction(db, async (tx) => {
-    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, code, forceRequired);
+    const step = await checkStepUpInTransaction(tx, userId, currentSessionId, proof, forceRequired);
     if (!step.ok) return step;
     return { ok: true as const, value: await body(tx, orgId, audit) };
   });
@@ -466,7 +543,7 @@ const unlinkExternalIdentitySchema = z
   .object({
     new_password: z.string(),
     current_password: z.string().optional(),
-    code: z.string().optional(),
+    ...stepUpProofFields,
   })
   .strict();
 
@@ -477,6 +554,7 @@ type UnlinkDenialCode =
   | "wrong_password"
   | "totp_required"
   | "invalid_totp"
+  | "invalid_webauthn"
   | "insufficient_verification";
 
 const UNLINK_DENIAL_STATUS: Record<UnlinkDenialCode, 401 | 409 | 400> = {
@@ -486,27 +564,40 @@ const UNLINK_DENIAL_STATUS: Record<UnlinkDenialCode, 401 | 409 | 400> = {
   wrong_password: 401,
   totp_required: 400,
   invalid_totp: 401,
+  invalid_webauthn: 401,
   insufficient_verification: 400,
 };
 
 /**
  * A stolen session alone must never be enough to replace an account's only credential - unlike
  * `withStepUpGate`'s role-gated check (a no-op for roles that don't require MFA), self-unlink
- * always demands one proof: the TOTP/recovery code if the account has it confirmed (a strictly
- * stronger check than the role-gated one, since it fires regardless of role), otherwise the
- * current local password. An account with neither - a JIT-provisioned SSO user who never set a
- * password or enrolled MFA - has no universally available proof to offer, so the action is
- * blocked rather than silently allowed through session validity alone.
+ * always demands one proof: a TOTP/recovery code or WebAuthn assertion if the account has any
+ * confirmed MFA method (a strictly stronger check than the role-gated one, since it fires
+ * regardless of role), otherwise the current local password. An account with neither - a
+ * JIT-provisioned SSO user who never set a password or enrolled MFA - has no universally available
+ * proof to offer, so the action is blocked rather than silently allowed through session validity
+ * alone.
  */
 async function verifySelfUnlinkProof(
   tx: Prisma.TransactionClient,
   userId: string,
   passwordHash: string | null,
-  proof: { current_password: string | undefined; code: string | undefined },
+  proof: { current_password: string | undefined; mfaProof: StepUpProof | undefined },
 ): Promise<{ ok: true } | { ok: false; code: UnlinkDenialCode }> {
-  if (await userHasConfirmedTotp(tx, userId)) {
-    if (!proof.code) return { ok: false, code: "totp_required" };
-    if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.code))) {
+  if (await userHasAnyConfirmedMfaMethod(tx, userId)) {
+    if (!proof.mfaProof) return { ok: false, code: "totp_required" };
+    if (proof.mfaProof.type === "webauthn") {
+      const verified = await finishWebauthnAssertion(
+        tx,
+        userId,
+        proof.mfaProof.response,
+        proof.mfaProof.challenge,
+        proof.mfaProof.rp,
+      );
+      if (!verified) return { ok: false, code: "invalid_webauthn" };
+      return { ok: true };
+    }
+    if (!(await verifyTotpOrRecoveryCode(tx, userId, proof.mfaProof.value))) {
       return { ok: false, code: "invalid_totp" };
     }
     return { ok: true };
@@ -556,15 +647,23 @@ async function unlinkSsoPreflightRateLimit(
   rateLimitStore: RateLimitStore,
   userId: string,
   currentSessionId: string | undefined,
-  code: string | undefined,
+  mfaProof: StepUpProof | undefined,
   currentPassword: string | undefined,
 ): Promise<Response | null> {
-  if (code) {
+  if (mfaProof) {
     if (!currentSessionId) return c.json({ error: "unauthorized" }, 401);
     const ip = resolveMfaClientIp(c);
-    if (!(await checkMfaVerifyRateLimit(rateLimitStore, currentSessionId, ip, code, "account-external-identity"))) {
-      return c.json({ error: "too many requests" }, 429);
-    }
+    const allowed =
+      mfaProof.type === "code"
+        ? await checkMfaVerifyRateLimit(
+            rateLimitStore,
+            currentSessionId,
+            ip,
+            mfaProof.value,
+            "account-external-identity",
+          )
+        : await checkWebauthnStepUpRateLimit(rateLimitStore, currentSessionId, ip, "account-external-identity");
+    if (!allowed) return c.json({ error: "too many requests" }, 429);
   }
   if (currentPassword) {
     const ip = resolveMfaClientIp(c);
@@ -579,6 +678,7 @@ export async function handleDeleteAccountExternalIdentity(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
@@ -600,13 +700,21 @@ export async function handleDeleteAccountExternalIdentity(
   if (newPassword.length < PASSWORD_MIN_LENGTH) return c.json({ error: "invalid_request" }, 400);
   if (isPasswordTooCommon(newPassword)) return c.json(passwordTooCommonJsonBody(), 400);
 
-  const code = parsed.data.code?.trim();
+  const mfaProof = await resolveStepUpProof(
+    c,
+    db,
+    currentSessionId,
+    { code: parsed.data.code, webauthn: parsed.data.webauthn },
+    injectedBaseUrl,
+  );
+  if (mfaProof instanceof Response) return mfaProof;
+
   const rateLimited = await unlinkSsoPreflightRateLimit(
     c,
     rateLimitStore,
     userId,
     currentSessionId,
-    code,
+    mfaProof,
     parsed.data.current_password,
   );
   if (rateLimited) return rateLimited;
@@ -627,7 +735,7 @@ export async function handleDeleteAccountExternalIdentity(
 
     const proof = await verifySelfUnlinkProof(tx, userId, user.password_hash, {
       current_password: parsed.data.current_password,
-      code,
+      mfaProof,
     });
     if (!proof.ok) return proof;
 
@@ -673,7 +781,7 @@ const passwordSchema = z
     current_password: z.string(),
     new_password: z.string().min(12),
     new_password_confirm: z.string(),
-    code: z.string().optional(),
+    ...stepUpProofFields,
   })
   .strict();
 
@@ -687,6 +795,7 @@ export async function handlePatchAccountPassword(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
@@ -714,13 +823,16 @@ export async function handlePatchAccountPassword(
     return c.json(passwordTooCommonJsonBody(), 400);
   }
 
+  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
+  if (proof instanceof Response) return proof;
+
   // The new password is only hashed once step-up has passed (or wasn't required), so a
   // totp_required/invalid_totp/rate-limited request never pays for the hash.
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-password" },
+    { userId, currentSessionId, proof, rateLimitAction: "account-password" },
     async (tx, orgId, audit) => {
       const password_hash = await hashPassword(new_password);
       await tx.user.update({
@@ -899,7 +1011,7 @@ export async function handlePostMfaConfirm(
   return c.json({ ok: true });
 }
 
-const resetSchema = z.object({ password: z.string(), code: z.string().optional() }).strict();
+const resetSchema = z.object({ password: z.string(), ...stepUpProofFields }).strict();
 
 /**
  * POST /api/account/mfa/reset — re-auth, remove MFA, revoke other sessions (keeps current).
@@ -911,6 +1023,7 @@ export async function handlePostMfaReset(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
@@ -929,6 +1042,9 @@ export async function handlePostMfaReset(
   const passwordFailure = await verifyCurrentPasswordOrFail(c, db, rateLimitStore, userId, parsed.data.password);
   if (passwordFailure) return passwordFailure;
 
+  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
+  if (proof instanceof Response) return proof;
+
   // A recovery code is consumed as soon as it's checked, so if the reset work below fails for
   // any other reason, the whole transaction (including that consumption) rolls back rather than
   // burning a one-time code for a reset that never actually happened.
@@ -936,7 +1052,7 @@ export async function handlePostMfaReset(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "mfa-reset" },
+    { userId, currentSessionId, proof, rateLimitAction: "mfa-reset" },
     async (tx, orgId, audit) => {
       const mfaDeleted = await tx.userMfaMethod.deleteMany({ where: { user_id: userId } });
       const devicesRevoked = await revokeAllTrustedDevicesForUser(tx, userId);
@@ -969,7 +1085,7 @@ export async function handlePostMfaReset(
  * URL (env `BASE_URL` → DB `instance_url` → dev localhost) — single-instance app, no per-tenant
  * RP ID. Returns a 422 Response the same way `resolveMailInstanceBaseUrl`'s other callers do when
  * no instance URL is configured yet in production. */
-async function resolveWebauthnRp(
+export async function resolveWebauthnRp(
   c: Context,
   db: PrismaClient,
   injectedBaseUrl?: string,
@@ -1125,6 +1241,38 @@ export async function handlePostAccountWebauthnRegisterFinish(
   return c.json({ ok: true, id: result.credentialRowId, backupCodes: result.backupCodes });
 }
 
+/**
+ * POST /api/account/mfa/webauthn/assert/begin — start a WebAuthn step-up ceremony against the
+ * caller's own registered credentials. The response's `options` are passed to the browser's
+ * `navigator.credentials.get()`; the resulting assertion is submitted as the `webauthn` proof on
+ * whichever step-up-gated action the caller is actually completing (password change, MFA reset,
+ * credential removal, backup-codes regenerate, SSO unlink) — there is no separate "finish" route,
+ * `resolveStepUpProof` consumes the stashed challenge from inside that action's own handler.
+ */
+export async function handlePostAccountWebauthnAssertBegin(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const auth = c.get("auth");
+  const userId = auth.userId;
+  const sessionId = auth.sessionId;
+  if (!sessionId) return c.json({ error: "unauthorized" }, 401);
+
+  if (!(await getWebauthnEnabled(db))) {
+    return c.json({ code: "webauthn_disabled" }, 403);
+  }
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const begin = await beginWebauthnAssertion(db, userId, rp.rpID);
+  if (!begin) return c.json({ code: "no_credentials" }, 400);
+
+  stashWebauthnChallenge("assert", sessionId, begin.challenge);
+  return c.json({ options: begin.options });
+}
+
 /** GET /api/account/mfa/webauthn — list the user's registered passkeys/security keys. */
 export async function handleGetAccountWebauthnCredentials(
   c: Context,
@@ -1153,6 +1301,7 @@ export async function handleDeleteAccountWebauthnCredential(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
@@ -1170,14 +1319,17 @@ export async function handleDeleteAccountWebauthnCredential(
   } catch {
     body = {};
   }
-  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  const parsed = z.object(stepUpProofFields).strict().safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
+  if (proof instanceof Response) return proof;
 
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-webauthn-remove" },
+    { userId, currentSessionId, proof, rateLimitAction: "account-webauthn-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeWebauthnCredential(tx, userId, credentialId);
       if (removed) {
@@ -1210,6 +1362,7 @@ export async function handleDeleteAccountTotp(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
@@ -1223,14 +1376,17 @@ export async function handleDeleteAccountTotp(
   } catch {
     body = {};
   }
-  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  const parsed = z.object(stepUpProofFields).strict().safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
+  if (proof instanceof Response) return proof;
 
   const gated = await withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId, currentSessionId, rawCode: parsed.data.code, rateLimitAction: "account-totp-remove" },
+    { userId, currentSessionId, proof, rateLimitAction: "account-totp-remove" },
     async (tx, orgId, audit) => {
       const removed = await removeTotpMethod(tx, userId);
       if (removed) {
@@ -1273,6 +1429,7 @@ export async function handlePostAccountRegenerateBackupCodes(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const auth = c.get("auth");
   const userId = auth.userId;
@@ -1286,8 +1443,11 @@ export async function handlePostAccountRegenerateBackupCodes(
   } catch {
     body = {};
   }
-  const parsed = z.object({ code: z.string().optional() }).strict().safeParse(body);
+  const parsed = z.object(stepUpProofFields).strict().safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const proof = await resolveStepUpProof(c, db, currentSessionId, parsed.data, injectedBaseUrl);
+  if (proof instanceof Response) return proof;
 
   const gated = await withStepUpGate(
     c,
@@ -1296,7 +1456,7 @@ export async function handlePostAccountRegenerateBackupCodes(
     {
       userId,
       currentSessionId,
-      rawCode: parsed.data.code,
+      proof,
       rateLimitAction: "account-backup-codes-regenerate",
     },
     async (tx, orgId, audit) => {

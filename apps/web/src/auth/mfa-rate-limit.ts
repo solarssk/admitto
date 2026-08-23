@@ -71,6 +71,40 @@ export async function checkMfaVerifyRateLimit(
   return true;
 }
 
+function mfaWebauthnSessionKey(sessionId: string, action?: string): string {
+  return action ? `mfa:webauthn:session:${action}:${sessionId}` : `mfa:webauthn:session:${sessionId}`;
+}
+
+function mfaWebauthnIpKey(ip: string, action?: string): string {
+  return action ? `mfa:webauthn:ip:${action}:${ip}` : `mfa:webauthn:ip:${ip}`;
+}
+
+/**
+ * Rate-limit a WebAuthn step-up/login attempt per session and IP — same session+IP dual-key shape
+ * as `checkMfaVerifyRateLimit`, but a single bucket: an assertion attempt has no code value to
+ * branch a TOTP-vs-recovery bucket choice on.
+ */
+export async function checkWebauthnStepUpRateLimit(
+  store: RateLimitStore,
+  sessionId: string,
+  ip: string,
+  action?: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["mfa:verify-webauthn"];
+
+  const sessionResult = await store.hit(mfaWebauthnSessionKey(sessionId, action), windowMs, max);
+  if (!sessionResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "session_webauthn" });
+    return false;
+  }
+  const ipResult = await store.hit(mfaWebauthnIpKey(ip, action), windowMs, max);
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "ip_webauthn" });
+    return false;
+  }
+  return true;
+}
+
 /** Client IP for MFA rate limiting (honours TRUST_PROXY). */
 export function resolveMfaClientIp(c: Context): string {
   return resolveClientIp(c);

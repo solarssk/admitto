@@ -3,8 +3,18 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { AUTH_METHOD, createSession, hashPassword, SESSION_STAGE, verifyPassword } from "@admitto/auth";
+import {
+  AUTH_METHOD,
+  beginWebauthnRegistration,
+  createSession,
+  finishWebauthnRegistration,
+  hashPassword,
+  markBackupCodesAcknowledged,
+  SESSION_STAGE,
+  verifyPassword,
+} from "@admitto/auth";
 import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "@admitto/auth/testing";
+import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
 import * as tickets from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
@@ -17,6 +27,7 @@ import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/sy
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
+const WEBAUTHN_RP = { rpName: "Admitto", rpID: "admitto.example.com", origin: "https://admitto.example.com" };
 
 const ORG_USERS = "org-users-test";
 const PROVIDER_ID = "iam-users-test-provider";
@@ -1350,6 +1361,41 @@ describe("POST /api/admin/users/:id/reset-password", () => {
   });
 });
 
+/** Register + acknowledge a confirmed WebAuthn credential directly against `prisma` (bypassing
+ * the HTTP ceremony), returning the virtual authenticator too so a step-up test can later produce
+ * a valid assertion against this same credential (see `webauthnStepUpProof`). */
+async function registerConfirmedWebauthnCredential(uid: string, label = "Seeded key") {
+  const authenticator = createVirtualAuthenticator();
+  const begin = await beginWebauthnRegistration(prisma, uid, "platform", WEBAUTHN_RP);
+  if (!begin) throw new Error("beginWebauthnRegistration failed");
+  const response = authenticator.register({ challenge: begin.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
+  const result = await finishWebauthnRegistration(prisma, uid, response, begin.challenge, "platform", label, WEBAUTHN_RP);
+  if (!result) throw new Error("finishWebauthnRegistration failed");
+  await markBackupCodesAcknowledged(prisma, uid);
+  return { ...result, authenticator };
+}
+
+/** Drive `POST /api/account/mfa/webauthn/assert/begin` over the given session, then sign the
+ * returned challenge with `authenticator` — the `{ webauthn }` fragment a step-up-gated action
+ * accepts alongside (or instead of) a `code`. */
+async function webauthnStepUpProof(
+  cookie: string,
+  authenticator: ReturnType<typeof createVirtualAuthenticator>,
+) {
+  const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
+    method: "POST",
+    headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  const { options } = (await beginRes.json()) as { options: { challenge: string } };
+  const response = authenticator.authenticate({
+    challenge: options.challenge,
+    rpID: WEBAUTHN_RP.rpID,
+    origin: WEBAUTHN_RP.origin,
+  });
+  return { webauthn: { response } };
+}
+
 describe("POST /api/admin/users/:id/reset-2fa and reset-password — superadmin-on-superadmin step-up", () => {
   const SUPER_TARGET_EMAIL = "users-super-target@example.com";
   let superTargetId = "";
@@ -1500,6 +1546,26 @@ describe("POST /api/admin/users/:id/reset-2fa and reset-password — superadmin-
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe("actor_mfa_required");
     expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBeGreaterThan(0);
+  });
+
+  it("reset-2fa: succeeds when the actor's only confirmed MFA method is WebAuthn (not TOTP-only anymore)", async () => {
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    const actorCredential = await registerConfirmedWebauthnCredential(superId);
+    const proof = await webauthnStepUpProof(superCookie, actorCredential.authenticator);
+
+    const res = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(proof),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: superTargetId } })).toBe(0);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, action_type: "user_mfa_reset", actor_user_id: superId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).toMatchObject({ userId: superTargetId, superadminTarget: true });
   });
 
   it("reset-password: returns 403 actor_mfa_required (not a silent skip) when the actor has no confirmed local TOTP, and leaves the target's password untouched", async () => {

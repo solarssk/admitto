@@ -711,7 +711,9 @@ describe("POST /api/account/mfa/totp/*", () => {
 });
 
 /** Register + acknowledge a confirmed WebAuthn credential directly against `prisma` (bypassing
- * the HTTP ceremony), so a test can prove a TOTP-only action leaves it untouched. */
+ * the HTTP ceremony), so a test can prove a TOTP-only action leaves it untouched. Also returns the
+ * virtual authenticator itself so a step-up test can later produce a valid assertion against this
+ * same credential (see `webauthnStepUpProof`). */
 async function registerConfirmedWebauthnCredential(uid: string, label = "Seeded key") {
   const authenticator = createVirtualAuthenticator();
   const begin = await beginWebauthnRegistration(prisma, uid, "platform", WEBAUTHN_RP);
@@ -720,7 +722,28 @@ async function registerConfirmedWebauthnCredential(uid: string, label = "Seeded 
   const result = await finishWebauthnRegistration(prisma, uid, response, begin.challenge, "platform", label, WEBAUTHN_RP);
   if (!result) throw new Error("finishWebauthnRegistration failed");
   await markBackupCodesAcknowledged(prisma, uid);
-  return result;
+  return { ...result, authenticator };
+}
+
+/** Drive `POST /api/account/mfa/webauthn/assert/begin` over the given session, then sign the
+ * returned challenge with `authenticator` — the `{ webauthn }` fragment a step-up-gated action
+ * accepts alongside (or instead of) a `code`. */
+async function webauthnStepUpProof(
+  cookie: string,
+  authenticator: ReturnType<typeof createVirtualAuthenticator>,
+) {
+  const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
+    method: "POST",
+    headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  const { options } = (await beginRes.json()) as { options: { challenge: string } };
+  const response = authenticator.authenticate({
+    challenge: options.challenge,
+    rpID: WEBAUTHN_RP.rpID,
+    origin: WEBAUTHN_RP.origin,
+  });
+  return { webauthn: { response } };
 }
 
 // Enroll+confirm via direct function calls (not the HTTP endpoints) so these setup steps
@@ -817,6 +840,44 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     });
     expect(res.status).toBe(200);
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBe(0);
+  });
+
+  it("resets MFA with a valid WebAuthn assertion, including the credential it was proven with", async () => {
+    const credential = await registerConfirmedWebauthnCredential(adminUserId);
+    const proof = await webauthnStepUpProof(adminCookie, credential.authenticator);
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, ...proof }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBe(0);
+  });
+
+  it("returns 401 invalid_webauthn for an assertion signed by the wrong authenticator", async () => {
+    await registerConfirmedWebauthnCredential(adminUserId);
+    const wrongAuthenticator = createVirtualAuthenticator();
+    const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const { options } = (await beginRes.json()) as { options: { challenge: string } };
+    const response = wrongAuthenticator.authenticate({
+      challenge: options.challenge,
+      rpID: WEBAUTHN_RP.rpID,
+      origin: WEBAUTHN_RP.origin,
+    });
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, webauthn: { response } }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "webauthn" } })).toBe(1);
   });
 
   it("does not require a code for the non-MFA-required operator fixture", async () => {
@@ -950,6 +1011,24 @@ describe("PATCH /api/account/password — step-up for MFA-required roles", () =>
       body: JSON.stringify({ password: NEW_PASSWORD, code: backupCode }),
     });
     expect(replay.status).toBe(401);
+  });
+
+  it("changes the password with a valid WebAuthn assertion", async () => {
+    const credential = await registerConfirmedWebauthnCredential(adminUserId);
+    const proof = await webauthnStepUpProof(adminCookie, credential.authenticator);
+
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: ADMIN_PASSWORD,
+        new_password: NEW_PASSWORD,
+        new_password_confirm: NEW_PASSWORD,
+        ...proof,
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(await verifyPassword(NEW_PASSWORD, (await prisma.user.findUniqueOrThrow({ where: { id: adminUserId } })).password_hash!)).toBe(true);
   });
 
   it("does not require a code for the non-MFA-required operator fixture", async () => {
@@ -1177,6 +1256,23 @@ describe("DELETE /api/account/mfa/totp — step-up for MFA-required roles", () =
     });
     expect(replay.status).toBe(401);
   });
+
+  it("removes TOTP using a WebAuthn assertion as step-up, leaving the WebAuthn credential itself untouched", async () => {
+    await prisma.userMfaMethod.create({
+      data: { user_id: adminUserId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    const credential = await registerConfirmedWebauthnCredential(adminUserId);
+    const proof = await webauthnStepUpProof(adminCookie, credential.authenticator);
+
+    const res = await app.request("/api/account/mfa/totp", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(proof),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "webauthn" } })).toBe(1);
+  });
 });
 
 describe("GET /api/account/mfa/backup-codes", () => {
@@ -1322,6 +1418,20 @@ describe("POST /api/account/mfa/backup-codes/regenerate — step-up for MFA-requ
       orderBy: { created_at: "desc" },
     });
     expect(audit?.actor_user_id).toBe(adminUserId);
+  });
+
+  it("regenerates backup codes with a valid WebAuthn assertion", async () => {
+    const credential = await registerConfirmedWebauthnCredential(adminUserId);
+    const proof = await webauthnStepUpProof(adminCookie, credential.authenticator);
+
+    const res = await app.request("/api/account/mfa/backup-codes/regenerate", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(proof),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; codes: string[] };
+    expect(body.codes).toHaveLength(BACKUP_RECOVERY_CODE_COUNT);
   });
 });
 
@@ -1798,6 +1908,50 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     });
     expect(res.status).toBe(200);
     expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(0);
+  });
+
+  it("unlinks with a valid WebAuthn assertion", async () => {
+    const credential = await registerConfirmedWebauthnCredential(adminUserId);
+    const proof = await webauthnStepUpProof(adminCookie, credential.authenticator);
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-webauthn-subject", user_id: adminUserId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, ...proof }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(0);
+  });
+
+  it("returns 401 invalid_webauthn for a WebAuthn-only account when the assertion is wrong", async () => {
+    await registerConfirmedWebauthnCredential(adminUserId);
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-webauthn-wrong-subject", user_id: adminUserId },
+    });
+    const wrongAuthenticator = createVirtualAuthenticator();
+    const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const { options } = (await beginRes.json()) as { options: { challenge: string } };
+    const response = wrongAuthenticator.authenticate({
+      challenge: options.challenge,
+      rpID: WEBAUTHN_RP.rpID,
+      origin: WEBAUTHN_RP.origin,
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, webauthn: { response } }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");
+    expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
   });
 });
 
