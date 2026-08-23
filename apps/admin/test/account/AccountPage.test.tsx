@@ -23,6 +23,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     unlinkAccountExternalIdentity: vi.fn(),
     beginWebauthnRegistration: vi.fn(),
     finishWebauthnRegistration: vi.fn(),
+    beginWebauthnAssertion: vi.fn(),
     deleteWebauthnCredential: vi.fn(),
     deleteAccountTotp: vi.fn(),
     fetchBackupCodesStatus: vi.fn(),
@@ -30,10 +31,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-// startRegistration() calls the real navigator.credentials.create(), which doesn't exist in
-// jsdom - every test drives it through this mock instead of a real WebAuthn ceremony.
+// startRegistration()/startAuthentication() call the real navigator.credentials.create()/get(),
+// neither of which exists in jsdom - every test drives them through these mocks instead of a
+// real WebAuthn ceremony.
 vi.mock("@simplewebauthn/browser", () => ({
   startRegistration: vi.fn(),
+  startAuthentication: vi.fn(),
 }));
 
 vi.mock("../../src/account/TotpQrCode.js", () => ({
@@ -68,12 +71,13 @@ import {
   unlinkAccountExternalIdentity,
   beginWebauthnRegistration,
   finishWebauthnRegistration,
+  beginWebauthnAssertion,
   deleteWebauthnCredential,
   deleteAccountTotp,
   fetchBackupCodesStatus,
   regenerateBackupCodes,
 } from "../../src/api/client.js";
-import { startRegistration } from "@simplewebauthn/browser";
+import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 
 const mockDeleteSession = vi.mocked(deleteAccountSession);
 
@@ -88,6 +92,8 @@ const mockResetMfa = vi.mocked(resetMfa);
 const mockUnlinkExternalIdentity = vi.mocked(unlinkAccountExternalIdentity);
 const mockBeginWebauthnRegistration = vi.mocked(beginWebauthnRegistration);
 const mockFinishWebauthnRegistration = vi.mocked(finishWebauthnRegistration);
+const mockBeginWebauthnAssertion = vi.mocked(beginWebauthnAssertion);
+const mockStartAuthentication = vi.mocked(startAuthentication);
 const mockDeleteWebauthnCredential = vi.mocked(deleteWebauthnCredential);
 const mockDeleteAccountTotp = vi.mocked(deleteAccountTotp);
 const mockFetchBackupCodesStatus = vi.mocked(fetchBackupCodesStatus);
@@ -2972,6 +2978,44 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
 
     await waitFor(() => {
       expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("removes a credential using a passkey/security key as step-up proof instead of a code", async () => {
+    const account: AccountDto = {
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod(),
+      ],
+    };
+    mockFetchAccount.mockResolvedValue(account);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockResolvedValue({ total: 10, remaining: 10 });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockDeleteWebauthnCredential
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true });
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    const stepUpButton = await screen.findByRole("button", { name: "Use a passkey or security key" });
+    fireEvent.click(stepUpButton);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", {
+      webauthn: { response: { id: "cred-1" } },
     });
   });
 

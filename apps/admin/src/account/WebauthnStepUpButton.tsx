@@ -1,6 +1,7 @@
 import { startAuthentication } from "@simplewebauthn/browser";
 import { Button } from "@admitto/ui";
-import { beginWebauthnAssertion } from "../api/client.js";
+import { ApiError, beginWebauthnAssertion } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { StepUpProofBody } from "../api/types.js";
 
 /** Run a WebAuthn step-up ceremony (fetch a challenge, prompt the browser, sign it) and return
@@ -35,13 +36,28 @@ export function WebauthnStepUpButton({ busy, onBusyChange, onError, onSubmit }: 
       onClick={async () => {
         onBusyChange(true);
         onError(null);
+        let proof: StepUpProofBody;
         try {
-          const proof = await runWebauthnStepUp();
-          await onSubmit(proof);
+          proof = await runWebauthnStepUp();
         } catch (err) {
           onError(
             err instanceof Error && err.name === "NotAllowedError"
               ? "Passkey or security key step-up was cancelled."
+              : "Could not verify with your passkey or security key. Try again, or enter a code instead.",
+          );
+          onBusyChange(false);
+          return;
+        }
+        try {
+          await onSubmit(proof);
+        } catch (err) {
+          // The ceremony itself already succeeded here - a thrown ApiError is the protected
+          // action rejecting the proof (session expired, rate-limited, target already gone),
+          // not a failed passkey/security key verification, so it gets its own message instead
+          // of the ceremony-cancelled copy above.
+          onError(
+            err instanceof ApiError
+              ? operatorApiErrorMessage(err, "Failed to complete the action.")
               : "Could not verify with your passkey or security key. Try again, or enter a code instead.",
           );
         } finally {

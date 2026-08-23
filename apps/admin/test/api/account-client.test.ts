@@ -6,6 +6,7 @@ import {
   beginWebauthnRegistration,
   finishWebauthnRegistration,
   fetchWebauthnCredentials,
+  beginWebauthnAssertion,
   deleteWebauthnCredential,
   deleteAccountTotp,
   fetchBackupCodesStatus,
@@ -136,6 +137,22 @@ describe("account API client", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
     expect(result.credentials).toHaveLength(1);
+  });
+
+  it("beginWebauthnAssertion POSTs to the assert/begin endpoint and returns ceremony options", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ options: { challenge: "chal-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await beginWebauthnAssertion();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/account/mfa/webauthn/assert/begin",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(result).toEqual({ options: { challenge: "chal-1" } });
   });
 
   it("deleteWebauthnCredential DELETEs the encoded credential endpoint with an optional step-up code", async () => {
