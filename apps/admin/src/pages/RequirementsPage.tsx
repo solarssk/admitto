@@ -18,6 +18,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
@@ -281,6 +282,8 @@ function AddItemModal({
   readonly onSubmit: (e: React.FormEvent) => void;
   readonly onClose: () => void;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useOverscrollBounceGuard(scrollRef);
   return (
     <dialog className="event-item-modal" open aria-modal="true" aria-label="Add item">
       <button
@@ -290,7 +293,7 @@ function AddItemModal({
         onClick={onClose}
       />
       <div ref={addPanelRef} className="event-item-modal__panel">
-        <div className="event-item-modal__scroll at-scroll">
+        <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
           <div className="event-item-modal__header">
             <div>
               <h2 className="event-item-modal__title">

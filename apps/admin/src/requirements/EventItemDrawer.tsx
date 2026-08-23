@@ -11,6 +11,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon } from "./customFieldType.js";
 import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "./requirements.css";
 
 export interface EventItemDrawerProps {
@@ -69,7 +70,9 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, !deleteConfirmOpen, onClose);
+  useOverscrollBounceGuard(scrollRef);
   // "badge" is auto-recreated by the server (ensureBadgeEventItem) — deleting it
   // would silently reappear, so deletion is blocked; disable it instead.
   const isDefaultItem = item.key === "badge";
@@ -152,7 +155,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
       >
         <ModalBackdrop onClose={onClose} />
         <div ref={panelRef} className="event-item-modal__panel">
-          <div className="event-item-modal__scroll at-scroll">
+          <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
             <div className="event-item-modal__header">
               <div>
                 <h2 id="item-modal-title" className="event-item-modal__title">

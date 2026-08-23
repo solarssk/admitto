@@ -6,6 +6,7 @@ import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "./requirements.css";
 
 export interface EventCustomFieldModalProps {
@@ -47,7 +48,9 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
   const [saving, setSaving] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, onClose);
+  useOverscrollBounceGuard(scrollRef);
 
   let submitLabel = "Create field";
   if (saving) submitLabel = "Saving…";
@@ -122,7 +125,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
     >
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="event-item-modal__panel">
-        <div className="event-item-modal__scroll at-scroll">
+        <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
           <div className="event-item-modal__header">
             <div>
               <h2 id="custom-field-modal-title" className="event-item-modal__title">

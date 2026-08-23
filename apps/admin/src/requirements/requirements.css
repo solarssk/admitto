@@ -103,6 +103,12 @@
   font-size: var(--fs-mono);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  /* A slugified key with no word/punctuation boundaries (slugifyItemKey only inserts `_` at
+   * non-alphanumeric runs) has no natural break point - since these now share a scroll region
+   * with the header/footer (.event-item-modal__scroll, overflow: auto on both axes), an
+   * unbreakable run could otherwise force a horizontal scrollbar across the whole modal instead
+   * of just wrapping. */
+  overflow-wrap: anywhere;
 }
 
 .requirements-item-id {

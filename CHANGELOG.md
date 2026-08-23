@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Communication email preview (Communication tab and the template editor) no longer lets clicks on the ticket link or QR code navigate inside the preview frame - clicking the recipient's real ticket link previously triggered a nested-frame Content Security Policy violation instead of doing nothing.
+- Requirements' item and custom-field editors (Badge, Gift bag, Add item) now scroll their header and footer together with the rest of the form, matching every other popup in the app, instead of pinning them in place - the scrollbar also now sits flush against the popup's edge instead of inset behind a permanently reserved gap.
 
 ## [0.5.5] - 2026-08-23
 
