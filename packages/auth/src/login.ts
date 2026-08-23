@@ -336,6 +336,8 @@ export interface CompleteMfaWithWebauthnInput {
   ip?: string;
   userAgent?: string;
   deviceLabel?: string;
+  /** Browser IANA timezone when captured; omit when unknown. */
+  timezone?: string | null;
 }
 
 type CompleteMfaWithWebauthnTxResult =
@@ -395,6 +397,7 @@ async function emitMfaWebauthnAudit(
     sessionId: input.sessionId,
     ip: input.ip,
     userAgent: input.userAgent,
+    timezone: input.timezone,
   };
   if (!result.ok) {
     await logMfaFailure(db, auditCtx, result.reason, result.reason === "session_not_promoted" ? "webauthn" : undefined);

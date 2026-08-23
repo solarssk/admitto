@@ -338,6 +338,27 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
     expect(mocks.resetFailedMfaFailureStreak).toHaveBeenCalledWith(prisma, "user-1");
   });
 
+  it("carries the captured timezone into the audit context, same as completeMfa's own TOTP path", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+
+    await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+      ip: "1.2.3.4",
+      timezone: "Europe/Warsaw",
+    });
+
+    expect(mocks.logMfaSuccess).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ timezone: "Europe/Warsaw" }),
+      "webauthn",
+    );
+  });
+
   it("skips trusted-device creation and getTrustedDeviceDays entirely when remember-device is not requested", async () => {
     mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
     mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
