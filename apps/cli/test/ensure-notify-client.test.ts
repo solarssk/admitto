@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const openWorkerNotifyClient = vi.fn();
 
@@ -17,6 +18,13 @@ function fakeClient() {
 describe("ensureNotifyClient", () => {
   beforeEach(() => {
     openWorkerNotifyClient.mockReset();
+    resetSystemLogBufferForTest();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("reuses the current client when it's still alive", async () => {
@@ -48,5 +56,27 @@ describe("ensureNotifyClient", () => {
     openWorkerNotifyClient.mockRejectedValue(new Error("connection refused"));
     const result = await ensureNotifyClient("postgresql://example/db", null);
     expect(result).toBeNull();
+  });
+
+  it("records the reconnect failure as a warn-level worker system-log entry", async () => {
+    openWorkerNotifyClient.mockRejectedValue(new Error("connection refused"));
+    await ensureNotifyClient("postgresql://example/db", null);
+
+    const [entry] = querySystemLogs({ source: "worker" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: expect.stringContaining("notify client unavailable"),
+      fields: { job: "heartbeat" },
+    });
+  });
+
+  it("does not record a successful reconnect as a worker system-log entry", async () => {
+    const fresh = fakeClient();
+    openWorkerNotifyClient.mockResolvedValue(fresh);
+    await ensureNotifyClient("postgresql://example/db", null);
+
+    // Success itself doesn't call log() - only the fallback-to-poll-only branch does. Confirms
+    // the happy path leaves no stray entry behind for this same job.
+    expect(querySystemLogs({ source: "worker" })).toHaveLength(0);
   });
 });

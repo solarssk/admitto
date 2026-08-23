@@ -139,6 +139,11 @@ export interface MfaAuditContext {
   sessionId?: string;
   ip?: string;
   userAgent?: string;
+  /** Browser IANA timezone when captured; omit when unknown. Was missing entirely on this
+   * context (unlike LoginAuditContext), so every MFA-family SecurityAuditLog row always fell
+   * back to the viewer's-own-timezone icon in Security logs, regardless of how fresh the row
+   * was — not a legacy-data fallback, a genuine gap in what this context could carry. */
+  timezone?: string | null;
 }
 
 /** MFA verification method recorded in `auth.mfa.success`. */
@@ -326,6 +331,7 @@ export async function logMfaSuccess(db: Db, ctx: MfaAuditContext, method: MfaMet
     event_type: "auth.mfa.success",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
+    actor_timezone: ctx.timezone ?? null,
     metadata: { sessionId: ctx.sessionId ?? null, method, userAgent: ctx.userAgent ?? null },
   });
 }
@@ -364,6 +370,7 @@ export async function logMfaFailure(
     event_type: "auth.mfa.fail",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
+    actor_timezone: ctx.timezone ?? null,
     metadata: { sessionId: ctx.sessionId ?? null, reason, method: method ?? null, userAgent: ctx.userAgent ?? null },
   });
 }
@@ -385,6 +392,7 @@ export async function logMfaRecoveryConsumed(
     event_type: "auth.mfa.recovery_consumed",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
+    actor_timezone: ctx.timezone ?? null,
     metadata: { method, sessionId: ctx.sessionId ?? null },
   });
 }
@@ -511,6 +519,7 @@ export async function logTrustedDeviceCreated(db: Db, ctx: MfaAuditContext): Pro
     event_type: "auth.trusted_device.created",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
+    actor_timezone: ctx.timezone ?? null,
     metadata: { sessionId: ctx.sessionId ?? null, userAgent: ctx.userAgent ?? null },
   });
 }

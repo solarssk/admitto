@@ -9,7 +9,7 @@
  */
 
 export type SystemLogLevel = "info" | "warn" | "error";
-export type SystemLogSource = "api" | "db" | "cache" | "mail" | "admin" | "security";
+export type SystemLogSource = "api" | "db" | "cache" | "mail" | "admin" | "security" | "worker" | "wallet" | "external";
 
 export interface SystemLogEntry {
   id: number;
@@ -31,6 +31,18 @@ const CAPACITY = 1000;
 
 let buffer: SystemLogEntry[] = [];
 let nextId = 1;
+let publisher: ((entry: SystemLogEntry) => void) | null = null;
+
+/** Lets a process without its own buffer (the apps/cli worker) forward its entries to whichever
+ * process does own the buffer the UI reads (apps/web), by POSTing to the existing
+ * /api/ops/system-logs bridge (see apps/cli/src/lib/system-log-publish.ts, and
+ * apps/web/src/ops/system-log-ingest.ts on the receiving end - the same bridge the bounce job's
+ * own reportBounceIngestSystemLog already uses). apps/web itself never calls this: its own
+ * emitSystemLog calls already land directly in its own buffer. A publisher that throws must never
+ * break the caller of emitSystemLog, so the call site below wraps it in try/catch. */
+export function setSystemLogPublisher(fn: ((entry: SystemLogEntry) => void) | null): void {
+  publisher = fn;
+}
 
 /** Append to the in-memory buffer only (no console output) - used internally by
  * emitSystemLog() and directly by tests that want to populate the buffer without
@@ -65,7 +77,12 @@ export function emitSystemLog(
   if (level === "info") console.info(line);
   else if (level === "warn") console.warn(line);
   else console.error(line);
-  recordSystemLog({ level, source, message, fields });
+  const recorded = recordSystemLog({ level, source, message, fields });
+  try {
+    publisher?.(recorded);
+  } catch {
+    /* best-effort relay - never let a publish failure surface at the emitSystemLog call site */
+  }
 }
 
 /** Entries with id > sinceId (or all, if omitted), oldest-first, filtered by level/source and a
@@ -94,4 +111,5 @@ export function currentSystemLogCursor(): number {
 export function resetSystemLogBufferForTest(): void {
   buffer = [];
   nextId = 1;
+  publisher = null;
 }

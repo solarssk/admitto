@@ -9,7 +9,6 @@ type ScanHistoryListProps = {
   admittedCount: number;
   totalCount: number;
   history: CheckInHistoryEntry[];
-  eventTimezone: string;
   eventDate?: string | null;
   compact?: boolean;
   ticketTypes?: TicketTypeDto[];
@@ -20,7 +19,6 @@ export function ScanHistoryList({
   admittedCount,
   totalCount,
   history,
-  eventTimezone,
   eventDate = null,
   compact = false,
   ticketTypes = [],
@@ -31,7 +29,6 @@ export function ScanHistoryList({
       <CkStats admitted={admittedCount} total={totalCount} />
       <CkRecentScans
         history={history}
-        eventTimezone={eventTimezone}
         eventDate={eventDate}
         compact={compact}
         limit={compact ? 3 : CK_RECENT_SCANS_SIDEBAR_LIMIT}

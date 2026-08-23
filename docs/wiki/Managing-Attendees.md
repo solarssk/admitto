@@ -5,7 +5,7 @@
 | **Audience** | Event Managers |
 | **Required role** | Administrator |
 | **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+| **Last verified** | Admitto 0.5.2 |
 
 ## What this page helps you do
 
@@ -38,7 +38,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 1. Select one or more rows (or use the header checkbox for the page).
 2. From the bulk bar, choose only the action you need:
    - **Send tickets**
-   - **Check in** without scanning
+   - **Check in** without scanning (asks for confirmation first, same as the other bulk actions below; can normally be undone afterward with **Revoke check-in**)
    - **Revoke check-in**, **Revoke items**, or **Revoke pass**
    - **Void wallet pass**, **Push updates**, or **Delete wallet pass** (only enabled when the selection includes at least one attendee who added a pass)
    - **Change ticket type** (also pushes the new type to any already-issued wallet passes in the selection, in the background) or **Change attendance status**
@@ -52,8 +52,8 @@ Open the correct event. Check its ticket types and custom attendee fields before
 2. The profile is read-only until you open **Edit** in the header. Save profile changes from that dialog.
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
 4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes.
-5. Delivery history supports **View sent message** (rendered mail with ticket link redacted) and **View delivery details**.
-6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds **Revoke items**, **Delete attendee** (typed confirmation for GDPR erasure), and, once the attendee has added a wallet pass, **Void wallet pass**, **Push updates**, and **Delete wallet pass**. **Restore pass** asks for confirmation before applying. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
+5. Delivery history supports **View sent message** (the rendered mail exactly as sent, including the real ticket link and QR code) and **View delivery details**.
+6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds **Resend ticket**, **Copy ticket link** (copies the attendee's existing ticket URL to the clipboard, without resending anything; fails without sending a new ticket if none has been issued yet - use **Resend ticket** first), **Revoke items**, **Delete attendee** (typed confirmation for GDPR erasure), and, once the attendee has added a wallet pass, **Void wallet pass**, **Push updates**, and **Delete wallet pass**. **Restore pass** asks for confirmation before applying. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
 
 Use [Importing Attendees](Importing-Attendees) for a prepared list rather than adding many records one by one.
 

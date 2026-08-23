@@ -40,6 +40,7 @@ import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { setTrustedDeviceCookie, resolvePostMfaLandingPath } from "./routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
 function htmlResponse(
   c: Context,
@@ -201,6 +202,7 @@ export async function handlePostMfaVerify(
     return c.text("Too many requests", 429);
   }
 
+  const timezone = parseOptionalClientTimezone(form["timezone"]);
   const result = await completeMfa(
     db,
     {
@@ -216,6 +218,7 @@ export async function handlePostMfaVerify(
       sessionId: partial.sessionId,
       ip,
       userAgent: c.req.header("user-agent"),
+      timezone,
     },
   );
 

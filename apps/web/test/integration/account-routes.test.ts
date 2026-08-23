@@ -1687,6 +1687,43 @@ describe("DELETE /api/account/external-identity", () => {
     expect(otherSession.revoked_at).not.toBeNull();
   });
 
+  it("unlinks a Cloudflare Access identity together with its source OIDC identity, not just the OIDC one", async () => {
+    // Cloudflare Access identities are only ever auto-provisioned alongside a source OIDC
+    // identity (resolveCfAccessIdentityFromValidatedJwt requires one to already exist) and get
+    // silently recreated on the next Cloudflare-authenticated request as long as that source
+    // identity survives - so leaving it behind here would make this "unlink" a no-op for
+    // Cloudflare sign-in, and unlinking just the OIDC identity would orphan the Cloudflare one
+    // (every subsequent Cloudflare-protected request then fails with source_identity_not_linked).
+    const cfProvider = await prisma.identityProvider.create({
+      data: {
+        provider_type: "cloudflare_access",
+        issuer: "https://team.cloudflareaccess.test",
+        client_id: "__cloudflare_access__",
+        authorization_endpoint: "https://team.cloudflareaccess.test/cdn-cgi/access/login",
+        token_endpoint: "https://team.cloudflareaccess.test/cdn-cgi/access/login",
+        jwks_uri: "https://team.cloudflareaccess.test/cdn-cgi/access/certs",
+        display_name: "Cloudflare Access",
+        enabled: true,
+      },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "hybrid-unlink-oidc-subject", user_id: userId },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: cfProvider.id, subject: "hybrid-unlink-cf-subject", user_id: userId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(0);
+
+    await prisma.identityProvider.delete({ where: { id: cfProvider.id } });
+  });
+
   it("returns 400 current_password_required when the account has a local password and none is given", async () => {
     await prisma.externalIdentity.create({
       data: { provider_id: PROVIDER_ID, subject: "self-unlink-no-current-pass-subject", user_id: userId },

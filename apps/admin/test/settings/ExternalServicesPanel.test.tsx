@@ -469,7 +469,10 @@ describe("ExternalServicesPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toMatch(/API key/i);
+      // Two alerts, not a duplicate bug: the save-time summary list (all validation problems
+      // at once) and the API key field's own inline error (Input's error prop, live-announced
+      // as the user edits that field) both legitimately report the same problem here.
+      expect(screen.getAllByRole("alert").some((el) => /API key/i.test(el.textContent ?? ""))).toBe(true);
     });
     expect(mockSaveWeather).not.toHaveBeenCalled();
   });

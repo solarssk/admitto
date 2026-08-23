@@ -3,12 +3,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context } from "hono";
 
-/** Exact public ticket assets: keep the allowlist tight so these routes never shadow SPA `/assets/*`. */
+/** Exact public ticket assets: keep the allowlist tight so these routes never shadow SPA `/assets/*`.
+ * PNG wallet badges exist alongside the SVGs for email use only (classic Outlook desktop's Word
+ * rendering engine does not display SVG `<img>` sources at all) - the ticket page keeps the SVGs. */
 const ASSET_NAMES = new Set([
   "admitto-mark.svg",
   "admitto-logo.svg",
   "apple-wallet-badge.svg",
   "google-wallet-badge.svg",
+  "apple-wallet-badge.png",
+  "google-wallet-badge.png",
 ]);
 const assetCache = new Map<string, Buffer>();
 
@@ -55,7 +59,7 @@ export function readTicketAssetForTest(name: string): Buffer | null {
 function serveTicketAsset(c: Context, name: string): Response | Promise<Response> {
   const body = readTicketAsset(name);
   if (!body) return c.notFound();
-  c.header("Content-Type", "image/svg+xml; charset=utf-8");
+  c.header("Content-Type", name.endsWith(".png") ? "image/png" : "image/svg+xml; charset=utf-8");
   c.header("Cache-Control", "public, max-age=86400");
   c.header("X-Content-Type-Options", "nosniff");
   return c.body(new Uint8Array(body));
@@ -77,4 +81,13 @@ export function handleGetAppleWalletBadge(c: Context): Response | Promise<Respon
 
 export function handleGetGoogleWalletBadge(c: Context): Response | Promise<Response> {
   return serveTicketAsset(c, "google-wallet-badge.svg");
+}
+
+/** PNG variant for email markup - see the `ASSET_NAMES` comment above. */
+export function handleGetAppleWalletBadgePng(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "apple-wallet-badge.png");
+}
+
+export function handleGetGoogleWalletBadgePng(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "google-wallet-badge.png");
 }

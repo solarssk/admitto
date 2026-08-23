@@ -44,6 +44,8 @@ export interface TemplateVars {
   apple_wallet_url?: string;
   google_wallet_url?: string;
   download_page_url?: string;
+  ticket_type?: string;
+  event_hours?: string;
   // Per-event custom image asset tokens (branding asset library, v0.4.13 batch 05) - dynamic
   // {{token}} names decided by the admin at upload time, not known ahead of time like the
   // fields above. See resolveEventImageAssetVars in branding.ts.

@@ -14,10 +14,17 @@ import type { PrismaClient } from "@admitto/db";
  * appended - `signedData` re-serializes that same body (itself carrying its own nested
  * signature/signedData one level deeper; only the outer level needs verifying/parsing, the deeper
  * nesting is presumably an artifact of PassCreator's own delivery-log rendering, not something we
- * need to walk). Confirms the {signedData, signature} envelope shape assumed here. Still
- * UNCONFIRMED: the exact shape of a pass_voided delivery (whether `voided` is a top-level boolean
- * or something else) and of first_pushnotification_registered (whether firstDownloadedAt appears
- * there) - only pushnotification_unregistered has been observed live so far.
+ * need to walk). Confirms the {signedData, signature} envelope shape assumed here.
+ *
+ * pass_voided's own payload shape is CONFIRMED, and it's not what was assumed here before
+ * 2026-08-19 (developer.passcreator.com/en/webhooks/pass-hooks): there is no top-level `voided`
+ * field at all, and no field anywhere in any event's payload names which event fired - PassCreator
+ * relies entirely on which subscribed target URL received the delivery for that. `voided` on
+ * `PassCreatorWebhookData` below is therefore never set from the wire; it's set by the caller
+ * (apps/web/src/wallet-webhook.ts's `isVoidedRoute`) once it already knows, from the URL alone,
+ * that this delivery is a pass_voided one. Still genuinely unconfirmed: whether
+ * first_pushnotification_registered's payload includes `firstDownloadedAt` - only
+ * pushnotification_unregistered has been observed live so far.
  */
 export interface PassCreatorWebhookEnvelope {
   signedData: string;
@@ -48,17 +55,21 @@ export interface PassCreatorWebhookData {
 }
 
 /** True if `signature` (hex) validates against `signedData` (verified as raw string bytes, never
- * a re-serialized object) using `publicKeyPem`. SHA-256/ECDSA P-256, per the documented example -
- * matches the curve PassCreator's own PEM key example uses, but the exact hash algorithm is not
- * spelled out in the docs and needs live confirmation (a wrong guess here fails closed, rejecting
- * genuine webhooks, rather than accepting forged ones - see module doc). */
+ * a re-serialized object) using `publicKeyPem`. ECDSA P-256, per the documented example's PEM key.
+ *
+ * SHA1, not SHA256: developer.passcreator.com/en/signatures/verify-a-signature's own code example
+ * calls PHP's `openssl_verify($data, hex2bin($signature), $publicKey)` with only 3 arguments - the
+ * docs never say "SHA1" in words, but PHP's `openssl_verify()` defaults its 4th `$algorithm`
+ * parameter to `OPENSSL_ALGO_SHA1` when omitted, and the example omits it. A wrong guess here
+ * fails closed (rejecting genuine webhooks rather than accepting forged ones - see module doc),
+ * which is what SHA256 was silently doing before this was traced back to the PHP default. */
 export function verifyWebhookSignature(
   signedData: string,
   signatureHex: string,
   publicKeyPem: string,
 ): boolean {
   try {
-    const verifier = createVerify("SHA256");
+    const verifier = createVerify("SHA1");
     verifier.update(signedData, "utf8");
     verifier.end();
     return verifier.verify(publicKeyPem, signatureHex, "hex");
@@ -140,12 +151,18 @@ function webhookMatchWhere(data: PassCreatorWebhookData): Prisma.WalletPassWhere
 // on two separate deliveries: "iOS" (Apple) and "AndroidGooglePay" (Google) - PassCreator's own
 // enum label, not the device's literal OS name (hence not just "Android"). "iPadOS"/"macOS" are
 // additionally recognized as Apple (Wallet runs on all three) even though only "iOS" itself has
-// been observed. Without a recognized value we can't tell which pair of apple_*/google_* columns
-// noOfActivePasses/noOfInactivePasses belongs to, so both stay untouched rather than guessing -
-// covers the field being absent as well as a genuinely unrecognized label. Split out from
-// applyWebhookUpdate to keep its cognitive complexity within SonarCloud's threshold.
+// been observed. The full enum (developer.passcreator.com/en/webhooks/pass-hooks, confirmed
+// 2026-08-19): iOS, AndroidGooglePay, Android, AndroidWalletPasses, AndroidWalletUnion,
+// WindowsPhone - the plain "Android"/AndroidWalletPasses/AndroidWalletUnion variants were missing
+// here entirely (every delivery reporting one of them left both platforms' counts untouched, not
+// just the wrong one). WindowsPhone isn't a wallet platform Admitto issues passes for and stays
+// unrecognized on purpose. Without a recognized value we can't tell which pair of
+// apple_*/google_* columns noOfActivePasses/noOfInactivePasses belongs to, so both stay untouched
+// rather than guessing - covers the field being absent as well as a genuinely unrecognized label.
+// Split out from applyWebhookUpdate to keep its cognitive complexity within SonarCloud's
+// threshold.
 const APPLE_OPERATING_SYSTEMS = new Set(["ios", "ipados", "macos"]);
-const GOOGLE_OPERATING_SYSTEMS = new Set(["androidgooglepay"]);
+const GOOGLE_OPERATING_SYSTEMS = new Set(["androidgooglepay", "android", "androidwalletpasses", "androidwalletunion"]);
 
 function applyRegistrationCounts(updateData: Prisma.WalletPassUpdateInput, data: PassCreatorWebhookData): void {
   if (data.operatingSystem === undefined) return;

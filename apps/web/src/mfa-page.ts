@@ -1,5 +1,6 @@
 import {
   authFormSubmitScript,
+  authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   renderAuthBrand,
   renderAuthDocument,
@@ -14,7 +15,7 @@ export function getMfaPageSecurityHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
 ): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins, { allowSelfConnect: true });
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
 }
 
 /** MFA enroll allows nonce-gated inline script for clipboard copy and OTP widget. */
@@ -91,6 +92,7 @@ export function renderMfaVerifyForm(
     ${err}
     <form method="post" action="/mfa/verify">
       ${nextField}
+      <input type="hidden" name="timezone" value="" autocomplete="off">
       ${renderAuthOtpCodeField({
         label: "Authentication code",
         labelId: "mfa-code-label",
@@ -106,7 +108,7 @@ export function renderMfaVerifyForm(
     step: "Two-factor authentication",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}${
+    scripts: `${mfaOtpDigitsScript(scriptNonce)}\n${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce)}${
       hasWebauthnCredentials ? `\n${mfaWebauthnScript(scriptNonce)}` : ""
     }`,
   });

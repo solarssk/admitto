@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 vi.mock("../src/claim-admin-job.js", () => ({
   claimNextAdminJob: vi.fn(),
@@ -59,6 +60,7 @@ describe("drainWalletPushJobs", () => {
     vi.mocked(claimNextAdminJob).mockReset();
     vi.mocked(reissueOneWalletPass).mockReset();
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
+    resetSystemLogBufferForTest();
 
     db = {
       adminJob: {
@@ -207,6 +209,8 @@ describe("drainWalletPushJobs", () => {
       where: { id: "job-wp-1" },
       data: { status: "failed", finished_at: expect.any(Date), error: WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR },
     });
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "error", message: "wallet_push_job_failed", fields: { job_id: "job-wp-1" } });
   });
 
   it("marks the job failed for a malformed request payload instead of throwing", async () => {

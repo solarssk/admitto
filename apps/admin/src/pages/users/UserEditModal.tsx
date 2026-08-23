@@ -112,6 +112,14 @@ function activeSessionsLabel(count: number): string {
   return `${count} session${count === 1 ? "" : "s"}`;
 }
 
+/** Real provider name(s) for the Sign-in method tile - e.g. "Authentik", or
+ * "Authentik + Cloudflare Access" when also ZTNA-linked (both are just rows in the same
+ * external_identities relation). Same join style as AccountTypeField on My Account. */
+function signInMethodLabel(user: UserListItemDto): string {
+  if (!user.has_sso) return "Local password";
+  return user.external_identities.map((ei) => ei.provider_display_name).join(" + ");
+}
+
 /** The header's "More actions" kebab menu (Reset MFA / Reset password / Unlink SSO / Revoke
  * sessions / Disable-Enable / Delete account) - each item just closes the menu and opens its own
  * confirm dialog or inline form; the parent owns all of that state. */
@@ -182,7 +190,7 @@ function UserMoreActionsMenu({
           <MoreActionsMenuItem
             icon="unlink"
             label="Unlink identity provider"
-            hint="Require a local password to sign in"
+            hint="Require a local password and sign them out everywhere"
             disabled={!user.has_sso || isSelf}
             tooltip={unlinkSsoTooltip(user.has_sso, isSelf)}
             onClick={pick(onUnlinkSso)}
@@ -397,7 +405,12 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Sign-in method</strong>
-            <span>{user.has_sso ? "Identity provider" : "Local password"}</span>
+            {/* Real provider name(s) (e.g. "Authentik", or "Authentik + Cloudflare Access" when
+             * also ZTNA-linked) instead of the generic "Identity provider" - both are just rows
+             * in the same external_identities relation, so a Cloudflare Access link shows up
+             * here automatically rather than being invisible (PO report). Same join style as
+             * AccountTypeField on My Account. */}
+            <span title={signInMethodLabel(user)}>{signInMethodLabel(user)}</span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -408,7 +421,9 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Two-factor</strong>
-            <span>{user.has_mfa ? "Authenticator app enrolled" : "Not set up"}</span>
+            <span title={user.has_mfa ? "Authenticator app enrolled" : "Not set up"}>
+              {user.has_mfa ? "Authenticator app enrolled" : "Not set up"}
+            </span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -422,7 +437,9 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Active sessions</strong>
-            <span>{activeSessionsLabel(user.active_sessions_count)}</span>
+            <span title={activeSessionsLabel(user.active_sessions_count)}>
+              {activeSessionsLabel(user.active_sessions_count)}
+            </span>
           </span>
         </div>
       </div>
@@ -692,7 +709,12 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // dialog to handle Escape alone (bot review finding; same pattern as EventItemDrawer's own
   // `!deleteConfirmOpen`).
   const anyConfirmDialogOpen =
-    deleteConfirm || disableConfirmOpen || resetMfaOpen || revokeSessionsOpen || unlinkSsoOpen || roleChangeConfirmOpen;
+    deleteConfirm ||
+    disableConfirmOpen ||
+    resetMfaOpen ||
+    revokeSessionsOpen ||
+    unlinkSsoOpen ||
+    roleChangeConfirmOpen;
   useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose);
   const moreActions = useDropdownMenu<HTMLButtonElement>({ align: "end" });
 
@@ -1134,10 +1156,17 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         <div ref={scrollRef} className="add-attendee-modal__scroll">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
-              <Avatar name={displayTitle} size="sm" />
+              {/* Default (md, 36px) to match .identity-row-icon's size - the standard other
+               * modal headers use for their leading icon (identity-editor__header-title). */}
+              <Avatar name={displayTitle} />
               <div className="users-modal__head-text">
                 <h2 id={titleId}>{displayTitle}</h2>
-                <span className="users-modal__head-email">{user.email}</span>
+                {/* displayTitle already falls back to user.email when there's no display_name -
+                 * showing this line too would repeat the exact same string right under itself
+                 * (PO report), on top of the Email address field further down the form. */}
+                {user.display_name?.trim() && (
+                  <span className="users-modal__head-email">{user.email}</span>
+                )}
               </div>
             </div>
             <div className="users-modal__head-actions">
@@ -1363,7 +1392,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={unlinkSsoOpen}
         title="Unlink identity provider"
-        message={`Unlink the identity provider for ${displayTitle}? Set the new local password they'll sign in with below - their identity-provider sign-in stops working immediately.`}
+        message={`Unlink the identity provider for ${displayTitle}? Set the new local password they'll sign in with below - their identity-provider sign-in stops working immediately, and this also signs them out of every active session and trusted device.`}
         errorMessage={unlinkSsoError}
         confirmLabel="Unlink"
         confirmVariant="danger"

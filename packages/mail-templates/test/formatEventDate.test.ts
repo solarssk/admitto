@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { formatEventDate, resolvePreviewEventTimeZone } from "../src/formatEventDate.js";
+import {
+  formatEventDate,
+  resolvePreviewEventTimeZone,
+} from "../src/formatEventDate.js";
 
 describe("formatEventDate", () => {
   it("formats calendar day in the given timezone, not UTC slice", () => {

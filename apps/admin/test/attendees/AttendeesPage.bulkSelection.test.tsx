@@ -172,6 +172,13 @@ function openAndArmDeleteDialog() {
   return openMenuItemAndArmDialog(/^Delete(?! wallet)/);
 }
 
+/** "Check in" is a bare bulk-bar button (not behind "More actions") gated by its own confirm
+ * dialog (no arming delay) — click it, then confirm within the dialog it opens. */
+function openAndConfirmBulkCheckIn() {
+  fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Check in" }));
+}
+
 /** Opens the "More actions" menu, then clicks the given menu item and returns the confirm dialog. */
 function openMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
   fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
@@ -1144,7 +1151,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(bulkCheckInAttendees).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"]);
@@ -1153,6 +1160,23 @@ describe("AttendeesPage bulk check-in", () => {
       expect(addToast).toHaveBeenCalledWith("2 attendees checked in.", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("Cancel closes the bulk-check-in dialog without calling bulkCheckInAttendees (codecov review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkCheckInAttendees).not.toHaveBeenCalled();
   });
 
   it("notes already-admitted attendees in the toast instead of erroring", async () => {
@@ -1165,7 +1189,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("1 attendee checked in (1 already admitted).", "success");
@@ -1182,7 +1206,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("All selected attendees were already checked in.", "info");
@@ -1199,7 +1223,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("No attendees checked in (1 pass revoked, 1 not found).", "error");
@@ -1216,7 +1240,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("1 attendee checked in (2 failed unexpectedly).", "warning");
@@ -1241,7 +1265,7 @@ describe("AttendeesPage bulk check-in", () => {
       fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
       await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-      fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+      openAndConfirmBulkCheckIn();
 
       await waitFor(() => {
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
@@ -1263,7 +1287,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Check-in failed.", "error");
@@ -1281,7 +1305,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Failed to check in attendees.", "error");
@@ -1307,7 +1331,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
@@ -1348,7 +1372,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
