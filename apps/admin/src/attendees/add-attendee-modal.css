@@ -70,6 +70,28 @@
   width: min(100%, 640px);
 }
 
+/* One-off panel widths that used to live as inline `style={{ width: ... }}` overrides on
+ * individual consumers (CspTrustedOriginsModal, FixMapsLinkModal, FontFamilyModal,
+ * DeviceLabelEditModal) - moved here as named modifiers so every panel width in the app lives
+ * in one place instead of being scattered across component files. Values unchanged from what
+ * each consumer already used (including the 94vw cap, distinct from --wide's 100%, which relies
+ * on this same .add-attendee-modal overlay's own 16px padding for its edge margin instead). */
+.add-attendee-modal__panel--w420 {
+  width: min(94vw, 420px);
+}
+
+.add-attendee-modal__panel--w520 {
+  width: min(94vw, 520px);
+}
+
+.add-attendee-modal__panel--w560 {
+  width: min(94vw, 560px);
+}
+
+.add-attendee-modal__panel--w640 {
+  width: min(94vw, 640px);
+}
+
 /* Vertical field stack for a Card body's own form fields (distinct from .users-modal__roles,
  * which is a list of role rows) - users-page.css, imported by the same modal. */
 .users-modal__profile-fields {

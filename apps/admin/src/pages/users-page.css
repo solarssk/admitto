@@ -680,7 +680,11 @@
 
 .users-modal__status-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* minmax(0, 1fr), not plain 1fr - a plain 1fr track won't shrink below its content's
+   * min-content width, so a long label (e.g. "Sign-in method") pushed the grid ~14px wider
+   * than the panel even at the modal's normal 480px width, forcing a permanent horizontal
+   * scrollbar on .add-attendee-modal__scroll (overflow: auto covers both axes). */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }

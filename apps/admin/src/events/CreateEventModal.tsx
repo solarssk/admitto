@@ -127,7 +127,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
-      <div ref={scrollRef} className="add-attendee-modal__scroll">
+      <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-calendar-plus" aria-hidden="true" /> New event
         </h2>

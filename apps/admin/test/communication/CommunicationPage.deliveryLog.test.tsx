@@ -580,7 +580,9 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     const srcdoc = iframe.getAttribute("srcdoc") ?? "";
     expect(srcdoc).not.toContain("{{qr_image_url}}");
     expect(srcdoc).not.toContain("{{ticket_url}}");
-    expect(srcdoc).toContain("https://tickets.example.com/t/tok123");
+    expect(srcdoc).toContain("https://tickets.example.com/q/tok123.png");
+    expect(srcdoc).toContain("View ticket");
+    expect(srcdoc).not.toContain('href="https://tickets.example.com/t/tok123"');
     expect(fetchRenderedDelivery).toHaveBeenCalledWith("evt-1", "dlv-1", expect.any(AbortSignal));
 
     // Only the header IconButton closes it now - the redundant footer Close button (the header

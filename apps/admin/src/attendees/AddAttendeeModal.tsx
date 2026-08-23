@@ -196,7 +196,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel">
-      <div ref={scrollRef} className="add-attendee-modal__scroll">
+      <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Add attendee
         </h2>
