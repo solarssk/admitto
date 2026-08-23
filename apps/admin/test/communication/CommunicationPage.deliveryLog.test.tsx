@@ -559,11 +559,11 @@ describe("CommunicationPage delivery log - row menu", () => {
 });
 
 describe("CommunicationPage delivery log - sent message preview modal", () => {
-  it("fetches and renders the redacted message, with the privacy notice and sandboxed iframe", async () => {
+  it("fetches and renders the real message content in a sandboxed iframe", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
     fetchRenderedDelivery.mockResolvedValue({
       subject: "Your ticket for Test Event",
-      html: '<p>Hi</p><img src="data:image/svg+xml;base64,QUJD" alt="QR hidden" /><a href="#">View ticket</a>',
+      html: '<p>Hi</p><img src="https://tickets.example.com/q/tok123.png" alt="QR" /><a href="https://tickets.example.com/t/tok123">View ticket</a>',
     });
 
     renderPage();
@@ -573,9 +573,6 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Sent message preview" });
-    expect(
-      within(dialog).getByText(/QR code and ticket link are hidden here for privacy/),
-    ).toBeTruthy();
     await within(dialog).findByText("Your ticket for Test Event");
 
     const iframe = within(dialog).getByTitle("Sent message preview");
@@ -583,6 +580,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     const srcdoc = iframe.getAttribute("srcdoc") ?? "";
     expect(srcdoc).not.toContain("{{qr_image_url}}");
     expect(srcdoc).not.toContain("{{ticket_url}}");
+    expect(srcdoc).toContain("https://tickets.example.com/t/tok123");
     expect(fetchRenderedDelivery).toHaveBeenCalledWith("evt-1", "dlv-1", expect.any(AbortSignal));
 
     // Only the header IconButton closes it now - the redundant footer Close button (the header
@@ -1195,8 +1193,8 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     await goToDeliveryLogTab();
     await screen.findByText("Guest One");
 
-    fireEvent.click(screen.getByRole("tab", { name: /Send/i }));
-    await screen.findByRole("tab", { name: /Send/i, selected: true });
+    fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
+    await screen.findByRole("tab", { name: /Email/i, selected: true });
 
     fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
     const tab = await screen.findByRole("tab", { name: /Delivery log/i, selected: true });

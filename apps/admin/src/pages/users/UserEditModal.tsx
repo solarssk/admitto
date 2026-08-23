@@ -112,6 +112,14 @@ function activeSessionsLabel(count: number): string {
   return `${count} session${count === 1 ? "" : "s"}`;
 }
 
+/** Real provider name(s) for the Sign-in method tile - e.g. "Authentik", or
+ * "Authentik + Cloudflare Access" when also ZTNA-linked (both are just rows in the same
+ * external_identities relation). Same join style as AccountTypeField on My Account. */
+function signInMethodLabel(user: UserListItemDto): string {
+  if (!user.has_sso) return "Local password";
+  return user.external_identities.map((ei) => ei.provider_display_name).join(" + ");
+}
+
 /** The header's "More actions" kebab menu (Reset MFA / Reset password / Unlink SSO / Revoke
  * sessions / Disable-Enable / Delete account) - each item just closes the menu and opens its own
  * confirm dialog or inline form; the parent owns all of that state. */
@@ -182,7 +190,7 @@ function UserMoreActionsMenu({
           <MoreActionsMenuItem
             icon="unlink"
             label="Unlink identity provider"
-            hint="Require a local password to sign in"
+            hint="Require a local password and sign them out everywhere"
             disabled={!user.has_sso || isSelf}
             tooltip={unlinkSsoTooltip(user.has_sso, isSelf)}
             onClick={pick(onUnlinkSso)}
@@ -366,6 +374,9 @@ function SignInSecuritySection({
   resetPasswordTitleId,
   newPassword,
   setNewPassword,
+  requiresActorStepUp,
+  resetPasswordCode,
+  setResetPasswordCode,
   resetPasswordBusy,
   onCancelResetPassword,
   onResetPassword,
@@ -377,6 +388,9 @@ function SignInSecuritySection({
   resetPasswordTitleId: string;
   newPassword: string;
   setNewPassword: (value: string) => void;
+  requiresActorStepUp: boolean;
+  resetPasswordCode: string;
+  setResetPasswordCode: (value: string) => void;
   resetPasswordBusy: boolean;
   onCancelResetPassword: () => void;
   onResetPassword: () => void;
@@ -391,7 +405,12 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Sign-in method</strong>
-            <span>{user.has_sso ? "Identity provider" : "Local password"}</span>
+            {/* Real provider name(s) (e.g. "Authentik", or "Authentik + Cloudflare Access" when
+             * also ZTNA-linked) instead of the generic "Identity provider" - both are just rows
+             * in the same external_identities relation, so a Cloudflare Access link shows up
+             * here automatically rather than being invisible (PO report). Same join style as
+             * AccountTypeField on My Account. */}
+            <span title={signInMethodLabel(user)}>{signInMethodLabel(user)}</span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -402,7 +421,9 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Two-factor</strong>
-            <span>{user.has_mfa ? "Authenticator app enrolled" : "Not set up"}</span>
+            <span title={user.has_mfa ? "Authenticator app enrolled" : "Not set up"}>
+              {user.has_mfa ? "Authenticator app enrolled" : "Not set up"}
+            </span>
           </span>
         </div>
         <div className="users-modal__status-chip">
@@ -416,7 +437,9 @@ function SignInSecuritySection({
           </span>
           <span className="users-modal__status-chip-body">
             <strong>Active sessions</strong>
-            <span>{activeSessionsLabel(user.active_sessions_count)}</span>
+            <span title={activeSessionsLabel(user.active_sessions_count)}>
+              {activeSessionsLabel(user.active_sessions_count)}
+            </span>
           </span>
         </div>
       </div>
@@ -438,7 +461,30 @@ function SignInSecuritySection({
             onChange={(e) => setNewPassword(e.target.value)}
             {...NO_AUTOFILL_PROPS}
           />
-          <p className="form-hint">User sessions will be revoked. They must log in with the new password.</p>
+          {requiresActorStepUp && (
+            <div className="mail-field-row">
+              <label className="mail-field-label" htmlFor="reset-password-actor-code">
+                Your authenticator or backup code
+              </label>
+              <Input
+                id="reset-password-actor-code"
+                name="reset-password-actor-code"
+                type="text"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={resetPasswordCode}
+                disabled={resetPasswordBusy}
+                onChange={(e) => setResetPasswordCode(e.target.value)}
+                {...NO_AUTOFILL_PROPS}
+                autoComplete="one-time-code"
+              />
+            </div>
+          )}
+          <p className="form-hint">
+            User sessions will be revoked. They must log in with the new password.
+            {requiresActorStepUp &&
+              " Resetting another superadmin's password requires your own authenticator or backup code."}
+          </p>
           <div className="users-modal__actions" style={{ justifyContent: "flex-start" }}>
             <Button type="button" variant="secondary" disabled={resetPasswordBusy} onClick={onCancelResetPassword}>
               Cancel
@@ -446,7 +492,11 @@ function SignInSecuritySection({
             <Button
               type="button"
               variant="danger"
-              disabled={resetPasswordBusy || newPassword.length < PASSWORD_MIN_LENGTH}
+              disabled={
+                resetPasswordBusy ||
+                newPassword.length < PASSWORD_MIN_LENGTH ||
+                (requiresActorStepUp && resetPasswordCode.trim().length === 0)
+              }
               onClick={onResetPassword}
             >
               {resetPasswordBusy ? "Resetting…" : "Reset password"}
@@ -512,8 +562,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const [roleChangeConfirmOpen, setRoleChangeConfirmOpen] = useState(false);
   const [resetMfaOpen, setResetMfaOpen] = useState(false);
   const [resetMfaBusy, setResetMfaBusy] = useState(false);
+  const [resetMfaCode, setResetMfaCode] = useState("");
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [resetPasswordCode, setResetPasswordCode] = useState("");
   const [resetPasswordBusy, setResetPasswordBusy] = useState(false);
   const [revokeSessionsOpen, setRevokeSessionsOpen] = useState(false);
   const [revokeSessionsBusy, setRevokeSessionsBusy] = useState(false);
@@ -657,7 +709,12 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // dialog to handle Escape alone (bot review finding; same pattern as EventItemDrawer's own
   // `!deleteConfirmOpen`).
   const anyConfirmDialogOpen =
-    deleteConfirm || disableConfirmOpen || resetMfaOpen || revokeSessionsOpen || unlinkSsoOpen || roleChangeConfirmOpen;
+    deleteConfirm ||
+    disableConfirmOpen ||
+    resetMfaOpen ||
+    revokeSessionsOpen ||
+    unlinkSsoOpen ||
+    roleChangeConfirmOpen;
   useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose);
   const moreActions = useDropdownMenu<HTMLButtonElement>({ align: "end" });
 
@@ -858,8 +915,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     if (!user) return;
     setResetMfaBusy(true);
     try {
-      await resetUserMfa(user.id);
+      await resetUserMfa(user.id, resetMfaCode || undefined);
       setResetMfaOpen(false);
+      setResetMfaCode("");
       onUpdated(user, "Two-factor reset. User must sign in again.");
       onClose();
     } catch (err) {
@@ -874,9 +932,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setResetPasswordBusy(true);
     setError(null);
     try {
-      await resetUserPassword(user.id, { new_password: newPassword });
+      await resetUserPassword(user.id, { new_password: newPassword, code: resetPasswordCode || undefined });
       setResetPasswordOpen(false);
       setNewPassword("");
+      setResetPasswordCode("");
       onUpdated(user, "Password reset. Sessions revoked.");
       onClose();
     } catch (err) {
@@ -968,6 +1027,11 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   // below work over "the" current type, not several.
   const currentRoleType = user.roles[0]?.role ?? "";
   const isRoleTypeChange = newRole !== "" && currentRoleType !== "" && newRole !== currentRoleType;
+
+  // Mirrors the server's actorMustStepUpForReset (apps/web/src/admin/users-routes.ts): resetting
+  // another superadmin's 2FA/password requires the acting superadmin to prove themselves with
+  // their own TOTP/recovery code first, so the reset dialogs below show that field only then.
+  const requiresActorStepUp = !isSelf && currentRoleType === "superadmin";
 
   /** Resolves a role assignment's raw scope_id to the human label shown elsewhere in the admin
    * (event title / organization name) - this modal already fetches both lists for the "assign
@@ -1092,10 +1156,17 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
         <div ref={scrollRef} className="add-attendee-modal__scroll">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
-              <Avatar name={displayTitle} size="sm" />
+              {/* Default (md, 36px) to match .identity-row-icon's size - the standard other
+               * modal headers use for their leading icon (identity-editor__header-title). */}
+              <Avatar name={displayTitle} />
               <div className="users-modal__head-text">
                 <h2 id={titleId}>{displayTitle}</h2>
-                <span className="users-modal__head-email">{user.email}</span>
+                {/* displayTitle already falls back to user.email when there's no display_name -
+                 * showing this line too would repeat the exact same string right under itself
+                 * (PO report), on top of the Email address field further down the form. */}
+                {user.display_name?.trim() && (
+                  <span className="users-modal__head-email">{user.email}</span>
+                )}
               </div>
             </div>
             <div className="users-modal__head-actions">
@@ -1204,10 +1275,14 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
               resetPasswordTitleId={resetPasswordTitleId}
               newPassword={newPassword}
               setNewPassword={setNewPassword}
+              requiresActorStepUp={requiresActorStepUp}
+              resetPasswordCode={resetPasswordCode}
+              setResetPasswordCode={setResetPasswordCode}
               resetPasswordBusy={resetPasswordBusy}
               onCancelResetPassword={() => {
                 setResetPasswordOpen(false);
                 setNewPassword("");
+                setResetPasswordCode("");
               }}
               onResetPassword={() => void handleResetPassword()}
             />
@@ -1264,15 +1339,42 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={resetMfaOpen}
         title="Reset two-factor"
-        message="This will remove all two-factor methods and revoke all sessions for this user."
+        message={
+          requiresActorStepUp
+            ? "This will remove all two-factor methods and revoke all sessions for this user. Resetting another superadmin's two-factor requires your own authenticator or backup code."
+            : "This will remove all two-factor methods and revoke all sessions for this user."
+        }
         confirmLabel="Reset"
         confirmVariant="danger"
         loading={resetMfaBusy}
+        disableConfirm={requiresActorStepUp && resetMfaCode.trim().length === 0}
         onConfirm={() => void handleResetMfa()}
         onCancel={() => {
-          if (!resetMfaBusy) setResetMfaOpen(false);
+          if (resetMfaBusy) return;
+          setResetMfaOpen(false);
+          setResetMfaCode("");
         }}
-      />
+      >
+        {requiresActorStepUp && (
+          <div className="mail-field-row">
+            <label className="mail-field-label" htmlFor="reset-mfa-actor-code">
+              Your authenticator or backup code
+            </label>
+            <Input
+              id="reset-mfa-actor-code"
+              name="reset-mfa-actor-code"
+              type="text"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={resetMfaCode}
+              disabled={resetMfaBusy}
+              onChange={(e) => setResetMfaCode(e.target.value)}
+              {...NO_AUTOFILL_PROPS}
+              autoComplete="one-time-code"
+            />
+          </div>
+        )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={revokeSessionsOpen}
@@ -1290,7 +1392,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={unlinkSsoOpen}
         title="Unlink identity provider"
-        message={`Unlink the identity provider for ${displayTitle}? Set the new local password they'll sign in with below - their identity-provider sign-in stops working immediately.`}
+        message={`Unlink the identity provider for ${displayTitle}? Set the new local password they'll sign in with below - their identity-provider sign-in stops working immediately, and this also signs them out of every active session and trusted device.`}
         errorMessage={unlinkSsoError}
         confirmLabel="Unlink"
         confirmVariant="danger"

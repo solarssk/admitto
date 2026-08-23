@@ -32,6 +32,22 @@ describe("wallet / ticket mark assets", () => {
     }
   });
 
+  it("serves PNG wallet badges for email (classic Outlook doesn't render SVG <img> sources)", async () => {
+    const app = createApp();
+    for (const path of ["/assets/apple-wallet-badge.png", "/assets/google-wallet-badge.png"]) {
+      const res = await app.request(path);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("content-type"), path).toBe("image/png");
+      expect(res.headers.get("x-content-type-options"), path).toBe("nosniff");
+      const body = Buffer.from(await res.arrayBuffer());
+      expect(body.subarray(0, 8), path).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      // Second hit exercises the in-memory asset cache path.
+      const cached = await app.request(path);
+      expect(cached.status, path).toBe(200);
+      expect(Buffer.from(await cached.arrayBuffer())).toEqual(body);
+    }
+  });
+
   it("does not serve unknown files under the wallet allowlist handlers", async () => {
     // Exact routes only - a random asset path is not registered here.
     const app = createApp();

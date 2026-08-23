@@ -21,6 +21,17 @@ export type OutsideInteraction = "pointer" | "focus" | "scroll";
 export function resolvesInsideContainer(target: EventTarget | null, container: HTMLElement | null): boolean {
   if (!container || !(target instanceof Node)) return false;
   if (container.contains(target)) return true;
+  // A mousedown on non-focusable content inside the container (e.g. this field's own <label>,
+  // which isn't itself focusable) makes the browser fall back to focusing the nearest focusable
+  // ancestor - every modal in this app is a native <dialog> (21 call sites), which is itself
+  // focusable - firing a focusin whose target is the enclosing <dialog>, an ancestor of this
+  // container, rather than a sibling control the user actually chose. That fallback focus is not
+  // a real "click away": treating it as outside closed the panel mid-press, and the label's own
+  // forwarded click then reopened it on release, flickering closed-then-open on every held click
+  // near the label inside a modal (PO report, Attendee/Event edit modals). Scoped to <dialog>
+  // specifically, not any ancestor - document.body contains every container on the page, so a
+  // blanket ancestor check would silently disable outside-click detection everywhere.
+  if (target instanceof HTMLDialogElement && target.contains(container)) return true;
   const forId = target instanceof Element ? target.closest("label")?.htmlFor : undefined;
   const labelled = forId ? document.getElementById(forId) : null;
   return !!labelled && container.contains(labelled);

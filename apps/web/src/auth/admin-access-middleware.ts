@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import type { IdentityProvider, PrismaClient } from "@admitto/db";
+import type { JWTPayload } from "jose";
 import { getCookie } from "hono/cookie";
 import {
   SESSION_COOKIE_NAME,
@@ -10,23 +11,35 @@ import {
   validateAccessJwt,
   CfAccessJwtError,
   findCloudflareAccessProvider,
-  resolveOrCreateUserFromExternalIdentity,
+  resolveCfAccessIdentityFromValidatedJwt,
   ExternalIdentityLinkError,
   extractClaims,
-  applyOidcGroupRoleMappings,
+  type ExternalIdentityClaims,
   logCfAccessAuth,
   logAccessDenied,
   type CfAccessConfig,
-  type ExternalIdentityClaims,
 } from "@admitto/auth";
 import { resolveStaffEntryPath } from "../setup-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
+import { renderForbidden } from "../ticket-page.js";
+import { getStaffSpaSecurityHeaders } from "../staff-spa.js";
 
 const CF_ACCESS_FORBIDDEN_MESSAGE =
-  "authenticated via Cloudflare Access, but this account has no admin access";
+  "You signed in through Cloudflare Access, but this account has no admin access.";
+const NO_SUPERADMIN_MESSAGE = "Your account does not have the access needed for this page.";
+const INVALID_CF_ACCESS_MESSAGE =
+  "Your Cloudflare Access sign-in could not be verified. Sign in again, or contact your administrator if this continues.";
 
 function isApiAdminPath(path: string): boolean {
   return path === "/api/admin" || path.startsWith("/api/admin/");
+}
+
+/** Styled 403 for a top-level browser navigation - the specific reason stays in System logs. */
+function htmlForbidden(c: Context, message: string): Response {
+  for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+    c.header(name, value);
+  }
+  return c.html(renderForbidden(message), 403);
 }
 
 async function loginBoundaryResponse(c: Context, prisma: PrismaClient): Promise<Response> {
@@ -41,26 +54,29 @@ function rejectInvalidJwt(c: Context, reason: string): Response {
   if (isApiAdminPath(c.req.path)) {
     return c.json({ error: "cf_access_jwt_invalid" }, 403);
   }
-  return c.text("Forbidden", 403);
+  return htmlForbidden(c, INVALID_CF_ACCESS_MESSAGE);
 }
 
-/** Resolve (or JIT-create) the local user for a validated CF Access identity. */
-async function resolveCfAccessIdentity(
+/** Resolve the local user only through the configured direct OIDC identity binding. */
+async function resolveCfAccessPrincipal(
   c: Context,
   prisma: PrismaClient,
+  config: CfAccessConfig,
   provider: IdentityProvider,
   subject: string,
+  payload: JWTPayload,
   claims: ExternalIdentityClaims,
   path: string,
 ): Promise<{ userId: string } | { response: Response }> {
   try {
-    const resolved = await resolveOrCreateUserFromExternalIdentity(
-      prisma,
-      provider,
-      subject,
+    const resolved = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+      config,
+      cloudflareProvider: provider,
+      cloudflareSubject: subject,
+      payload,
       claims,
-    );
-    return { userId: resolved.user.id };
+    });
+    return { userId: resolved.userId };
   } catch (err) {
     const reason =
       err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";
@@ -96,14 +112,20 @@ async function handleCfAccessToken(
     }
 
     const claims = extractClaims(payload, provider);
-    const resolution = await resolveCfAccessIdentity(c, prisma, provider, subject, claims, path);
+    const resolution = await resolveCfAccessPrincipal(
+      c,
+      prisma,
+      config,
+      provider,
+      subject,
+      payload,
+      claims,
+      path,
+    );
     if ("response" in resolution) {
       return resolution.response;
     }
     const { userId } = resolution;
-
-    // Reconcile grants against current mapping rules (revocation when rules or groups change).
-    await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
 
     // Set as soon as the identity is resolved, before the admin-role check below - a denied
     // request here is still a known, verified actor, and request-log's IP attribution
@@ -119,7 +141,10 @@ async function handleCfAccessToken(
         subject,
         path,
       });
-      return c.text(CF_ACCESS_FORBIDDEN_MESSAGE, 403);
+      if (isApiAdminPath(path)) {
+        return c.json({ error: "cf_access_no_admin_access" }, 403);
+      }
+      return htmlForbidden(c, CF_ACCESS_FORBIDDEN_MESSAGE);
     }
 
     logCfAccessAuth({
@@ -192,7 +217,7 @@ async function sessionSuperadminGate(
     if (isApiAdminPath(c.req.path)) {
       return c.json({ error: "forbidden" }, 403);
     }
-    return c.text("Forbidden", 403);
+    return htmlForbidden(c, NO_SUPERADMIN_MESSAGE);
   }
   c.set("auth", {
     userId: validated.userId,

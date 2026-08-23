@@ -1,9 +1,11 @@
 # Sending Messages and Delivery
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Administrator |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.2 |
 
 ## What this page helps you do
 
@@ -35,7 +37,7 @@ The batch completes with a recorded status for every attempted delivery. The del
 | No delivery for this template | Attendees without a queued or successful delivery for the selected template. For the ticket template, this means no active initial ticket delivery. Failed, bounced, or rejected attempts do not count as successful delivery. |
 | By attendance status | Attendees whose current attendance status matches the selected status. |
 | By ticket type | Attendees whose stored ticket type matches the selected configured type. |
-| Specific attendees | Search by name or email and pick individual attendees one at a time. Use this for a small, named group instead of a broad filter. |
+| Specific attendees | Search by name or email and pick individual attendees one at a time, or check them directly in the **Attendees** list. Use this for a small, named group instead of a broad filter. Like **All attendees**, previous delivery does not exclude anyone selected this way: an attendee who already has a ticket gets a resend, and an attendee who does not gets a first ticket, in the same action. |
 
 Custom-template bulk sends are recorded as resends. A recipient count is a dry run and sends nothing.
 
@@ -55,3 +57,4 @@ Sending creates delivery records and can issue the attendee's ticket when needed
 - [Email Templates](Email-Templates)
 - [Email Delivery Statuses](Email-Delivery-Statuses)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
+- [Sending Wallet Messages](Sending-Wallet-Messages)

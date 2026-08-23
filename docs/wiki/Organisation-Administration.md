@@ -1,9 +1,11 @@
 # Organisation Administration
 
-> **Audience:** Organisation Admins
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | Organisation Admins |
+| **Required role** | Administrator |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 
@@ -15,7 +17,7 @@ Confirm that your account has the Admin role for the organisation that owns the 
 
 ## Steps
 
-1. Open **Events** to see active and archived events in your organisation. Each card shows a map preview when maps are enabled and the event has a pin, a short status (for example **Needs archiving**, **Today**, or **In N days**), location, attendee count, and a weather chip on the map when weather is enabled and the event has coordinates (temperature within the active provider horizon, or “Forecast available N days before the event” further out). The chip uses °C or °F from your computer’s timezone (`Europe/…` → °C, typical US/Americas zones → °F), not the browser language. Archive and restore stay in **Event settings** / organisation Event archiving, not on the card.
+1. Open **Events** to see active and archived events in your organisation. Each card shows a map preview when maps are enabled and the event has a pin, a short status (for example **Needs archiving**, **Today**, or **In N days**), location, attendee count, and a weather chip on the map when weather is enabled and the event has coordinates (temperature within the active provider horizon, or “Forecast available N days before the event” further out). The chip always shows temperature in Celsius. Archive and restore stay in **Event settings** / organisation Event archiving, not on the card.
 2. Create events and manage their attendees, requirements, communication, reports, and settings.
 3. Open **Users & roles** to review assignments available to your administration scope.
 4. Give operators event-scoped access only to the events where they work.
@@ -29,7 +31,7 @@ The Organisation Admin can manage organisation events and their staff access but
 
 - An **organisation** owns events. An **event** owns attendees, operator assignments, requirements, templates, and check-in history.
 - Organisation Admin access applies only to events in the assigned organisation.
-- Event **Mailing** and **Integrations** tabs are Superadmin-only, even when other event settings are available to Organisation Admins.
+- Event **Mailing**, **Wallet**, and **Integrations** tabs are Superadmin-only, even when other event settings are available to Organisation Admins.
 - Map thumbnails on the Events list show a **© OpenStreetMap** credit on the card. Ticket and mail maps still burn the credit into the PNG. CARTO appears in that burn-in only if you configure CARTO tiles under Organisation Settings → External services.
 
 ## What changes after this action

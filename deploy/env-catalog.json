@@ -548,6 +548,24 @@
       "summary": "Fail export AdminJobs stuck in running after this many ms (default 15 minutes)."
     },
     {
+      "name": "WALLET_PUSH_JOB_STALE_RUNNING_MS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Fail wallet_push AdminJobs stuck in running after this many ms (default 30 minutes)."
+    },
+    {
+      "name": "WALLET_MESSAGE_JOB_STALE_RUNNING_MS",
+      "group": "worker",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Fail wallet_message AdminJobs stuck in running after this many ms (default 30 minutes)."
+    },
+    {
       "name": "OPS_HEALTH_TOKEN",
       "group": "ops",
       "boot": "optional",
@@ -669,9 +687,18 @@
       "group": "identity",
       "boot": "optional",
       "consumers": ["app"],
-      "secret": true,
+      "secret": false,
       "ui": "Settings → Identity",
-      "summary": "Cloudflare Access application audience tag."
+      "summary": "Cloudflare Access application audience tag; this is not a bearer token or client secret."
+    },
+    {
+      "name": "CF_ACCESS_SOURCE_PROVIDER_ID",
+      "group": "identity",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "Settings → Identity",
+      "summary": "ID of the direct OIDC provider whose immutable subject is forwarded by Cloudflare Access for safe staff SSO linking."
     },
     {
       "name": "CF_ACCESS_PROTECTED_PREFIXES",

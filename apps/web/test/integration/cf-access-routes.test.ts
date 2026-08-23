@@ -1,8 +1,10 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Hono } from "hono";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
+import { createAdminAccessMiddleware } from "../../src/auth/admin-access-middleware.js";
 import {
   hashPassword,
   createSession,
@@ -10,6 +12,7 @@ import {
   SETTING_CF_ACCESS_ENABLED,
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
+  SETTING_CF_ACCESS_SOURCE_PROVIDER_ID,
   clearCfAccessRuntimeConfigCache,
   clearCfAccessJwksCacheForTests,
 } from "@admitto/auth";
@@ -28,18 +31,27 @@ const SUPER_ID = "cf-superadmin";
 const NO_ROLE_ID = "cf-norole";
 const SUPER_EMAIL = "cf-super@example.com";
 const NO_ROLE_EMAIL = "cf-norole@example.com";
+const AUTHENTIK_SOURCE_PROVIDER_ID = "cf-authentik-source";
+const AUTHENTIK_SUPER_SUBJECT = "authentik-super-user-uuid";
+const AUTHENTIK_NO_ROLE_SUBJECT = "authentik-no-role-user-uuid";
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let mock: MockCfAccess;
 let superCookie: string;
+let cfAccessProviderId: string;
 
 async function seedCfSettings(): Promise<void> {
   await prisma.systemSettings.upsert({
     where: { key: SETTING_CF_ACCESS_ENABLED },
     create: { key: SETTING_CF_ACCESS_ENABLED, value_json: "true" },
     update: { value_json: "true" },
+  });
+  await prisma.systemSettings.upsert({
+    where: { key: SETTING_CF_ACCESS_SOURCE_PROVIDER_ID },
+    create: { key: SETTING_CF_ACCESS_SOURCE_PROVIDER_ID, value_json: JSON.stringify(AUTHENTIK_SOURCE_PROVIDER_ID) },
+    update: { value_json: JSON.stringify(AUTHENTIK_SOURCE_PROVIDER_ID) },
   });
   await prisma.systemSettings.upsert({
     where: { key: SETTING_CF_ACCESS_TEAM_DOMAIN },
@@ -58,7 +70,17 @@ beforeAll(async () => {
   mock = await startMockCfAccess();
   prisma = createTestPrismaClient();
 
-  await prisma.externalIdentity.deleteMany();
+  await prisma.externalIdentity.deleteMany({
+    where: {
+      OR: [
+        { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID },
+        { provider: { provider_type: "cloudflare_access" } },
+      ],
+    },
+  });
+  await prisma.identityProvider.deleteMany({
+    where: { id: AUTHENTIK_SOURCE_PROVIDER_ID },
+  });
   await prisma.identityProvider.deleteMany({ where: { provider_type: "cloudflare_access" } });
   await prisma.userMfaMethod.deleteMany({ where: { user_id: { in: [SUPER_ID, NO_ROLE_ID] } } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: { in: [SUPER_ID, NO_ROLE_ID] } } });
@@ -74,6 +96,37 @@ beforeAll(async () => {
   });
   await prisma.roleAssignment.create({
     data: { user_id: SUPER_ID, role: "superadmin", scope_type: "instance", scope_id: null },
+  });
+
+  const sourceProvider = await prisma.identityProvider.create({
+    data: {
+      id: AUTHENTIK_SOURCE_PROVIDER_ID,
+      provider_type: "oidc",
+      issuer: "https://authentik.test/application/o/admitto/",
+      client_id: "admitto-direct-oidc",
+      authorization_endpoint: "https://authentik.test/application/o/authorize/",
+      token_endpoint: "https://authentik.test/application/o/token/",
+      jwks_uri: "https://authentik.test/application/o/jwks/",
+      display_name: "Authentik direct",
+      enabled: true,
+      claim_groups: "admitto_groups",
+    },
+  });
+  await prisma.externalIdentity.createMany({
+    data: [
+      {
+        provider_id: sourceProvider.id,
+        subject: AUTHENTIK_SUPER_SUBJECT,
+        user_id: SUPER_ID,
+        email: SUPER_EMAIL,
+      },
+      {
+        provider_id: sourceProvider.id,
+        subject: AUTHENTIK_NO_ROLE_SUBJECT,
+        user_id: NO_ROLE_ID,
+        email: NO_ROLE_EMAIL,
+      },
+    ],
   });
 
   await prisma.userMfaMethod.create({
@@ -105,23 +158,7 @@ beforeAll(async () => {
       enabled: true,
     },
   });
-  await prisma.externalIdentity.create({
-    data: {
-      provider_id: provider.id,
-      subject: "cf-super-sub",
-      user_id: SUPER_ID,
-      email: SUPER_EMAIL,
-    },
-  });
-  await prisma.externalIdentity.create({
-    data: {
-      provider_id: provider.id,
-      subject: "cf-norole-sub",
-      user_id: NO_ROLE_ID,
-      email: NO_ROLE_EMAIL,
-    },
-  });
-
+  cfAccessProviderId = provider.id;
   app = createApp({
     prisma,
     skipCheckinBootValidation: true,
@@ -132,12 +169,24 @@ beforeAll(async () => {
 
 afterAll(async () => {
   clearCfAccessJwksCacheForTests();
-  await stopMockCfAccess(mock);
   // Remove the CF Access settings seeded above. SystemSettings is instance-wide state in the
   // shared admitto_web_test database - identity-api-routes.test.ts's team_domain_required test
   // requires these keys to be absent, and file order is not guaranteed (the sequencer sorts by
   // cached timings), so leaving them behind made that test fail intermittently.
   await prisma.systemSettings.deleteMany({ where: { key: { startsWith: "cf_access_" } } });
+  // The provider and identities are also shared test-database state. Leaving the direct OIDC
+  // fixture behind makes unrelated account-route tests offer it as a connectable provider.
+  await prisma.externalIdentity.deleteMany({
+    where: { provider_id: { in: [AUTHENTIK_SOURCE_PROVIDER_ID, cfAccessProviderId] } },
+  });
+  await prisma.identityProvider.deleteMany({
+    where: { id: { in: [AUTHENTIK_SOURCE_PROVIDER_ID, cfAccessProviderId] } },
+  });
+  await prisma.userMfaMethod.deleteMany({ where: { user_id: { in: [SUPER_ID, NO_ROLE_ID] } } });
+  await prisma.roleAssignment.deleteMany({ where: { user_id: { in: [SUPER_ID, NO_ROLE_ID] } } });
+  await prisma.session.deleteMany({ where: { user_id: { in: [SUPER_ID, NO_ROLE_ID] } } });
+  await prisma.user.deleteMany({ where: { id: { in: [SUPER_ID, NO_ROLE_ID] } } });
+  await stopMockCfAccess(mock);
   await prisma.$disconnect();
 });
 
@@ -227,7 +276,11 @@ describe("CF Access admin collision point", () => {
   });
 
   it("valid CF JWT + superadmin renders SPA shell without login redirect", async () => {
-    const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-super-sub",
+      email: SUPER_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+    });
     const res = await app.request("/admin", {
       headers: { [CF_ACCESS_HEADER]: token },
     });
@@ -237,7 +290,11 @@ describe("CF Access admin collision point", () => {
   });
 
   it("allows a Cloudflare Access superadmin to use the superadmin-only identity API", async () => {
-    const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-super-sub",
+      email: SUPER_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+    });
     const res = await app.request("/api/admin/identity/providers", {
       headers: { [CF_ACCESS_HEADER]: token },
     });
@@ -246,7 +303,11 @@ describe("CF Access admin collision point", () => {
   });
 
   it("CF JWT without session bootstraps admin SPA and /api/admin/* APIs", async () => {
-    const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-super-sub",
+      email: SUPER_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+    });
     const headers = { [CF_ACCESS_HEADER]: token };
 
     const spa = await app.request("/admin", { headers });
@@ -259,6 +320,11 @@ describe("CF Access admin collision point", () => {
     expect(meBody.user.email).toBe(SUPER_EMAIL);
     expect(meBody.session_active).toBe(false);
 
+    const cfIdentity = await prisma.externalIdentity.findUnique({
+      where: { provider_id_subject: { provider_id: (await prisma.identityProvider.findFirstOrThrow({ where: { provider_type: "cloudflare_access" } })).id, subject: "cf-super-sub" } },
+    });
+    expect(cfIdentity?.user_id).toBe(SUPER_ID);
+
     const theme = await app.request("/api/admin/theme", { headers });
     expect(theme.status).toBe(200);
 
@@ -266,19 +332,148 @@ describe("CF Access admin collision point", () => {
     expect(legacyMe.status).toBe(401);
   });
 
-  it("valid CF JWT + no role returns 403 message", async () => {
+  it("valid CF JWT + no role returns 403 JSON on the API path", async () => {
     const token = await signCfAccessJwt(mock, {
       sub: "cf-norole-sub",
       email: NO_ROLE_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
     });
-    // Probe a requireAdminAccess-gated route: the CF no-role branch returns the
-    // CF-specific text body (staffAdminGate on /admin returns a generic Forbidden).
+    // requireAdminAccess is only ever mounted on /api/admin/identity/* (staffAdminGate covers
+    // /admin's own, separate no-role case with the branded page instead).
     const res = await app.request("/api/admin/identity/providers", {
       headers: { [CF_ACCESS_HEADER]: token },
     });
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "cf_access_no_admin_access" });
+  });
+
+  it("valid CF JWT + no role on the SPA path shows the styled Access denied page", async () => {
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-norole-spa-sub",
+      email: NO_ROLE_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+    });
+    const res = await app.request("/admin", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+    expect(res.status).toBe(403);
     const text = await res.text();
-    expect(text).toContain("authenticated via Cloudflare Access");
+    expect(text).toContain("Your account does not have access to the admin panel.");
+  });
+
+  it("reconciles source-provider group grants on every Cloudflare Access sign-in", async () => {
+    const group = "cf-managed-superadmins";
+    const subject = "cf-group-sync-sub";
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+        group,
+        role: "superadmin",
+        scope_type: "instance",
+        scope_id: "",
+      },
+    });
+
+    try {
+      const grantedToken = await signCfAccessJwt(mock, {
+        sub: subject,
+        email: NO_ROLE_EMAIL,
+        custom: {
+          admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT,
+          admitto_groups: [group],
+        },
+      });
+      const granted = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: grantedToken },
+      });
+      expect(granted.status).toBe(200);
+      expect(
+        await prisma.oidcRoleGrant.count({
+          where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, user_id: NO_ROLE_ID },
+        }),
+      ).toBe(1);
+
+      const revokedToken = await signCfAccessJwt(mock, {
+        sub: subject,
+        email: NO_ROLE_EMAIL,
+        custom: {
+          admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT,
+          admitto_groups: [],
+        },
+      });
+      const revoked = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: revokedToken },
+      });
+      expect(revoked.status).toBe(403);
+      expect(
+        await prisma.oidcRoleGrant.count({
+          where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, user_id: NO_ROLE_ID },
+        }),
+      ).toBe(0);
+      await expect(
+        prisma.externalIdentity.findUniqueOrThrow({
+          where: {
+            provider_id_subject: {
+              provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+              subject: AUTHENTIK_NO_ROLE_SUBJECT,
+            },
+          },
+          select: { groups: true },
+        }),
+      ).resolves.toEqual({ groups: [] });
+    } finally {
+      await prisma.oidcGroupRoleMapping.deleteMany({
+        where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, group },
+      });
+      await prisma.roleAssignment.deleteMany({
+        where: { user_id: NO_ROLE_ID, role: "superadmin", scope_type: "instance" },
+      });
+      await prisma.externalIdentity.update({
+        where: {
+          provider_id_subject: {
+            provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+            subject: AUTHENTIK_NO_ROLE_SUBJECT,
+          },
+        },
+        data: { groups: [] },
+      });
+    }
+  });
+
+  it("fails closed when a mapped source group claim was not copied into the Access JWT", async () => {
+    const group = "cf-required-group-claim";
+    const subject = "cf-missing-group-claim-sub";
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: AUTHENTIK_SOURCE_PROVIDER_ID,
+        group,
+        role: "superadmin",
+        scope_type: "instance",
+        scope_id: "",
+      },
+    });
+
+    try {
+      const token = await signCfAccessJwt(mock, {
+        sub: subject,
+        email: NO_ROLE_EMAIL,
+        custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+      });
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+      expect(
+        await prisma.oidcRoleGrant.count({
+          where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, user_id: NO_ROLE_ID },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.oidcGroupRoleMapping.deleteMany({
+        where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, group },
+      });
+    }
   });
 
   it("invalid CF JWT rejects even with valid session", async () => {
@@ -303,7 +498,7 @@ describe("CF Access admin collision point", () => {
     expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
   });
 
-  it("rejects CF JWT when email matches existing user without ExternalIdentity (no auto-link)", async () => {
+  it("rejects a canonical claim not linked through the selected source even when its email matches a local user", async () => {
     const orphanId = "cf-orphan-admin";
     const orphanEmail = "cf-orphan-admin@example.com";
     await prisma.roleAssignment.deleteMany({ where: { user_id: orphanId } });
@@ -320,7 +515,11 @@ describe("CF Access admin collision point", () => {
         data: { user_id: orphanId, role: "superadmin", scope_type: "instance", scope_id: null },
       });
 
-      const token = await signCfAccessJwt(mock, { sub: "cf-orphan-sub", email: orphanEmail });
+      const token = await signCfAccessJwt(mock, {
+        sub: "cf-orphan-sub",
+        email: orphanEmail,
+        custom: { admitto_identity: "unlinked-authentik-user-uuid" },
+      });
       const staffPage = await app.request("/admin", {
         headers: { [CF_ACCESS_HEADER]: token },
       });
@@ -331,6 +530,11 @@ describe("CF Access admin collision point", () => {
       });
       expect(res.status).toBe(403);
       expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+      expect(
+        await prisma.externalIdentity.findFirst({
+          where: { provider_id: AUTHENTIK_SOURCE_PROVIDER_ID, subject: "unlinked-authentik-user-uuid" },
+        }),
+      ).toBeNull();
     } finally {
       await prisma.roleAssignment.deleteMany({ where: { user_id: orphanId } });
       await prisma.user.deleteMany({ where: { id: orphanId } });
@@ -346,6 +550,98 @@ describe("CF Access admin collision point", () => {
     expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
   });
 
+  it("rejects a valid JWT without canonical identity on both the SPA and privileged API without creating a link", async () => {
+    const token = await signCfAccessJwt(mock, { sub: "cf-missing-identity-sub", email: SUPER_EMAIL });
+    const headers = { [CF_ACCESS_HEADER]: token };
+
+    const staffPage = await app.request("/admin", { headers });
+    expect(staffPage.status).toBe(403);
+    const api = await app.request("/api/admin/identity/providers", { headers });
+    expect(api.status).toBe(403);
+    expect(await api.json()).toEqual({ error: "cf_access_jwt_invalid" });
+
+    const provider = await prisma.identityProvider.findFirstOrThrow({
+      where: { provider_type: "cloudflare_access" },
+    });
+    expect(
+      await prisma.externalIdentity.findUnique({
+        where: { provider_id_subject: { provider_id: provider.id, subject: "cf-missing-identity-sub" } },
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects a Cloudflare subject already bound to another local user", async () => {
+    const provider = await prisma.identityProvider.findFirstOrThrow({
+      where: { provider_type: "cloudflare_access" },
+    });
+    await prisma.externalIdentity.create({
+      data: {
+        provider_id: provider.id,
+        subject: "cf-collision-sub",
+        user_id: NO_ROLE_ID,
+        email: NO_ROLE_EMAIL,
+      },
+    });
+    try {
+      const token = await signCfAccessJwt(mock, {
+        sub: "cf-collision-sub",
+        email: SUPER_EMAIL,
+        custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+      });
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+    } finally {
+      await prisma.externalIdentity.delete({
+        where: { provider_id_subject: { provider_id: provider.id, subject: "cf-collision-sub" } },
+      });
+    }
+  });
+
+  it("rejects a CF JWT when the configured source provider is disabled", async () => {
+    await prisma.identityProvider.update({
+      where: { id: AUTHENTIK_SOURCE_PROVIDER_ID },
+      data: { enabled: false },
+    });
+    try {
+      const token = await signCfAccessJwt(mock, {
+        sub: "cf-source-disabled-sub",
+        email: SUPER_EMAIL,
+        custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+      });
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+    } finally {
+      await prisma.identityProvider.update({
+        where: { id: AUTHENTIK_SOURCE_PROVIDER_ID },
+        data: { enabled: true },
+      });
+    }
+  });
+
+  it("rejects a CF JWT when its linked source account is inactive", async () => {
+    await prisma.user.update({ where: { id: NO_ROLE_ID }, data: { is_active: false } });
+    try {
+      const token = await signCfAccessJwt(mock, {
+        sub: "cf-source-user-inactive-sub",
+        email: NO_ROLE_EMAIL,
+        custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+      });
+      const res = await app.request("/api/admin/identity/providers", {
+        headers: { [CF_ACCESS_HEADER]: token },
+      });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "cf_access_jwt_invalid" });
+    } finally {
+      await prisma.user.update({ where: { id: NO_ROLE_ID }, data: { is_active: true } });
+    }
+  });
+
   it("rejects CF JWTs while the Cloudflare Access provider is disabled", async () => {
     const provider = await prisma.identityProvider.findFirstOrThrow({
       where: { provider_type: "cloudflare_access" },
@@ -353,7 +649,11 @@ describe("CF Access admin collision point", () => {
     await prisma.identityProvider.update({ where: { id: provider.id }, data: { enabled: false } });
 
     try {
-      const token = await signCfAccessJwt(mock, { sub: "cf-super-sub", email: SUPER_EMAIL });
+      const token = await signCfAccessJwt(mock, {
+        sub: "cf-super-sub",
+        email: SUPER_EMAIL,
+        custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+      });
       const staffPage = await app.request("/admin", {
         headers: { [CF_ACCESS_HEADER]: token },
       });
@@ -369,6 +669,26 @@ describe("CF Access admin collision point", () => {
     }
   });
 
+  it("a Cloudflare Access identity can reach the check-in API, not just /admin", async () => {
+    // The header is attached manually below, same as every other test in this file - it proves
+    // Admitto's own pre-auth accepts a valid CF Access identity here, not that Cloudflare will
+    // actually forward one for /api/checkin out of the box. That still requires the operator to
+    // add /api/checkin to the real Cloudflare Access application's own path match, separately
+    // from Admitto's Protected URL paths setting - see docs/wiki/Cloudflare-Access-Identity-Linking.md.
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-checkin-sub",
+      email: SUPER_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_SUPER_SUBJECT },
+    });
+    // No eventId query param - proves this got past auth (createCheckinPreAuth) and into event
+    // scoping (createCheckinEventScope), not a 401. The scan endpoint shares the same pre-auth.
+    const res = await app.request("/api/checkin/history", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
   it("public /login does not require CF JWT", async () => {
     const res = await app.request("/login");
     expect(res.status).toBe(200);
@@ -377,5 +697,73 @@ describe("CF Access admin collision point", () => {
   it("public /t does not require CF JWT", async () => {
     const res = await app.request("/t/nonexistent-token");
     expect(res.status).not.toBe(401);
+  });
+});
+
+// requireAdminAccess (createAdminAccessMiddleware) is only ever mounted on /api/admin/identity/*
+// routes in app.ts, so its own non-API HTML branches never see real traffic there. Exercised here
+// directly, on a standalone Hono app mounting the same exported middleware on an arbitrary
+// non-API path, to cover the defensive HTML fallback every other gate in this codebase also has.
+describe("createAdminAccessMiddleware HTML fallback (no /api/admin caller today)", () => {
+  it("rejects an invalid CF JWT on a non-API path with the styled Access denied page", async () => {
+    const isolatedApp = new Hono();
+    isolatedApp.get("/not-an-api-path", createAdminAccessMiddleware(prisma), (c) => c.text("ok"));
+
+    const res = await isolatedApp.request("/not-an-api-path", {
+      headers: { [CF_ACCESS_HEADER]: "not.a.jwt" },
+    });
+
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).toContain("Your Cloudflare Access sign-in could not be verified");
+  });
+
+  it("rejects a break-glass session without the superadmin role on a non-API path", async () => {
+    await prisma.systemSettings.update({
+      where: { key: SETTING_CF_ACCESS_ENABLED },
+      data: { value_json: "false" },
+    });
+    clearCfAccessRuntimeConfigCache();
+    const { rawToken } = await createSession(prisma, {
+      userId: NO_ROLE_ID,
+      stage: SESSION_STAGE.FULL,
+    });
+    try {
+      const isolatedApp = new Hono();
+      isolatedApp.get("/not-an-api-path", createAdminAccessMiddleware(prisma), (c) => c.text("ok"));
+
+      const res = await isolatedApp.request("/not-an-api-path", {
+        headers: { Cookie: `admitto_session=${rawToken}` },
+      });
+
+      expect(res.status).toBe(403);
+      const text = await res.text();
+      expect(text).toContain("Your account does not have the access needed for this page.");
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: NO_ROLE_ID } });
+      await prisma.systemSettings.update({
+        where: { key: SETTING_CF_ACCESS_ENABLED },
+        data: { value_json: "true" },
+      });
+      clearCfAccessRuntimeConfigCache();
+    }
+  });
+
+  it("rejects a resolved CF identity without the superadmin role on a non-API path", async () => {
+    const token = await signCfAccessJwt(mock, {
+      sub: "cf-norole-html-sub",
+      email: NO_ROLE_EMAIL,
+      custom: { admitto_identity: AUTHENTIK_NO_ROLE_SUBJECT },
+    });
+    const isolatedApp = new Hono();
+    isolatedApp.get("/not-an-api-path", createAdminAccessMiddleware(prisma), (c) => c.text("ok"));
+
+    const res = await isolatedApp.request("/not-an-api-path", {
+      headers: { [CF_ACCESS_HEADER]: token },
+    });
+
+    expect(res.status).toBe(403);
+    const text = await res.text();
+    expect(text).toContain("Cloudflare Access, but this account has no admin access");
   });
 });

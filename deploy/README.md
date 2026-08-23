@@ -399,11 +399,11 @@ Set `TRUST_PROXY=true` and `TRUSTED_PROXY_CIDRS` in `deploy/.env`.
 
 ## Cloudflare and WireGuard
 
-See [`../../_ops/design/deployment-cloudflare-access.md`](../../_ops/design/deployment-cloudflare-access.md) for:
+Key points for this deployment model:
 
 - Path classification (what stays bypass vs Access-protected)
 - Origin invariant: reachable only via Cloudflare or WireGuard tunnel
-- Pre-linking admins before enabling `CF_ACCESS_ENABLED`
+- Pre-linking staff identities and selecting the direct OIDC source before enabling `CF_ACCESS_ENABLED`
 
 Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 

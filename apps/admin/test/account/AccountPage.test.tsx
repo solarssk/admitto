@@ -1021,6 +1021,20 @@ describe("AccountPage toasts", () => {
     expect(screen.queryByRole("button", { name: "Set up" })).toBeNull();
   });
 
+  it("shows OIDC-only MFA reset guidance, not the methods list, when already enrolled with no local password", async () => {
+    mockFetchAccount.mockResolvedValue({ ...totpEnrolledAccount, has_local_password: false, roles: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Two-factor reset requires a local password/i),
+      ).toBeTruthy();
+    });
+    expect(screen.queryByText("Authenticator app (TOTP)")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+  });
+
   it("copies the otpauth URI during enrollment", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const originalClipboard = navigator.clipboard;
@@ -1653,7 +1667,9 @@ describe("AccountPage profile: account type", () => {
 const LINKED_ACCOUNT: AccountDto = {
   ...baseAccount,
   has_local_password: false,
-  external_identities: [{ id: "ei1", provider_id: "p1", provider_display_name: "Okta", linked_at: "2026-01-01T00:00:00.000Z" }],
+  external_identities: [
+    { id: "ei1", provider_id: "p1", provider_display_name: "Okta", provider_type: "oidc", linked_at: "2026-01-01T00:00:00.000Z" },
+  ],
 };
 
 /** Opens the Profile card's "SSO" menu and clicks one item in it. */
@@ -1814,7 +1830,10 @@ describe("AccountPage profile: SSO unlink", () => {
     await waitFor(() => {
       expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
     });
-    expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({ new_password: "long-enough-password", code: undefined });
+    expect(mockUnlinkExternalIdentity).toHaveBeenCalledWith({
+      new_password: "long-enough-password",
+      code: undefined,
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(screen.getByText("Local account")).toBeTruthy();
@@ -1858,6 +1877,29 @@ describe("AccountPage profile: SSO unlink", () => {
     });
     const stepUpDialog = await screen.findByRole("dialog");
     expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+  });
+
+  it("closes the step-up dialog on Cancel, without reopening the unlink confirm dialog", async () => {
+    mockFetchAccount.mockResolvedValue(LINKED_ACCOUNT);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
+    renderWithToast(<AccountPage />);
+
+    await screen.findByRole("button", { name: "SSO" });
+    clickIdentityMenuItem(/Unlink SSO/);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+
+    await waitFor(() => {
+      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+    });
+    const stepUpDialog = await screen.findByRole("dialog");
+    expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows an inline error in the step-up dialog for a wrong code and keeps it open", async () => {
@@ -1913,7 +1955,10 @@ describe("AccountPage profile: SSO unlink", () => {
     await waitFor(() => {
       expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
     });
-    expect(mockUnlinkExternalIdentity).toHaveBeenLastCalledWith({ new_password: "long-enough-password", code: "123456" });
+    expect(mockUnlinkExternalIdentity).toHaveBeenLastCalledWith({
+      new_password: "long-enough-password",
+      code: "123456",
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -2026,6 +2071,11 @@ describe("AccountPage profile: SSO unlink", () => {
         "Some of your roles are managed by your identity provider. Ask an administrator to remove them before unlinking SSO.",
       ),
     ).toBeTruthy();
+
+    // Regression: reopening must not still show what was typed before this error closed the dialog.
+    clickIdentityMenuItem(/Unlink SSO/);
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
   });
 
   it("closes the dialog and toasts when the account has no available proof of identity", async () => {
@@ -2051,6 +2101,11 @@ describe("AccountPage profile: SSO unlink", () => {
         "We can't verify it's you without a password or two-factor authentication. Ask an administrator for help unlinking SSO.",
       ),
     ).toBeTruthy();
+
+    // Regression: reopening must not still show what was typed before this error closed the dialog.
+    clickIdentityMenuItem(/Unlink SSO/);
+    const reopened = await screen.findByRole("dialog");
+    expect((within(reopened).getByLabelText("New local password") as HTMLInputElement).value).toBe("");
   });
 });
 

@@ -2,6 +2,7 @@
  * Resolve event-day weather summary for list cards and public tickets (ADR 0040).
  */
 
+import { emitSystemLog } from "@admitto/shared/system-log";
 import {
   attributionForProvider,
   forecastHorizonDays,
@@ -198,22 +199,44 @@ export class WeatherService {
       };
     }
 
+    const started = Date.now();
+    let day;
     try {
-      const day =
+      day =
         this.config.provider === "metno"
           ? await this.metNoClient().fetchDayForecast(lat, lon, eventYmd, tz)
           : await this.openMeteo.fetchDayForecast(lat, lon, eventYmd, tz);
-      await this.cache.set(key, day, this.config.cacheTtlMs);
-      return {
-        status: "ok",
-        temp_c: Math.round(day.temp_max_c),
-        temp_min_c: Math.round(day.temp_min_c),
-        weather_code: day.weather_code,
-        ...this.attributionFields(),
-      };
-    } catch {
+    } catch (err) {
+      emitSystemLog("external", "warn", "weather_fetch_failed", {
+        provider: this.config.provider,
+        latency_ms: Date.now() - started,
+        error: probeErrorMessage(err),
+      });
       return { status: "unavailable", ...this.attributionFields() };
     }
+    // Logged immediately after the provider call resolves, before the cache write below - a
+    // slow/unavailable cache would otherwise inflate latency_ms with time the provider itself
+    // never spent, and a cache implementation that rejects (the shared Redis-backed one fails
+    // open and never does, but WeatherService accepts any injected WeatherCache) would otherwise
+    // get misreported as weather_fetch_failed even though the provider call succeeded (bot
+    // review).
+    emitSystemLog("external", "info", "weather_fetch_ok", {
+      provider: this.config.provider,
+      latency_ms: Date.now() - started,
+    });
+    try {
+      await this.cache.set(key, day, this.config.cacheTtlMs);
+    } catch {
+      // Best-effort: a cache write failure must not turn an already-successful provider result
+      // into an "unavailable" response for the caller.
+    }
+    return {
+      status: "ok",
+      temp_c: Math.round(day.temp_max_c),
+      temp_min_c: Math.round(day.temp_min_c),
+      weather_code: day.weather_code,
+      ...this.attributionFields(),
+    };
   }
 
   async probeLive(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
@@ -221,6 +244,11 @@ export class WeatherService {
     try {
       if (this.config.provider === "metno") {
         if (!this.metNoReady()) {
+          emitSystemLog("external", "warn", "weather_probe_failed", {
+            provider: this.config.provider,
+            latency_ms: Date.now() - started,
+            error: "support_contact_required",
+          });
           return {
             ok: false,
             latencyMs: Date.now() - started,
@@ -231,9 +259,18 @@ export class WeatherService {
       } else {
         await this.openMeteo.probe();
       }
+      emitSystemLog("external", "info", "weather_probe_ok", {
+        provider: this.config.provider,
+        latency_ms: Date.now() - started,
+      });
       return { ok: true, latencyMs: Date.now() - started };
     } catch (err) {
       const message = probeErrorMessage(err);
+      emitSystemLog("external", "warn", "weather_probe_failed", {
+        provider: this.config.provider,
+        latency_ms: Date.now() - started,
+        error: message,
+      });
       return { ok: false, latencyMs: Date.now() - started, error: message };
     }
   }

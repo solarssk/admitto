@@ -1,5 +1,5 @@
 import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
-import type { LogoPersistenceDto } from "@admitto/mail-templates";
+import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
@@ -572,6 +572,10 @@ export interface EventImageAssetDto {
   token: string;
   filename: string;
   url: string;
+  /** Full pre-crop file for re-Edit; null for assets created before this field existed. */
+  original_url: string | null;
+  /** Last crop framing applied - null if there's nothing to restore. */
+  crop: LogoCropMeta | null;
   size_bytes: number;
   mime_type: string;
   created_at: string;
@@ -809,6 +813,68 @@ export interface BulkSendStatusResponse {
   queued: number;
   sent: number;
   failed: number;
+}
+
+/** Audience filter for POST `/api/admin/events/:eventId/wallet-message/send` - narrower than
+ * mail's BulkSendFilter, since every branch is already scoped server-side to attendees with an
+ * active wallet pass ("all" means all such attendees, not literally everyone on the event). */
+export type WalletMessageFilter =
+  | { type: "all" }
+  | { type: "ticket_type"; value: string }
+  | { type: "attendee_ids"; ids: string[] };
+
+export interface WalletMessageSendBody {
+  filter: WalletMessageFilter;
+  text: string;
+  dryRun?: boolean;
+}
+
+export interface WalletMessageDryRunResponse {
+  recipientCount: number;
+}
+
+export interface WalletMessageQueuedResponse {
+  jobId: string | null;
+  recipientCount: number;
+}
+
+export interface WalletMessageJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  sent: number | null;
+  skipped: number | null;
+  errored: number | null;
+  created_at: string;
+  started_at: string | null;
+}
+
+export interface WalletMessageHistoryItem {
+  id: string;
+  created_at: string;
+  sent: number;
+  skipped: number;
+  errored: number;
+  status: "succeeded" | "failed";
+  error: string | null;
+}
+
+export interface WalletMessageHistoryResponse {
+  items: WalletMessageHistoryItem[];
+}
+
+/** Row shape returned by the wallet-message-scoped attendee search - a subset of AttendeeRowDto,
+ * matching what apps/web's handleSearchWalletMessageAttendees actually returns. */
+export interface WalletMessageAttendeeDto {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface WalletMessageAttendeeSearchResponse {
+  items: WalletMessageAttendeeDto[];
 }
 
 export type MailFieldSource = "env" | "db" | "default";
@@ -1221,6 +1287,12 @@ export interface RoleAssignmentDto {
   is_oidc: boolean;
 }
 
+export interface UserIdentityDto {
+  id: string;
+  provider_display_name: string;
+  provider_type: string;
+}
+
 export interface UserListItemDto {
   id: string;
   email: string;
@@ -1234,6 +1306,10 @@ export interface UserListItemDto {
   active_sessions_count: number;
   has_mfa: boolean;
   has_sso: boolean;
+  /** Every identity provider this user is linked to (SSO/OIDC and Cloudflare Access alike —
+   * both are ExternalIdentity rows, distinguished only by their provider's own type). Empty
+   * when has_sso is false. */
+  external_identities: UserIdentityDto[];
   roles: RoleAssignmentDto[];
 }
 
@@ -1248,7 +1324,13 @@ export interface UserListResponse {
 export interface UserStatsDto {
   total: number;
   active: number;
+  /** Users with a local password and a confirmed MFA method — two-factor coverage is only
+   * meaningful for accounts that have a password login path to protect. Compare against
+   * `password_users`, not `total` or `total - sso` (a hybrid password+SSO account still has a
+   * password to protect, so it's included in both this and `password_users`, unlike `sso`). */
   mfa: number;
+  /** Users with a local password set - the denominator for the two-factor coverage KPI. */
+  password_users: number;
   sso: number;
   active_sessions: number;
   active_sessions_users: number;
@@ -1278,6 +1360,13 @@ export interface GrantUserRoleBody {
 }
 
 export interface ResetUserPasswordBody {
+  new_password: string;
+  /** Actor's own TOTP/recovery code - required by the server only when resetting another
+   * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
+  code?: string;
+}
+
+export interface UnlinkUserExternalIdentityBody {
   new_password: string;
 }
 
@@ -1423,7 +1512,7 @@ export interface SystemLogEntryDto {
   id: number;
   ts: string;
   level: "info" | "warn" | "error";
-  source: "api" | "db" | "cache" | "mail" | "admin" | "security";
+  source: "api" | "db" | "cache" | "mail" | "admin" | "security" | "worker" | "wallet" | "external";
   message: string;
   fields?: Record<string, unknown>;
 }
@@ -1454,6 +1543,7 @@ export interface AccountExternalIdentityDto {
   id: string;
   provider_id: string;
   provider_display_name: string;
+  provider_type: "oidc" | "cloudflare_access";
   linked_at: string;
 }
 
@@ -1678,6 +1768,13 @@ export interface CfAccessEnvLocks {
   teamDomain: boolean;
   audience: boolean;
   protectedPrefixes: boolean;
+  sourceProviderId: boolean;
+}
+
+export interface CfAccessSourceProvider {
+  id: string;
+  displayName: string;
+  enabled: boolean;
 }
 
 export interface CfAccessSummaryDto {
@@ -1685,6 +1782,8 @@ export interface CfAccessSummaryDto {
   teamDomain: string;
   audience: string[];
   protectedPrefixes: string[];
+  sourceProviderId: string;
+  sourceProviders: CfAccessSourceProvider[];
   locks: CfAccessEnvLocks;
 }
 
@@ -1792,6 +1891,7 @@ export interface CfAccessUpdateBody {
   teamDomain?: string;
   audience?: string[] | string;
   protectedPrefixes?: string[] | string;
+  sourceProviderId?: string;
 }
 
 /** POST /api/admin/identity/cf-access/test result. */

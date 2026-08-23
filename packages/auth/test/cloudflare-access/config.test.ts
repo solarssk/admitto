@@ -7,6 +7,7 @@ import {
   resolveTeamDomainFromRaw,
   pathMatchesCfProtectedPrefix,
   validateCfAccessBootConfigFromResolved,
+  validateCfAccessIdentityLinkConfig,
 } from "../../src/cloudflare-access/config.js";
 
 const envLockMockPrisma = {
@@ -63,9 +64,35 @@ describe("validateCfAccessBootConfigFromResolved", () => {
         teamDomain: "",
         audience: [],
         protectedPrefixes: ["/admin"],
+        sourceProviderId: "",
         jwksUri: "",
       }),
     ).toThrow("CF_ACCESS_TEAM_DOMAIN");
+  });
+});
+
+describe("validateCfAccessIdentityLinkConfig", () => {
+  it("requires an explicit source provider only for enabled CF Access", () => {
+    expect(() =>
+      validateCfAccessIdentityLinkConfig({
+        enabled: true,
+        teamDomain: "https://team.cloudflareaccess.com",
+        audience: ["aud"],
+        protectedPrefixes: ["/admin"],
+        sourceProviderId: "",
+        jwksUri: "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
+      }),
+    ).toThrow("CF_ACCESS_SOURCE_PROVIDER_ID");
+    expect(() =>
+      validateCfAccessIdentityLinkConfig({
+        enabled: false,
+        teamDomain: "",
+        audience: [],
+        protectedPrefixes: ["/admin"],
+        sourceProviderId: "",
+        jwksUri: "",
+      }),
+    ).not.toThrow();
   });
 });
 

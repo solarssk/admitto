@@ -297,13 +297,18 @@ async function ensureOidcGrantForRule(
  * Sync RoleAssignments from OIDC group rules for one provider login.
  * Adds matching roles and removes provider grants that no longer match any current rule + group.
  * Pre-existing manual (or other-source) assignments are never deleted.
+ *
+ * `undefined` means the provider did not supply a usable groups claim, so no role state is
+ * changed. An explicit empty array remains a real assertion that no mapped groups apply and can
+ * revoke provider-owned grants.
  */
 export async function applyOidcGroupRoleMappings(
   prisma: PrismaClient | Prisma.TransactionClient,
   providerId: string,
   userId: string,
-  groups: string[],
+  groups: readonly string[] | undefined,
 ): Promise<number> {
+  if (groups === undefined) return 0;
   const rules = await prisma.oidcGroupRoleMapping.findMany({
     where: { provider_id: providerId },
   });

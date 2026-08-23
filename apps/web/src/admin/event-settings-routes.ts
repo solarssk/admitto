@@ -28,9 +28,7 @@ import {
   PassCreatorClient,
   WalletProviderError,
   WALLET_MAPPING_PLACEHOLDERS,
-  resolveWalletProvider,
   type PassCreatorWebhookEventType,
-  type WalletPassProvider,
 } from "@admitto/wallet";
 import { z } from "zod";
 import {
@@ -44,7 +42,6 @@ import {
 } from "./admin-helpers.js";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { resolveInstanceBaseUrl } from "../instance-base-url.js";
-import { reissueOneWalletPass } from "./attendees-api-routes.js";
 import { quoteCsvCell, sanitizeCsvCell } from "./csv-sanitize.js";
 import { timezoneField } from "./timezone.js";
 import {
@@ -56,6 +53,7 @@ import {
 import { attachmentContentDisposition } from "./content-disposition.js";
 import { bestEffortDeleteReplacedUploadUrls } from "./branding-upload.js";
 import { isManagedUploadUrlReferenced } from "./branding-upload-refs.js";
+import { enqueueEventWideWalletPushJob } from "./wallet-push-routes.js";
 
 const dateOnlyField = z
   .string()
@@ -93,6 +91,7 @@ const patchEventSchema = z
     wallet_api_key: z.string().trim().max(512).nullish(),
     wallet_apple_enabled: z.boolean().optional(),
     wallet_google_enabled: z.boolean().optional(),
+    wallet_semantic_tags_enabled: z.boolean().optional(),
     wallet_field_mapping: z
       .record(
         z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
@@ -121,6 +120,7 @@ type EventSettingsRow = {
   wallet_api_key_enc: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_semantic_tags_enabled: boolean;
   wallet_field_mapping: unknown;
   capacity: number | null;
   archived_at: Date | null;
@@ -157,6 +157,7 @@ function serializeEventSettings(
     wallet_api_key: { configured: event.wallet_api_key_enc != null },
     wallet_apple_enabled: event.wallet_apple_enabled,
     wallet_google_enabled: event.wallet_google_enabled,
+    wallet_semantic_tags_enabled: event.wallet_semantic_tags_enabled,
     wallet_field_mapping: parseWalletFieldMapping(event.wallet_field_mapping),
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
@@ -196,6 +197,7 @@ const EVENT_SETTINGS_SELECT = {
   wallet_api_key_enc: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
+  wallet_semantic_tags_enabled: true,
   wallet_field_mapping: true,
   capacity: true,
   archived_at: true,
@@ -374,6 +376,7 @@ type WalletFieldsPatch = {
   wallet_api_key_enc?: string | null;
   wallet_apple_enabled?: boolean;
   wallet_google_enabled?: boolean;
+  wallet_semantic_tags_enabled?: boolean;
   wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
 };
 
@@ -392,6 +395,9 @@ function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
   }
   if (patch.wallet_google_enabled !== undefined) {
     data.wallet_google_enabled = patch.wallet_google_enabled;
+  }
+  if (patch.wallet_semantic_tags_enabled !== undefined) {
+    data.wallet_semantic_tags_enabled = patch.wallet_semantic_tags_enabled;
   }
   if (patch.wallet_field_mapping !== undefined) {
     const mapping = patch.wallet_field_mapping;
@@ -524,7 +530,13 @@ async function subscribeWalletWebhooksBestEffort(
     templateId: updated.wallet_template_id,
     baseUrl: resolvePassCreatorBaseUrl(),
   });
-  const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+  const registrationUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+  // pass_voided gets its own target URL - see handlePassCreatorWebhook's doc comment
+  // (wallet-webhook.ts) for why: PassCreator's payload never names which event fired, and
+  // pass_voided's own payload has no `voided` field either, so the three registration events and
+  // pass_voided can't share one URL the way they used to.
+  const targetUrlFor = (event: PassCreatorWebhookEventType): string =>
+    event === "pass_voided" ? `${registrationUrl}/voided` : registrationUrl;
 
   // subscribeWebhook creates a fresh subscription entry every call, even for an identical
   // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
@@ -532,22 +544,43 @@ async function subscribeWalletWebhooksBestEffort(
   // delivering its own redundant webhook call forever after. Listing is itself best-effort: if it
   // fails, fall back to the old blind-subscribe behavior rather than skipping subscription
   // entirely - a few duplicate subscriptions are a lesser problem than none at all.
-  let alreadySubscribed: Set<string>;
+  let ownTemplateHooks: { targetUrl: string | null; event: string; passTemplate: string | null }[] = [];
   try {
-    const existing = await client.listWebhooks();
-    alreadySubscribed = new Set(
-      existing
-        .filter((hook) => hook.passTemplate === updated.wallet_template_id && hook.targetUrl === targetUrl)
-        .map((hook) => hook.event),
+    ownTemplateHooks = (await client.listWebhooks()).filter(
+      (hook) => hook.passTemplate === updated.wallet_template_id,
     );
   } catch (err) {
     console.error("wallet webhook subscribe: listWebhooks failed, subscribing unconditionally:", err);
-    alreadySubscribed = new Set();
   }
-  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter((event) => !alreadySubscribed.has(event));
+
+  // One-time migration: pass_voided used to share registrationUrl with the three registration
+  // events (before 2026-08-19) - a subscription there is stale now that it has its own URL, and
+  // would otherwise sit there forever, redelivering every void to a route that can't act on it.
+  // PassCreator's unsubscribe API removes every event on a target URL at once (not one event
+  // selectively - see PassCreatorClient.unsubscribeWebhook), so cleaning up that one stale entry
+  // means clearing registrationUrl entirely and resubscribing all four events fresh below.
+  const hasLegacyVoidedSubscription = ownTemplateHooks.some(
+    (hook) => hook.targetUrl === registrationUrl && hook.event === "pass_voided",
+  );
+  let alreadySubscribed = new Set(ownTemplateHooks.map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`));
+  if (hasLegacyVoidedSubscription) {
+    try {
+      await client.unsubscribeWebhook(registrationUrl);
+      alreadySubscribed = new Set(); // wiped clean - every event below gets a fresh subscription
+    } catch (err) {
+      // Unsubscribe failed: the stale entry is still there untouched, so fall back to the normal
+      // dedup (computed above) rather than piling a duplicate registration-event subscription on
+      // top of it.
+      console.error("wallet webhook subscribe: legacy pass_voided migration unsubscribe failed:", err);
+    }
+  }
+
+  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter(
+    (event) => !alreadySubscribed.has(`${targetUrlFor(event)} ${event}`),
+  );
 
   const settled = await Promise.allSettled(
-    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrl, event)),
+    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrlFor(event), event)),
   );
   settled.forEach((outcome, index) => {
     if (outcome.status !== "rejected") return;
@@ -563,89 +596,70 @@ async function subscribeWalletWebhooksBestEffort(
 }
 
 /** Event fields that can appear in a wallet pass via WALLET_MAPPING_PLACEHOLDERS (event name,
- * hours, date, location) - only these are worth an automatic push to every already-issued pass.
- * A patch that touches only, say, capacity or branding never reaches pushWalletUpdatesBestEffort
- * below. */
-const WALLET_RELEVANT_EVENT_FIELDS: ReadonlySet<string> = new Set([
-  "title",
-  "date",
-  "timezone",
-  "event_hours_start",
-  "event_hours_end",
-]);
+ * hours, date, location) or via the semantic tags toggle - flipping either changes what
+ * buildWalletPassInput would produce for an already-issued pass. wallet_apple_enabled is
+ * included too: buildWalletPassInput gates `semantics` on it as well as
+ * wallet_semantic_tags_enabled (Apple-only data never sent for a Google-only event), so turning
+ * Apple Wallet off must also refresh already-issued passes, or a stale semantics payload would
+ * linger on-device until some other tracked field happened to change. */
+type WalletRelevantEventSnapshot = {
+  title: string;
+  date: Date;
+  timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
+  wallet_apple_enabled: boolean;
+  wallet_semantic_tags_enabled: boolean;
+};
 
-/** Same six-liner as attendees-api-routes.ts's own local chunk - duplicated rather than shared
- * across these two files for the same reason noted there (trivial, dependency-free). */
-function chunkWalletTargets<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
-  return chunks;
+/** True only when one of the wallet-relevant fields' *persisted* value actually differs -
+ * comparing against the pre-write row, not just whether the patch touched the key, so
+ * resubmitting an unchanged value (e.g. a client re-saving the same title) never counts as a
+ * change (bot review: an unconditional key-presence check would let a resubmit loop repeatedly
+ * enqueue pushes for no real change once each prior job finishes). Dates compare via getTime() -
+ * both sides come from the same Postgres column, so this only ever differs on a genuine write. */
+function walletRelevantEventFieldsChanged(
+  existing: WalletRelevantEventSnapshot,
+  updated: WalletRelevantEventSnapshot,
+): boolean {
+  return (
+    existing.title !== updated.title ||
+    existing.date.getTime() !== updated.date.getTime() ||
+    existing.timezone !== updated.timezone ||
+    existing.event_hours_start !== updated.event_hours_start ||
+    existing.event_hours_end !== updated.event_hours_end ||
+    existing.wallet_apple_enabled !== updated.wallet_apple_enabled ||
+    existing.wallet_semantic_tags_enabled !== updated.wallet_semantic_tags_enabled
+  );
 }
 
-const WALLET_PUSH_CONCURRENCY = 10;
-
-/** Best-effort: pushes every already-issued active wallet pass's name/ticket type/event details
- * fresh whenever a save changes one of WALLET_RELEVANT_EVENT_FIELDS above (PO report, 2026-08-13:
- * "the system already knows the wallet is on, so when hours/name change in Event Settings it
- * should quietly update the wallets too" - previously nothing pushed to already-issued passes
- * until an admin manually reissued each one). Reuses reissueOneWalletPass, the exact same
- * per-attendee logic the bulk-wallet-reissue endpoint already uses - a genuine data push, not
- * the webhook (re-)subscription subscribeWalletWebhooksBestEffort above handles. Runs after the
- * settings transaction has committed; a PassCreator outage or bad key here never fails the save,
- * and an attendee whose ticket can't be resolved is simply left with a stale pass until a manual
- * reissue or the next relevant settings change retries this. */
+/** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass's
+ * name/ticket type/event details whenever a save actually changes one of the wallet-relevant
+ * fields (PO report, 2026-08-13: "the system already knows the wallet is on, so when hours/name
+ * change in Event Settings it should quietly update the wallets too" - previously nothing pushed
+ * to already-issued passes until an admin manually reissued each one). Guarded on wallet_enabled
+ * here (unlike attendees-api-routes.ts's ticket-type push) so an event that never had wallet
+ * turned on doesn't accumulate wallet_not_configured job-failure history on every settings save.
+ * Awaited by the caller inside its own try/catch - enqueueing is now a single fast AdminJob
+ * insert (not a PassCreator fan-out), so there's no client-timeout risk in waiting for it; a
+ * PassCreator outage or bad key still never fails the save, since that only ever surfaces later,
+ * inside the job worker. */
 async function pushWalletUpdatesBestEffort(
   db: PrismaClient,
+  c: Context,
   eventId: string,
-  changedFields: readonly string[],
-  updated: {
+  existing: WalletRelevantEventSnapshot,
+  updated: WalletRelevantEventSnapshot & {
+    organization_id: string;
     wallet_enabled: boolean;
     wallet_template_id: string | null;
     wallet_api_key_enc: string | null;
-    wallet_field_mapping: unknown;
   },
-  audit: ReturnType<typeof adminAuditFromContext>,
 ): Promise<void> {
-  if (!changedFields.some((field) => WALLET_RELEVANT_EVENT_FIELDS.has(field))) return;
+  if (!walletRelevantEventFieldsChanged(existing, updated)) return;
   if (!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc) return;
 
-  const provider: WalletPassProvider | null = resolveWalletProvider({
-    walletEnabled: updated.wallet_enabled,
-    walletTemplateId: updated.wallet_template_id,
-    walletApiKeyEnc: updated.wallet_api_key_enc,
-    walletFieldMapping: parseWalletFieldMapping(updated.wallet_field_mapping),
-  });
-  if (!provider) return;
-
-  const targets = await db.walletPass.findMany({
-    where: { status: "active", provider_pass_id: { not: null }, attendee: { event_id: eventId } },
-    select: { attendee_id: true, provider_pass_id: true },
-  });
-  if (targets.length === 0) return;
-
-  for (const batch of chunkWalletTargets(targets, WALLET_PUSH_CONCURRENCY)) {
-    const settled = await Promise.allSettled(
-      batch.map((row) =>
-        reissueOneWalletPass(
-          db,
-          eventId,
-          { attendeeId: row.attendee_id, providerPassId: row.provider_pass_id! },
-          provider,
-          audit,
-        ),
-      ),
-    );
-    settled.forEach((outcome, index) => {
-      if (outcome.status !== "rejected") return;
-      console.error("wallet event-change push failed:", outcome.reason);
-      recordSystemLog({
-        level: "error",
-        source: "admin",
-        message: "wallet_event_change_push_failed",
-        fields: { eventId, attendeeId: batch[index]!.attendee_id },
-      });
-    });
-  }
+  await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id, "settings");
 }
 
 /** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
@@ -684,6 +698,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     patch.wallet_api_key !== undefined ||
     patch.wallet_apple_enabled !== undefined ||
     patch.wallet_google_enabled !== undefined ||
+    patch.wallet_semantic_tags_enabled !== undefined ||
     patch.wallet_field_mapping !== undefined;
   if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
@@ -706,6 +721,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     wallet_api_key_enc?: string | null;
     wallet_apple_enabled?: boolean;
     wallet_google_enabled?: boolean;
+    wallet_semantic_tags_enabled?: boolean;
     wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     capacity?: number | null;
     logo_url?: string | null;
@@ -758,23 +774,23 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     if (patchesWallet) {
       await subscribeWalletWebhooksBestEffort(db, eventId, updated);
     }
-    // Deliberately NOT awaited: on an event with hundreds/thousands of already-issued passes,
-    // this fans out one PassCreator call per attendee - awaiting it here would hold the response
-    // open long enough to risk a client-side timeout even though the settings change above has
-    // already committed. Runs in the background of this same process instead; the .catch keeps a
-    // failure here from ever becoming an unhandled promise rejection. Already best-effort by
-    // design (see the function's own doc comment) - a push lost to a mid-flight process restart
-    // self-heals the same way a PassCreator outage already does, on the next relevant save or a
-    // manual reissue.
-    pushWalletUpdatesBestEffort(db, eventId, changedFields, updated, audit).catch((err) => {
-      console.error("wallet event-change push failed (top-level):", err);
+    // Awaited (unlike the pre-job-system version): enqueueing is now a single fast AdminJob
+    // insert, not a fan-out of one PassCreator call per attendee, so there's no client-timeout
+    // risk left to justify not waiting for it. Caught separately from the transaction above (same
+    // reasoning as attendees-api-routes.ts's ticket-type push enqueue) - the settings write
+    // already committed, so a transient enqueue failure here must not turn that success into a
+    // 500.
+    try {
+      await pushWalletUpdatesBestEffort(db, c, eventId, existing, updated);
+    } catch (err) {
+      console.error("wallet event-change push enqueue failed:", err);
       recordSystemLog({
         level: "error",
         source: "admin",
         message: "wallet_event_change_push_failed",
         fields: { eventId },
       });
-    });
+    }
 
     const deletability = await loadDeletability(db, eventId, updated);
     const revokeCounts = await loadRevokeCounts(db, eventId);

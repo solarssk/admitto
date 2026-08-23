@@ -181,12 +181,9 @@ describe("ExternalServicesPanel", () => {
     expect(mockSaveMaps).not.toHaveBeenCalled();
   });
 
-  it("toasts info when Save is clicked with no dirty fields", async () => {
+  it("disables Save when there are no dirty fields", async () => {
     await renderLoaded();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toContain("No changes to save.");
-    });
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
     expect(mockSaveWeather).not.toHaveBeenCalled();
     expect(mockSaveMaps).not.toHaveBeenCalled();
   });
@@ -472,7 +469,10 @@ describe("ExternalServicesPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toMatch(/API key/i);
+      // Two alerts, not a duplicate bug: the save-time summary list (all validation problems
+      // at once) and the API key field's own inline error (Input's error prop, live-announced
+      // as the user edits that field) both legitimately report the same problem here.
+      expect(screen.getAllByRole("alert").some((el) => /API key/i.test(el.textContent ?? ""))).toBe(true);
     });
     expect(mockSaveWeather).not.toHaveBeenCalled();
   });
@@ -510,6 +510,28 @@ describe("ExternalServicesPanel", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toMatch(/Max zoom/);
     });
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
+  it("keeps Reset enabled to clear a stale validation error after manually retyping the saved value", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("external-maps-max-zoom"), {
+      target: { value: "99" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toMatch(/Max zoom/);
+    });
+    // Retype the original saved value by hand instead of clicking Reset - this zeroes the dirty
+    // diff without going through the code path that clears the stale error.
+    fireEvent.change(el<HTMLInputElement>("external-maps-max-zoom"), {
+      target: { value: "19" },
+    });
+    expect(screen.getByRole("alert").textContent).toMatch(/Max zoom/);
+    expect(screen.getByRole("button", { name: "Reset" })).toHaveProperty("disabled", false);
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     await waitFor(() => {
       expect(screen.queryByRole("alert")).toBeNull();

@@ -1040,6 +1040,38 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(row.wallet_google_enabled).toBe(true);
   });
 
+  it("toggles wallet_semantic_tags_enabled (superadmin) - off by default", async () => {
+    try {
+      const before = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+      expect(before.wallet_semantic_tags_enabled).toBe(false);
+
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { event: { wallet_semantic_tags_enabled: boolean } };
+      expect(body.event.wallet_semantic_tags_enabled).toBe(true);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_SET },
+        data: { wallet_semantic_tags_enabled: false },
+      });
+    }
+  });
+
+  it("returns 403 when an organisation admin tries to toggle wallet_semantic_tags_enabled", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+    });
+    expect(res.status).toBe(403);
+    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+    expect(row.wallet_semantic_tags_enabled).toBe(false);
+  });
+
   it("toggles the wallet_enabled master switch (superadmin)", async () => {
     try {
       const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
@@ -1153,97 +1185,96 @@ describe("PATCH /api/admin/events/:eventId", () => {
       await prisma.event.deleteMany({ where: { id: PUSH_EVENT } });
     });
 
-    it("pushes the already-issued pass fresh when a wallet-relevant field (title) changes", async () => {
-      const updateSpy = vi
-        .spyOn(PassCreatorClient.prototype, "updatePass")
-        .mockResolvedValue({
-          providerPassId: `pc-${PUSH_ATTENDEE}`,
-          appleUrl: "https://pc.test/apple/pushed",
-          androidUrl: "https://pc.test/android/pushed",
-        });
-      try {
-        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
-          method: "PATCH",
-          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "Wallet Push Gala (renamed)" }),
-        });
-
-        expect(res.status).toBe(200);
-        // The push runs in the background, deliberately not awaited by the response above (a
-        // large event's fan-out must never hold the settings save open) - poll instead of
-        // asserting immediately after the request resolves.
-        await vi.waitFor(() => {
-          expect(updateSpy).toHaveBeenCalledTimes(1);
-        });
-        expect(updateSpy.mock.calls[0]?.[0]).toBe(`pc-${PUSH_ATTENDEE}`);
-        await vi.waitFor(async () => {
-          const pass = await prisma.walletPass.findUnique({ where: { attendee_id: PUSH_ATTENDEE } });
-          expect(pass?.apple_url).toBe("https://pc.test/apple/pushed");
-        });
-      } finally {
-        updateSpy.mockRestore();
-      }
+    afterEach(async () => {
+      await prisma.adminJob.deleteMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
     });
 
-    it("does not push when only an unrelated field (capacity) changes", async () => {
-      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
-        providerPassId: `pc-${PUSH_ATTENDEE}`,
-        appleUrl: "https://pc.test/apple/unexpected",
-        androidUrl: "https://pc.test/android/unexpected",
+    it("enqueues an event-wide wallet_push job when a wallet-relevant field (title) changes", async () => {
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (renamed)" }),
       });
+
+      expect(res.status).toBe(200);
+      // Awaited by the route (unlike the old direct-PassCreator-call version): the job row exists
+      // as soon as the response resolves, no polling needed.
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]).toMatchObject({
+        status: "pending",
+        result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT, reason: "settings" } },
+      });
+    });
+
+    it("enqueues an event-wide wallet_push job when wallet_semantic_tags_enabled is toggled", async () => {
+      // PUSH_EVENT is fully configured (template + key), so this save also runs
+      // subscribeWalletWebhooksBestEffort (patchesWallet is true for this field) - stub the
+      // PassCreator client the same way "webhook subscription on wallet-config save" below
+      // does, or this makes a real network call and hangs until the test times out (no network
+      // egress in CI).
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
       try {
         const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
           method: "PATCH",
           headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ capacity: 500 }),
+          body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
         });
 
         expect(res.status).toBe(200);
-        // Nothing to poll for here - changedFields never includes capacity, so
-        // pushWalletUpdatesBestEffort returns before ever touching the provider, background or
-        // not. A short settle still guards against a false pass from a same-tick race.
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        expect(updateSpy).not.toHaveBeenCalled();
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]).toMatchObject({
+          status: "pending",
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        });
       } finally {
-        updateSpy.mockRestore();
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_semantic_tags_enabled: false } });
       }
     });
 
-    it("still saves the field change (200) when the background push itself fails", async () => {
-      const updateSpy = vi
-        .spyOn(PassCreatorClient.prototype, "updatePass")
-        .mockRejectedValue(new Error("provider outage"));
+    it("enqueues an event-wide wallet_push job when wallet_apple_enabled is toggled (semantics gating depends on it too)", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
       try {
         const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
           method: "PATCH",
           headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "Wallet Push Gala (renamed again)" }),
+          body: JSON.stringify({ wallet_apple_enabled: false }),
         });
 
         expect(res.status).toBe(200);
-        const body = (await res.json()) as { event: { title: string } };
-        expect(body.event.title).toBe("Wallet Push Gala (renamed again)");
-        // The failed push is still attempted in the background - poll for it, then confirm the
-        // save itself (already committed before the push even started) was never rolled back.
-        await vi.waitFor(() => {
-          expect(updateSpy).toHaveBeenCalledTimes(1);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]).toMatchObject({
+          status: "pending",
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
         });
-        const event = await prisma.event.findUnique({ where: { id: PUSH_EVENT } });
-        expect(event?.title).toBe("Wallet Push Gala (renamed again)");
       } finally {
-        updateSpy.mockRestore();
+        listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_apple_enabled: true } });
       }
     });
 
-    it("still saves the field change (200) via the top-level catch when pushWalletUpdatesBestEffort itself throws before its internal per-attendee handling", async () => {
+    it("does not enqueue a job when only an unrelated field (capacity) changes", async () => {
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ capacity: 500 }),
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("still saves the field change (200) via the catch when enqueueing itself throws (bot review)", async () => {
       resetSystemLogBufferForTest();
-      // Forcing db.walletPass.findMany (the function's very first DB call, before its own
-      // internal Promise.allSettled safety net around each attendee) to reject is the only way
-      // to reach the top-level `.catch` in handlePatchEvent - a per-attendee PassCreator failure
-      // (covered above) is already caught internally and never gets here.
-      const findManySpy = vi
-        .spyOn(prisma.walletPass, "findMany")
-        .mockRejectedValueOnce(new Error("db down"));
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("db down"));
       try {
         const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
           method: "PATCH",
@@ -1255,24 +1286,231 @@ describe("PATCH /api/admin/events/:eventId", () => {
         const body = (await res.json()) as { event: { title: string } };
         expect(body.event.title).toBe("Wallet Push Gala (db down)");
 
-        await vi.waitFor(() => {
-          const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
-          expect(entry).toBeDefined();
-        });
         const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
         expect(entry).toMatchObject({
           level: "error",
           source: "admin",
           message: "wallet_event_change_push_failed",
+          fields: { eventId: PUSH_EVENT },
         });
-        // No attendeeId here (unlike the internal per-attendee failure logged above) - proof this
-        // came from the top-level catch, not the function's own Promise.allSettled loop.
-        expect(entry?.fields).toEqual({ eventId: PUSH_EVENT });
 
         const event = await prisma.event.findUnique({ where: { id: PUSH_EVENT } });
         expect(event?.title).toBe("Wallet Push Gala (db down)");
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
       } finally {
-        findManySpy.mockRestore();
+        createSpy.mockRestore();
+      }
+    });
+
+    it.each([
+      ["wallet_enabled is false", { wallet_enabled: false }, { wallet_enabled: true }],
+      ["wallet_template_id is missing", { wallet_template_id: null }, { wallet_template_id: "tmpl-push" }],
+      [
+        "wallet_api_key_enc is missing",
+        { wallet_api_key_enc: null },
+        { wallet_api_key_enc: encryptToString("push-api-key") },
+      ],
+    ])(
+      "does not enqueue a job for a wallet-relevant field change when %s (guard, bot review)",
+      async (_label, unconfigured, restore) => {
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: unconfigured });
+        try {
+          const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+            method: "PATCH",
+            headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "Wallet Push Gala (unconfigured guard)" }),
+          });
+
+          expect(res.status).toBe(200);
+          const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+          expect(jobs).toHaveLength(0);
+        } finally {
+          await prisma.event.update({ where: { id: PUSH_EVENT }, data: restore });
+        }
+      },
+    );
+
+    it("does not enqueue a second job while one is already pending for the event (dedupe, bot review)", async () => {
+      const first = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (dedupe 1)" }),
+      });
+      expect(first.status).toBe(200);
+      const afterFirst = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(afterFirst).toHaveLength(1);
+
+      // Still pending (nothing drained it) - a second relevant-field save must reuse that same
+      // job instead of queuing another one behind it (bot review: no-op/idempotency guard).
+      const second = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (dedupe 2)" }),
+      });
+      expect(second.status).toBe(200);
+      const afterSecond = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(afterSecond).toHaveLength(1);
+      expect(afterSecond[0]?.id).toBe(afterFirst[0]?.id);
+    });
+
+    it("does not enqueue a job when a wallet-relevant field is resubmitted with its current value (bot review)", async () => {
+      const before = await prisma.event.findUniqueOrThrow({ where: { id: PUSH_EVENT }, select: { title: true } });
+
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: before.title }),
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("does not let a pending attendee_ids-kind job suppress a new event-wide push (bot review)", async () => {
+      await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_SET,
+          event_id: PUSH_EVENT,
+          result_json: { request: { kind: "attendee_ids", eventId: PUSH_EVENT, attendeeIds: [PUSH_ATTENDEE] } },
+        },
+      });
+
+      const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Wallet Push Gala (kind-scoped dedupe)" }),
+      });
+      expect(res.status).toBe(200);
+
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(2);
+      const kinds = jobs
+        .map((job) => (job.result_json as { request: { kind: string } }).request.kind)
+        .sort();
+      expect(kinds).toEqual(["attendee_ids", "event_wide"]);
+    });
+
+    it("creates only one event-wide job when two relevant-field saves race (DB-enforced, bot review)", async () => {
+      const [resA, resB] = await Promise.all([
+        app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (race A)" }),
+        }),
+        app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_hours_start: "18:00", event_hours_end: "22:00" }),
+        }),
+      ]);
+      expect(resA.status).toBe(200);
+      expect(resB.status).toBe(200);
+
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    });
+
+    it("reuses the winning job when create() itself hits a P2002 conflict (race-lost path, bot review)", async () => {
+      // Simulates the narrow window findPendingEventWideWalletPushJob's own pre-check can miss:
+      // another request's job is inserted between this call's own (mocked-empty) pre-check and
+      // its create() attempt - the DB's unique index is what actually catches it, and the
+      // catch block must fetch and return that real winner rather than erroring the save.
+      const winner = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_SET,
+          event_id: PUSH_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
+        },
+      });
+      const findFirstSpy = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValueOnce(null);
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (p2002 race)" }),
+        });
+        expect(res.status).toBe(200);
+
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+        expect(jobs[0]?.id).toBe(winner.id);
+      } finally {
+        createSpy.mockRestore();
+        findFirstSpy.mockRestore();
+      }
+    });
+
+    it("still saves the field change (200) via the catch when enqueueing fails with a non-conflict error (bot review)", async () => {
+      resetSystemLogBufferForTest();
+      const createSpy = vi
+        .spyOn(prisma.adminJob, "create")
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError("Foreign key constraint violated", {
+            code: "P2003",
+            clientVersion: "test",
+          }),
+        );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (non-conflict error)" }),
+        });
+
+        // A non-P2002 error isn't a "someone else won the race" signal - it must re-throw (not
+        // silently swallow) up to the caller's own outer catch, which still saves the settings
+        // change successfully rather than failing the whole request.
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({ message: "wallet_event_change_push_failed", fields: { eventId: PUSH_EVENT } });
+      } finally {
+        createSpy.mockRestore();
+      }
+    });
+
+    it("re-throws the P2002 conflict when no winning job can be found (edge case, bot review)", async () => {
+      // Contrived (the conflicting job would have to vanish between the failed insert and the
+      // immediate re-query, in production this never happens), but still a real code path: the
+      // catch block must not silently swallow a P2002 it can't actually resolve to a real job.
+      resetSystemLogBufferForTest();
+      const findFirstSpy = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValue(null);
+      const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (p2002 no winner)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+
+        const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_change_push_failed" });
+        expect(entry).toMatchObject({ message: "wallet_event_change_push_failed", fields: { eventId: PUSH_EVENT } });
+      } finally {
+        createSpy.mockRestore();
+        findFirstSpy.mockRestore();
       }
     });
   });
@@ -1321,6 +1559,13 @@ describe("PATCH /api/admin/events/:eventId", () => {
             "pushnotification_unregistered",
           ].sort(),
         );
+        // pass_voided gets its own target URL (wallet-webhook.ts's doc comment explains why) -
+        // the other three registration events still share the plain target URL.
+        const baseUrl = await resolveInstanceBaseUrl(prisma);
+        const registrationUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+        const targetUrlByEvent = new Map(subscribeSpy.mock.calls.map((call) => [call[1], call[0]]));
+        expect(targetUrlByEvent.get("pass_voided")).toBe(`${registrationUrl}/voided`);
+        expect(targetUrlByEvent.get("pushnotification_registered")).toBe(registrationUrl);
       } finally {
         listSpy.mockRestore();
         subscribeSpy.mockRestore();
@@ -1331,7 +1576,8 @@ describe("PATCH /api/admin/events/:eventId", () => {
       const baseUrl = await resolveInstanceBaseUrl(prisma);
       const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
       const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
-        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        // pass_voided subscribes to its own /voided-suffixed target URL, not the shared one.
+        { targetUrl: `${targetUrl}/voided`, event: "pass_voided", passTemplate: "tmpl-sub" },
         // Different template - must not count as "already subscribed" for this event's template.
         { targetUrl, event: "pushnotification_registered", passTemplate: "some-other-template" },
       ]);
@@ -1353,6 +1599,77 @@ describe("PATCH /api/admin/events/:eventId", () => {
         );
       } finally {
         listSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("migrates a legacy pass_voided subscription off the shared URL: unsubscribes it and resubscribes all 4 events fresh", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+        // Stale: pass_voided still on the pre-2026-08-19 shared URL, alongside the three
+        // registration events that are still correctly subscribed there.
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
+      ]);
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockResolvedValue(undefined);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+        expect(unsubscribeSpy).toHaveBeenCalledExactlyOnceWith(targetUrl);
+        const targetUrlByEvent = new Map(subscribeSpy.mock.calls.map((call) => [call[1], call[0]]));
+        expect(targetUrlByEvent.get("pass_voided")).toBe(`${targetUrl}/voided`);
+        expect(targetUrlByEvent.get("pushnotification_registered")).toBe(targetUrl);
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("does not duplicate the registration-event subscriptions when the legacy-pass_voided unsubscribe itself fails", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
+      ]);
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockRejectedValue(new Error("down"));
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(unsubscribeSpy).toHaveBeenCalledExactlyOnceWith(targetUrl);
+        // Only the new /voided subscription for pass_voided is added - the three registration
+        // events, still untouched on the old URL, must not get a duplicate piled on top.
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledExactlyOnceWith(`${targetUrl}/voided`, "pass_voided");
+        });
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
         subscribeSpy.mockRestore();
       }
     });

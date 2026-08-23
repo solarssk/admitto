@@ -13,6 +13,8 @@ export const SETTING_CF_ACCESS_ENABLED = "cf_access_enabled";
 export const SETTING_CF_ACCESS_TEAM_DOMAIN = "cf_access_team_domain";
 export const SETTING_CF_ACCESS_AUD = "cf_access_aud";
 export const SETTING_CF_ACCESS_PROTECTED_PREFIXES = "cf_access_protected_prefixes";
+/** Direct OIDC provider that owns the canonical subject forwarded by Cloudflare Access. */
+export const SETTING_CF_ACCESS_SOURCE_PROVIDER_ID = "cf_access_source_provider_id";
 
 /** Runtime UI branding (CSS vars) — ADR 0020 / v0.4 foundation. */
 export const SETTING_BRANDING_THEME = "branding_theme";
@@ -41,6 +43,7 @@ export const SYSTEM_SETTING_KEYS = [
   SETTING_CF_ACCESS_TEAM_DOMAIN,
   SETTING_CF_ACCESS_AUD,
   SETTING_CF_ACCESS_PROTECTED_PREFIXES,
+  SETTING_CF_ACCESS_SOURCE_PROVIDER_ID,
   SETTING_BRANDING_THEME,
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,

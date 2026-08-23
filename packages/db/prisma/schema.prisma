@@ -50,6 +50,10 @@ model Event {
   wallet_api_key_enc           String?
   wallet_apple_enabled         Boolean                    @default(true)
   wallet_google_enabled        Boolean                    @default(true)
+  // Apple Wallet semantic tags (Siri Suggestions/Maps/Calendar) - opt-in, default off (ADR 0009
+  // data minimization: nothing beyond the pass's visible fields goes to PassCreator unless an
+  // admin explicitly turns it on). Apple only - no Google Wallet equivalent exists.
+  wallet_semantic_tags_enabled Boolean                    @default(false)
   // Admin-defined PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}).
   // Null/empty = the built-in default mapping (name, eventDate, eventHours, eventPlace, ticketType).
   wallet_field_mapping         Json?
@@ -143,6 +147,11 @@ model EventImageAsset {
   token      String
   filename   String
   url        String
+  // Full pre-crop file for re-Edit; display still uses `url` (cropped). Null for assets
+  // created before this column existed - Edit falls back to re-cropping the cropped `url`.
+  original_url String?
+  // Percent crop + zoom last applied: { unit:"%", x, y, width, height, zoom }.
+  crop       Json?
   size_bytes Int
   mime_type  String
   created_at DateTime @default(now())
@@ -696,6 +705,12 @@ model User {
   // review) to alert when a privileged account is under attack; reset to 0 on a successful
   // login or once the streak crosses the alert threshold (see auth.login.repeated_failures).
   failed_login_streak   Int                @default(0)
+  // Consecutive failed MFA verification attempts (wrong TOTP/recovery code) for admin/superadmin
+  // accounts, tracked separately from failed_login_streak since that one resets on password
+  // success, before MFA is even attempted - this catches an attacker who already has a valid
+  // password grinding MFA-code guesses. Reset to 0 on successful MFA verification or once the
+  // streak crosses the alert threshold (see auth.mfa.repeated_failures).
+  failed_mfa_streak     Int                @default(0)
   created_at            DateTime           @default(now())
   updated_at            DateTime           @updatedAt
   sessions              Session[]
@@ -962,6 +977,10 @@ model AdminJob {
   updated_count   Int?
   skipped_count   Int?
   invalid_count   Int?
+  // Generic live-progress counter (wallet_push and any future job type that wants one) -
+  // import/export don't use these, they still write all counts once at completion.
+  progress_total  Int?
+  progress_done   Int?
   error           String?      @db.Text
   result_json     Json?
   created_at      DateTime     @default(now())

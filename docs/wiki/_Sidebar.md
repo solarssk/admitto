@@ -39,6 +39,7 @@
 - [Advanced Email Templates](Advanced-Email-Templates)
 - [Template Variables](Template-Variables)
 - [Sending Messages and Delivery](Sending-Tickets-and-Delivery)
+- [Sending Wallet Messages](Sending-Wallet-Messages)
 - [Email Delivery Statuses](Email-Delivery-Statuses)
 
 **Check-in Operations**
@@ -63,6 +64,8 @@
 
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Identity and SSO](Identity-and-SSO)
+- [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)
+- [Wallet Passes Overview](Wallet-Passes-Overview)
 
 **Reference**
 

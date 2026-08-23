@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { PrismaClient } from "@admitto/db";
+import { EMAIL_DELIVERY_SUCCESS_STATUSES, type PrismaClient } from "@admitto/db";
 import { decryptFromString } from "@admitto/crypto";
 import {
   buildEventLocationTemplateVars,
-  formatEventDate,
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
@@ -22,7 +21,8 @@ import {
   type MailMessage,
 } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
-import { issueTicket } from "@admitto/tickets";
+import { formatDate, formatEventHoursRangeText } from "@admitto/shared/region-date-format";
+import { issueTicket, loadEventTicketTypes, parseTicketAddressComponents } from "@admitto/tickets";
 import { resolveBaseUrl } from "./baseUrl.js";
 import { claimInitialDelivery, createResendDelivery, type ClaimInitialInput } from "./claim.js";
 import {
@@ -101,6 +101,20 @@ async function resolvePlaintextToken(
   return undefined;
 }
 
+/** Resolves an attendee's ticket_type catalog key to its display label - fails open to the raw
+ * key if the catalog lookup doesn't have it (deleted/renamed type), "General" when unset. Same
+ * fallback precedent as buildWalletPassInput's ticketTypeLabel. Exported (not re-exported from
+ * index.ts) so its raw-key fallback - unreachable through sendTicketEmails' normal DB-constrained
+ * flow, since Attendee.ticket_type is FK-restricted to an existing TicketType.key - can still be
+ * unit tested directly, same pattern as deliverPendingBatch. */
+export function resolveTicketTypeLabel(
+  ticketType: string | null,
+  ticketTypeLabels: ReadonlyMap<string, string>,
+): string {
+  if (!ticketType) return "General";
+  return ticketTypeLabels.get(ticketType) ?? ticketType;
+}
+
 function materializePendingMessage(item: PendingSend): MailMessage {
   const rendered = materializeStoredDeliveryMessage(
     { subject: item.frozenSubject, html: item.frozenHtml },
@@ -121,6 +135,7 @@ interface AttendeeForSend extends AttendeeLinkInput {
   last_name: string | null;
   email: string;
   token_enc: string | null;
+  ticket_type: string | null;
 }
 
 /** Event fields needed to process a single ticket-email send. */
@@ -128,6 +143,9 @@ interface EventForSend extends EventLinkInput {
   id: string;
   title: string;
   date: Date;
+  timezone: string;
+  event_hours_start: string | null;
+  event_hours_end: string | null;
   location_details?: {
     venue_name: string | null;
     formatted_address: string | null;
@@ -153,6 +171,7 @@ interface ProcessAttendeeForSendInput {
   resolvedTemplate: ResolvedTemplate;
   branding: BrandingUrls;
   customAssets: EventImageAssetPlaceholders;
+  ticketTypeLabels: ReadonlyMap<string, string>;
   baseUrl: string;
   env: NodeJS.ProcessEnv;
   purpose: "initial" | "resend";
@@ -173,6 +192,7 @@ async function processAttendeeForSend({
   resolvedTemplate,
   branding,
   customAssets,
+  ticketTypeLabels,
   baseUrl,
   env,
   purpose,
@@ -221,6 +241,15 @@ async function processAttendeeForSend({
     baseUrl,
     env,
   );
+  const country =
+    parseTicketAddressComponents(event.location_details?.address_components)?.country ?? null;
+  const eventHours = formatEventHoursRangeText(
+    event.event_hours_start,
+    event.event_hours_end,
+    country,
+    event.timezone,
+    event.date,
+  );
 
   const rendered = renderTemplateTrustedForStorage(
     {
@@ -233,7 +262,9 @@ async function processAttendeeForSend({
       full_name: attendee.name,
       email: attendee.email,
       event_name: event.title,
-      event_date: formatEventDate(event.date, "UTC"),
+      event_date: formatDate(event.date, country),
+      event_hours: eventHours,
+      ticket_type: resolveTicketTypeLabel(attendee.ticket_type, ticketTypeLabels),
       ...locationVars,
       logo_url: branding.logo_url,
       header_image_url: branding.header_image_url,
@@ -262,38 +293,81 @@ async function processAttendeeForSend({
     sessionId: options.sessionId,
   };
 
-  if (purpose === "initial") {
-    const claim = await claimInitialDelivery(claimInput, prisma);
-    if (claim.action === "skip") {
-      return { kind: "skip", attendeeId: attendee.id, reason: claim.reason };
-    }
-    return {
-      kind: "pending",
-      pending: {
-        deliveryId: claim.deliveryId,
-        attendeeId: attendee.id,
-        to: claim.message.to,
-        frozenSubject: claim.message.subject,
-        frozenHtml: claim.message.html,
-        links,
-        idempotencyKey: `${attendee.id}:initial`,
-        incrementAttempts: claim.action === "retry_existing",
-      },
-    };
+  return claimOrResendPending(attendee.id, purpose, claimInput, links, prisma);
+}
+
+/**
+ * purpose:"resend" always creates a new resend row. purpose:"initial" claims the atomic
+ * (attendee, event) slot - except when that claim is skipped specifically because the
+ * attendee already has a successful ticket: an explicit send action (checkbox selection)
+ * against them is an implicit resend, not a silent no-op. A true in-flight duplicate is
+ * still skipped.
+ */
+async function claimOrResendPending(
+  attendeeId: string,
+  purpose: "initial" | "resend",
+  claimInput: ClaimInitialInput,
+  links: AttendeeMailLinks,
+  prisma: PrismaClient,
+): Promise<AttendeeSendOutcome> {
+  if (purpose !== "initial") {
+    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
   }
 
-  const created = await createResendDelivery(claimInput, prisma);
+  // An explicit send for a delivery that had already completed before this request began is a
+  // resend. Check before attempting the atomic initial claim: a P2002 from that claim can also
+  // mean another concurrent request just completed its first send, which must remain a skip.
+  const existingInitial = await prisma.emailDelivery.findFirst({
+    where: {
+      attendee_id: claimInput.attendeeId,
+      event_id: claimInput.eventId,
+      purpose: "initial",
+    },
+    select: { status: true },
+  });
+  if (
+    existingInitial &&
+    EMAIL_DELIVERY_SUCCESS_STATUSES.includes(
+      existingInitial.status as (typeof EMAIL_DELIVERY_SUCCESS_STATUSES)[number],
+    )
+  ) {
+    return { kind: "pending", pending: await createResendPending(attendeeId, claimInput, links, prisma) };
+  }
+
+  const claim = await claimInitialDelivery(claimInput, prisma);
+  if (claim.action === "skip") {
+    return { kind: "skip", attendeeId, reason: claim.reason };
+  }
   return {
     kind: "pending",
     pending: {
-      deliveryId: created.deliveryId,
-      attendeeId: attendee.id,
-      to: created.message.to,
-      frozenSubject: created.message.subject,
-      frozenHtml: created.message.html,
+      deliveryId: claim.deliveryId,
+      attendeeId,
+      to: claim.message.to,
+      frozenSubject: claim.message.subject,
+      frozenHtml: claim.message.html,
       links,
-      idempotencyKey: `${attendee.id}:resend:${created.deliveryId}`,
+      idempotencyKey: `${attendeeId}:initial`,
+      incrementAttempts: claim.action === "retry_existing",
     },
+  };
+}
+
+async function createResendPending(
+  attendeeId: string,
+  claimInput: ClaimInitialInput,
+  links: AttendeeMailLinks,
+  prisma: PrismaClient,
+): Promise<PendingSend> {
+  const created = await createResendDelivery(claimInput, prisma);
+  return {
+    deliveryId: created.deliveryId,
+    attendeeId,
+    to: created.message.to,
+    frozenSubject: created.message.subject,
+    frozenHtml: created.message.html,
+    links,
+    idempotencyKey: `${attendeeId}:resend:${created.deliveryId}`,
   };
 }
 
@@ -369,7 +443,10 @@ export async function deliverPendingBatch(
 /**
  * Issue / claim ticket emails for an event (initial or resend).
  * By default only enqueues `EmailDelivery` rows (`queued`); the Admitto worker drains them.
- * Skips individual attendees on not_issuable, token/link build errors, or dedup — does not abort the batch.
+ * Skips individual attendees on not_issuable, token/link build errors, or an in-flight duplicate
+ * — does not abort the batch. purpose:"initial" against an attendee who already has a successful
+ * ticket falls back to a resend rather than skipping, since that only happens on an explicit send
+ * action (e.g. checkbox selection), not an automated sweep.
  */
 export async function sendTicketEmails(
   eventId: string,
@@ -401,6 +478,9 @@ export async function sendTicketEmails(
   }
   const branding = resolveBrandingFromEvent(event);
   const customAssets = await resolveEventImageAssetVars(eventId, prisma);
+  const ticketTypeLabels = new Map(
+    (await loadEventTicketTypes(prisma, eventId)).map((t) => [t.key, t.label]),
+  );
 
   const attendees = await prisma.attendee.findMany({
     where: {
@@ -423,6 +503,7 @@ export async function sendTicketEmails(
         resolvedTemplate,
         branding,
         customAssets,
+        ticketTypeLabels,
         baseUrl,
         env,
         purpose,

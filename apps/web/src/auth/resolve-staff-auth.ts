@@ -9,10 +9,9 @@ import {
   validateAccessJwt,
   CfAccessJwtError,
   findCloudflareAccessProvider,
-  resolveOrCreateUserFromExternalIdentity,
+  resolveCfAccessIdentityFromValidatedJwt,
   ExternalIdentityLinkError,
   extractClaims,
-  applyOidcGroupRoleMappings,
   logCfAccessAuth,
   type CfAccessConfig,
 } from "@admitto/auth";
@@ -46,13 +45,14 @@ async function resolveCfAccessAuth(
     const claims = extractClaims(payload, provider);
     let userId: string;
     try {
-      const resolved = await resolveOrCreateUserFromExternalIdentity(
-        prisma,
-        provider,
-        subject,
+      const resolved = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+        config,
+        cloudflareProvider: provider,
+        cloudflareSubject: subject,
+        payload,
         claims,
-      );
-      userId = resolved.user.id;
+      });
+      userId = resolved.userId;
     } catch (err) {
       const reason =
         err instanceof ExternalIdentityLinkError ? err.message : "identity_resolution_failed";
@@ -66,7 +66,6 @@ async function resolveCfAccessAuth(
       return { status: "invalid_cf_jwt", reason };
     }
 
-    await applyOidcGroupRoleMappings(prisma, provider.id, userId, claims.groups ?? []);
     logCfAccessAuth({
       outcome: "success",
       email: claims.email,

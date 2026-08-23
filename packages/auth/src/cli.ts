@@ -10,7 +10,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createInterface } from "node:readline";
+import { createInterface, type Interface } from "node:readline";
 import { prisma } from "@admitto/db";
 import { bootstrapSuperadmin, superadminInstanceExists, userIsInstanceSuperadmin } from "./bootstrap.js";
 import { PASSWORD_MIN_LENGTH } from "./constants.js";
@@ -21,7 +21,7 @@ import { resetUserMfa } from "./mfa/enrollment.js";
 import { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 import { logMfaBreakGlassCli } from "./audit.js";
 import { loadEnvFile } from "@admitto/shared/load-env-file";
-import { assertNoPasswordArgv, CliError, readPasswordFromStdin } from "./cli-helpers.js";
+import { assertNoPasswordArgv, CliError, createLineReader, readPasswordFromStdin } from "./cli-helpers.js";
 import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "./retention.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,17 +57,13 @@ function usage(): never {
   throw new CliError("Invalid usage");
 }
 
-async function confirmForce(): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  return new Promise((resolve) => {
-    rl.question(
-      "A superadmin@instance already exists. Type 'yes' to create another: ",
-      (answer) => {
-        rl.close();
-        resolve(answer.trim().toLowerCase() === "yes");
-      },
-    );
-  });
+// Takes the caller's line reader (createLineReader(), cli-helpers.ts) rather than creating its
+// own readline.Interface#question() - runBootstrapSuperadmin reuses the same reader for the
+// password prompt right after this one. See createLineReader's own comment for why two chained
+// question() calls on piped (non-TTY) stdin can otherwise hang.
+async function confirmForce(readLine: (prompt: string) => Promise<string>): Promise<boolean> {
+  const answer = await readLine("A superadmin@instance already exists. Type 'yes' to create another: ");
+  return answer.trim().toLowerCase() === "yes";
 }
 
 async function verifyTargetUserPassword(email: string): Promise<{ userId: string }> {
@@ -98,6 +94,11 @@ async function verifyTargetUserPassword(email: string): Promise<{ userId: string
 }
 
 async function runBootstrapSuperadmin(): Promise<void> {
+  // Checked before any DB lookup or interactive prompt below - `--force` on an existing instance
+  // means the (blocking) confirmForce() prompt runs first otherwise, leaving a --password=<value>
+  // argv sitting in the process list for the whole time the operator spends answering it.
+  assertNoPasswordArgv(process.argv);
+
   const email = arg("email");
   if (!email) usage();
 
@@ -108,14 +109,26 @@ async function runBootstrapSuperadmin(): Promise<void> {
       "superadmin@instance already exists. Use --force to create another (with confirmation).",
     );
   }
+
+  // Shared across confirmForce() and the password prompt below when both run - see
+  // createLineReader's own comment (cli-helpers.ts) for why chaining two separate prompts on
+  // piped stdin needs this instead of a plain readline.Interface#question() per prompt.
+  let rl: Interface | undefined;
+  let readLine: ((prompt: string) => Promise<string>) | undefined;
   if (exists && force) {
-    const ok = await confirmForce();
+    // terminal: false - see createLineReader's own comment for why, without it, a piped
+    // password would get echoed back to the screen whenever stderr is still a real terminal.
+    rl = createInterface({ input: process.stdin, output: process.stderr, terminal: false });
+    readLine = createLineReader(rl, process.stderr);
+    const ok = await confirmForce(readLine);
     if (!ok) {
+      rl.close();
       throw new CliError("Aborted.");
     }
   }
 
-  const password = await readPasswordFromStdin();
+  const password = await readPasswordFromStdin("Password: ", readLine, rl);
+  rl?.close();
   let userId: string;
   try {
     ({ userId } = await bootstrapSuperadmin(prisma, email, password));
@@ -130,6 +143,8 @@ async function runBootstrapSuperadmin(): Promise<void> {
     }
     throw err;
   }
+  // bootstrapSuperadmin writes the auth.superadmin.bootstrap audit record itself, inside the
+  // same transaction as the account creation - no separate call needed here.
   console.log(`Superadmin created: ${userId} (${email})`);
 }
 

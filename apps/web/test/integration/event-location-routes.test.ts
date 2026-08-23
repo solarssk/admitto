@@ -1,10 +1,13 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { encryptToString } from "@admitto/crypto";
+import { generateToken, hashToken } from "@admitto/tickets";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import type { EventLocationDto } from "@admitto/location";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -715,5 +718,176 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     expect(body.longitude).toBe(21.01);
     expect(body.google_maps_url_override).toBeNull();
     expect(body.apple_maps_url_override).toBeNull();
+  });
+});
+
+describe("PUT /api/admin/events/:eventId/location — auto-push to already-issued wallet passes", () => {
+  const WALLET_LOC_EVENT = "evt-location-wallet-push";
+  const WALLET_LOC_ATTENDEE = "att-location-wallet-push";
+
+  beforeAll(async () => {
+    const token = generateToken();
+    await prisma.event.create({
+      data: {
+        id: WALLET_LOC_EVENT,
+        title: "Wallet Location Gala",
+        slug: "wallet-location-gala",
+        date: new Date("2026-10-04"),
+        organization_id: ORG_LOC,
+        wallet_template_id: "tmpl-location-push",
+        wallet_api_key_enc: encryptToString("location-push-api-key"),
+      },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: WALLET_LOC_ATTENDEE,
+        event_id: WALLET_LOC_EVENT,
+        email: "wallet-location-push@example.com",
+        name: "Wallet Location Guest",
+        token_hash: hashToken(token),
+        token_enc: encryptToString(token),
+      },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: WALLET_LOC_ATTENDEE,
+        provider: "passcreator",
+        provider_pass_id: `pc-${WALLET_LOC_ATTENDEE}`,
+        status: "active",
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.walletPass.deleteMany({ where: { attendee_id: WALLET_LOC_ATTENDEE } });
+    await prisma.attendee.deleteMany({ where: { id: WALLET_LOC_ATTENDEE } });
+    await prisma.event.deleteMany({ where: { id: WALLET_LOC_EVENT } });
+  });
+
+  afterEach(async () => {
+    await prisma.eventLocation.deleteMany({ where: { event_id: WALLET_LOC_EVENT } });
+    await prisma.adminJob.deleteMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+  });
+
+  it("enqueues an event-wide wallet_push job when a wallet-relevant field (formatted_address) changes", async () => {
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, {
+      formatted_address: "1 Wallet Street, Example City",
+    });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      status: "pending",
+      result_json: { request: { kind: "event_wide", eventId: WALLET_LOC_EVENT, reason: "location" } },
+    });
+  });
+
+  it("does not enqueue a job when only map_zoom (UI-only, not on the pass) changes", async () => {
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { map_zoom: 12 });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("does not enqueue a job when only geocoding_provider (provenance, not on the pass) changes", async () => {
+    await prisma.eventLocation.create({
+      data: { event_id: WALLET_LOC_EVENT, latitude: 50.06, longitude: 19.94 },
+    });
+
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { geocoding_provider: "nominatim" });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("still saves the location change (200) when enqueueing itself throws", async () => {
+    resetSystemLogBufferForTest();
+    const createSpy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("db down"));
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, {
+        formatted_address: "Enqueue Failure Street",
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as EventLocationDto;
+      expect(body.formatted_address).toBe("Enqueue Failure Street");
+
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+
+      const [entry] = querySystemLogs({ source: "admin", search: "wallet_event_location_push_failed" });
+      expect(entry).toMatchObject({
+        level: "error",
+        source: "admin",
+        message: "wallet_event_location_push_failed",
+        fields: { eventId: WALLET_LOC_EVENT },
+      });
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ["wallet_enabled is false", { wallet_enabled: false }, { wallet_enabled: true }],
+    ["wallet_template_id is missing", { wallet_template_id: null }, { wallet_template_id: "tmpl-location-push" }],
+    [
+      "wallet_api_key_enc is missing",
+      { wallet_api_key_enc: null },
+      { wallet_api_key_enc: encryptToString("location-push-api-key") },
+    ],
+  ])(
+    "does not enqueue a job for a wallet-relevant field change when %s (guard, bot review)",
+    async (_label, unconfigured, restore) => {
+      await prisma.event.update({ where: { id: WALLET_LOC_EVENT }, data: unconfigured });
+      try {
+        const res = await putLocation(WALLET_LOC_EVENT, adminCookie, {
+          formatted_address: "Unconfigured Guard Street",
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        await prisma.event.update({ where: { id: WALLET_LOC_EVENT }, data: restore });
+      }
+    },
+  );
+
+  it("does not enqueue a job when a wallet-relevant field is resubmitted with its current value (bot review)", async () => {
+    await prisma.eventLocation.create({
+      data: { event_id: WALLET_LOC_EVENT, formatted_address: "Unchanged Street" },
+    });
+
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { formatted_address: "Unchanged Street" });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("does not enqueue a job when address_components are resubmitted with identical content (bot review)", async () => {
+    const components = {
+      object_name: "ICE Kraków",
+      street: "Marii Konopnickiej 17",
+      postcode: "30-302",
+      city: "Kraków",
+      region: "Lesser Poland",
+      country: "Poland",
+    };
+    await prisma.eventLocation.create({
+      data: { event_id: WALLET_LOC_EVENT, address_components: components },
+    });
+
+    // A fresh object with identical content, not the same reference - proves the comparison is
+    // by serialized value (JSON.stringify), not by object identity (Prisma always returns a new
+    // JS object on read, even when the stored content hasn't changed).
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { address_components: { ...components } });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(0);
   });
 });

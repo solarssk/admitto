@@ -42,6 +42,15 @@ export const DEFAULT_MFA_REQUIRED_ROLES = "admin,superadmin";
 /** Label on UserMfaMethod recovery rows for break-glass emergency codes. */
 export const EMERGENCY_RECOVERY_LABEL = "emergency";
 
+/** Suggested default when no Cloudflare Access "Protected URL paths" value is stored yet - a
+ * fresh setup covers the admin panel and the check-in scan/lookup API, which also accepts a
+ * Cloudflare Access identity (see resolveStaffAuthFromRequest / createCheckinPreAuth). This is
+ * only ever a suggestion shown in Admitto's own settings; it does not configure Cloudflare
+ * itself. An operator must still add the same paths to the Cloudflare Access application's own
+ * path match for Cloudflare to actually forward a token for them - see
+ * docs/wiki/Cloudflare-Access-Identity-Linking.md. */
+export const CF_ACCESS_DEFAULT_PROTECTED_PREFIXES = ["/admin", "/api/admin", "/api/checkin"];
+
 /** Throttle interval for updating last_seen_at on validate. */
 export const SESSION_LAST_SEEN_THROTTLE_MS = 60_000;
 

@@ -1,9 +1,11 @@
 # Ticket Types
 
-> **Audience:** Event Managers
-> **Required role:** Organisation Admin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | Event Managers |
+| **Required role** | Administrator |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.5.1 |
 
 ## What this page helps you do
 
@@ -16,12 +18,11 @@ Decide which groups genuinely need different preparation, communication, check-i
 ## Steps
 
 1. Open **Event settings**, then **Ticket types**.
-2. Select **Add ticket type**.
-3. Replace **New type** with the intended label.
-4. Choose a colour that helps staff distinguish the type.
-5. Add the remaining types needed by the event.
-6. Review attendee counts before removing or changing an existing type.
-7. Use the configured label or key in attendee imports.
+2. Select **Add ticket type**, type the intended label, and choose a colour that helps staff distinguish the type.
+3. Add the remaining types needed by the event, or edit an existing type's label or colour.
+4. Select **Save** to apply the new types and any label/colour edits, or **Reset** to discard them. Leaving the page with unsaved additions or edits prompts for confirmation.
+5. Review attendee counts before removing an existing type. Select its trash icon and confirm - removal takes effect immediately and does not wait for Save.
+6. Use the configured label or key in attendee imports.
 
 ## Expected result
 
@@ -34,6 +35,7 @@ The ticket type appears consistently in attendee forms, imports, filters, commun
 - The stored key is created with the type and remains stable when its visible label changes.
 - A type cannot be removed while attendees still use it.
 - Do not create several labels for the same group only to correct spelling; rename the existing type.
+- Adding a type or editing its label/colour is staged in the page until you select **Save**; it is not sent to the server before that. Removing a type is the exception - it takes effect immediately once confirmed.
 
 ## What changes after this action
 

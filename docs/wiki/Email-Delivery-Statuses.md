@@ -1,9 +1,11 @@
 # Email Delivery Statuses
 
-> **Audience:** Event Managers and Superadmins
-> **Required role:** Organisation Admin or Superadmin
-> **Feature status:** Available
-> **Last verified:** Admitto 0.4.13
+| Field | Value |
+|---|---|
+| **Audience** | Event Managers and Superadmins |
+| **Required role** | Administrator or Superadmin |
+| **Feature status** | Available |
+| **Last verified** | Admitto 0.4.13 |
 
 The delivery log records the latest known state reported by Admitto and the configured mail transport.
 
@@ -28,7 +30,7 @@ Filters show recorded facts; they do not guarantee that a person read the email.
 
 Use a row's **…** menu in the delivery log to look deeper at a single delivery without leaving the page:
 
-- **View sent message** shows the actual subject and body generated for that attendee. The QR code and ticket link are always replaced with a "hidden for privacy" placeholder, so this view is for confirming wording and layout, not for retrieving a working ticket.
+- **View sent message** shows the actual subject and body generated for that attendee, including the real ticket link and QR code the recipient received.
 - **View delivery details** shows the mail provider, message id, and attempt count. A Failed, Bounced, or Rejected delivery gets a red notice with the SMTP or transport error code and a plain-English explanation; an Accepted, Sent, or Delivered one gets a matching green confirmation instead. Sibling sends and resends for the same attendee stay on Delivery history (attendee page) and the Communication delivery log, not inside this popup.
 - **Resend** and **Dismiss bounce** appear only on a Bounced row. Resend sends that same template again after you have corrected the cause; Dismiss bounce clears the row from the Communication header's bounce count without sending anything, for cases already resolved another way (for example the attendee confirmed the original message). Both actions grey out on that row once used, since a delivery row's recorded status does not change afterward.
 

@@ -118,6 +118,13 @@ beforeAll(async () => {
   adminSessionId = adminSession.session.id;
 });
 
+// The whole /api/account/* route group now shares one auth:account-ip per-IP bucket (see
+// policies.ts); every request in this file resolves to the same effective test-harness IP, so
+// without a reset here the group bucket would accumulate across unrelated `it()`s and start
+// rejecting otherwise-valid requests partway through the file. Tests that specifically exercise
+// rate-limit-exceeded behavior pre-fill their own target bucket after this reset runs.
+beforeEach(() => rateLimitStore.reset());
+
 afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
   await prisma.externalIdentity.deleteMany({ where: { user_id: userId } });
@@ -299,6 +306,29 @@ describe("PATCH /api/account/password", () => {
     });
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
+  });
+
+  it("returns 429 after exceeding the password-check rate limit, independent of the per-IP bucket", async () => {
+    rateLimitStore.reset();
+    // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
+    // looping HTTP requests: /api/account/password also sits behind the auth:account-ip per-IP
+    // bucket (applied group-wide in app.ts to the whole /api/account/* route group, max 10/min),
+    // which would trip at the same threshold on repeated real requests and mask whether this
+    // handler's own password-check rate limit is actually the thing returning 429.
+    const bucketKey = `account:password-check:user:${userId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(bucketKey, 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: PASSWORD, new_password: NEW_PASSWORD, new_password_confirm: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("too many requests");
+    rateLimitStore.reset();
   });
 
   it("returns 400 password_too_common for a blocklisted new password", async () => {
@@ -498,9 +528,9 @@ describe("POST /api/account/mfa/totp/*", () => {
   });
 
   it("two concurrent confirms of the same pending enrollment write exactly one audit row", async () => {
-    // account/password, mfa/totp/confirm, and mfa/reset all share one per-IP rate-limit
-    // bucket (loginRateLimitJson); reset it so this test's own requests don't trip a limit
-    // exhausted by everything else that already ran in this file.
+    // The whole /api/account/* route group shares one per-IP rate-limit bucket
+    // (auth:account-ip); reset it so this test's own requests don't trip a limit exhausted
+    // by everything else that already ran in this file.
     rateLimitStore.reset();
     const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
       method: "POST",
@@ -539,6 +569,32 @@ describe("POST /api/account/mfa/totp/*", () => {
       body: JSON.stringify({ password: "wrong-password" }),
     });
     expect(res.status).toBe(401);
+  });
+
+  it("returns 429 on MFA reset after exceeding the password-check rate limit, independent of the per-IP bucket", async () => {
+    rateLimitStore.reset();
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: encryptTotpSecret(generateTotpSecret()), confirmed_at: new Date() },
+    });
+    // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
+    // looping HTTP requests: /api/account/mfa/reset also sits behind the group-wide
+    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 10/min),
+    // which would trip at the same threshold on repeated real requests and mask whether this
+    // handler's own password-check rate limit is actually the thing returning 429.
+    const bucketKey = `account:password-check:user:${userId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(bucketKey, 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId } })).toBeGreaterThan(0);
+    rateLimitStore.reset();
   });
 
   it("resets MFA and revokes other sessions on valid password", async () => {
@@ -649,8 +705,9 @@ describe("POST /api/account/mfa/totp/*", () => {
 });
 
 // Enroll+confirm via direct function calls (not the HTTP endpoints) so these setup steps
-// don't consume the shared per-IP login rate-limit bucket that both `/api/account/mfa/reset`
-// and `/api/account/password` are gated by. Shared by both step-up describe blocks below.
+// don't consume the shared per-IP auth:account-ip bucket that both `/api/account/mfa/reset`
+// and `/api/account/password` (and the rest of /api/account/*) are gated by. Shared by both
+// step-up describe blocks below.
 async function enrollConfirmedTotp(): Promise<string> {
   const enrollment = await startTotpEnrollment(prisma, adminUserId);
   const secret = parseTotpSecretFromOtpauthUri(enrollment!.otpauthUri);
@@ -692,10 +749,10 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
   it("returns 429 after exceeding the step-up code rate limit", async () => {
     await enrollConfirmedTotp();
     // Pre-fill only this endpoint's own session bucket directly, instead of looping HTTP
-    // requests: /api/account/mfa/reset also sits behind the shared per-IP login rate limiter
-    // (loginRateLimitJson, max 10/min) applied in app.ts before this handler runs, which would
-    // trip first on repeated real requests and mask whether this handler's own step-up rate
-    // limit is actually the thing returning 429.
+    // requests: /api/account/mfa/reset also sits behind the group-wide auth:account-ip per-IP
+    // bucket (applied to all of /api/account/* in app.ts, max 10/min), which would trip first
+    // on repeated real requests and mask whether this handler's own step-up rate limit is
+    // actually the thing returning 429.
     const bucketKey = `mfa:totp:session:mfa-reset:${adminSessionId}`;
     for (let i = 0; i < 10; i++) {
       await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
@@ -795,10 +852,10 @@ describe("PATCH /api/account/password — step-up for MFA-required roles", () =>
   it("returns 429 after exceeding the step-up code rate limit", async () => {
     await enrollConfirmedTotp();
     // Pre-fill only this endpoint's own session bucket directly, instead of looping HTTP
-    // requests: /api/account/password also sits behind the shared per-IP login rate limiter
-    // (loginRateLimitJson, max 10/min) applied in app.ts before this handler runs, which would
-    // trip first on repeated real requests and mask whether this handler's own step-up rate
-    // limit is actually the thing returning 429.
+    // requests: /api/account/password also sits behind the group-wide auth:account-ip per-IP
+    // bucket (applied to all of /api/account/* in app.ts, max 10/min), which would trip first
+    // on repeated real requests and mask whether this handler's own step-up rate limit is
+    // actually the thing returning 429.
     const bucketKey = `mfa:totp:session:account-password:${adminSessionId}`;
     for (let i = 0; i < 10; i++) {
       await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
@@ -1190,6 +1247,43 @@ describe("DELETE /api/account/external-identity", () => {
     expect(otherSession.revoked_at).not.toBeNull();
   });
 
+  it("unlinks a Cloudflare Access identity together with its source OIDC identity, not just the OIDC one", async () => {
+    // Cloudflare Access identities are only ever auto-provisioned alongside a source OIDC
+    // identity (resolveCfAccessIdentityFromValidatedJwt requires one to already exist) and get
+    // silently recreated on the next Cloudflare-authenticated request as long as that source
+    // identity survives - so leaving it behind here would make this "unlink" a no-op for
+    // Cloudflare sign-in, and unlinking just the OIDC identity would orphan the Cloudflare one
+    // (every subsequent Cloudflare-protected request then fails with source_identity_not_linked).
+    const cfProvider = await prisma.identityProvider.create({
+      data: {
+        provider_type: "cloudflare_access",
+        issuer: "https://team.cloudflareaccess.test",
+        client_id: "__cloudflare_access__",
+        authorization_endpoint: "https://team.cloudflareaccess.test/cdn-cgi/access/login",
+        token_endpoint: "https://team.cloudflareaccess.test/cdn-cgi/access/login",
+        jwks_uri: "https://team.cloudflareaccess.test/cdn-cgi/access/certs",
+        display_name: "Cloudflare Access",
+        enabled: true,
+      },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "hybrid-unlink-oidc-subject", user_id: userId },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: cfProvider.id, subject: "hybrid-unlink-cf-subject", user_id: userId },
+    });
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(0);
+
+    await prisma.identityProvider.delete({ where: { id: cfProvider.id } });
+  });
+
   it("returns 400 current_password_required when the account has a local password and none is given", async () => {
     await prisma.externalIdentity.create({
       data: { provider_id: PROVIDER_ID, subject: "self-unlink-no-current-pass-subject", user_id: userId },
@@ -1218,6 +1312,32 @@ describe("DELETE /api/account/external-identity", () => {
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("wrong_password");
     expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(1);
+  });
+
+  it("returns 429 after exceeding the password-check rate limit, independent of the per-IP bucket", async () => {
+    rateLimitStore.reset();
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-ratelimit-subject", user_id: userId },
+    });
+    // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
+    // looping HTTP requests: /api/account/external-identity also sits behind the group-wide
+    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 10/min),
+    // which would trip at the same threshold on repeated real requests and mask whether this
+    // handler's own password-check rate limit is actually the thing returning 429.
+    const bucketKey = `account:password-check:user:${userId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(bucketKey, 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, current_password: PASSWORD }),
+    });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
+    expect(await prisma.externalIdentity.count({ where: { user_id: userId } })).toBe(1);
+    rateLimitStore.reset();
   });
 
   it("blocks unlink with 409 while an OIDC-owned role grant exists, leaving identity and grant untouched", async () => {

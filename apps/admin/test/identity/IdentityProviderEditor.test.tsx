@@ -169,6 +169,11 @@ describe("IdentityProviderEditor — create", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Create provider" })).toBeTruthy();
     });
+    // Create is disabled on a still-empty draft - dirty an unrelated field so it becomes
+    // clickable, leaving Display name blank to exercise the validation being tested.
+    fireEvent.change(screen.getByLabelText("Issuer URL"), {
+      target: { value: "https://accounts.google.com" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create provider" }));
 
     await waitFor(() => {
@@ -279,6 +284,8 @@ describe("IdentityProviderEditor — edit", () => {
     router.navigate("/admin/settings/identity/providers/p2");
 
     await screen.findByDisplayValue("Okta");
+    // Save is disabled on a clean load - dirty the field so it becomes clickable.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Okta SSO" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith("p2", expect.anything()));
   });
@@ -294,6 +301,10 @@ describe("IdentityProviderEditor — edit", () => {
     // (blank = keep stored) and the save body must NOT send an empty secret.
     fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "x" } });
     fireEvent.change(screen.getByLabelText(/client secret/i), { target: { value: "" } });
+    // Clearing it back to "" is itself a no-op (client_secret_touched re-derives from the
+    // current value's length, so it also reverts to false) - dirty an unrelated field so
+    // Save is clickable, without changing what's being verified about the secret.
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google Workspace" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
@@ -540,15 +551,21 @@ describe("IdentityProviderEditor — coverage", () => {
 });
 
 describe("IdentityProviderEditor — Redirect URI", () => {
-  it("shows a create-mode hint that the Redirect URI appears after the first save", async () => {
+  it("shows a disabled Redirect URI placeholder with a non-interactive Copy icon in create mode, same layout as edit", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
+    const field = (await screen.findByLabelText("Redirect URI")) as HTMLInputElement;
+    expect(field.disabled).toBe(true);
+    expect(field.value).toMatch(/api\/auth\/oidc/);
     expect(
-      await screen.findByText(/After the first save, reopen the provider and copy the Redirect URI/, {
+      screen.getByText(/Available to copy once you save this provider for the first time/, {
         exact: false,
       }),
     ).toBeTruthy();
-    expect(screen.getByText(/api\/auth\/oidc/, { exact: false })).toBeTruthy();
-    expect(screen.queryByLabelText("Redirect URI")).toBeNull();
+    // Nothing to copy yet, so this renders as Input's plain decorative icon (no onIconClick),
+    // not a button - there's no click target to disable. Queried from the field itself (not
+    // container.querySelector) since the editor renders into a portal outside RTL's container.
+    expect(screen.queryByRole("button", { name: /Copy/i })).toBeNull();
+    expect(field.closest(".at-inputgroup")?.querySelector(".ti-copy")).toBeTruthy();
   });
 
   it("shows the Redirect URI with Copy in edit mode from the provider API", async () => {

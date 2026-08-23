@@ -26,6 +26,7 @@ const fetchEventItems = vi.fn();
 const bulkRevokeItems = vi.fn();
 const addToast = vi.fn();
 const reportApiError = vi.fn();
+const pollWalletPushCompletion = vi.fn();
 
 function mailSettings(provider: string | null) {
   return {
@@ -93,6 +94,10 @@ vi.mock("../../src/attendees/pollBulkSendCompletion.js", async (importOriginal) 
     pollBulkSendCompletion: (...args: unknown[]) => pollBulkSendCompletion(...args),
   };
 });
+
+vi.mock("../../src/attendees/pollWalletPushCompletion.js", () => ({
+  pollWalletPushCompletion: (...args: unknown[]) => pollWalletPushCompletion(...args),
+}));
 
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
@@ -165,6 +170,13 @@ function bulkBar() {
  * also catches "Delete wallet pass" - excluded via the lookahead. */
 function openAndArmDeleteDialog() {
   return openMenuItemAndArmDialog(/^Delete(?! wallet)/);
+}
+
+/** "Check in" is a bare bulk-bar button (not behind "More actions") gated by its own confirm
+ * dialog (no arming delay) — click it, then confirm within the dialog it opens. */
+function openAndConfirmBulkCheckIn() {
+  fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Check in" }));
 }
 
 /** Opens the "More actions" menu, then clicks the given menu item and returns the confirm dialog. */
@@ -1139,7 +1151,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
     await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(bulkCheckInAttendees).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"]);
@@ -1148,6 +1160,23 @@ describe("AttendeesPage bulk check-in", () => {
       expect(addToast).toHaveBeenCalledWith("2 attendees checked in.", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("Cancel closes the bulk-check-in dialog without calling bulkCheckInAttendees (codecov review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkCheckInAttendees).not.toHaveBeenCalled();
   });
 
   it("notes already-admitted attendees in the toast instead of erroring", async () => {
@@ -1160,7 +1189,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("1 attendee checked in (1 already admitted).", "success");
@@ -1177,7 +1206,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("All selected attendees were already checked in.", "info");
@@ -1194,7 +1223,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("No attendees checked in (1 pass revoked, 1 not found).", "error");
@@ -1211,7 +1240,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("1 attendee checked in (2 failed unexpectedly).", "warning");
@@ -1236,7 +1265,7 @@ describe("AttendeesPage bulk check-in", () => {
       fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
       await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-      fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+      openAndConfirmBulkCheckIn();
 
       await waitFor(() => {
         expect(assignSpy).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
@@ -1258,7 +1287,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Check-in failed.", "error");
@@ -1276,7 +1305,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Failed to check in attendees.", "error");
@@ -1302,7 +1331,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
@@ -1343,7 +1372,7 @@ describe("AttendeesPage bulk check-in", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
-    fireEvent.click(bulkBar().getByRole("button", { name: "Check in" }));
+    openAndConfirmBulkCheckIn();
 
     await act(async () => router.navigate("/admin/events/evt-2/attendees"));
     await waitFor(() => {
@@ -1800,6 +1829,54 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
       expect(addToast).toHaveBeenCalledWith("2 attendees set to Standard", "success");
     });
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("polls wallet push completion when the response includes a job id", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, walletPushJobId: "job-abc" });
+    pollWalletPushCompletion.mockResolvedValue(undefined);
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(pollWalletPushCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "job-abc",
+        addToast,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("toasts a fallback message when the wallet push poll itself fails to run", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, walletPushJobId: "job-abc" });
+    pollWalletPushCompletion.mockRejectedValue(new Error("network down"));
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
+    });
+  });
+
+  it("does not poll wallet push completion when nothing actually changed (no job enqueued)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    fetchTicketTypes.mockResolvedValue(catalog);
+    bulkChangeTicketType.mockResolvedValue({ updatedCount: 0, alreadySetCount: 2, walletPushJobId: null });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Change ticket type/, "Change ticket type");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(bulkChangeTicketType).toHaveBeenCalledOnce());
+    expect(pollWalletPushCompletion).not.toHaveBeenCalled();
   });
 
   it("closes the picker on Cancel without applying anything, and keeps the selection", async () => {

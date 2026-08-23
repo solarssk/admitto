@@ -20,7 +20,7 @@ import {
   setMailTemplate,
   updateMailTemplateMetadata,
   validateTemplate,
-  materializeStoredDeliveryMessageRedacted,
+  materializeStoredDeliveryMessage,
   UnknownPlaceholdersError,
   MjmlCompileError,
   friendlyMjmlErrorMessage,
@@ -35,6 +35,7 @@ import {
   listDeliveries,
   getDeliveryWithTimeline,
   getRenderedDelivery,
+  resolveAttendeeMailLinks,
   sendTestEmail,
   toDeliveryDto,
   toDeliveryDetailDto,
@@ -44,7 +45,7 @@ import {
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
 import { isSendSuccess } from "@admitto/mailer";
-import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeBulkActionLog } from "@admitto/tickets";
+import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeActionLog, writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -259,7 +260,7 @@ async function renderDraftPreview(
   const customAssets = await resolveEventImageAssetVars(eventId, db);
 
   const vars = {
-    ...buildBaseTemplateVars(event, undefined, branding, baseUrl),
+    ...buildBaseTemplateVars(event, branding, baseUrl),
     ...customAssets.vars,
   };
 
@@ -659,15 +660,17 @@ export async function handleGetEventDelivery(c: Context, db: PrismaClient): Prom
   return c.json(dto);
 }
 
-/** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered — redacted rendered message
- * for the "View sent message" preview. The recipient's real QR code / ticket link are never
- * returned, by construction — see materializeStoredDeliveryMessageRedacted. Either field can
- * independently be null: the delivery wasn't found at all (whole response is null/404), or the
- * retention window already nulled the stored snapshot (see retention.ts nullifyDeliverySnapshots)
- * — callers must render an explicit "message content no longer available" state for the latter. */
+/** GET /api/admin/events/:eventId/deliveries/:deliveryId/rendered: rendered message for the
+ * "View sent message" preview, with the recipient's real ticket link and QR code materialized in
+ * (same admin/superadmin gate as "Copy ticket link", which already exposes the same ticket_url).
+ * Either field can independently be null: the delivery wasn't found at all (whole response is
+ * null/404), or the retention window already nulled the stored snapshot (see retention.ts
+ * nullifyDeliverySnapshots), so callers must render an explicit "message content no longer
+ * available" state for the latter. */
 export async function handleGetRenderedEventDelivery(
   c: Context,
   db: PrismaClient,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
@@ -685,14 +688,41 @@ export async function handleGetRenderedEventDelivery(
     return c.json({ subject: null, html: null });
   }
 
-  const redacted = materializeStoredDeliveryMessageRedacted({
-    subject: rendered.rendered_subject ?? "",
-    html: rendered.rendered_html ?? "",
+  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
+  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
+
+  let materialized;
+  try {
+    const links = await resolveAttendeeMailLinks(rendered.attendee_id, db, baseUrlOrRes);
+    materialized = materializeStoredDeliveryMessage(
+      { subject: rendered.rendered_subject ?? "", html: rendered.rendered_html ?? "" },
+      links,
+    );
+  } catch (err) {
+    // Only the specific "nothing to build a link from yet" shape is a genuine "not available"
+    // response, same distinction handleGetAttendeeTicketLink makes - a decryption failure or a
+    // DB error hitting this same call is a real server error and must not be swallowed into the
+    // same response used for expired retention.
+    const notIssued =
+      err instanceof Error &&
+      (err.message.includes("missing token_enc") || err.message.includes("missing public_ref"));
+    if (!notIssued) throw err;
+    return c.json({ subject: null, html: null });
+  }
+
+  await db.$transaction(async (tx) => {
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: rendered.attendee_id,
+      action_type: "ticket_link_retrieved",
+      audit: adminAuditFromContext(c),
+    });
   });
 
+  c.header("Cache-Control", "no-store");
   return c.json({
-    subject: rendered.rendered_subject != null ? redacted.subject : null,
-    html: rendered.rendered_html != null ? redacted.html : null,
+    subject: rendered.rendered_subject != null ? materialized.subject : null,
+    html: rendered.rendered_html != null ? materialized.html : null,
   });
 }
 

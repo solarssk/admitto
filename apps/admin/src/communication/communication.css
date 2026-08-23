@@ -62,6 +62,17 @@
   gap: var(--space-4);
 }
 
+/* A grid track's default min-width is `auto` (its content's intrinsic min-content width), not
+   0 - a long unbroken run of text (no spaces for the browser to break on) on one side makes
+   that track's min-content huge, which blows out its whole column and starves the other one,
+   even though overflow-wrap: break-word is set (it governs actual line-wrapping, not intrinsic
+   sizing, so it doesn't shrink min-content on its own). Forcing min-width: 0 here makes the grid
+   honor the explicit 1fr/1fr split regardless of content, which in turn gives break-word room to
+   actually wrap that content within its column instead of pushing the layout wide. */
+.communication-templates-split > * {
+  min-width: 0;
+}
+
 @media (max-width: 960px) {
   .communication-templates-split {
     grid-template-columns: 1fr;
@@ -311,6 +322,14 @@
   margin-top: var(--space-3);
 }
 
+/* Cancels the margin-top above when this field is already a flex-gap sibling inside
+   .settings-card-stack (Wallets tab) - otherwise the stack's own gap and this margin stack on
+   top of each other, doubling the space below the intro paragraph. Templates' own body field
+   sits in a plain (non-gapped) fieldset stack, so it still needs and keeps its own margin. */
+.settings-card-stack .communication-body-field {
+  margin-top: 0;
+}
+
 .communication-body-field label {
   display: block;
   margin-bottom: var(--space-2);
@@ -327,28 +346,7 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-sm);
   resize: vertical;
-  /* Same slim on-theme scrollbar as .overview-timeline / .attendee-deliveries-scroll (staff.css /
-     attendees.css) - the body is long enough to scroll on most real templates, and the native
-     scrollbar reads as inconsistent with the rest of the app next to it. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-
-.communication-textarea::-webkit-scrollbar {
-  width: 8px;
-}
-
-.communication-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.communication-textarea::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-pill);
-}
-
-.communication-textarea::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  /* Scrollbar look: shared .at-scroll (packages/ui) — applied via className, not here. */
 }
 
 .communication-errors {
@@ -682,11 +680,17 @@
 }
 
 /* Icon-prefixed fields (email, time, template) - an icon per field disambiguates without a text
-   label that would wrap awkwardly on narrow cards (reports-log-card__meta-item convention). */
+   label that would wrap awkwardly on narrow cards (reports-log-card__meta-item convention).
+   min-width: 0 + max-width: 100% let a long value (typically the email) wrap inside its own
+   item instead of overflowing the card on narrow phones - the parent's flex-wrap only wraps
+   between items, not within one. */
 .communication-card__meta-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .communication-card__meta-item i {
@@ -698,6 +702,17 @@
   padding: var(--space-6);
   text-align: center;
   color: var(--text-muted);
+}
+
+/* The header's shared .at-card__header is nowrap by design - but the Delivery log card's title
+   plus its three actions (Clear filters, Export log, Live/Paused) genuinely don't fit on one
+   line under ~480px. Wrapping to a second line there is the lesser evil vs. clipping a button
+   off-screen (same fix already applied to Settings' Audit log card, staff.css). */
+@media (max-width: 480px) {
+  .communication-delivery-header .at-card__header {
+    flex-wrap: wrap;
+    height: auto;
+  }
 }
 
 /* Communication header: "Documentation" is a single short action, same shape as Reports'
