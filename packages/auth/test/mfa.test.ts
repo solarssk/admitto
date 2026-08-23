@@ -52,7 +52,13 @@ import {
   revokeAllTrustedDevicesForUser,
 } from "../src/mfa/trusted-device.js";
 import { userRequiresMfa, userHasConfirmedTotp, markBackupCodesAcknowledged } from "../src/mfa/policy.js";
-import { createSession, validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
+import {
+  createSession,
+  validateSession,
+  validatePartialSession,
+  promoteSessionToFull,
+  promoteSessionToBackupCodesStep,
+} from "../src/session.js";
 import { getSessionTtlAdminMs, getMfaRequiredRoles } from "../src/settings/resolver.js";
 import { SETTING_SESSION_TTL } from "../src/settings/keys.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
@@ -500,6 +506,52 @@ describe("login MFA flow", () => {
     expect(events.some((e) => e.event === "auth.mfa.fail")).toBe(true);
     expect(events.some((e) => e.event === "auth.mfa.success")).toBe(false);
     expect(events.some((e) => e.event === "auth.mfa.recovery_consumed")).toBe(false);
+  });
+});
+
+describe("promoteSessionToBackupCodesStep", () => {
+  it("rotates the session token and grants the backup-codes TTL", async () => {
+    const userId = "user-promote-to-backup-step";
+    await prisma.user.create({
+      data: { id: userId, email: "promote-to-backup-step@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    try {
+      const { session, rawToken: preToken } = await createSession(prisma, {
+        userId,
+        stage: SESSION_STAGE.ENROLLMENT_REQUIRED,
+      });
+
+      const promoted = await promoteSessionToBackupCodesStep(prisma, session.id, userId);
+      expect(promoted?.rawToken).toBeTruthy();
+      expect(promoted!.rawToken).not.toBe(preToken);
+
+      // The pre-promotion token must stop validating; the rotated one takes over.
+      expect(await validatePartialSession(prisma, preToken)).toBeNull();
+      const validated = await validatePartialSession(prisma, promoted!.rawToken);
+      expect(validated?.stage).toBe(SESSION_STAGE.BACKUP_CODES_REQUIRED);
+
+      const row = await prisma.session.findUnique({ where: { id: session.id } });
+      expect(row?.expires_at.getTime()).toBe(row?.last_seen_at.getTime()! + BACKUP_CODES_STEP_TTL_MS);
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: userId } });
+      await prisma.user.deleteMany({ where: { id: userId } });
+    }
+  });
+
+  it("refuses a session that is not enrollment_required", async () => {
+    const userId = "user-promote-to-backup-step-wrong-stage";
+    await prisma.user.create({
+      data: { id: userId, email: "promote-to-backup-step-wrong@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    try {
+      const { session } = await createSession(prisma, { userId, stage: SESSION_STAGE.MFA_PENDING });
+      expect(await promoteSessionToBackupCodesStep(prisma, session.id, userId)).toBeNull();
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: userId } });
+      await prisma.user.deleteMany({ where: { id: userId } });
+    }
   });
 });
 
