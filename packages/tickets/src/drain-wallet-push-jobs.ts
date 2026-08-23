@@ -7,6 +7,7 @@
  * that's PassCreator's own rate limit, not something to optimize away.
  */
 import type { PrismaClient } from "@admitto/db";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import {
   DEFAULT_WORKER_HEARTBEAT_STALE_MS,
   isWorkerHeartbeatStale,
@@ -148,7 +149,10 @@ function walletPushJobErrorMessage(err: unknown): string {
 }
 
 async function markWalletPushFailed(db: PrismaClient, jobId: string, err: unknown): Promise<void> {
-  console.error("wallet push job failed:", err);
+  emitSystemLog("wallet", "error", "wallet_push_job_failed", {
+    job_id: jobId,
+    error: err instanceof Error ? err.message : String(err),
+  });
   await db.adminJob.update({
     where: { id: jobId },
     data: {

@@ -32,17 +32,11 @@ ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=$GIT_COMMIT
 RUN npm run build
 
-# Prisma v7's config loader (prisma.config.ts -> @prisma/config -> c12/jiti/etc.) pulls in several
-# new transitive packages beyond the old prisma/@prisma/.prisma trio, and docker-entrypoint.sh
-# still needs the CLI (a devDependency) at container startup to run migrate status/deploy. Snapshot
-# node_modules before pruning devDependencies, then merge back only what pruning removed (`cp -n`
-# skips anything that already exists, so real prod dependencies are untouched) instead of
-# hardcoding an increasingly long and version-fragile package list.
-RUN cp -r node_modules /opt/node_modules-full
-
+# docker-entrypoint.sh needs the Prisma CLI at container startup to run migrate status/deploy, so
+# packages/db/package.json declares "prisma" as a runtime dependency (not devDependency); npm
+# prune keeps it and its resolved transitive tree (prisma.config.ts -> @prisma/config ->
+# c12/jiti/etc.) automatically, same as any other production dependency.
 RUN npm prune --omit=dev
-
-RUN cp -rn /opt/node_modules-full/. node_modules/ && rm -rf /opt/node_modules-full
 
 FROM node:24-bookworm-slim AS production
 

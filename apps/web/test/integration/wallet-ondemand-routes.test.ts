@@ -193,7 +193,7 @@ describe("On-demand wallet routes", () => {
         attendeeCompanyLabel: "Acme",
         attendeeDepartmentLabel: "Engineering",
         eventNameLabel: "Wallet Gala",
-        eventHoursLabel: "18:00-22:00",
+        eventHoursLabel: "18:00 - 22:00 UTC",
         directionsTextLabel: undefined,
         googleMapsUrlLabel: expect.stringContaining("google.com"),
         appleMapsUrlLabel: expect.stringContaining("apple.com"),

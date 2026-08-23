@@ -530,7 +530,13 @@ async function subscribeWalletWebhooksBestEffort(
     templateId: updated.wallet_template_id,
     baseUrl: resolvePassCreatorBaseUrl(),
   });
-  const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+  const registrationUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
+  // pass_voided gets its own target URL - see handlePassCreatorWebhook's doc comment
+  // (wallet-webhook.ts) for why: PassCreator's payload never names which event fired, and
+  // pass_voided's own payload has no `voided` field either, so the three registration events and
+  // pass_voided can't share one URL the way they used to.
+  const targetUrlFor = (event: PassCreatorWebhookEventType): string =>
+    event === "pass_voided" ? `${registrationUrl}/voided` : registrationUrl;
 
   // subscribeWebhook creates a fresh subscription entry every call, even for an identical
   // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
@@ -538,22 +544,43 @@ async function subscribeWalletWebhooksBestEffort(
   // delivering its own redundant webhook call forever after. Listing is itself best-effort: if it
   // fails, fall back to the old blind-subscribe behavior rather than skipping subscription
   // entirely - a few duplicate subscriptions are a lesser problem than none at all.
-  let alreadySubscribed: Set<string>;
+  let ownTemplateHooks: { targetUrl: string | null; event: string; passTemplate: string | null }[] = [];
   try {
-    const existing = await client.listWebhooks();
-    alreadySubscribed = new Set(
-      existing
-        .filter((hook) => hook.passTemplate === updated.wallet_template_id && hook.targetUrl === targetUrl)
-        .map((hook) => hook.event),
+    ownTemplateHooks = (await client.listWebhooks()).filter(
+      (hook) => hook.passTemplate === updated.wallet_template_id,
     );
   } catch (err) {
     console.error("wallet webhook subscribe: listWebhooks failed, subscribing unconditionally:", err);
-    alreadySubscribed = new Set();
   }
-  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter((event) => !alreadySubscribed.has(event));
+
+  // One-time migration: pass_voided used to share registrationUrl with the three registration
+  // events (before 2026-08-19) - a subscription there is stale now that it has its own URL, and
+  // would otherwise sit there forever, redelivering every void to a route that can't act on it.
+  // PassCreator's unsubscribe API removes every event on a target URL at once (not one event
+  // selectively - see PassCreatorClient.unsubscribeWebhook), so cleaning up that one stale entry
+  // means clearing registrationUrl entirely and resubscribing all four events fresh below.
+  const hasLegacyVoidedSubscription = ownTemplateHooks.some(
+    (hook) => hook.targetUrl === registrationUrl && hook.event === "pass_voided",
+  );
+  let alreadySubscribed = new Set(ownTemplateHooks.map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`));
+  if (hasLegacyVoidedSubscription) {
+    try {
+      await client.unsubscribeWebhook(registrationUrl);
+      alreadySubscribed = new Set(); // wiped clean - every event below gets a fresh subscription
+    } catch (err) {
+      // Unsubscribe failed: the stale entry is still there untouched, so fall back to the normal
+      // dedup (computed above) rather than piling a duplicate registration-event subscription on
+      // top of it.
+      console.error("wallet webhook subscribe: legacy pass_voided migration unsubscribe failed:", err);
+    }
+  }
+
+  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter(
+    (event) => !alreadySubscribed.has(`${targetUrlFor(event)} ${event}`),
+  );
 
   const settled = await Promise.allSettled(
-    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrl, event)),
+    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrlFor(event), event)),
   );
   settled.forEach((outcome, index) => {
     if (outcome.status !== "rejected") return;

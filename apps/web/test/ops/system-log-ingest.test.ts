@@ -149,6 +149,19 @@ describe("handleOpsSystemLogIngest", () => {
     expect(entries[0]!.fields).toBeUndefined();
   });
 
+  it.each(["worker", "wallet", "external"] as const)("accepts the %s source", async (source) => {
+    const before = currentSystemLogCursor();
+    const app = appWithToken(TOKEN);
+    const res = await app.request("/api/ops/system-logs", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ source, level: "info", message: `${source}_ok` }),
+    });
+    expect(res.status).toBe(200);
+    const entries = querySystemLogs({ sinceId: before, source });
+    expect(entries).toHaveLength(1);
+  });
+
   it("records an entry with no fields object when fields are omitted", async () => {
     const before = currentSystemLogCursor();
     const app = appWithToken(TOKEN);

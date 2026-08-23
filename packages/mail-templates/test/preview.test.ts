@@ -10,6 +10,7 @@ describe("buildBaseTemplateVars", () => {
         id: "evt-location",
         title: "Location event",
         date: new Date("2026-09-01"),
+        timezone: "UTC",
         location_details: {
           venue_name: "Sample venue",
           formatted_address: "Example Street 1, Warsaw",
@@ -19,7 +20,6 @@ describe("buildBaseTemplateVars", () => {
           accessibility_text: "Step-free access is available.",
         },
       },
-      "UTC",
       branding,
       "https://tickets.example.com/",
     );
@@ -42,6 +42,7 @@ describe("buildBaseTemplateVars", () => {
         id: "evt-no-map",
         title: "No map event",
         date: new Date("2026-09-01"),
+        timezone: "UTC",
         location_details: {
           venue_name: "Text-only venue",
           formatted_address: null,
@@ -51,7 +52,6 @@ describe("buildBaseTemplateVars", () => {
           accessibility_text: null,
         },
       },
-      "UTC",
       branding,
       "https://tickets.example.com",
     );
@@ -65,6 +65,51 @@ describe("buildBaseTemplateVars", () => {
       google_maps_url: "",
       apple_maps_url: "",
     });
+  });
+
+  it("formats event_date/event_hours in the event's own regional convention, same as the ticket page", () => {
+    const vars = buildBaseTemplateVars(
+      {
+        id: "evt-us",
+        title: "US event",
+        date: new Date("2026-09-01"),
+        timezone: "America/New_York",
+        event_hours_start: "09:00",
+        event_hours_end: "17:00",
+        location_details: {
+          venue_name: "Sample venue",
+          formatted_address: null,
+          latitude: null,
+          longitude: null,
+          directions_text: null,
+          accessibility_text: null,
+          address_components: { country: "United States" },
+        },
+      },
+      branding,
+      "https://tickets.example.com/",
+    );
+
+    expect(vars.event_date).toBe("September 1, 2026");
+    expect(vars.event_hours).toBe("9:00 am - 5:00 pm EDT");
+  });
+
+  it("uses en-GB 24h and no country/timezone suffix drift when no address is set", () => {
+    const vars = buildBaseTemplateVars(
+      {
+        id: "evt-plain",
+        title: "Plain event",
+        date: new Date("2026-09-01"),
+        timezone: "UTC",
+        event_hours_start: "09:00",
+        event_hours_end: "17:00",
+      },
+      branding,
+      "https://tickets.example.com/",
+    );
+
+    expect(vars.event_date).toBe("1 September 2026");
+    expect(vars.event_hours).toBe("09:00 - 17:00 UTC");
   });
 });
 

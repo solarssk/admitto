@@ -34,7 +34,7 @@ describe("auth-page-security", () => {
     const withEmptyArray = getAuthPageInlineScriptHeaders("test-nonce-value", []);
     expect(withEmptyArray["Content-Security-Policy"]).toBe(withoutArg["Content-Security-Policy"]);
     expect(withoutArg["Content-Security-Policy"]).not.toContain("frame-src");
-    expect(withoutArg["Content-Security-Policy"]).not.toContain("connect-src");
+    expect(withoutArg["Content-Security-Policy"]).toContain("connect-src 'self'");
   });
 
   it("adds trusted origins to script-src, connect-src, and frame-src (login challenge widget)", () => {
@@ -43,7 +43,7 @@ describe("auth-page-security", () => {
     ]);
     const csp = headers["Content-Security-Policy"]!;
     expect(csp).toContain("script-src 'nonce-test-nonce-value' https://challenges.cloudflare.com");
-    expect(csp).toContain("connect-src https://challenges.cloudflare.com");
+    expect(csp).toContain("connect-src 'self' https://challenges.cloudflare.com");
     expect(csp).toContain("frame-src https://challenges.cloudflare.com");
   });
 });
