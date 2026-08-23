@@ -583,6 +583,11 @@
   color: var(--status-error-fg);
 }
 
+.account-mfa-credential-row__remove:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 .account-mfa-method__action {
   flex-shrink: 0;
 }
