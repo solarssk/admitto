@@ -51,7 +51,7 @@ export async function userHasConfirmedTotp(
 /**
  * True when a sensitive re-auth action (OIDC link, MFA reset, ...) must require a step-up proof,
  * not just a password: the user's role requires MFA and they have a confirmed MFA method (TOTP
- * or WebAuthn — a step-up itself accepts either a code or a WebAuthn assertion, see
+ * or WebAuthn: a step-up itself accepts either a code or a WebAuthn assertion, see
  * `checkStepUpInTransaction` in `apps/web/src/admin/account-routes.ts`).
  */
 export async function userRequiresMfaStepUp(

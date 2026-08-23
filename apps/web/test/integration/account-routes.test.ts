@@ -726,7 +726,7 @@ async function registerConfirmedWebauthnCredential(uid: string, label = "Seeded 
 }
 
 /** Drive `POST /api/account/mfa/webauthn/assert/begin` over the given session, then sign the
- * returned challenge with `authenticator` — the `{ webauthn }` fragment a step-up-gated action
+ * returned challenge with `authenticator`: the `{ webauthn }` fragment a step-up-gated action
  * accepts alongside (or instead of) a `code`. */
 async function webauthnStepUpProof(
   cookie: string,
