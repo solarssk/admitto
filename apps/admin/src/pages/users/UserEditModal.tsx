@@ -1153,7 +1153,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
          * panel, matching the Identity providers modal's own backdrop (identity-modal.css). */}
         <ModalBackdrop />
         <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--wide">
-        <div ref={scrollRef} className="add-attendee-modal__scroll">
+        <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
           <div className="users-modal__head">
             <div className="users-modal__head-who">
               {/* Default (md, 36px) to match .identity-row-icon's size - the standard other

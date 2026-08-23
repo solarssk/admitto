@@ -82,7 +82,7 @@ export function CspTrustedOriginsModal({
     <dialog className="add-attendee-modal" open aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--w560">
-        <div ref={scrollRef} className="add-attendee-modal__scroll">
+        <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
           <h2 className="add-attendee-modal__title" id={titleId}>
             <i className="ti ti-shield-lock" aria-hidden="true" />{" "}
             Trusted third-party script origins
