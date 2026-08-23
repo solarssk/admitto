@@ -78,6 +78,10 @@ function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
   </div>`;
 }
 
+// Tabler outline icon (matching AUTH_SSO_BUTTON_ICON_SVG's format/size) for the "Remember this
+// device" follow-up button.
+const AUTH_REMEMBER_DEVICE_ICON_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 5a1 1 0 0 1 1 -1h16a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1v-10" /><path d="M7 20h10" /><path d="M9 16v4" /><path d="M15 16v4" /></svg>`;
+
 /** Render MFA verification form HTML (`/mfa/verify`). `hasWebauthnCredentials` shows the
  * "Use a passkey or security key" button only for a user who actually has one registered - the
  * button also self-hides via script when the browser lacks WebAuthn support. `hasTotp` controls
@@ -121,7 +125,7 @@ export function renderMfaVerifyForm(
   const rememberPrompt = hasWebauthnCredentials
     ? `<div class="auth-remember-prompt" id="mfa-remember-prompt" hidden>
       <p class="subtitle">Verified. Remember this device so you don't need to verify again next time?</p>
-      <button class="auth-btn-primary" type="button" id="mfa-remember-yes">Remember this device</button>
+      <button class="auth-btn-primary" type="button" id="mfa-remember-yes">${AUTH_REMEMBER_DEVICE_ICON_SVG}Remember this device</button>
       <button class="auth-btn-secondary" type="button" id="mfa-remember-no">Not now</button>
     </div>`
     : "";
@@ -384,6 +388,7 @@ export function renderMfaEnrollWebauthnPage(
       message: `Could not register your ${methodLabel}. Try again, or choose a different method.`,
     })}</div>
     <button class="auth-btn-primary" type="button" id="mfa-enroll-webauthn-btn" data-attachment="${attachment}">Continue with ${methodLabel}</button>
+    <p class="auth-field-hint" id="mfa-enroll-webauthn-hint" hidden>Waiting for your browser's passkey or security key prompt. This can take a moment, especially if it opens a password manager or another device.</p>
     <a class="auth-btn-secondary auth-enroll-back-link" href="/mfa/enroll/method${nextQuery}">Choose a different method</a>`;
   return renderAuthDocument({
     step: "Set up two-factor authentication",
@@ -652,6 +657,7 @@ function mfaEnrollWebauthnScript(scriptNonce: string): string {
 (function () {
   var btn = document.getElementById("mfa-enroll-webauthn-btn");
   var errorBox = document.getElementById("mfa-enroll-webauthn-error");
+  var hint = document.getElementById("mfa-enroll-webauthn-hint");
   if (!btn) return;
 
   function b64urlToBuffer(b64url) {
@@ -673,6 +679,7 @@ function mfaEnrollWebauthnScript(scriptNonce: string): string {
   function showError() {
     btn.disabled = false;
     if (errorBox) errorBox.hidden = false;
+    if (hint) hint.hidden = true;
   }
 
   if (!window.PublicKeyCredential) {
@@ -683,6 +690,7 @@ function mfaEnrollWebauthnScript(scriptNonce: string): string {
   function runCeremony() {
     btn.disabled = true;
     if (errorBox) errorBox.hidden = true;
+    if (hint) hint.hidden = false;
     var attachment = btn.dataset.attachment;
 
     fetch("/api/auth/mfa/webauthn/register/begin", {

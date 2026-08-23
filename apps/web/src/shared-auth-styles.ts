@@ -211,6 +211,12 @@ body {
 .auth-remember-prompt {
   margin-top: 1.25rem;
 }
+#mfa-remember-yes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+}
 #mfa-remember-no {
   margin-top: 0.75rem;
 }

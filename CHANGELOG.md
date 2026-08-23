@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Signing in can now be completed with a registered passkey or security key at the two-factor step after your password - a "Use a passkey or security key" option appears once you have one confirmed, alongside the usual authenticator-code field.
 - First-time two-factor setup now lets you choose an authenticator app, a passkey, or a security key as your second factor, instead of always starting with an authenticator app QR code. Skipped entirely (setup goes straight to the authenticator app as before) on an instance that has passkeys and security keys turned off.
 
+### Changed
+
+- Signing out no longer ends a "Remember this device" trust for that device. It now lasts for its full window (30 days by default) regardless of how many times you sign out and back in on it, matching how most other products with this feature behave. A password change, a two-factor reset, or an admin-initiated reset still clears it immediately, the same as before.
+
 ### Fixed
 
 - My Account no longer briefly shows "Too many requests" and fails to load right after a burst of two-factor management actions (enrolling or removing an authenticator app, registering a passkey or security key, viewing or regenerating backup codes) - the per-IP rate limit shared by all of My Account's requests was too tight for ordinary back-to-back use of the newly added WebAuthn management actions.
@@ -26,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The three method choices in first-time two-factor setup now show an icon for each method, and "Security key" is labelled "Security key (YubiKey)", matching how My account already names a registered one.
 - On the two-factor sign-in step, the "Could not verify with your passkey or security key" message no longer appears between Continue and the "Use a passkey or security key" button. It now shows near the top of the page, in the same place as every other error on this step.
 - Signing in with a passkey or security key when it is your only confirmed second factor (the ceremony starts automatically, before there is any real chance to check "Remember this device" first) now offers "Remember this device?" as a one-tap follow-up right after verification succeeds, instead of silently never remembering the device on that path.
+- First-time passkey/security-key setup no longer looks stuck while your browser or password manager (for example Bitwarden) works through its own prompt - a short note now explains the wait, matching the hint already shown for the same wait on My Account's own step-up popups.
 
 ### Security
 

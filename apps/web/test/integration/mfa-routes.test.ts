@@ -5,7 +5,6 @@ import {
   hashPassword,
   LOGIN_NEXT,
   TRUSTED_DEVICE_COOKIE_NAME,
-  validateTrustedDevice,
   parseTotpSecretFromOtpauthUri,
   beginWebauthnRegistration,
   finishWebauthnRegistration,
@@ -1236,8 +1235,8 @@ describe("IAM-001/IAM-003 forced password change is enforced at the session laye
   });
 });
 
-describe("logout revokes trusted device", () => {
-  it("API logout invalidates remembered device token", async () => {
+describe("logout leaves a remembered device trusted", () => {
+  it("API logout does not invalidate the remembered device token, and a later login on the same device skips MFA", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
     await resetAdminAuthLabState(admin!.id);
     const secret = generateTotpSecret();
@@ -1280,8 +1279,27 @@ describe("logout revokes trusted device", () => {
       },
     });
     expect(logoutRes.status).toBe(200);
+    expect(
+      logoutRes.headers.getSetCookie?.().some((c) => c.startsWith(`${TRUSTED_DEVICE_COOKIE_NAME}=`)),
+    ).toBe(false);
 
-    expect(await validateTrustedDevice(prisma, admin!.id, trustedValue)).toBe(false);
+    // "Remember this device" means skipping MFA on this device until that trust itself expires
+    // or is explicitly revoked (password change, MFA reset, admin action) - not "only until the
+    // next logout". A fresh login carrying the same trusted-device cookie should land on a full
+    // session directly, without another MFA prompt.
+    const secondLoginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...sameOrigin,
+        Cookie: `${TRUSTED_DEVICE_COOKIE_NAME}=${trustedValue}`,
+      },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    expect(secondLoginRes.status).toBe(200);
+    expect((await secondLoginRes.json()) as { next: string }).toEqual(
+      expect.objectContaining({ next: LOGIN_NEXT.COMPLETE }),
+    );
   });
 });
 

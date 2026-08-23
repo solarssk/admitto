@@ -22,7 +22,6 @@ import {
   loginNextAfterFullSession,
   getTrustedDeviceDays,
   revokeSession,
-  revokeTrustedDeviceByToken,
   SESSION_STAGE,
   type SessionStage,
   updateSessionDeviceLabel,
@@ -122,16 +121,6 @@ export function clearSessionCookie(c: Context): void {
   });
 }
 
-/** Clear trusted-device cookie (call on logout). */
-export function clearTrustedDeviceCookie(c: Context): void {
-  const opts = sessionCookieOptions(c);
-  deleteCookie(c, TRUSTED_DEVICE_COOKIE_NAME, {
-    path: opts.path,
-    secure: opts.secure,
-    sameSite: opts.sameSite,
-  });
-}
-
 /** POST /api/auth/login, rate-limited, sets session cookie on success. */
 export async function handleLogin(
   c: Context,
@@ -184,17 +173,16 @@ export async function handleLogin(
   return c.json({ ok: true, next: result.next }, 200);
 }
 
-/** POST /api/auth/logout, revokes current session, trusted device, and clears cookies. */
+/** POST /api/auth/logout, revokes the current session and clears its cookie. Does not touch the
+ * trusted-device cookie/token - "Remember this device" means skipping MFA on this device until
+ * that trust itself expires or is explicitly revoked (password change, MFA reset, admin action),
+ * not "only until the next logout". A normal sign-out should not force MFA again on next login,
+ * on this same device, before that trust window ends. */
 export async function handleLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
-  if (validated) {
-    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
-  }
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
-  clearTrustedDeviceCookie(c);
   return c.json({ ok: true }, 200);
 }
 
