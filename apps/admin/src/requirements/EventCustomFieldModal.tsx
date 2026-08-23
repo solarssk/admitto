@@ -6,6 +6,7 @@ import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
 import { slugifyItemKey } from "./itemKey.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
+import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "./requirements.css";
 
 export interface EventCustomFieldModalProps {
@@ -47,7 +48,9 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
   const [saving, setSaving] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, onClose);
+  useOverscrollBounceGuard(scrollRef);
 
   let submitLabel = "Create field";
   if (saving) submitLabel = "Saving…";
@@ -122,129 +125,131 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
     >
       <ModalBackdrop onClose={onClose} />
       <div ref={panelRef} className="event-item-modal__panel">
-        <div className="event-item-modal__header">
-          <div>
-            <h2 id="custom-field-modal-title" className="event-item-modal__title">
-              <i className="ti ti-forms" aria-hidden="true" />
-              {isEdit ? "Edit custom field" : "Add custom field"}
-            </h2>
-            <p className="event-item-modal__subtitle">
-              {isEdit
-                ? "Update how this field appears to operators."
-                : "Collect extra attendee details on import and show them to operators during check-in."}
-            </p>
+        <div ref={scrollRef} className="event-item-modal__scroll at-scroll">
+          <div className="event-item-modal__header">
+            <div>
+              <h2 id="custom-field-modal-title" className="event-item-modal__title">
+                <i className="ti ti-forms" aria-hidden="true" />
+                {isEdit ? "Edit custom field" : "Add custom field"}
+              </h2>
+              <p className="event-item-modal__subtitle">
+                {isEdit
+                  ? "Update how this field appears to operators."
+                  : "Collect extra attendee details on import and show them to operators during check-in."}
+              </p>
+            </div>
+            <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
-          <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
-        </div>
-        <form id="custom-field-form" className="event-item-modal__body at-scroll at-scroll--stable" onSubmit={(e) => void handleSave(e)}>
-          <div className="at-field">
-            <div className="add-item-label-row">
-              <label className="at-label" htmlFor="cf-label">
-                Display label
+          <form id="custom-field-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+            <div className="at-field">
+              <div className="add-item-label-row">
+                <label className="at-label" htmlFor="cf-label">
+                  Display label
+                </label>
+                {form.source_field && (
+                  <span className="at-hint">
+                    ID: <code className="requirements-item-id">{form.source_field}</code>
+                  </span>
+                )}
+              </div>
+              <div className="contents-row__key-row">
+                <input
+                  id="cf-label"
+                  className="at-input"
+                  value={form.label}
+                  onChange={(e) => updateLabel(e.target.value)}
+                  placeholder="Dietary requirements"
+                  autoFocus
+                />
+                <div className="contents-row__type-picker">
+                  <Tooltip content="Required">
+                    <button
+                      type="button"
+                      className={`contents-row__type-btn${form.required ? " contents-row__type-btn--active" : ""}`}
+                      onClick={() => setForm((f) => ({ ...f, required: !f.required }))}
+                      aria-pressed={form.required}
+                      aria-label="Required"
+                    >
+                      <i className="ti ti-asterisk" />
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
+              <span className="at-hint">
+                Used to reference this field from items and to match it elsewhere. Can't be
+                changed after creation.
+              </span>
+            </div>
+            <div className="at-field">
+              <label className="at-label" htmlFor="cf-description">
+                Description
               </label>
-              {form.source_field && (
-                <span className="at-hint">
-                  ID: <code className="requirements-item-id">{form.source_field}</code>
-                </span>
+              <textarea
+                id="cf-description"
+                className="at-textarea"
+                rows={2}
+                maxLength={500}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Shown to operators on the import reference table"
+              />
+            </div>
+            <div className="at-field">
+              <span className="at-label" id="cf-type-label">
+                Field type
+              </span>
+              <div
+                className="contents-row__type-picker contents-row__type-picker--block"
+                role="group"
+                aria-labelledby="cf-type-label"
+              >
+                {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
+                  <Tooltip key={value} content={btnLabel}>
+                    <button
+                      type="button"
+                      className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
+                      onClick={() => {
+                        setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : "" }));
+                      }}
+                      aria-pressed={form.type === value}
+                      aria-label={btnLabel}
+                    >
+                      <i className={`ti ${icon}`} />
+                      <span>{btnLabel}</span>
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+              <span className="at-hint">
+                {CUSTOM_FIELD_TYPES.find((type) => type.value === form.type)?.hint}
+              </span>
+              {form.type === "select" && (
+                <>
+                  <label className="at-label" htmlFor="cf-options">
+                    Options (one per line)
+                  </label>
+                  <textarea
+                    id="cf-options"
+                    className="at-textarea"
+                    rows={3}
+                    value={form.options}
+                    onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
+                    placeholder={"Vegetarian\nVegan\nGluten-free"}
+                    aria-label="Select options"
+                  />
+                </>
               )}
             </div>
-            <div className="contents-row__key-row">
-              <input
-                id="cf-label"
-                className="at-input"
-                value={form.label}
-                onChange={(e) => updateLabel(e.target.value)}
-                placeholder="Dietary requirements"
-                autoFocus
-              />
-              <div className="contents-row__type-picker">
-                <Tooltip content="Required">
-                  <button
-                    type="button"
-                    className={`contents-row__type-btn${form.required ? " contents-row__type-btn--active" : ""}`}
-                    onClick={() => setForm((f) => ({ ...f, required: !f.required }))}
-                    aria-pressed={form.required}
-                    aria-label="Required"
-                  >
-                    <i className="ti ti-asterisk" />
-                  </button>
-                </Tooltip>
-              </div>
+          </form>
+          <div className="event-item-modal__footer">
+            <div className="event-item-modal__footer-end">
+              <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving || !dirty}>
+                {submitLabel}
+              </Button>
             </div>
-            <span className="at-hint">
-              Used to reference this field from items and to match it elsewhere. Can't be
-              changed after creation.
-            </span>
-          </div>
-          <div className="at-field">
-            <label className="at-label" htmlFor="cf-description">
-              Description
-            </label>
-            <textarea
-              id="cf-description"
-              className="at-textarea"
-              rows={2}
-              maxLength={500}
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Shown to operators on the import reference table"
-            />
-          </div>
-          <div className="at-field">
-            <span className="at-label" id="cf-type-label">
-              Field type
-            </span>
-            <div
-              className="contents-row__type-picker contents-row__type-picker--block"
-              role="group"
-              aria-labelledby="cf-type-label"
-            >
-              {CUSTOM_FIELD_TYPES.map(({ value, icon, label: btnLabel }) => (
-                <Tooltip key={value} content={btnLabel}>
-                  <button
-                    type="button"
-                    className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
-                    onClick={() => {
-                      setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : "" }));
-                    }}
-                    aria-pressed={form.type === value}
-                    aria-label={btnLabel}
-                  >
-                    <i className={`ti ${icon}`} />
-                    <span>{btnLabel}</span>
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
-            <span className="at-hint">
-              {CUSTOM_FIELD_TYPES.find((type) => type.value === form.type)?.hint}
-            </span>
-            {form.type === "select" && (
-              <>
-                <label className="at-label" htmlFor="cf-options">
-                  Options (one per line)
-                </label>
-                <textarea
-                  id="cf-options"
-                  className="at-textarea"
-                  rows={3}
-                  value={form.options}
-                  onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
-                  placeholder={"Vegetarian\nVegan\nGluten-free"}
-                  aria-label="Select options"
-                />
-              </>
-            )}
-          </div>
-        </form>
-        <div className="event-item-modal__footer">
-          <div className="event-item-modal__footer-end">
-            <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving || !dirty}>
-              {submitLabel}
-            </Button>
           </div>
         </div>
       </div>
