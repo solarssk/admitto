@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Passkeys and security keys registered under My account → Two-factor authentication can now be used to confirm sensitive account actions - password change, resetting two-factor, removing a passkey or security key, regenerating backup codes, unlinking single sign-on - the same as a code from your authenticator app. Previously a registered passkey only counted toward "has a confirmed second factor" and could not itself be used for anything.
+
 ### Fixed
 
 - Communication email preview (Communication tab and the template editor) no longer lets clicks on the ticket link or QR code navigate inside the preview frame - clicking the recipient's real ticket link previously triggered a nested-frame Content Security Policy violation instead of doing nothing.
@@ -15,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The staff user edit modal's Sign-in security row no longer forces a permanent horizontal scrollbar.
 - All remaining popups (Add attendee, Create event, Invite user, Create/Edit template, CSP trusted origins, Fix Maps link, Font family, device label edit, and the Attendees page bulk dialogs) now use the app's slim on-theme scrollbar instead of the browser's default one, matching every other popup.
 - The header "Send tickets" dialog now puts Cancel before "Send tickets", matching every other popup's button order. The device label edit modal's save error now renders as a Notice banner instead of plain text.
+
+### Security
+
+- An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.
 
 ## [0.5.5] - 2026-08-23
 
