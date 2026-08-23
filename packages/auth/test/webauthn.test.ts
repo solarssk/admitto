@@ -458,8 +458,10 @@ describe("WebAuthn-only user, login and session policy", () => {
     // the session-policy check this PR is responsible for (a WebAuthn-only full session must not
     // be rejected the way a TOTP-only check would have rejected it before this change).
     const promoted = await promoteSessionToFull(prisma, loginResult.sessionId, userId);
-    expect(promoted).toBe(SESSION_STAGE.FULL);
-    expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+    expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
+    // Promotion rotates the session token - the pre-promotion cookie must stop validating.
+    expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
+    expect(await validateSession(prisma, promoted!.rawToken)).not.toBeNull();
   });
 
   it("userRequiresMfaStepUp is true for a WebAuthn-only confirmed admin", async () => {

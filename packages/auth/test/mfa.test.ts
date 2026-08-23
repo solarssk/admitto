@@ -568,6 +568,43 @@ describe("promoteSessionToFull", () => {
       await prisma.user.deleteMany({ where: { id: { in: [backupUserId, passwordUserId] } } });
     }
   });
+
+  it("a second racing call for the same session does not re-rotate past the first (P2)", async () => {
+    const userId = "user-promote-race";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "promote-race@example.com", password_hash },
+    });
+
+    try {
+      const enrollment = await startTotpEnrollment(prisma, userId);
+      const secret = parseTotpSecretFromOtpauthUri(enrollment!.otpauthUri);
+      expect(await confirmTotpEnrollment(prisma, userId, generateTotpCode(secret!))).toBe(true);
+
+      const session = await createSession(prisma, { userId, stage: SESSION_STAGE.MFA_PENDING });
+
+      // Both requests resolve the same target (backup_codes_required, since codes are still
+      // unacknowledged) and race to promote the same still-mfa_pending row.
+      const [first, second] = await Promise.all([
+        promoteSessionToFull(prisma, session.session.id, userId),
+        promoteSessionToFull(prisma, session.session.id, userId),
+      ]);
+      const winner = first ?? second;
+      const loser = first ? second : first;
+
+      expect(winner?.stage).toBe(SESSION_STAGE.BACKUP_CODES_REQUIRED);
+      // Exactly one of the two racing calls promotes the row - the other must see it already
+      // moved and refuse, not silently rotate the token a second time out from under the winner.
+      expect(loser).toBeNull();
+
+      // The winner's token is the one and only token now valid for this session.
+      expect(await validatePartialSession(prisma, winner!.rawToken)).not.toBeNull();
+    } finally {
+      await prisma.session.deleteMany({ where: { user_id: userId } });
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
+      await prisma.user.deleteMany({ where: { id: userId } });
+    }
+  });
 });
 
 describe("validateSession MFA policy", () => {

@@ -374,10 +374,9 @@ export async function handleMfaVerify(
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
   // Session token rotates on every promotion (see promoteSessionToFull) - the pre-MFA
-  // cookie must stop working the instant a higher stage is reached.
-  if (result.sessionRawToken) {
-    setSessionCookie(c, result.sessionRawToken);
-  }
+  // cookie must stop working the instant a higher stage is reached. Always set on the
+  // `ok: true` path - completeMfa() only omits it on the `ok: false` branch handled above.
+  setSessionCookie(c, result.sessionRawToken!);
 
   // User still owes backup-code acknowledgment — keep them in the constrained
   // stage instead of granting full access (IAM-002).

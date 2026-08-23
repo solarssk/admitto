@@ -323,13 +323,17 @@ export async function promoteSessionToFull(
       user_id: userId,
       revoked_at: null,
       expires_at: { gt: now },
+      // Excludes targetStage itself (`BACKUP_CODES_REQUIRED`/`CHANGE_PASSWORD_REQUIRED` are also
+      // valid *source* stages) so a second, racing call that resolves the same target no longer
+      // matches a row a concurrent call already moved there - it would otherwise re-rotate the
+      // token a second time and silently invalidate the cookie the first call already returned.
       stage: {
         in: [
           SESSION_STAGE.MFA_PENDING,
           SESSION_STAGE.ENROLLMENT_REQUIRED,
           SESSION_STAGE.BACKUP_CODES_REQUIRED,
           SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
-        ],
+        ].filter((stage) => stage !== targetStage),
       },
     },
     data: {
