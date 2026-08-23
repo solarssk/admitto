@@ -485,10 +485,11 @@ describe("HTML /mfa/verify — passkey button", () => {
     expect(verifyPage.status).toBe(200);
     const html = await verifyPage.text();
     expect(html).toContain("Enter the 6-digit code from your authenticator app.");
-    expect(html).not.toContain('data-start-backup="true"');
+    expect(html).toContain('<div class="auth-otp-digits"');
+    expect(html).not.toContain('data-auto-start="true"');
   });
 
-  it("leads with the backup-code field when the account has no confirmed TOTP method (only a passkey)", async () => {
+  it("auto-starts the passkey ceremony and offers the backup-code field as the fallback when the account has no confirmed TOTP method (only a passkey)", async () => {
     const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
     await resetAdminAuthLabState(admin!.id);
     await registerConfirmedWebauthnCredential(admin!.id);
@@ -504,8 +505,32 @@ describe("HTML /mfa/verify — passkey button", () => {
     });
     expect(verifyPage.status).toBe(200);
     const html = await verifyPage.text();
+    expect(html).toContain("Continue with your passkey or security key, or enter a backup recovery code below.");
+    expect(html).toContain('id="mfa-webauthn-btn" hidden data-auto-start="true"');
+    expect(html).toContain('<label class="auth-label" for="code">Backup recovery code</label>');
+    // No digit boxes at all - there is no authenticator app for them to ever validate against.
+    expect(html).not.toContain('<div class="auth-otp-digits"');
+  });
+
+  it("leads with the backup-code field and no passkey auto-start when the account has neither a confirmed TOTP method nor a passkey", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    // No MFA method at all - resetAdminAuthLabState already cleared every one; login still
+    // reaches MFA_PENDING because the operator/admin fixture's role requires MFA regardless.
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const verifyPage = await app.request("/mfa/verify", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(verifyPage.status).toBe(200);
+    const html = await verifyPage.text();
     expect(html).toContain("Enter one of your backup recovery codes.");
-    expect(html).toContain('data-start-backup="true"');
+    expect(html).not.toContain('id="mfa-webauthn-btn"');
   });
 });
 

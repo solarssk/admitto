@@ -33,8 +33,10 @@ interface AuthOtpCodeFieldOptions {
   allowBackupCode?: boolean;
   /** Focus first digit on load (disable on QR enrollment step). */
   autofocusOtp?: boolean;
-  /** Start with the backup-code panel open and the digit boxes hidden, for a user with no
-   * confirmed authenticator app to enter a code from (only meaningful with allowBackupCode). */
+  /** Render only the backup-code field, with no digit boxes and no toggle back to them, for an
+   * account with no confirmed authenticator app - there is nothing a 6-digit entry could ever
+   * validate against, so it isn't offered as an option at all (only meaningful with
+   * allowBackupCode). */
   startInBackupMode?: boolean;
 }
 
@@ -43,27 +45,34 @@ function renderAuthStepIndicator(step: number, total: number, label: string): st
   return `<p class="auth-step-indicator" aria-current="step"><span class="auth-step-indicator__meta">Step ${step} of ${total}</span> - ${escapeHtml(label)}</p>`;
 }
 
-/** Six centered digit boxes + hidden `code` field for form POST. */
+/** Six centered digit boxes + hidden `code` field for form POST, or (when `startInBackupMode`)
+ * just the backup-code field on its own. */
 function renderAuthOtpCodeField(options: AuthOtpCodeFieldOptions): string {
+  if (options.allowBackupCode && options.startInBackupMode) {
+    return `<div class="auth-field">
+      <label class="auth-label" for="code">Backup recovery code</label>
+      <input class="auth-input" type="text" id="code" name="code" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" required autofocus>
+    </div>`;
+  }
+
   const digits = Array.from(
     { length: 6 },
     (_, i) =>
       `<input class="auth-otp-digit" type="text" inputmode="numeric" autocomplete="${i === 0 ? "one-time-code" : "off"}" maxlength="1" aria-label="Digit ${i + 1} of 6" data-otp-index="${i}">`,
   ).join("");
 
-  const startInBackupMode = options.allowBackupCode === true && options.startInBackupMode === true;
   const backupSection = options.allowBackupCode
-    ? `<button type="button" class="auth-otp-backup-toggle">${startInBackupMode ? "Use authenticator code" : "Use a backup recovery code"}</button>
-    <div class="auth-otp-backup-panel"${startInBackupMode ? "" : " hidden"}>
+    ? `<button type="button" class="auth-otp-backup-toggle">Use a backup recovery code</button>
+    <div class="auth-otp-backup-panel" hidden>
       <label class="auth-label" for="backup-code-input">Backup recovery code</label>
       <input class="auth-input" id="backup-code-input" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX">
     </div>`
     : "";
 
   // Span + aria-labelledby on the digit group (not a bare <label> without `for`).
-  return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? " data-backup-fallback" : ""}${options.autofocusOtp === false ? ' data-autofocus-otp="false"' : ""}${startInBackupMode ? ' data-start-backup="true"' : ""}>
-    <span class="auth-label" id="${escapeHtml(options.labelId)}"${startInBackupMode ? " hidden" : ""}>${escapeHtml(options.label)}</span>
-    <div class="auth-otp-digits"${startInBackupMode ? " hidden" : ""} role="group" aria-labelledby="${escapeHtml(options.labelId)}">${digits}</div>
+  return `<div class="auth-otp-wrap" data-auth-otp-digits${options.allowBackupCode ? " data-backup-fallback" : ""}${options.autofocusOtp === false ? ' data-autofocus-otp="false"' : ""}>
+    <span class="auth-label" id="${escapeHtml(options.labelId)}">${escapeHtml(options.label)}</span>
+    <div class="auth-otp-digits" role="group" aria-labelledby="${escapeHtml(options.labelId)}">${digits}</div>
     <input type="hidden" name="code" id="code" required>
     ${backupSection}
   </div>`;
@@ -88,20 +97,27 @@ export function renderMfaVerifyForm(
     : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
   const fallbackHint = hasTotp ? "or use your authenticator code" : "or enter a backup recovery code";
+  // Auto-run the passkey/security-key ceremony on load only when it's the account's only real
+  // second factor besides backup codes (no authenticator app to fall back to manually) - with a
+  // confirmed TOTP method, the code field stays the primary, unprompted path (mfaWebauthnScript
+  // still wires up the button either way, for a manual retry or a first attempt).
+  const autoStartWebauthn = hasWebauthnCredentials && !hasTotp;
   const webauthnSection = hasWebauthnCredentials
     ? `<div class="auth-webauthn-error" id="mfa-webauthn-error" hidden>${renderNoticeHtml({
         variant: "error",
         role: "alert",
         message: `Could not verify with your passkey or security key. Try again, ${fallbackHint}.`,
       })}</div>
-      <button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden>Use a passkey or security key</button>`
+      <button class="auth-btn-secondary" type="button" id="mfa-webauthn-btn" hidden${autoStartWebauthn ? ' data-auto-start="true"' : ""}>Use a passkey or security key</button>`
     : "";
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Two-factor authentication</h2>
     <p class="subtitle">${
       hasTotp
         ? "Enter the 6-digit code from your authenticator app."
-        : "Enter one of your backup recovery codes."
+        : autoStartWebauthn
+          ? "Continue with your passkey or security key, or enter a backup recovery code below."
+          : "Enter one of your backup recovery codes."
     }</p>
     ${err}
     <form method="post" action="/mfa/verify">
@@ -281,7 +297,7 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
     var backupToggle = wrap.querySelector(".auth-otp-backup-toggle");
     var backupPanel = wrap.querySelector(".auth-otp-backup-panel");
     var backupInput = backupPanel && backupPanel.querySelector("input");
-    var usingBackup = wrap.dataset.startBackup === "true";
+    var usingBackup = false;
     if (!hidden || digits.length === 0) return;
 
     function syncHidden() {
@@ -365,10 +381,7 @@ function mfaOtpDigitsScript(scriptNonce: string): string {
       });
     }
 
-    if (usingBackup) {
-      syncHidden();
-      if (backupInput) backupInput.focus();
-    } else if (wrap.dataset.autofocusOtp !== "false") {
+    if (wrap.dataset.autofocusOtp !== "false") {
       focusDigit(0);
     }
   });
@@ -410,7 +423,7 @@ function mfaWebauthnScript(scriptNonce: string): string {
     if (errorBox) errorBox.hidden = false;
   }
 
-  btn.addEventListener("click", function () {
+  function runCeremony() {
     btn.disabled = true;
     if (errorBox) errorBox.hidden = true;
 
@@ -469,7 +482,13 @@ function mfaWebauthnScript(scriptNonce: string): string {
         // remains usable.
         showError();
       });
-  });
+  }
+
+  btn.addEventListener("click", runCeremony);
+  // Set server-side only when this is the account's sole real second factor (no confirmed
+  // authenticator app) - runs the ceremony immediately instead of waiting for a click, with the
+  // backup-code field already visible and usable if it's cancelled or fails.
+  if (btn.dataset.autoStart === "true") runCeremony();
 })();
 </script>`;
 }
