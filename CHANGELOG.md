@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The "Download" button in My Account's passkey, security key, and backup codes dialogs now sits below the codes as its own clearly visible button, instead of a small text link next to the header.
 - The two-factor sign-in step's "Could not verify with your passkey or security key" message no longer sits flush against Continue with no gap above it.
 - My Account's "Manage backup codes" dialog no longer permanently disables Regenerate the moment a fresh batch is shown. It now unlocks again once "I've saved my backup codes" is checked, so a second regeneration can be started without closing and reopening the dialog, and correctly asks for its own fresh step-up code instead of reusing the first one.
+- First-time two-factor setup's authenticator app QR step and passkey/security key step now each offer a "Choose a different method" link back to the method choice, for an account that picked the wrong one by mistake. Previously the only way back was abandoning setup and starting over.
 
 ### Security
 

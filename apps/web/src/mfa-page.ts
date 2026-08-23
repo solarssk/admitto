@@ -165,6 +165,13 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
     ? renderNoticeHtml({ variant: "error", role: "alert", message: error })
     : "";
   const nextField = next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : "";
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
+  // Only when this step was reached via a method choice (totalSteps === 4) - the 3-step,
+  // TOTP-only flow has no other method to go back to.
+  const backToMethodLink =
+    totalSteps === 4
+      ? `<a class="auth-btn-secondary auth-enroll-back-link" href="/mfa/enroll/method${nextQuery}">Choose a different method</a>`
+      : "";
 
   const setupSection =
     otpauthUri && setupKey && qrDataUri
@@ -205,7 +212,8 @@ export function renderMfaEnrollQrPage(options: MfaEnrollQrPageOptions): string {
         autofocusOtp: false,
       })}
       <button class="auth-btn-primary" type="submit">Confirm and continue</button>
-    </form>`;
+    </form>
+    ${backToMethodLink}`;
 
   return renderAuthDocument({
     step: "Set up two-factor authentication",
@@ -349,7 +357,7 @@ export function renderMfaEnrollWebauthnPage(
       message: `Could not register your ${methodLabel}. Try again, or choose a different method.`,
     })}</div>
     <button class="auth-btn-primary" type="button" id="mfa-enroll-webauthn-btn" data-attachment="${attachment}">Continue with ${methodLabel}</button>
-    <a class="auth-btn-secondary" href="/mfa/enroll/method${nextQuery}">Choose a different method</a>`;
+    <a class="auth-btn-secondary auth-enroll-back-link" href="/mfa/enroll/method${nextQuery}">Choose a different method</a>`;
   return renderAuthDocument({
     step: "Set up two-factor authentication",
     body: renderAuthPage(card, true),

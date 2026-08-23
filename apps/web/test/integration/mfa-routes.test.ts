@@ -594,6 +594,38 @@ describe("HTML MFA enroll", () => {
     expect(html).not.toContain("Save your backup codes");
     expect(extractBackupCodes(html)).toEqual([]);
     expect(await prisma.userMfaMethod.count({ where: { user_id: admin!.id, type: "totp" } })).toBe(1);
+    // WebAuthn is enabled by default, so this is the 4-step flow reached via the method choice -
+    // a way back to it, in case authenticator app was picked by mistake, is expected.
+    expect(html).toContain("Step 3 of 4");
+    expect(html).toContain('class="auth-btn-secondary auth-enroll-back-link" href="/mfa/enroll/method"');
+  });
+
+  it("QR step has no back-to-method link on a WebAuthn-disabled instance (3-step, TOTP-only flow)", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_WEBAUTHN_ENABLED },
+      create: { key: SETTING_WEBAUTHN_ENABLED, value_json: "false" },
+      update: { value_json: "false" },
+    });
+    try {
+      const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+      await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+      const loginRes = await app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+      });
+      const startRes = await app.request("/mfa/enroll/start", {
+        method: "POST",
+        headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      });
+      expect(startRes.status).toBe(200);
+      const html = await startRes.text();
+      expect(html).toContain("Step 2 of 3");
+      expect(html).not.toContain('href="/mfa/enroll/method"');
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+    }
   });
 
   it("POST /mfa/enroll/download-codes returns attachment on backup-codes step", async () => {

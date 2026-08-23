@@ -401,11 +401,11 @@ body {
 .auth-enroll-method-list .auth-btn-secondary {
   text-decoration: none;
 }
-/* "Choose a different method" link on the WebAuthn enrollment page - same glued-to-the-button-
-   above-it gap .auth-btn-secondary already needed fixing for elsewhere on this page family
-   (#mfa-webauthn-btn), checked for every new sibling pair this time instead of one at a time.
-   The error notice above the button is already spaced by .auth-btn-primary's own margin-top. */
-#mfa-enroll-webauthn-btn + .auth-btn-secondary {
+/* "Choose a different method" link, shown on both the QR (TOTP) and WebAuthn enrollment steps
+   when reached via the method-choice page - same glued-to-the-form/button-above-it gap
+   .auth-btn-secondary already needed fixing for elsewhere on this page family (#mfa-webauthn-btn),
+   shared by both step pages instead of a fragile per-page ID sibling selector. */
+.auth-enroll-back-link {
   margin-top: 0.75rem;
 }
 .auth-mfa-actions .auth-btn-secondary { flex: 1 1 12rem; margin-top: 0; }
