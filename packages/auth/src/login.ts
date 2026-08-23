@@ -172,6 +172,8 @@ export interface CompleteMfaResult {
   trustedDeviceRawToken?: string;
   /** Stage the session reached after promotion (e.g. `backup_codes_required` when codes still owed). */
   stage?: SessionStage;
+  /** Rotated session token from the promotion - caller must set a fresh cookie from this. */
+  sessionRawToken?: string;
 }
 
 type CompleteMfaTxResult =
@@ -183,6 +185,7 @@ type CompleteMfaTxResult =
       recoveryMethod?: "backup" | "emergency";
       trustedDeviceRawToken?: string;
       stage: SessionStage;
+      sessionRawToken: string;
     };
 
 /**
@@ -214,8 +217,8 @@ async function completeMfaInTransaction(
     };
   }
 
-  const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
-  if (!promotedStage) throw new SessionPromotionFailedAfterCodeVerifiedError(codeResult.method);
+  const promoted = await promoteSessionToFull(tx, sessionId, userId);
+  if (!promoted) throw new SessionPromotionFailedAfterCodeVerifiedError(codeResult.method);
 
   const method: MfaMethod = codeResult.method;
   const recoveryMethod = method === "totp" ? undefined : method;
@@ -234,12 +237,13 @@ async function completeMfaInTransaction(
         method,
         recoveryMethod,
         trustedDeviceRawToken: rawToken,
-        stage: promotedStage,
+        stage: promoted.stage,
+        sessionRawToken: promoted.rawToken,
       };
     }
   }
 
-  return { ok: true, method, recoveryMethod, stage: promotedStage };
+  return { ok: true, method, recoveryMethod, stage: promoted.stage, sessionRawToken: promoted.rawToken };
 }
 
 /** Emit MFA audit events, and the repeated-failure alert side effect, after the DB transaction
@@ -318,6 +322,7 @@ export async function completeMfa(
     ok: true,
     trustedDeviceRawToken: txResult.trustedDeviceRawToken,
     stage: txResult.stage,
+    sessionRawToken: txResult.sessionRawToken,
   };
 }
 

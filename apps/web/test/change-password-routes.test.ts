@@ -108,7 +108,7 @@ describe("change-password-routes", () => {
     hashPw.mockResolvedValue("hashed");
     tooCommon.mockReturnValue(false);
     revokeOthers.mockResolvedValue(2);
-    promote.mockResolvedValue(SESSION_STAGE.FULL);
+    promote.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
     resolveLanding.mockResolvedValue("/admin");
     stashBackup.mockResolvedValue(["AAAA-BBBB"]);
   });
@@ -187,7 +187,7 @@ describe("change-password-routes", () => {
   });
 
   it("redirects to backup-codes when promotion lands on backup_codes_required", async () => {
-    promote.mockResolvedValue(SESSION_STAGE.BACKUP_CODES_REQUIRED);
+    promote.mockResolvedValue({ stage: SESSION_STAGE.BACKUP_CODES_REQUIRED, rawToken: "rotated-token" });
     const app = makeApp(makeDb({}), { userId: "u1", sessionId: "s1" });
     const res = await app.request("/change-password", {
       method: "POST",

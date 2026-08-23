@@ -260,13 +260,22 @@ export async function validatePartialSession(
  * Promote partial session to backup-codes step after TOTP enrollment confirm.
  * Grants a fresh TTL so users who spent most of the QR-scan window do not hit
  * an expired session immediately upon reaching the backup-codes page.
+ *
+ * Rotates the session token (fresh raw token + hash) on every promotion, not just the stage:
+ * the token issued at password-login time must not still be the one that unlocks a later,
+ * higher-privilege stage, or a cookie captured while it was still `enrollment_required`
+ * (worthless on its own) silently becomes fully valid the moment the legitimate user finishes
+ * MFA in the same browser (OWASP ASVS / Session Management Cheat Sheet: regenerate the session
+ * identifier on every authentication-level change). Caller must set the new cookie from the
+ * returned `rawToken` - the old one stops matching `token_hash` immediately.
  */
 export async function promoteSessionToBackupCodesStep(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
   userId: string,
-): Promise<boolean> {
+): Promise<{ rawToken: string } | null> {
   const now = new Date();
+  const rawToken = generateToken();
   const result = await prisma.session.updateMany({
     where: {
       id: sessionId,
@@ -277,24 +286,27 @@ export async function promoteSessionToBackupCodesStep(
     },
     data: {
       stage: SESSION_STAGE.BACKUP_CODES_REQUIRED,
+      token_hash: hashToken(rawToken),
       expires_at: new Date(now.getTime() + BACKUP_CODES_STEP_TTL_MS),
       last_seen_at: now,
     },
   });
-  return result.count === 1;
+  return result.count === 1 ? { rawToken } : null;
 }
 
 /**
  * Advance a partial session after a successful step. Resolves the next stage via
  * {@link resolvePostMfaStage}: usually `full`, but kept constrained when the user
  * still owes backup-code acknowledgment (IAM-002) or a forced password change
- * (IAM-001). Returns the resulting stage, or `null` if the session was ineligible.
+ * (IAM-001). Returns the resulting stage and a rotated raw token, or `null` if the
+ * session was ineligible. See {@link promoteSessionToBackupCodesStep} for why the
+ * token must rotate here too - caller must set the new cookie from `rawToken`.
  */
 export async function promoteSessionToFull(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
   userId: string,
-): Promise<SessionStage | null> {
+): Promise<{ stage: SessionStage; rawToken: string } | null> {
   const targetStage = await resolvePostMfaStage(prisma, userId);
   // TTL is resolved at promotion time (not cached from login) so SystemSettings changes apply immediately.
   const nonFullTtlMs =
@@ -304,6 +316,7 @@ export async function promoteSessionToFull(
   const ttlMs =
     targetStage === SESSION_STAGE.FULL ? await resolveFullTtlMs(prisma, userId) : nonFullTtlMs;
   const now = new Date();
+  const rawToken = generateToken();
   const result = await prisma.session.updateMany({
     where: {
       id: sessionId,
@@ -321,11 +334,12 @@ export async function promoteSessionToFull(
     },
     data: {
       stage: targetStage,
+      token_hash: hashToken(rawToken),
       expires_at: new Date(now.getTime() + ttlMs),
       last_seen_at: now,
     },
   });
-  return result.count === 1 ? targetStage : null;
+  return result.count === 1 ? { stage: targetStage, rawToken } : null;
 }
 
 /** Set or clear device label on the active session (operator check-in step). */

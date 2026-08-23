@@ -35,7 +35,7 @@ function extractOtpauthUri(html: string): string | null {
 async function confirmHtmlEnrollAndReachBackupCodes(
   loginRes: Response,
   startHtml: string,
-): Promise<{ backupCodesRes: Response; backupHtml: string }> {
+): Promise<{ confirmRes: Response; backupCodesRes: Response; backupHtml: string }> {
   const otpauth = extractOtpauthUri(startHtml);
   expect(otpauth).toBeTruthy();
   const secret = parseTotpSecretFromOtpauthUri(otpauth!);
@@ -54,11 +54,13 @@ async function confirmHtmlEnrollAndReachBackupCodes(
   expect(confirmRes.status).toBe(302);
   expect(confirmRes.headers.get("location")).toBe("/mfa/enroll/backup-codes");
 
+  // Session token rotates on promotion (enrollment_required -> backup_codes_required):
+  // the pre-confirm cookie from loginRes no longer works, use confirmRes's fresh one.
   const backupCodesRes = await app.request("/mfa/enroll/backup-codes", {
-    headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    headers: { ...sameOrigin, ...cookieHeader(confirmRes) },
   });
   expect(backupCodesRes.status).toBe(200);
-  return { backupCodesRes, backupHtml: await backupCodesRes.text() };
+  return { confirmRes, backupCodesRes, backupHtml: await backupCodesRes.text() };
 }
 
 const sameOrigin = { Origin: "http://localhost" };
@@ -241,8 +243,9 @@ describe("POST /api/auth/login MFA", () => {
     expect(trustedCookie).toBeTruthy();
     expect(trustedCookie).toMatch(/Max-Age=\d+/i);
 
+    // Session token rotates on this promotion (mfa_pending -> full).
     const me = await app.request("/api/auth/me", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { ...sameOrigin, ...cookieHeader(verifyRes) },
     });
     expect(me.status).toBe(200);
   });
@@ -471,7 +474,7 @@ describe("HTML MFA enroll", () => {
     expect(startRes.status).toBe(200);
     const startHtml = await startRes.text();
 
-    const { backupHtml } = await confirmHtmlEnrollAndReachBackupCodes(loginRes, startHtml);
+    const { confirmRes, backupHtml } = await confirmHtmlEnrollAndReachBackupCodes(loginRes, startHtml);
     const codeMatches = extractBackupCodes(backupHtml);
     expect(codeMatches.length).toBeGreaterThan(0);
 
@@ -480,7 +483,7 @@ describe("HTML MFA enroll", () => {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         ...sameOrigin,
-        ...cookieHeader(loginRes),
+        ...cookieHeader(confirmRes),
       },
       body: new URLSearchParams(
         codeMatches.map((code) => ["code", code] as [string, string]),
@@ -584,21 +587,22 @@ describe("HTML MFA enroll", () => {
     });
     expect(startRes.status).toBe(200);
     const startHtml = await startRes.text();
-    await confirmHtmlEnrollAndReachBackupCodes(loginRes, startHtml);
+    const { confirmRes } = await confirmHtmlEnrollAndReachBackupCodes(loginRes, startHtml);
 
     const finishRes = await app.request("/mfa/enroll/backup-codes", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         ...sameOrigin,
-        ...cookieHeader(loginRes),
+        ...cookieHeader(confirmRes),
       },
       redirect: "manual",
     });
     expect(finishRes.status).toBe(302);
 
+    // Session token rotates again on this promotion (backup_codes_required -> full).
     const me = await app.request("/api/auth/me", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { ...sameOrigin, ...cookieHeader(finishRes) },
     });
     expect(me.status).toBe(200);
   });
@@ -642,20 +646,22 @@ describe("IAM-002 backup-code acknowledgment cannot be skipped via a fresh login
     expect(Array.isArray(verifyBody.backup_codes)).toBe(true);
     expect(verifyBody.backup_codes!.length).toBeGreaterThan(0);
 
+    // Session token rotated on this promotion (mfa_pending -> backup_codes_required).
     const me = await app.request("/api/auth/me", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { ...sameOrigin, ...cookieHeader(verifyRes) },
     });
     expect(me.status).toBe(401);
 
     // Acknowledging the codes finally promotes the session to full.
     const finishRes = await app.request("/api/auth/mfa/totp/backup-codes/complete", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(verifyRes) },
     });
     expect(finishRes.status).toBe(200);
 
+    // Session token rotated again on this promotion (backup_codes_required -> full).
     const meFull = await app.request("/api/auth/me", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { ...sameOrigin, ...cookieHeader(finishRes) },
     });
     expect(meFull.status).toBe(200);
   });
@@ -725,9 +731,10 @@ describe("IAM-001/IAM-003 forced password change is enforced at the session laye
         }),
       ).toMatchObject({ metadata: { forced: true } });
 
-      // The same session is now full and may reach protected routes.
+      // The same session is now full and may reach protected routes. Token rotated
+      // on this promotion (change_password_required -> full) - use the fresh cookie.
       const allowed = await app.request("/api/checkin/events", {
-        headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+        headers: { ...sameOrigin, ...cookieHeader(changed) },
       });
       expect(allowed.status).toBe(200);
     } finally {

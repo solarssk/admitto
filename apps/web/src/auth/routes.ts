@@ -373,6 +373,11 @@ export async function handleMfaVerify(
   if (result.trustedDeviceRawToken) {
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
+  // Session token rotates on every promotion (see promoteSessionToFull) - the pre-MFA
+  // cookie must stop working the instant a higher stage is reached.
+  if (result.sessionRawToken) {
+    setSessionCookie(c, result.sessionRawToken);
+  }
 
   // User still owes backup-code acknowledgment — keep them in the constrained
   // stage instead of granting full access (IAM-002).
@@ -464,6 +469,7 @@ export async function handleTotpConfirm(
   if (!promoted) {
     return c.json(AUTH_ERROR, 401);
   }
+  setSessionCookie(c, promoted.rawToken);
 
   // Extend stash TTL to match the fresh backup-codes session window.
   extendEnrollmentBackupCodes(partial.sessionId);
@@ -506,9 +512,10 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
   if (!promoted) {
     return c.json(AUTH_ERROR, 401);
   }
+  setSessionCookie(c, promoted.rawToken);
 
   clearEnrollmentBackupCodes(partial.sessionId);
-  if (promoted === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+  if (promoted.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
     return c.json({ ok: true, next: LOGIN_NEXT.CHANGE_PASSWORD }, 200);
   }
   const next = await loginNextAfterFullSession(db, partial.userId);

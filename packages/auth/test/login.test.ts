@@ -167,7 +167,7 @@ describe("completeMfa trusted-device audit", () => {
 
   it("emits auth.trusted_device.created when remember-device is enabled", async () => {
     mocks.verifyTotpOrRecoveryCodeDetailed.mockResolvedValue({ ok: true, method: "totp" });
-    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.promoteSessionToFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
     mocks.getTrustedDeviceDays.mockResolvedValue(30);
     mocks.createTrustedDevice.mockResolvedValue({ rawToken: "trusted-raw" });
 
@@ -180,7 +180,12 @@ describe("completeMfa trusted-device audit", () => {
       userAgent: "test-agent",
     });
 
-    expect(result).toEqual({ ok: true, trustedDeviceRawToken: "trusted-raw", stage: SESSION_STAGE.FULL });
+    expect(result).toEqual({
+      ok: true,
+      trustedDeviceRawToken: "trusted-raw",
+      stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
+    });
     expect(mocks.logTrustedDeviceCreated).toHaveBeenCalledWith(prisma, {
       userId: "user-1",
       sessionId: "sess-1",

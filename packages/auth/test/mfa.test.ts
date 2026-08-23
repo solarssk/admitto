@@ -259,7 +259,9 @@ describe("login MFA flow", () => {
       code: generateTotpCode(secret),
     });
     expect(mfa.ok).toBe(true);
-    expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+    // Promotion rotates the session token - the pre-MFA token must stop validating.
+    expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
+    expect(await validateSession(prisma, mfa.sessionRawToken!)).not.toBeNull();
   });
 
   it("rolls back backup-code consumption when session promotion fails, and audits the failure", async () => {
@@ -375,7 +377,9 @@ describe("login MFA flow", () => {
     infoSpy.mockRestore();
 
     expect(mfa.ok).toBe(true);
-    expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+    // Promotion rotates the session token - the pre-MFA token must stop validating.
+    expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
+    expect(await validateSession(prisma, mfa.sessionRawToken!)).not.toBeNull();
     expect(await verifyBackupRecoveryCode(prisma, USER_ADMIN, codes[0]!)).toBe(false);
 
     expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe("backup");
@@ -412,7 +416,9 @@ describe("login MFA flow", () => {
     infoSpy.mockRestore();
 
     expect(mfa.ok).toBe(true);
-    expect(await validateSession(prisma, loginResult.rawToken)).not.toBeNull();
+    // Promotion rotates the session token - the pre-MFA token must stop validating.
+    expect(await validateSession(prisma, loginResult.rawToken)).toBeNull();
+    expect(await validateSession(prisma, mfa.sessionRawToken!)).not.toBeNull();
     expect(await verifyEmergencyRecoveryCode(prisma, USER_ADMIN, emergencyCode)).toBe(false);
 
     expect(events.find((e) => e.event === "auth.mfa.success")?.method).toBe("emergency");
@@ -506,12 +512,12 @@ describe("promoteSessionToFull", () => {
         stage: SESSION_STAGE.MFA_PENDING,
       });
 
-      expect(await promoteSessionToFull(prisma, backupSession.session.id, backupUserId)).toBe(
-        SESSION_STAGE.BACKUP_CODES_REQUIRED,
-      );
-      expect(await promoteSessionToFull(prisma, passwordSession.session.id, passwordUserId)).toBe(
-        SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
-      );
+      expect(
+        (await promoteSessionToFull(prisma, backupSession.session.id, backupUserId))?.stage,
+      ).toBe(SESSION_STAGE.BACKUP_CODES_REQUIRED);
+      expect(
+        (await promoteSessionToFull(prisma, passwordSession.session.id, passwordUserId))?.stage,
+      ).toBe(SESSION_STAGE.CHANGE_PASSWORD_REQUIRED);
 
       const [promotedBackup, promotedPassword] = await prisma.session.findMany({
         where: { id: { in: [backupSession.session.id, passwordSession.session.id] } },

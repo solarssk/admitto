@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All remaining popups (Add attendee, Create event, Invite user, Create/Edit template, CSP trusted origins, Fix Maps link, Font family, device label edit, and the Attendees page bulk dialogs) now use the app's slim on-theme scrollbar instead of the browser's default one, matching every other popup.
 - The header "Send tickets" dialog now puts Cancel before "Send tickets", matching every other popup's button order. The device label edit modal's save error now renders as a Notice banner instead of plain text.
 
+### Security
+
+- The session cookie issued right after entering a password now stops working the moment MFA enrollment, MFA verification, backup-code acknowledgment, or a forced password change promotes that session further - previously the same cookie value carried through every step, so a copy of it captured before MFA (e.g. from a browser extension, a shared machine, or a misconfigured non-TLS deployment) would silently become a fully signed-in admin or superadmin session the instant the real user finished signing in, with no further MFA needed on the attacker's side.
+
 ## [0.5.5] - 2026-08-23
 
 ### Added
