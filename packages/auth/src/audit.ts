@@ -147,7 +147,7 @@ export interface MfaAuditContext {
 }
 
 /** MFA verification method recorded in `auth.mfa.success`. */
-export type MfaMethod = "totp" | "backup" | "emergency";
+export type MfaMethod = "totp" | "backup" | "emergency" | "webauthn";
 
 /** Rate-limit bucket identifiers for `auth.rate_limit.exceeded` audit events. */
 export type RateLimitScope =
@@ -337,12 +337,17 @@ export async function logMfaSuccess(db: Db, ctx: MfaAuditContext, method: MfaMet
 }
 
 /** Why an MFA completion attempt failed, recorded in `auth.mfa.fail`'s `reason` field: a wrong
- * TOTP/recovery code, a recovery code that matched but lost a race to consume its row, or a
- * code that verified correctly but session promotion failed afterward (e.g. the partial session
- * expired or was concurrently revoked between code entry and promotion - the transaction rolls
- * back in that last case, see `completeMfaInTransaction`, so this is what makes the outcome
- * reconstructable after the fact instead of leaving a silent, unaudited failure). */
-export type MfaFailureReason = "invalid_code" | "recovery_consume_conflict" | "session_not_promoted";
+ * TOTP/recovery code, a recovery code that matched but lost a race to consume its row, a rejected
+ * WebAuthn assertion, or a code/assertion that verified correctly but session promotion failed
+ * afterward (e.g. the partial session expired or was concurrently revoked between verification and
+ * promotion - the transaction rolls back in that last case, see `completeMfaInTransaction`/
+ * `completeMfaWithWebauthnInTransaction`, so this is what makes the outcome reconstructable after
+ * the fact instead of leaving a silent, unaudited failure). */
+export type MfaFailureReason =
+  | "invalid_code"
+  | "recovery_consume_conflict"
+  | "invalid_webauthn"
+  | "session_not_promoted";
 
 /** Emit `auth.mfa.fail` after a failed MFA completion attempt and persist a durable
  * `SecurityAuditLog` row (raw `user_id` - see logMfaSuccess). `method` is only known for

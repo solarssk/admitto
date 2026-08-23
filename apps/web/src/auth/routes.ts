@@ -1,4 +1,6 @@
 import type { Context } from "hono";
+import { z } from "zod";
+import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@admitto/db";
 import { describeMailConfigForOrg } from "@admitto/mailer-config";
@@ -12,22 +14,27 @@ import {
   logout,
   validatePartialSession,
   completeMfa,
+  completeMfaWithWebauthn,
   getOrStartTotpEnrollment,
   confirmTotpEnrollment,
   promoteSessionToFull,
   promoteSessionToBackupCodesStep,
   loginNextAfterFullSession,
   getTrustedDeviceDays,
+  revokeSession,
   revokeTrustedDeviceByToken,
   SESSION_STAGE,
+  type SessionStage,
   updateSessionDeviceLabel,
   DEVICE_LABEL_MAX_LEN,
   regenerateBackupRecoveryCodes,
   markBackupCodesAcknowledged,
   resolveSetupComplete,
+  getWebauthnEnabled,
+  beginWebauthnAssertion,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
-import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
+import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
   getStashedEnrollmentBackupCodes,
   stashEnrollmentBackupCodes,
@@ -35,10 +42,15 @@ import {
   clearEnrollmentBackupCodes,
 } from "./enrollment-backup-cache.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
+import { stashWebauthnChallenge, consumeWebauthnChallenge } from "./webauthn-challenge-cache.js";
+import { resolveWebauthnRp, webauthnAuthenticationResponseSchema } from "../admin/account-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
+import { parseOptionalClientTimezone } from "../admin/timezone.js";
+import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
+import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 
 const AUTH_ERROR = { error: "unauthorized" } as const;
 
@@ -388,6 +400,163 @@ export async function handleMfaVerify(
   }
 
   const next = await loginNextAfterFullSession(db, partial.userId);
+  return c.json({ ok: true, next }, 200);
+}
+
+/**
+ * Where to send the browser after MFA succeeds via the HTML login page — shared by
+ * `mfa-html-routes.ts`'s form-POST `/mfa/verify` route and `handlePostMfaWebauthnVerify` below,
+ * so both apply the exact same three-way stage branch (backup-codes owed / password change owed /
+ * full landing) instead of each re-implementing it. Returns a path string, not a `Response`: the
+ * HTML route wraps it in a 302, this file's JSON route in a `{ok: true, next}` body for the login
+ * page's own script to navigate to. Deliberately separate from `handleMfaVerify` above, which
+ * returns `LOGIN_NEXT` semantic keys for the admin SPA's own login flow, not a URL path.
+ */
+export async function resolvePostMfaLandingPath(
+  c: Context,
+  db: PrismaClient,
+  userId: string,
+  sessionId: string,
+  stage: SessionStage,
+  nextRaw?: string,
+): Promise<string> {
+  if (stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
+    await ensureEnrollmentBackupCodesStashed(db, sessionId, userId);
+    const next = resolveOptionalSafeRedirectPath(nextRaw);
+    return next ? `/mfa/enroll/backup-codes?next=${encodeURIComponent(next)}` : "/mfa/enroll/backup-codes";
+  }
+  if (stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+    return "/change-password";
+  }
+
+  clearEnrollmentBackupCodes(sessionId);
+  try {
+    return await resolvePostLoginRedirectForUser(db, userId, nextRaw);
+  } catch (err) {
+    // resolvePostLoginRedirectForUser has no realistic throw path reachable in a live test
+    // without faking a mid-request DB fault - defensive, so a broken landing computation
+    // revokes the promoted session and sends the browser back to /login instead of a 500.
+    /* v8 ignore start */
+    await revokeSession(db, sessionId);
+    clearSessionCookie(c);
+    console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
+    return "/login";
+    /* v8 ignore stop */
+  }
+}
+
+/** POST /api/auth/mfa/webauthn/begin — start a WebAuthn login-time step-up ceremony against the
+ * user's own registered credentials (partial session, MFA_PENDING only). */
+export async function handlePostMfaWebauthnBegin(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.MFA_PENDING) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  if (!(await getWebauthnEnabled(db))) {
+    return c.json({ code: "webauthn_disabled" }, 403);
+  }
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const begin = await beginWebauthnAssertion(db, partial.userId, rp.rpID);
+  if (!begin) return c.json({ code: "no_credentials" }, 400);
+
+  stashWebauthnChallenge("assert", partial.sessionId, begin.challenge);
+  return c.json({ options: begin.options });
+}
+
+const mfaWebauthnVerifySchema = z
+  .object({
+    response: webauthnAuthenticationResponseSchema,
+    remember_device: z.boolean().optional(),
+    next: z.string().optional(),
+    timezone: z.string().optional(),
+  })
+  .strict();
+
+/** POST /api/auth/mfa/webauthn/verify — complete the login-time MFA step with a WebAuthn
+ * assertion instead of a TOTP/recovery code (partial session, MFA_PENDING only). Consumes the
+ * challenge `handlePostMfaWebauthnBegin` stashed for this same session — never a client-supplied
+ * challenge — and resolves the instance's own RP config the same way. */
+export async function handlePostMfaWebauthnVerify(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.MFA_PENDING) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = mfaWebauthnVerifySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  if (!(await getWebauthnEnabled(db))) {
+    return c.json({ code: "webauthn_disabled" }, 403);
+  }
+
+  const ip = resolveMfaClientIp(c);
+  if (!(await checkWebauthnStepUpRateLimit(rateLimitStore, partial.sessionId, ip, "login-mfa-webauthn"))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
+
+  const challenge = consumeWebauthnChallenge("assert", partial.sessionId);
+  if (!challenge) return c.json({ code: "challenge_expired" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const result = await completeMfaWithWebauthn(
+    db,
+    {
+      userId: partial.userId,
+      sessionId: partial.sessionId,
+      response: parsed.data.response as AuthenticationResponseJSON,
+      challenge,
+      rp,
+      rememberDevice: parsed.data.remember_device === true,
+      ip,
+      userAgent: c.req.header("user-agent"),
+      timezone: parseOptionalClientTimezone(parsed.data.timezone),
+    },
+    {
+      userId: partial.userId,
+      sessionId: partial.sessionId,
+      ip,
+      userAgent: c.req.header("user-agent"),
+      timezone: parseOptionalClientTimezone(parsed.data.timezone),
+    },
+  );
+
+  if (!result.ok) {
+    return c.json({ code: "invalid_webauthn" }, 401);
+  }
+
+  if (result.trustedDeviceRawToken) {
+    await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
+  }
+
+  const next = await resolvePostMfaLandingPath(
+    c,
+    db,
+    partial.userId,
+    partial.sessionId,
+    result.stage ?? SESSION_STAGE.FULL,
+    parsed.data.next,
+  );
   return c.json({ ok: true, next }, 200);
 }
 
