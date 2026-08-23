@@ -27,6 +27,9 @@ const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   mail: "Mail",
   admin: "Admin",
   security: "Security",
+  worker: "Worker",
+  wallet: "Wallet",
+  external: "External services",
 };
 
 // No "Debug" option - nothing in this app ever logs at that level, so a filter option for it
@@ -80,7 +83,8 @@ function renderConsoleBody(
       <div className="system-log-panel__console-empty">
         <p className="system-log-panel__console-empty-title">No log activity yet</p>
         <p className="system-log-panel__console-empty-desc">
-          Activity across the API, database, cache, mail transport, and admin actions will appear here as it happens.
+          Activity across the API, database, cache, mail transport, admin actions, background
+          worker, wallet, and external services will appear here as it happens.
         </p>
       </div>
     );
@@ -141,9 +145,12 @@ interface SystemLogsPanelProps {
 
 /**
  * Live tail of the in-memory system-log buffer (see @admitto/shared/system-log) - raw
- * API/DB/Cache/Mail/Admin activity for diagnosing issues, not a durable audit trail (that's the
- * Audit log side of this same toggle). Everything shown here is also written to the container's
- * stdout independent of this view, so nothing is lost if the buffer resets or the UI is down.
+ * API/DB/Cache/Mail/Admin/Worker/Wallet/External activity for diagnosing issues, not a durable
+ * audit trail (that's the Audit log side of this same toggle). Everything shown here is also
+ * written to its own process's stdout independent of this view (the worker's entries relay over
+ * an authenticated HTTP POST to /api/ops/system-logs - see apps/cli/src/lib/system-log-publish.ts
+ * - but are still written to the worker's own stdout first), so nothing is lost if the buffer
+ * resets or the UI is down.
  */
 export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanelProps>(function SystemLogsPanel(
   { isDesktop, isVisible, liveButton, downloadButton, onLiveChange, onHasEntriesChange },
@@ -170,6 +177,12 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   const pollFailureCountRef = useRef(0);
   const filtersRef = useRef({ level, source, search });
   const consoleRef = useRef<HTMLDivElement>(null);
+  // Set right before every setEntries(fresh snapshot) call (initial load, a filter change, or
+  // the poll effect's own re-snapshot-on-buffer-reset branch) - consumed by the scroll effect
+  // below to jump straight to the newest lines instead of applying its normal "stay pinned only
+  // if already near the bottom" logic, which otherwise leaves a first-time viewer looking at the
+  // oldest lines in the buffer (PO review).
+  const forceScrollToBottomRef = useRef(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -201,6 +214,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     )
       .then((data) => {
         if (ac.signal.aborted) return;
+        forceScrollToBottomRef.current = true;
         setEntries(data.entries);
         cursorRef.current = data.cursor;
       })
@@ -251,6 +265,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
           const snapshot = await fetchSystemLogs(filterParams, ac.signal);
           if (ac.signal.aborted) return;
           cursorRef.current = snapshot.cursor;
+          forceScrollToBottomRef.current = true;
           setEntries(snapshot.entries);
         } else {
           cursorRef.current = data.cursor;
@@ -282,13 +297,25 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
   }, [live, isVisible]);
 
   // New lines arriving while scrolled to the bottom should keep the view pinned there; if the
-  // operator has scrolled up to read older lines, don't yank them back down.
+  // operator has scrolled up to read older lines, don't yank them back down. A fresh snapshot
+  // (initial load or a filter change) always jumps straight to the newest lines instead - this
+  // is a live tail, so opening it should behave like `docker logs -f`/`tail -f`, not start
+  // scrolled to the oldest buffered entry (PO review). Also reruns on isVisible: LogsPanelViews
+  // keeps this panel mounted under display:none while the operator is on Audit/Security, so a
+  // snapshot that resolves during that time hits a console with scrollHeight 0 - consuming the
+  // flag there would leave it never actually applied, since switching back to System only
+  // flips isVisible, not entries, so this effect wouldn't otherwise rerun (bot review).
   useEffect(() => {
     const el = consoleRef.current;
-    if (!el) return;
+    if (!el || !isVisible) return;
+    if (forceScrollToBottomRef.current) {
+      forceScrollToBottomRef.current = false;
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (distanceFromBottom < 80) el.scrollTop = el.scrollHeight;
-  }, [entries]);
+  }, [entries, isVisible]);
 
   const lines = useMemo(() => entries.map(formatLogLine), [entries]);
 
@@ -348,6 +375,11 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       searchPlaceholder="Search levels…"
       emptyLabel="No levels found"
       showLabel={false}
+      // Only 4 short options (All levels/Info/Warn/Error) - the shared 260px floor (tuned for
+      // longer option sets) left a wide, empty dropdown panel hugging the toolbar's right edge
+      // for no reason (PO report). Same idea as .audit-log-pagesize's own minWidth={72} for its
+      // even-shorter page-size options.
+      minWidth={140}
       value={level || "all"}
       options={[
         { id: "all", label: "All levels" },

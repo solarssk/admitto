@@ -46,7 +46,14 @@ import {
   staticMapCacheControl,
   staticMapFailureStatus,
 } from "./maps/static-map-route.js";
-import { handleGetAdmittoLogo, handleGetAdmittoMark, handleGetAppleWalletBadge, handleGetGoogleWalletBadge } from "./wallet-badges.js";
+import {
+  handleGetAdmittoLogo,
+  handleGetAdmittoMark,
+  handleGetAppleWalletBadge,
+  handleGetAppleWalletBadgePng,
+  handleGetGoogleWalletBadge,
+  handleGetGoogleWalletBadgePng,
+} from "./wallet-badges.js";
 import { handlePassCreatorWebhook } from "./wallet-webhook.js";
 import {
   resolveCheckinToken,
@@ -148,6 +155,7 @@ import {
   handleBulkTicketTypeEventAttendees,
   handleBulkRsvpEventAttendees,
   handleResendEventAttendeeTicket,
+  handleGetAttendeeTicketLink,
   handleDismissAttendeeBounce,
   handleBulkResendTickets,
   handleExportAttendees,
@@ -1000,6 +1008,8 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/assets/admitto-logo.svg", handleGetAdmittoLogo);
   app.get("/assets/apple-wallet-badge.svg", handleGetAppleWalletBadge);
   app.get("/assets/google-wallet-badge.svg", handleGetGoogleWalletBadge);
+  app.get("/assets/apple-wallet-badge.png", handleGetAppleWalletBadgePng);
+  app.get("/assets/google-wallet-badge.png", handleGetGoogleWalletBadgePng);
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,
@@ -1393,6 +1403,12 @@ export function createApp(options: CreateAppOptions = {}) {
     guardArchivedEvent((c) => handleResendEventAttendeeTicket(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
   );
   app.post(
+    "/api/admin/events/:eventId/attendees/:id/ticket-link",
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handleGetAttendeeTicketLink(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
     "/api/admin/events/:eventId/attendees/:id/dismiss-bounce",
     jsonPostCsrf,
     staffAdminGate,
@@ -1541,7 +1557,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handleGetEventDelivery(c, db),
   );
   app.get("/api/admin/events/:eventId/deliveries/:deliveryId/rendered", staffAdminGate, (c) =>
-    handleGetRenderedEventDelivery(c, db),
+    handleGetRenderedEventDelivery(c, db, mailInjectedBaseUrl),
   );
   app.get("/api/admin/events/:eventId/import/template", staffAdminGate, (c) =>
     handleGetImportTemplate(c, db),
@@ -2115,10 +2131,15 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   }
 
-  // PassCreator webhook deliveries (registration/void events) - one event's target URL per
-  // subscribeWebhook() call, never a browser navigation.
+  // PassCreator webhook deliveries (registration events: first_pushnotification_registered,
+  // pushnotification_registered, pushnotification_unregistered) - never a browser navigation.
   app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, (c) =>
     handlePassCreatorWebhook(c, db, options.walletPassProvider),
+  );
+  // pass_voided gets its own target URL (subscribeWalletWebhooksBestEffort) since PassCreator's
+  // payload never names which event fired - see handlePassCreatorWebhook's doc comment.
+  app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, (c) =>
+    handlePassCreatorWebhook(c, db, options.walletPassProvider, true),
   );
 
   // Mode B hosted QR — filename param is "{public_ref}.png"

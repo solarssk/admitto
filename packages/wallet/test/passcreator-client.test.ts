@@ -1,13 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PassCreatorClient, WalletProviderError } from "../src/index.js";
 import { PASSCREATOR_DEFAULT_BASE_URL } from "../src/passcreator-config.js";
 import type { WalletPassInput } from "../src/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 const CONFIG = { apiKey: "test-key", templateId: "tmpl-1", baseUrl: "https://pc.test" };
 
 const INPUT: WalletPassInput = {
   attendeeName: "Jane Doe",
   eventDateLabel: "12 August 2026",
+  eventDateShortLabel: "12 Aug 2026",
   eventHoursLabel: "18:00-22:00",
   eventLocationLabel: "Test Venue",
   ticketTypeLabel: "General",
@@ -178,33 +180,19 @@ describe("PassCreatorClient.describeTemplate", () => {
 });
 
 describe("PassCreatorClient.getWebhookPublicKey", () => {
-  it("GETs the public-key endpoint and returns raw PEM text as-is", async () => {
-    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
+  it("GETs the public-key endpoint and parses the confirmed live {publicKey} shape (2026-08-19)", async () => {
+    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----\n";
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(url).toBe("https://pc.test/api/hook/publickey");
       expect(init?.method).toBe("GET");
-      return new Response(pem, { status: 200, headers: { "Content-Type": "text/plain" } });
+      return jsonResponse(200, { publicKey: pem });
     });
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
-  });
-
-  it("also accepts the PEM wrapped in the standard {success, data} envelope", async () => {
-    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
-    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: pem }));
-    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
-  });
-
-  it("also accepts the PEM nested at data.publicKey", async () => {
-    const pem = "-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----";
-    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: { publicKey: pem } }));
-    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    await expect(client.getWebhookPublicKey()).resolves.toBe(pem);
+    await expect(client.getWebhookPublicKey()).resolves.toBe(pem.trim());
   });
 
   it("throws when the response doesn't contain a recognizable PEM key", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: {} }));
+    const fetchMock = vi.fn(async () => jsonResponse(200, { publicKey: "not a pem" }));
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     await expect(client.getWebhookPublicKey()).rejects.toBeInstanceOf(WalletProviderError);
   });
@@ -253,6 +241,41 @@ describe("PassCreatorClient.subscribeWebhook", () => {
     await expect(
       client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pass_voided"),
     ).rejects.toBeInstanceOf(WalletProviderError);
+  });
+});
+
+describe("PassCreatorClient.unsubscribeWebhook", () => {
+  it("POSTs to /api/hook/unsubscribe with just target_url, no templateId or event", async () => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      expect(url).toBe("https://pc.test/api/hook/unsubscribe");
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(init?.body as string)).toEqual({
+        target_url: "https://admitto.example.com/api/wallet/webhook/passcreator/evt-1/voided",
+      });
+      return jsonResponse(200, { success: true });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(
+      client.unsubscribeWebhook("https://admitto.example.com/api/wallet/webhook/passcreator/evt-1/voided"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("throws on a non-2xx status", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) => jsonResponse(404, { success: false }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.unsubscribeWebhook("https://admitto.example.com/hook")).rejects.toBeInstanceOf(
+      WalletProviderError,
+    );
+  });
+
+  it("throws on a 2xx status whose body explicitly reports success: false", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL) =>
+      jsonResponse(200, { success: false, errors: ["no such subscription"] }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await expect(client.unsubscribeWebhook("https://admitto.example.com/hook")).rejects.toBeInstanceOf(
+      WalletProviderError,
+    );
   });
 });
 
@@ -658,5 +681,142 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     const result = await client.getRegistrationStatus("admitto:event1:attendee1");
     expect(result?.googleActiveRegistrations).toBe(1);
+  });
+});
+
+describe("PassCreatorClient wallet system-log coverage", () => {
+  beforeEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
+  afterEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
+  it("does not log a successful request - a bulk event-wide push can call this hundreds of times, which risked bursting the ops-ingest rate limit", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: { identifier: "pass-1", iPhoneUri: "u", androidUri: "u" },
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    await client.createPass(INPUT);
+
+    expect(querySystemLogs({ source: "wallet" })).toEqual([]);
+  });
+
+  it("logs a warn-level entry (no request body, no Authorization header) on a rejected request", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(401, { success: false, errors: ["Unauthorized"] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_rejected", fields: { status: 401 } });
+    expect(JSON.stringify(entry)).not.toContain("test-key");
+    expect(JSON.stringify(entry)).not.toContain(INPUT.attendeeName);
+  });
+
+  it("strips the query string from a search request's route (avoids leaking the encoded userProvidedId)", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(500, { success: false, errors: ["boom"] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.findByUserProvidedId("admitto:event1:attendee1")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry?.fields?.["route"]).toBe("/api/v3/pass");
+    expect(JSON.stringify(entry)).not.toContain("attendee1");
+  });
+
+  it("logs a warn-level entry when the request itself throws (network failure)", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_failed" });
+  });
+
+  it("logs a warn-level rejected entry for an HTTP 200 that carries success: false in its envelope", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { success: false, errors: ["Duplicate userProvidedId"] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "warn", message: "passcreator_request_rejected", fields: { status: 200 } });
+  });
+
+  it("does not log deletePass's idempotent 404-as-success case as a rejection", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await client.deletePass("already-gone");
+
+    expect(querySystemLogs({ source: "wallet" })).toEqual([]);
+  });
+
+  it("logs a rejected deletePass for a genuine failure (not 404), with a static route template instead of the pass id", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.deletePass("attendee-linked-pass-id")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "passcreator_request_rejected",
+      fields: { status: 401, route: "/api/v3/pass/{id}" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("attendee-linked-pass-id");
+  });
+
+  it("logs a rejected updatePass with a static route template instead of the pass id", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(404, { success: false, errors: ["Not found"] }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.updatePass("attendee-linked-pass-id", INPUT)).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "passcreator_request_rejected",
+      fields: { status: 404, route: "/api/v3/pass/{id}" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("attendee-linked-pass-id");
+  });
+
+  it("logs a rejected voidPass/restorePass with a static route template instead of the pass id", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 401 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.voidPass("attendee-linked-pass-id")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "passcreator_request_rejected",
+      fields: { status: 401, route: "/api/pass/{id}" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("attendee-linked-pass-id");
+  });
+
+  it("logs a rejected subscribeWebhook with a static route template instead of the template id", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 500 }));
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.subscribeWebhook("https://example.com/hook", "pass_voided")).rejects.toThrow(WalletProviderError);
+
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "warn",
+      message: "passcreator_request_rejected",
+      fields: { status: 500, route: "/api/hook/subscribe/{templateId}" },
+    });
+    expect(JSON.stringify(entry)).not.toContain(CONFIG.templateId);
   });
 });

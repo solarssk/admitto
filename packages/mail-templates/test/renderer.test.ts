@@ -7,7 +7,6 @@ import {
   renderTemplateTrusted,
   renderTemplateTrustedForStorage,
   materializeStoredDeliveryMessage,
-  materializeStoredDeliveryMessageRedacted,
   validateHttpUrl,
   InvalidHttpUrlError,
   MissingRequiredPlaceholderError,
@@ -226,6 +225,17 @@ describe("renderTemplate", () => {
     expect(
       absolutizeBundledTicketAssetUrls('<img src="/assets/apple-wallet-badge.svg" />'),
     ).toBe('<img src="/assets/apple-wallet-badge.svg" />');
+
+    // PNG variant: the format the wallet-button placeholder actually inserts into mail bodies
+    // (classic Outlook desktop doesn't render SVG <img> sources).
+    expect(
+      absolutizeBundledTicketAssetUrls(
+        '<img src="/assets/apple-wallet-badge.png" /><img src="/assets/google-wallet-badge.png" />',
+        "https://tickets.example.com/",
+      ),
+    ).toBe(
+      '<img src="https://tickets.example.com/assets/apple-wallet-badge.png" /><img src="https://tickets.example.com/assets/google-wallet-badge.png" />',
+    );
 
     const rendered = renderTemplate(
       {
@@ -505,72 +515,5 @@ describe("renderTemplateTrustedForStorage", () => {
       qr_image_url: "https://example.com/q/tok.png",
     });
     expect(sent.html).not.toContain("href=");
-  });
-});
-
-describe("materializeStoredDeliveryMessageRedacted", () => {
-  it("never includes a real ticket_url/qr_image_url, only safe placeholders", () => {
-    const frozen = renderTemplateTrustedForStorage(
-      {
-        subject: "Ticket for {{first_name}}, link: {{ticket_url}}",
-        compiledHtml:
-          '<a href="{{ticket_url}}">Open ticket</a><img src="{{qr_image_url}}" alt="QR" width="200" height="200" />',
-      },
-      { first_name: "Alice" },
-    );
-
-    const redacted = materializeStoredDeliveryMessageRedacted(frozen);
-
-    // The literal placeholder tokens must be gone in both subject and html.
-    expect(redacted.subject).not.toContain("{{ticket_url}}");
-    expect(redacted.html).not.toContain("{{ticket_url}}");
-    expect(redacted.html).not.toContain("{{qr_image_url}}");
-
-    // The ticket link must be inert, never a real/navigable URL.
-    expect(redacted.html).toContain('href="#"');
-    expect(redacted.subject).toContain("#");
-
-    // The QR image must be a local inline SVG data URI, never a fetchable URL that could
-    // reveal or proxy the recipient's real scannable QR code.
-    expect(redacted.html).toMatch(/src="data:image\/svg\+xml/);
-    expect(redacted.html).not.toContain("http://");
-    expect(redacted.html).not.toContain("https://");
-
-    // Other, non-deferred placeholders are untouched by redaction.
-    expect(redacted.subject).toContain("Alice");
-  });
-
-  it("never leaks a real ticket_url/qr_image_url even if the frozen snapshot somehow held one", () => {
-    // Defense in depth: even if a future bug stored a real resolved value instead of the
-    // literal placeholder token, redaction must still only ever emit the safe constants —
-    // it must not "pass through" whatever text preceded it.
-    const redacted = materializeStoredDeliveryMessageRedacted({
-      subject: "See {{ticket_url}}",
-      html: '<a href="{{ticket_url}}">go</a><img src="{{qr_image_url}}" />',
-    });
-    expect(redacted.subject).toBe("See #");
-    expect(redacted.html).toContain('href="#"');
-    expect(redacted.html).toMatch(/^<a href="#">go<\/a><img src="data:image\/svg\+xml/);
-  });
-
-  it("leaves non-deferred placeholders literal (only ticket_url/qr_image_url are redacted)", () => {
-    const redacted = materializeStoredDeliveryMessageRedacted({
-      subject: "Hi {{first_name}}",
-      html: "<p>{{event_name}}</p>",
-    });
-    expect(redacted.subject).toBe("Hi {{first_name}}");
-    expect(redacted.html).toBe("<p>{{event_name}}</p>");
-  });
-
-  it("redacts a ticket_url/qr_image_url placeholder that appears in HTML text content, not inside a quoted attribute", () => {
-    const redacted = materializeStoredDeliveryMessageRedacted({
-      subject: "See {{ticket_url}}",
-      html: "<p>Link: {{ticket_url}}</p><p>QR: {{qr_image_url}}</p>",
-    });
-
-    expect(redacted.html).not.toContain("{{ticket_url}}");
-    expect(redacted.html).not.toContain("{{qr_image_url}}");
-    expect(redacted.html).toContain("<p>Link: #</p>");
-    expect(redacted.html).toMatch(/<p>QR: data:image\/svg\+xml/);
   });
 });

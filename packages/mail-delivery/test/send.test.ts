@@ -12,6 +12,7 @@ import {
   retryDelivery,
   sendTicketEmails,
 } from "../src/index.js";
+import { resolveTicketTypeLabel } from "../src/send.js";
 
 const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-mail-send";
@@ -74,6 +75,14 @@ afterAll(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("resolveTicketTypeLabel", () => {
+  it("falls open to the raw key when the catalog has no match", () => {
+    expect(resolveTicketTypeLabel("deleted_type", new Map([["vip", "VIP"]]))).toBe(
+      "deleted_type",
+    );
+  });
 });
 
 describe("sendTicketEmails name fields", () => {
@@ -339,7 +348,7 @@ describe("sendTicketEmails", () => {
     expect(exported[0]?.message.html).not.toContain("/m/evt-mail-send.png");
   });
 
-  it("dedups second initial send", async () => {
+  it("second initial send to an already-ticketed attendee resends instead of being skipped", async () => {
     exported.length = 0;
     const result = await sendTicketEmails(
       EVENT_ID,
@@ -348,8 +357,54 @@ describe("sendTicketEmails", () => {
       { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       { exportSink: (p) => exported.push(p) },
     );
+    expect(result.sent).toBe(1);
+    expect(result.skipped).toHaveLength(0);
+    expect(exported).toHaveLength(1);
+
+    const rows = await prisma.emailDelivery.findMany({
+      where: { attendee_id: "att-mode-a" },
+      orderBy: { queued_at: "asc" },
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.purpose).toBe("initial");
+    expect(rows[1]?.purpose).toBe("resend");
+  });
+
+  it("skips an initial send while another initial delivery for that attendee is still queued", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-in-flight",
+        event_id: EVENT_ID,
+        email: "in-flight@example.com",
+        name: "In Flight",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: "org-mail",
+        event_id: EVENT_ID,
+        attendee_id: "att-in-flight",
+        purpose: "initial",
+        batch_id: "in-flight-batch",
+        provider: "export_only",
+        status: "queued",
+        recipient_email: "in-flight@example.com",
+        rendered_subject: "Subject",
+        rendered_html: "<p>Hi</p>",
+        queued_at: new Date(),
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-in-flight"] },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
     expect(result.sent).toBe(0);
-    expect(result.skipped.some((s) => s.reason === "already_sent")).toBe(true);
+    expect(result.skipped).toEqual([{ attendeeId: "att-in-flight", reason: "in_flight" }]);
     expect(exported).toHaveLength(0);
   });
 
@@ -377,7 +432,7 @@ describe("sendTicketEmails", () => {
       where: { attendee_id: "att-race", purpose: "initial" },
     });
     expect(rows).toHaveLength(1);
-    expect(exported.length).toBeLessThanOrEqual(1);
+    expect(exported).toHaveLength(1);
   });
 
   it("skips agency attendee missing public_ref without aborting the batch", async () => {
@@ -469,6 +524,89 @@ describe("sendTicketEmails", () => {
         { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
       ),
     ).rejects.toThrow("recipientEmail requires exactly one attendeeId");
+  });
+
+  it("renders ticket_type label and event_hours from the event's start/end time", async () => {
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: { event_hours_start: "10:00", event_hours_end: "17:00" },
+    });
+    await prisma.ticketType.create({
+      data: { event_id: EVENT_ID, key: "vip", label: "VIP", color: "purple", sort_order: 1 },
+    });
+    await prisma.attendee.create({
+      data: {
+        id: "att-ticket-type",
+        event_id: EVENT_ID,
+        email: "vip@example.com",
+        name: "VIP Example",
+        ticket_type: "vip",
+      },
+    });
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "ticket-type",
+        label: "Ticket type",
+        subject_template: "{{ticket_type}} - {{event_hours}}",
+        body_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        compiled_html_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        template_format: "html",
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-ticket-type"], templateId: template.id },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(1);
+    expect(exported[0]?.message.subject).toBe("VIP - 10:00 - 17:00 UTC");
+
+    await prisma.event.update({
+      where: { id: EVENT_ID },
+      data: { event_hours_start: null, event_hours_end: null },
+    });
+  });
+
+  it("falls back to General for ticket_type and empty string for event_hours when unset", async () => {
+    await prisma.attendee.create({
+      data: {
+        id: "att-no-ticket-type",
+        event_id: EVENT_ID,
+        email: "general@example.com",
+        name: "General Example",
+      },
+    });
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "no-ticket-type",
+        label: "No ticket type",
+        subject_template: "[{{ticket_type}}] [{{event_hours}}]",
+        body_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        compiled_html_template: "<p>{{ticket_type}} {{event_hours}}</p>",
+        template_format: "html",
+      },
+    });
+
+    exported.length = 0;
+    const result = await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-no-ticket-type"], templateId: template.id },
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: (p) => exported.push(p) },
+    );
+
+    expect(result.sent).toBe(1);
+    expect(exported[0]?.message.subject).toBe("[General] []");
   });
 });
 

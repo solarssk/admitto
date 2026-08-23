@@ -1,4 +1,5 @@
 import { decryptFromString } from "@admitto/crypto";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { PassCreatorClient } from "./passcreator-client.js";
 import type { WalletPassProvider } from "./provider.js";
 
@@ -35,7 +36,9 @@ export function resolveWalletProvider(
   try {
     apiKey = decryptFromString(event.walletApiKeyEnc);
   } catch (err) {
-    console.error("wallet API key decrypt failed:", err);
+    emitSystemLog("wallet", "error", "wallet_api_key_decrypt_failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
   return new PassCreatorClient({

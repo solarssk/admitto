@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns/promises";
 import { fetch as undiciFetch } from "undici";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import {
   NominatimProvider,
   GeocodingProviderError,
@@ -800,5 +801,76 @@ describe("NominatimProvider response size / timeout hardening", () => {
     resolveFirst(jsonResponse(geocodeJsonBody([])));
     await Promise.all([first, second]);
     expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("NominatimProvider system-log coverage", () => {
+  beforeEach(() => {
+    resetSystemLogBufferForTest();
+  });
+
+  it("logs the query length (not the text) and result count on a successful search", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        geocodeJsonBody([
+          {
+            name: "Złote Tarasy",
+            street: "Złota",
+            housenumber: "59",
+            city: "Warszawa",
+            country: "Polska",
+            label: "Złote Tarasy, 59, Złota, Warszawa, Polska",
+            coordinates: [21.0, 52.0],
+          },
+        ]),
+      ),
+    );
+    await makeProvider(fetchFn).search("Złote Tarasy Warszawa");
+
+    const [entry] = querySystemLogs({ source: "external" });
+    expect(entry).toMatchObject({
+      level: "info",
+      message: "geocoding_search_ok",
+      fields: { provider: "nominatim", query_length: "Złote Tarasy Warszawa".length, results: 1 },
+    });
+    expect(JSON.stringify(entry)).not.toContain("Złote Tarasy Warszawa");
+  });
+
+  it("logs a warn-level entry on a failed search", async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new Error("connection refused"));
+    await expect(makeProvider(fetchFn).search("anything")).rejects.toThrow(GeocodingProviderError);
+
+    const [entry] = querySystemLogs({ source: "external" });
+    expect(entry).toMatchObject({ level: "warn", message: "geocoding_search_failed" });
+  });
+
+  it("logs distinct outcomes for a matched, unmatched, and failed reverse lookup", async () => {
+    const matched = vi.fn().mockResolvedValue(
+      jsonResponse(
+        geocodeJsonBody([
+          {
+            name: "Złote Tarasy",
+            street: "Złota",
+            housenumber: "59",
+            city: "Warszawa",
+            country: "Polska",
+            label: "Złote Tarasy, 59, Złota, Warszawa, Polska",
+            coordinates: [21.0, 52.0],
+          },
+        ]),
+      ),
+    );
+    await makeProvider(matched).reverse(52.2297, 21.0028);
+    expect(querySystemLogs({ source: "external" })[0]).toMatchObject({ level: "info", message: "geocoding_reverse_ok" });
+
+    resetSystemLogBufferForTest();
+    const unmatched = vi.fn().mockResolvedValue(jsonResponse(geocodeJsonBody([])));
+    await makeProvider(unmatched).reverse(0, 0);
+    expect(querySystemLogs({ source: "external" })[0]).toMatchObject({ level: "info", message: "geocoding_reverse_no_match" });
+
+    resetSystemLogBufferForTest();
+    const failing = vi.fn().mockRejectedValue(new Error("connection refused"));
+    await expect(makeProvider(failing).reverse(0, 0)).rejects.toThrow(GeocodingProviderError);
+    expect(querySystemLogs({ source: "external" })[0]).toMatchObject({ level: "warn", message: "geocoding_reverse_failed" });
   });
 });

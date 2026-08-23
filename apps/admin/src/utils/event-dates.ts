@@ -34,7 +34,7 @@ export function formatEventCalendarDate(iso: string): string {
 /**
  * Preview of the {{event_date}} wallet placeholder - mirrors apps/web/src/ticket-page.ts's own
  * formatDate default (en-GB, day/long month/year). The real pass is now region-aware (it adapts
- * to the event's own country via @admitto/tickets' region-date-format.ts), so this preview is
+ * to the event's own country via @admitto/shared's region-date-format.ts), so this preview is
  * exact for events with no country set, an unrecognized country, or a recognized United Kingdom
  * country (all resolve to en-GB) - it does not thread the event's address_components.country
  * through, so any other country's actual pass date (e.g. US-style month/day/year) can differ
@@ -53,6 +53,21 @@ export function formatWalletDatePreview(isoDate: string): string | null {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+/**
+ * Preview of the {{event_date_short}} wallet placeholder - same fallback (en-GB, no country
+ * threaded through, see {@link formatWalletDatePreview}) but with the month abbreviated to a
+ * fixed 3 letters ("24 Sep 2026"), matching @admitto/shared's `formatDateShort` (not CLDR's own
+ * en-GB "Sept").
+ */
+export function formatWalletDatePreviewShort(isoDate: string): string | null {
+  const parsed = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+    parsed.getUTCMonth()
+  ];
+  return `${parsed.getUTCDate()} ${month} ${parsed.getUTCFullYear()}`;
 }
 
 /**

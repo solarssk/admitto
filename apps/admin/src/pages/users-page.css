@@ -564,16 +564,18 @@
   gap: var(--space-1);
 }
 
+/* Match IdentityModalHeader's .identity-editor__title/__subtitle - the standard other modal
+ * headers already follow (PO report: this one looked off, different title size and a mono
+ * subtitle font with no reason to be monospace - it's a name/email pair, not a code value). */
 .users-modal__head-text h2 {
   margin: 0;
-  font-size: var(--fs-h3);
+  font-size: var(--fs-h2);
   font-weight: 600;
 }
 
 .users-modal__head-email {
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: var(--fs-sm);
-  font-family: var(--font-mono, ui-monospace, monospace);
 }
 
 .users-modal__field {
@@ -582,9 +584,21 @@
   gap: var(--space-1);
 }
 
-.users-modal__field-label {
+/* Match .at-label (Input's own label, used by Display name/Email above this field) exactly -
+ * this is a bespoke label because Phone number's row has two inputs, not because it should
+ * look different. It was missing color, defaulting to the ambient (darker) text color instead
+ * of --text-secondary (PO report round 1: looked a different color than the standard).
+ * Scoped as `.users-modal__field .users-modal__field-label` (two classes), not just the bare
+ * class, to out-specify the older `.users-modal__field label` rule below - that generic rule
+ * still applies to this same <label> (it's a descendant, class or not) and was adding its own
+ * margin-bottom on top of .users-modal__field's flex `gap`, double-spacing the label from the
+ * row under it where Email address (plain .at-label, no margin of its own) only ever had the
+ * single gap (PO report round 2: extra distance, not just color). */
+.users-modal__field .users-modal__field-label {
+  margin-bottom: 0;
   font-size: var(--fs-sm);
-  font-weight: 500;
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
 }
 
 .users-modal__phone-row {
@@ -716,6 +730,9 @@
 
 .users-modal__status-chip-body span {
   font-size: var(--fs-sm);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .users-modal__logins {

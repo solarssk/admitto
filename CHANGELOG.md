@@ -15,11 +15,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.
 
+## [0.5.5] - 2026-08-23
+
+### Added
+
+- Settings → Logs & audit → System now has three additional log sources: Worker (background job activity - mail delivery, import/export, wallet push/message drains, bounce ingest, wallet sync, retention), Wallet (Apple/Google Wallet provider operations - issue, void, push, search), and External services (outbound weather and maps/geocoding calls). None of this activity reached the live tail before.
+
+### Changed
+
+- Communication → Delivery log's "View sent message" preview now shows the recipient's real ticket link and QR code instead of a redacted placeholder. Event managers already have equivalent access to the same real ticket link one click away (attendee detail → More actions → Copy ticket link), so hiding it in the preview no longer served a purpose.
+
 ### Fixed
 
+- The login, MFA, change-password, and other server-rendered auth pages no longer block same-origin fetch/XHR requests such as Cloudflare's own edge-injected bot-detection beacon (`/cdn-cgi/challenge-platform/...`). Their Content-Security-Policy previously omitted `connect-src` entirely on an instance with no trusted origins configured, so it fell back to `default-src 'none'` and blocked even requests to Admitto's own origin.
+- Event Overview's Key contacts avatars are now centered against the full row height instead of anchored to the top, so they no longer sit noticeably above center once a contact has a role or note wrapping the row to two lines.
+- The staff user edit modal (Users & roles) no longer permanently reserves scrollbar-gutter space on its right edge, matching every other modal that shares its layout - a short profile (no recent logins, no role chips) sat with dead space on the right where a scrollbar was never going to appear.
+- Settings → Logs & audit → System's Level filter dropdown no longer opens far wider than its four short options need, leaving a mostly-empty panel hugging the toolbar's right edge.
+
+### Security
+
+- The production Docker image no longer ships the full development toolchain (TypeScript, ESLint, Vitest, Vite). A Dockerfile step meant to restore Prisma CLI's runtime dependencies after pruning devDependencies was instead restoring every pruned package, shrinking the image by about 200 MB and removing 11 CVEs (10 high, 1 medium) that lived in TypeScript's native compiler binary.
+- `bootstrap-superadmin --force` (both `npm run cli -w @admitto/auth --` and the `admitto` CLI) no longer hangs forever when the confirmation and password answers are piped in together, as any scripted/non-interactive caller does - only a human typing at a real terminal, one line at a time, avoided the underlying readline bug.
+
+## [0.5.4] - 2026-08-21
+
+### Added
+
+- Users & roles: the staff user modal and My account's SSO menu now show the actual linked identity provider name(s) (e.g. "Authentik", or "Authentik + Cloudflare Access" when also linked through Cloudflare Access) instead of the generic "Identity provider" label.
+- Bulk check-in from the Attendees list now asks for confirmation before admitting everyone selected, matching the other bulk actions (revoke, delete, send tickets) on the same toolbar.
+- Event Settings → Wallet → Field mapping has a new `event_date_short` placeholder alongside the existing `event_date` - a shorter form with an abbreviated month (e.g. "24 Sep 2026" instead of "24 September 2026") for pass template fields too narrow for the long date. An event's wallet pass now also sets PassCreator's Lock Screen relevance date whenever Apple Wallet is enabled and the event has a start time, independent of the separate Apple Wallet semantic tags opt-in.
+
+### Changed
+
+- The "Confirm check-in" button on the Check-in screen always uses Admitto's own blue, regardless of the organisation's branding accent color - a branded accent in red or orange read as an error state on this specific button.
+- Attendee Overview's two-column layout is now a literal 50/50 split.
+- The Two-factor coverage stat on Users & roles no longer counts staff who sign in through an identity provider as "missing 2FA" - two-factor for those accounts is the identity provider's responsibility, not something Admitto enforces.
+- The public ticket page's date, time, and venue now read as a proper stat layout - "Date" and "Time" as labeled columns side by side with a divider between them, and the venue address on its own line below with a pin icon - instead of three stacked icon-and-text rows. The previous layout also had a real bug: the pin icon could drift away from a venue address that wrapped onto a second line, growing worse the longer the venue name was. Date and time no longer need an icon at all, and the venue's pin icon now stays at a fixed, consistent gap from the address regardless of its length.
+- Wallet pass's `event_hours` field mapping now reads exactly like the public ticket page: a spaced hyphen between start and end ("9:00 am - 6:00 pm" instead of "9:00am-6:00pm"), the event's timezone abbreviation appended, and an open-ended "from"/"until" instead of being omitted entirely when only one of start/end is set on the event.
+- Ticket confirmation emails' `{{event_date}}` and `{{event_hours}}` placeholders now match the public ticket page's format - the event's own regional date/time convention with its timezone abbreviation (e.g. "21 August 2026", "10:00 am - 6:05 pm IST") - instead of a fixed ISO date and 24-hour time with no timezone shown, regardless of where the event actually takes place.
+
+### Fixed
+
+- Unlinking SSO from My Account now also removes a linked Cloudflare Access identity, instead of leaving it behind without its underlying sign-in method. Previously this silently broke every later Cloudflare-authenticated request for that account.
+- Wallet registration webhooks from PassCreator (device add/remove events) are no longer silently rejected. Two separate bugs each broke every delivery in a different way: Admitto was reading PassCreator's public-key response with the wrong field name (so the key could never be fetched at all), and signature verification was using the wrong hash algorithm (so a fetched key still couldn't validate a genuine delivery). No wallet registration status ever updated from a live device, and PassCreator kept retrying every delivery for over a day. Also fixed: some Android Wallet variants (`Android`, `AndroidWalletPasses`, `AndroidWalletUnion`, not just `AndroidGooglePay`) were silently ignored instead of updating Google registration counts. Wallet status now updates correctly when an attendee adds or removes their pass from Apple or Google Wallet.
+- Voiding a pass directly in PassCreator's own dashboard (bypassing Admitto) is now reflected on the attendee's Wallet status. This never worked before: PassCreator's void-notification webhook doesn't say which event fired or carry any voided flag in its payload, so it was structurally indistinguishable from every other wallet event and was always ignored. It now gets its own separate webhook subscription so Admitto can tell the two apart. PassCreator has no equivalent restore/un-void webhook event, so a pass restored directly in PassCreator's dashboard still isn't reflected automatically - Admitto's own restore action is unaffected.
+- Organisation Settings → Archiving and My account → Active sessions: their tables now span the full width of their card, matching every other table in the app. A leftover negative-margin/padding pair silently canceled itself out, so the table never actually reached the card's edge.
+- The Audit log now keeps the deleted event's real name in "Deleted event …" entries instead of falling back to the generic label once the event itself no longer exists to look the name up from.
+- A staff account's display name, when unset, now shows their email address in the top-right account menu instead of just the part of the email before the @ sign.
+- Activity log and attendee Notes now show a staff member's email when they have no display name set, instead of a generic label ("Admin", which wrongly implied a specific role) or skipping straight past the email to that same generic fallback.
+- Note author badges (Attendee detail → Notes) now use the same role name and color as everywhere else in the app ("Superadmin"/"Administrator"/"Operator"), instead of an unrelated two-letter code ("SA"/"AD"/"OP").
+- Requirements' Add/Edit item and Add/Edit custom field modals no longer shift their form width when the scrollbar appears or disappears - their content almost always needs to scroll, so the space for it is now reserved up front instead of toggling in and out.
+- Check-in and note timestamps now show in the viewer's own browser timezone rather than the event's, and a note added on an earlier day now shows which day, not just a time.
+- Security logs' "2FA verified" rows now get the same "your local time" icon as "Login succeeded" rows when the browser reported a timezone, instead of always falling back to the generic device icon.
+- Several small layout fixes on Check-in, Users & roles, My account, Organisation settings → Identity/Mail, and Attendee delivery history: text no longer wraps awkwardly in status chips or company/department names, modal scrollbars behave consistently and no longer shift content when they appear, a Redirect URI field's copy control now sits inside the field, and a couple of redundant or misaligned hint lines were removed or straightened out.
+- Ticket page event hours now show the event's own timezone abbreviation next to the time (e.g. "10:00 am - 6:05 pm IST"), always use lowercase am/pm instead of varying between "AM" and "am" depending on the event's country, and join the start and end time with a spaced hyphen instead of a tight dash.
+- Initial setup and change-password screens: the password strength meter no longer sits almost on top of the "Confirm password" field once it appears. It now takes up real space below the password field, the same standard gap used between every other field on the form, instead of floating on an overlay a couple of pixels above the next label.
+
+## [0.5.3] - 2026-08-18
+
+### Added
+
+- Mail templates now support two more placeholders: `{{ticket_type}}` (the attendee's ticket type label) and `{{event_hours}}` (the event's start-end time, if set in Event settings). Both were already available on wallet passes but missing from the Communication tab's template editor.
+- Attendee detail's "More actions" menu now has a "Copy ticket link" action for admins and superadmins, which copies the attendee's existing ticket URL to the clipboard. Previously the only way to get that link was to resend the ticket email to yourself. The raw ticket token is still never exposed as attendee data - it's decrypted server-side only for this action, the same way the existing wallet-pass link actions already work, and each copy is recorded in the attendee's action log.
+
+### Fixed
+
+- An attendee's Wallet status now shows "Added" only once PassCreator confirms the pass was actually registered on an Apple or Google Wallet device. Previously it showed "Added" as soon as the attendee opened the "Add to Wallet" link, even if they backed out of the install prompt and never actually added it - it now shows "Sent" until a real device registration is confirmed.
+- Selecting attendees on the Attendees list and clicking "Send tickets" (single or bulk) no longer silently skips anyone who already received a ticket, reporting "No tickets were queued" with nothing actually sent. It now resends to whoever already has a ticket while still sending a first ticket to anyone who doesn't, correctly recorded in the delivery log either way.
 - The admin panel's Check-in tab now works for staff who sign in only through Cloudflare Access, not just staff with a local Admitto password. Previously it showed a "sign in to Admitto" notice and blocked live scanning entirely for Cloudflare-only sign-ins.
 - Signing in with a local password (or directly through your identity provider, not Cloudflare Access) no longer gets stuck after the two-factor code when the admin panel is one of the paths Cloudflare Access protects - it now lands on the check-in surface instead, which every admin and superadmin can already use once at least one event exists. It falls back once more, to My account, on a brand new instance with no events yet.
 - Pressing and holding a searchable dropdown's own caption (e.g. Attendance, Ticket type, Event timezone) while it was open inside a modal no longer closes it the instant you press down, then reopens it the instant you release. Clicking near the caption briefly moved keyboard focus to the surrounding modal window itself, which every one of these dropdowns mistook for "focus moved to something else" and closed for.
+- The Apple Wallet and Google Wallet buttons inserted into email templates now show up correctly in Outlook. Classic Outlook desktop doesn't render SVG images at all in mail bodies, so the badge graphic was silently missing for anyone reading their ticket confirmation there; it's now a PNG in email while the public ticket page keeps the sharper SVG version.
+- The Send test email result in Event/Organisation Settings → Mail no longer shows the bounce-detection message pressed directly against the details above it, with no visible gap.
+- Sending an attendee's first ticket from two staff actions at the same time no longer sends two copies of the email. The delivery log already kept one ticket, but the second send could reach the mail provider before the duplicate was rejected.
 
 ## [0.5.2] - 2026-08-16
 
@@ -1022,7 +1090,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/solarssk/admitto/compare/v0.5.4...v0.5.5
+[0.5.4]: https://github.com/solarssk/admitto/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/solarssk/admitto/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/solarssk/admitto/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/solarssk/admitto/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/solarssk/admitto/compare/v0.4.14...v0.5.0

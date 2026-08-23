@@ -734,65 +734,45 @@ export function AccountPage() {
               aria-hidden="true"
               className="sr-only"
             />
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-current-password">Current password</label>
+            <Input
+              id="account-current-password"
+              name="current-password"
+              label="Current password"
+              type="password"
+              autoComplete="current-password"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+            />
+            <div className="at-password-slot">
               <Input
-                id="account-current-password"
-                name="current-password"
-                type="password"
-                autoComplete="current-password"
-                autoCapitalize="off"
-                spellCheck={false}
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-              />
-            </div>
-            <div className="mail-field-row mail-field-row--password">
-              <label className="mail-field-label" htmlFor="account-new-password">
-                New password <span className="mail-field-label-optional">(at least 12 characters)</span>
-              </label>
-              <div className="at-password-slot">
-                <Input
-                  id="account-new-password"
-                  name="new-password"
-                  type="password"
-                  autoComplete="new-password"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  passwordRules="minlength: 12;"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  minLength={12}
-                />
-                <PasswordStrengthMeter password={newPassword} />
-              </div>
-            </div>
-            <div className="mail-field-row">
-              <div className="mail-secret-field__label-row">
-                <label className="mail-field-label" htmlFor="account-confirm-password">Confirm new password</label>
-                {passwordMismatch && (
-                  <span
-                    id="account-confirm-password-error"
-                    className="account-password-mismatch text-error"
-                    role="alert"
-                  >
-                    Passwords do not match.
-                  </span>
-                )}
-              </div>
-              <Input
-                id="account-confirm-password"
-                name="confirm-new-password"
+                id="account-new-password"
+                name="new-password"
+                label="New password (at least 12 characters)"
                 type="password"
                 autoComplete="new-password"
                 autoCapitalize="off"
                 spellCheck={false}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                aria-invalid={passwordMismatch || undefined}
-                aria-describedby={passwordMismatch ? "account-confirm-password-error" : undefined}
+                passwordRules="minlength: 12;"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                minLength={12}
               />
+              <PasswordStrengthMeter password={newPassword} />
             </div>
+            <Input
+              id="account-confirm-password"
+              name="confirm-new-password"
+              label="Confirm new password"
+              type="password"
+              autoComplete="new-password"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              error={passwordMismatch ? "Passwords do not match." : undefined}
+            />
             <div className="mail-transport-footer">
               <Button type="submit" variant="primary" disabled={passwordSaving || !passwordFormValid}>
                 Change password
@@ -1328,6 +1308,23 @@ export function AccountPage() {
             <span className="at-hint">Choose 12-hour AM/PM or 24-hour time.</span>
           </div>
           <div className="at-field">
+            <label className="at-label" htmlFor="account-language">Language</label>
+            <SearchableSelect
+              id="account-language"
+              label="Language"
+              showLabel={false}
+              placeholder="English (US)"
+              searchPlaceholder=""
+              emptyLabel=""
+              value="en-US"
+              options={[{ id: "en-US", label: "English (US)" }]}
+              disabled
+              title="More languages are coming soon."
+              onChange={() => {}}
+            />
+            <span className="at-hint">Coming soon - Admitto is English-only for now.</span>
+          </div>
+          <div className="at-field">
             <label className="at-label" htmlFor="account-phone-number">Phone number</label>
             <div className="account-phone-row">
               <PhoneCountrySelect
@@ -1579,7 +1576,7 @@ export function AccountPage() {
       </ConfirmDialog>
 
       <ConfirmDialog
-        open={unlinkSsoOpen}
+        open={unlinkSsoOpen && !unlinkStepUpOpen}
         icon={<i className="ti ti-plug-connected-x" aria-hidden="true" />}
         title="Unlink SSO"
         message="Unlink SSO from your account? Set the new local password you'll sign in with below - your SSO sign-in stops working immediately."
@@ -1598,7 +1595,6 @@ export function AccountPage() {
             await submitUnlinkSso();
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
-              setUnlinkSsoOpen(false);
               setUnlinkCodeError(null);
               setUnlinkStepUpOpen(true);
             } else if (err instanceof ApiError && hasApiErrorCode(err, "invalid_request")) {
@@ -1681,6 +1677,7 @@ export function AccountPage() {
             if (hasApiErrorCode(err, "invalid_totp")) {
               setUnlinkCodeError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
             } else {
+              setUnlinkSsoOpen(false);
               setUnlinkStepUpOpen(false);
               setUnlinkCode("");
               addToast(operatorApiErrorMessage(err, "Failed to unlink SSO."), "error");
@@ -1691,6 +1688,7 @@ export function AccountPage() {
         }}
         onCancel={() => {
           if (!unlinkSsoBusy) {
+            setUnlinkSsoOpen(false);
             setUnlinkStepUpOpen(false);
             setUnlinkCode("");
             setUnlinkCodeError(null);

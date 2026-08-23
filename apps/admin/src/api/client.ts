@@ -90,6 +90,7 @@ import type {
   PatchAdminUserBody,
   GrantUserRoleBody,
   ResetUserPasswordBody,
+  UnlinkUserExternalIdentityBody,
   UserListItemDto,
   RoleAssignmentsListResponse,
   SetupChecksResponse,
@@ -1232,6 +1233,16 @@ export async function resendTicket(
   return parseJson<DeliveryDto>(res);
 }
 
+/** Admin/superadmin-only: retrieve the attendee's existing ticket URL to copy and hand to them
+ * directly - does not issue a ticket that hasn't been sent yet, use resendTicket for that. */
+export async function fetchTicketLink(eventId: string, attendeeId: string): Promise<{ url: string }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/ticket-link`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ url: string }>(res);
+}
+
 export async function dismissBounce(
   eventId: string,
   attendeeId: string,
@@ -2270,7 +2281,7 @@ export async function resetUserMfa(id: string, code?: string): Promise<{ ok: boo
 
 export async function unlinkUserExternalIdentity(
   id: string,
-  body: ResetUserPasswordBody,
+  body: UnlinkUserExternalIdentityBody,
 ): Promise<{ ok: boolean }> {
   const res = await fetch(
     `/api/admin/users/${encodeURIComponent(id)}/external-identity`,

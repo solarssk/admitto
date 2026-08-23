@@ -101,6 +101,8 @@ export function stripEmptyUrlAttributes(html: string): string {
 const BUNDLED_TICKET_ASSET_PATHS = [
   "/assets/apple-wallet-badge.svg",
   "/assets/google-wallet-badge.svg",
+  "/assets/apple-wallet-badge.png",
+  "/assets/google-wallet-badge.png",
 ] as const;
 
 /** Rewrite known relative bundled ticket asset `src` values to absolute URLs using `baseUrl`. */
@@ -300,46 +302,3 @@ export function materializeStoredDeliveryMessage(
   };
 }
 
-/** Neutral inline SVG (no external request, nothing scannable) shown in place of the real QR
- * code in the admin "View sent message" preview — same 200x200 box the default ticket template
- * renders `{{qr_image_url}}` at (see defaultTemplate.ts), so custom templates sized to match also
- * look intentional rather than broken. */
-const REDACTED_QR_IMAGE_DATA_URI =
-  "data:image/svg+xml;charset=UTF-8," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
-      '<rect width="200" height="200" fill="#f1f3f5"/>' +
-      '<rect x="0.5" y="0.5" width="199" height="199" fill="none" stroke="#ced4da"/>' +
-      '<text x="100" y="94" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">QR code</text>' +
-      '<text x="100" y="114" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#495057">hidden for privacy</text>' +
-      "</svg>",
-  );
-
-/** Inert placeholder for `{{ticket_url}}` in the redacted admin preview — not a real link. */
-const REDACTED_TICKET_URL = "#";
-
-/**
- * Substitute the deferred `{{ticket_url}}`/`{{qr_image_url}}` tokens in a frozen delivery
- * snapshot with safe, non-scannable, non-navigable placeholders — for the admin "View sent
- * message" preview only. Deliberately bypasses `materializeStoredDeliveryMessage`'s http(s)-only
- * URL validation (built for real template-author input, not this fixed trusted substitution) so
- * a `data:` URI and an inert `#` href can be used. Never substitutes the recipient's real QR
- * image or ticket link — staff must not be able to see or scan another person's ticket.
- */
-export function materializeStoredDeliveryMessageRedacted(
-  frozen: RenderedTemplate,
-): RenderedTemplate {
-  const redact = (text: string, mode: "html" | "subject"): string =>
-    text.replace(VALID_PLACEHOLDER_RE, (match, name: string, offset: number) => {
-      if (!STORAGE_DEFERRED_LINK_PLACEHOLDERS.has(name)) return match;
-      const value = name === "qr_image_url" ? REDACTED_QR_IMAGE_DATA_URI : REDACTED_TICKET_URL;
-      if (mode === "subject") return value;
-      const inAttribute = isInsideQuotedAttribute(text, offset);
-      return inAttribute ? escapeHtmlAttribute(value) : escapeHtmlText(value);
-    });
-
-  return {
-    subject: redact(frozen.subject, "subject"),
-    html: redact(frozen.html, "html"),
-  };
-}
