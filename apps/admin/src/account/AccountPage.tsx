@@ -1365,20 +1365,18 @@ export function AccountPage() {
           ? renderBackupCodesSection(regeneratedBackupCodes, false, "stacked")
           : regenerateBackupCodesCodeRequired && (
             <>
-              <div className="mail-field-row">
-                <label className="mail-field-label" htmlFor="account-regenerate-backup-codes-code">Authenticator or backup code</label>
-                <Input
-                  id="account-regenerate-backup-codes-code"
-                  name="regenerate-backup-codes-code"
-                  type="text"
-                  autoComplete="one-time-code"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  value={regenerateBackupCodesCode}
-                  onChange={(e) => setRegenerateBackupCodesCode(e.target.value)}
-                  {...stepUpCodeFieldAttrs}
-                />
-              </div>
+              <Input
+                id="account-regenerate-backup-codes-code"
+                name="regenerate-backup-codes-code"
+                label="Authenticator or backup code"
+                type="text"
+                autoComplete="one-time-code"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={regenerateBackupCodesCode}
+                onChange={(e) => setRegenerateBackupCodesCode(e.target.value)}
+                {...stepUpCodeFieldAttrs}
+              />
               {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
                 <WebauthnStepUpButton
                   busy={regeneratingBackupCodes}
@@ -1512,20 +1510,18 @@ export function AccountPage() {
         )}
         {removeCredentialCodeRequired && (
           <>
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-remove-credential-code">Authenticator or backup code</label>
-              <Input
-                id="account-remove-credential-code"
-                name="remove-credential-code"
-                type="text"
-                autoComplete="one-time-code"
-                autoCapitalize="off"
-                spellCheck={false}
-                value={removeCredentialCode}
-                onChange={(e) => setRemoveCredentialCode(e.target.value)}
-                {...stepUpCodeFieldAttrs}
-              />
-            </div>
+            <Input
+              id="account-remove-credential-code"
+              name="remove-credential-code"
+              label="Authenticator or backup code"
+              type="text"
+              autoComplete="one-time-code"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={removeCredentialCode}
+              onChange={(e) => setRemoveCredentialCode(e.target.value)}
+              {...stepUpCodeFieldAttrs}
+            />
             {removeCredentialTarget && account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
               <WebauthnStepUpButton
                 busy={removingCredential}
@@ -1950,20 +1946,18 @@ export function AccountPage() {
         )}
         {removeTotpCodeRequired && (
           <>
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-remove-totp-code">Authenticator or backup code</label>
-              <Input
-                id="account-remove-totp-code"
-                name="remove-totp-code"
-                type="text"
-                autoComplete="one-time-code"
-                autoCapitalize="off"
-                spellCheck={false}
-                value={removeTotpCode}
-                onChange={(e) => setRemoveTotpCode(e.target.value)}
-                {...stepUpCodeFieldAttrs}
-              />
-            </div>
+            <Input
+              id="account-remove-totp-code"
+              name="remove-totp-code"
+              label="Authenticator or backup code"
+              type="text"
+              autoComplete="one-time-code"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={removeTotpCode}
+              onChange={(e) => setRemoveTotpCode(e.target.value)}
+              {...stepUpCodeFieldAttrs}
+            />
             {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
               <WebauthnStepUpButton
                 busy={removingTotp}
@@ -1990,35 +1984,31 @@ export function AccountPage() {
         onCancel={handleResetMfaCancel}
       >
         <div className="account-reset-mfa-fields">
-          <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-            <Input
-              id="account-reset-password"
-              name="current-password"
-              type="password"
-              autoComplete="current-password"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={resetPassword}
-              onChange={(e) => setResetPassword(e.target.value)}
-            />
-          </div>
+          <Input
+            id="account-reset-password"
+            name="current-password"
+            label="Current password"
+            type="password"
+            autoComplete="current-password"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={resetPassword}
+            onChange={(e) => setResetPassword(e.target.value)}
+          />
           {resetCodeRequired && (
             <>
-              <div className="mail-field-row">
-                <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
-                <Input
-                  id="account-reset-code"
-                  name="reset-code"
-                  type="text"
-                  autoComplete="one-time-code"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  value={resetCode}
-                  onChange={(e) => setResetCode(e.target.value)}
-                  {...stepUpCodeFieldAttrs}
-                />
-              </div>
+              <Input
+                id="account-reset-code"
+                name="reset-code"
+                label="Authenticator or backup code"
+                type="text"
+                autoComplete="one-time-code"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={resetCode}
+                onChange={(e) => setResetCode(e.target.value)}
+                {...stepUpCodeFieldAttrs}
+              />
               {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
                 <WebauthnStepUpButton
                   busy={resetting}
@@ -2045,20 +2035,18 @@ export function AccountPage() {
         onConfirm={handlePasswordStepUpConfirm}
         onCancel={handlePasswordStepUpCancel}
       >
-        <div className="mail-field-row">
-          <label className="mail-field-label" htmlFor="account-password-code">Authenticator or backup code</label>
-          <Input
-            id="account-password-code"
-            name="password-code"
-            type="text"
-            autoComplete="one-time-code"
-            autoCapitalize="off"
-            spellCheck={false}
-            value={passwordCode}
-            onChange={(e) => setPasswordCode(e.target.value)}
-            {...stepUpCodeFieldAttrs}
-          />
-        </div>
+        <Input
+          id="account-password-code"
+          name="password-code"
+          label="Authenticator or backup code"
+          type="text"
+          autoComplete="one-time-code"
+          autoCapitalize="off"
+          spellCheck={false}
+          value={passwordCode}
+          onChange={(e) => setPasswordCode(e.target.value)}
+          {...stepUpCodeFieldAttrs}
+        />
         {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
           <WebauthnStepUpButton
             busy={passwordSaving}
@@ -2124,20 +2112,18 @@ export function AccountPage() {
         onConfirm={handleUnlinkStepUpConfirm}
         onCancel={handleUnlinkStepUpCancel}
       >
-        <div className="mail-field-row">
-          <label className="mail-field-label" htmlFor="account-unlink-code">Authenticator or backup code</label>
-          <Input
-            id="account-unlink-code"
-            name="unlink-code"
-            type="text"
-            autoComplete="one-time-code"
-            autoCapitalize="off"
-            spellCheck={false}
-            value={unlinkCode}
-            onChange={(e) => setUnlinkCode(e.target.value)}
-            {...stepUpCodeFieldAttrs}
-          />
-        </div>
+        <Input
+          id="account-unlink-code"
+          name="unlink-code"
+          label="Authenticator or backup code"
+          type="text"
+          autoComplete="one-time-code"
+          autoCapitalize="off"
+          spellCheck={false}
+          value={unlinkCode}
+          onChange={(e) => setUnlinkCode(e.target.value)}
+          {...stepUpCodeFieldAttrs}
+        />
         {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
           <WebauthnStepUpButton
             busy={unlinkSsoBusy}

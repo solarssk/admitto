@@ -111,11 +111,19 @@ describe("WebauthnStepUpButton", () => {
     );
   });
 
-  it("disables the button while busy", () => {
+  it("disables the button and shows a waiting hint while busy", () => {
     render(
       <WebauthnStepUpButton busy={true} onBusyChange={vi.fn()} onError={vi.fn()} onSubmit={vi.fn()} />,
     );
     const button = screen.getByRole("button", { name: "Use a passkey or security key" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+    expect(screen.getByText(/Waiting for your browser's passkey or security key prompt/)).toBeTruthy();
+  });
+
+  it("shows no waiting hint when not busy", () => {
+    render(
+      <WebauthnStepUpButton busy={false} onBusyChange={vi.fn()} onError={vi.fn()} onSubmit={vi.fn()} />,
+    );
+    expect(screen.queryByText(/Waiting for your browser's passkey or security key prompt/)).toBeNull();
   });
 });
