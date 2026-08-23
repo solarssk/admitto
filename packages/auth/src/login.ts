@@ -24,7 +24,7 @@ import {
   type LoginNext,
   type SessionStage,
 } from "./constants.js";
-import { userRequiresMfa, userHasConfirmedTotp, userHasUnacknowledgedBackupCodes } from "./mfa/policy.js";
+import { userRequiresMfa, userHasAnyConfirmedMfaMethod, userHasUnacknowledgedBackupCodes } from "./mfa/policy.js";
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { verifyTotpOrRecoveryCodeDetailed } from "./mfa/verify-step-up-code.js";
 import { getTrustedDeviceDays } from "./settings/resolver.js";
@@ -96,8 +96,8 @@ export async function login(
   let next: LoginNext = LOGIN_NEXT.COMPLETE;
 
   if (requiresMfa) {
-    const hasTotp = await userHasConfirmedTotp(prisma, user.id);
-    if (!hasTotp) {
+    const hasConfirmedMfaMethod = await userHasAnyConfirmedMfaMethod(prisma, user.id);
+    if (!hasConfirmedMfaMethod) {
       stage = SESSION_STAGE.ENROLLMENT_REQUIRED;
       next = LOGIN_NEXT.ENROLLMENT_REQUIRED;
     } else if (

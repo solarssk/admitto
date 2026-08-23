@@ -1,7 +1,6 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
-import { EMERGENCY_RECOVERY_LABEL } from "../constants.js";
 import { findUserById } from "../user.js";
-import { userHasConfirmedTotp } from "./policy.js";
+import { userHasConfirmedTotp, userHasAnyConfirmedMfaMethod } from "./policy.js";
 import {
   buildTotpOtpauthUri,
   decryptTotpSecret,
@@ -9,7 +8,7 @@ import {
   generateTotpSecret,
   verifyTotpCodeDetailed,
 } from "./totp.js";
-import { generateBackupRecoveryCodes } from "./backup-recovery.js";
+import { BACKUP_RECOVERY_DELETE_FILTER, ensureFreshEnrollmentBackupCodes } from "./backup-recovery.js";
 import { runInTransaction } from "../prisma-tx.js";
 
 export interface StartTotpEnrollmentResult {
@@ -21,14 +20,11 @@ export interface StartTotpEnrollmentResult {
   backupCodesAlreadyShown?: boolean;
 }
 
-const BACKUP_RECOVERY_DELETE_FILTER = {
-  type: "recovery" as const,
-  OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
-};
-
 /**
  * Start TOTP enrollment: create unconfirmed totp row + backup codes (transactional).
- * Refuses when user already has confirmed TOTP.
+ * Refuses when user already has confirmed TOTP. Backup codes are only (re)generated when this
+ * is the user's first-ever MFA method — starting TOTP as a *second* method (e.g. they already
+ * have a confirmed passkey) leaves their existing, already-acknowledged codes untouched.
  */
 export async function startTotpEnrollment(
   prisma: PrismaClient,
@@ -48,9 +44,6 @@ export async function startTotpEnrollment(
     await tx.userMfaMethod.deleteMany({
       where: { user_id: userId, type: "totp" },
     });
-    await tx.userMfaMethod.deleteMany({
-      where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
-    });
 
     await tx.userMfaMethod.create({
       data: {
@@ -61,7 +54,7 @@ export async function startTotpEnrollment(
       },
     });
 
-    const { codes: backupCodes } = await generateBackupRecoveryCodes(tx, userId);
+    const backupCodes = await ensureFreshEnrollmentBackupCodes(tx, userId);
     return { otpauthUri, backupCodes };
   });
 }
@@ -96,9 +89,13 @@ export async function resumePendingTotpEnrollment(
     await prisma.userMfaMethod.deleteMany({
       where: { user_id: userId, type: "totp", confirmed_at: null },
     });
-    await prisma.userMfaMethod.deleteMany({
-      where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
-    });
+    // Only wipe recovery codes when the user still has no confirmed method — otherwise these
+    // codes belong to an already-acknowledged other method, not this abandoned attempt.
+    if (!(await userHasAnyConfirmedMfaMethod(prisma, userId))) {
+      await prisma.userMfaMethod.deleteMany({
+        where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
+      });
+    }
     return null;
   }
 }
@@ -117,9 +114,11 @@ export async function cancelPendingTotpEnrollment(
       where: { user_id: userId, type: "totp", confirmed_at: null },
     });
     if (count === 0) return;
-    await tx.userMfaMethod.deleteMany({
-      where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
-    });
+    if (!(await userHasAnyConfirmedMfaMethod(tx, userId))) {
+      await tx.userMfaMethod.deleteMany({
+        where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
+      });
+    }
   });
 }
 
@@ -155,14 +154,20 @@ export async function confirmTotpEnrollment(
   const verified = verifyTotpCodeDetailed(row.secret_enc, code);
   if (!verified.valid) return false;
 
+  // Must run before the row below flips to confirmed, or it would see itself as "already
+  // confirmed" and never force the ack step for a true first-time enrollment.
+  const isFirstMfaMethod = !(await userHasAnyConfirmedMfaMethod(prisma, userId));
+
   const updated = await prisma.userMfaMethod.updateMany({
     where: { id: row.id, confirmed_at: null },
     data: {
       confirmed_at: new Date(),
       last_totp_time_step: verified.timeStep,
       last_used_at: new Date(),
-      // Force the backup-codes acknowledgment step before a full session (IAM-002).
-      backup_codes_acknowledged_at: null,
+      // Force the backup-codes acknowledgment step before a full session (IAM-002) — only when
+      // this is the user's first confirmed method; a second method (e.g. TOTP added after an
+      // already-acknowledged passkey) doesn't re-show codes, so it must not re-gate on them.
+      ...(isFirstMfaMethod ? { backup_codes_acknowledged_at: null } : {}),
     },
   });
   return updated.count > 0;

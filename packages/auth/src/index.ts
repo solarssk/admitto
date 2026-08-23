@@ -212,6 +212,7 @@ export { runInTransaction } from "./prisma-tx.js";
 export {
   userRequiresMfa,
   userHasConfirmedTotp,
+  userHasAnyConfirmedMfaMethod,
   userRequiresMfaStepUp,
   userHasUnacknowledgedBackupCodes,
   markBackupCodesAcknowledged,
@@ -230,6 +231,21 @@ export {
 export { parseTotpSecretFromOtpauthUri } from "./mfa/totp.js";
 export { regenerateBackupRecoveryCodes, findBackupRecoveryRowId, verifyBackupRecoveryCodesSet } from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
+export {
+  beginWebauthnRegistration,
+  finishWebauthnRegistration,
+  listWebauthnCredentials,
+  removeWebauthnCredential,
+  beginWebauthnAssertion,
+  finishWebauthnAssertion,
+  type WebauthnAttachment,
+  type WebauthnRpConfig,
+  type BeginWebauthnRegistrationResult,
+  type FinishWebauthnRegistrationResult,
+  type WebauthnCredentialSummary,
+  type BeginWebauthnAssertionResult,
+  type FinishWebauthnAssertionResult,
+} from "./mfa/webauthn.js";
 export { validateTrustedDevice, revokeTrustedDeviceByToken, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
 export { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "./retention.js";
 

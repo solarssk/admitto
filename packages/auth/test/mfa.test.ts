@@ -49,11 +49,13 @@ import {
   revokeTrustedDeviceByToken,
   revokeAllTrustedDevicesForUser,
 } from "../src/mfa/trusted-device.js";
-import { userRequiresMfa, userHasConfirmedTotp } from "../src/mfa/policy.js";
+import { userRequiresMfa, userHasConfirmedTotp, markBackupCodesAcknowledged } from "../src/mfa/policy.js";
 import { createSession, validateSession, validatePartialSession, promoteSessionToFull } from "../src/session.js";
 import { getSessionTtlAdminMs, getMfaRequiredRoles } from "../src/settings/resolver.js";
 import { SETTING_SESSION_TTL } from "../src/settings/keys.js";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
+import { beginWebauthnRegistration, finishWebauthnRegistration, type WebauthnRpConfig } from "../src/mfa/webauthn.js";
+import { createVirtualAuthenticator } from "../src/webauthn-testing.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
@@ -61,8 +63,21 @@ const DB_ROOT = path.resolve(__dirname, "..", "..", "db");
 const USER_ADMIN = "user-mfa-admin";
 const USER_OP = "user-mfa-op";
 const PASSWORD = "mfa-test-pass-123";
+const WEBAUTHN_RP: WebauthnRpConfig = { rpName: "Admitto", rpID: "localhost", origin: "http://localhost:3000" };
 
 let prisma: PrismaClient;
+
+/** Register + acknowledge a confirmed WebAuthn credential directly (bypassing any TOTP), so a
+ * test can exercise the "user already has a different confirmed method" branch of a guard. */
+async function registerConfirmedWebauthnCredential(userId: string): Promise<void> {
+  const authenticator = createVirtualAuthenticator();
+  const begin = await beginWebauthnRegistration(prisma, userId, "platform", WEBAUTHN_RP);
+  if (!begin) throw new Error("beginWebauthnRegistration returned null");
+  const response = authenticator.register({ challenge: begin.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", null, WEBAUTHN_RP);
+  if (!result) throw new Error("finishWebauthnRegistration failed");
+  await markBackupCodesAcknowledged(prisma, userId);
+}
 
 beforeAll(async () => {
   assertTestDatabaseUrl(process.env.DATABASE_URL ?? "");
@@ -186,6 +201,27 @@ describe("TOTP enrollment", () => {
     expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
     const fresh = await startTotpEnrollment(prisma, userId);
     expect(fresh?.otpauthUri).toMatch(/^otpauth:\/\/totp\//);
+  });
+
+  it("resumePendingTotpEnrollment's corrupt-secret cleanup preserves recovery codes when another method is already confirmed", async () => {
+    const userId = "user-totp-corrupt-second-method";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-corrupt-second@example.com", password_hash },
+    });
+    await registerConfirmedWebauthnCredential(userId);
+    const recoveryCountBefore = await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } });
+    expect(recoveryCountBefore).toBeGreaterThan(0);
+
+    await prisma.userMfaMethod.create({
+      data: { user_id: userId, type: "totp", secret_enc: "not-valid-encrypted-payload", confirmed_at: null },
+    });
+
+    expect(await resumePendingTotpEnrollment(prisma, userId)).toBeNull();
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(
+      recoveryCountBefore,
+    );
   });
 
   it("startTotpEnrollment refuses when TOTP already confirmed", async () => {
@@ -560,6 +596,24 @@ describe("validateSession MFA policy", () => {
   });
 });
 
+describe("createSession, resolveInitialSessionStage fallback (stage omitted)", () => {
+  it("fails closed to enrollment_required for an MFA-required user with no confirmed method", async () => {
+    const userId = "user-create-session-no-stage";
+    await prisma.user.create({
+      data: { id: userId, email: "create-session-no-stage@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: userId, role: "admin", scope_type: "instance", scope_id: null },
+    });
+
+    // No `stage` passed, every real caller (login, OIDC) always passes one explicitly; this
+    // exercises resolveInitialSessionStage's own fail-closed fallback for any future caller that
+    // doesn't.
+    const session = await createSession(prisma, { userId });
+    expect(session.session.stage).toBe(SESSION_STAGE.ENROLLMENT_REQUIRED);
+  });
+});
+
 describe("recovery code format", () => {
   it("uses 64-bit entropy (16 hex chars)", () => {
     const code = generateRecoveryCodePlaintext();
@@ -907,6 +961,26 @@ describe("cancelPendingTotpEnrollment", () => {
         where: { user_id: userId, type: "recovery" },
       }),
     ).toBe(0);
+  });
+
+  it("preserves recovery codes when cancelling a second-method TOTP attempt with another confirmed method", async () => {
+    const userId = "user-cancel-second-method";
+    await prisma.user.create({
+      data: { id: userId, email: "cancel-second-method@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await registerConfirmedWebauthnCredential(userId);
+    const recoveryCountBefore = await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } });
+    expect(recoveryCountBefore).toBeGreaterThan(0);
+
+    const started = await startTotpEnrollment(prisma, userId);
+    expect(started).not.toBeNull();
+
+    await cancelPendingTotpEnrollment(prisma, userId);
+
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "totp" } })).toBe(0);
+    expect(await prisma.userMfaMethod.count({ where: { user_id: userId, type: "recovery" } })).toBe(
+      recoveryCountBefore,
+    );
   });
 
   it("does not delete confirmed TOTP or saved recovery codes when no pending enrollment", async () => {
