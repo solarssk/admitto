@@ -355,6 +355,25 @@ describe("completeMfaWithWebauthn trusted-device audit", () => {
     expect(mocks.createTrustedDevice).not.toHaveBeenCalled();
     expect(mocks.logTrustedDeviceCreated).not.toHaveBeenCalled();
   });
+
+  it("skips trusted-device creation when the instance's trusted-device window is disabled (0 days)", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.getTrustedDeviceDays.mockResolvedValue(0);
+
+    const result = await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+      rememberDevice: true,
+    });
+
+    expect(result).toEqual({ ok: true, trustedDeviceRawToken: undefined, stage: SESSION_STAGE.FULL });
+    expect(mocks.createTrustedDevice).not.toHaveBeenCalled();
+    expect(mocks.logTrustedDeviceCreated).not.toHaveBeenCalled();
+  });
 });
 
 describe("completeMfaWithWebauthn failure audit", () => {

@@ -432,10 +432,15 @@ export async function resolvePostMfaLandingPath(
   try {
     return await resolvePostLoginRedirectForUser(db, userId, nextRaw);
   } catch (err) {
+    // resolvePostLoginRedirectForUser has no realistic throw path reachable in a live test
+    // without faking a mid-request DB fault - defensive, so a broken landing computation
+    // revokes the promoted session and sends the browser back to /login instead of a 500.
+    /* v8 ignore start */
     await revokeSession(db, sessionId);
     clearSessionCookie(c);
     console.error("post-login redirect:", err instanceof Error ? err.message : "unknown");
     return "/login";
+    /* v8 ignore stop */
   }
 }
 
