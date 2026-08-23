@@ -102,7 +102,7 @@ export function FixMapsLinkModal({
     <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
       <ModalBackdrop onClose={handleClose} />
       <div ref={panelRef} className="add-attendee-modal__panel add-attendee-modal__panel--w520">
-      <div ref={scrollRef} className="add-attendee-modal__scroll">
+      <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           Fix a wrong map link
         </h2>
