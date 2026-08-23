@@ -124,10 +124,11 @@ type SecurityDto = {
   mfa_required_roles: SettingField<string[]>;
   instance_url: SettingField<string | null>;
   csp_trusted_origins: SettingField<string[]>;
+  webauthn_enabled: SettingField<boolean>;
 };
 
 describe("GET /api/admin/system-settings", () => {
-  it("returns all 8 keys with source=default on fresh DB", async () => {
+  it("returns all 9 keys with source=default on fresh DB", async () => {
     const res = await app.request("/api/admin/system-settings", {
       headers: { Cookie: superCookie },
     });
@@ -143,6 +144,8 @@ describe("GET /api/admin/system-settings", () => {
     expect(body.instance_url.value).toBeNull();
     expect(body.csp_trusted_origins.source).toBe("default");
     expect(body.csp_trusted_origins.value).toEqual([]);
+    expect(body.webauthn_enabled.source).toBe("default");
+    expect(body.webauthn_enabled.value).toBe(true);
     expect(typeof body.session_ttl_ms.value).toBe("number");
     expect(typeof body.session_idle_timeout_ms.value).toBe("number");
     expect(typeof body.operator_session_idle_timeout_ms.value).toBe("number");
@@ -507,6 +510,45 @@ describe("PATCH /api/admin/system-settings", () => {
     const body = (await res.json()) as SecurityDto;
     expect(body.trusted_device_days.value).toBe(0);
     expect(body.trusted_device_days.source).toBe("db");
+  });
+
+  it("updates webauthn_enabled to false and source becomes db", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ webauthn_enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.webauthn_enabled.value).toBe(false);
+    expect(body.webauthn_enabled.source).toBe("db");
+  });
+
+  it("env-locked webauthn_enabled key returns 400 'managed by environment'", async () => {
+    const prev = process.env.WEBAUTHN_ENABLED;
+    process.env.WEBAUTHN_ENABLED = "false";
+    try {
+      const res = await app.request("/api/admin/system-settings", {
+        method: "PATCH",
+        headers: {
+          Cookie: superCookie,
+          "Content-Type": "application/json",
+          ...sameOrigin,
+        },
+        body: JSON.stringify({ webauthn_enabled: true }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string; field: string };
+      expect(body.error).toBe("managed by environment");
+      expect(body.field).toBe("webauthn_enabled");
+    } finally {
+      if (prev === undefined) delete process.env.WEBAUTHN_ENABLED;
+      else process.env.WEBAUTHN_ENABLED = prev;
+    }
   });
 
   it("null value clears DB override and source reverts to default", async () => {

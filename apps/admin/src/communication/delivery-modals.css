@@ -27,14 +27,16 @@
      support. See add-attendee-modal.css for the same fix on the other modal shell. */
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
+  /* Scrolling lives on .delivery-modal__scroll below, not here - overflow: auto directly on this
+   * rounded box would render the scrollbar as a hard rectangle cutting across the rounded corner
+   * instead of following it. Same shell shape as .identity-modal__panel/__scroll (staff.css) and
+   * .add-attendee-modal__panel/__scroll - header/body/footer scroll together as one region,
+   * matching every other modal in the app rather than pinning header/footer in place. */
   overflow: hidden;
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
-  /* Padding lives on header / body / footer so a body scrollbar sits flush with the panel edge
-   * instead of starting inset under the header (looked like a broken mid-panel scroller). */
-  padding: 0;
   display: flex;
   flex-direction: column;
 }
@@ -43,14 +45,21 @@
   width: min(100%, 760px);
 }
 
+.delivery-modal__scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+
 .delivery-modal__header {
-  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--space-3);
-  /* No divider under the subtitle — same as add-attendee / FontFamily / requirements modals. */
-  padding: var(--space-5) var(--space-5) 0;
 }
 
 .delivery-modal__title {
@@ -67,14 +76,9 @@
 }
 
 .delivery-modal__body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
 }
 
 .delivery-modal__section-title {
@@ -87,13 +91,10 @@
 }
 
 .delivery-modal__footer {
-  flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-5) var(--space-5);
-  border-top: 1px solid var(--border);
 }
 
 .delivery-modal__loading,

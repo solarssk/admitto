@@ -189,7 +189,7 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
        * than requiring Cancel/Escape, matching the Edit user modal's own backdrop. */}
       <ModalBackdrop />
       <div ref={panelRef} className="add-attendee-modal__panel">
-      <div ref={scrollRef} className="add-attendee-modal__scroll">
+      <div ref={scrollRef} className="add-attendee-modal__scroll at-scroll">
         <h2 className="add-attendee-modal__title" id={titleId}>
           <i className="ti ti-user-plus" aria-hidden="true" /> Invite a new team member
         </h2>

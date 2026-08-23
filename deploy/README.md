@@ -232,10 +232,11 @@ cd deploy
 ./validate-env.sh
 docker compose pull app worker migrate   # or set ADMITTO_IMAGE to the new tag
 docker compose up -d
+docker compose logs migrate              # check what schema changes / backfills this upgrade applied
 curl -sf http://127.0.0.1:8080/healthz
 ```
 
-Migrations apply in the one-shot `migrate` service. There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only.
+Migrations apply in the one-shot `migrate` service. `docker compose up -d` blocks until `migrate` finishes (or fails), so its full log is already available by the time the command returns — check it every upgrade, not just when something looks wrong: `migrate` exits and its container shows as stopped, which some UIs (e.g. Portainer) collapse or hide by default, so it's easy to miss unless you look. There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only.
 
 `validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
