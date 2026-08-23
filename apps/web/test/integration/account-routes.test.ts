@@ -1468,7 +1468,7 @@ describe("POST /api/account/mfa/backup-codes/regenerate", () => {
     const body = (await res.json()) as { ok: boolean; codes: string[] };
     expect(body.ok).toBe(true);
     expect(body.codes).toHaveLength(BACKUP_RECOVERY_CODE_COUNT);
-    expect(body.codes).not.toEqual(expect.arrayContaining(oldCodes));
+    for (const old of oldCodes) expect(body.codes).not.toContain(old);
 
     const audit = await prisma.adminAuditLog.findFirst({
       where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_backup_codes_regenerated" },
@@ -1554,7 +1554,7 @@ describe("POST /api/account/mfa/backup-codes/regenerate — step-up for MFA-requ
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; codes: string[] };
     expect(body.codes).toHaveLength(BACKUP_RECOVERY_CODE_COUNT);
-    expect(body.codes).not.toEqual(expect.arrayContaining(oldCodes));
+    for (const old of oldCodes) expect(body.codes).not.toContain(old);
 
     const statusRes = await app.request("/api/account/mfa/backup-codes", { headers: { Cookie: adminCookie } });
     expect(await statusRes.json()).toEqual({ total: BACKUP_RECOVERY_CODE_COUNT, remaining: BACKUP_RECOVERY_CODE_COUNT });
