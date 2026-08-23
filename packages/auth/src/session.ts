@@ -11,7 +11,7 @@ import {
 } from "./settings/resolver.js";
 import {
   userRequiresMfa,
-  userHasConfirmedTotp,
+  userHasAnyConfirmedMfaMethod,
   userHasUnacknowledgedBackupCodes,
 } from "./mfa/policy.js";
 
@@ -113,7 +113,7 @@ async function resolveInitialSessionStage(
 ): Promise<SessionStage> {
   if (explicit !== undefined) return explicit;
   if (!(await userRequiresMfa(prisma, userId))) return resolvePostMfaStage(prisma, userId);
-  if (await userHasConfirmedTotp(prisma, userId)) return SESSION_STAGE.MFA_PENDING;
+  if (await userHasAnyConfirmedMfaMethod(prisma, userId)) return SESSION_STAGE.MFA_PENDING;
   return SESSION_STAGE.ENROLLMENT_REQUIRED;
 }
 
@@ -229,7 +229,7 @@ async function assertFullSessionMfaPolicy(
 
   if (validated.session.auth_method === AUTH_METHOD.OIDC) return true;
   if (!(await userRequiresMfa(prisma, validated.userId))) return true;
-  if (!(await userHasConfirmedTotp(prisma, validated.userId))) return false;
+  if (!(await userHasAnyConfirmedMfaMethod(prisma, validated.userId))) return false;
 
   const requiredRoles = await getMfaRequiredRoles(prisma);
   const firstElevatedRole = await prisma.roleAssignment.findFirst({

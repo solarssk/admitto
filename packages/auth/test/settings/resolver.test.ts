@@ -8,6 +8,7 @@ import {
   getSessionIdleTimeoutAdminMs,
   getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
+  getWebauthnEnabled,
   setSetting,
 } from "../../src/settings/resolver.js";
 import {
@@ -156,5 +157,15 @@ describe("typed settings fallbacks", () => {
     const prisma = settingsMockPrisma({ mfa_required_roles: "admin, operator" });
 
     await expect(getMfaRequiredRoles(prisma)).resolves.toEqual(["admin", "operator"]);
+  });
+
+  it("resolves the persisted value for webauthn_enabled", async () => {
+    const prisma = settingsMockPrisma({ webauthn_enabled: false });
+
+    await expect(getWebauthnEnabled(prisma)).resolves.toBe(false);
+  });
+
+  it("falls back to the default (enabled) for webauthn_enabled when nothing is persisted", async () => {
+    await expect(getWebauthnEnabled(envOnlyMockPrisma)).resolves.toBe(true);
   });
 });

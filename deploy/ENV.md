@@ -137,6 +137,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | optional | app | none | no | Idle timeout for operator sessions (ms). |
 | `TRUSTED_DEVICE_DAYS` | optional | app | none | no | MFA trusted-device cookie lifetime in days. |
 | `MFA_REQUIRED_ROLES` | optional | app | none | no | Comma-separated roles that must enroll MFA (default admin,superadmin). |
+| `WEBAUTHN_ENABLED` | optional | app | none | no | Whether passkey/security-key (WebAuthn) MFA is offered (default true). |
 | `CSP_TRUSTED_ORIGINS` | optional | app | Settings → Security (preferred); env locks UI | no | JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages. |
 
 ## Identity (env lock / seed)
@@ -189,4 +190,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 101 distinct keys seen in scan (tests excluded)._
+_Last generated from 102 distinct keys seen in scan (tests excluded)._
