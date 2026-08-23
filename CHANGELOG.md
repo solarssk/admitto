@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Signing in with a passkey or security key when it is your only confirmed second factor (the ceremony starts automatically, before there is any real chance to check "Remember this device" first) now offers "Remember this device?" as a one-tap follow-up right after verification succeeds, instead of silently never remembering the device on that path.
 - First-time passkey/security-key setup no longer looks stuck while your browser or password manager (for example Bitwarden) works through its own prompt - a short note now explains the wait, matching the hint already shown for the same wait on My Account's own step-up popups.
 
+### Fixed
+
+- Communication email preview (Communication tab and the template editor) no longer lets clicks on the ticket link or QR code navigate inside the preview frame - clicking the recipient's real ticket link previously triggered a nested-frame Content Security Policy violation instead of doing nothing.
+- Requirements' item and custom-field editors (Badge, Gift bag, Add item) now scroll their header and footer together with the rest of the form, matching every other popup in the app, instead of pinning them in place - the scrollbar also now sits flush against the popup's edge instead of inset behind a permanently reserved gap. This reverses the permanent scrollbar-gutter reservation added in 0.5.4 for these two modals specifically: a short form (e.g. a text-type custom field) is evenly centered again instead of always leaving dead space on the right, at the cost of a small width shift on the rare form tall enough to actually need the scrollbar - the same trade-off every other popup in the app already makes.
+- Delivery details and Sent message preview (Communication log) now scroll their header and footer together with the rest of the content, matching every other popup in the app, instead of pinning them in place.
+- The staff user edit modal's Sign-in security row no longer forces a permanent horizontal scrollbar.
+- All remaining popups (Add attendee, Create event, Invite user, Create/Edit template, CSP trusted origins, Fix Maps link, Font family, device label edit, and the Attendees page bulk dialogs) now use the app's slim on-theme scrollbar instead of the browser's default one, matching every other popup.
+- The header "Send tickets" dialog now puts Cancel before "Send tickets", matching every other popup's button order. The device label edit modal's save error now renders as a Notice banner instead of plain text.
+
 ### Security
 
 - An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.

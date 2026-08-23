@@ -74,10 +74,11 @@ let prisma: PrismaClient;
 async function registerConfirmedWebauthnCredential(userId: string): Promise<void> {
   const authenticator = createVirtualAuthenticator();
   const begin = await beginWebauthnRegistration(prisma, userId, "platform", WEBAUTHN_RP);
-  const response = authenticator.register({ challenge: begin!.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
-  const result = await finishWebauthnRegistration(prisma, userId, response, begin!.challenge, "platform", null, WEBAUTHN_RP);
-  await markBackupCodesAcknowledged(prisma, userId);
+  if (!begin) throw new Error("beginWebauthnRegistration returned null");
+  const response = authenticator.register({ challenge: begin.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
+  const result = await finishWebauthnRegistration(prisma, userId, response, begin.challenge, "platform", null, WEBAUTHN_RP);
   if (!result) throw new Error("finishWebauthnRegistration failed");
+  await markBackupCodesAcknowledged(prisma, userId);
 }
 
 beforeAll(async () => {
@@ -597,7 +598,7 @@ describe("validateSession MFA policy", () => {
   });
 });
 
-describe("createSession — resolveInitialSessionStage fallback (stage omitted)", () => {
+describe("createSession, resolveInitialSessionStage fallback (stage omitted)", () => {
   it("fails closed to enrollment_required for an MFA-required user with no confirmed method", async () => {
     const userId = "user-create-session-no-stage";
     await prisma.user.create({
@@ -607,7 +608,7 @@ describe("createSession — resolveInitialSessionStage fallback (stage omitted)"
       data: { user_id: userId, role: "admin", scope_type: "instance", scope_id: null },
     });
 
-    // No `stage` passed — every real caller (login, OIDC) always passes one explicitly; this
+    // No `stage` passed, every real caller (login, OIDC) always passes one explicitly; this
     // exercises resolveInitialSessionStage's own fail-closed fallback for any future caller that
     // doesn't.
     const session = await createSession(prisma, { userId });

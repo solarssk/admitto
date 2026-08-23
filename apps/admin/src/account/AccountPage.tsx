@@ -1289,6 +1289,7 @@ export function AccountPage() {
     const open = isPasskey ? managePasskeysOpen : manageSecurityKeysOpen;
     const setOpen = isPasskey ? setManagePasskeysOpen : setManageSecurityKeysOpen;
     const credentials = webauthnCredentials(account, attachment);
+    const canAdd = account.has_local_password && account.webauthn_enabled;
     return (
       <ConfirmDialog
         open={open}
@@ -1297,6 +1298,7 @@ export function AccountPage() {
         message={isPasskey ? "Your registered passkeys." : "Your registered security keys."}
         confirmLabel="Add"
         cancelLabel="Close"
+        disableConfirm={!canAdd}
         onConfirm={() => {
           setOpen(false);
           if (isPasskey) {
@@ -1403,13 +1405,16 @@ export function AccountPage() {
           }
         }}
         onCancel={() => {
-          if (!regeneratingBackupCodes) {
-            setManageBackupCodesOpen(false);
-            setRegenerateBackupCodesCode("");
-            setRegenerateBackupCodesCodeRequired(false);
-            setRegenerateBackupCodesError(null);
-            setRegeneratedBackupCodes(null);
-          }
+          if (regeneratingBackupCodes) return;
+          // Same guard as handleAddPasskeyCancel: once regeneration succeeds, the previous batch
+          // is already invalid and this popup is the only place the new plaintext codes are ever
+          // shown - closing before the save checkbox is ticked would lose them for good.
+          if (regeneratedBackupCodes && !backupCodesSaved) return;
+          setManageBackupCodesOpen(false);
+          setRegenerateBackupCodesCode("");
+          setRegenerateBackupCodesCodeRequired(false);
+          setRegenerateBackupCodesError(null);
+          setRegeneratedBackupCodes(null);
         }}
       >
         {regeneratedBackupCodes

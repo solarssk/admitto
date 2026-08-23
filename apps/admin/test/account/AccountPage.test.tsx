@@ -129,7 +129,7 @@ const totpEnrolledAccount: AccountDto = {
   mfa_methods: [{ type: "totp", confirmed: true, last_used_at: null }],
 };
 
-/** A registered passkey ("platform") or security key ("cross-platform") row — mirrors what
+/** A registered passkey ("platform") or security key ("cross-platform") row, mirrors what
  * GET /api/account returns for a confirmed webauthn credential. */
 function makeWebauthnMethod(overrides: Partial<AccountMfaMethodDto> = {}): AccountMfaMethodDto {
   return {
@@ -275,8 +275,8 @@ describe("AccountPage delayed loading", () => {
     vi.useFakeTimers();
     renderWithToast(<AccountPage />);
 
-    // Let 150ms elapse on the account fetch's own clock before it resolves — almost the
-    // whole no-flash window — to prove the sessions spinner's window doesn't inherit this
+    // Let 150ms elapse on the account fetch's own clock before it resolves, almost the
+    // whole no-flash window, to prove the sessions spinner's window doesn't inherit this
     // elapsed time from a timer that started ticking at mount.
     act(() => {
       vi.advanceTimersByTime(150);
@@ -285,7 +285,7 @@ describe("AccountPage delayed loading", () => {
       resolveAccountFetch(baseAccount);
     });
 
-    // Only 50ms further (200ms total since mount) — not nearly enough for the sessions
+    // Only 50ms further (200ms total since mount), not nearly enough for the sessions
     // card's own fresh 200ms window, which only starts once it becomes visible here.
     act(() => {
       vi.advanceTimersByTime(50);
@@ -472,7 +472,7 @@ describe("AccountPage toasts", () => {
     expect(newPassword.getAttribute("autocomplete")).toBe("new-password");
     expect(newPassword.getAttribute("passwordrules")).toBe("minlength: 12;");
 
-    // Matches the SSR /setup and /change-password pages — "new-password" lets
+    // Matches the SSR /setup and /change-password pages, "new-password" lets
     // password managers fill/save the confirm field consistently.
     expect(screen.getByLabelText("Confirm new password").getAttribute("autocomplete")).toBe(
       "new-password",
@@ -1520,7 +1520,7 @@ describe("AccountPage toasts", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
 
-    // The dialog stays open — progressive disclosure reveals the code field right here (same
+    // The dialog stays open, progressive disclosure reveals the code field right here (same
     // pattern as the remove-credential dialog), plus a toast explaining why.
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
@@ -2305,7 +2305,7 @@ describe("AccountPage: no role assigned", () => {
     await waitFor(() => {
       expect(screen.getByText(/doesn't have any role assigned yet/)).toBeTruthy();
     });
-    // Password/2FA still work with no role — the notice is informational, not a lockout.
+    // Password/2FA still work with no role, the notice is informational, not a lockout.
     expect(screen.getByLabelText("Current password")).toBeTruthy();
   });
 
@@ -3215,6 +3215,26 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
     // Add is still gone - only removal/inspection of what's already registered stays available.
     expect(screen.queryAllByRole("button", { name: "Add" })).toHaveLength(0);
+  });
+
+  it("disables Add inside the Manage passkeys dialog when webauthn is disabled for the instance", async () => {
+    mockLoadedAccount({
+      ...baseAccount,
+      webauthn_enabled: false,
+      mfa_methods: [makeWebauthnMethod()],
+    });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    const addButton = within(manageDialog).getByRole("button", { name: "Add" });
+    expect(addButton.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(addButton);
+    expect(screen.queryByRole("dialog", { name: "Add passkey" })).toBeNull();
   });
 
   it("hides Add passkey/Add security key when the account has no local password", async () => {

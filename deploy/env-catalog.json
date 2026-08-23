@@ -656,6 +656,15 @@
       "summary": "Comma-separated roles that must enroll MFA (default admin,superadmin)."
     },
     {
+      "name": "WEBAUTHN_ENABLED",
+      "group": "sessions",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Whether passkey/security-key (WebAuthn) MFA is offered (default true)."
+    },
+    {
       "name": "CSP_TRUSTED_ORIGINS",
       "group": "sessions",
       "boot": "optional",

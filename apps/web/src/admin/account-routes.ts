@@ -40,7 +40,11 @@ import {
   checkStepUpTotalRateLimit,
   resolveMfaClientIp,
 } from "../auth/mfa-rate-limit.js";
-import { stashWebauthnChallenge, consumeWebauthnChallenge } from "../auth/webauthn-challenge-cache.js";
+import {
+  stashWebauthnChallenge,
+  consumeWebauthnChallenge,
+  clearWebauthnChallenge,
+} from "../auth/webauthn-challenge-cache.js";
 import { checkAccountPasswordRateLimit } from "../rate-limit/policies.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
@@ -1230,7 +1234,11 @@ export async function resolveWebauthnRp(
 ): Promise<{ rpName: string; rpID: string; origin: string } | Response> {
   const baseUrl = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrl instanceof Response) return baseUrl;
-  return { rpName: "Admitto", rpID: new URL(baseUrl).hostname, origin: baseUrl };
+  const url = new URL(baseUrl);
+  // .origin, not the raw baseUrl - resolveMailInstanceBaseUrl's callers tolerate a configured
+  // Instance URL that includes a pathname, but WebAuthn's expectedOrigin check compares against
+  // the browser's plain scheme+host+port, never a path.
+  return { rpName: "Admitto", rpID: url.hostname, origin: url.origin };
 }
 
 export const webauthnAttachmentSchema = z.enum(["platform", "cross-platform"]);
@@ -1327,6 +1335,14 @@ export async function handlePostAccountWebauthnRegisterFinish(
   const userId = auth.userId;
   const sessionId = auth.sessionId;
   if (!sessionId) return c.json({ error: "unauthorized" }, 401);
+
+  if (!(await getWebauthnEnabled(db))) {
+    // Covers the instance being disabled between this account's own begin and finish calls, not
+    // just a finish reached without ever calling begin - either way there is a stale challenge
+    // for this ceremony worth dropping rather than leaving it to expire on its own.
+    clearWebauthnChallenge("register", sessionId);
+    return c.json({ code: "webauthn_disabled" }, 403);
+  }
 
   let body: unknown;
   try {
