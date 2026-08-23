@@ -69,6 +69,7 @@ import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
+import { makeEmailPreviewInert } from "../communication/inertEmailPreview.js";
 
 type ActiveField = "subject" | "body";
 type TemplateFormat = "mjml" | "html";
@@ -1210,8 +1211,8 @@ function TemplateEditorCard({
  * and rendered without a real attendee - but a live https:// URL to a domain nothing actually
  * hosts renders as a broken image and a dead-end link, reading as broken rather than deliberate.
  * Swapped here for a same-origin-safe, always-rendering placeholder before the admin ever sees
- * it; the sandboxed iframe already blocks navigation on the link either way, so this is purely
- * cosmetic, not a security boundary. */
+ * it. Links stay inert regardless (see makeEmailPreviewInert), so this is purely cosmetic, not a
+ * security boundary. */
 const SAMPLE_TICKET_URL = "https://tickets.example.com/t/sample-token";
 const SAMPLE_QR_IMAGE_URL = "https://tickets.example.com/q/sample-token.png";
 /** Matches `DEFAULT_SAMPLE_VARS.email` (packages/mail-templates/src/preview.ts) - the "to"
@@ -1357,7 +1358,7 @@ function PreviewBody({
           className="communication-preview-frame"
           title="Email preview"
           sandbox=""
-          srcDoc={sanitizeSamplePreviewHtml(previewHtml)}
+          srcDoc={makeEmailPreviewInert(sanitizeSamplePreviewHtml(previewHtml))}
         />
       ) : (
         <div className="communication-preview-frame communication-preview-frame--loading">

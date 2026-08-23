@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Communication email preview (Communication tab and the template editor) no longer lets clicks on the ticket link or QR code navigate inside the preview frame - clicking the recipient's real ticket link previously triggered a nested-frame Content Security Policy violation instead of doing nothing.
+
 ## [0.5.5] - 2026-08-23
 
 ### Added
