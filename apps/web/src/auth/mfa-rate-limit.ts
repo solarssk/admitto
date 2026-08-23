@@ -80,7 +80,7 @@ function mfaWebauthnIpKey(ip: string, action?: string): string {
 }
 
 /**
- * Rate-limit a WebAuthn step-up/login attempt per session and IP — same session+IP dual-key shape
+ * Rate-limit a WebAuthn step-up/login attempt per session and IP, same session+IP dual-key shape
  * as `checkMfaVerifyRateLimit`, but a single bucket: an assertion attempt has no code value to
  * branch a TOTP-vs-recovery bucket choice on.
  */

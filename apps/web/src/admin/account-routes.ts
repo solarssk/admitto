@@ -114,9 +114,9 @@ const webauthnAuthenticationResponseSchema = z.object({
   type: z.literal("public-key"),
 });
 
-/** Fields every step-up-gated request body accepts alongside its own — a TOTP/recovery code, or a
+/** Fields every step-up-gated request body accepts alongside its own: a TOTP/recovery code, or a
  * WebAuthn assertion response. Spread into a `.strict()` schema next to that action's own fields. */
-const stepUpProofFields = {
+export const stepUpProofFields = {
   code: z.string().optional(),
   webauthn: z.object({ response: webauthnAuthenticationResponseSchema }).optional(),
 };
@@ -131,8 +131,8 @@ export type StepUpProof =
 /**
  * Resolve the caller-supplied step-up proof from a parsed request body (`stepUpProofFields`) into
  * the form `checkStepUpInTransaction` understands. A WebAuthn proof consumes the challenge the
- * matching `POST /api/account/mfa/webauthn/assert/begin` call stashed server-side — never a
- * client-supplied challenge — and resolves the instance's own RP config, so this can return a
+ * matching `POST /api/account/mfa/webauthn/assert/begin` call stashed server-side (never a
+ * client-supplied challenge) and resolves the instance's own RP config, so this can return a
  * Response to short-circuit on (no session, expired challenge, disabled instance setting,
  * misconfigured instance URL) the same way the registration routes already do.
  */
@@ -1227,7 +1227,7 @@ export async function handlePostAccountWebauthnRegisterFinish(
     if (!created) return null;
 
     // Self-service registration returns backup codes to the client directly (unlike the
-    // login-time flow's separate acknowledgment step) — mark them acknowledged now so this
+    // login-time flow's separate acknowledgment step): mark them acknowledged now so this
     // already-`full` session isn't rejected by the backup-codes gate (IAM-002) on its very next
     // request. A no-op when this wasn't the user's first MFA method (no fresh codes to ack).
     await markBackupCodesAcknowledged(tx, userId);
@@ -1252,7 +1252,7 @@ export async function handlePostAccountWebauthnRegisterFinish(
  * caller's own registered credentials. The response's `options` are passed to the browser's
  * `navigator.credentials.get()`; the resulting assertion is submitted as the `webauthn` proof on
  * whichever step-up-gated action the caller is actually completing (password change, MFA reset,
- * credential removal, backup-codes regenerate, SSO unlink) — there is no separate "finish" route,
+ * credential removal, backup-codes regenerate, SSO unlink): there is no separate "finish" route,
  * `resolveStepUpProof` consumes the stashed challenge from inside that action's own handler.
  */
 export async function handlePostAccountWebauthnAssertBegin(
