@@ -12,4 +12,4 @@ ADD COLUMN     "webauthn_sign_count" INTEGER,
 ADD COLUMN     "webauthn_transports" TEXT[] NOT NULL DEFAULT '{}';
 
 -- CreateIndex
-CREATE UNIQUE INDEX "UserMfaMethod_webauthn_credential_id_key" ON "UserMfaMethod"("webauthn_credential_id");
+CREATE UNIQUE INDEX CONCURRENTLY "UserMfaMethod_webauthn_credential_id_key" ON "UserMfaMethod"("webauthn_credential_id");

@@ -11,17 +11,18 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
   type WebAuthnCredential,
 } from "@simplewebauthn/server";
+import { isoUint8Array } from "@simplewebauthn/server/helpers";
 import { findUserById } from "../user.js";
 import { ensureFreshEnrollmentBackupCodes } from "./backup-recovery.js";
 import { userHasAnyConfirmedMfaMethod } from "./policy.js";
 import { runInTransaction } from "../prisma-tx.js";
 
 /** "platform" = passkey (Touch ID/Windows Hello/password manager); "cross-platform" = security
- * key (USB/NFC/BLE FIDO2 device). Same ceremony either way — only this hint and the My Account
+ * key (USB/NFC/BLE FIDO2 device). Same ceremony either way, only this hint and the My Account
  * row it's registered from differ. */
 export type WebauthnAttachment = "platform" | "cross-platform";
 
-/** Relying Party identity resolved from the instance's own base URL — single-instance app, no
+/** Relying Party identity resolved from the instance's own base URL, single-instance app, no
  * per-tenant RP ID. */
 export interface WebauthnRpConfig {
   rpName: string;
@@ -60,6 +61,11 @@ export async function beginWebauthnRegistration(
     rpName: rp.rpName,
     rpID: rp.rpID,
     userName: user.email,
+    // Stable across every registration ceremony for this account (defaults to a fresh random
+    // handle per call otherwise) - the WebAuthn user handle is how an authenticator/password
+    // manager groups multiple credentials under one account. Our own cuid is already opaque and
+    // non-PII, exactly the kind of value the spec recommends here.
+    userID: isoUint8Array.fromUTF8String(userId),
     userDisplayName: user.display_name ?? user.email,
     // Generic FIDO2 acceptance, no vendor attestation checks (out of scope, see plan).
     attestationType: "none",
@@ -71,12 +77,12 @@ export async function beginWebauthnRegistration(
       })),
     authenticatorSelection: {
       // Passkeys must be discoverable (resident) to earn the name and sync across a password
-      // manager/iCloud Keychain. Security keys don't need it — we always pass an explicit
+      // manager/iCloud Keychain. Security keys don't need it, we always pass an explicit
       // `allowCredentials` list at assertion time (never usernameless login), so preferring
       // resident credentials there would only burn a hardware key's limited resident-key slots
       // for no benefit.
       residentKey: attachment === "platform" ? "required" : "discouraged",
-      // Ask, don't require — mirrors how a TOTP code alone already counts as the second factor.
+      // Ask, don't require, mirrors how a TOTP code alone already counts as the second factor.
       userVerification: "preferred",
     },
     // Non-binding UI ordering hint (WebAuthn Level 3 `hints`, Chrome/Edge 128+) rather than a
@@ -97,7 +103,7 @@ export async function beginWebauthnRegistration(
 
 export interface FinishWebauthnRegistrationResult {
   credentialRowId: string;
-  /** Plaintext backup codes — only non-empty when this was the user's first-ever confirmed MFA
+  /** Plaintext backup codes, only non-empty when this was the user's first-ever confirmed MFA
    * method (mirrors TOTP's fresh-enrollment behavior). */
   backupCodes: string[];
 }
@@ -155,7 +161,7 @@ export async function finishWebauthnRegistration(
         webauthn_transports: credential.transports ?? [],
         webauthn_attachment: attachment,
         webauthn_aaguid: aaguid,
-        // Force the backup-codes acknowledgment step before a full session (IAM-002) — only when
+        // Force the backup-codes acknowledgment step before a full session (IAM-002), only when
         // this is the first method, same rule as confirmTotpEnrollment. Omitted otherwise, so the
         // column keeps its schema default (already acknowledged).
         ...(isFirstMfaMethod ? { backup_codes_acknowledged_at: null } : {}),
@@ -232,7 +238,7 @@ export async function beginWebauthnAssertion(
         id: c.webauthn_credential_id as string,
         transports: toTransports(c.webauthn_transports),
       })),
-    // Discoverable-credential UV, not required — WebAuthn here is always the *second* factor
+    // Discoverable-credential UV, not required, WebAuthn here is always the *second* factor
     // (after password), same trust level as a TOTP code.
     userVerification: "preferred",
   });
@@ -250,11 +256,11 @@ export interface FinishWebauthnAssertionResult {
  *
  * `expectedChallenge` is the caller's responsibility to make single-use: this function does not
  * store, consume, or invalidate it. The caller must persist each challenge keyed uniquely (e.g.
- * per session) and delete it immediately after this call — success or failure — so a captured
+ * per session) and delete it immediately after this call, success or failure, so a captured
  * response can never be replayed against a still-valid challenge. The sign-counter check alone
  * is not a substitute: many real authenticators (most platform passkeys) always report counter
  * `0`, and `@simplewebauthn/server` only rejects a counter *regression* when at least one of the
- * stored/new values is nonzero — an authenticator stuck at `0` gets no counter-based replay
+ * stored/new values is nonzero, an authenticator stuck at `0` gets no counter-based replay
  * protection at all, so single-use challenge storage is the only real defense in that case.
  */
 export async function finishWebauthnAssertion(
@@ -298,10 +304,17 @@ export async function finishWebauthnAssertion(
   }
   if (!verification.verified) return null;
 
-  await prisma.userMfaMethod.update({
-    where: { id: row.id },
+  // Compare-and-swap on the counter value this verification was actually computed against: a
+  // plain update() here would let two concurrent authentications against a cloned nonzero-counter
+  // credential (two different valid signatures, both reporting the same next counter) both read
+  // the same stored value, both pass verifyAuthenticationResponse's regression check, and both
+  // succeed. updateMany's where clause makes only the first writer's update match; the loser sees
+  // count 0, meaning the counter it verified against is already stale, and is rejected here.
+  const { count } = await prisma.userMfaMethod.updateMany({
+    where: { id: row.id, webauthn_sign_count: row.webauthn_sign_count },
     data: { webauthn_sign_count: verification.authenticationInfo.newCounter, last_used_at: new Date() },
   });
+  if (count === 0) return null;
 
   return { credentialRowId: row.id };
 }
