@@ -651,7 +651,7 @@
   max-height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Scrollbar look + gutter reservation: shared .at-scroll/.at-scroll--stable (packages/ui). */
+  /* Scrollbar look: shared .at-scroll (packages/ui). */
 }
 
 .attendee-deliveries {
