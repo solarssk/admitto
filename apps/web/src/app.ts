@@ -358,8 +358,12 @@ import {
   handlePostMfaReset as handlePostAccountMfaReset,
   handlePostAccountWebauthnRegisterBegin,
   handlePostAccountWebauthnRegisterFinish,
+  handlePostAccountWebauthnAssertBegin,
   handleGetAccountWebauthnCredentials,
   handleDeleteAccountWebauthnCredential,
+  handleDeleteAccountTotp,
+  handleGetAccountBackupCodesStatus,
+  handlePostAccountRegenerateBackupCodes,
 } from "./admin/account-routes.js";
 import {
   handleGetSystemSettings,
@@ -1711,13 +1715,13 @@ export function createApp(options: CreateAppOptions = {}) {
     handleDeleteUserRole(c, db),
   );
   app.post("/api/admin/users/:id/reset-2fa", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserMfa(c, db, rateLimitStore),
+    handlePostResetUserMfa(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.delete("/api/admin/users/:id/external-identity", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteUserExternalIdentity(c, db),
   );
   app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserPassword(c, db, rateLimitStore),
+    handlePostResetUserPassword(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.post("/api/admin/users/:id/revoke-sessions", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostRevokeUserSessions(c, db),
@@ -1749,10 +1753,10 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePatchAccountProfile(c, db),
   );
   app.patch("/api/account/password", jsonPostCsrf, requireSession, (c) =>
-    handlePatchAccountPassword(c, db, rateLimitStore),
+    handlePatchAccountPassword(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.delete("/api/account/external-identity", jsonPostCsrf, requireSession, (c) =>
-    handleDeleteAccountExternalIdentity(c, db, rateLimitStore),
+    handleDeleteAccountExternalIdentity(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
@@ -1772,7 +1776,7 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostAccountMfaConfirm(c, db, rateLimitStore),
   );
   app.post("/api/account/mfa/reset", jsonPostCsrf, requireSession, (c) =>
-    handlePostAccountMfaReset(c, db, rateLimitStore),
+    handlePostAccountMfaReset(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/account/mfa/webauthn", requireSession, (c) =>
     handleGetAccountWebauthnCredentials(c, db),
@@ -1791,8 +1795,28 @@ export function createApp(options: CreateAppOptions = {}) {
     createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
     (c) => handlePostAccountWebauthnRegisterFinish(c, db, mailInjectedBaseUrl),
   );
+  app.post(
+    "/api/account/mfa/webauthn/assert/begin",
+    jsonPostCsrf,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountWebauthnAssertBegin(c, db, mailInjectedBaseUrl),
+  );
   app.delete("/api/account/mfa/webauthn/:credentialId", jsonPostCsrf, requireSession, (c) =>
-    handleDeleteAccountWebauthnCredential(c, db, rateLimitStore),
+    handleDeleteAccountWebauthnCredential(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.delete("/api/account/mfa/totp", jsonPostCsrf, loginRateLimitJson, requireSession, (c) =>
+    handleDeleteAccountTotp(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.get("/api/account/mfa/backup-codes", requireSession, (c) =>
+    handleGetAccountBackupCodesStatus(c, db),
+  );
+  app.post(
+    "/api/account/mfa/backup-codes/regenerate",
+    jsonPostCsrf,
+    loginRateLimitJson,
+    requireSession,
+    (c) => handlePostAccountRegenerateBackupCodes(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));

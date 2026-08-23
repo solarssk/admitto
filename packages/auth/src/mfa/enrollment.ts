@@ -206,6 +206,19 @@ export async function verifyUserTotpCode(
   return updated.count === 1;
 }
 
+/** Remove only the user's TOTP row(s) — leaves WebAuthn credentials and backup recovery codes
+ * untouched (mirrors `removeWebauthnCredential` in webauthn.ts, scoped to its own type the same
+ * way). Returns false if there was no TOTP row to remove. */
+export async function removeTotpMethod(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<boolean> {
+  const { count } = await prisma.userMfaMethod.deleteMany({
+    where: { user_id: userId, type: "totp" },
+  });
+  return count > 0;
+}
+
 /** Remove all MFA methods, revoke sessions and trusted devices (break-glass). */
 export async function resetUserMfa(
   prisma: PrismaClient | Prisma.TransactionClient,

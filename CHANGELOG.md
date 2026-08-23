@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Passkeys and security keys registered under My account → Two-factor authentication can now be used to confirm sensitive account actions - password change, resetting two-factor, removing a passkey or security key, regenerating backup codes, unlinking single sign-on - the same as a code from your authenticator app. Previously a registered passkey only counted toward "has a confirmed second factor" and could not itself be used for anything.
+
 ### Fixed
 
 - Communication email preview (Communication tab and the template editor) no longer lets clicks on the ticket link or QR code navigate inside the preview frame - clicking the recipient's real ticket link previously triggered a nested-frame Content Security Policy violation instead of doing nothing.
@@ -19,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - The session cookie issued right after entering a password now stops working the moment MFA enrollment, MFA verification, backup-code acknowledgment, or a forced password change promotes that session further - previously the same cookie value carried through every step, so a copy of it captured before MFA (e.g. from a browser extension, a shared machine, or a misconfigured non-TLS deployment) would silently become a fully signed-in admin or superadmin session the instant the real user finished signing in, with no further MFA needed on the attacker's side.
+- An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.
 
 ## [0.5.5] - 2026-08-23
 
@@ -157,6 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - My account: staff can choose 12-hour (AM/PM), 24-hour, or browser-default time input independently from their regional date format.
+- **My account: passkeys and security keys.** Staff can now register passkeys (Face ID, Windows Hello, and similar) and security keys (for example a YubiKey) as extra two-factor methods alongside an authenticator app. Each one is given a name so multiple keys can be told apart, and there is no limit on how many can be registered. Setting up, resetting, or adding a two-factor method now opens in a popup instead of expanding inline on the page. Registering a passkey or security key stays available to inspect or remove even if an administrator later turns passkeys/security keys off for the instance — only adding a new one is affected. If it's the account's first-ever confirmed two-factor method, its 10 backup codes are shown once in the same popup and must be saved before it can be closed, the same as first-time authenticator app setup.
+- **My account: backup codes.** A new Backup codes row in Two-factor authentication shows how many of your codes are still unused (for example "7 of 10 remaining"). Regenerate invalidates the current batch and issues a fresh set of 10 codes, shown once as plain text — the same one-time reveal used during initial setup.
 - **Add to Apple Wallet / Google Wallet.** The wallet badges on the public ticket page are now live — tapping one creates (or reuses) the attendee's wallet pass and opens it directly, without ever landing on a PassCreator-hosted page. If creation fails, the ticket page shows a retry notice instead of a broken redirect.
 - **Wallet settings in the admin UI.** Event settings → Wallet (superadmin-only) now has a real PassCreator API key and Template ID field, both specific to that event, so a leaked or rotated key only ever affects one event, not the whole instance (instead of the roadmap placeholder). A header switch turns the whole feature on or off for the event; independent Apple Wallet / Google Wallet switches disable one platform without clearing the other's configuration. Test connection checks the API key and template against PassCreator before saving. Field mapping controls which PassCreator field key receives which attendee/event value — nothing beyond the QR code is sent until it's mapped, since PassCreator templates don't share a common set of field names. Admins can map attendee name (full or first/last), email, company, department, event name/date/hours/location, ticket type, the ticket/QR value (for templates whose barcode isn't bound to it directly), directions and accessibility notes, individual address components, and Google/Apple Maps links. No env var restart needed to change any of it.
 - **Event hours (start/end).** New Event and Event settings → Basic information now have an optional "Event hours" start/end time field, shown as a range on tickets and (later) wallet passes. Leave blank to omit.
@@ -165,6 +172,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Revoking an attendee's ticket now also voids their wallet pass, if they have one, so a revoked ticket doesn't stay usable at the gate through an old wallet install. Restoring the ticket restores the pass the same way.
 - Event Settings changes to an event's name, date, timezone, or event hours are now pushed in the background to every already-issued wallet pass for that event, so passes stay in sync without staff needing to push updates manually.
 - Organisation Settings → Security: superadmins can now allow specific third-party `https://` origins to run script, send data, and (on sign-in pages) render an embedded widget, for example an analytics/monitoring beacon like Cloudflare Web Analytics or a login challenge widget like Cloudflare Turnstile, without weakening the Content-Security-Policy for anything else.
+
+### Changed
+
+- **My account: two-factor authentication methods can now be managed independently.** The authenticator app's action is now **Manage** instead of **Reset**: **Remove** takes out only the authenticator app and leaves passkeys, security keys, and backup codes untouched; **Reset everything** remains available from the card's own options menu for clearing all of them at once.
 
 ### Fixed
 - Public ticket page: the browser tab, bookmarks, and home-screen shortcuts now show the Admitto icon on the ticket page and its not-found/error state, instead of a blank or default icon. The shared favicon markup was never wired into this page's HTML template.

@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop, Spinner, Tooltip } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice, Spinner, Tooltip } from "@admitto/ui";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
 
 export type ConfirmDialogProps = {
   open: boolean;
+  /** Tabler icon element shown beside the title (e.g. <i className="ti ti-shield-lock" />). */
+  icon?: ReactNode;
   title: string;
   message: string;
   errorMessage?: string | null;
@@ -41,6 +43,7 @@ export type ConfirmDialogProps = {
 /** Accessible confirmation modal replacing native window.confirm. */
 export function ConfirmDialog({
   open,
+  icon,
   title,
   message,
   errorMessage,
@@ -99,6 +102,11 @@ export function ConfirmDialog({
       <ModalBackdrop onClose={onCancel} />
       <div ref={panelRef} className="confirm-dialog__panel">
         <h3 id={titleId} className="confirm-dialog__title">
+          {icon && (
+            <span className="confirm-dialog__icon" aria-hidden="true">
+              {icon}
+            </span>
+          )}
           {title}
         </h3>
         <p id={descriptionId} className="confirm-dialog__message">
@@ -106,9 +114,9 @@ export function ConfirmDialog({
         </p>
         {children}
         {errorMessage && (
-          <p className="confirm-dialog__error" role="alert">
+          <Notice variant="error" role="alert">
             {errorMessage}
-          </p>
+          </Notice>
         )}
         {needsTypedConfirmation && (
           <Input

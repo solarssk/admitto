@@ -227,11 +227,18 @@ export {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   verifyUserTotpCode,
+  removeTotpMethod,
   resetUserMfa,
   type StartTotpEnrollmentResult,
 } from "./mfa/enrollment.js";
 export { parseTotpSecretFromOtpauthUri } from "./mfa/totp.js";
-export { regenerateBackupRecoveryCodes, findBackupRecoveryRowId, verifyBackupRecoveryCodesSet } from "./mfa/backup-recovery.js";
+export {
+  regenerateBackupRecoveryCodes,
+  findBackupRecoveryRowId,
+  verifyBackupRecoveryCodesSet,
+  getBackupRecoveryCodesStatus,
+  type BackupRecoveryCodesStatus,
+} from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
 export {
   beginWebauthnRegistration,
