@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-25
+
 ### Added
 
 - Admin errors that happen outside React's own render cycle - an exception thrown from a button/switch handler, an unhandled promise rejection, or a browser extension's script getting blocked by the admin's Content-Security-Policy - are now reported to the server the same way a render error already was, instead of only ever showing up in that one person's browser console. Meant to catch page breakage caused by a browser extension (e.g. a password manager reacting to a settings toggle) with enough detail to diagnose it without needing to reproduce it live.
@@ -1151,7 +1153,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/solarssk/admitto/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/solarssk/admitto/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/solarssk/admitto/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/solarssk/admitto/compare/v0.5.3...v0.5.4
