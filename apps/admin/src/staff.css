@@ -5790,7 +5790,10 @@ output.mail-field-hint {
    table - UTC + local time, name + email - so this keeps Scope's row-height in the same rhythm
    instead of wrapping without limit and making one row much taller than its neighbours). Anything
    still cut off is reachable via the cell's native title tooltip (see buildAuditColumns' `title`
-   for this column). */
+   for this column). Applied to a <span> wrapper around the label, not the <td> itself - `display:
+   -webkit-box` would override the <td>'s required `table-cell` display, and the browser's table
+   fix-up then wraps the <td> in an anonymous cell box, leaving the real <td>'s own padding, border
+   and vertical-align (from `.table td`) on the wrong element and breaking row separators. */
 .audit-log-scope {
   display: -webkit-box;
   -webkit-line-clamp: 2;

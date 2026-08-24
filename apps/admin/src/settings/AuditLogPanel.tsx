@@ -725,9 +725,8 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
   {
     key: "scope",
     header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
-    className: "audit-log-scope",
     title: (entry) => scopeLabel(entry, eventTitleById),
-    cell: (entry) => scopeLabel(entry, eventTitleById),
+    cell: (entry) => <span className="audit-log-scope">{scopeLabel(entry, eventTitleById)}</span>,
   },
   {
     key: "actor",
