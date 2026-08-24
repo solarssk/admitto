@@ -7,8 +7,11 @@ updates:
     open-pull-requests-limit: 5
     # Auto-rebase-on-conflict was observed leaving package-lock.json's resolved tree stale
     # (declared versions right, hoisted node_modules entries wrong) after two concurrent
-    # dependabot PRs bumped the same package; npm ci didn't catch it. Disabling forces a
-    # PR recreation (full lockfile resolve) instead of an in-place patch on conflict.
+    # dependabot PRs bumped the same package; npm ci didn't catch it. Disabling stops that
+    # automatic in-place patch: a base-branch conflict now leaves the PR conflicted instead
+    # of silently repatching it. Resolve manually - comment `@dependabot recreate` for a
+    # fresh lockfile resolve, or close/reopen - CI's lockfile check (verify-lockfile-
+    # resolutions.py) is the backstop if a conflict does get auto-resolved some other way.
     rebase-strategy: "disabled"
     ignore:
       - dependency-name: "@types/node"

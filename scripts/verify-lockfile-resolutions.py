@@ -13,6 +13,7 @@ parents request; those show up as permanent, expected "invalid" entries and are 
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,10 +31,15 @@ KNOWN_TRANSITIVE_MISMATCHES = {
 
 def main() -> int:
     overrides = json.loads((ROOT / "package.json").read_text()).get("overrides", {})
-    ignored_names = set(overrides) | KNOWN_TRANSITIVE_MISMATCHES
+
+    npm = shutil.which("npm")
+    node_bin = shutil.which("node")
+    if npm is None or node_bin is None:
+        print("npm and/or node executable not found on PATH.", file=sys.stderr)
+        return 2
 
     result = subprocess.run(
-        ["npm", "ls", "--all", "--json"],
+        [npm, "ls", "--all", "--json"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -42,9 +48,26 @@ def main() -> int:
 
     problems: set[tuple[str, str]] = set()
 
+    def is_explained_by_override(name: str, child: dict) -> bool:
+        # An override pin only explains an "invalid" entry when the resolved version actually
+        # satisfies it - i.e. the override is doing its job overriding some other consumer's
+        # older want. A resolved version that doesn't even satisfy its own override is still a
+        # bug (the override not being honored), not the expected override skew.
+        spec = overrides.get(name)
+        version = child.get("version")
+        if not isinstance(spec, str) or not version:
+            return False
+        check = subprocess.run(
+            [node_bin, "-e", "process.exit(require('semver').satisfies(process.argv[1], process.argv[2]) ? 0 : 1)",
+             version, spec],
+            cwd=ROOT,
+        )
+        return check.returncode == 0
+
     def walk(node: dict) -> None:
         for name, child in node.get("dependencies", {}).items():
-            if child.get("invalid") and name not in ignored_names:
+            invalid = child.get("invalid")
+            if invalid and name not in KNOWN_TRANSITIVE_MISMATCHES and not is_explained_by_override(name, child):
                 problems.add((name, child.get("version")))
             walk(child)
 
