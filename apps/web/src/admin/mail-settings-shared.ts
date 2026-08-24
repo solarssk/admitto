@@ -96,16 +96,9 @@ export const putMailSettingsBodySchema = z
           .refine((u) => u.toLowerCase().startsWith("https://"), {
             error: "powerAutomateUrl must use HTTPS",
           })
-          .refine(
-            (u) => {
-              try {
-                return !isBlockedMailHost(new URL(u).hostname);
-              } catch {
-                return false;
-              }
-            },
-            { error: "powerAutomateUrl must not target a private, loopback, or link-local address" },
-          ),
+          .refine((u) => !isBlockedMailHost(new URL(u).hostname), {
+            error: "powerAutomateUrl must not target a private, loopback, or link-local address",
+          }),
         z.literal(""),
       ])
       .optional(),
