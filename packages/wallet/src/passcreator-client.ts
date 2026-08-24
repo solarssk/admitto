@@ -20,6 +20,10 @@ export type PassCreatorWebhookEventType =
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 500;
+/** Same timeout every other outbound HTTP client in this codebase uses for a third-party call
+ * (OIDC discovery/token, Cloudflare Access, Graph mailer) - a request PassCreator never responds
+ * to would otherwise hang this client's caller forever, since fetch() has no default timeout. */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type PassCreatorEnvelope<T> = {
   success: boolean;
@@ -65,6 +69,17 @@ function previewBody(text: string): string {
  * `.join()` instead of surfacing the intended WalletProviderError. */
 function requestErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** True when `err` is the rejection AbortSignal.timeout() produces once its timer fires -
+ * distinct from a malformed-body SyntaxError. performFetch's signal only aborts the fetch()
+ * promise itself if it fires before headers arrive; if PassCreator sends 2xx headers and then
+ * stalls while streaming the body, fetch() already resolved and the same signal instead aborts
+ * whichever res.json()/res.text() call is reading that body - callers must check for this
+ * specifically so a stalled body read reports wallet_provider_timeout, not a misleading "the
+ * response body just didn't parse" or (worse) a silently-treated-as-empty success (bot review). */
+function isTimeoutAbort(err: unknown): boolean {
+  return err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
 function extractErrorStrings(errors: unknown): string[] | undefined {
@@ -193,7 +208,22 @@ export class PassCreatorClient implements WalletPassProvider {
   async getWebhookPublicKey(): Promise<string> {
     const path = "/api/hook/publickey";
     const res = await this.requestRaw("GET", path);
-    const text = await res.text();
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      this.logOutcome("GET", path, false, res.status);
+      if (isTimeoutAbort(err)) {
+        throw new WalletProviderError(
+          "wallet_provider_timeout",
+          `PassCreator response body timed out: ${requestErrorMessage(err)}`,
+        );
+      }
+      // Not previously handled at all - keep the same "let it throw" shape for a genuinely
+      // unexpected read failure, just via the documented WalletProviderError contract now
+      // (bot review: this method used to leak whatever res.text() itself threw).
+      throw this.toProviderError(res.status, [requestErrorMessage(err)]);
+    }
     if (!res.ok) {
       this.logOutcome("GET", path, false, res.status);
       throw this.toProviderError(res.status, [previewBody(text)]);
@@ -365,10 +395,19 @@ export class PassCreatorClient implements WalletPassProvider {
     let envelope: PassCreatorEnvelope<T>;
     try {
       envelope = (await res.json()) as PassCreatorEnvelope<T>;
-    } catch {
+    } catch (err) {
+      this.logOutcome(method, route, false, res.status);
+      if (isTimeoutAbort(err)) {
+        // Headers arrived (fetch() already resolved) but the body stream itself stalled past the
+        // timeout - a genuine timeout, not a malformed body, even though the status here is
+        // whatever PassCreator sent before stalling (often 200).
+        throw new WalletProviderError(
+          "wallet_provider_timeout",
+          `PassCreator response body timed out: ${requestErrorMessage(err)}`,
+        );
+      }
       // Non-JSON body (e.g. an upstream proxy's HTML 502 page) - map by HTTP status instead of
       // letting the raw SyntaxError escape and break the documented WalletProviderError contract.
-      this.logOutcome(method, route, false, res.status);
       throw this.toProviderError(res.status);
     }
     if (!envelope.success || envelope.data === undefined) {
@@ -411,7 +450,25 @@ export class PassCreatorClient implements WalletPassProvider {
       this.logOutcome(method, route, false, res.status);
       throw this.toProviderError(res.status);
     }
-    const body: unknown = await res.json().catch(() => null);
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch (err) {
+      if (isTimeoutAbort(err)) {
+        // A stalled body read must not fall through to the "no body, treat as success" case
+        // below - that would report a subscribe/unsubscribe/list that never actually completed
+        // as having succeeded (bot review).
+        this.logOutcome(method, route, false, res.status);
+        throw new WalletProviderError(
+          "wallet_provider_timeout",
+          `PassCreator response body timed out: ${requestErrorMessage(err)}`,
+        );
+      }
+      // Any other body-read failure (e.g. no body at all on a 2xx) - unlike request()'s strict
+      // envelope, these three endpoints' confirmed-live shapes are already handled defensively by
+      // their own callers (see subscribeWebhook/unsubscribeWebhook/listWebhooks doc comments), so
+      // falling through with body left at null is the existing, intentional behavior here.
+    }
     const bodyFailed = body && typeof body === "object" && (body as { success?: unknown }).success === false;
     this.logOutcome(method, route, !bodyFailed, res.status);
     if (bodyFailed) {
@@ -432,6 +489,7 @@ export class PassCreatorClient implements WalletPassProvider {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   }
 

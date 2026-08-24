@@ -20,6 +20,7 @@ import {
   reclaimStaleWalletPushJobs,
   STALE_WALLET_PUSH_PENDING_ERROR,
   WALLET_PUSH_CONCURRENCY,
+  WALLET_PUSH_JOB_ALL_FAILED_ERROR,
   WALLET_PUSH_JOB_BAD_REQUEST_ERROR,
   WALLET_PUSH_JOB_GENERIC_ERROR,
   WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR,
@@ -182,7 +183,7 @@ describe("drainWalletPushJobs", () => {
     expect(finalCall![0].data.result_json).toMatchObject({ reissued: 1, skipped: 1, errored: 0 });
   });
 
-  it("counts a rejected push as errored without aborting the rest of the batch", async () => {
+  it("counts a rejected push as errored without aborting the rest of the batch, but still logs the partial failure since nothing else would surface it for a background job", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     vi.mocked(reissueOneWalletPass)
       .mockRejectedValueOnce(new Error("provider down"))
@@ -195,6 +196,36 @@ describe("drainWalletPushJobs", () => {
       (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
     );
     expect(finalCall![0].data.result_json).toMatchObject({ reissued: 1, skipped: 0, errored: 1 });
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({
+      level: "error",
+      message: "wallet_push_job_had_errors",
+      fields: { job_id: "job-wp-1", event_id: "evt-1", reissued: 1, skipped: 0, errored: 1 },
+    });
+  });
+
+  it("marks the job failed (not succeeded) when every targeted attendee errors, instead of reporting success for a push that reached nobody", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    vi.mocked(reissueOneWalletPass)
+      .mockRejectedValueOnce(new Error("provider down"))
+      .mockRejectedValueOnce(new Error("provider down"));
+
+    const result = await drainWalletPushJobs(db as never);
+
+    expect(result).toEqual({ claimed: 1, succeeded: 0, failed: 1, reclaimed: 0 });
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
+    );
+    expect(finalCall![0]).toMatchObject({
+      where: { id: "job-wp-1" },
+      data: {
+        status: "failed",
+        error: WALLET_PUSH_JOB_ALL_FAILED_ERROR,
+        result_json: { reissued: 0, skipped: 0, errored: 2 },
+      },
+    });
+    const [entry] = querySystemLogs({ source: "wallet" });
+    expect(entry).toMatchObject({ level: "error", message: "wallet_push_job_had_errors" });
   });
 
   it("marks the job failed (not succeeded) when the event has no usable wallet provider", async () => {

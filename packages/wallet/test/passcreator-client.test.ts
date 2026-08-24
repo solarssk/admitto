@@ -149,6 +149,41 @@ describe("PassCreatorClient.createPass", () => {
       message: expect.stringContaining("connection reset"),
     });
   });
+
+  it("attaches a timeout signal to every request, and wraps a request that never resolves as wallet_provider_timeout", async () => {
+    const fetchMock = vi.fn((_url: string | URL, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      expect(init?.signal?.aborted).toBe(false);
+      // A hung PassCreator connection never resolves or rejects on its own - fetch() only rejects
+      // once the attached signal fires. Simulate that by rejecting exactly the way Node's fetch
+      // does when an AbortSignal.timeout() signal aborts it, instead of waiting out the real 15s.
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("The operation timed out.", "TimeoutError")));
+      });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    const pending = client.createPass(INPUT);
+    // performFetch's own AbortSignal.timeout(15_000) is real and can't be swapped out from here -
+    // abort it directly to simulate that 15s elapsing without a real test-suite delay.
+    (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.signal?.dispatchEvent(new Event("abort"));
+
+    await expect(pending).rejects.toMatchObject({ code: "wallet_provider_timeout" });
+  });
+
+  it("wraps a response body that stalls past the timeout as wallet_provider_timeout, not a generic parse failure (bot review)", async () => {
+    // fetch() itself already resolved (PassCreator sent 2xx headers) - the timeout signal instead
+    // fires while res.json() is still streaming the body, which is what actually rejects here.
+    const fakeResponse = {
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new DOMException("The operation timed out.", "TimeoutError")),
+    };
+    const fetchMock = vi.fn(async () => fakeResponse as unknown as Response);
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.createPass(INPUT)).rejects.toMatchObject({ code: "wallet_provider_timeout" });
+  });
 });
 
 describe("PassCreatorClient.describeTemplate", () => {
@@ -196,6 +231,18 @@ describe("PassCreatorClient.getWebhookPublicKey", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
     await expect(client.getWebhookPublicKey()).rejects.toBeInstanceOf(WalletProviderError);
   });
+
+  it("wraps a body that stalls past the timeout as wallet_provider_timeout, instead of leaking the raw DOMException (bot review)", async () => {
+    const fakeResponse = {
+      ok: true,
+      status: 200,
+      text: () => Promise.reject(new DOMException("The operation timed out.", "TimeoutError")),
+    };
+    const fetchMock = vi.fn(async () => fakeResponse as unknown as Response);
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(client.getWebhookPublicKey()).rejects.toMatchObject({ code: "wallet_provider_timeout" });
+  });
 });
 
 describe("PassCreatorClient.subscribeWebhook", () => {
@@ -241,6 +288,22 @@ describe("PassCreatorClient.subscribeWebhook", () => {
     await expect(
       client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pass_voided"),
     ).rejects.toBeInstanceOf(WalletProviderError);
+  });
+
+  it("throws wallet_provider_timeout when the body stalls past the timeout, instead of silently treating it as success (bot review)", async () => {
+    // Before this fix, a body-read failure here fell through to `body: null`, which reads as
+    // "no explicit success: false" and so was (wrongly) treated as a successful subscribe.
+    const fakeResponse = {
+      ok: true,
+      status: 201,
+      json: () => Promise.reject(new DOMException("The operation timed out.", "TimeoutError")),
+    };
+    const fetchMock = vi.fn(async () => fakeResponse as unknown as Response);
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await expect(
+      client.subscribeWebhook("https://admitto.example.com/api/webhooks/passcreator", "pass_voided"),
+    ).rejects.toMatchObject({ code: "wallet_provider_timeout" });
   });
 });
 
