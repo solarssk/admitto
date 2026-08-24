@@ -316,36 +316,52 @@ describe("EventCard", () => {
   });
 
   it("falls back to the browser IANA timezone when operatorTimeZone is omitted", () => {
-    renderCard(
-      {},
-      {
-        ...baseEvent,
-        weather: {
-          status: "ok",
-          temp_c: 22,
-          weather_code: 0,
-          attribution: "Weather data by MET Norway",
+    function MockDateTimeFormat() {
+      return { resolvedOptions: () => ({ timeZone: "America/New_York" }) };
+    }
+    vi.stubGlobal("Intl", { ...Intl, DateTimeFormat: MockDateTimeFormat });
+    try {
+      renderCard(
+        {},
+        {
+          ...baseEvent,
+          weather: {
+            status: "ok",
+            temp_c: 22,
+            weather_code: 0,
+            attribution: "Weather data by MET Norway",
+          },
         },
-      },
-    );
-    // Production never passes operatorTimeZone; unit follows the runtime zone (°C or °F).
-    expect(screen.getByText(/^22°C$|^72°F$/)).toBeTruthy();
+      );
+      // Production never passes operatorTimeZone; unit follows the runtime zone.
+      expect(screen.getByText("72°F")).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("treats blank operatorTimeZone as omitted", () => {
-    renderCard(
-      { operatorTimeZone: "   " },
-      {
-        ...baseEvent,
-        weather: {
-          status: "ok",
-          temp_c: 22,
-          weather_code: 0,
-          attribution: "Weather data by MET Norway",
+    function MockDateTimeFormat() {
+      return { resolvedOptions: () => ({ timeZone: "America/New_York" }) };
+    }
+    vi.stubGlobal("Intl", { ...Intl, DateTimeFormat: MockDateTimeFormat });
+    try {
+      renderCard(
+        { operatorTimeZone: "   " },
+        {
+          ...baseEvent,
+          weather: {
+            status: "ok",
+            temp_c: 22,
+            weather_code: 0,
+            attribution: "Weather data by MET Norway",
+          },
         },
-      },
-    );
-    expect(screen.getByText(/^22°C$|^72°F$/)).toBeTruthy();
+      );
+      expect(screen.getByText("72°F")).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("uses singular day wording for too_far horizon and opens-in of 1", () => {
