@@ -196,6 +196,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                       <p>Inactive items are hidden from check-in operators.</p>
                     </div>
                     <Switch
+                      id="event-item-active"
                       label={form.enabled ? "On" : "Off"}
                       checked={form.enabled}
                       onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
@@ -262,6 +263,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                       <p>Track when this item must be returned (e.g. headset).</p>
                     </div>
                     <Switch
+                      id="event-item-requires-return"
                       label={form.requires_return ? "On" : "Off"}
                       checked={form.requires_return}
                       onChange={(e) =>
@@ -277,6 +279,7 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                         <p>Automatically mark badge as issued when attendee is admitted.</p>
                       </div>
                       <Switch
+                        id="event-item-issue-on-checkin"
                         label={form.issue_on_checkin ? "On" : "Off"}
                         checked={form.issue_on_checkin}
                         onChange={(e) =>

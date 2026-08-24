@@ -1743,7 +1743,11 @@ export function createApp(options: CreateAppOptions = {}) {
   app.patch("/api/admin/system-settings", jsonPostCsrf, staffAdminGate, (c) =>
     handlePatchSystemSettings(c, db),
   );
-  app.post("/api/admin/client-errors", jsonPostCsrf, staffAdminGate, (c) => handlePostClientError(c));
+  // requireSession, not staffAdminGate: the staff SPA bundle (and this reporting call) also
+  // runs on /operator and /account, whose sessions fail the admin-panel check - gating this
+  // log-only endpoint on admin access would 403 every report from those surfaces and write a
+  // spurious access-denied row to the security audit log for each one.
+  app.post("/api/admin/client-errors", jsonPostCsrf, requireSession, (c) => handlePostClientError(c));
   app.post("/api/admin/uploads", jsonPostCsrf, staffAdminGate, uploadBodyLimit, (c) =>
     handlePostUpload(c, db),
   );
