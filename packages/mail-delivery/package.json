@@ -32,7 +32,7 @@
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
     "iconv-lite": "^0.7.3",
-    "imapflow": "^1.7.0",
+    "imapflow": "^1.7.1",
     "libmime": "^5.4.1",
     "libqp": "^2.1.1"
   },
