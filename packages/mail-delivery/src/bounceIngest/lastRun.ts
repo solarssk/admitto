@@ -76,26 +76,32 @@ export function parseBounceIngestTickSeconds(env: NodeJS.ProcessEnv = process.en
 }
 
 /** Positive-integer form the raw string must take to be a valid deploy tick override. */
-const POSITIVE_INTEGER_RE = /^[1-9][0-9]*$/;
+const POSITIVE_INTEGER_RE = /^[1-9]\d*$/;
 
 /**
  * Startup-only guard for the worker process: reject an explicitly-set but invalid
- * BOUNCE_INGEST_TICK_SECONDS/BOUNCE_INGEST_INTERVAL_SECONDS (zero, negative, decimal, or
- * non-numeric) loudly instead of letting parseBounceIngestTickSeconds() silently fall back to
- * the default - a typo'd deploy override should fail the container at boot, not run forever on
- * an operator-invisible wrong interval. An unset or blank var is fine (falls back to default);
- * this only fires when the var is actually present with unusable content. Was previously
- * enforced by deploy/scripts/bounce-ingest-loop.sh's own `grep -Eq` check before the worker
- * compose cutover (#783) replaced that script with this Node process without carrying the
- * check over.
+ * BOUNCE_INGEST_TICK_SECONDS/BOUNCE_INGEST_INTERVAL_SECONDS (zero, negative, decimal,
+ * non-numeric, or too large to parse safely) loudly instead of letting
+ * parseBounceIngestTickSeconds() silently fall back to the default - a typo'd deploy override
+ * should fail the container at boot, not run forever on an operator-invisible wrong interval.
+ * An unset or blank var is fine (falls back to default); this only fires when the var is
+ * actually present with unusable content. Was previously enforced by
+ * deploy/scripts/bounce-ingest-loop.sh's own `grep -Eq` check before the worker compose cutover
+ * (#783) replaced that script with this Node process without carrying the check over.
+ *
+ * Validates only the effective variable, mirroring parseBounceIngestTickSeconds()'s own
+ * TICK-then-legacy-INTERVAL precedence - a leftover invalid legacy value must not block startup
+ * once the new variable is set and already overrides it.
  */
 export function assertValidBounceIngestTickSecondsEnv(env: NodeJS.ProcessEnv = process.env): void {
-  for (const key of ["BOUNCE_INGEST_TICK_SECONDS", "BOUNCE_INGEST_INTERVAL_SECONDS"] as const) {
-    const raw = env[key];
-    if (raw === undefined || raw === "") continue;
-    if (!POSITIVE_INTEGER_RE.test(raw)) {
-      throw new Error(`${key} must be a positive integer (got: ${raw})`);
-    }
+  const key =
+    env["BOUNCE_INGEST_TICK_SECONDS"] !== undefined
+      ? "BOUNCE_INGEST_TICK_SECONDS"
+      : "BOUNCE_INGEST_INTERVAL_SECONDS";
+  const raw = env[key];
+  if (raw === undefined || raw === "") return;
+  if (!POSITIVE_INTEGER_RE.test(raw) || !Number.isSafeInteger(Number.parseInt(raw, 10))) {
+    throw new Error(`${key} must be a positive integer (got: ${raw})`);
   }
 }
 
